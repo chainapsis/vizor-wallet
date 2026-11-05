@@ -352,7 +352,7 @@ class PayAmountStep extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     Text(
-                      context.l10n.payAmountShieldedBalance,
+                      context.l10n.commonShieldedBalance,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                       ),

@@ -15,7 +15,7 @@ class PayWizardStepper extends StatelessWidget {
   });
 
   static List<String> labels(AppLocalizations l10n) => [
-    l10n.payStepAmount,
+    l10n.commonAmount,
     l10n.payStepRecipient,
     l10n.payStepReview,
   ];

@@ -154,7 +154,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
               Center(
                 child: AppTappable(
                   key: const ValueKey('mobile_pay_add_contact_picture'),
-                  semanticsLabel: context.l10n.payChangeContactPicture,
+                  semanticsLabel: context.l10n.commonChangeContactPicture,
                   onTap: _pickPicture,
                   child: ExcludeSemantics(
                     child: SizedBox.square(
@@ -196,7 +196,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                context.l10n.payAddressLabel,
+                context.l10n.commonAddressLabel,
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -206,7 +206,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                 controller: _labelController,
                 focusNode: _labelFocusNode,
                 fieldKey: const ValueKey('mobile_pay_add_contact_label'),
-                hintText: context.l10n.payAddLabelHint,
+                hintText: context.l10n.commonContactLabelHint,
                 textInputAction: TextInputAction.done,
                 inputFormatters: [LengthLimitingTextInputFormatter(20)],
                 onSubmitted: (_) => _save(),
@@ -217,7 +217,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                         padding: const EdgeInsets.only(right: AppSpacing.xs),
                         child: AppIconHoverButton(
                           icon: AppIcons.cross,
-                          semanticLabel: context.l10n.payClearContactLabel,
+                          semanticLabel: context.l10n.commonClearContactLabel,
                           onTap: _clearLabel,
                           size: 32,
                           borderRadius: BorderRadius.circular(AppRadii.small),
@@ -237,7 +237,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                       child: Padding(
                         padding: const EdgeInsets.all(AppSpacing.xxs),
                         child: Text(
-                          context.l10n.payChainAndAddress,
+                          context.l10n.commonChainAndAddress,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelMedium.copyWith(
@@ -344,7 +344,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                 child: Text(
                   _saving
                       ? context.l10n.paySaving
-                      : context.l10n.paySaveContact,
+                      : context.l10n.commonSaveContact,
                 ),
               ),
               const SizedBox(height: AppSpacing.s),

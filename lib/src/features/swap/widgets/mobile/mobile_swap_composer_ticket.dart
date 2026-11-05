@@ -163,7 +163,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
       // relayout entirely. A deliberate product step away from the Figma
       // filled frames, which hide the labels once a value is entered.
       showTitle: true,
-      title: context.l10n.swapComposerYouPay,
+      title: context.l10n.commonYouPay,
       titleTrailing: sendsZec
           ? _MaxAmountTrigger(
               availableText: widget.zecAvailableText,

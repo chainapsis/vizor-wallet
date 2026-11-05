@@ -74,7 +74,7 @@ class MobileSwapReviewHeader extends StatelessWidget {
       bottomLeftText: row.bottomText,
       trailingActionLabel: fullAddress == null
           ? null
-          : context.l10n.swapFullAddress,
+          : context.l10n.commonFullAddress,
       trailingActionKey: const ValueKey('mobile_swap_full_address'),
       onTrailingAction: fullAddress == null
           ? null
@@ -83,8 +83,8 @@ class MobileSwapReviewHeader extends StatelessWidget {
               title:
                   row.addressNetworkLabel ??
                   (row.asset.isNativeZec
-                      ? context.l10n.swapZcashAddressTitle
-                      : context.l10n.swapChainAddressTitle(
+                      ? context.l10n.commonZcashAddress
+                      : context.l10n.commonAddressForChain(
                           row.asset.chainLabel,
                         )),
               address: fullAddress,

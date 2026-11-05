@@ -207,7 +207,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     copyTextWithToast(
       context,
       text: txid,
-      toastMessage: context.l10n.sendStatusTxHashCopied,
+      toastMessage: context.l10n.commonTransactionHashCopied,
     );
   }
 
@@ -438,7 +438,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         memoText: hasMemo ? memo : null,
                         memoExpanded: _messageExpanded,
                         noticeText: _phase == _SendStatusPhase.failed
-                            ? (_error ?? context.l10n.sendStatusTitleFailed)
+                            ? (_error ?? context.l10n.commonSendFailed)
                             : _statusMessage,
                         onShowFullAddress: isDonation
                             ? null

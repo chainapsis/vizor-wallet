@@ -351,10 +351,10 @@ bool _isPositiveSwapAmount(String? amountText) {
 String _payActivityTitle(AppLocalizations l10n, SwapIntentStatus status) {
   return switch (status) {
     SwapIntentStatus.complete => l10n.activityPayPaid,
-    SwapIntentStatus.refunded => l10n.activityPayRefunded,
+    SwapIntentStatus.refunded => l10n.commonPaymentRefunded,
     SwapIntentStatus.failed ||
-    SwapIntentStatus.expired => l10n.activityPayFailed,
-    _ => l10n.activityPayInProgress,
+    SwapIntentStatus.expired => l10n.commonPaymentFailed,
+    _ => l10n.commonPaymentInProgress,
   };
 }
 
@@ -374,16 +374,16 @@ String _swapActivityStatusText(
   return switch (status) {
     SwapIntentStatus.awaitingDeposit ||
     SwapIntentStatus.awaitingExternalDeposit =>
-      progress?.label(l10n) ?? l10n.activityStatusInProgress,
+      progress?.label(l10n) ?? l10n.commonInProgress,
     SwapIntentStatus.incompleteDeposit => l10n.activityStatusIncompleteDeposit,
     SwapIntentStatus.depositObserved ||
     SwapIntentStatus.processing ||
     SwapIntentStatus.providerStatusUnknown =>
-      progress?.label(l10n) ?? l10n.activityStatusInProgress,
-    SwapIntentStatus.complete => l10n.activityStatusCompleted,
-    SwapIntentStatus.refunded => l10n.activityStatusRefunded,
-    SwapIntentStatus.expired => l10n.activityStatusFailed,
-    SwapIntentStatus.failed => l10n.activityStatusFailed,
+      progress?.label(l10n) ?? l10n.commonInProgress,
+    SwapIntentStatus.complete => l10n.commonCompleted,
+    SwapIntentStatus.refunded => l10n.commonRefunded,
+    SwapIntentStatus.expired => l10n.commonFailed,
+    SwapIntentStatus.failed => l10n.commonFailed,
   };
 }
 
@@ -491,9 +491,9 @@ SwapActivityLegAbsorption matchSwapActivityLegAbsorption({
 String _swapActivityTitle(AppLocalizations l10n, SwapIntentStatus status) {
   return switch (status) {
     SwapIntentStatus.complete => l10n.activitySwapSwapped,
-    SwapIntentStatus.refunded => l10n.activitySwapRefunded,
+    SwapIntentStatus.refunded => l10n.commonSwapRefunded,
     SwapIntentStatus.failed ||
-    SwapIntentStatus.expired => l10n.activitySwapFailed,
+    SwapIntentStatus.expired => l10n.commonSwapFailed,
     _ => l10n.activitySwapSwapping,
   };
 }
@@ -536,7 +536,7 @@ String _swapActivityChildTimestamp(
 String? _relativeActivityTimestamp(AppLocalizations l10n, DateTime timestamp) {
   final elapsed = DateTime.now().difference(timestamp.toLocal());
   if (elapsed.isNegative) return null;
-  if (elapsed.inMinutes < 1) return l10n.activitySwapJustNow;
+  if (elapsed.inMinutes < 1) return l10n.commonJustNow;
   if (elapsed.inHours < 1) {
     return l10n.activitySwapMinutesAgo(elapsed.inMinutes);
   }

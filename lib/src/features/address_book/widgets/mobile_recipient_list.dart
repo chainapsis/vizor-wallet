@@ -199,7 +199,7 @@ class MobileRecipientRow extends StatelessWidget {
                         AppIcons.check,
                         size: 16,
                         color: colors.icon.accent,
-                        semanticLabel: context.l10n.addressBookSelectedContact,
+                        semanticLabel: context.l10n.commonSelectedContact,
                       ),
                     )
                   : null,

@@ -77,7 +77,7 @@ class SwapReviewPageContent extends StatelessWidget {
             Text(
               payMode
                   ? context.l10n.swapReviewConfirmPaymentTitle
-                  : context.l10n.swapReviewSwapTitle,
+                  : context.l10n.commonReviewSwap,
               key: ValueKey(payMode ? 'pay_review_title' : 'swap_review_title'),
               textAlign: TextAlign.center,
               style: AppTypography.bodyLarge.copyWith(
@@ -136,19 +136,19 @@ class SwapReviewPageContent extends StatelessWidget {
     if (sendsZec) {
       return SwapReviewInfoSideData(
         asset: quote.sellAsset,
-        label: payMode ? l10n.swapReviewYouPay : l10n.swapStatusPayLabel,
+        label: payMode ? l10n.commonYouPay : l10n.commonYourePaying,
         amountText: quote.sellAmountText,
         detailText: payMode
-            ? l10n.swapReviewPrivately
+            ? l10n.commonPrivatelyFromShieldedBalance
             : payFiatTextOverride ?? _payFiatText(quote),
       );
     }
     final refundAddress = addressPlan.oneClickRefundTo.trim();
     return SwapReviewInfoSideData(
       asset: quote.sellAsset,
-      label: l10n.swapStatusPayLabel,
+      label: l10n.commonYourePaying,
       amountText: quote.sellAmountText,
-      detailText: l10n.swapReviewRefundToAddress(
+      detailText: l10n.commonRefundToAddress(
         _contactAwareAddressText(refundAddress, quote.sellAsset),
       ),
       detailCopyText: refundAddress,
@@ -162,7 +162,7 @@ class SwapReviewPageContent extends StatelessWidget {
     if (!sendsZec) {
       return SwapReviewInfoSideData(
         asset: quote.receiveAsset,
-        label: l10n.swapStatusReceiveLabel,
+        label: l10n.commonYoureReceiving,
         amountText: quote.receiveEstimateText,
         detailText: receiveFiatTextOverride ?? _receiveFiatText(quote),
       );
@@ -170,11 +170,9 @@ class SwapReviewPageContent extends StatelessWidget {
     final recipientAddress = addressPlan.userExternalAddress.trim();
     return SwapReviewInfoSideData(
       asset: quote.receiveAsset,
-      label: payMode
-          ? l10n.swapReviewRecipientGets
-          : l10n.swapStatusReceiveLabel,
+      label: payMode ? l10n.commonRecipientGets : l10n.commonYoureReceiving,
       amountText: quote.receiveEstimateText,
-      detailText: l10n.swapReviewToAddressOnChain(
+      detailText: l10n.commonToAddressOnChain(
         _contactAwareAddressText(recipientAddress, quote.receiveAsset),
         quote.receiveAsset.chainLabel,
       ),
@@ -220,7 +218,7 @@ class _PayReviewCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              context.l10n.swapReviewRecipientGets,
+              context.l10n.commonRecipientGets,
               textAlign: TextAlign.center,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.text.secondary,
@@ -254,7 +252,7 @@ class _PayReviewCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    context.l10n.swapReviewYouPay,
+                    context.l10n.commonYouPay,
                     style: AppTypography.bodyMediumStrong.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -289,7 +287,7 @@ class _PayReviewCard extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
-                    context.l10n.swapReviewPrivately,
+                    context.l10n.commonPrivatelyFromShieldedBalance,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.labelSmall.copyWith(
@@ -306,12 +304,12 @@ class _PayReviewCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ReviewListRow(
-              label: context.l10n.swapReviewRate,
+              label: context.l10n.commonRate,
               value: quote.rateText,
             ),
             if (feeText != null && feeText.isNotEmpty)
               ReviewListRow(
-                label: context.l10n.swapReviewNetworkFees,
+                label: context.l10n.commonNetworkConversionFees,
                 value: feeText,
               ),
             ReviewListRow(
@@ -417,7 +415,7 @@ class SwapReviewPageActions extends StatelessWidget {
     final primaryLabel = expired
         ? context.l10n.swapReviewReviewAgain
         : startBlockedReason != null
-        ? context.l10n.swapActionNotEnoughZec
+        ? context.l10n.commonNotEnoughZec
         : starting
         ? startingLabel
         : payMode
@@ -504,13 +502,13 @@ class _SwapReviewDetailCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ReviewListRow(
-              label: context.l10n.swapReviewSlippageTolerance,
+              label: context.l10n.commonSlippageTolerance,
               value:
                   slippageToleranceTextOverride ??
                   swapReviewSlippageToleranceText(quote),
             ),
             ReviewListRow(
-              label: context.l10n.swapReviewGuaranteedMinimum,
+              label: context.l10n.commonGuaranteedMinimum,
               value: compactSwapAmountText(quote.minimumReceiveText),
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.icon.muted,
@@ -523,7 +521,7 @@ class _SwapReviewDetailCard extends StatelessWidget {
         ),
         const ReviewWrapDivider(),
         ReviewListRow(
-          label: context.l10n.swapReviewSwapFee,
+          label: context.l10n.commonSwapFee,
           value: quote.feeLabel,
           trailingIconName: AppIcons.help,
           trailingIconColor: colors.icon.muted,

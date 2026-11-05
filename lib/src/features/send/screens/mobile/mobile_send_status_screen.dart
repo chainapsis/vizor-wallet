@@ -262,11 +262,11 @@ class _MobileSendStatusScreenState
       };
     }
     return switch (_phase) {
-      _MobileSendStatusPhase.sending => context.l10n.sendStatusMobileSending,
+      _MobileSendStatusPhase.sending => context.l10n.commonSending,
       _MobileSendStatusPhase.pendingBroadcast =>
         context.l10n.sendStatusMobileQueued,
       _MobileSendStatusPhase.succeeded => context.l10n.sendStatusMobileSent,
-      _MobileSendStatusPhase.failed => context.l10n.sendStatusTitleFailed,
+      _MobileSendStatusPhase.failed => context.l10n.commonSendFailed,
     };
   }
 
@@ -296,13 +296,13 @@ class _MobileSendStatusScreenState
     return switch (_phase) {
       _MobileSendStatusPhase.sending => null,
       _MobileSendStatusPhase.pendingBroadcast ||
-      _MobileSendStatusPhase.succeeded => context.l10n.sendStatusMobileDone,
+      _MobileSendStatusPhase.succeeded => context.l10n.commonDone,
       _MobileSendStatusPhase.failed =>
         _canRetryBroadcast
             ? context.l10n.commonRetry
             : _isDonation
             ? context.l10n.sendStatusMobileReturnToSettings
-            : context.l10n.sendStatusMobileReturnHome,
+            : context.l10n.commonReturnHome,
     };
   }
 
@@ -339,7 +339,7 @@ class _MobileSendStatusScreenState
         secondaryActionLabel: _canRetryBroadcast
             ? (_isDonation
                   ? context.l10n.sendStatusMobileReturnToSettings
-                  : context.l10n.sendStatusMobileReturnHome)
+                  : context.l10n.commonReturnHome)
             : null,
         onSecondaryAction: _canRetryBroadcast ? _handleBack : null,
       ),

@@ -33,8 +33,8 @@ String payActivityStatusAmountLabel(
 ) => switch (phase) {
   PayActivityStatusPhase.completed => l10n.swapActivityYouPaid,
   PayActivityStatusPhase.failed ||
-  PayActivityStatusPhase.refunded => l10n.swapActivityAmount,
-  PayActivityStatusPhase.inProgress => l10n.swapActivityYourePaying,
+  PayActivityStatusPhase.refunded => l10n.commonAmount,
+  PayActivityStatusPhase.inProgress => l10n.commonYourePaying,
 };
 
 /// Shared Pay status data backed by values whose meaning is known at the
@@ -67,15 +67,15 @@ class PayActivityStatusPresentation {
   String title(AppLocalizations l10n) => switch (phase) {
     PayActivityStatusPhase.inProgress => l10n.swapActivityPayInProgressTitle,
     PayActivityStatusPhase.completed => l10n.swapActivityPaidSuccessfullyTitle,
-    PayActivityStatusPhase.failed => l10n.swapActivityPaymentFailed,
-    PayActivityStatusPhase.refunded => l10n.swapActivityPaymentRefunded,
+    PayActivityStatusPhase.failed => l10n.commonPaymentFailed,
+    PayActivityStatusPhase.refunded => l10n.commonPaymentRefunded,
   };
 
   String statusLabel(AppLocalizations l10n) => switch (phase) {
-    PayActivityStatusPhase.inProgress => l10n.swapActivityPayStatusInProgress,
-    PayActivityStatusPhase.completed => l10n.swapActivityPayStatusCompleted,
-    PayActivityStatusPhase.failed => l10n.swapActivityPayStatusFailed,
-    PayActivityStatusPhase.refunded => l10n.swapActivityPayStatusRefunded,
+    PayActivityStatusPhase.inProgress => l10n.commonInProgress,
+    PayActivityStatusPhase.completed => l10n.commonCompleted,
+    PayActivityStatusPhase.failed => l10n.commonFailed,
+    PayActivityStatusPhase.refunded => l10n.commonRefunded,
   };
 }
 
@@ -189,10 +189,10 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   String? receiveDetailCopyText;
   if (sendsZec) {
     if (payMode) {
-      payDetailText = l10n.swapActivityPrivatelyFromShielded;
+      payDetailText = l10n.commonPrivatelyFromShieldedBalance;
     }
     if (recipientAddress != null && recipientAddress.isNotEmpty) {
-      receiveDetailText = l10n.swapActivityToAddressOnChain(
+      receiveDetailText = l10n.commonToAddressOnChain(
         _headerAddressText(
           recipientAddress,
           asset: receiveAsset,
@@ -205,7 +205,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     }
   } else {
     if (refundAddress != null && refundAddress.isNotEmpty) {
-      payDetailText = l10n.swapActivityRefundToAddress(
+      payDetailText = l10n.commonRefundToAddress(
         _headerAddressText(
           refundAddress,
           asset: sellAsset,
@@ -230,26 +230,26 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     payLabel: payMode
         ? _payIntentShowsPaidCopy(intent)
               ? l10n.swapActivityYouPaid
-              : l10n.swapActivityYouPay
+              : l10n.commonYouPay
         : _swapShowsTerminalFailureLabels(intent.status)
         ? l10n.swapActivityDepositAmount
         : intent.status == SwapIntentStatus.complete
         ? l10n.swapActivityYouPaid
-        : l10n.swapActivityYourePaying,
+        : l10n.commonYourePaying,
     receiveLabel: payMode
         ? switch (intent.status) {
             SwapIntentStatus.complete => l10n.swapActivityRecipientReceived,
             SwapIntentStatus.failed ||
             SwapIntentStatus.refunded ||
             SwapIntentStatus.expired ||
-            SwapIntentStatus.incompleteDeposit => l10n.swapActivityAmount,
-            _ => l10n.swapActivityRecipientGets,
+            SwapIntentStatus.incompleteDeposit => l10n.commonAmount,
+            _ => l10n.commonRecipientGets,
           }
         : _swapShowsTerminalFailureLabels(intent.status)
         ? l10n.swapActivityExpectedToReceive
         : intent.status == SwapIntentStatus.complete
         ? l10n.swapActivityYouReceived
-        : l10n.swapActivityYoureReceiving,
+        : l10n.commonYoureReceiving,
     payDetailText: payDetailText,
     payDetailCopyText: payDetailCopyText,
     receiveDetailText: receiveDetailText,
@@ -264,8 +264,8 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
       addressBookContacts: addressBookContacts,
     ),
     progressTabLabel: payMode
-        ? l10n.swapActivityPaymentProgressTab
-        : l10n.swapActivitySwapProgressTab,
+        ? l10n.commonPaymentProgress
+        : l10n.commonSwapProgress,
     paymentMode: payMode,
     payStatus: payStatus,
     explorerUri: swapActivityExplorerUri(intent),
@@ -368,13 +368,12 @@ String _swapActivityStatusLabel(
       l10n.swapActivityStatusAwaitingExternalDeposit,
     SwapIntentStatus.depositObserved => l10n.swapActivityStatusDepositObserved,
     SwapIntentStatus.processing => l10n.swapActivityStatusProcessing,
-    SwapIntentStatus.providerStatusUnknown =>
-      l10n.swapActivityStatusCheckingStatus,
+    SwapIntentStatus.providerStatusUnknown => l10n.commonCheckingStatus,
     SwapIntentStatus.incompleteDeposit => l10n.swapActivityIncompleteDeposit,
     SwapIntentStatus.complete => l10n.swapActivityStatusComplete,
-    SwapIntentStatus.refunded => l10n.swapActivityPayStatusRefunded,
+    SwapIntentStatus.refunded => l10n.commonRefunded,
     SwapIntentStatus.expired => l10n.swapActivityStatusExpired,
-    SwapIntentStatus.failed => l10n.swapActivityPayStatusFailed,
+    SwapIntentStatus.failed => l10n.commonFailed,
   };
 }
 
@@ -383,17 +382,17 @@ String _swapActivityStatusTitle(AppLocalizations l10n, SwapIntent intent) {
     return switch (intent.status) {
       SwapIntentStatus.complete => l10n.swapActivityPaymentComplete,
       SwapIntentStatus.incompleteDeposit => l10n.swapActivityIncompletePayment,
-      SwapIntentStatus.refunded => l10n.swapActivityPaymentRefunded,
+      SwapIntentStatus.refunded => l10n.commonPaymentRefunded,
       SwapIntentStatus.failed ||
-      SwapIntentStatus.expired => l10n.swapActivityPaymentFailed,
-      _ => l10n.swapActivityPaymentInProgress,
+      SwapIntentStatus.expired => l10n.commonPaymentFailed,
+      _ => l10n.commonPaymentInProgress,
     };
   }
   return switch (intent.status) {
     SwapIntentStatus.complete => l10n.swapActivitySwapCompleted,
     SwapIntentStatus.incompleteDeposit => l10n.swapActivityIncompleteDeposit,
-    SwapIntentStatus.refunded => l10n.swapActivitySwapRefunded,
-    SwapIntentStatus.failed => l10n.swapActivitySwapFailed,
+    SwapIntentStatus.refunded => l10n.commonSwapRefunded,
+    SwapIntentStatus.failed => l10n.commonSwapFailed,
     _ => l10n.swapActivitySwapInProgress,
   };
 }
@@ -593,15 +592,12 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         ),
       if (timestamp != null)
         SwapStatusDetailRowData(
-          label: l10n.swapActivityDetailTimestamp,
+          label: l10n.commonTimestamp,
           kind: SwapStatusDetailKind.timestamp,
           value: timestamp,
         ),
       if (payRateText != null)
-        SwapStatusDetailRowData(
-          label: l10n.swapActivityDetailRate,
-          value: payRateText,
-        ),
+        SwapStatusDetailRowData(label: l10n.commonRate, value: payRateText),
       if (depositTxHash != null && depositTxHash.isNotEmpty)
         SwapStatusDetailRowData(
           label: sourceTxLabel,
@@ -630,7 +626,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
               intent.status != SwapIntentStatus.refunded ||
               kAppFormFactor == AppFormFactor.mobile))
         ..._addressDetailRows(
-          label: l10n.swapActivityDetailRefundTo,
+          label: l10n.commonRefundTo,
           kind: SwapStatusDetailKind.refundTo,
           address: refundAddress,
           asset: sourceAsset,
@@ -640,13 +636,13 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       ?txIdRow,
       if (failed && intent.providerRefundInfo?.hasRecordedRefund == true)
         SwapStatusDetailRowData(
-          label: l10n.swapActivityDetailRefundedAmount,
+          label: l10n.commonRefundedAmount,
           kind: SwapStatusDetailKind.refundedAmount,
           value: intent.providerRefundInfo!.refundedAmountText!,
         ),
       if (failed && recordedRefundFee != null)
         SwapStatusDetailRowData(
-          label: l10n.swapActivityDetailRefundFee,
+          label: l10n.commonRefundFee,
           kind: SwapStatusDetailKind.refundFee,
           value: recordedRefundFee,
         ),
@@ -691,7 +687,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   return [
     if (sendsZec && recipientAddress != null && recipientAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: l10n.swapActivityDetailRecipient(receiveSymbol),
+        label: l10n.commonSymbolRecipient(receiveSymbol),
         kind: SwapStatusDetailKind.recipient,
         address: recipientAddress,
         asset: receiveAsset,
@@ -700,7 +696,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       ),
     if (!sendsZec && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: l10n.swapActivityDetailRefundAddress(sourceSymbol),
+        label: l10n.commonSymbolRefundAddress(sourceSymbol),
         kind: SwapStatusDetailKind.refundAddress,
         address: refundAddress,
         asset: sourceAsset,
@@ -720,7 +716,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     // deposits cannot complete without it).
     if (!sendsZec && depositMemo != null && depositMemo.isNotEmpty)
       SwapStatusDetailRowData(
-        label: l10n.swapActivityDetailMemo,
+        label: l10n.commonMemo,
         kind: SwapStatusDetailKind.memo,
         value: depositMemo,
         copyable: true,
@@ -728,7 +724,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       ),
     if (!payMode)
       SwapStatusDetailRowData(
-        label: l10n.swapActivityDetailSlippageTolerance,
+        label: l10n.commonSlippageTolerance,
         kind: SwapStatusDetailKind.slippageTolerance,
         value:
             intent.slippageToleranceText ??
@@ -736,7 +732,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       ),
     if (!payMode)
       SwapStatusDetailRowData(
-        label: l10n.swapActivityDetailGuaranteedMinimum,
+        label: l10n.commonGuaranteedMinimum,
         kind: SwapStatusDetailKind.guaranteedMinimum,
         value: intent.minimumReceiveText ?? intent.receiveEstimate,
         help: true,
@@ -744,19 +740,16 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       ),
     if (timestamp != null)
       SwapStatusDetailRowData(
-        label: l10n.swapActivityDetailTimestamp,
+        label: l10n.commonTimestamp,
         kind: SwapStatusDetailKind.timestamp,
         value: timestamp,
       ),
     if (payRateText != null)
-      SwapStatusDetailRowData(
-        label: l10n.swapActivityDetailRate,
-        value: payRateText,
-      ),
+      SwapStatusDetailRowData(label: l10n.commonRate, value: payRateText),
     ?txIdRow,
     if (sendsZec && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: l10n.swapActivityDetailRefundAddress(sourceSymbol),
+        label: l10n.commonSymbolRefundAddress(sourceSymbol),
         kind: SwapStatusDetailKind.refundAddress,
         address: refundAddress,
         asset: sourceAsset,
@@ -764,7 +757,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       ),
     if (!sendsZec && recipientAddress != null && recipientAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: l10n.swapActivityDetailRecipient(receiveSymbol),
+        label: l10n.commonSymbolRecipient(receiveSymbol),
         kind: SwapStatusDetailKind.recipient,
         address: recipientAddress,
         asset: receiveAsset,
@@ -787,7 +780,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         copyText: destinationChainTxHash,
       ),
     SwapStatusDetailRowData(
-      label: l10n.swapActivityDetailSwapFee,
+      label: l10n.commonSwapFee,
       kind: SwapStatusDetailKind.swapFee,
       value: intent.swapFeeText ?? l10n.swapActivityDetailIncludedInRate,
       help: true,
@@ -820,19 +813,16 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
   return [
     if (!failed)
       SwapStatusDetailRowData(
-        label: paid ? l10n.swapActivityYouPaid : l10n.swapActivityYouPay,
+        label: paid ? l10n.swapActivityYouPaid : l10n.commonYouPay,
         value: intent.sellAmount,
       ),
     if (!failed && payRateText != null)
-      SwapStatusDetailRowData(
-        label: l10n.swapActivityDetailRate,
-        value: payRateText,
-      ),
+      SwapStatusDetailRowData(label: l10n.commonRate, value: payRateText),
     if (!failed && feeText != null)
       SwapStatusDetailRowData(
         label: terminal
             ? l10n.swapActivityDetailFees
-            : l10n.swapActivityDetailNetworkConversionFees,
+            : l10n.commonNetworkConversionFees,
         value: feeText,
         help: true,
         helpTooltip: terminal
@@ -841,13 +831,13 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
       ),
     if (failed && intent.providerRefundInfo?.hasRecordedRefund == true)
       SwapStatusDetailRowData(
-        label: l10n.swapActivityDetailRefundedAmount,
+        label: l10n.commonRefundedAmount,
         kind: SwapStatusDetailKind.refundedAmount,
         value: intent.providerRefundInfo!.refundedAmountText!,
       ),
     if (failed && recordedRefundFee != null)
       SwapStatusDetailRowData(
-        label: l10n.swapActivityDetailRefundFee,
+        label: l10n.commonRefundFee,
         kind: SwapStatusDetailKind.refundFee,
         value: recordedRefundFee,
       ),
@@ -870,7 +860,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
       ),
     if (failed && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: l10n.swapActivityDetailRefundTo,
+        label: l10n.commonRefundTo,
         kind: SwapStatusDetailKind.refundTo,
         address: refundAddress,
         asset: sourceAsset,
@@ -909,7 +899,7 @@ SwapStatusDetailRowData? _swapActivityTxIdRow(
   if (linkUri == null) return null;
 
   return SwapStatusDetailRowData(
-    label: l10n.swapActivityDetailTxId,
+    label: l10n.commonTxId,
     kind: SwapStatusDetailKind.txId,
     value: compactSwapAddress(txId),
     linkUri: linkUri,
@@ -957,7 +947,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
       ),
     if (depositMemo != null && depositMemo.isNotEmpty)
       SwapStatusDetailRowData(
-        label: l10n.swapActivityDetailMemo,
+        label: l10n.commonMemo,
         kind: SwapStatusDetailKind.memo,
         value: depositMemo,
         copyable: true,
@@ -990,13 +980,13 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
       ),
     if (providerInfo?.refundFeeText != null)
       SwapStatusDetailRowData(
-        label: l10n.swapActivityDetailRefundFee,
+        label: l10n.commonRefundFee,
         kind: SwapStatusDetailKind.refundFee,
         value: providerInfo!.refundFeeText!,
       ),
     if (refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: l10n.swapActivityDetailRefundAddress(sourceSymbol),
+        label: l10n.commonSymbolRefundAddress(sourceSymbol),
         kind: SwapStatusDetailKind.refundAddress,
         address: refundAddress,
         asset: sourceAsset,
@@ -1005,7 +995,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
       ),
     if (!sendsZec && recipientAddress != null && recipientAddress.isNotEmpty)
       ..._addressDetailRows(
-        label: l10n.swapActivityDetailRecipient(receiveSymbol),
+        label: l10n.commonSymbolRecipient(receiveSymbol),
         kind: SwapStatusDetailKind.recipient,
         address: recipientAddress,
         asset: receiveAsset,
@@ -1147,13 +1137,13 @@ String? swapDepositDeadlineLabel(AppLocalizations l10n, SwapIntent intent) {
   if (remaining.inHours >= 1) {
     final hours = (remaining.inSeconds / Duration.secondsPerHour).ceil();
     return hours == 1
-        ? l10n.swapActivityDeadlineOneHour
+        ? l10n.commonDurationOneHour
         : l10n.swapActivityDeadlineHours(hours);
   }
   if (remaining.inMinutes >= 15) {
     final minutes = remaining.inMinutes;
     return minutes == 1
-        ? l10n.swapActivityDeadlineOneMinute
+        ? l10n.commonDurationOneMinute
         : l10n.swapActivityDeadlineMinutes(minutes);
   }
   final minutes = remaining.inMinutes.remainder(60).toString().padLeft(2, '0');

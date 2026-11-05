@@ -93,7 +93,7 @@ class SendReviewContentView extends StatelessWidget {
 
     return SendReviewContentColumn(
       title: isPaymentRequest
-          ? context.l10n.sendReviewPaymentTitle
+          ? context.l10n.commonReviewPayment
           : context.l10n.sendReviewTitle,
       children: [
         SendReviewInfoSection(

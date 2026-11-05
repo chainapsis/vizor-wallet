@@ -93,17 +93,17 @@ String mobileSwapActivityTitle(
     return switch (intent.status) {
       SwapIntentStatus.complete => l10n.activityPayPaid,
       SwapIntentStatus.incompleteDeposit => l10n.activityPayIncomplete,
-      SwapIntentStatus.refunded => l10n.activityPayRefunded,
+      SwapIntentStatus.refunded => l10n.commonPaymentRefunded,
       SwapIntentStatus.failed ||
-      SwapIntentStatus.expired => l10n.activityPayFailed,
+      SwapIntentStatus.expired => l10n.commonPaymentFailed,
       _ => l10n.activityPayPaying,
     };
   }
   if (intent.status == SwapIntentStatus.expired) {
-    return l10n.activitySwapFailed;
+    return l10n.commonSwapFailed;
   }
   if (swapActivityShowsExternalDepositPage(intent)) {
-    return l10n.activitySwapReviewQuote;
+    return l10n.commonReviewQuote;
   }
   return presentation.title;
 }

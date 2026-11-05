@@ -211,7 +211,7 @@ void main() {
         findsOneWidget,
       );
       expect(_text(tester, 'request_message_counter'), endsWith('/512'));
-      expect(find.text(testL10n.receiveRequestAddMessage), findsNothing);
+      expect(find.text(testL10n.commonAddAMessage), findsNothing);
     });
 
     testWidgets('a transparent request offers no message at all', (

@@ -107,7 +107,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorText = context.l10n.receiveNoActiveAccount;
+        _errorText = context.l10n.commonNoActiveAccount;
       });
       return;
     }
@@ -891,7 +891,7 @@ class _ReceiveContentLayout extends StatelessWidget {
                                         : 'receive_copy_transparent_address_button',
                                   ),
                                   label: _isShielded
-                                      ? context.l10n.receiveCopyShieldedAddress
+                                      ? context.l10n.commonCopyShieldedAddress
                                       : context
                                             .l10n
                                             .receiveCopyTransparentAddress,

@@ -255,7 +255,7 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
       setState(() {
         _isLoading = false;
         _detailsPending = false;
-        _error = context.l10n.activityReceiptNoAccount;
+        _error = context.l10n.commonNoActiveAccountSentence;
       });
       return;
     }

@@ -110,7 +110,7 @@ class SaplingParamsPrompt extends StatelessWidget {
                   AppButton(
                     onPressed: onDownload,
                     minWidth: 280,
-                    child: Text(context.l10n.sendSaplingDownloadButton),
+                    child: Text(context.l10n.commonDownload),
                   ),
                   const SizedBox(height: AppSpacing.s),
                   AppButton(

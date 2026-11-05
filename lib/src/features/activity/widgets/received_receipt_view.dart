@@ -124,17 +124,17 @@ class ReceivedReceiptView extends StatelessWidget {
     };
     final (statusValue, statusIconName, statusColor) = switch (status) {
       ReceivedReceiptStatus.inProgress => (
-        l10n.activityStatusInProgress,
+        l10n.commonInProgress,
         AppIcons.loader,
         colors.text.secondary,
       ),
       ReceivedReceiptStatus.completed => (
-        l10n.activityStatusCompleted,
+        l10n.commonCompleted,
         AppIcons.checkCircle,
         colors.text.positiveStrong,
       ),
       ReceivedReceiptStatus.failed => (
-        l10n.activityStatusFailed,
+        l10n.commonFailed,
         AppIcons.cancel,
         colors.text.destructive,
       ),
@@ -190,7 +190,7 @@ class ReceivedReceiptView extends StatelessWidget {
                 else
                   _unknownFromRow(context, unknownFromKind!),
               ReviewInfoRow(
-                label: l10n.activityReceiptAmount,
+                label: l10n.commonAmount,
                 value: amountText,
                 leading: ClipOval(
                   child: Image.asset(
@@ -243,11 +243,11 @@ class ReceivedReceiptView extends StatelessWidget {
                     onToggle: onExpandMemo,
                   ),
                 ReviewListRow(
-                  label: l10n.activityReceiptTimestamp,
+                  label: l10n.commonTimestamp,
                   value: timestampText,
                 ),
                 ReviewListRow(
-                  label: l10n.activityReceiptTxId,
+                  label: l10n.commonTxId,
                   value: txIdText,
                   trailingIconName: AppIcons.arrowTopRight,
                   onPressed: onTxIdPressed,
@@ -277,7 +277,7 @@ class ReceivedReceiptView extends StatelessWidget {
         bottomLeftText: isShieldedSource
             ? context.l10n.poolShielded
             : context.l10n.poolTransparent,
-        trailingActionLabel: context.l10n.activityReceiptShowFullAddress,
+        trailingActionLabel: context.l10n.commonShowFullAddress,
         onTrailingAction: onShowFullAddress,
       ),
       SendReviewContactRecipient(
@@ -293,7 +293,7 @@ class ReceivedReceiptView extends StatelessWidget {
             size: AppProfilePictureSize.large,
           ),
           bottomLeftText: truncatedAddress(address),
-          trailingActionLabel: context.l10n.activityReceiptShowFullAddress,
+          trailingActionLabel: context.l10n.commonShowFullAddress,
           onTrailingAction: onShowFullAddress,
         ),
     };

@@ -139,7 +139,7 @@ class MobileAddressBookScreen extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               MobileTopNav.back(
-                title: context.l10n.addressBookContactsTitle,
+                title: context.l10n.commonContacts,
                 onBack: () => context.pop(),
                 // The Figma no-contacts frame has no top-nav add button (the
                 // centered "Add contact" CTA covers it); the + appears only
@@ -688,7 +688,7 @@ class _ContactRowMenuButtonState extends State<_ContactRowMenuButton> {
         item(
           key: const ValueKey('mobile_contact_menu_send'),
           iconName: AppIcons.plane,
-          label: context.l10n.addressBookSendZec,
+          label: context.l10n.commonSendZec,
           action: _handleSend,
         ),
       item(
@@ -1056,9 +1056,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
         resolve: (raw) async {
           final address = normalizeAddressScanPayload(raw);
           if (address == null || address.isEmpty) {
-            return MobileScanOutcome.rejected(
-              context.l10n.addressScanNoAddress,
-            );
+            return MobileScanOutcome.rejected(context.l10n.commonQrNoAddress);
           }
           return MobileScanOutcome.accepted(address);
         },
@@ -1163,7 +1161,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
               Center(
                 child: Semantics(
                   button: true,
-                  label: context.l10n.addressBookChangePicture,
+                  label: context.l10n.commonChangeContactPicture,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => _pickAvatar(),
@@ -1303,7 +1301,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                 onPressed: _canSave ? _save : null,
                 child: Text(
                   isEdit
-                      ? context.l10n.addressBookSaveContact
+                      ? context.l10n.commonSaveContact
                       : context.l10n.addressBookAddContact,
                 ),
               ),
@@ -1453,7 +1451,7 @@ class _RemoveContactSheet extends StatelessWidget {
             expand: true,
             variant: AppButtonVariant.destructive,
             onPressed: () => Navigator.of(context).pop(true),
-            child: Text(context.l10n.addressBookRemove),
+            child: Text(context.l10n.commonRemove),
           ),
           const SizedBox(height: AppSpacing.s),
           MobileSheetCancel(onTap: () => Navigator.of(context).pop(false)),

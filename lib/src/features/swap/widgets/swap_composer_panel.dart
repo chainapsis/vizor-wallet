@@ -152,7 +152,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final ticket = _SwapTicketShell(
       key: const ValueKey('swap_compact_ticket'),
       payCard: _SwapAmountCard(
-        label: context.l10n.swapComposerYouPay,
+        label: context.l10n.commonYouPay,
         active: payActive,
         amount: _SwapAmountInput(
           key: const ValueKey('swap_amount_field'),

@@ -116,8 +116,8 @@ class SendStatusContentView extends StatelessWidget {
           switch (phase) {
             SendStatusPhase.inProgress =>
               context.l10n.sendStatusTitleInProgress,
-            SendStatusPhase.completed => context.l10n.sendStatusTitleCompleted,
-            SendStatusPhase.failed => context.l10n.sendStatusTitleFailed,
+            SendStatusPhase.completed => context.l10n.commonSentSuccessfully,
+            SendStatusPhase.failed => context.l10n.commonSendFailed,
           },
       children: [
         SendReviewInfoSection(
@@ -162,17 +162,17 @@ class SendStatusContentView extends StatelessWidget {
         final colors = context.colors;
         final (statusValue, statusIconName, statusColor) = switch (phase) {
           SendStatusPhase.inProgress => (
-            context.l10n.sendStatusValueInProgress,
+            context.l10n.commonInProgress,
             AppIcons.loader,
             colors.text.secondary,
           ),
           SendStatusPhase.completed => (
-            context.l10n.sendStatusValueCompleted,
+            context.l10n.commonCompleted,
             AppIcons.checkCircle,
             colors.text.positiveStrong,
           ),
           SendStatusPhase.failed => (
-            context.l10n.sendStatusValueFailed,
+            context.l10n.commonFailed,
             AppIcons.cancel,
             colors.text.destructive,
           ),
@@ -202,12 +202,12 @@ class SendStatusContentView extends StatelessWidget {
                     onToggle: onExpandMemo,
                   ),
                 ReviewListRow(
-                  label: context.l10n.sendStatusRowTimestamp,
+                  label: context.l10n.commonTimestamp,
                   value: timestampText,
                 ),
                 if (txIdText != null)
                   ReviewListRow(
-                    label: context.l10n.sendStatusRowTxId,
+                    label: context.l10n.commonTxId,
                     value: txIdText!,
                     trailingIconName: AppIcons.arrowTopRight,
                     onPressed: onOpenExplorer,

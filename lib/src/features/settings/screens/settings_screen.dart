@@ -385,7 +385,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       WindowsUpdateStatus.downloading => '${state.downloadProgress}%',
       WindowsUpdateStatus.ready => l10n.updateRestart,
       WindowsUpdateStatus.applying => l10n.settingsUpdateApplying,
-      WindowsUpdateStatus.failed => l10n.settingsUpdateFailed,
+      WindowsUpdateStatus.failed => l10n.commonFailed,
       WindowsUpdateStatus.noUpdate => l10n.settingsUpdateUpToDate,
       _ => l10n.settingsUpdateCheck,
     };
@@ -707,7 +707,7 @@ class _SettingsList extends ConsumerWidget {
               _SettingsRow(
                 iconName: AppIcons.donation,
                 iconGlyphSize: 16.5,
-                label: context.l10n.settingsRowSupportVizor,
+                label: context.l10n.commonSupportVizor,
                 onTap: onDonation!,
               ),
           ],
@@ -916,7 +916,7 @@ class _WindowsUpdateModal extends ConsumerWidget {
     }
     return switch (state.status) {
       WindowsUpdateStatus.checking => _UpdatePrimaryAction(
-        label: context.l10n.settingsUpdateCheckingButton,
+        label: context.l10n.commonCheckingEllipsis,
       ),
       WindowsUpdateStatus.downloading => _UpdatePrimaryAction(
         label: context.l10n.settingsUpdateDownloadingButton,

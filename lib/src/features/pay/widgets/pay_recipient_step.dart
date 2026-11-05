@@ -181,7 +181,7 @@ class PayRecipientStep extends StatelessWidget {
           if (matchedContacts.isNotEmpty)
             _PayRecipientListCard(
               key: const ValueKey('pay_contacts_card'),
-              title: context.l10n.payContacts,
+              title: context.l10n.commonContacts,
               children: [
                 for (final contact in matchedContacts)
                   _PayRecipientRow(
@@ -504,7 +504,7 @@ class _ContactSelectionSlot extends StatelessWidget {
                 AppIcons.check,
                 size: 16,
                 color: context.colors.icon.accent,
-                semanticLabel: context.l10n.paySelectedContact,
+                semanticLabel: context.l10n.commonSelectedContact,
               ),
             )
           : null,

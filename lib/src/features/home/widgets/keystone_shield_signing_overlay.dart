@@ -364,7 +364,7 @@ class _KeystoneShieldSigningOverlayState
       return context.l10n.homeShieldErrorTooSmall;
     }
     if (lower.contains('sapling') || lower.contains('download')) {
-      return context.l10n.homeShieldErrorProvingParams;
+      return context.l10n.commonProvingParamsFailed;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
       return context.l10n.homeShieldErrorBroadcast;
@@ -385,7 +385,7 @@ class _KeystoneShieldSigningOverlayState
       setState(() {
         _closed = false;
         _phase = _KeystoneShieldPhase.failed;
-        _error = context.l10n.homeShieldCancelFailed;
+        _error = context.l10n.commonCancelFailedRetry;
       });
       return;
     }

@@ -76,7 +76,7 @@ ActivityRowData buildTransactionActivityRow({
   final subtitle = replacesPool
       ? pendingEta?.label(l10n) ??
             pendingFallbackLabel ??
-            l10n.activityRowCheckingStatus
+            l10n.commonCheckingStatus
       : isMigration
       ? 'Orchard → Ironwood' // l10n-ignore: product names only
       : isNetChange
@@ -108,7 +108,7 @@ ActivityRowData buildTransactionActivityRow({
         : isFailed && (isSent || isMigration)
         ? isMigration
               ? l10n.activityTitleMigrationFailed
-              : l10n.activityTitleSendFailed
+              : l10n.commonSendFailed
         : isInFlight
         ? _pendingTxTitle(
             isMigration
@@ -153,16 +153,16 @@ ActivityRowData buildTransactionActivityRow({
         ? colors.text.positiveStrong
         : outgoingAmountColor(colors),
     amountSubtitle: isFailed && amount != BigInt.zero
-        ? l10n.activityStatusRefunded
+        ? l10n.commonRefunded
         : privateQueriesEnabled &&
               transactionActivitySummaryIncomplete(transaction)
         ? l10n.activityReceiptDetailsIncomplete
         : null,
     statusText: isFailed
-        ? l10n.activityStatusFailed
+        ? l10n.commonFailed
         : isPending
-        ? l10n.activityStatusInProgress
-        : l10n.activityStatusCompleted,
+        ? l10n.commonInProgress
+        : l10n.commonCompleted,
     statusIconName: isFailed
         ? AppIcons.skull
         : isPending

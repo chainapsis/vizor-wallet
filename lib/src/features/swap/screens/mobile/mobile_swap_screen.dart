@@ -213,7 +213,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                   final address = normalizeAddressScanPayload(raw);
                   if (address == null || address.isEmpty) {
                     return MobileScanOutcome.rejected(
-                      context.l10n.swapScanNoAddress,
+                      context.l10n.commonQrNoAddress,
                     );
                   }
                   return MobileScanOutcome.accepted(address);
@@ -518,7 +518,7 @@ class _MobileSwapReviewButton extends StatelessWidget {
               : context.l10n.swapActionAddRefundAddress)
         : destinationFormatError ??
               (balanceExceeded
-                  ? context.l10n.swapActionNotEnoughZec
+                  ? context.l10n.commonNotEnoughZec
                   : state.quoteLoading
                   ? context.l10n.swapActionGettingQuote
                   : context.l10n.swapActionContinueToReview);

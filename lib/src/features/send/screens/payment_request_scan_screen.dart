@@ -73,7 +73,7 @@ class _PaymentRequestScanScreenState extends State<PaymentRequestScanScreen> {
     sidebar: const AppMainSidebar(),
     pane: OnboardingPaneChrome(
       backTarget: OnboardingBackTarget.callback(
-        label: context.l10n.sendRequestScanBackLabel,
+        label: context.l10n.commonPaymentRequest,
         onTap: _back,
       ),
       child: LayoutBuilder(
@@ -92,7 +92,7 @@ class _PaymentRequestScanScreenState extends State<PaymentRequestScanScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        context.l10n.sendRequestScanTitle,
+                        context.l10n.commonScanOriginalQr,
                         style: AppTypography.displayLarge.copyWith(
                           color: context.colors.text.accent,
                         ),

@@ -33,7 +33,7 @@ class KeystoneSendScanArgs {
   /// QR the device should display for [expectedUrType].
   String unexpectedUrMessage(AppLocalizations l10n) =>
       expectedUrType == 'zcash-batch-sig-result'
-      ? l10n.sendKeystoneScanUnexpectedSignature
+      ? l10n.commonKeystoneScanSignatureResult
       : l10n.sendKeystoneScanUnexpectedTransaction;
 
   final bool decodePcztResponse;

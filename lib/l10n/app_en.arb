@@ -98,10 +98,6 @@
   "@accountsRemoveCheckingSwaps": {
     "description": "Message in the desktop remove-account dialog while the wallet looks for pending swaps."
   },
-  "accountsRemoveConfirm": "Remove",
-  "@accountsRemoveConfirm": {
-    "description": "[security] Destructive button that confirms removing one account and its local data."
-  },
   "accountsRemoveFailed": "Couldn't remove account.",
   "@accountsRemoveFailed": {
     "description": "[security] Error in the desktop remove-account dialog when removing the account failed."
@@ -174,10 +170,6 @@
   "@accountsSendFailed": {
     "description": "Toast on the Accounts screen when sending to an account's address could not be started."
   },
-  "accountsSendZec": "Send ZEC",
-  "@accountsSendZec": {
-    "description": "Account menu item that starts a send to that account's address."
-  },
   "accountsTitle": "Accounts",
   "@accountsTitle": {
     "description": "Title of the Accounts screen that lists the wallet's accounts."
@@ -194,21 +186,9 @@
   "@accountsViewViewingKey": {
     "description": "[security] Account menu item that shows the account's viewing key."
   },
-  "activityAddressShielded": "Shielded address",
-  "@activityAddressShielded": {
-    "description": "Title of the sheet that shows a full shielded address."
-  },
-  "activityAddressTransparent": "Transparent address",
-  "@activityAddressTransparent": {
-    "description": "Title of the sheet that shows a full transparent address."
-  },
   "activityAddressUnified": "Unified address",
   "@activityAddressUnified": {
     "description": "Title of the sheet that shows a full unified address."
-  },
-  "activityAddressZcash": "Zcash address",
-  "@activityAddressZcash": {
-    "description": "Title of the sheet that shows a full address of unrecognized type."
   },
   "activityBalanceFromOrchard": "From Orchard balance",
   "@activityBalanceFromOrchard": {
@@ -225,10 +205,6 @@
   "activityBalanceOrchard": "Orchard balance",
   "@activityBalanceOrchard": {
     "description": "Value of the From row of a migration receipt."
-  },
-  "activityBalanceShielded": "Shielded balance",
-  "@activityBalanceShielded": {
-    "description": "Value of the To row of a shielding receipt."
   },
   "activityDetailsLoadFailed": "Failed — try again",
   "@activityDetailsLoadFailed": {
@@ -293,10 +269,6 @@
   "activityFeedEmpty": "No activity yet",
   "@activityFeedEmpty": {
     "description": "Message shown when the activity list is empty."
-  },
-  "activityFeedLoading": "Loading activity",
-  "@activityFeedLoading": {
-    "description": "Screen-reader label of the activity list loading placeholder."
   },
   "activityFeedRetry": "Retry loading activity",
   "@activityFeedRetry": {
@@ -442,10 +414,6 @@
   "@activityOmissionShieldedFunding": {
     "description": "Item in the list of what private details leave out: the shielded part of the funds."
   },
-  "activityPayFailed": "Payment failed",
-  "@activityPayFailed": {
-    "description": "Title of a failed Pay activity row or detail screen."
-  },
   "activityPayFromShielded": "from shielded ZEC",
   "@activityPayFromShielded": {
     "description": "Subtitle of a Pay activity row: the payment was made from shielded ZEC."
@@ -460,10 +428,6 @@
       }
     }
   },
-  "activityPayInProgress": "Payment in progress",
-  "@activityPayInProgress": {
-    "description": "Title of a pending Pay activity row."
-  },
   "activityPayIncomplete": "Payment incomplete",
   "@activityPayIncomplete": {
     "description": "Title of the Pay detail screen when the deposit was incomplete."
@@ -475,10 +439,6 @@
   "activityPayPaying": "Paying ...",
   "@activityPayPaying": {
     "description": "Title of the Pay detail screen while the payment is pending."
-  },
-  "activityPayRefunded": "Payment refunded",
-  "@activityPayRefunded": {
-    "description": "Title of a refunded Pay activity row or detail screen."
   },
   "activityPoolMixed": "Mixed",
   "@activityPoolMixed": {
@@ -495,10 +455,6 @@
   "activityPublicLookupWarning": "The server learns that this wallet is interested in this transaction, and without Tor, your IP address.",
   "@activityPublicLookupWarning": {
     "description": "[security] Warning in the dialog that confirms loading one transaction's details from the server: what the server learns."
-  },
-  "activityReceiptAmount": "Amount",
-  "@activityReceiptAmount": {
-    "description": "Label of a row on a transaction receipt: the transferred amount."
   },
   "activityReceiptAmountMigrated": "Amount migrated",
   "@activityReceiptAmountMigrated": {
@@ -544,10 +500,6 @@
   "@activityReceiptLoading": {
     "description": "Message shown while a transaction receipt is loading."
   },
-  "activityReceiptMessage": "Message",
-  "@activityReceiptMessage": {
-    "description": "Label of a row on a transaction receipt: the memo attached to the transaction."
-  },
   "activityReceiptNetChange": "Net change",
   "@activityReceiptNetChange": {
     "description": "Label of a row on a transaction receipt: the balance change of a transaction that is not shown as an external payment."
@@ -555,10 +507,6 @@
   "activityReceiptNetworkFee": "Network fee",
   "@activityReceiptNetworkFee": {
     "description": "Label of a row on a transaction receipt: the total network fee of the transaction."
-  },
-  "activityReceiptNoAccount": "No active account.",
-  "@activityReceiptNoAccount": {
-    "description": "Error shown when a receipt is opened with no active account."
   },
   "activityReceiptOutput": "Output",
   "@activityReceiptOutput": {
@@ -568,29 +516,9 @@
   "@activityReceiptRefreshFailed": {
     "description": "Message shown when the latest status of a transaction could not be refreshed."
   },
-  "activityReceiptShowFullAddress": "Show full address",
-  "@activityReceiptShowFullAddress": {
-    "description": "Ghost button on a receipt row that opens the full address of the sender or recipient."
-  },
   "activityReceiptStatus": "Status",
   "@activityReceiptStatus": {
     "description": "Label of a row on a transaction receipt: the transaction status."
-  },
-  "activityReceiptTimestamp": "Timestamp",
-  "@activityReceiptTimestamp": {
-    "description": "Label of a row on a transaction receipt: the date and time of the transaction."
-  },
-  "activityReceiptTo": "To",
-  "@activityReceiptTo": {
-    "description": "Label of a row on a transaction receipt: the recipient or the destination of funds."
-  },
-  "activityReceiptTxFee": "Tx fee",
-  "@activityReceiptTxFee": {
-    "description": "Label of a row on a transaction receipt: the fee paid for the transaction."
-  },
-  "activityReceiptTxId": "Tx ID",
-  "@activityReceiptTxId": {
-    "description": "Label of a row on a transaction receipt: the transaction ID, tapping it opens a block explorer."
   },
   "activityReceiptUnattributedFeeHelp": "Total fee for this transaction. Your account's share of this fee is unknown.",
   "@activityReceiptUnattributedFeeHelp": {
@@ -599,10 +527,6 @@
   "activityReceiptUnknownFee": "Unknown",
   "@activityReceiptUnknownFee": {
     "description": "Shown as the fee of a transaction whose fee the wallet has not recorded. An unknown fee is never zero."
-  },
-  "activityRowCheckingStatus": "Checking status",
-  "@activityRowCheckingStatus": {
-    "description": "Subtitle of a pending activity row while the app checks the transaction status."
   },
   "activityRowToday": "Today, {time}",
   "@activityRowToday": {
@@ -628,10 +552,6 @@
       }
     }
   },
-  "activityScreenTitle": "Activity",
-  "@activityScreenTitle": {
-    "description": "Title of the activity screen and its list."
-  },
   "activitySectionEarlier": "Earlier",
   "@activitySectionEarlier": {
     "description": "Heading of the activity section for entries without a date."
@@ -648,29 +568,13 @@
   "@activitySenderUnknown": {
     "description": "Value of the From row when the sender cannot be determined."
   },
-  "activityStatusCompleted": "Completed",
-  "@activityStatusCompleted": {
-    "description": "Status value of a transaction or swap that finished."
-  },
-  "activityStatusFailed": "Failed",
-  "@activityStatusFailed": {
-    "description": "Status value of a transaction or swap that failed."
-  },
   "activityStatusFailedFundsReturned": "Failed, funds returned",
   "@activityStatusFailedFundsReturned": {
     "description": "Status value of a mobile receipt for a transaction that expired before mining; no funds were spent."
   },
-  "activityStatusInProgress": "In progress",
-  "@activityStatusInProgress": {
-    "description": "Status value of a transaction or swap that has not finished."
-  },
   "activityStatusIncompleteDeposit": "Incomplete deposit",
   "@activityStatusIncompleteDeposit": {
     "description": "Status value of a swap whose deposit was smaller than the quote requires."
-  },
-  "activityStatusRefunded": "Refunded",
-  "@activityStatusRefunded": {
-    "description": "Status value of a swap, or subtitle of a failed row, whose funds were returned."
   },
   "activitySwapAssetOnChain": "{symbol} on {chain}",
   "@activitySwapAssetOnChain": {
@@ -696,14 +600,6 @@
       }
     }
   },
-  "activitySwapFailed": "Swap failed",
-  "@activitySwapFailed": {
-    "description": "Title of a failed swap activity row."
-  },
-  "activitySwapJustNow": "just now",
-  "@activitySwapJustNow": {
-    "description": "Timestamp of a swap sub-row that settled less than a minute ago."
-  },
   "activitySwapMinutesAgo": "{minutes}m ago",
   "@activitySwapMinutesAgo": {
     "description": "Timestamp of a swap sub-row that settled some minutes ago.",
@@ -723,14 +619,6 @@
         "example": "ZEC"
       }
     }
-  },
-  "activitySwapRefunded": "Swap refunded",
-  "@activitySwapRefunded": {
-    "description": "Title of a refunded swap activity row."
-  },
-  "activitySwapReviewQuote": "Review quote",
-  "@activitySwapReviewQuote": {
-    "description": "Title of the mobile swap detail screen while the user has to review the quote."
   },
   "activitySwapStep": "{current}/{total} In progress",
   "@activitySwapStep": {
@@ -802,14 +690,6 @@
   "@activityTitleReceivingVerb": {
     "description": "Title of a pending incoming activity row; the app appends an ellipsis."
   },
-  "activityTitleSendFailed": "Send failed",
-  "@activityTitleSendFailed": {
-    "description": "Title of an activity row or receipt for an outgoing transaction that failed."
-  },
-  "activityTitleSending": "Sending...",
-  "@activityTitleSending": {
-    "description": "Title of the mobile receipt of an outgoing transaction that is pending."
-  },
   "activityTitleSendingVerb": "Sending",
   "@activityTitleSendingVerb": {
     "description": "Title of a pending outgoing activity row; the app appends an ellipsis."
@@ -818,21 +698,9 @@
   "@activityTitleSent": {
     "description": "Title of an activity row for an outgoing transaction."
   },
-  "activityTitleSentSuccessfully": "Sent successfully",
-  "@activityTitleSentSuccessfully": {
-    "description": "Title of the mobile receipt of an outgoing transaction that completed."
-  },
   "activityTitleShielded": "Shielded",
   "@activityTitleShielded": {
     "description": "Title of an activity row or receipt for funds moved into a shielded pool."
-  },
-  "activityTitleShieldedSuccessfully": "Shielded successfully",
-  "@activityTitleShieldedSuccessfully": {
-    "description": "Title of the desktop receipt of a shielding transaction that completed."
-  },
-  "activityTitleShielding": "Shielding...",
-  "@activityTitleShielding": {
-    "description": "Title of the mobile receipt of a pending shielding transaction."
   },
   "activityTitleShieldingFailed": "Shielding failed",
   "@activityTitleShieldingFailed": {
@@ -849,10 +717,6 @@
   "activityTitleTransaction": "Transaction",
   "@activityTitleTransaction": {
     "description": "Title of a receipt or activity row for a transaction of unknown kind."
-  },
-  "activityToastHashCopiedDesktop": "Transaction hash copied",
-  "@activityToastHashCopiedDesktop": {
-    "description": "Toast on the desktop receipt after the transaction hash was copied."
   },
   "activityToastHashCopiedMobile": "Transaction Hash Copied",
   "@activityToastHashCopiedMobile": {
@@ -878,21 +742,9 @@
   "@addressBookAddressMissing": {
     "description": "Validation message when the contact address field is empty."
   },
-  "addressBookChainAndAddress": "Chain & address",
-  "@addressBookChainAndAddress": {
-    "description": "Section label above the network selector and address field in the contact dialog."
-  },
-  "addressBookChangePicture": "Change contact picture",
-  "@addressBookChangePicture": {
-    "description": "Accessibility label of the avatar button in the contact dialog."
-  },
   "addressBookClearAddress": "Clear address",
   "@addressBookClearAddress": {
     "description": "Accessibility label of the button that clears the contact address on mobile."
-  },
-  "addressBookClearLabel": "Clear contact label",
-  "@addressBookClearLabel": {
-    "description": "Accessibility label of the button that clears the contact label."
   },
   "addressBookClearName": "Clear name",
   "@addressBookClearName": {
@@ -910,10 +762,6 @@
         "type": "String"
       }
     }
-  },
-  "addressBookContactsTitle": "Contacts",
-  "@addressBookContactsTitle": {
-    "description": "Title of the address book screen."
   },
   "addressBookEditContact": "Edit contact",
   "@addressBookEditContact": {
@@ -946,14 +794,6 @@
   "addressBookInvalidZcash": "Invalid Zcash address",
   "@addressBookInvalidZcash": {
     "description": "Error under an address field when the text is not a valid Zcash address for the current network."
-  },
-  "addressBookLabelFieldLabel": "Address label",
-  "@addressBookLabelFieldLabel": {
-    "description": "Label of the contact name field in the desktop contact dialog."
-  },
-  "addressBookLabelHint": "Add label 1-20 characters",
-  "@addressBookLabelHint": {
-    "description": "Placeholder of the contact name field in the desktop dialog."
   },
   "addressBookLabelLength": "Use 1-20 characters",
   "@addressBookLabelLength": {
@@ -1011,10 +851,6 @@
   "@addressBookPickerSearchHint": {
     "description": "Placeholder of the contact picker search field."
   },
-  "addressBookRemove": "Remove",
-  "@addressBookRemove": {
-    "description": "Confirm button that removes a contact."
-  },
   "addressBookRemoveBody": "{label} will be removed from your contacts.",
   "@addressBookRemoveBody": {
     "description": "Body of the desktop remove dialog. {label} is the contact's name.",
@@ -1053,10 +889,6 @@
   "@addressBookRemoveFailedMobile": {
     "description": "Toast on mobile when deleting a contact fails."
   },
-  "addressBookSaveContact": "Save contact",
-  "@addressBookSaveContact": {
-    "description": "Button that saves an edited contact on mobile."
-  },
   "addressBookSaveFailed": "Couldn't save contact. Try again.",
   "@addressBookSaveFailed": {
     "description": "Error in the desktop contact dialog when saving fails."
@@ -1094,18 +926,6 @@
   "@addressBookSelectNetwork": {
     "description": "Title and accessibility label of the network picker."
   },
-  "addressBookSelectPicture": "Select contact picture",
-  "@addressBookSelectPicture": {
-    "description": "Title of the picker that chooses a contact avatar."
-  },
-  "addressBookSelectedContact": "Selected contact",
-  "@addressBookSelectedContact": {
-    "description": "Accessibility label of the check mark on the chosen contact."
-  },
-  "addressBookSendZec": "Send ZEC",
-  "@addressBookSendZec": {
-    "description": "Contact menu item that starts sending ZEC to the contact."
-  },
   "addressScanAddressCameraNeeded": "Address QR scanning needs a camera on this device.",
   "@addressScanAddressCameraNeeded": {
     "description": "Description in the mobile address scanner when the device has no camera."
@@ -1135,14 +955,6 @@
   "@addressScanCameraRestricted": {
     "description": "Message over the full-screen scanner when the system restricts the camera."
   },
-  "addressScanCameraUnavailable": "Camera unavailable",
-  "@addressScanCameraUnavailable": {
-    "description": "Title shown when the camera cannot be used."
-  },
-  "addressScanCameraUnavailableNow": "The camera is unavailable right now.",
-  "@addressScanCameraUnavailableNow": {
-    "description": "Message over the full-screen scanner when the camera cannot start."
-  },
   "addressScanCloseScanner": "Close scanner",
   "@addressScanCloseScanner": {
     "description": "Accessibility label of the close button of the QR scanner."
@@ -1155,10 +967,6 @@
   "@addressScanDeniedTitle": {
     "description": "Title in the desktop QR scanner when the camera permission was denied."
   },
-  "addressScanDeniedTitleMobile": "You've denied camera access",
-  "@addressScanDeniedTitleMobile": {
-    "description": "Title in the mobile QR scanner when the camera permission was denied."
-  },
   "addressScanEnableWindowsAccess": "Enable Windows camera access",
   "@addressScanEnableWindowsAccess": {
     "description": "Title in the desktop QR scanner when Windows blocks the camera."
@@ -1167,10 +975,6 @@
   "@addressScanGrantAccess": {
     "description": "Title of the desktop QR scanner while waiting for the camera permission."
   },
-  "addressScanLoading": "Loading",
-  "@addressScanLoading": {
-    "description": "Label next to a spinner in the desktop QR scanner while the camera starts."
-  },
   "addressScanLoadingCamera": "Loading camera...",
   "@addressScanLoadingCamera": {
     "description": "Footer label of the desktop QR scanner while cameras are being listed."
@@ -1178,10 +982,6 @@
   "addressScanLoadingEllipsis": "Loading...",
   "@addressScanLoadingEllipsis": {
     "description": "Label next to a spinner in the mobile QR scanner while the camera starts."
-  },
-  "addressScanNoAddress": "QR code did not include an address.",
-  "@addressScanNoAddress": {
-    "description": "Error shown after scanning a QR code that contains no address."
   },
   "addressScanNoCamera": "No camera found",
   "@addressScanNoCamera": {
@@ -1195,29 +995,9 @@
   "@addressScanOpenSettings": {
     "description": "Button that opens the system settings page for the camera permission."
   },
-  "addressScanRequestAgain": "Request again",
-  "@addressScanRequestAgain": {
-    "description": "Button that asks for the camera permission again."
-  },
-  "addressScanRequestAgainHint": "Request again, or enable manually\nin the System settings.",
-  "@addressScanRequestAgainHint": {
-    "description": "Description when camera access is requested or denied. The line break splits the text for the narrow dialog."
-  },
-  "addressScanRestrictedBody": "Screen Time or device management\nis blocking the camera.",
-  "@addressScanRestrictedBody": {
-    "description": "Description in the mobile QR scanner when Screen Time or device management restricts the camera. The line break splits the text."
-  },
-  "addressScanRestrictedTitle": "Camera access is restricted",
-  "@addressScanRestrictedTitle": {
-    "description": "Title in the mobile QR scanner when the camera is restricted by the system."
-  },
   "addressScanTitle": "Scan the address QR code",
   "@addressScanTitle": {
     "description": "Title of the QR scanner that reads an address."
-  },
-  "addressScanToggleFlashlight": "Toggle flashlight",
-  "@addressScanToggleFlashlight": {
-    "description": "Accessibility label of the flashlight button of the QR scanner."
   },
   "addressScanWindowsAccessHint": "Turn on Camera access and Let desktop apps access your camera in Windows Settings.",
   "@addressScanWindowsAccessHint": {
@@ -1226,14 +1006,6 @@
   "addressScanZcashPrompt": "Scan a Zcash QR code to continue",
   "@addressScanZcashPrompt": {
     "description": "Caption under the viewfinder of the mobile QR scanner."
-  },
-  "appBackAmount": "Amount",
-  "@appBackAmount": {
-    "description": "Back-link name of the send amount step."
-  },
-  "appBackContacts": "Contacts",
-  "@appBackContacts": {
-    "description": "Back-link name of the address book screen."
   },
   "appBackDonation": "Donation",
   "@appBackDonation": {
@@ -1350,10 +1122,6 @@
   "@appUpdateDismiss": {
     "description": "Button on the in-app update prompt that hides it after a failed update."
   },
-  "appUpdateDownload": "Download",
-  "@appUpdateDownload": {
-    "description": "Button on the in-app update prompt that starts downloading the update."
-  },
   "appUpdateDownloading": "Downloading",
   "@appUpdateDownloading": {
     "description": "Disabled button label on the in-app update prompt while the update downloads."
@@ -1448,6 +1216,14 @@
       }
     }
   },
+  "commonActionNeeded": "Action needed",
+  "@commonActionNeeded": {
+    "description": "Status label of the Ledger shield failure panel after an error. Shared by: home, send."
+  },
+  "commonAddAMessage": "Add a message",
+  "@commonAddAMessage": {
+    "description": "Label of the collapsed prompt that adds an optional message to a payment request. Shared by: receive, send."
+  },
   "commonAddAccount": "Add account",
   "@commonAddAccount": {
     "description": "Button, screen name and step label for adding another account."
@@ -1455,6 +1231,23 @@
   "commonAddressCopied": "Address copied",
   "@commonAddressCopied": {
     "description": "Toast after an address is copied to the clipboard."
+  },
+  "commonAddressForChain": "{chain} address",
+  "@commonAddressForChain": {
+    "description": "Placeholder of the Pay recipient field on mobile; names the chain the address must belong to. Shared by: pay, swap.",
+    "placeholders": {
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "commonAddressLabel": "Address label",
+  "@commonAddressLabel": {
+    "description": "Label of the contact name field in the desktop contact dialog. Shared by: address, pay."
+  },
+  "commonAmount": "Amount",
+  "@commonAmount": {
+    "description": "Label of a row on a transaction receipt: the transferred amount. Shared by: activity, app, pay, receive, send, swap."
   },
   "commonBack": "Back",
   "@commonBack": {
@@ -1470,21 +1263,81 @@
       }
     }
   },
+  "commonBackToWallet": "Back to wallet",
+  "@commonBackToWallet": {
+    "description": "Button on the shield result screens that returns to the wallet. Shared by: home, send."
+  },
+  "commonCameraDeniedTitle": "You've denied camera access",
+  "@commonCameraDeniedTitle": {
+    "description": "Title in the mobile QR scanner when the camera permission was denied. Shared by: address, keystone."
+  },
+  "commonCameraRequestAgainHint": "Request again, or enable manually\nin the System settings.",
+  "@commonCameraRequestAgainHint": {
+    "description": "Description when camera access is requested or denied. The line break splits the text for the narrow dialog. Shared by: address, keystone."
+  },
+  "commonCameraRestrictedBody": "Screen Time or device management\nis blocking the camera.",
+  "@commonCameraRestrictedBody": {
+    "description": "Description in the mobile QR scanner when Screen Time or device management restricts the camera. The line break splits the text. Shared by: address, keystone."
+  },
+  "commonCameraRestrictedTitle": "Camera access is restricted",
+  "@commonCameraRestrictedTitle": {
+    "description": "Title in the mobile QR scanner when the camera is restricted by the system. Shared by: address, keystone."
+  },
+  "commonCameraUnavailable": "Camera unavailable",
+  "@commonCameraUnavailable": {
+    "description": "Title shown when the camera cannot be used. Shared by: address, keystone."
+  },
+  "commonCameraUnavailableNow": "The camera is unavailable right now.",
+  "@commonCameraUnavailableNow": {
+    "description": "Message over the full-screen scanner when the camera cannot start. Shared by: address, home."
+  },
   "commonCancel": "Cancel",
   "@commonCancel": {
     "description": "Button that closes a modal or sheet without applying a change."
+  },
+  "commonCancelFailedRetry": "Could not finish cancelling. Please try again.",
+  "@commonCancelFailedRetry": {
+    "description": "Error on the shield screens when cancelling could not release the pending work. Shared by: home, send, swap."
   },
   "commonCancellationFailed": "Could not finish cancellation. Try again.",
   "@commonCancellationFailed": {
     "description": "Toast when leaving a flow could not cancel its pending work."
   },
+  "commonCancelling": "Cancelling…",
+  "@commonCancelling": {
+    "description": "Label shown on a button or title while a signing request is being cancelled. Shared by: send, swap."
+  },
   "commonCannotBeUndone": "This cannot be undone.",
   "@commonCannotBeUndone": {
     "description": "[security] Warning that a destructive action is permanent."
   },
+  "commonChainAndAddress": "Chain & address",
+  "@commonChainAndAddress": {
+    "description": "Section label above the network selector and address field in the contact dialog. Shared by: address, pay."
+  },
+  "commonChangeContactPicture": "Change contact picture",
+  "@commonChangeContactPicture": {
+    "description": "Accessibility label of the avatar button in the contact dialog. Shared by: address, pay."
+  },
   "commonChecking": "Checking...",
   "@commonChecking": {
     "description": "Status while Vizor checks something."
+  },
+  "commonCheckingEllipsis": "Checking…",
+  "@commonCheckingEllipsis": {
+    "description": "Label of the primary button on the payment request card while the request is being checked. Shared by: send, settings."
+  },
+  "commonCheckingStatus": "Checking status",
+  "@commonCheckingStatus": {
+    "description": "Subtitle of a pending activity row while the app checks the transaction status. Shared by: activity, swap."
+  },
+  "commonClear": "Clear",
+  "@commonClear": {
+    "description": "Button that clears the secret passphrase words entered so far. Shared by: onboarding, send."
+  },
+  "commonClearContactLabel": "Clear contact label",
+  "@commonClearContactLabel": {
+    "description": "Accessibility label of the button that clears the contact label. Shared by: address, pay."
   },
   "commonClearText": "Clear text",
   "@commonClearText": {
@@ -1494,9 +1347,25 @@
   "@commonClose": {
     "description": "Button or screen-reader label that closes a sheet or modal."
   },
+  "commonCloseMessage": "Close message",
+  "@commonCloseMessage": {
+    "description": "Accessibility label of the button that removes the optional message field. Shared by: receive, send."
+  },
   "commonCoinholderVoting": "Coinholder voting",
   "@commonCoinholderVoting": {
     "description": "Name of the coinholder voting feature."
+  },
+  "commonCompleted": "Completed",
+  "@commonCompleted": {
+    "description": "Status value of a transaction or swap that finished. Shared by: activity, send, swap."
+  },
+  "commonContactLabelHint": "Add label 1-20 characters",
+  "@commonContactLabelHint": {
+    "description": "Placeholder of the contact name field in the desktop dialog. Shared by: address, pay."
+  },
+  "commonContacts": "Contacts",
+  "@commonContacts": {
+    "description": "Title of the address book screen. Shared by: address, app, pay, send."
   },
   "commonContinue": "Continue",
   "@commonContinue": {
@@ -1514,45 +1383,226 @@
   "@commonCopyAddress": {
     "description": "Button that copies an address to the clipboard."
   },
+  "commonCopyShieldedAddress": "Copy shielded address",
+  "@commonCopyShieldedAddress": {
+    "description": "Button label and accessibility label that copies the shielded address. Shared by: receive, sidebar."
+  },
   "commonDismissNotification": "Dismiss notification",
   "@commonDismissNotification": {
     "description": "Screen-reader label of the close button on a toast."
+  },
+  "commonDone": "Done",
+  "@commonDone": {
+    "description": "Primary button of the mobile Pay submitted screen; goes to Home. Shared by: pay, send."
+  },
+  "commonDownload": "Download",
+  "@commonDownload": {
+    "description": "Button on the in-app update prompt that starts downloading the update. Shared by: app, send."
+  },
+  "commonDurationOneHour": "1hr",
+  "@commonDurationOneHour": {
+    "description": "Compact countdown until the deposit deadline when exactly one hour remains; 'hr' abbreviates hour."
+  },
+  "commonDurationOneMinute": "1min",
+  "@commonDurationOneMinute": {
+    "description": "Compact countdown until the deposit deadline when exactly one minute remains; 'min' abbreviates minute."
+  },
+  "commonEdit": "Edit",
+  "@commonEdit": {
+    "description": "Button that edits the value shown next to it. Shared by: onboarding, send."
+  },
+  "commonEnterAmountInUsd": "Enter amount in USD",
+  "@commonEnterAmountInUsd": {
+    "description": "Accessibility label of the toggle that switches the mobile Pay amount input to US dollars. Shared by: pay, receive."
+  },
+  "commonFailed": "Failed",
+  "@commonFailed": {
+    "description": "Status value of a transaction or swap that failed. Shared by: activity, send, settings, swap."
   },
   "commonFeatureInProgress": "This feature is still in progress.",
   "@commonFeatureInProgress": {
     "description": "Body of the sheet for a feature that is not available on this platform yet."
   },
+  "commonFullAddress": "Full address",
+  "@commonFullAddress": {
+    "description": "Link on the mobile Pay review recipient row that shows the whole address. Shared by: pay, send, swap."
+  },
+  "commonGetSignature": "Get signature",
+  "@commonGetSignature": {
+    "description": "[security] Primary button in the desktop Keystone modal that opens the scanner to read the signature QR code from the device. Shared by: send, swap."
+  },
   "commonGoBack": "Go back",
   "@commonGoBack": {
     "description": "Button that returns to the previous screen."
+  },
+  "commonGuaranteedMinimum": "Guaranteed minimum",
+  "@commonGuaranteedMinimum": {
+    "description": "Label of a status detail row with the minimum amount the swap is guaranteed to deliver."
   },
   "commonImporting": "Importing...",
   "@commonImporting": {
     "description": "Status or button label while an account is being imported."
   },
+  "commonInProgress": "In progress",
+  "@commonInProgress": {
+    "description": "Status value of a transaction or swap that has not finished. Shared by: activity, send, swap."
+  },
   "commonInformation": "Information",
   "@commonInformation": {
     "description": "Default screen-reader name of a carousel of information cards."
   },
+  "commonJustNow": "just now",
+  "@commonJustNow": {
+    "description": "Timestamp of a swap sub-row that settled less than a minute ago. Shared by: activity, pay."
+  },
   "commonKeepQrSteady": "Keep the QR code steady and fully visible.",
   "@commonKeepQrSteady": {
-    "description": "Hint while scanning a QR code from a device screen."
+    "description": "Hint while scanning a QR code from a device screen. Shared by: common, pay."
   },
   "commonKeepScreenAwake": "Keep screen awake",
   "@commonKeepScreenAwake": {
     "description": "Setting and button that keep the screen on while Vizor syncs."
   },
+  "commonKeystoneAfterScan": "After you scanned, click Get signature.",
+  "@commonKeystoneAfterScan": {
+    "description": "[security] Instruction in the desktop Keystone modal after proofs are ready. Shared by: send, swap."
+  },
+  "commonKeystoneScanSignatureResult": "Open the signature result QR on Keystone, then scan again.",
+  "@commonKeystoneScanSignatureResult": {
+    "description": "Hint when the scanned QR code is of the wrong type; asks to open the signature result QR code on the Keystone device. Shared by: send, swap."
+  },
+  "commonKeystoneScanTransaction": "Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.",
+  "@commonKeystoneScanTransaction": {
+    "description": "[security] Instruction on the mobile Keystone screen to scan the transaction QR code with the Keystone device and follow its prompts. Shared by: send, swap."
+  },
+  "commonLedgerSigningFailed": "Ledger signing failed",
+  "@commonLedgerSigningFailed": {
+    "description": "Title of the Ledger shield failure panel after an error. Shared by: home, send."
+  },
+  "commonLoading": "Loading",
+  "@commonLoading": {
+    "description": "Label next to a spinner in the desktop QR scanner while the camera starts. Shared by: address, onboarding."
+  },
+  "commonLoadingActivity": "Loading activity",
+  "@commonLoadingActivity": {
+    "description": "Screen-reader label of the activity list loading placeholder. Shared by: activity, home."
+  },
+  "commonMemo": "Memo",
+  "@commonMemo": {
+    "description": "Label of a status detail row holding the deposit memo the user must include."
+  },
+  "commonMessage": "Message",
+  "@commonMessage": {
+    "description": "Label of a row on a transaction receipt: the memo attached to the transaction. Shared by: activity, receipt, receive, send."
+  },
+  "commonMessageIsTooLong": "Message is too long",
+  "@commonMessageIsTooLong": {
+    "description": "Error shown when the payment request message exceeds the size limit. Shared by: receive, send."
+  },
+  "commonNetworkConversionFees": "Network + conversion fees",
+  "@commonNetworkConversionFees": {
+    "description": "Label of a status detail row with the network and conversion fees of a payment in progress."
+  },
+  "commonNoActiveAccount": "No active account",
+  "@commonNoActiveAccount": {
+    "description": "Error shown on the Receive screen when no wallet account is selected. Shared by: receive, send."
+  },
+  "commonNoActiveAccountSentence": "No active account.",
+  "@commonNoActiveAccountSentence": {
+    "description": "Error shown when a receipt is opened with no active account. Shared by: activity, home."
+  },
   "commonNotAvailableYet": "Not available yet",
   "@commonNotAvailableYet": {
     "description": "Title of the sheet for a feature that is not available on this platform yet."
+  },
+  "commonNotEnoughZec": "Not enough ZEC",
+  "@commonNotEnoughZec": {
+    "description": "Error or disabled button label on Pay steps when the spendable ZEC balance is too low. Shared by: pay, send, swap."
   },
   "commonOk": "OK",
   "@commonOk": {
     "description": "Button that acknowledges a message and closes it."
   },
+  "commonPayInsufficientZec": "You don't have enough ZEC for this payment. Try a smaller amount.",
+  "@commonPayInsufficientZec": {
+    "description": "Error on the Pay recipient step when the quote costs more ZEC than is spendable. Shared by: pay, swap."
+  },
+  "commonPaymentFailed": "Payment failed",
+  "@commonPaymentFailed": {
+    "description": "Title of a failed Pay activity row or detail screen. Shared by: activity, pay, swap."
+  },
+  "commonPaymentInProgress": "Payment in progress",
+  "@commonPaymentInProgress": {
+    "description": "Title of a pending Pay activity row. Shared by: activity, swap."
+  },
+  "commonPaymentProgress": "Payment progress",
+  "@commonPaymentProgress": {
+    "description": "Label of the progress tab on a payment status screen."
+  },
+  "commonPaymentRefunded": "Payment refunded",
+  "@commonPaymentRefunded": {
+    "description": "Title of a refunded Pay activity row or detail screen. Shared by: activity, swap."
+  },
+  "commonPaymentRequest": "Payment request",
+  "@commonPaymentRequest": {
+    "description": "Title of the payment request card that opens when the user follows a zcash: link or scans a payment request QR code."
+  },
+  "commonPrivatelyFromShieldedBalance": "Privately, from shielded balance",
+  "@commonPrivatelyFromShieldedBalance": {
+    "description": "Line under the paid amount on a payment status screen, saying the payment is spent privately from the shielded balance."
+  },
+  "commonProvingParamsFailed": "Required proving parameters could not be prepared.",
+  "@commonProvingParamsFailed": {
+    "description": "Error on the Keystone shield screens when the Sapling proving parameters failed to download or load. Shared by: home, send."
+  },
+  "commonQrNoAddress": "QR code did not include an address.",
+  "@commonQrNoAddress": {
+    "description": "Error shown after scanning a QR code that contains no address. Shared by: address, pay, swap."
+  },
   "commonQuit": "Quit",
   "@commonQuit": {
     "description": "Button that quits Vizor."
+  },
+  "commonRate": "Rate",
+  "@commonRate": {
+    "description": "Label of a status detail row with the exchange rate."
+  },
+  "commonRecipientGets": "Recipient gets",
+  "@commonRecipientGets": {
+    "description": "Label of the amount the payment recipient will receive, on an in-progress payment status screen."
+  },
+  "commonRefundFee": "Refund fee",
+  "@commonRefundFee": {
+    "description": "Label of a status detail row with the fee charged for the refund."
+  },
+  "commonRefundTo": "Refund to",
+  "@commonRefundTo": {
+    "description": "Label of a status detail row holding the address a refund goes to."
+  },
+  "commonRefundToAddress": "Refund to: {address}",
+  "@commonRefundToAddress": {
+    "description": "Line under the paid amount of a swap status screen: the address a refund goes to.",
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "commonRefunded": "Refunded",
+  "@commonRefunded": {
+    "description": "Status value of a swap, or subtitle of a failed row, whose funds were returned. Shared by: activity, swap."
+  },
+  "commonRefundedAmount": "Refunded amount",
+  "@commonRefundedAmount": {
+    "description": "Label of a status detail row with the amount refunded."
+  },
+  "commonRemove": "Remove",
+  "@commonRemove": {
+    "description": "[security] Destructive button that confirms removing one account and its local data. Shared by: accounts, address."
+  },
+  "commonRequestAgain": "Request again",
+  "@commonRequestAgain": {
+    "description": "Button that asks for the camera permission again. Shared by: address, keystone."
   },
   "commonResetVizor": "Reset Vizor",
   "@commonResetVizor": {
@@ -1562,6 +1612,42 @@
   "@commonRetry": {
     "description": "Button that retries a failed step."
   },
+  "commonRetrySaving": "Retry saving",
+  "@commonRetrySaving": {
+    "description": "Button that retries saving a Ledger-signed transaction. Shared by: send, swap."
+  },
+  "commonReturnHome": "Return home",
+  "@commonReturnHome": {
+    "description": "Primary button of the mobile Pay submitted screen after a failure; goes to Home. Shared by: pay, send."
+  },
+  "commonReviewAndFinish": "Review & finish",
+  "@commonReviewAndFinish": {
+    "description": "Button on the manual import step shown after the last word that moves to the review step. Shared by: onboarding, send."
+  },
+  "commonReviewPayment": "Review Payment",
+  "@commonReviewPayment": {
+    "description": "Title of the Pay review step. Shared by: pay, send, swap."
+  },
+  "commonReviewQuote": "Review quote",
+  "@commonReviewQuote": {
+    "description": "Title of the mobile swap detail screen while the user has to review the quote. Shared by: activity, swap."
+  },
+  "commonReviewSwap": "Review swap",
+  "@commonReviewSwap": {
+    "description": "Primary button label on the swap screen that opens the swap review."
+  },
+  "commonSave": "Save",
+  "@commonSave": {
+    "description": "Dialog button that saves the edited value. Shared by: onboarding, pay."
+  },
+  "commonSaveContact": "Save contact",
+  "@commonSaveContact": {
+    "description": "Button that saves an edited contact on mobile. Shared by: address, pay."
+  },
+  "commonScanOriginalQr": "Scan original QR",
+  "@commonScanOriginalQr": {
+    "description": "Button that opens the camera to scan the requester's original payment request QR code."
+  },
   "commonScanQrCode": "Scan QR Code",
   "@commonScanQrCode": {
     "description": "Title of a QR code scanning screen."
@@ -1570,13 +1656,151 @@
   "@commonSelectAccount": {
     "description": "Title of a screen that picks one account to import."
   },
+  "commonSelectContactPicture": "Select contact picture",
+  "@commonSelectContactPicture": {
+    "description": "Title of the picker that chooses a contact avatar. Shared by: address, pay."
+  },
+  "commonSelectRecipient": "Select Recipient",
+  "@commonSelectRecipient": {
+    "description": "Title of the Pay recipient step. Shared by: pay, send."
+  },
+  "commonSelectedContact": "Selected contact",
+  "@commonSelectedContact": {
+    "description": "Accessibility label of the check mark on the chosen contact. Shared by: address, pay."
+  },
+  "commonSendFailed": "Send failed",
+  "@commonSendFailed": {
+    "description": "Title of an activity row or receipt for an outgoing transaction that failed. Shared by: activity, send."
+  },
+  "commonSendZec": "Send ZEC",
+  "@commonSendZec": {
+    "description": "Account menu item that starts a send to that account's address. Shared by: accounts, address."
+  },
+  "commonSending": "Sending...",
+  "@commonSending": {
+    "description": "Title of the mobile receipt of an outgoing transaction that is pending. Shared by: activity, send."
+  },
   "commonSensitiveContentHidden": "Sensitive content hidden",
   "@commonSensitiveContentHidden": {
     "description": "Screen-reader label of the lock icon covering secret content while the app is in the background."
   },
+  "commonSentSuccessfully": "Sent successfully",
+  "@commonSentSuccessfully": {
+    "description": "Title of the mobile receipt of an outgoing transaction that completed. Shared by: activity, send."
+  },
+  "commonShieldedAddress": "Shielded address",
+  "@commonShieldedAddress": {
+    "description": "Title of the sheet that shows a full shielded address. Shared by: activity, onboarding, receive, send."
+  },
+  "commonShieldedBalance": "Shielded balance",
+  "@commonShieldedBalance": {
+    "description": "Value of the To row of a shielding receipt. Shared by: activity, home, pay."
+  },
+  "commonShieldedSuccessfully": "Shielded successfully",
+  "@commonShieldedSuccessfully": {
+    "description": "Title of the desktop receipt of a shielding transaction that completed. Shared by: activity, home."
+  },
+  "commonShielding": "Shielding...",
+  "@commonShielding": {
+    "description": "Title of the mobile receipt of a pending shielding transaction. Shared by: activity, home."
+  },
+  "commonShowFullAddress": "Show full address",
+  "@commonShowFullAddress": {
+    "description": "Ghost button on a receipt row that opens the full address of the sender or recipient. Shared by: activity, pay, send, swap."
+  },
+  "commonSigningCancelledBeforeParams": "Signing was cancelled before proving parameters were downloaded.",
+  "@commonSigningCancelledBeforeParams": {
+    "description": "Error shown when the user declined the proving-parameter download during Keystone signing. Shared by: send, swap."
+  },
+  "commonSigningExpired": "Transaction expired before it could be signed.",
+  "@commonSigningExpired": {
+    "description": "[security] Error shown when the transaction expired before the Keystone could sign it. Shared by: send, swap."
+  },
+  "commonSlippageTolerance": "Slippage tolerance",
+  "@commonSlippageTolerance": {
+    "description": "Label of a status detail row with the slippage tolerance of the quote."
+  },
+  "commonSupportVizor": "Support Vizor",
+  "@commonSupportVizor": {
+    "description": "Back link label on the donation review screen. Shared by: send, settings."
+  },
+  "commonSwapFailed": "Swap failed",
+  "@commonSwapFailed": {
+    "description": "Title of a failed swap activity row. Shared by: activity, swap."
+  },
+  "commonSwapFee": "Swap fee",
+  "@commonSwapFee": {
+    "description": "Label of a status detail row with the swap fee."
+  },
+  "commonSwapProgress": "Swap progress",
+  "@commonSwapProgress": {
+    "description": "Label of the progress tab on a swap status screen."
+  },
+  "commonSwapRefunded": "Swap refunded",
+  "@commonSwapRefunded": {
+    "description": "Title of a refunded swap activity row. Shared by: activity, swap."
+  },
+  "commonSymbolRecipient": "{symbol} recipient",
+  "@commonSymbolRecipient": {
+    "description": "Default contact label suggestion when saving a swap recipient to the address book.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "commonSymbolRefundAddress": "{symbol} refund address",
+  "@commonSymbolRefundAddress": {
+    "description": "Label of a status detail row holding the address a refund of the asset goes to.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "commonTimestamp": "Timestamp",
+  "@commonTimestamp": {
+    "description": "Label of a row on a transaction receipt: the date and time of the transaction. Shared by: activity, send, swap."
+  },
+  "commonTo": "To",
+  "@commonTo": {
+    "description": "Label of a row on a transaction receipt: the recipient or the destination of funds. Shared by: activity, pay, send, swap."
+  },
+  "commonToAddressOnChain": "To: {address} on {chain}",
+  "@commonToAddressOnChain": {
+    "description": "Line under the received amount of a swap or payment status screen: the recipient address followed by the blockchain it is on.",
+    "placeholders": {
+      "address": {
+        "type": "String"
+      },
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "commonToggleFlashlight": "Toggle flashlight",
+  "@commonToggleFlashlight": {
+    "description": "Accessibility label of the flashlight button of the QR scanner. Shared by: address, home."
+  },
+  "commonTransactionExpired": "Transaction expired",
+  "@commonTransactionExpired": {
+    "description": "Title of the Ledger failure panel when the transaction proposal expired before it could be signed. Shared by: send, swap."
+  },
+  "commonTransactionHashCopied": "Transaction hash copied",
+  "@commonTransactionHashCopied": {
+    "description": "Toast on the desktop receipt after the transaction hash was copied. Shared by: activity, send."
+  },
+  "commonTransparentAddress": "Transparent address",
+  "@commonTransparentAddress": {
+    "description": "Title of the sheet that shows a full transparent address. Shared by: activity, onboarding, receive, send."
+  },
   "commonTryAgain": "Try again",
   "@commonTryAgain": {
     "description": "Button that repeats an action that failed."
+  },
+  "commonTxId": "Tx ID",
+  "@commonTxId": {
+    "description": "Label of a row on a transaction receipt: the transaction ID, tapping it opens a block explorer. Shared by: activity, send, swap."
   },
   "commonUnlockVizor": "Unlock Vizor",
   "@commonUnlockVizor": {
@@ -1593,6 +1817,22 @@
   "commonWelcomeBack": "Welcome Back",
   "@commonWelcomeBack": {
     "description": "Title of the unlock screen."
+  },
+  "commonYouPay": "You pay",
+  "@commonYouPay": {
+    "description": "Label of the amount the user pays, on a payment status screen before the payment completes."
+  },
+  "commonYourePaying": "You're paying",
+  "@commonYourePaying": {
+    "description": "Label of the amount being paid while a swap or payment is still in progress."
+  },
+  "commonYoureReceiving": "You're receiving",
+  "@commonYoureReceiving": {
+    "description": "Label of the amount being received while a swap is in progress."
+  },
+  "commonZcashAddress": "Zcash address",
+  "@commonZcashAddress": {
+    "description": "Title of the sheet that shows a full address of unrecognized type. Shared by: activity, send, swap."
   },
   "endpointCurrent": "Current: {endpoint}",
   "@endpointCurrent": {
@@ -1626,10 +1866,6 @@
   "homeActivityEmptyHintMobile": "How about running your\nfirst ZEC tx?",
   "@homeActivityEmptyHintMobile": {
     "description": "Two-line hint under the mobile Home empty-state title; tx is short for transaction."
-  },
-  "homeActivityLoading": "Loading activity",
-  "@homeActivityLoading": {
-    "description": "Screen-reader label of the Home recent-activity list while it loads."
   },
   "homeActivityUnavailable": "Unable to load activity.",
   "@homeActivityUnavailable": {
@@ -1700,10 +1936,6 @@
   "homeKeepAwakeTitle": "Stay awake to sync?",
   "@homeKeepAwakeTitle": {
     "description": "Title of the mobile Home sheet that offers to keep the screen awake while the wallet syncs."
-  },
-  "homeLedgerActionNeeded": "Action needed",
-  "@homeLedgerActionNeeded": {
-    "description": "Status label of the Ledger shield failure panel after an error."
   },
   "homeLedgerApprovalNotAccepted": "Your Ledger couldn’t accept this approval. Earlier approvals were already sent.",
   "@homeLedgerApprovalNotAccepted": {
@@ -1794,10 +2026,6 @@
   "homeLedgerShieldingFailed": "Ledger shielding could not be completed.",
   "@homeLedgerShieldingFailed": {
     "description": "Generic error on the Ledger shield dialog."
-  },
-  "homeLedgerSigningFailedTitle": "Ledger signing failed",
-  "@homeLedgerSigningFailedTitle": {
-    "description": "Title of the Ledger shield failure panel after an error."
   },
   "homeLoadFailed": "Something went wrong. Try again in a moment.\n\nDetails: {details}",
   "@homeLoadFailed": {
@@ -1923,10 +2151,6 @@
   "@homeShieldAttentionTitle": {
     "description": "Title of the mobile Keystone shield screen when shielding failed or ended with a warning."
   },
-  "homeShieldBackToWallet": "Back to wallet",
-  "@homeShieldBackToWallet": {
-    "description": "Button on the shield result screens that returns to the wallet."
-  },
   "homeShieldBackToWalletTitleCase": "Back to Wallet",
   "@homeShieldBackToWalletTitleCase": {
     "description": "Button on the desktop Keystone shield dialog that closes it after a failure or warning."
@@ -1950,14 +2174,6 @@
   "homeShieldCameraDenied": "Allow camera access in Settings to scan Keystone signatures.",
   "@homeShieldCameraDenied": {
     "description": "Message over the mobile Keystone scanner when camera permission is denied."
-  },
-  "homeShieldCameraUnavailable": "The camera is unavailable right now.",
-  "@homeShieldCameraUnavailable": {
-    "description": "Message over the mobile Keystone scanner when the camera cannot start."
-  },
-  "homeShieldCancelFailed": "Could not finish cancelling. Please try again.",
-  "@homeShieldCancelFailed": {
-    "description": "Error on the shield screens when cancelling could not release the pending work."
   },
   "homeShieldCancelled": "Shielding was cancelled.",
   "@homeShieldCancelled": {
@@ -1994,10 +2210,6 @@
   "homeShieldErrorNotFinalized": "Shield transaction could not be finalized.",
   "@homeShieldErrorNotFinalized": {
     "description": "Error on the mobile Keystone shield screen when the signed transaction could not be extracted."
-  },
-  "homeShieldErrorProvingParams": "Required proving parameters could not be prepared.",
-  "@homeShieldErrorProvingParams": {
-    "description": "Error on the Keystone shield screens when the Sapling proving parameters failed to download or load."
   },
   "homeShieldErrorSeedUnavailable": "Secret Passphrase isn't available for this account.",
   "@homeShieldErrorSeedUnavailable": {
@@ -2042,10 +2254,6 @@
   "homeShieldNextStep": "Next step",
   "@homeShieldNextStep": {
     "description": "Mobile shield footer button that moves from the transaction QR to scanning the Keystone signature."
-  },
-  "homeShieldNoActiveAccount": "No active account.",
-  "@homeShieldNoActiveAccount": {
-    "description": "Error notice on desktop Home when Shield is pressed but no account is selected."
   },
   "homeShieldNow": "Shield now",
   "@homeShieldNow": {
@@ -2109,29 +2317,13 @@
   "@homeShieldSubmitting": {
     "description": "Subtitle of the desktop Keystone shield dialog while the transaction is being sent."
   },
-  "homeShieldSucceededTitle": "Shielded successfully",
-  "@homeShieldSucceededTitle": {
-    "description": "Title of the mobile shield screens after shielding completed."
-  },
-  "homeShieldToggleFlashlight": "Toggle flashlight",
-  "@homeShieldToggleFlashlight": {
-    "description": "Screen-reader label of the flashlight button on the mobile Keystone scanner."
-  },
   "homeShieldWaitingForPrivateRecovery": "Private recovery is catching up with the latest block. Try again in a moment; your Keystone signature is kept.",
   "@homeShieldWaitingForPrivateRecovery": {
     "description": "Message when a Keystone shield must wait for private recovery; the signature is kept for the retry."
   },
-  "homeShieldedBalance": "Shielded balance",
-  "@homeShieldedBalance": {
-    "description": "Label on the Home balance card for the shielded balance. See the glossary entry for shielded."
-  },
   "homeShieldingBalance": "Shielding your balance…",
   "@homeShieldingBalance": {
     "description": "Status text on the mobile shield screens while the transparent balance is being shielded."
-  },
-  "homeShieldingProgress": "Shielding...",
-  "@homeShieldingProgress": {
-    "description": "Label of the mobile Home shield button while shielding is in progress."
   },
   "homeTransparentBalance": "Transparent: {balance}",
   "@homeTransparentBalance": {
@@ -2269,14 +2461,6 @@
   "@keystoneBirthdaySubtitle": {
     "description": "Subtitle under the wallet birthday heading explaining why the date is asked."
   },
-  "keystoneCameraDeniedBody": "Request again, or enable manually\nin the System settings.",
-  "@keystoneCameraDeniedBody": {
-    "description": "Two-line description under the camera denied title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short."
-  },
-  "keystoneCameraDeniedTitle": "You've denied camera access",
-  "@keystoneCameraDeniedTitle": {
-    "description": "Title of the mobile Keystone scan card when the camera permission was denied."
-  },
   "keystoneCameraEnableBody": "A camera is required to connect Keystone.\nYou can revert this in settings anytime later.",
   "@keystoneCameraEnableBody": {
     "description": "Two-line description under the enable camera access title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short."
@@ -2285,25 +2469,9 @@
   "@keystoneCameraEnableTitle": {
     "description": "Title of the mobile Keystone scan card while camera permission is being requested."
   },
-  "keystoneCameraRequestAgain": "Request again",
-  "@keystoneCameraRequestAgain": {
-    "description": "Button on the mobile Keystone scan card that asks for camera permission again."
-  },
-  "keystoneCameraRestrictedBody": "Screen Time or device management\nis blocking the camera.",
-  "@keystoneCameraRestrictedBody": {
-    "description": "Two-line description under the camera restricted title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short."
-  },
-  "keystoneCameraRestrictedTitle": "Camera access is restricted",
-  "@keystoneCameraRestrictedTitle": {
-    "description": "Title of the mobile Keystone scan card when camera access is restricted by the system."
-  },
   "keystoneCameraUnavailableBody": "Keystone import uses camera QR scanning only.\nConnect a camera and try again.",
   "@keystoneCameraUnavailableBody": {
     "description": "Two-line description under the camera unavailable title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short."
-  },
-  "keystoneCameraUnavailableTitle": "Camera unavailable",
-  "@keystoneCameraUnavailableTitle": {
-    "description": "Title of the mobile Keystone scan card when no camera is available."
   },
   "keystoneConfirmSelection": "Confirm selection",
   "@keystoneConfirmSelection": {
@@ -2755,10 +2923,6 @@
   "@lockSyncPausedTitle": {
     "description": "Title on the sync lock screen and passcode screen header when sync was interrupted."
   },
-  "lockSyncedSemantics": "Vizor is synced",
-  "@lockSyncedSemantics": {
-    "description": "Screen-reader label of the sync lock screen when sync has finished."
-  },
   "lockSyncingMessage": "Vizor is syncing",
   "@lockSyncingMessage": {
     "description": "Screen-reader label and caption on the sync lock screen while sync is running."
@@ -2777,7 +2941,7 @@
   },
   "navActivity": "Activity",
   "@navActivity": {
-    "description": "Sidebar and tab bar destination: transaction history."
+    "description": "Sidebar and tab bar destination: transaction history. Shared by: activity, nav."
   },
   "navHome": "Home",
   "@navHome": {
@@ -2835,10 +2999,6 @@
       }
     }
   },
-  "onboardingAddressShieldedLabel": "Shielded address",
-  "@onboardingAddressShieldedLabel": {
-    "description": "Caption of the shielded example address card on the address types step."
-  },
   "onboardingAddressShieldedTitleMobile": "Shielded Address",
   "@onboardingAddressShieldedTitleMobile": {
     "description": "Heading of the shielded address card on the mobile address types step."
@@ -2846,10 +3006,6 @@
   "onboardingAddressTransparentDescription": "Address starts with t, similar to Bitcoin, your address' balance and transaction history are publicly visible.",
   "@onboardingAddressTransparentDescription": {
     "description": "Explains transparent addresses on the address types step, desktop and mobile."
-  },
-  "onboardingAddressTransparentLabel": "Transparent address",
-  "@onboardingAddressTransparentLabel": {
-    "description": "Caption of the transparent example address card on the address types step."
   },
   "onboardingAddressTransparentTitleMobile": "Transparent Address",
   "@onboardingAddressTransparentTitleMobile": {
@@ -3027,10 +3183,6 @@
   "@onboardingCheckingAccounts": {
     "description": "Disabled primary button label while the import looks for additional accounts of the same secret passphrase."
   },
-  "onboardingClear": "Clear",
-  "@onboardingClear": {
-    "description": "Button that clears the secret passphrase words entered so far."
-  },
   "onboardingConnectHardwareSubtitleDesktop": "Select your hardware wallet.",
   "@onboardingConnectHardwareSubtitleDesktop": {
     "description": "Subtitle of the desktop hardware wallet picker."
@@ -3082,10 +3234,6 @@
   "onboardingDiscoveryTitle": "Additional accounts found",
   "@onboardingDiscoveryTitle": {
     "description": "Title of the dialog shown when the secret passphrase has more accounts with activity than the first one."
-  },
-  "onboardingEdit": "Edit",
-  "@onboardingEdit": {
-    "description": "Button that edits the value shown next to it."
   },
   "onboardingEditBip39Passphrase": "Edit BIP39 passphrase",
   "@onboardingEditBip39Passphrase": {
@@ -3283,10 +3431,6 @@
   "@onboardingLinkVizorDesktopDescription": {
     "description": "Description of the option that links accounts from the Vizor desktop app by scanning a QR code."
   },
-  "onboardingLoading": "Loading",
-  "@onboardingLoading": {
-    "description": "Placeholder shown instead of the transparent balance of a found account while it is being loaded."
-  },
   "onboardingLostPasswordBody": "If you've lost your password, the only way to recover\nyour account is to {resetAction}.\nThis deletes all accounts and unshared gift card links.\nYou will need to {importAction}.",
   "@onboardingLostPasswordBody": {
     "description": "[security] Explanation on the lost-password screen. {resetAction} and {importAction} are bold phrases supplied by onboardingLostPasswordResetAction and onboardingLostPasswordImportAction; keep them in the sentence. The line breaks match the design.",
@@ -3327,10 +3471,6 @@
   "onboardingManualNextWord": "Next word",
   "@onboardingManualNextWord": {
     "description": "Button on the manual import step that accepts the typed word and moves to the next one."
-  },
-  "onboardingManualReviewFinish": "Review & finish",
-  "@onboardingManualReviewFinish": {
-    "description": "Button on the manual import step shown after the last word that moves to the review step."
   },
   "onboardingManualStoppedAt": "Stopped at '{word}' — it isn't in the passphrase word list.",
   "@onboardingManualStoppedAt": {
@@ -3437,10 +3577,6 @@
   "onboardingReviewImportTitle": "Review Import",
   "@onboardingReviewImportTitle": {
     "description": "[security] Heading of the step where the user reviews the entered secret passphrase before importing."
-  },
-  "onboardingSave": "Save",
-  "@onboardingSave": {
-    "description": "Dialog button that saves the edited value."
   },
   "onboardingSavingWallet": "Saving wallet...",
   "@onboardingSavingWallet": {
@@ -3678,17 +3814,9 @@
   "@passwordsDoNotMatch": {
     "description": "[security] Error when the two new password entries differ."
   },
-  "payAddLabelHint": "Add label 1-20 characters",
-  "@payAddLabelHint": {
-    "description": "Placeholder of the contact name field: the name must be 1 to 20 characters."
-  },
   "payAddToContacts": "Add to contacts",
   "@payAddToContacts": {
     "description": "Button that saves the new Pay recipient address to the address book."
-  },
-  "payAddressLabel": "Address label",
-  "@payAddressLabel": {
-    "description": "Label of the contact name field in the Pay add-contact form."
   },
   "payAddressSemantics": "Address {address}",
   "@payAddressSemantics": {
@@ -3712,10 +3840,6 @@
       }
     }
   },
-  "payAmountEnterInUsd": "Enter amount in USD",
-  "@payAmountEnterInUsd": {
-    "description": "Accessibility label of the toggle that switches the mobile Pay amount input to US dollars."
-  },
   "payAmountEstimated": "Estimated:",
   "@payAmountEstimated": {
     "description": "Label before the estimated ZEC cost on the mobile Pay amount step."
@@ -3732,46 +3856,13 @@
   "@payAmountPayingIn": {
     "description": "Label next to the asset picker on the Pay amount step."
   },
-  "payAmountShieldedBalance": "Shielded balance",
-  "@payAmountShieldedBalance": {
-    "description": "Chip naming the balance the payment is paid from, on the desktop Pay amount step."
-  },
   "payBackHome": "Home",
   "@payBackHome": {
     "description": "Back link of the first Pay step; goes to Home."
   },
-  "payChainAddressHint": "{chain} address",
-  "@payChainAddressHint": {
-    "description": "Placeholder of the Pay recipient field on mobile; names the chain the address must belong to.",
-    "placeholders": {
-      "chain": {
-        "type": "String"
-      }
-    }
-  },
-  "payChainAndAddress": "Chain & address",
-  "@payChainAndAddress": {
-    "description": "Heading above the chain and address of the contact being added."
-  },
-  "payChangeContactPicture": "Change contact picture",
-  "@payChangeContactPicture": {
-    "description": "Accessibility label of the contact picture button in the mobile Pay add-contact card."
-  },
-  "payClearContactLabel": "Clear contact label",
-  "@payClearContactLabel": {
-    "description": "Accessibility label of the button that clears the contact name field."
-  },
-  "payContacts": "Contacts",
-  "@payContacts": {
-    "description": "Title of the list of address book contacts on the Pay recipient step."
-  },
   "payFetchingQuote": "Fetching quote",
   "@payFetchingQuote": {
     "description": "Disabled button label while the Pay quote is loading."
-  },
-  "payInsufficientZec": "You don't have enough ZEC for this payment. Try a smaller amount.",
-  "@payInsufficientZec": {
-    "description": "Error on the Pay recipient step when the quote costs more ZEC than is spendable."
   },
   "payNewAddressDetected": "New address detected.",
   "@payNewAddressDetected": {
@@ -3780,10 +3871,6 @@
   "payNewAddressWarning": "You haven't interacted with this address before.",
   "@payNewAddressWarning": {
     "description": "Warning text under the new-address heading on the Pay recipient step."
-  },
-  "payNotEnoughZec": "Not enough ZEC",
-  "@payNotEnoughZec": {
-    "description": "Error or disabled button label on Pay steps when the spendable ZEC balance is too low."
   },
   "payRecentDaysAgo": "{days}d ago",
   "@payRecentDaysAgo": {
@@ -3802,10 +3889,6 @@
         "type": "int"
       }
     }
-  },
-  "payRecentJustNow": "just now",
-  "@payRecentJustNow": {
-    "description": "Relative time of a recent Pay recipient used less than a minute ago."
   },
   "payRecentMinutesAgo": "{minutes}m ago",
   "@payRecentMinutesAgo": {
@@ -3848,10 +3931,6 @@
   "@payReviewConvertedAmount": {
     "description": "Label of the row with the ZEC amount converted for the payment."
   },
-  "payReviewFullAddress": "Full address",
-  "@payReviewFullAddress": {
-    "description": "Link on the mobile Pay review recipient row that shows the whole address."
-  },
   "payReviewPaying": "Paying",
   "@payReviewPaying": {
     "description": "Label of the paying amount row on the Pay review step; also the disabled button label while the payment starts."
@@ -3876,25 +3955,9 @@
   "@payReviewReturnToPay": {
     "description": "Button on the mobile Pay review step when the quote is no longer active."
   },
-  "payReviewShowFullAddress": "Show full address",
-  "@payReviewShowFullAddress": {
-    "description": "Link on the desktop Pay review recipient row that shows the whole address."
-  },
-  "payReviewTo": "To",
-  "@payReviewTo": {
-    "description": "Label of the recipient row on the Pay review step."
-  },
   "payReviewUnknownAddress": "Unknown address",
   "@payReviewUnknownAddress": {
     "description": "Caption of the recipient row when the address is not a saved contact."
-  },
-  "paySave": "Save",
-  "@paySave": {
-    "description": "Button that saves the contact in the Pay add-contact modal."
-  },
-  "paySaveContact": "Save contact",
-  "@paySaveContact": {
-    "description": "Button that saves the contact in the mobile Pay add-contact card."
   },
   "paySaveContactError": "Couldn't save this contact. Try again.",
   "@paySaveContactError": {
@@ -3912,10 +3975,6 @@
   "@payScanCaption": {
     "description": "Caption of the camera scanner for the Pay recipient address."
   },
-  "payScanNoAddress": "QR code did not include an address.",
-  "@payScanNoAddress": {
-    "description": "Error when the scanned QR code holds no address."
-  },
   "payScanPermissionTitle": "Scan the recipient address",
   "@payScanPermissionTitle": {
     "description": "Title of the camera permission prompt of the Pay recipient scanner."
@@ -3928,25 +3987,9 @@
   "@payScanQrTitle": {
     "description": "Title of the card that opens the QR scanner on the mobile Pay recipient step."
   },
-  "payScanSteadyHint": "Keep the QR code steady and fully visible.",
-  "@payScanSteadyHint": {
-    "description": "Hint under the Pay recipient scanner."
-  },
-  "paySelectContactPicture": "Select contact picture",
-  "@paySelectContactPicture": {
-    "description": "Title of the contact picture picker opened from the Pay add-contact modal."
-  },
   "paySelectRecipient": "Select recipient",
   "@paySelectRecipient": {
     "description": "Button that confirms the Pay recipient and goes to the review step."
-  },
-  "paySelectedContact": "Selected contact",
-  "@paySelectedContact": {
-    "description": "Accessibility label of the check icon on the selected contact in the Pay recipient list."
-  },
-  "payStepAmount": "Amount",
-  "@payStepAmount": {
-    "description": "Label of the Pay wizard step where the user enters the amount; also the back link from the recipient step."
   },
   "payStepRecipient": "Recipient",
   "@payStepRecipient": {
@@ -3956,25 +3999,13 @@
   "@payStepReview": {
     "description": "Label of the Pay wizard step where the user reviews the payment."
   },
-  "paySubmittedDone": "Done",
-  "@paySubmittedDone": {
-    "description": "Primary button of the mobile Pay submitted screen; goes to Home."
-  },
   "paySubmittedFailedBody": "The payment could not be submitted. Try again.",
   "@paySubmittedFailedBody": {
     "description": "Body of the mobile Pay submitted screen when submitting failed."
   },
-  "paySubmittedFailedTitle": "Payment failed",
-  "@paySubmittedFailedTitle": {
-    "description": "Title of the mobile Pay submitted screen when the payment could not be submitted."
-  },
   "paySubmittedGoToActivity": "Go to activity",
   "@paySubmittedGoToActivity": {
     "description": "Secondary button of the mobile Pay submitted screen; opens Activity."
-  },
-  "paySubmittedReturnHome": "Return home",
-  "@paySubmittedReturnHome": {
-    "description": "Primary button of the mobile Pay submitted screen after a failure; goes to Home."
   },
   "paySubmittedStatusUncertainNotice": "The payment status is uncertain. Check Activity before trying again.",
   "@paySubmittedStatusUncertainNotice": {
@@ -4017,14 +4048,6 @@
       }
     }
   },
-  "payTitleRecipient": "Select Recipient",
-  "@payTitleRecipient": {
-    "description": "Title of the Pay recipient step."
-  },
-  "payTitleReview": "Review Payment",
-  "@payTitleReview": {
-    "description": "Title of the Pay review step."
-  },
   "poolShielded": "Shielded",
   "@poolShielded": {
     "description": "Badge naming a shielded pool or address. See the glossary entry for shielded."
@@ -4045,10 +4068,6 @@
   "@profilePictureUpdateFailed": {
     "description": "Error in the profile picture picker when saving failed."
   },
-  "receiptMessageLabel": "Message",
-  "@receiptMessageLabel": {
-    "description": "Label of the memo row while a receipt is loading."
-  },
   "receiveAboutAddressType": "About this address type",
   "@receiveAboutAddressType": {
     "description": "Accessibility label of the help button that explains shielded versus transparent addresses."
@@ -4060,10 +4079,6 @@
   "receiveAddressLoadFailed": "We couldn't load your address. Try again in a moment.",
   "@receiveAddressLoadFailed": {
     "description": "Message shown in place of the QR code when the address could not be loaded."
-  },
-  "receiveCopyShieldedAddress": "Copy shielded address",
-  "@receiveCopyShieldedAddress": {
-    "description": "Button label and accessibility label that copies the shielded address."
   },
   "receiveCopyTransparentAddress": "Copy transparent address",
   "@receiveCopyTransparentAddress": {
@@ -4109,10 +4124,6 @@
   "@receiveInfoShieldedSubtitle": {
     "description": "[security] Subtitle of the shielded address explainer."
   },
-  "receiveInfoShieldedTitle": "Shielded address",
-  "@receiveInfoShieldedTitle": {
-    "description": "Title of the explainer dialog for shielded addresses."
-  },
   "receiveInfoTransparentExchanges": "Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.",
   "@receiveInfoTransparentExchanges": {
     "description": "Bullet in the transparent address explainer about where transparent addresses are used."
@@ -4142,14 +4153,6 @@
   "@receiveInfoTransparentSubtitle": {
     "description": "[security] Subtitle of the transparent address explainer; its activity is public."
   },
-  "receiveInfoTransparentTitle": "Transparent address",
-  "@receiveInfoTransparentTitle": {
-    "description": "Title of the explainer dialog for transparent addresses."
-  },
-  "receiveNoActiveAccount": "No active account",
-  "@receiveNoActiveAccount": {
-    "description": "Error shown on the Receive screen when no wallet account is selected."
-  },
   "receiveQrSaveFailed": "We couldn't save the QR image. Try another folder, or copy the request link instead.",
   "@receiveQrSaveFailed": {
     "description": "Error toast on the Receive screen when saving the payment-request QR image fails."
@@ -4171,10 +4174,6 @@
   "@receiveRenewAddressError": {
     "description": "Toast and inline error on the Receive screen when generating a new shielded address fails."
   },
-  "receiveRequestAddMessage": "Add a message",
-  "@receiveRequestAddMessage": {
-    "description": "Label of the collapsed prompt that adds an optional message to a payment request."
-  },
   "receiveRequestAmountDecimalsError": "Enter up to 8 decimals",
   "@receiveRequestAmountDecimalsError": {
     "description": "Inline error under the payment request amount field when the amount has more than 8 decimal places."
@@ -4182,10 +4181,6 @@
   "receiveRequestAmountFormatError": "Enter an amount like 0.5",
   "@receiveRequestAmountFormatError": {
     "description": "Inline error under the payment request amount field when the text is not a number."
-  },
-  "receiveRequestAmountLabel": "Amount",
-  "@receiveRequestAmountLabel": {
-    "description": "Label of the amount field in the payment request dialog."
   },
   "receiveRequestAmountSupplyError": "Amount exceeds the ZEC supply",
   "@receiveRequestAmountSupplyError": {
@@ -4199,10 +4194,6 @@
         "type": "String"
       }
     }
-  },
-  "receiveRequestCloseMessage": "Close message",
-  "@receiveRequestCloseMessage": {
-    "description": "Accessibility label of the button that removes the optional message field."
   },
   "receiveRequestCloseRequest": "Close request",
   "@receiveRequestCloseRequest": {
@@ -4224,10 +4215,6 @@
   "@receiveRequestCreate": {
     "description": "Button that turns the entered amount and message into a payment request."
   },
-  "receiveRequestEnterUsd": "Enter amount in USD",
-  "@receiveRequestEnterUsd": {
-    "description": "Accessibility label of the toggle that switches the amount field to US dollars."
-  },
   "receiveRequestEnterZec": "Enter amount in ZEC",
   "@receiveRequestEnterZec": {
     "description": "Accessibility label of the toggle that switches the amount field to ZEC."
@@ -4243,14 +4230,6 @@
   "receiveRequestMessageHint": "Anyone you send the link to can read this",
   "@receiveRequestMessageHint": {
     "description": "[security] Placeholder in the payment request message field: the message is readable by anyone who gets the link."
-  },
-  "receiveRequestMessageLabel": "Message",
-  "@receiveRequestMessageLabel": {
-    "description": "Label of the optional message field in the payment request dialog."
-  },
-  "receiveRequestMessageTooLong": "Message is too long",
-  "@receiveRequestMessageTooLong": {
-    "description": "Error shown when the payment request message exceeds the size limit."
   },
   "receiveRequestSaveQr": "Save QR image",
   "@receiveRequestSaveQr": {
@@ -4305,17 +4284,9 @@
   "@sendAddMemo": {
     "description": "Button on the send screen that reveals the optional memo field."
   },
-  "sendAddressTypeShielded": "Shielded address",
-  "@sendAddressTypeShielded": {
-    "description": "Fallback label for a recipient whose address is shielded."
-  },
   "sendAddressTypeTex": "TEX address",
   "@sendAddressTypeTex": {
     "description": "Fallback label for a recipient whose address is a transparent-source-only (TEX) address."
-  },
-  "sendAddressTypeTransparent": "Transparent address",
-  "@sendAddressTypeTransparent": {
-    "description": "Fallback label for a recipient whose address is transparent."
   },
   "sendAddressValidationFailed": "Address validation failed",
   "@sendAddressValidationFailed": {
@@ -4324,14 +4295,6 @@
   "sendAmountCtaEnterAmount": "Enter amount to continue",
   "@sendAmountCtaEnterAmount": {
     "description": "Label of the disabled primary button on the mobile amount step before an amount is entered."
-  },
-  "sendAmountCtaReviewAndFinish": "Review & finish",
-  "@sendAmountCtaReviewAndFinish": {
-    "description": "Label of the primary button on the mobile amount step once the amount is valid."
-  },
-  "sendAmountLabel": "Amount",
-  "@sendAmountLabel": {
-    "description": "Label above the amount field."
   },
   "sendBroadcastCancelledBeforeParams": "Sending was cancelled before proving parameters were downloaded.",
   "@sendBroadcastCancelledBeforeParams": {
@@ -4393,14 +4356,6 @@
   "@sendCalculatingMax": {
     "description": "Message shown while the maximum sendable amount is still being calculated."
   },
-  "sendClearAction": "Clear",
-  "@sendClearAction": {
-    "description": "Button inside the filled recipient field that clears it."
-  },
-  "sendCloseMessageField": "Close message",
-  "@sendCloseMessageField": {
-    "description": "Accessibility label of the button that closes the message field."
-  },
   "sendContactPickerEmpty": "No Zcash contacts",
   "@sendContactPickerEmpty": {
     "description": "Empty-state title in the contact picker when the user has no Zcash contacts."
@@ -4408,10 +4363,6 @@
   "sendContactPickerTitle": "Contacts Zcash",
   "@sendContactPickerTitle": {
     "description": "Title of the contact picker modal opened from the send screen, listing Zcash contacts."
-  },
-  "sendContactsLink": "Contacts",
-  "@sendContactsLink": {
-    "description": "Link next to the recipient field that opens the contact picker."
   },
   "sendDonationAddressTitle": "Vizor donation address",
   "@sendDonationAddressTitle": {
@@ -4552,21 +4503,9 @@
   "@sendInvalidAmount": {
     "description": "Error under the amount field when the entered amount cannot be parsed."
   },
-  "sendKeystoneAfterScan": "After you scanned, click Get signature.",
-  "@sendKeystoneAfterScan": {
-    "description": "[security] Instruction in the desktop Keystone modal after proofs are ready."
-  },
   "sendKeystoneConfirmTitle": "Confirm with Keystone",
   "@sendKeystoneConfirmTitle": {
     "description": "[security] Title of the desktop Keystone signing modal and label of the review button for a Keystone account."
-  },
-  "sendKeystoneExpired": "Transaction expired before it could be signed.",
-  "@sendKeystoneExpired": {
-    "description": "[security] Error shown when the transaction expired before the Keystone could sign it."
-  },
-  "sendKeystoneGetSignature": "Get signature",
-  "@sendKeystoneGetSignature": {
-    "description": "[security] Primary button in the desktop Keystone modal that opens the scanner to read the signature QR code from the device."
   },
   "sendKeystonePrepareFailedGoBack": "Keystone signing could not be prepared. Go back and try again.",
   "@sendKeystonePrepareFailedGoBack": {
@@ -4579,14 +4518,6 @@
   "sendKeystonePreparing": "Preparing",
   "@sendKeystonePreparing": {
     "description": "Disabled primary button label in the desktop Keystone modal while proofs are being prepared."
-  },
-  "sendKeystoneProvingCancelled": "Signing was cancelled before proving parameters were downloaded.",
-  "@sendKeystoneProvingCancelled": {
-    "description": "Error shown when the user declined the proving-parameter download during Keystone signing."
-  },
-  "sendKeystoneProvingParamsFailed": "Required proving parameters could not be prepared.",
-  "@sendKeystoneProvingParamsFailed": {
-    "description": "Error shown when the proving parameters needed for the signature could not be prepared."
   },
   "sendKeystoneQrMismatch": "This QR code does not match the current Keystone signing request.",
   "@sendKeystoneQrMismatch": {
@@ -4619,14 +4550,6 @@
   "sendKeystoneScanToFinish": "Scan the QR code on your Keystone to finish sending",
   "@sendKeystoneScanToFinish": {
     "description": "Caption under the camera view asking the user to scan the signature QR code shown on the Keystone to finish sending."
-  },
-  "sendKeystoneScanTransactionInstruction": "Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.",
-  "@sendKeystoneScanTransactionInstruction": {
-    "description": "[security] Instruction on the mobile Keystone screen to scan the transaction QR code with the Keystone device and follow its prompts."
-  },
-  "sendKeystoneScanUnexpectedSignature": "Open the signature result QR on Keystone, then scan again.",
-  "@sendKeystoneScanUnexpectedSignature": {
-    "description": "Hint when the scanned QR code is of the wrong type; asks to open the signature result QR code on the Keystone device."
   },
   "sendKeystoneScanUnexpectedTransaction": "Open the signed transaction QR on Keystone, then scan again.",
   "@sendKeystoneScanUnexpectedTransaction": {
@@ -4683,10 +4606,6 @@
   "@sendLedgerExpiredMessage": {
     "description": "[security] Ledger failure message: the expired transaction cannot be signed anymore and the user must start a new one."
   },
-  "sendLedgerExpiredTitle": "Transaction expired",
-  "@sendLedgerExpiredTitle": {
-    "description": "Title of the Ledger failure panel when the transaction proposal expired before it could be signed."
-  },
   "sendLedgerKeepOpenRetry": "Keep Vizor open and try again. No new Ledger approval needed.",
   "@sendLedgerKeepOpenRetry": {
     "description": "[security] Ledger failure message: the device already signed, so the user only needs to retry in Vizor without approving again on the Ledger."
@@ -4703,10 +4622,6 @@
   "@sendLedgerRejectedOnDevice": {
     "description": "[security] Failure message when the user declined the transaction on their Ledger device."
   },
-  "sendLedgerRetrySaving": "Retry saving",
-  "@sendLedgerRetrySaving": {
-    "description": "Button that retries saving a Ledger-signed transaction."
-  },
   "sendLedgerSignaturePreservedMessage": "Your Ledger signature is preserved. Retry saving without approving another transaction.",
   "@sendLedgerSignaturePreservedMessage": {
     "description": "[security] Message saying the Ledger signature was kept; the user should retry saving and must not approve another transaction on the device."
@@ -4715,10 +4630,6 @@
   "@sendLedgerSignedNeedsAttentionTitle": {
     "description": "[security] Title shown when the signed transaction could not be verified and must not be signed or sent again."
   },
-  "sendLedgerSigningFailedTitle": "Ledger signing failed",
-  "@sendLedgerSigningFailedTitle": {
-    "description": "Title of the generic Ledger signing failure panel."
-  },
   "sendLedgerSigningIncomplete": "Ledger signing could not be completed. Check your device and try again.",
   "@sendLedgerSigningIncomplete": {
     "description": "Generic Ledger failure message asking the user to check the device and retry."
@@ -4726,10 +4637,6 @@
   "sendLedgerSigningUnavailableTitle": "Ledger signing unavailable",
   "@sendLedgerSigningUnavailableTitle": {
     "description": "Title of the failure panel when the Ledger cannot sign this kind of transaction."
-  },
-  "sendLedgerStatusActionNeeded": "Action needed",
-  "@sendLedgerStatusActionNeeded": {
-    "description": "Status chip on a Ledger signing failure panel telling the user to take an action."
   },
   "sendLedgerStatusNewTransactionRequired": "New transaction required",
   "@sendLedgerStatusNewTransactionRequired": {
@@ -4796,29 +4703,9 @@
   "@sendMemoShieldedOnly": {
     "description": "Error under the message field when a memo is entered for a transparent recipient."
   },
-  "sendMemoTooLong": "Message is too long",
-  "@sendMemoTooLong": {
-    "description": "Error under the message field when the memo exceeds 512 bytes."
-  },
   "sendMemoWhitespaceOnly": "Whitespace only",
   "@sendMemoWhitespaceOnly": {
     "description": "Muted value shown in place of a message that consists only of spaces or blank lines."
-  },
-  "sendMessageHint": "Add a message",
-  "@sendMessageHint": {
-    "description": "Placeholder in the optional message field."
-  },
-  "sendMessageLabel": "Message",
-  "@sendMessageLabel": {
-    "description": "Label above the optional message (memo) field on the send screen."
-  },
-  "sendNoActiveAccount": "No active account",
-  "@sendNoActiveAccount": {
-    "description": "Error shown on the send screen when no account is selected."
-  },
-  "sendNotEnoughZec": "Not enough ZEC",
-  "@sendNotEnoughZec": {
-    "description": "[security] Error under the mobile amount field when the amount is higher than the spendable balance."
   },
   "sendOpenContacts": "Open contacts",
   "@sendOpenContacts": {
@@ -4848,10 +4735,6 @@
   "@sendPaymentRequestCheckFailed": {
     "description": "Fallback status line on the payment request card when checking the request failed without a specific reason."
   },
-  "sendPaymentRequestChecking": "Checking…",
-  "@sendPaymentRequestChecking": {
-    "description": "Label of the primary button on the payment request card while the request is being checked."
-  },
   "sendPaymentRequestClose": "Close payment request",
   "@sendPaymentRequestClose": {
     "description": "Accessibility label of the button that closes the payment request card."
@@ -4859,10 +4742,6 @@
   "sendPaymentRequestConfirmWithSender": "Confirm the details with the person who sent it.",
   "@sendPaymentRequestConfirmWithSender": {
     "description": "[security] Advice in the check-before-you-pay notice to confirm the payment details with the sender when no QR code can be scanned."
-  },
-  "sendPaymentRequestEdit": "Edit",
-  "@sendPaymentRequestEdit": {
-    "description": "Label of the button on the payment request card that opens the compose form to change the request."
   },
   "sendPaymentRequestEnterAmount": "Enter amount",
   "@sendPaymentRequestEnterAmount": {
@@ -4974,10 +4853,6 @@
   "@sendPaymentRequestScanOriginalHint": {
     "description": "[security] Advice in the check-before-you-pay notice to scan the requester's original QR code in Vizor instead of trusting a link."
   },
-  "sendPaymentRequestScanOriginalQr": "Scan original QR",
-  "@sendPaymentRequestScanOriginalQr": {
-    "description": "Button that opens the camera to scan the requester's original payment request QR code."
-  },
   "sendPaymentRequestShowFullAddress": "Show full recipient address",
   "@sendPaymentRequestShowFullAddress": {
     "description": "[security] Accessibility label of the control that expands the full recipient address so the user can verify it."
@@ -5002,10 +4877,6 @@
   "sendPaymentRequestSyncing": "Wallet is still syncing — this will update when it finishes",
   "@sendPaymentRequestSyncing": {
     "description": "Status line on the payment request card while the wallet is still syncing; the check reruns automatically afterwards."
-  },
-  "sendPaymentRequestTitle": "Payment request",
-  "@sendPaymentRequestTitle": {
-    "description": "Title of the payment request card that opens when the user follows a zcash: link or scans a payment request QR code."
   },
   "sendPaymentRequestTransactionMemo": "Transaction memo",
   "@sendPaymentRequestTransactionMemo": {
@@ -5068,10 +4939,6 @@
   "@sendRecipientWrongNetwork": {
     "description": "[security] Error under the recipient field when a well-formed Zcash address belongs to another network than this wallet (for example a testnet address on mainnet)."
   },
-  "sendRequestScanBackLabel": "Payment request",
-  "@sendRequestScanBackLabel": {
-    "description": "Back link label on the payment request QR scan screen."
-  },
   "sendRequestScanCheckFailed": "Couldn't check this QR code. Try again.",
   "@sendRequestScanCheckFailed": {
     "description": "Error when a scanned payment request QR code could not be checked."
@@ -5100,10 +4967,6 @@
   "@sendRequestScanTipOriginal": {
     "description": "Troubleshooting tip when the payment request QR code cannot be scanned."
   },
-  "sendRequestScanTitle": "Scan original QR",
-  "@sendRequestScanTitle": {
-    "description": "Title of the screen that scans the requester's original payment request QR code."
-  },
   "sendRequestScanUnavailable": "Connect a camera, or go back and review the link details.",
   "@sendRequestScanUnavailable": {
     "description": "Message when no camera is available for scanning the payment request QR code."
@@ -5111,10 +4974,6 @@
   "sendReviewAction": "Review",
   "@sendReviewAction": {
     "description": "Label of the primary button on the send screen that opens the review step."
-  },
-  "sendReviewBackSupportVizor": "Support Vizor",
-  "@sendReviewBackSupportVizor": {
-    "description": "Back link label on the donation review screen."
   },
   "sendReviewCalculatingFee": "Calculating fee...",
   "@sendReviewCalculatingFee": {
@@ -5144,14 +5003,6 @@
   "@sendReviewFinishingSyncButton": {
     "description": "Label of the disabled review button while the wallet finishes syncing."
   },
-  "sendReviewFullAddress": "Full address",
-  "@sendReviewFullAddress": {
-    "description": "[security] Action on the recipient row of the mobile review that opens the complete address."
-  },
-  "sendReviewPaymentTitle": "Review Payment",
-  "@sendReviewPaymentTitle": {
-    "description": "[security] Title of the review screen for a payment request, shown before the user approves an irreversible payment."
-  },
   "sendReviewPreparing": "Preparing...",
   "@sendReviewPreparing": {
     "description": "Label of the review button while the transaction is being prepared."
@@ -5169,25 +5020,13 @@
   "@sendReviewRequestedBy": {
     "description": "Row label on the review screen for the recipient of a payment request; the value is the address or contact that asked to be paid."
   },
-  "sendReviewShowFullAddress": "Show full address",
-  "@sendReviewShowFullAddress": {
-    "description": "[security] Action on the recipient row that opens the complete address so the user can verify it before sending."
-  },
   "sendReviewTitle": "Review send",
   "@sendReviewTitle": {
     "description": "[security] Title of the review screen shown before the user approves an irreversible send."
   },
-  "sendReviewTo": "To",
-  "@sendReviewTo": {
-    "description": "Row label on the review and receipt screens for the recipient."
-  },
   "sendSaplingDownloadBody": "To create this private transaction, your wallet needs to download about 50MB of cryptographic parameters.",
   "@sendSaplingDownloadBody": {
     "description": "Body of the dialog explaining that about 50MB of cryptographic proving parameters must be downloaded to create a private transaction."
-  },
-  "sendSaplingDownloadButton": "Download",
-  "@sendSaplingDownloadButton": {
-    "description": "Button in the proving-parameters dialog that starts the download."
   },
   "sendSaplingDownloadNote": "This happens once, then it's done.\nNetwork data charges may apply.",
   "@sendSaplingDownloadNote": {
@@ -5237,14 +5076,6 @@
   "@sendSendingToLabel": {
     "description": "Label above the chosen recipient on the mobile amount step."
   },
-  "sendSignCancelFailed": "Could not finish cancelling. Please try again.",
-  "@sendSignCancelFailed": {
-    "description": "Error shown when cancelling a signing request could not be completed."
-  },
-  "sendSignCancelling": "Cancelling…",
-  "@sendSignCancelling": {
-    "description": "Label shown on a button or title while a signing request is being cancelled."
-  },
   "sendSignConfirmTransaction": "Confirm transaction",
   "@sendSignConfirmTransaction": {
     "description": "Title of the mobile hardware-wallet signing screen."
@@ -5269,10 +5100,6 @@
   "sendSpendableTooltipTitle": "Your spendable balance may be lower than your total balance.",
   "@sendSpendableTooltipTitle": {
     "description": "[security] Bold first line of the tooltip next to Use Max explaining why spendable balance can be lower than total."
-  },
-  "sendStatusBackToWallet": "Back to wallet",
-  "@sendStatusBackToWallet": {
-    "description": "Link on the mobile failed-send screen that returns to the wallet home."
   },
   "sendStatusDonationFailed": "Donation failed",
   "@sendStatusDonationFailed": {
@@ -5310,10 +5137,6 @@
   "@sendStatusMobileDonationThanks": {
     "description": "Title on the mobile status screen after a donation succeeded; the line break is intentional."
   },
-  "sendStatusMobileDone": "Done",
-  "@sendStatusMobileDone": {
-    "description": "Primary button on the mobile status screen after a send was submitted or finished."
-  },
   "sendStatusMobileNothingSent": "Nothing was sent, your funds haven't moved. Try again.",
   "@sendStatusMobileNothingSent": {
     "description": "[security] Subtitle on the mobile status screen after a failed send: nothing left the wallet, so the user's funds are unchanged."
@@ -5326,17 +5149,9 @@
   "@sendStatusMobileQueued": {
     "description": "Title on the mobile status screen when the transaction was created and will be submitted automatically."
   },
-  "sendStatusMobileReturnHome": "Return home",
-  "@sendStatusMobileReturnHome": {
-    "description": "Button on the mobile status screen that returns to the home screen."
-  },
   "sendStatusMobileReturnToSettings": "Return to settings",
   "@sendStatusMobileReturnToSettings": {
     "description": "Button on the mobile status screen that returns to Settings after a donation attempt."
-  },
-  "sendStatusMobileSending": "Sending...",
-  "@sendStatusMobileSending": {
-    "description": "Title on the mobile status screen while a transaction is being sent."
   },
   "sendStatusMobileSendingDonation": "Sending donation...",
   "@sendStatusMobileSendingDonation": {
@@ -5358,45 +5173,13 @@
   "@sendStatusRowStatus": {
     "description": "Row label on the send receipt for the transaction status."
   },
-  "sendStatusRowTimestamp": "Timestamp",
-  "@sendStatusRowTimestamp": {
-    "description": "Row label on the send receipt for the date and time."
-  },
-  "sendStatusRowTxId": "Tx ID",
-  "@sendStatusRowTxId": {
-    "description": "Row label on the send receipt for the transaction ID; tapping opens a block explorer."
-  },
   "sendStatusScanKeystoneTitle": "Scan your Keystone QR Code",
   "@sendStatusScanKeystoneTitle": {
     "description": "[security] Heading on the desktop send status screen asking the user to scan the signing QR code shown on their Keystone hardware wallet."
   },
-  "sendStatusTitleCompleted": "Sent successfully",
-  "@sendStatusTitleCompleted": {
-    "description": "Title on the send status screen after the transaction was sent."
-  },
-  "sendStatusTitleFailed": "Send failed",
-  "@sendStatusTitleFailed": {
-    "description": "Title on the send status screen when sending failed, and the fallback error text."
-  },
   "sendStatusTitleInProgress": "Send in progress...",
   "@sendStatusTitleInProgress": {
     "description": "Title on the send status screen while the transaction is being sent."
-  },
-  "sendStatusTxHashCopied": "Transaction hash copied",
-  "@sendStatusTxHashCopied": {
-    "description": "Toast shown after the user copies the transaction hash."
-  },
-  "sendStatusValueCompleted": "Completed",
-  "@sendStatusValueCompleted": {
-    "description": "Value of the Status row on the send receipt after sending."
-  },
-  "sendStatusValueFailed": "Failed",
-  "@sendStatusValueFailed": {
-    "description": "Value of the Status row on the send receipt when sending failed."
-  },
-  "sendStatusValueInProgress": "In progress",
-  "@sendStatusValueInProgress": {
-    "description": "Value of the Status row on the send receipt while sending."
   },
   "sendStepEnterAmount": "Enter Amount",
   "@sendStepEnterAmount": {
@@ -5409,10 +5192,6 @@
   "sendStepReviewSend": "Review Send",
   "@sendStepReviewSend": {
     "description": "[security] Title of the review step of the mobile send flow, before the user approves an irreversible send."
-  },
-  "sendStepSelectRecipient": "Select Recipient",
-  "@sendStepSelectRecipient": {
-    "description": "Title of the first step of the mobile send flow where the user picks the recipient."
   },
   "sendTitle": "Send {currency}",
   "@sendTitle": {
@@ -5448,10 +5227,6 @@
         "type": "int"
       }
     }
-  },
-  "sendZcashAddress": "Zcash address",
-  "@sendZcashAddress": {
-    "description": "Placeholder or label for a Zcash address field or address type."
   },
   "settingsAccountChangedPasscode": "Selected account changed. Enter your passcode again.",
   "@settingsAccountChangedPasscode": {
@@ -5924,10 +5699,6 @@
   "@settingsRowSecretPassphrase": {
     "description": "[security] Settings row that opens the secret recovery phrase screen (desktop, sentence case)."
   },
-  "settingsRowSupportVizor": "Support Vizor",
-  "@settingsRowSupportVizor": {
-    "description": "Settings row that opens the donation screen."
-  },
   "settingsRowUpdates": "Updates",
   "@settingsRowUpdates": {
     "description": "Settings row and dialog title for checking and installing app updates."
@@ -6152,10 +5923,6 @@
   "@settingsTorStatusDirect": {
     "description": "Tor status label when requests connect directly without Tor."
   },
-  "settingsTorStatusFailed": "Failed",
-  "@settingsTorStatusFailed": {
-    "description": "Tor status label when connecting to Tor failed (mobile)."
-  },
   "settingsTorStatusNotSaved": "Setting not saved",
   "@settingsTorStatusNotSaved": {
     "description": "Tor status label when the Tor preference could not be saved."
@@ -6282,10 +6049,6 @@
   "@settingsUpdateChecking": {
     "description": "Short value on the Updates row while checking for an update."
   },
-  "settingsUpdateCheckingButton": "Checking…",
-  "@settingsUpdateCheckingButton": {
-    "description": "Disabled button label in the Updates dialog while checking."
-  },
   "settingsUpdateCurrentLabel": "Current",
   "@settingsUpdateCurrentLabel": {
     "description": "Label before the currently installed version number in the Updates dialog."
@@ -6297,10 +6060,6 @@
   "settingsUpdateDownloadingButton": "Downloading…",
   "@settingsUpdateDownloadingButton": {
     "description": "Disabled button label in the Updates dialog while downloading."
-  },
-  "settingsUpdateFailed": "Failed",
-  "@settingsUpdateFailed": {
-    "description": "Short value on the Updates row when the update failed."
   },
   "settingsUpdatePasswordTitle": "Update password",
   "@settingsUpdatePasswordTitle": {
@@ -6526,10 +6285,6 @@
   "@sidebarAddressCopyFailed": {
     "description": "Toast when copying the account address from the sidebar failed."
   },
-  "sidebarCopyShieldedAddress": "Copy shielded address",
-  "@sidebarCopyShieldedAddress": {
-    "description": "Screen-reader label of the sidebar copy-address button."
-  },
   "sidebarHideBalance": "Hide balance",
   "@sidebarHideBalance": {
     "description": "Screen-reader label of the sidebar button that hides amounts."
@@ -6578,23 +6333,6 @@
   "@swapActionGettingQuote": {
     "description": "Primary button label on the swap screen while a quote is loading."
   },
-  "swapActionNotEnoughZec": "Not enough ZEC",
-  "@swapActionNotEnoughZec": {
-    "description": "Disabled primary button label on the swap screen when the ZEC balance does not cover the amount."
-  },
-  "swapActionReview": "Review swap",
-  "@swapActionReview": {
-    "description": "Primary button label on the swap screen that opens the swap review."
-  },
-  "swapActivityAddressBookRecipient": "{symbol} recipient",
-  "@swapActivityAddressBookRecipient": {
-    "description": "Default contact label suggestion when saving a swap recipient to the address book.",
-    "placeholders": {
-      "symbol": {
-        "type": "String"
-      }
-    }
-  },
   "swapActivityAddressBookRefund": "{symbol} refund",
   "@swapActivityAddressBookRefund": {
     "description": "Default contact label suggestion when saving a swap refund address to the address book.",
@@ -6603,10 +6341,6 @@
         "type": "String"
       }
     }
-  },
-  "swapActivityAmount": "Amount",
-  "@swapActivityAmount": {
-    "description": "Neutral label of the amount on a failed, refunded or expired payment status screen."
   },
   "swapActivityDeadlineHours": "{hours}hrs",
   "@swapActivityDeadlineHours": {
@@ -6625,14 +6359,6 @@
         "type": "int"
       }
     }
-  },
-  "swapActivityDeadlineOneHour": "1hr",
-  "@swapActivityDeadlineOneHour": {
-    "description": "Compact countdown until the deposit deadline when exactly one hour remains; 'hr' abbreviates hour."
-  },
-  "swapActivityDeadlineOneMinute": "1min",
-  "@swapActivityDeadlineOneMinute": {
-    "description": "Compact countdown until the deposit deadline when exactly one minute remains; 'min' abbreviates minute."
   },
   "swapActivityDepositAmount": "Deposit amount",
   "@swapActivityDepositAmount": {
@@ -6743,10 +6469,6 @@
   "@swapActivityDetailFees": {
     "description": "Label of a status detail row with the fees of a payment."
   },
-  "swapActivityDetailGuaranteedMinimum": "Guaranteed minimum",
-  "@swapActivityDetailGuaranteedMinimum": {
-    "description": "Label of a status detail row with the minimum amount the swap is guaranteed to deliver."
-  },
   "swapActivityDetailIncluded": "Included",
   "@swapActivityDetailIncluded": {
     "description": "Value of the fees row when the fee is already included in the quote."
@@ -6755,63 +6477,17 @@
   "@swapActivityDetailIncludedInRate": {
     "description": "Value of the swap fee row when the fee is already part of the displayed rate."
   },
-  "swapActivityDetailMemo": "Memo",
-  "@swapActivityDetailMemo": {
-    "description": "Label of a status detail row holding the deposit memo the user must include."
-  },
   "swapActivityDetailMissingDeposit": "Missing deposit",
   "@swapActivityDetailMissingDeposit": {
     "description": "Label of a status detail row with how much more the user must deposit."
-  },
-  "swapActivityDetailNetworkConversionFees": "Network + conversion fees",
-  "@swapActivityDetailNetworkConversionFees": {
-    "description": "Label of a status detail row with the network and conversion fees of a payment in progress."
-  },
-  "swapActivityDetailRate": "Rate",
-  "@swapActivityDetailRate": {
-    "description": "Label of a status detail row with the exchange rate."
   },
   "swapActivityDetailRealizedSlippage": "Realized slippage",
   "@swapActivityDetailRealizedSlippage": {
     "description": "Label of a status detail row with the slippage a finished swap actually had."
   },
-  "swapActivityDetailRecipient": "{symbol} recipient",
-  "@swapActivityDetailRecipient": {
-    "description": "Label of a status detail row holding the recipient address of the asset.",
-    "placeholders": {
-      "symbol": {
-        "type": "String"
-      }
-    }
-  },
-  "swapActivityDetailRefundAddress": "{symbol} refund address",
-  "@swapActivityDetailRefundAddress": {
-    "description": "Label of a status detail row holding the address a refund of the asset goes to.",
-    "placeholders": {
-      "symbol": {
-        "type": "String"
-      }
-    }
-  },
-  "swapActivityDetailRefundFee": "Refund fee",
-  "@swapActivityDetailRefundFee": {
-    "description": "Label of a status detail row with the fee charged for the refund."
-  },
-  "swapActivityDetailRefundTo": "Refund to",
-  "@swapActivityDetailRefundTo": {
-    "description": "Label of a status detail row holding the address a refund goes to."
-  },
-  "swapActivityDetailRefundedAmount": "Refunded amount",
-  "@swapActivityDetailRefundedAmount": {
-    "description": "Label of a status detail row with the amount refunded."
-  },
   "swapActivityDetailRequiredDeposit": "Required deposit",
   "@swapActivityDetailRequiredDeposit": {
     "description": "Label of a status detail row with the deposit amount the swap requires."
-  },
-  "swapActivityDetailSlippageTolerance": "Slippage tolerance",
-  "@swapActivityDetailSlippageTolerance": {
-    "description": "Label of a status detail row with the slippage tolerance of the quote."
   },
   "swapActivityDetailSourceTxShielded": "{symbol} tx (shielded)",
   "@swapActivityDetailSourceTxShielded": {
@@ -6822,21 +6498,9 @@
       }
     }
   },
-  "swapActivityDetailSwapFee": "Swap fee",
-  "@swapActivityDetailSwapFee": {
-    "description": "Label of a status detail row with the swap fee."
-  },
-  "swapActivityDetailTimestamp": "Timestamp",
-  "@swapActivityDetailTimestamp": {
-    "description": "Label of a status detail row with the date and time of a swap."
-  },
   "swapActivityDetailTotalFees": "Total fees",
   "@swapActivityDetailTotalFees": {
     "description": "Label of a status detail row with the total fees of a swap."
-  },
-  "swapActivityDetailTxId": "Tx ID",
-  "@swapActivityDetailTxId": {
-    "description": "Label of a status detail row holding a transaction identifier that links to the explorer; 'Tx' abbreviates transaction."
   },
   "swapActivityExpectedToReceive": "Expected to receive",
   "@swapActivityExpectedToReceive": {
@@ -6875,41 +6539,9 @@
   "@swapActivityPayInProgressTitle": {
     "description": "Title of the pay status header while a payment is in progress."
   },
-  "swapActivityPayStatusCompleted": "Completed",
-  "@swapActivityPayStatusCompleted": {
-    "description": "Status value of a payment that completed."
-  },
-  "swapActivityPayStatusFailed": "Failed",
-  "@swapActivityPayStatusFailed": {
-    "description": "Status value of a payment that failed."
-  },
-  "swapActivityPayStatusInProgress": "In progress",
-  "@swapActivityPayStatusInProgress": {
-    "description": "Status value of a payment that is still in progress."
-  },
-  "swapActivityPayStatusRefunded": "Refunded",
-  "@swapActivityPayStatusRefunded": {
-    "description": "Status value of a payment or swap that was refunded."
-  },
   "swapActivityPaymentComplete": "Payment complete",
   "@swapActivityPaymentComplete": {
     "description": "Title of a payment status screen after the payment completed."
-  },
-  "swapActivityPaymentFailed": "Payment failed",
-  "@swapActivityPaymentFailed": {
-    "description": "Title of a payment status screen when the payment failed or expired."
-  },
-  "swapActivityPaymentInProgress": "Payment in progress",
-  "@swapActivityPaymentInProgress": {
-    "description": "Title of a payment status screen while the payment is in progress."
-  },
-  "swapActivityPaymentProgressTab": "Payment progress",
-  "@swapActivityPaymentProgressTab": {
-    "description": "Label of the progress tab on a payment status screen."
-  },
-  "swapActivityPaymentRefunded": "Payment refunded",
-  "@swapActivityPaymentRefunded": {
-    "description": "Title of a payment status screen when the payment was refunded."
   },
   "swapActivityPickerNoRecipients": "No saved {symbol} recipients",
   "@swapActivityPickerNoRecipients": {
@@ -6947,39 +6579,13 @@
       }
     }
   },
-  "swapActivityPrivatelyFromShielded": "Privately, from shielded balance",
-  "@swapActivityPrivatelyFromShielded": {
-    "description": "Line under the paid amount on a payment status screen, saying the payment is spent privately from the shielded balance."
-  },
   "swapActivityReceiveAssetFallback": "receive asset",
   "@swapActivityReceiveAssetFallback": {
     "description": "Lowercase fallback name of the received asset when a swap record has no symbol."
   },
-  "swapActivityRecipientGets": "Recipient gets",
-  "@swapActivityRecipientGets": {
-    "description": "Label of the amount the payment recipient will receive, on an in-progress payment status screen."
-  },
   "swapActivityRecipientReceived": "Recipient received",
   "@swapActivityRecipientReceived": {
     "description": "Label of the amount the payment recipient received, on a completed payment status screen."
-  },
-  "swapActivityRefundToAddress": "Refund to: {address}",
-  "@swapActivityRefundToAddress": {
-    "description": "Line under the paid amount of a swap status screen: the address a refund goes to.",
-    "placeholders": {
-      "address": {
-        "type": "String"
-      }
-    }
-  },
-  "swapActivityStateAddressHint": "{chain} address",
-  "@swapActivityStateAddressHint": {
-    "description": "Hint of the swap refund address field: an address on the named chain.",
-    "placeholders": {
-      "chain": {
-        "type": "String"
-      }
-    }
   },
   "swapActivityStateAddressOrAccountHint": "{chain} address or account",
   "@swapActivityStateAddressOrAccountHint": {
@@ -7051,15 +6657,6 @@
       }
     }
   },
-  "swapActivityStateRefundAddressLabel": "{symbol} refund address",
-  "@swapActivityStateRefundAddressLabel": {
-    "description": "Label of the address field of the swap address modal when the user deposits an external asset.",
-    "placeholders": {
-      "symbol": {
-        "type": "String"
-      }
-    }
-  },
   "swapActivityStatusAwaitingDeposit": "Awaiting deposit",
   "@swapActivityStatusAwaitingDeposit": {
     "description": "Status label of a swap that is waiting for the deposit."
@@ -7067,10 +6664,6 @@
   "swapActivityStatusAwaitingExternalDeposit": "Awaiting external deposit",
   "@swapActivityStatusAwaitingExternalDeposit": {
     "description": "Status label of a swap that is waiting for the user to send a deposit from another chain."
-  },
-  "swapActivityStatusCheckingStatus": "Checking status",
-  "@swapActivityStatusCheckingStatus": {
-    "description": "Status label of a swap whose provider status is being checked."
   },
   "swapActivityStatusComplete": "Complete",
   "@swapActivityStatusComplete": {
@@ -7278,33 +6871,9 @@
   "@swapActivitySwapCompleted": {
     "description": "Title of a swap status screen after the swap completed."
   },
-  "swapActivitySwapFailed": "Swap failed",
-  "@swapActivitySwapFailed": {
-    "description": "Title of a swap status screen when the swap failed."
-  },
   "swapActivitySwapInProgress": "Swap in progress...",
   "@swapActivitySwapInProgress": {
     "description": "Title of a swap status screen while the swap is in progress."
-  },
-  "swapActivitySwapProgressTab": "Swap progress",
-  "@swapActivitySwapProgressTab": {
-    "description": "Label of the progress tab on a swap status screen."
-  },
-  "swapActivitySwapRefunded": "Swap refunded",
-  "@swapActivitySwapRefunded": {
-    "description": "Title of a swap status screen when the swap was refunded."
-  },
-  "swapActivityToAddressOnChain": "To: {address} on {chain}",
-  "@swapActivityToAddressOnChain": {
-    "description": "Line under the received amount of a swap or payment status screen: the recipient address followed by the blockchain it is on.",
-    "placeholders": {
-      "address": {
-        "type": "String"
-      },
-      "chain": {
-        "type": "String"
-      }
-    }
   },
   "swapActivityTooltipFees": "Covers our fee and the route providers' costs to process this swap. Already included in the rate above.",
   "@swapActivityTooltipFees": {
@@ -7335,21 +6904,9 @@
   "@swapActivityYouPaid": {
     "description": "Label of the amount the user paid, on a completed swap or payment status screen."
   },
-  "swapActivityYouPay": "You pay",
-  "@swapActivityYouPay": {
-    "description": "Label of the amount the user pays, on a payment status screen before the payment completes."
-  },
   "swapActivityYouReceived": "You received",
   "@swapActivityYouReceived": {
     "description": "Label of the amount received on a completed swap status screen."
-  },
-  "swapActivityYourePaying": "You're paying",
-  "@swapActivityYourePaying": {
-    "description": "Label of the amount being paid while a swap or payment is still in progress."
-  },
-  "swapActivityYoureReceiving": "You're receiving",
-  "@swapActivityYoureReceiving": {
-    "description": "Label of the amount being received while a swap is in progress."
   },
   "swapAddressRecipientDescription": "Your {symbol} will be delivered to this address.",
   "@swapAddressRecipientDescription": {
@@ -7385,19 +6942,6 @@
       }
     }
   },
-  "swapAddressRefundFieldLabel": "Refund to",
-  "@swapAddressRefundFieldLabel": {
-    "description": "Field label above the refund address input in the swap address editor."
-  },
-  "swapAddressRefundTitle": "{symbol} refund address",
-  "@swapAddressRefundTitle": {
-    "description": "Title of the swap address editor when the user edits the address a failed swap refunds to; {symbol} is the asset ticker.",
-    "placeholders": {
-      "symbol": {
-        "type": "String"
-      }
-    }
-  },
   "swapAddressRememberRecipient": "Remember this address for recipients",
   "@swapAddressRememberRecipient": {
     "description": "Toggle label in the swap address editor that saves the address for future recipients."
@@ -7418,15 +6962,6 @@
   "@swapAssetSelectorTitle": {
     "description": "Title of the modal that lists assets to swap."
   },
-  "swapChainAddressTitle": "{chain} address",
-  "@swapChainAddressTitle": {
-    "description": "Title of the address verification sheet for the external chain side of a swap; {chain} is the chain name.",
-    "placeholders": {
-      "chain": {
-        "type": "String"
-      }
-    }
-  },
   "swapComposerAddRecipientAddressEllipsis": "Add recipient address...",
   "@swapComposerAddRecipientAddressEllipsis": {
     "description": "Placeholder in the swap composer address row when no recipient address is set; tapping opens the editor."
@@ -7444,10 +6979,6 @@
       }
     }
   },
-  "swapComposerYouPay": "You pay",
-  "@swapComposerYouPay": {
-    "description": "Label above the amount the user sends in the swap composer."
-  },
   "swapComposerYouReceive": "You receive",
   "@swapComposerYouReceive": {
     "description": "Label above the amount the user gets in the swap composer."
@@ -7459,10 +6990,6 @@
   "swapContactAlreadySaved": "Already in your contacts",
   "@swapContactAlreadySaved": {
     "description": "Toast shown after the user tries to save a swap address that is already in the address book."
-  },
-  "swapDepositAmount": "Amount",
-  "@swapDepositAmount": {
-    "description": "Row label for the amount to send on the desktop deposit screen."
   },
   "swapDepositAmountCopiedDesktop": "Amount Copied",
   "@swapDepositAmountCopiedDesktop": {
@@ -7488,10 +7015,6 @@
   "@swapDepositDoneMobile": {
     "description": "Button on the mobile deposit screen the user taps after sending funds to the one-time deposit address."
   },
-  "swapDepositHourOne": "1hr",
-  "@swapDepositHourOne": {
-    "description": "Deposit deadline label for exactly one hour remaining."
-  },
   "swapDepositHoursMany": "{count}hrs",
   "@swapDepositHoursMany": {
     "description": "Deposit deadline label for several hours remaining; {count} is the number of hours.",
@@ -7501,17 +7024,9 @@
       }
     }
   },
-  "swapDepositMemo": "Memo",
-  "@swapDepositMemo": {
-    "description": "[security] Row label for the memo that must be included with the deposit."
-  },
   "swapDepositMemoCopied": "Memo copied",
   "@swapDepositMemoCopied": {
     "description": "Toast after the user copies the deposit memo."
-  },
-  "swapDepositMinuteOne": "1min",
-  "@swapDepositMinuteOne": {
-    "description": "Deposit deadline label for exactly one minute remaining."
   },
   "swapDepositMinutesMany": "{count}mins",
   "@swapDepositMinutesMany": {
@@ -7542,10 +7057,6 @@
   "@swapDepositTimeoutBody": {
     "description": "[security] Body on the desktop deposit screen after the deposit window ended; the deposit address must not be used any more. Contains a line break."
   },
-  "swapDepositTimeoutTitle": "Swap failed",
-  "@swapDepositTimeoutTitle": {
-    "description": "Title on the desktop deposit screen after the deposit window ended."
-  },
   "swapDepositTitle": "Deposit tokens",
   "@swapDepositTitle": {
     "description": "Title of the desktop screen showing the one-time deposit address for a swap."
@@ -7562,14 +7073,6 @@
   "@swapDismissBarrierLabel": {
     "description": "Accessibility label of the tappable backdrop behind swap modals on mobile."
   },
-  "swapFullAddress": "Full address",
-  "@swapFullAddress": {
-    "description": "Link on a swap review row that opens a sheet showing the whole address."
-  },
-  "swapKeystoneAfterScan": "After you scanned, click Get signature.",
-  "@swapKeystoneAfterScan": {
-    "description": "[security] Instruction in the swap Keystone signing overlay telling the user what to do after scanning."
-  },
   "swapKeystoneBroadcastFailed": "Transaction could not be broadcast.",
   "@swapKeystoneBroadcastFailed": {
     "description": "[security] Error in swap Keystone signing when broadcasting failed."
@@ -7578,22 +7081,6 @@
   "@swapKeystoneBroadcastingTitle": {
     "description": "[security] Title of the swap Keystone signing overlay while the signed ZEC deposit is being broadcast."
   },
-  "swapKeystoneCancelFailed": "Could not finish cancelling. Please try again.",
-  "@swapKeystoneCancelFailed": {
-    "description": "Error in the swap Keystone signing flow when cancelling the signing request failed."
-  },
-  "swapKeystoneCancelledBeforeParams": "Signing was cancelled before proving parameters were downloaded.",
-  "@swapKeystoneCancelledBeforeParams": {
-    "description": "[security] Error in the swap Keystone signing overlay when the user declined the proving parameter download."
-  },
-  "swapKeystoneCancelling": "Cancelling…",
-  "@swapKeystoneCancelling": {
-    "description": "Secondary button text and mobile title while a swap signing request is being cancelled."
-  },
-  "swapKeystoneExpired": "Transaction expired before it could be signed.",
-  "@swapKeystoneExpired": {
-    "description": "[security] Error in swap Keystone signing when the proposal expired before signing."
-  },
   "swapKeystoneFailedTitle": "Keystone signing failed",
   "@swapKeystoneFailedTitle": {
     "description": "[security] Title of the mobile swap Keystone screen when signing failed."
@@ -7601,10 +7088,6 @@
   "swapKeystoneFinalizing": "Broadcasting ZEC deposit...",
   "@swapKeystoneFinalizing": {
     "description": "[security] Label on the mobile swap Keystone screen while the signed deposit is broadcast."
-  },
-  "swapKeystoneGetSignature": "Get signature",
-  "@swapKeystoneGetSignature": {
-    "description": "[security] Button in the swap Keystone signing overlay that opens the signature scanner."
   },
   "swapKeystoneIncomplete": "ZEC deposit signing could not be completed.",
   "@swapKeystoneIncomplete": {
@@ -7622,10 +7105,6 @@
   "@swapKeystoneScanCaption": {
     "description": "[security] Caption under the signature scanner on the mobile swap Keystone screen."
   },
-  "swapKeystoneScanDescription": "Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.",
-  "@swapKeystoneScanDescription": {
-    "description": "[security] Description on the mobile swap Keystone screen above the transaction QR code."
-  },
   "swapKeystoneScanToSign": "Scan to sign",
   "@swapKeystoneScanToSign": {
     "description": "[security] Subtitle of the swap Keystone signing overlay above the QR code."
@@ -7637,10 +7116,6 @@
   "swapKeystoneStatusUncertain": "The transaction status is uncertain. Refresh activity before trying again.",
   "@swapKeystoneStatusUncertain": {
     "description": "[security] Error in the swap Keystone signing overlay when the broadcast outcome is unknown."
-  },
-  "swapKeystoneUnexpectedUr": "Open the signature result QR on Keystone, then scan again.",
-  "@swapKeystoneUnexpectedUr": {
-    "description": "[security] Message on the mobile swap Keystone screen when the scanned QR is not the signature result."
   },
   "swapLedgerBackToActivity": "Back to activity",
   "@swapLedgerBackToActivity": {
@@ -7674,10 +7149,6 @@
   "@swapLedgerRetryCleanup": {
     "description": "[security] Button in the swap Ledger recovery modal that retries releasing reserved funds."
   },
-  "swapLedgerRetrySaving": "Retry saving",
-  "@swapLedgerRetrySaving": {
-    "description": "[security] Button in the swap Ledger recovery modal that retries saving the sent transaction."
-  },
   "swapLedgerSigningIncomplete": "Ledger signing could not be completed.",
   "@swapLedgerSigningIncomplete": {
     "description": "[security] Generic error in the swap Ledger signing modal when signing fails for an unknown reason."
@@ -7693,10 +7164,6 @@
   "swapLedgerStatusWait": "Please wait",
   "@swapLedgerStatusWait": {
     "description": "[security] Status chip in the swap Ledger modal while another operation finishes the transaction."
-  },
-  "swapLedgerTitleExpired": "Transaction expired",
-  "@swapLedgerTitleExpired": {
-    "description": "[security] Title of the swap Ledger recovery modal when the signed transaction expired before it was sent."
   },
   "swapLedgerTitlePending": "Transaction status pending",
   "@swapLedgerTitlePending": {
@@ -7818,45 +7285,9 @@
   "@swapPayStatusNewAddress": {
     "description": "Subtext under the recipient on the pay status screen when the address is not a saved contact."
   },
-  "swapPayStatusProgressTab": "Payment progress",
-  "@swapPayStatusProgressTab": {
-    "description": "Label of the progress tab on the pay status screen."
-  },
-  "swapPayStatusRefundFee": "Refund fee",
-  "@swapPayStatusRefundFee": {
-    "description": "Row label for the fee charged on a refund."
-  },
-  "swapPayStatusRefundTo": "Refund to",
-  "@swapPayStatusRefundTo": {
-    "description": "Row label for the address a refund was sent to."
-  },
-  "swapPayStatusRefundedAmount": "Refunded amount",
-  "@swapPayStatusRefundedAmount": {
-    "description": "Row label for the amount refunded after a failed payment."
-  },
-  "swapPayStatusShowFullAddress": "Show full address",
-  "@swapPayStatusShowFullAddress": {
-    "description": "Link on the pay status recipient row that reveals the full address."
-  },
   "swapPayStatusSourceAmount": "Source amount",
   "@swapPayStatusSourceAmount": {
     "description": "Row label for the original ZEC amount of a failed payment."
-  },
-  "swapPayStatusTimestamp": "Timestamp",
-  "@swapPayStatusTimestamp": {
-    "description": "Row label for the payment time on the pay status screen."
-  },
-  "swapPayStatusTo": "To",
-  "@swapPayStatusTo": {
-    "description": "Row label for the payment recipient on the pay status screen."
-  },
-  "swapPayStatusTxFee": "Tx fee",
-  "@swapPayStatusTxFee": {
-    "description": "Row label for the network fee of a payment, with a help icon."
-  },
-  "swapPayStatusTxId": "Tx ID",
-  "@swapPayStatusTxId": {
-    "description": "Row label for the transaction ID on the pay status screen."
   },
   "swapPoweredByLabel": "Powered by",
   "@swapPoweredByLabel": {
@@ -7887,21 +7318,9 @@
       }
     }
   },
-  "swapReviewGuaranteedMinimum": "Guaranteed minimum",
-  "@swapReviewGuaranteedMinimum": {
-    "description": "Row label for the guaranteed minimum receive amount on the swap review summary."
-  },
-  "swapReviewInsufficientZecPay": "You don't have enough ZEC for this payment. Try a smaller amount.",
-  "@swapReviewInsufficientZecPay": {
-    "description": "Warning on the pay review screen when the ZEC balance cannot cover the payment amount."
-  },
   "swapReviewInsufficientZecSwap": "You don't have enough ZEC for this swap. Try a smaller amount.",
   "@swapReviewInsufficientZecSwap": {
     "description": "Warning on the swap review screen when the ZEC balance cannot cover the swap amount."
-  },
-  "swapReviewNetworkFees": "Network + conversion fees",
-  "@swapReviewNetworkFees": {
-    "description": "Row label for combined network and conversion fees on the pay review summary."
   },
   "swapReviewPayAmount": "Pay {amount}",
   "@swapReviewPayAmount": {
@@ -7911,10 +7330,6 @@
         "type": "String"
       }
     }
-  },
-  "swapReviewPrivately": "Privately, from shielded balance",
-  "@swapReviewPrivately": {
-    "description": "Detail line on the pay review screen stating the payment is made from the shielded balance."
   },
   "swapReviewQuoteExpired": "Quote expired. Review again for an updated rate.",
   "@swapReviewQuoteExpired": {
@@ -7928,23 +7343,6 @@
   "@swapReviewQuoteInactive": {
     "description": "Warning on the mobile swap review screen when the quote has expired or been replaced."
   },
-  "swapReviewRate": "Rate",
-  "@swapReviewRate": {
-    "description": "Row label for the exchange rate on the pay review summary."
-  },
-  "swapReviewRecipientGets": "Recipient gets",
-  "@swapReviewRecipientGets": {
-    "description": "Label above the amount the payment recipient receives on the pay review screen."
-  },
-  "swapReviewRefundToAddress": "Refund to: {address}",
-  "@swapReviewRefundToAddress": {
-    "description": "Detail line under the pay amount on the swap review when the user pays from an external chain; {address} is a contact name or shortened address.",
-    "placeholders": {
-      "address": {
-        "type": "String"
-      }
-    }
-  },
   "swapReviewReturnToSwap": "Return to swap",
   "@swapReviewReturnToSwap": {
     "description": "Primary button on the mobile swap review when the quote is no longer active."
@@ -7952,10 +7350,6 @@
   "swapReviewReviewAgain": "Review again",
   "@swapReviewReviewAgain": {
     "description": "Primary button on the swap review that fetches a new quote after the old one expired."
-  },
-  "swapReviewSlippageTolerance": "Slippage tolerance",
-  "@swapReviewSlippageTolerance": {
-    "description": "Row label for the slippage tolerance on the swap review summary."
   },
   "swapReviewStartingLockingQuote": "Locking quote",
   "@swapReviewStartingLockingQuote": {
@@ -7969,22 +7363,6 @@
   "@swapReviewStartingSending": {
     "description": "Disabled primary button label on the swap review while the ZEC deposit is being sent."
   },
-  "swapReviewSwapFee": "Swap fee",
-  "@swapReviewSwapFee": {
-    "description": "Row label for the swap fee on the swap review summary."
-  },
-  "swapReviewSwapTitle": "Review swap",
-  "@swapReviewSwapTitle": {
-    "description": "Title of the desktop swap review screen."
-  },
-  "swapReviewTitlePay": "Review Payment",
-  "@swapReviewTitlePay": {
-    "description": "Top bar title of the mobile pay review screen."
-  },
-  "swapReviewTitleSwap": "Review quote",
-  "@swapReviewTitleSwap": {
-    "description": "Top bar title of the mobile swap review screen."
-  },
   "swapReviewToAddress": "To: {address}",
   "@swapReviewToAddress": {
     "description": "Subtitle under the receive amount on the mobile swap review when the user sends ZEC; {address} is a contact name or shortened address.",
@@ -7993,26 +7371,6 @@
         "type": "String"
       }
     }
-  },
-  "swapReviewToAddressOnChain": "To: {address} on {chain}",
-  "@swapReviewToAddressOnChain": {
-    "description": "Detail line under the receive amount on the swap review; {address} is a contact name or shortened address and {chain} the chain name.",
-    "placeholders": {
-      "address": {
-        "type": "String"
-      },
-      "chain": {
-        "type": "String"
-      }
-    }
-  },
-  "swapReviewYouPay": "You pay",
-  "@swapReviewYouPay": {
-    "description": "Label above the payment amount on the pay review screen."
-  },
-  "swapScanNoAddress": "QR code did not include an address.",
-  "@swapScanNoAddress": {
-    "description": "Error shown by the mobile address scanner when the scanned QR code holds no address."
   },
   "swapSignPayment": "Sign payment",
   "@swapSignPayment": {
@@ -8042,41 +7400,13 @@
   "@swapSlippageTitle": {
     "description": "Title of the slippage settings modal and field label for the allowed price movement."
   },
-  "swapStatusBadgeCompleted": "Completed",
-  "@swapStatusBadgeCompleted": {
-    "description": "Status text on the mobile swap and pay status screen when the operation finished successfully."
-  },
-  "swapStatusBadgeFailed": "Failed",
-  "@swapStatusBadgeFailed": {
-    "description": "Status text on the mobile status screen when the operation failed."
-  },
-  "swapStatusBadgeInProgress": "In progress",
-  "@swapStatusBadgeInProgress": {
-    "description": "Status text on the mobile status screen while the operation is still running."
-  },
   "swapStatusBadgeNeedsAttention": "Needs attention",
   "@swapStatusBadgeNeedsAttention": {
     "description": "Status text on the mobile status screen when the operation needs user action."
   },
-  "swapStatusBadgeRefunded": "Refunded",
-  "@swapStatusBadgeRefunded": {
-    "description": "Status text on the mobile status screen when the funds were refunded."
-  },
   "swapStatusDetailsTab": "Transaction details",
   "@swapStatusDetailsTab": {
     "description": "Label of the details tab on the swap status screen."
-  },
-  "swapStatusPayLabel": "You're paying",
-  "@swapStatusPayLabel": {
-    "description": "Default label above the amount the user sends on the swap status screen."
-  },
-  "swapStatusProgressTab": "Swap progress",
-  "@swapStatusProgressTab": {
-    "description": "Default label of the progress tab on the swap status screen."
-  },
-  "swapStatusReceiveLabel": "You're receiving",
-  "@swapStatusReceiveLabel": {
-    "description": "Default label above the amount the user gets on the swap status screen."
   },
   "swapStatusRowLabel": "Status",
   "@swapStatusRowLabel": {
@@ -8101,10 +7431,6 @@
   "swapViewOnNearIntents": "View on NEAR Intents",
   "@swapViewOnNearIntents": {
     "description": "Button label on the swap progress footer that opens the swap in the NEAR Intents explorer."
-  },
-  "swapZcashAddressTitle": "Zcash address",
-  "@swapZcashAddressTitle": {
-    "description": "Title of the address verification sheet for the Zcash side of a swap."
   },
   "syncCheckingPercentSemantics": "Checking {percent} percent",
   "@syncCheckingPercentSemantics": {
@@ -8230,7 +7556,7 @@
   },
   "syncVizorSynced": "Vizor is synced",
   "@syncVizorSynced": {
-    "description": "Sync status, and screen-reader label, when the wallet is up to date."
+    "description": "Sync status, and screen-reader label, when the wallet is up to date. Shared by: lock, sync."
   },
   "txFeeHelpTooltip": "Fee paid to the Zcash network to process this transaction.",
   "@txFeeHelpTooltip": {
@@ -8242,7 +7568,7 @@
   },
   "txFeeInfoTitle": "Tx fee",
   "@txFeeInfoTitle": {
-    "description": "Title of the transaction fee info sheet."
+    "description": "Title of the transaction fee info sheet. Shared by: activity, swap, tx."
   },
   "updateFailedMessage": "Couldn't complete the update. Try again.",
   "@updateFailedMessage": {

@@ -95,9 +95,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Checking this account for active swaps before removal.';
 
   @override
-  String get accountsRemoveConfirm => 'Remove';
-
-  @override
   String get accountsRemoveFailed => 'Couldn\'t remove account.';
 
   @override
@@ -159,9 +156,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountsSendFailed => 'Send couldn\'t be started';
 
   @override
-  String get accountsSendZec => 'Send ZEC';
-
-  @override
   String get accountsTitle => 'Accounts';
 
   @override
@@ -174,16 +168,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountsViewViewingKey => 'View viewing key';
 
   @override
-  String get activityAddressShielded => 'Shielded address';
-
-  @override
-  String get activityAddressTransparent => 'Transparent address';
-
-  @override
   String get activityAddressUnified => 'Unified address';
-
-  @override
-  String get activityAddressZcash => 'Zcash address';
 
   @override
   String get activityBalanceFromOrchard => 'From Orchard balance';
@@ -196,9 +181,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityBalanceOrchard => 'Orchard balance';
-
-  @override
-  String get activityBalanceShielded => 'Shielded balance';
 
   @override
   String get activityDetailsLoadFailed => 'Failed — try again';
@@ -248,9 +230,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityFeedEmpty => 'No activity yet';
-
-  @override
-  String get activityFeedLoading => 'Loading activity';
 
   @override
   String get activityFeedRetry => 'Retry loading activity';
@@ -355,18 +334,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'the shielded part of the funding';
 
   @override
-  String get activityPayFailed => 'Payment failed';
-
-  @override
   String get activityPayFromShielded => 'from shielded ZEC';
 
   @override
   String activityPayFromShieldedOnChain(String network) {
     return 'from shielded ZEC · $network';
   }
-
-  @override
-  String get activityPayInProgress => 'Payment in progress';
 
   @override
   String get activityPayIncomplete => 'Payment incomplete';
@@ -376,9 +349,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityPayPaying => 'Paying ...';
-
-  @override
-  String get activityPayRefunded => 'Payment refunded';
 
   @override
   String get activityPoolMixed => 'Mixed';
@@ -393,9 +363,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get activityPublicLookupWarning =>
       'The server learns that this wallet is interested in this transaction, and without Tor, your IP address.';
-
-  @override
-  String get activityReceiptAmount => 'Amount';
 
   @override
   String get activityReceiptAmountMigrated => 'Amount migrated';
@@ -432,16 +399,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityReceiptLoading => 'Loading transaction…';
 
   @override
-  String get activityReceiptMessage => 'Message';
-
-  @override
   String get activityReceiptNetChange => 'Net change';
 
   @override
   String get activityReceiptNetworkFee => 'Network fee';
-
-  @override
-  String get activityReceiptNoAccount => 'No active account.';
 
   @override
   String get activityReceiptOutput => 'Output';
@@ -451,22 +412,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Latest transaction status could not be refreshed.';
 
   @override
-  String get activityReceiptShowFullAddress => 'Show full address';
-
-  @override
   String get activityReceiptStatus => 'Status';
-
-  @override
-  String get activityReceiptTimestamp => 'Timestamp';
-
-  @override
-  String get activityReceiptTo => 'To';
-
-  @override
-  String get activityReceiptTxFee => 'Tx fee';
-
-  @override
-  String get activityReceiptTxId => 'Tx ID';
 
   @override
   String get activityReceiptUnattributedFeeHelp =>
@@ -474,9 +420,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityReceiptUnknownFee => 'Unknown';
-
-  @override
-  String get activityRowCheckingStatus => 'Checking status';
 
   @override
   String activityRowToday(String time) {
@@ -492,9 +435,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get activityScreenTitle => 'Activity';
-
-  @override
   String get activitySectionEarlier => 'Earlier';
 
   @override
@@ -507,22 +447,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activitySenderUnknown => 'Unknown sender';
 
   @override
-  String get activityStatusCompleted => 'Completed';
-
-  @override
-  String get activityStatusFailed => 'Failed';
-
-  @override
   String get activityStatusFailedFundsReturned => 'Failed, funds returned';
 
   @override
-  String get activityStatusInProgress => 'In progress';
-
-  @override
   String get activityStatusIncompleteDeposit => 'Incomplete deposit';
-
-  @override
-  String get activityStatusRefunded => 'Refunded';
 
   @override
   String activitySwapAssetOnChain(String symbol, String chain) {
@@ -535,12 +463,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get activitySwapFailed => 'Swap failed';
-
-  @override
-  String get activitySwapJustNow => 'just now';
-
-  @override
   String activitySwapMinutesAgo(int minutes) {
     return '${minutes}m ago';
   }
@@ -549,12 +471,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String activitySwapReceivedAsset(String symbol) {
     return 'Received $symbol';
   }
-
-  @override
-  String get activitySwapRefunded => 'Swap refunded';
-
-  @override
-  String get activitySwapReviewQuote => 'Review quote';
 
   @override
   String activitySwapStep(int current, int total) {
@@ -604,28 +520,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityTitleReceivingVerb => 'Receiving';
 
   @override
-  String get activityTitleSendFailed => 'Send failed';
-
-  @override
-  String get activityTitleSending => 'Sending...';
-
-  @override
   String get activityTitleSendingVerb => 'Sending';
 
   @override
   String get activityTitleSent => 'Sent';
 
   @override
-  String get activityTitleSentSuccessfully => 'Sent successfully';
-
-  @override
   String get activityTitleShielded => 'Shielded';
-
-  @override
-  String get activityTitleShieldedSuccessfully => 'Shielded successfully';
-
-  @override
-  String get activityTitleShielding => 'Shielding...';
 
   @override
   String get activityTitleShieldingFailed => 'Shielding failed';
@@ -638,9 +539,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityTitleTransaction => 'Transaction';
-
-  @override
-  String get activityToastHashCopiedDesktop => 'Transaction hash copied';
 
   @override
   String get activityToastHashCopiedMobile => 'Transaction Hash Copied';
@@ -661,16 +559,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addressBookAddressMissing => 'Add an address';
 
   @override
-  String get addressBookChainAndAddress => 'Chain & address';
-
-  @override
-  String get addressBookChangePicture => 'Change contact picture';
-
-  @override
   String get addressBookClearAddress => 'Clear address';
-
-  @override
-  String get addressBookClearLabel => 'Clear contact label';
 
   @override
   String get addressBookClearName => 'Clear name';
@@ -682,9 +571,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String addressBookContactActions(String label) {
     return '$label actions';
   }
-
-  @override
-  String get addressBookContactsTitle => 'Contacts';
 
   @override
   String get addressBookEditContact => 'Edit contact';
@@ -709,12 +595,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addressBookInvalidZcash => 'Invalid Zcash address';
-
-  @override
-  String get addressBookLabelFieldLabel => 'Address label';
-
-  @override
-  String get addressBookLabelHint => 'Add label 1-20 characters';
 
   @override
   String get addressBookLabelLength => 'Use 1-20 characters';
@@ -762,9 +642,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addressBookPickerSearchHint => 'Search contacts';
 
   @override
-  String get addressBookRemove => 'Remove';
-
-  @override
   String addressBookRemoveBody(String label) {
     return '$label will be removed from your contacts.';
   }
@@ -789,9 +666,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get addressBookRemoveFailedMobile =>
       'Couldn\'t remove the contact. Please try again.';
-
-  @override
-  String get addressBookSaveContact => 'Save contact';
 
   @override
   String get addressBookSaveFailed => 'Couldn\'t save contact. Try again.';
@@ -821,15 +695,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addressBookSelectNetwork => 'Select network';
 
   @override
-  String get addressBookSelectPicture => 'Select contact picture';
-
-  @override
-  String get addressBookSelectedContact => 'Selected contact';
-
-  @override
-  String get addressBookSendZec => 'Send ZEC';
-
-  @override
   String get addressScanAddressCameraNeeded =>
       'Address QR scanning needs a camera on this device.';
 
@@ -855,13 +720,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Screen Time or device management is blocking the camera on this device.';
 
   @override
-  String get addressScanCameraUnavailable => 'Camera unavailable';
-
-  @override
-  String get addressScanCameraUnavailableNow =>
-      'The camera is unavailable right now.';
-
-  @override
   String get addressScanCloseScanner => 'Close scanner';
 
   @override
@@ -871,25 +729,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addressScanDeniedTitle => 'You\'ve denied Camera access';
 
   @override
-  String get addressScanDeniedTitleMobile => 'You\'ve denied camera access';
-
-  @override
   String get addressScanEnableWindowsAccess => 'Enable Windows camera access';
 
   @override
   String get addressScanGrantAccess => 'Grant access to your camera';
 
   @override
-  String get addressScanLoading => 'Loading';
-
-  @override
   String get addressScanLoadingCamera => 'Loading camera...';
 
   @override
   String get addressScanLoadingEllipsis => 'Loading...';
-
-  @override
-  String get addressScanNoAddress => 'QR code did not include an address.';
 
   @override
   String get addressScanNoCamera => 'No camera found';
@@ -902,24 +751,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addressScanOpenSettings => 'Open settings';
 
   @override
-  String get addressScanRequestAgain => 'Request again';
-
-  @override
-  String get addressScanRequestAgainHint =>
-      'Request again, or enable manually\nin the System settings.';
-
-  @override
-  String get addressScanRestrictedBody =>
-      'Screen Time or device management\nis blocking the camera.';
-
-  @override
-  String get addressScanRestrictedTitle => 'Camera access is restricted';
-
-  @override
   String get addressScanTitle => 'Scan the address QR code';
-
-  @override
-  String get addressScanToggleFlashlight => 'Toggle flashlight';
 
   @override
   String get addressScanWindowsAccessHint =>
@@ -927,12 +759,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addressScanZcashPrompt => 'Scan a Zcash QR code to continue';
-
-  @override
-  String get appBackAmount => 'Amount';
-
-  @override
-  String get appBackContacts => 'Contacts';
 
   @override
   String get appBackDonation => 'Donation';
@@ -1016,9 +842,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appUpdateDismiss => 'Dismiss';
 
   @override
-  String get appUpdateDownload => 'Download';
-
-  @override
   String get appUpdateDownloading => 'Downloading';
 
   @override
@@ -1071,10 +894,27 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get commonActionNeeded => 'Action needed';
+
+  @override
+  String get commonAddAMessage => 'Add a message';
+
+  @override
   String get commonAddAccount => 'Add account';
 
   @override
   String get commonAddressCopied => 'Address copied';
+
+  @override
+  String commonAddressForChain(String chain) {
+    return '$chain address';
+  }
+
+  @override
+  String get commonAddressLabel => 'Address label';
+
+  @override
+  String get commonAmount => 'Amount';
 
   @override
   String get commonBack => 'Back';
@@ -1085,17 +925,66 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get commonBackToWallet => 'Back to wallet';
+
+  @override
+  String get commonCameraDeniedTitle => 'You\'ve denied camera access';
+
+  @override
+  String get commonCameraRequestAgainHint =>
+      'Request again, or enable manually\nin the System settings.';
+
+  @override
+  String get commonCameraRestrictedBody =>
+      'Screen Time or device management\nis blocking the camera.';
+
+  @override
+  String get commonCameraRestrictedTitle => 'Camera access is restricted';
+
+  @override
+  String get commonCameraUnavailable => 'Camera unavailable';
+
+  @override
+  String get commonCameraUnavailableNow =>
+      'The camera is unavailable right now.';
+
+  @override
   String get commonCancel => 'Cancel';
+
+  @override
+  String get commonCancelFailedRetry =>
+      'Could not finish cancelling. Please try again.';
 
   @override
   String get commonCancellationFailed =>
       'Could not finish cancellation. Try again.';
 
   @override
+  String get commonCancelling => 'Cancelling…';
+
+  @override
   String get commonCannotBeUndone => 'This cannot be undone.';
 
   @override
+  String get commonChainAndAddress => 'Chain & address';
+
+  @override
+  String get commonChangeContactPicture => 'Change contact picture';
+
+  @override
   String get commonChecking => 'Checking...';
+
+  @override
+  String get commonCheckingEllipsis => 'Checking…';
+
+  @override
+  String get commonCheckingStatus => 'Checking status';
+
+  @override
+  String get commonClear => 'Clear';
+
+  @override
+  String get commonClearContactLabel => 'Clear contact label';
 
   @override
   String get commonClearText => 'Clear text';
@@ -1104,7 +993,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonClose => 'Close';
 
   @override
+  String get commonCloseMessage => 'Close message';
+
+  @override
   String get commonCoinholderVoting => 'Coinholder voting';
+
+  @override
+  String get commonCompleted => 'Completed';
+
+  @override
+  String get commonContactLabelHint => 'Add label 1-20 characters';
+
+  @override
+  String get commonContacts => 'Contacts';
 
   @override
   String get commonContinue => 'Continue';
@@ -1119,19 +1020,58 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonCopyAddress => 'Copy address';
 
   @override
+  String get commonCopyShieldedAddress => 'Copy shielded address';
+
+  @override
   String get commonDismissNotification => 'Dismiss notification';
+
+  @override
+  String get commonDone => 'Done';
+
+  @override
+  String get commonDownload => 'Download';
+
+  @override
+  String get commonDurationOneHour => '1hr';
+
+  @override
+  String get commonDurationOneMinute => '1min';
+
+  @override
+  String get commonEdit => 'Edit';
+
+  @override
+  String get commonEnterAmountInUsd => 'Enter amount in USD';
+
+  @override
+  String get commonFailed => 'Failed';
 
   @override
   String get commonFeatureInProgress => 'This feature is still in progress.';
 
   @override
+  String get commonFullAddress => 'Full address';
+
+  @override
+  String get commonGetSignature => 'Get signature';
+
+  @override
   String get commonGoBack => 'Go back';
+
+  @override
+  String get commonGuaranteedMinimum => 'Guaranteed minimum';
 
   @override
   String get commonImporting => 'Importing...';
 
   @override
+  String get commonInProgress => 'In progress';
+
+  @override
   String get commonInformation => 'Information';
+
+  @override
+  String get commonJustNow => 'just now';
 
   @override
   String get commonKeepQrSteady => 'Keep the QR code steady and fully visible.';
@@ -1140,13 +1080,114 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonKeepScreenAwake => 'Keep screen awake';
 
   @override
+  String get commonKeystoneAfterScan =>
+      'After you scanned, click Get signature.';
+
+  @override
+  String get commonKeystoneScanSignatureResult =>
+      'Open the signature result QR on Keystone, then scan again.';
+
+  @override
+  String get commonKeystoneScanTransaction =>
+      'Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.';
+
+  @override
+  String get commonLedgerSigningFailed => 'Ledger signing failed';
+
+  @override
+  String get commonLoading => 'Loading';
+
+  @override
+  String get commonLoadingActivity => 'Loading activity';
+
+  @override
+  String get commonMemo => 'Memo';
+
+  @override
+  String get commonMessage => 'Message';
+
+  @override
+  String get commonMessageIsTooLong => 'Message is too long';
+
+  @override
+  String get commonNetworkConversionFees => 'Network + conversion fees';
+
+  @override
+  String get commonNoActiveAccount => 'No active account';
+
+  @override
+  String get commonNoActiveAccountSentence => 'No active account.';
+
+  @override
   String get commonNotAvailableYet => 'Not available yet';
+
+  @override
+  String get commonNotEnoughZec => 'Not enough ZEC';
 
   @override
   String get commonOk => 'OK';
 
   @override
+  String get commonPayInsufficientZec =>
+      'You don\'t have enough ZEC for this payment. Try a smaller amount.';
+
+  @override
+  String get commonPaymentFailed => 'Payment failed';
+
+  @override
+  String get commonPaymentInProgress => 'Payment in progress';
+
+  @override
+  String get commonPaymentProgress => 'Payment progress';
+
+  @override
+  String get commonPaymentRefunded => 'Payment refunded';
+
+  @override
+  String get commonPaymentRequest => 'Payment request';
+
+  @override
+  String get commonPrivatelyFromShieldedBalance =>
+      'Privately, from shielded balance';
+
+  @override
+  String get commonProvingParamsFailed =>
+      'Required proving parameters could not be prepared.';
+
+  @override
+  String get commonQrNoAddress => 'QR code did not include an address.';
+
+  @override
   String get commonQuit => 'Quit';
+
+  @override
+  String get commonRate => 'Rate';
+
+  @override
+  String get commonRecipientGets => 'Recipient gets';
+
+  @override
+  String get commonRefundFee => 'Refund fee';
+
+  @override
+  String get commonRefundTo => 'Refund to';
+
+  @override
+  String commonRefundToAddress(String address) {
+    return 'Refund to: $address';
+  }
+
+  @override
+  String get commonRefunded => 'Refunded';
+
+  @override
+  String get commonRefundedAmount => 'Refunded amount';
+
+  @override
+  String get commonRemove => 'Remove';
+
+  @override
+  String get commonRequestAgain => 'Request again';
 
   @override
   String get commonResetVizor => 'Reset Vizor';
@@ -1155,16 +1196,141 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonRetry => 'Retry';
 
   @override
+  String get commonRetrySaving => 'Retry saving';
+
+  @override
+  String get commonReturnHome => 'Return home';
+
+  @override
+  String get commonReviewAndFinish => 'Review & finish';
+
+  @override
+  String get commonReviewPayment => 'Review Payment';
+
+  @override
+  String get commonReviewQuote => 'Review quote';
+
+  @override
+  String get commonReviewSwap => 'Review swap';
+
+  @override
+  String get commonSave => 'Save';
+
+  @override
+  String get commonSaveContact => 'Save contact';
+
+  @override
+  String get commonScanOriginalQr => 'Scan original QR';
+
+  @override
   String get commonScanQrCode => 'Scan QR Code';
 
   @override
   String get commonSelectAccount => 'Select account';
 
   @override
+  String get commonSelectContactPicture => 'Select contact picture';
+
+  @override
+  String get commonSelectRecipient => 'Select Recipient';
+
+  @override
+  String get commonSelectedContact => 'Selected contact';
+
+  @override
+  String get commonSendFailed => 'Send failed';
+
+  @override
+  String get commonSendZec => 'Send ZEC';
+
+  @override
+  String get commonSending => 'Sending...';
+
+  @override
   String get commonSensitiveContentHidden => 'Sensitive content hidden';
 
   @override
+  String get commonSentSuccessfully => 'Sent successfully';
+
+  @override
+  String get commonShieldedAddress => 'Shielded address';
+
+  @override
+  String get commonShieldedBalance => 'Shielded balance';
+
+  @override
+  String get commonShieldedSuccessfully => 'Shielded successfully';
+
+  @override
+  String get commonShielding => 'Shielding...';
+
+  @override
+  String get commonShowFullAddress => 'Show full address';
+
+  @override
+  String get commonSigningCancelledBeforeParams =>
+      'Signing was cancelled before proving parameters were downloaded.';
+
+  @override
+  String get commonSigningExpired =>
+      'Transaction expired before it could be signed.';
+
+  @override
+  String get commonSlippageTolerance => 'Slippage tolerance';
+
+  @override
+  String get commonSupportVizor => 'Support Vizor';
+
+  @override
+  String get commonSwapFailed => 'Swap failed';
+
+  @override
+  String get commonSwapFee => 'Swap fee';
+
+  @override
+  String get commonSwapProgress => 'Swap progress';
+
+  @override
+  String get commonSwapRefunded => 'Swap refunded';
+
+  @override
+  String commonSymbolRecipient(String symbol) {
+    return '$symbol recipient';
+  }
+
+  @override
+  String commonSymbolRefundAddress(String symbol) {
+    return '$symbol refund address';
+  }
+
+  @override
+  String get commonTimestamp => 'Timestamp';
+
+  @override
+  String get commonTo => 'To';
+
+  @override
+  String commonToAddressOnChain(String address, String chain) {
+    return 'To: $address on $chain';
+  }
+
+  @override
+  String get commonToggleFlashlight => 'Toggle flashlight';
+
+  @override
+  String get commonTransactionExpired => 'Transaction expired';
+
+  @override
+  String get commonTransactionHashCopied => 'Transaction hash copied';
+
+  @override
+  String get commonTransparentAddress => 'Transparent address';
+
+  @override
   String get commonTryAgain => 'Try again';
+
+  @override
+  String get commonTxId => 'Tx ID';
 
   @override
   String get commonUnlockVizor => 'Unlock Vizor';
@@ -1177,6 +1343,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonWelcomeBack => 'Welcome Back';
+
+  @override
+  String get commonYouPay => 'You pay';
+
+  @override
+  String get commonYourePaying => 'You\'re paying';
+
+  @override
+  String get commonYoureReceiving => 'You\'re receiving';
+
+  @override
+  String get commonZcashAddress => 'Zcash address';
 
   @override
   String endpointCurrent(String endpoint) {
@@ -1201,9 +1379,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeActivityEmptyHintMobile =>
       'How about running your\nfirst ZEC tx?';
-
-  @override
-  String get homeActivityLoading => 'Loading activity';
 
   @override
   String get homeActivityUnavailable => 'Unable to load activity.';
@@ -1260,9 +1435,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get homeKeepAwakeTitle => 'Stay awake to sync?';
-
-  @override
-  String get homeLedgerActionNeeded => 'Action needed';
 
   @override
   String get homeLedgerApprovalNotAccepted =>
@@ -1334,9 +1506,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeLedgerShieldingFailed =>
       'Ledger shielding could not be completed.';
-
-  @override
-  String get homeLedgerSigningFailedTitle => 'Ledger signing failed';
 
   @override
   String homeLoadFailed(String details) {
@@ -1433,9 +1602,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeShieldAttentionTitle => 'Shielding needs attention';
 
   @override
-  String get homeShieldBackToWallet => 'Back to wallet';
-
-  @override
   String get homeShieldBackToWalletTitleCase => 'Back to Wallet';
 
   @override
@@ -1455,14 +1621,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeShieldCameraDenied =>
       'Allow camera access in Settings to scan Keystone signatures.';
-
-  @override
-  String get homeShieldCameraUnavailable =>
-      'The camera is unavailable right now.';
-
-  @override
-  String get homeShieldCancelFailed =>
-      'Could not finish cancelling. Please try again.';
 
   @override
   String get homeShieldCancelled => 'Shielding was cancelled.';
@@ -1496,10 +1654,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeShieldErrorNotFinalized =>
       'Shield transaction could not be finalized.';
-
-  @override
-  String get homeShieldErrorProvingParams =>
-      'Required proving parameters could not be prepared.';
 
   @override
   String get homeShieldErrorSeedUnavailable =>
@@ -1540,9 +1694,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get homeShieldNextStep => 'Next step';
-
-  @override
-  String get homeShieldNoActiveAccount => 'No active account.';
 
   @override
   String get homeShieldNow => 'Shield now';
@@ -1593,23 +1744,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeShieldSubmitting => 'Submitting transaction';
 
   @override
-  String get homeShieldSucceededTitle => 'Shielded successfully';
-
-  @override
-  String get homeShieldToggleFlashlight => 'Toggle flashlight';
-
-  @override
   String get homeShieldWaitingForPrivateRecovery =>
       'Private recovery is catching up with the latest block. Try again in a moment; your Keystone signature is kept.';
 
   @override
-  String get homeShieldedBalance => 'Shielded balance';
-
-  @override
   String get homeShieldingBalance => 'Shielding your balance…';
-
-  @override
-  String get homeShieldingProgress => 'Shielding...';
 
   @override
   String homeTransparentBalance(String balance) {
@@ -1722,13 +1861,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'It helps us import your wallet faster.';
 
   @override
-  String get keystoneCameraDeniedBody =>
-      'Request again, or enable manually\nin the System settings.';
-
-  @override
-  String get keystoneCameraDeniedTitle => 'You\'ve denied camera access';
-
-  @override
   String get keystoneCameraEnableBody =>
       'A camera is required to connect Keystone.\nYou can revert this in settings anytime later.';
 
@@ -1736,21 +1868,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneCameraEnableTitle => 'Enable camera access';
 
   @override
-  String get keystoneCameraRequestAgain => 'Request again';
-
-  @override
-  String get keystoneCameraRestrictedBody =>
-      'Screen Time or device management\nis blocking the camera.';
-
-  @override
-  String get keystoneCameraRestrictedTitle => 'Camera access is restricted';
-
-  @override
   String get keystoneCameraUnavailableBody =>
       'Keystone import uses camera QR scanning only.\nConnect a camera and try again.';
-
-  @override
-  String get keystoneCameraUnavailableTitle => 'Camera unavailable';
 
   @override
   String get keystoneConfirmSelection => 'Confirm selection';
@@ -2098,9 +2217,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lockSyncPausedTitle => 'Sync paused';
 
   @override
-  String get lockSyncedSemantics => 'Vizor is synced';
-
-  @override
   String get lockSyncingMessage => 'Vizor is syncing';
 
   @override
@@ -2159,17 +2275,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get onboardingAddressShieldedLabel => 'Shielded address';
-
-  @override
   String get onboardingAddressShieldedTitleMobile => 'Shielded Address';
 
   @override
   String get onboardingAddressTransparentDescription =>
       'Address starts with t, similar to Bitcoin, your address\' balance and transaction history are publicly visible.';
-
-  @override
-  String get onboardingAddressTransparentLabel => 'Transparent address';
 
   @override
   String get onboardingAddressTransparentTitleMobile => 'Transparent Address';
@@ -2304,9 +2414,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingCheckingAccounts => 'Checking accounts...';
 
   @override
-  String get onboardingClear => 'Clear';
-
-  @override
   String get onboardingConnectHardwareSubtitleDesktop =>
       'Select your hardware wallet.';
 
@@ -2348,9 +2455,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingDiscoveryTitle => 'Additional accounts found';
-
-  @override
-  String get onboardingEdit => 'Edit';
 
   @override
   String get onboardingEditBip39Passphrase => 'Edit BIP39 passphrase';
@@ -2520,9 +2624,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Scan & connect to Vizor Desktop';
 
   @override
-  String get onboardingLoading => 'Loading';
-
-  @override
   String onboardingLostPasswordBody(String resetAction, String importAction) {
     return 'If you\'ve lost your password, the only way to recover\nyour account is to $resetAction.\nThis deletes all accounts and unshared gift card links.\nYou will need to $importAction.';
   }
@@ -2546,9 +2647,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingManualNextWord => 'Next word';
-
-  @override
-  String get onboardingManualReviewFinish => 'Review & finish';
 
   @override
   String onboardingManualStoppedAt(String word) {
@@ -2632,9 +2730,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingReviewImportTitle => 'Review Import';
-
-  @override
-  String get onboardingSave => 'Save';
 
   @override
   String get onboardingSavingWallet => 'Saving wallet...';
@@ -2839,13 +2934,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get passwordsDoNotMatch => 'Passwords do not match.';
 
   @override
-  String get payAddLabelHint => 'Add label 1-20 characters';
-
-  @override
   String get payAddToContacts => 'Add to contacts';
-
-  @override
-  String get payAddressLabel => 'Address label';
 
   @override
   String payAddressSemantics(String address) {
@@ -2861,9 +2950,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get payAmountEnterInUsd => 'Enter amount in USD';
-
-  @override
   String get payAmountEstimated => 'Estimated:';
 
   @override
@@ -2876,34 +2962,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get payAmountPayingIn => 'Paying in';
 
   @override
-  String get payAmountShieldedBalance => 'Shielded balance';
-
-  @override
   String get payBackHome => 'Home';
 
   @override
-  String payChainAddressHint(String chain) {
-    return '$chain address';
-  }
-
-  @override
-  String get payChainAndAddress => 'Chain & address';
-
-  @override
-  String get payChangeContactPicture => 'Change contact picture';
-
-  @override
-  String get payClearContactLabel => 'Clear contact label';
-
-  @override
-  String get payContacts => 'Contacts';
-
-  @override
   String get payFetchingQuote => 'Fetching quote';
-
-  @override
-  String get payInsufficientZec =>
-      'You don\'t have enough ZEC for this payment. Try a smaller amount.';
 
   @override
   String get payNewAddressDetected => 'New address detected.';
@@ -2911,9 +2973,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get payNewAddressWarning =>
       'You haven\'t interacted with this address before.';
-
-  @override
-  String get payNotEnoughZec => 'Not enough ZEC';
 
   @override
   String payRecentDaysAgo(int days) {
@@ -2924,9 +2983,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String payRecentHoursAgo(int hours) {
     return '${hours}h ago';
   }
-
-  @override
-  String get payRecentJustNow => 'just now';
 
   @override
   String payRecentMinutesAgo(int minutes) {
@@ -2958,9 +3014,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get payReviewConvertedAmount => 'Converted amount';
 
   @override
-  String get payReviewFullAddress => 'Full address';
-
-  @override
   String get payReviewPaying => 'Paying';
 
   @override
@@ -2979,19 +3032,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get payReviewReturnToPay => 'Return to pay';
 
   @override
-  String get payReviewShowFullAddress => 'Show full address';
-
-  @override
-  String get payReviewTo => 'To';
-
-  @override
   String get payReviewUnknownAddress => 'Unknown address';
-
-  @override
-  String get paySave => 'Save';
-
-  @override
-  String get paySaveContact => 'Save contact';
 
   @override
   String get paySaveContactError => 'Couldn\'t save this contact. Try again.';
@@ -3006,9 +3047,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get payScanCaption => 'Scan the recipient address QR code';
 
   @override
-  String get payScanNoAddress => 'QR code did not include an address.';
-
-  @override
   String get payScanPermissionTitle => 'Scan the recipient address';
 
   @override
@@ -3018,19 +3056,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get payScanQrTitle => 'Scan a QR code';
 
   @override
-  String get payScanSteadyHint => 'Keep the QR code steady and fully visible.';
-
-  @override
-  String get paySelectContactPicture => 'Select contact picture';
-
-  @override
   String get paySelectRecipient => 'Select recipient';
-
-  @override
-  String get paySelectedContact => 'Selected contact';
-
-  @override
-  String get payStepAmount => 'Amount';
 
   @override
   String get payStepRecipient => 'Recipient';
@@ -3039,20 +3065,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get payStepReview => 'Review';
 
   @override
-  String get paySubmittedDone => 'Done';
-
-  @override
   String get paySubmittedFailedBody =>
       'The payment could not be submitted. Try again.';
 
   @override
-  String get paySubmittedFailedTitle => 'Payment failed';
-
-  @override
   String get paySubmittedGoToActivity => 'Go to activity';
-
-  @override
-  String get paySubmittedReturnHome => 'Return home';
 
   @override
   String get paySubmittedStatusUncertainNotice =>
@@ -3088,12 +3105,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get payTitleRecipient => 'Select Recipient';
-
-  @override
-  String get payTitleReview => 'Review Payment';
-
-  @override
   String get poolShielded => 'Shielded';
 
   @override
@@ -3109,9 +3120,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profilePictureUpdateFailed => 'Couldn\'t update profile picture.';
 
   @override
-  String get receiptMessageLabel => 'Message';
-
-  @override
   String get receiveAboutAddressType => 'About this address type';
 
   @override
@@ -3121,9 +3129,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get receiveAddressLoadFailed =>
       'We couldn\'t load your address. Try again in a moment.';
-
-  @override
-  String get receiveCopyShieldedAddress => 'Copy shielded address';
 
   @override
   String get receiveCopyTransparentAddress => 'Copy transparent address';
@@ -3161,9 +3166,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiveInfoShieldedSubtitle => 'Strong privacy by default.';
 
   @override
-  String get receiveInfoShieldedTitle => 'Shielded address';
-
-  @override
   String get receiveInfoTransparentExchanges =>
       'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.';
 
@@ -3188,12 +3190,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiveInfoTransparentSubtitle => 'Publicly visible';
 
   @override
-  String get receiveInfoTransparentTitle => 'Transparent address';
-
-  @override
-  String get receiveNoActiveAccount => 'No active account';
-
-  @override
   String get receiveQrSaveFailed =>
       'We couldn\'t save the QR image. Try another folder, or copy the request link instead.';
 
@@ -3210,16 +3206,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'We couldn\'t refresh your shielded address. Try again, or use your current one.';
 
   @override
-  String get receiveRequestAddMessage => 'Add a message';
-
-  @override
   String get receiveRequestAmountDecimalsError => 'Enter up to 8 decimals';
 
   @override
   String get receiveRequestAmountFormatError => 'Enter an amount like 0.5';
-
-  @override
-  String get receiveRequestAmountLabel => 'Amount';
 
   @override
   String get receiveRequestAmountSupplyError => 'Amount exceeds the ZEC supply';
@@ -3228,9 +3218,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String receiveRequestButton(String ticker) {
     return 'Request $ticker';
   }
-
-  @override
-  String get receiveRequestCloseMessage => 'Close message';
 
   @override
   String get receiveRequestCloseRequest => 'Close request';
@@ -3249,9 +3236,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiveRequestCreate => 'Create request';
 
   @override
-  String get receiveRequestEnterUsd => 'Enter amount in USD';
-
-  @override
   String get receiveRequestEnterZec => 'Enter amount in ZEC';
 
   @override
@@ -3264,12 +3248,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get receiveRequestMessageHint =>
       'Anyone you send the link to can read this';
-
-  @override
-  String get receiveRequestMessageLabel => 'Message';
-
-  @override
-  String get receiveRequestMessageTooLong => 'Message is too long';
 
   @override
   String get receiveRequestSaveQr => 'Save QR image';
@@ -3312,25 +3290,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendAddMemo => 'Add a memo';
 
   @override
-  String get sendAddressTypeShielded => 'Shielded address';
-
-  @override
   String get sendAddressTypeTex => 'TEX address';
-
-  @override
-  String get sendAddressTypeTransparent => 'Transparent address';
 
   @override
   String get sendAddressValidationFailed => 'Address validation failed';
 
   @override
   String get sendAmountCtaEnterAmount => 'Enter amount to continue';
-
-  @override
-  String get sendAmountCtaReviewAndFinish => 'Review & finish';
-
-  @override
-  String get sendAmountLabel => 'Amount';
 
   @override
   String get sendBroadcastCancelledBeforeParams =>
@@ -3392,19 +3358,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendCalculatingMax => 'Calculating max amount';
 
   @override
-  String get sendClearAction => 'Clear';
-
-  @override
-  String get sendCloseMessageField => 'Close message';
-
-  @override
   String get sendContactPickerEmpty => 'No Zcash contacts';
 
   @override
   String get sendContactPickerTitle => 'Contacts Zcash';
-
-  @override
-  String get sendContactsLink => 'Contacts';
 
   @override
   String get sendDonationAddressTitle => 'Vizor donation address';
@@ -3521,17 +3478,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendInvalidAmount => 'Invalid amount';
 
   @override
-  String get sendKeystoneAfterScan => 'After you scanned, click Get signature.';
-
-  @override
   String get sendKeystoneConfirmTitle => 'Confirm with Keystone';
-
-  @override
-  String get sendKeystoneExpired =>
-      'Transaction expired before it could be signed.';
-
-  @override
-  String get sendKeystoneGetSignature => 'Get signature';
 
   @override
   String get sendKeystonePrepareFailedGoBack =>
@@ -3543,14 +3490,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sendKeystonePreparing => 'Preparing';
-
-  @override
-  String get sendKeystoneProvingCancelled =>
-      'Signing was cancelled before proving parameters were downloaded.';
-
-  @override
-  String get sendKeystoneProvingParamsFailed =>
-      'Required proving parameters could not be prepared.';
 
   @override
   String get sendKeystoneQrMismatch =>
@@ -3581,14 +3520,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get sendKeystoneScanToFinish =>
       'Scan the QR code on your Keystone to finish sending';
-
-  @override
-  String get sendKeystoneScanTransactionInstruction =>
-      'Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.';
-
-  @override
-  String get sendKeystoneScanUnexpectedSignature =>
-      'Open the signature result QR on Keystone, then scan again.';
 
   @override
   String get sendKeystoneScanUnexpectedTransaction =>
@@ -3631,9 +3562,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'This transaction can no longer be signed. Create and review a new transaction.';
 
   @override
-  String get sendLedgerExpiredTitle => 'Transaction expired';
-
-  @override
   String get sendLedgerKeepOpenRetry =>
       'Keep Vizor open and try again. No new Ledger approval needed.';
 
@@ -3649,9 +3577,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'The transaction was rejected on your Ledger.';
 
   @override
-  String get sendLedgerRetrySaving => 'Retry saving';
-
-  @override
   String get sendLedgerSignaturePreservedMessage =>
       'Your Ledger signature is preserved. Retry saving without approving another transaction.';
 
@@ -3660,17 +3585,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Signed transaction needs attention';
 
   @override
-  String get sendLedgerSigningFailedTitle => 'Ledger signing failed';
-
-  @override
   String get sendLedgerSigningIncomplete =>
       'Ledger signing could not be completed. Check your device and try again.';
 
   @override
   String get sendLedgerSigningUnavailableTitle => 'Ledger signing unavailable';
-
-  @override
-  String get sendLedgerStatusActionNeeded => 'Action needed';
 
   @override
   String get sendLedgerStatusNewTransactionRequired =>
@@ -3723,22 +3642,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Message is only available for shielded addresses';
 
   @override
-  String get sendMemoTooLong => 'Message is too long';
-
-  @override
   String get sendMemoWhitespaceOnly => 'Whitespace only';
-
-  @override
-  String get sendMessageHint => 'Add a message';
-
-  @override
-  String get sendMessageLabel => 'Message';
-
-  @override
-  String get sendNoActiveAccount => 'No active account';
-
-  @override
-  String get sendNotEnoughZec => 'Not enough ZEC';
 
   @override
   String get sendOpenContacts => 'Open contacts';
@@ -3763,17 +3667,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendPaymentRequestCheckFailed => 'Couldn\'t check this request';
 
   @override
-  String get sendPaymentRequestChecking => 'Checking…';
-
-  @override
   String get sendPaymentRequestClose => 'Close payment request';
 
   @override
   String get sendPaymentRequestConfirmWithSender =>
       'Confirm the details with the person who sent it.';
-
-  @override
-  String get sendPaymentRequestEdit => 'Edit';
 
   @override
   String get sendPaymentRequestEnterAmount => 'Enter amount';
@@ -3866,9 +3764,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Scan the original QR code directly in Vizor.';
 
   @override
-  String get sendPaymentRequestScanOriginalQr => 'Scan original QR';
-
-  @override
   String get sendPaymentRequestShowFullAddress => 'Show full recipient address';
 
   @override
@@ -3887,9 +3782,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get sendPaymentRequestSyncing =>
       'Wallet is still syncing — this will update when it finishes';
-
-  @override
-  String get sendPaymentRequestTitle => 'Payment request';
 
   @override
   String get sendPaymentRequestTransactionMemo => 'Transaction memo';
@@ -3936,9 +3828,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'This address is for a different Zcash network';
 
   @override
-  String get sendRequestScanBackLabel => 'Payment request';
-
-  @override
   String get sendRequestScanCheckFailed =>
       'Couldn\'t check this QR code. Try again.';
 
@@ -3967,17 +3856,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Open the requester’s original QR code full screen on another device.';
 
   @override
-  String get sendRequestScanTitle => 'Scan original QR';
-
-  @override
   String get sendRequestScanUnavailable =>
       'Connect a camera, or go back and review the link details.';
 
   @override
   String get sendReviewAction => 'Review';
-
-  @override
-  String get sendReviewBackSupportVizor => 'Support Vizor';
 
   @override
   String get sendReviewCalculatingFee => 'Calculating fee...';
@@ -4001,12 +3884,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendReviewFinishingSyncButton => 'Finishing wallet sync...';
 
   @override
-  String get sendReviewFullAddress => 'Full address';
-
-  @override
-  String get sendReviewPaymentTitle => 'Review Payment';
-
-  @override
   String get sendReviewPreparing => 'Preparing...';
 
   @override
@@ -4018,20 +3895,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendReviewRequestedBy => 'Requested by';
 
   @override
-  String get sendReviewShowFullAddress => 'Show full address';
-
-  @override
   String get sendReviewTitle => 'Review send';
-
-  @override
-  String get sendReviewTo => 'To';
 
   @override
   String get sendSaplingDownloadBody =>
       'To create this private transaction, your wallet needs to download about 50MB of cryptographic parameters.';
-
-  @override
-  String get sendSaplingDownloadButton => 'Download';
 
   @override
   String get sendSaplingDownloadNote =>
@@ -4077,13 +3945,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendSendingToLabel => 'Sending to';
 
   @override
-  String get sendSignCancelFailed =>
-      'Could not finish cancelling. Please try again.';
-
-  @override
-  String get sendSignCancelling => 'Cancelling…';
-
-  @override
   String get sendSignConfirmTransaction => 'Confirm transaction';
 
   @override
@@ -4101,9 +3962,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get sendSpendableTooltipTitle =>
       'Your spendable balance may be lower than your total balance.';
-
-  @override
-  String get sendStatusBackToWallet => 'Back to wallet';
 
   @override
   String get sendStatusDonationFailed => 'Donation failed';
@@ -4132,9 +3990,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Thank you for\nsupporting Vizor';
 
   @override
-  String get sendStatusMobileDone => 'Done';
-
-  @override
   String get sendStatusMobileNothingSent =>
       'Nothing was sent, your funds haven\'t moved. Try again.';
 
@@ -4146,13 +4001,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendStatusMobileQueued => 'Queued to send';
 
   @override
-  String get sendStatusMobileReturnHome => 'Return home';
-
-  @override
   String get sendStatusMobileReturnToSettings => 'Return to settings';
-
-  @override
-  String get sendStatusMobileSending => 'Sending...';
 
   @override
   String get sendStatusMobileSendingDonation => 'Sending donation...';
@@ -4172,34 +4021,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendStatusRowStatus => 'Status';
 
   @override
-  String get sendStatusRowTimestamp => 'Timestamp';
-
-  @override
-  String get sendStatusRowTxId => 'Tx ID';
-
-  @override
   String get sendStatusScanKeystoneTitle => 'Scan your Keystone QR Code';
 
   @override
-  String get sendStatusTitleCompleted => 'Sent successfully';
-
-  @override
-  String get sendStatusTitleFailed => 'Send failed';
-
-  @override
   String get sendStatusTitleInProgress => 'Send in progress...';
-
-  @override
-  String get sendStatusTxHashCopied => 'Transaction hash copied';
-
-  @override
-  String get sendStatusValueCompleted => 'Completed';
-
-  @override
-  String get sendStatusValueFailed => 'Failed';
-
-  @override
-  String get sendStatusValueInProgress => 'In progress';
 
   @override
   String get sendStepEnterAmount => 'Enter Amount';
@@ -4209,9 +4034,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sendStepReviewSend => 'Review Send';
-
-  @override
-  String get sendStepSelectRecipient => 'Select Recipient';
 
   @override
   String sendTitle(String currency) {
@@ -4239,9 +4061,6 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
-
-  @override
-  String get sendZcashAddress => 'Zcash address';
 
   @override
   String get settingsAccountChangedPasscode =>
@@ -4610,9 +4429,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsRowSecretPassphrase => 'Secret passphrase';
 
   @override
-  String get settingsRowSupportVizor => 'Support Vizor';
-
-  @override
   String get settingsRowUpdates => 'Updates';
 
   @override
@@ -4808,9 +4624,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsTorStatusDirect => 'Direct';
 
   @override
-  String get settingsTorStatusFailed => 'Failed';
-
-  @override
   String get settingsTorStatusNotSaved => 'Setting not saved';
 
   @override
@@ -4914,9 +4727,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsUpdateChecking => 'Checking';
 
   @override
-  String get settingsUpdateCheckingButton => 'Checking…';
-
-  @override
   String get settingsUpdateCurrentLabel => 'Current';
 
   @override
@@ -4924,9 +4734,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsUpdateDownloadingButton => 'Downloading…';
-
-  @override
-  String get settingsUpdateFailed => 'Failed';
 
   @override
   String get settingsUpdatePasswordTitle => 'Update password';
@@ -5108,9 +4915,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sidebarAddressCopyFailed => 'Address couldn\'t be copied';
 
   @override
-  String get sidebarCopyShieldedAddress => 'Copy shielded address';
-
-  @override
   String get sidebarHideBalance => 'Hide balance';
 
   @override
@@ -5147,23 +4951,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapActionGettingQuote => 'Getting quote';
 
   @override
-  String get swapActionNotEnoughZec => 'Not enough ZEC';
-
-  @override
-  String get swapActionReview => 'Review swap';
-
-  @override
-  String swapActivityAddressBookRecipient(String symbol) {
-    return '$symbol recipient';
-  }
-
-  @override
   String swapActivityAddressBookRefund(String symbol) {
     return '$symbol refund';
   }
-
-  @override
-  String get swapActivityAmount => 'Amount';
 
   @override
   String swapActivityDeadlineHours(int hours) {
@@ -5174,12 +4964,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String swapActivityDeadlineMinutes(int minutes) {
     return '${minutes}mins';
   }
-
-  @override
-  String get swapActivityDeadlineOneHour => '1hr';
-
-  @override
-  String get swapActivityDeadlineOneMinute => '1min';
 
   @override
   String get swapActivityDepositAmount => 'Deposit amount';
@@ -5249,54 +5033,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapActivityDetailFees => 'Fees';
 
   @override
-  String get swapActivityDetailGuaranteedMinimum => 'Guaranteed minimum';
-
-  @override
   String get swapActivityDetailIncluded => 'Included';
 
   @override
   String get swapActivityDetailIncludedInRate => 'Included in shown rate';
 
   @override
-  String get swapActivityDetailMemo => 'Memo';
-
-  @override
   String get swapActivityDetailMissingDeposit => 'Missing deposit';
-
-  @override
-  String get swapActivityDetailNetworkConversionFees =>
-      'Network + conversion fees';
-
-  @override
-  String get swapActivityDetailRate => 'Rate';
 
   @override
   String get swapActivityDetailRealizedSlippage => 'Realized slippage';
 
   @override
-  String swapActivityDetailRecipient(String symbol) {
-    return '$symbol recipient';
-  }
-
-  @override
-  String swapActivityDetailRefundAddress(String symbol) {
-    return '$symbol refund address';
-  }
-
-  @override
-  String get swapActivityDetailRefundFee => 'Refund fee';
-
-  @override
-  String get swapActivityDetailRefundTo => 'Refund to';
-
-  @override
-  String get swapActivityDetailRefundedAmount => 'Refunded amount';
-
-  @override
   String get swapActivityDetailRequiredDeposit => 'Required deposit';
-
-  @override
-  String get swapActivityDetailSlippageTolerance => 'Slippage tolerance';
 
   @override
   String swapActivityDetailSourceTxShielded(String symbol) {
@@ -5304,16 +5053,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get swapActivityDetailSwapFee => 'Swap fee';
-
-  @override
-  String get swapActivityDetailTimestamp => 'Timestamp';
-
-  @override
   String get swapActivityDetailTotalFees => 'Total fees';
-
-  @override
-  String get swapActivityDetailTxId => 'Tx ID';
 
   @override
   String get swapActivityExpectedToReceive => 'Expected to receive';
@@ -5342,31 +5082,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapActivityPayInProgressTitle => 'Pay in progress...';
 
   @override
-  String get swapActivityPayStatusCompleted => 'Completed';
-
-  @override
-  String get swapActivityPayStatusFailed => 'Failed';
-
-  @override
-  String get swapActivityPayStatusInProgress => 'In progress';
-
-  @override
-  String get swapActivityPayStatusRefunded => 'Refunded';
-
-  @override
   String get swapActivityPaymentComplete => 'Payment complete';
-
-  @override
-  String get swapActivityPaymentFailed => 'Payment failed';
-
-  @override
-  String get swapActivityPaymentInProgress => 'Payment in progress';
-
-  @override
-  String get swapActivityPaymentProgressTab => 'Payment progress';
-
-  @override
-  String get swapActivityPaymentRefunded => 'Payment refunded';
 
   @override
   String swapActivityPickerNoRecipients(String symbol) {
@@ -5389,27 +5105,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get swapActivityPrivatelyFromShielded =>
-      'Privately, from shielded balance';
-
-  @override
   String get swapActivityReceiveAssetFallback => 'receive asset';
 
   @override
-  String get swapActivityRecipientGets => 'Recipient gets';
-
-  @override
   String get swapActivityRecipientReceived => 'Recipient received';
-
-  @override
-  String swapActivityRefundToAddress(String address) {
-    return 'Refund to: $address';
-  }
-
-  @override
-  String swapActivityStateAddressHint(String chain) {
-    return '$chain address';
-  }
 
   @override
   String swapActivityStateAddressOrAccountHint(String chain) {
@@ -5449,19 +5148,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String swapActivityStateRefundAddressLabel(String symbol) {
-    return '$symbol refund address';
-  }
-
-  @override
   String get swapActivityStatusAwaitingDeposit => 'Awaiting deposit';
 
   @override
   String get swapActivityStatusAwaitingExternalDeposit =>
       'Awaiting external deposit';
-
-  @override
-  String get swapActivityStatusCheckingStatus => 'Checking status';
 
   @override
   String get swapActivityStatusComplete => 'Complete';
@@ -5603,21 +5294,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapActivitySwapCompleted => 'Swap completed';
 
   @override
-  String get swapActivitySwapFailed => 'Swap failed';
-
-  @override
   String get swapActivitySwapInProgress => 'Swap in progress...';
-
-  @override
-  String get swapActivitySwapProgressTab => 'Swap progress';
-
-  @override
-  String get swapActivitySwapRefunded => 'Swap refunded';
-
-  @override
-  String swapActivityToAddressOnChain(String address, String chain) {
-    return 'To: $address on $chain';
-  }
 
   @override
   String get swapActivityTooltipFees =>
@@ -5644,16 +5321,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapActivityYouPaid => 'You paid';
 
   @override
-  String get swapActivityYouPay => 'You pay';
-
-  @override
   String get swapActivityYouReceived => 'You received';
-
-  @override
-  String get swapActivityYourePaying => 'You\'re paying';
-
-  @override
-  String get swapActivityYoureReceiving => 'You\'re receiving';
 
   @override
   String swapAddressRecipientDescription(String symbol) {
@@ -5674,14 +5342,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get swapAddressRefundFieldLabel => 'Refund to';
-
-  @override
-  String swapAddressRefundTitle(String symbol) {
-    return '$symbol refund address';
-  }
-
-  @override
   String get swapAddressRememberRecipient =>
       'Remember this address for recipients';
 
@@ -5698,11 +5358,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapAssetSelectorTitle => 'Select asset';
 
   @override
-  String swapChainAddressTitle(String chain) {
-    return '$chain address';
-  }
-
-  @override
   String get swapComposerAddRecipientAddressEllipsis =>
       'Add recipient address...';
 
@@ -5715,9 +5370,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get swapComposerYouPay => 'You pay';
-
-  @override
   String get swapComposerYouReceive => 'You receive';
 
   @override
@@ -5725,9 +5377,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapContactAlreadySaved => 'Already in your contacts';
-
-  @override
-  String get swapDepositAmount => 'Amount';
 
   @override
   String get swapDepositAmountCopiedDesktop => 'Amount Copied';
@@ -5748,21 +5397,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapDepositDoneMobile => 'I’ve deposited tokens';
 
   @override
-  String get swapDepositHourOne => '1hr';
-
-  @override
   String swapDepositHoursMany(int count) {
     return '${count}hrs';
   }
 
   @override
-  String get swapDepositMemo => 'Memo';
-
-  @override
   String get swapDepositMemoCopied => 'Memo copied';
-
-  @override
-  String get swapDepositMinuteOne => '1min';
 
   @override
   String swapDepositMinutesMany(int count) {
@@ -5782,9 +5422,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'This deposit address is no longer valid.\nPlease, start another swap transaction.';
 
   @override
-  String get swapDepositTimeoutTitle => 'Swap failed';
-
-  @override
   String get swapDepositTitle => 'Deposit tokens';
 
   @override
@@ -5797,12 +5434,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapDismissBarrierLabel => 'Dismiss';
 
   @override
-  String get swapFullAddress => 'Full address';
-
-  @override
-  String get swapKeystoneAfterScan => 'After you scanned, click Get signature.';
-
-  @override
   String get swapKeystoneBroadcastFailed =>
       'Transaction could not be broadcast.';
 
@@ -5810,28 +5441,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapKeystoneBroadcastingTitle => 'Broadcasting ZEC deposit';
 
   @override
-  String get swapKeystoneCancelFailed =>
-      'Could not finish cancelling. Please try again.';
-
-  @override
-  String get swapKeystoneCancelledBeforeParams =>
-      'Signing was cancelled before proving parameters were downloaded.';
-
-  @override
-  String get swapKeystoneCancelling => 'Cancelling…';
-
-  @override
-  String get swapKeystoneExpired =>
-      'Transaction expired before it could be signed.';
-
-  @override
   String get swapKeystoneFailedTitle => 'Keystone signing failed';
 
   @override
   String get swapKeystoneFinalizing => 'Broadcasting ZEC deposit...';
-
-  @override
-  String get swapKeystoneGetSignature => 'Get signature';
 
   @override
   String get swapKeystoneIncomplete =>
@@ -5849,10 +5462,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Scan the QR code on your Keystone to finish the ZEC deposit';
 
   @override
-  String get swapKeystoneScanDescription =>
-      'Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.';
-
-  @override
   String get swapKeystoneScanToSign => 'Scan to sign';
 
   @override
@@ -5861,10 +5470,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get swapKeystoneStatusUncertain =>
       'The transaction status is uncertain. Refresh activity before trying again.';
-
-  @override
-  String get swapKeystoneUnexpectedUr =>
-      'Open the signature result QR on Keystone, then scan again.';
 
   @override
   String get swapLedgerBackToActivity => 'Back to activity';
@@ -5897,9 +5502,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapLedgerRetryCleanup => 'Retry cleanup';
 
   @override
-  String get swapLedgerRetrySaving => 'Retry saving';
-
-  @override
   String get swapLedgerSigningIncomplete =>
       'Ledger signing could not be completed.';
 
@@ -5911,9 +5513,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapLedgerStatusWait => 'Please wait';
-
-  @override
-  String get swapLedgerTitleExpired => 'Transaction expired';
 
   @override
   String get swapLedgerTitlePending => 'Transaction status pending';
@@ -6001,34 +5600,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapPayStatusNewAddress => 'New address';
 
   @override
-  String get swapPayStatusProgressTab => 'Payment progress';
-
-  @override
-  String get swapPayStatusRefundFee => 'Refund fee';
-
-  @override
-  String get swapPayStatusRefundTo => 'Refund to';
-
-  @override
-  String get swapPayStatusRefundedAmount => 'Refunded amount';
-
-  @override
-  String get swapPayStatusShowFullAddress => 'Show full address';
-
-  @override
   String get swapPayStatusSourceAmount => 'Source amount';
-
-  @override
-  String get swapPayStatusTimestamp => 'Timestamp';
-
-  @override
-  String get swapPayStatusTo => 'To';
-
-  @override
-  String get swapPayStatusTxFee => 'Tx fee';
-
-  @override
-  String get swapPayStatusTxId => 'Tx ID';
 
   @override
   String get swapPoweredByLabel => 'Powered by';
@@ -6051,26 +5623,13 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get swapReviewGuaranteedMinimum => 'Guaranteed minimum';
-
-  @override
-  String get swapReviewInsufficientZecPay =>
-      'You don\'t have enough ZEC for this payment. Try a smaller amount.';
-
-  @override
   String get swapReviewInsufficientZecSwap =>
       'You don\'t have enough ZEC for this swap. Try a smaller amount.';
-
-  @override
-  String get swapReviewNetworkFees => 'Network + conversion fees';
 
   @override
   String swapReviewPayAmount(String amount) {
     return 'Pay $amount';
   }
-
-  @override
-  String get swapReviewPrivately => 'Privately, from shielded balance';
 
   @override
   String get swapReviewQuoteExpired =>
@@ -6083,24 +5642,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapReviewQuoteInactive => 'This quote is no longer active.';
 
   @override
-  String get swapReviewRate => 'Rate';
-
-  @override
-  String get swapReviewRecipientGets => 'Recipient gets';
-
-  @override
-  String swapReviewRefundToAddress(String address) {
-    return 'Refund to: $address';
-  }
-
-  @override
   String get swapReviewReturnToSwap => 'Return to swap';
 
   @override
   String get swapReviewReviewAgain => 'Review again';
-
-  @override
-  String get swapReviewSlippageTolerance => 'Slippage tolerance';
 
   @override
   String get swapReviewStartingLockingQuote => 'Locking quote';
@@ -6112,32 +5657,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapReviewStartingSending => 'Sending';
 
   @override
-  String get swapReviewSwapFee => 'Swap fee';
-
-  @override
-  String get swapReviewSwapTitle => 'Review swap';
-
-  @override
-  String get swapReviewTitlePay => 'Review Payment';
-
-  @override
-  String get swapReviewTitleSwap => 'Review quote';
-
-  @override
   String swapReviewToAddress(String address) {
     return 'To: $address';
   }
-
-  @override
-  String swapReviewToAddressOnChain(String address, String chain) {
-    return 'To: $address on $chain';
-  }
-
-  @override
-  String get swapReviewYouPay => 'You pay';
-
-  @override
-  String get swapScanNoAddress => 'QR code did not include an address.';
 
   @override
   String get swapSignPayment => 'Sign payment';
@@ -6163,31 +5685,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapSlippageTitle => 'Slippage';
 
   @override
-  String get swapStatusBadgeCompleted => 'Completed';
-
-  @override
-  String get swapStatusBadgeFailed => 'Failed';
-
-  @override
-  String get swapStatusBadgeInProgress => 'In progress';
-
-  @override
   String get swapStatusBadgeNeedsAttention => 'Needs attention';
 
   @override
-  String get swapStatusBadgeRefunded => 'Refunded';
-
-  @override
   String get swapStatusDetailsTab => 'Transaction details';
-
-  @override
-  String get swapStatusPayLabel => 'You\'re paying';
-
-  @override
-  String get swapStatusProgressTab => 'Swap progress';
-
-  @override
-  String get swapStatusReceiveLabel => 'You\'re receiving';
 
   @override
   String get swapStatusRowLabel => 'Status';
@@ -6206,9 +5707,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapViewOnNearIntents => 'View on NEAR Intents';
-
-  @override
-  String get swapZcashAddressTitle => 'Zcash address';
 
   @override
   String syncCheckingPercentSemantics(String percent) {

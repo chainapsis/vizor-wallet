@@ -31,21 +31,21 @@ void main() {
         help: true,
       ),
       SwapStatusDetailRowData(
-        label: ko.swapActivityDetailRefundAddress('USDC'),
+        label: ko.commonSymbolRefundAddress('USDC'),
         kind: SwapStatusDetailKind.refundAddress,
         value: address,
         copyable: true,
         copyText: address,
       ),
       SwapStatusDetailRowData(
-        label: ko.swapActivityDetailRecipient('USDC'),
+        label: ko.commonSymbolRecipient('USDC'),
         kind: SwapStatusDetailKind.recipient,
         value: address,
         copyable: true,
         copyText: address,
       ),
       SwapStatusDetailRowData(
-        label: ko.swapActivityDetailTimestamp,
+        label: ko.commonTimestamp,
         kind: SwapStatusDetailKind.timestamp,
         value: 'May 20, 2026 13:20',
       ),
@@ -103,24 +103,20 @@ void main() {
 
     // The mobile relabel shows the localized swap-fee label for total fees.
     expect(find.text(ko.swapActivityDetailTotalFees), findsNothing);
-    final feeFinder = find.text(ko.swapActivityDetailSwapFee);
+    final feeFinder = find.text(ko.commonSwapFee);
     expect(feeFinder, findsOneWidget);
     // Success details hide the recipient row by kind.
-    expect(find.text(ko.swapActivityDetailRecipient('USDC')), findsNothing);
+    expect(find.text(ko.commonSymbolRecipient('USDC')), findsNothing);
     // The fee row sorts after the other rows.
     final feeY = tester.getTopLeft(feeFinder).dy;
     expect(
       feeY,
-      greaterThan(
-        tester.getTopLeft(find.text(ko.swapActivityDetailTimestamp)).dy,
-      ),
+      greaterThan(tester.getTopLeft(find.text(ko.commonTimestamp)).dy),
     );
     expect(
       feeY,
       greaterThan(
-        tester
-            .getTopLeft(find.text(ko.swapActivityDetailRefundAddress('USDC')))
-            .dy,
+        tester.getTopLeft(find.text(ko.commonSymbolRefundAddress('USDC'))).dy,
       ),
     );
     // Address values are compacted by kind.

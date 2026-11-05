@@ -137,7 +137,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       accountUuid = activeShieldingAccountUuid(ref);
     } catch (_) {
       setState(() {
-        _shieldBalanceError = context.l10n.homeShieldNoActiveAccount;
+        _shieldBalanceError = context.l10n.commonNoActiveAccountSentence;
       });
       return;
     }
@@ -1075,7 +1075,7 @@ class _HomeShieldBalanceButton extends StatelessWidget {
                       ),
                       child: Text(
                         isLoading
-                            ? context.l10n.homeShieldingProgress
+                            ? context.l10n.commonShielding
                             : context.l10n.homeShieldNow,
                         style: AppTypography.labelLarge.copyWith(
                           color: contentColor,
@@ -1655,7 +1655,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
         : colors.text.homeCard;
     final balanceTitle = migrationRequired
         ? context.l10n.homeMigrationRequiredTitle
-        : context.l10n.homeShieldedBalance;
+        : context.l10n.commonShieldedBalance;
 
     return SizedBox(
       width: 396,
@@ -2635,7 +2635,7 @@ class _HomeDesktopActivityCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Semantics(
-            label: isLoading ? context.l10n.homeActivityLoading : null,
+            label: isLoading ? context.l10n.commonLoadingActivity : null,
             child: Column(
               children: [
                 for (

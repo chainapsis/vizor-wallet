@@ -1404,7 +1404,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 const SizedBox(height: AppSpacing.md),
                 Semantics(
                   label: activityLoading
-                      ? context.l10n.homeActivityLoading
+                      ? context.l10n.commonLoadingActivity
                       : null,
                   child: Column(
                     children: [
@@ -1945,7 +1945,7 @@ class _BalanceCard extends StatelessWidget {
                               const SizedBox(width: AppSpacing.s),
                               Expanded(
                                 child: Text(
-                                  context.l10n.homeShieldedBalance,
+                                  context.l10n.commonShieldedBalance,
                                   style: _mobileHomeLabelMStyle.copyWith(
                                     color: cardText,
                                   ),
@@ -2377,7 +2377,7 @@ class _MobileShieldBalanceButton extends StatelessWidget {
             children: [
               Text(
                 isLoading
-                    ? context.l10n.homeShieldingProgress
+                    ? context.l10n.commonShielding
                     : context.l10n.homeShield,
                 style: _mobileHomeLabelMStyle.copyWith(color: contentColor),
               ),

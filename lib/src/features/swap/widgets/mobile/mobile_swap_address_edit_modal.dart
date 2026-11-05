@@ -149,7 +149,7 @@ class _MobileSwapAddressEditModalState
     final asset = widget.state.externalAsset;
     final title = sendsZec
         ? context.l10n.swapAddressRecipientTitle(asset.symbol)
-        : context.l10n.swapAddressRefundTitle(asset.symbol);
+        : context.l10n.commonSymbolRefundAddress(asset.symbol);
     final hint = widget.state.destinationFieldHint(context.l10n);
     final description = sendsZec
         ? context.l10n.swapAddressRecipientDescription(asset.symbol)

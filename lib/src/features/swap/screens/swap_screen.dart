@@ -469,10 +469,10 @@ class _SwapReviewFooter extends StatelessWidget {
         ? _destinationAddressActionLabel(context.l10n, state)
         : destinationFormatError ??
               (balanceExceeded
-                  ? context.l10n.swapActionNotEnoughZec
+                  ? context.l10n.commonNotEnoughZec
                   : state.quoteLoading
                   ? context.l10n.swapActionGettingQuote
-                  : context.l10n.swapActionReview);
+                  : context.l10n.commonReviewSwap);
     final reviewReady =
         !needsDestinationAddress &&
         destinationFormatError == null &&

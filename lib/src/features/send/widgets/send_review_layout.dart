@@ -138,7 +138,7 @@ class SendReviewInfoSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final amountRow = ReviewInfoRow(
-      label: context.l10n.sendAmountLabel,
+      label: context.l10n.commonAmount,
       value: amountText,
       leading: const ReviewZecCoinImage(),
       bottomLeftText: fiatText,
@@ -181,7 +181,7 @@ class SendReviewInfoSection extends StatelessWidget {
     // stand in for the identity the user is consenting to pay.
     final rowLabel = isPaymentRequest
         ? context.l10n.sendReviewRequestedBy
-        : context.l10n.sendReviewTo;
+        : context.l10n.commonTo;
     final rowKey = isPaymentRequest
         ? const ValueKey('send_review_requested_by')
         : null;
@@ -199,7 +199,7 @@ class SendReviewInfoSection extends StatelessWidget {
             ? context.colors.text.brandCrimson
             : null,
         bottomLeftText: _recipientBadgeText(context.l10n),
-        trailingActionLabel: context.l10n.sendReviewShowFullAddress,
+        trailingActionLabel: context.l10n.commonShowFullAddress,
         onTrailingAction: onShowFullAddress,
       ),
       SendReviewContactRecipient(
@@ -218,7 +218,7 @@ class SendReviewInfoSection extends StatelessWidget {
           struckThrough: recipientStruckThrough,
           bottomLeftIconName: _contactRecipientBottomLeftIconName,
           bottomLeftText: _contactRecipientBottomLeftText(address),
-          trailingActionLabel: context.l10n.sendReviewShowFullAddress,
+          trailingActionLabel: context.l10n.commonShowFullAddress,
           onTrailingAction: onShowFullAddress,
         ),
     };
@@ -324,7 +324,7 @@ class ReviewMemoRows extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final label = this.label ?? context.l10n.sendMessageLabel;
+    final label = this.label ?? context.l10n.commonMessage;
     final placeholder = memoText.trim().isEmpty
         ? context.l10n.sendMemoWhitespaceOnly
         : null;

@@ -123,11 +123,11 @@ class _MobileKeystoneSignScreenState
           child: MobileKeystonePcztSigningFlow(
             key: ValueKey('mobile_keystone_sign_round_${_rounds.index}'),
             title: _cancelRequested
-                ? context.l10n.sendSignCancelling
+                ? context.l10n.commonCancelling
                 : _rounds.title(context.l10n),
             description: widget.args.addressType == 'tex'
                 ? context.l10n.sendKeystoneTexTwoApprovals(_rounds.index + 1)
-                : context.l10n.sendKeystoneScanTransactionInstruction,
+                : context.l10n.commonKeystoneScanTransaction,
             preparePczt: _preparePczt,
             onSigned: _handleSignedPczt,
             signedPcztDecoder: _decodeKeystoneResponse,
@@ -337,12 +337,12 @@ class _MobileKeystoneSignScreenState
     final lower = error.toString().toLowerCase();
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
-      return context.l10n.sendKeystoneExpired;
+      return context.l10n.commonSigningExpired;
     }
     final batchError = keystoneBatchSigningFriendlyError(error);
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
-      return context.l10n.sendKeystoneProvingParamsFailed;
+      return context.l10n.commonProvingParamsFailed;
     }
     return context.l10n.sendKeystonePrepareFailedGoBack;
   }

@@ -198,12 +198,12 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
               _PayModalSurface.addressScanner => MobileAddressScanCard(
                 caption: context.l10n.payScanCaption,
                 permissionTitle: context.l10n.payScanPermissionTitle,
-                steadyHint: context.l10n.payScanSteadyHint,
+                steadyHint: context.l10n.commonKeepQrSteady,
                 resolve: (raw) async {
                   final address = normalizeAddressScanPayload(raw)?.trim();
                   if (address == null || address.isEmpty) {
                     return MobileScanOutcome.rejected(
-                      context.l10n.payScanNoAddress,
+                      context.l10n.commonQrNoAddress,
                     );
                   }
                   return MobileScanOutcome.accepted(address);
@@ -343,7 +343,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
       _MobilePayStep.amount => context.l10n.payTitleAmount(
         swapState.externalAsset.symbol,
       ),
-      _MobilePayStep.recipient => context.l10n.payTitleRecipient,
+      _MobilePayStep.recipient => context.l10n.commonSelectRecipient,
     };
     final migrationSpendable = ref.watch(
       ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),

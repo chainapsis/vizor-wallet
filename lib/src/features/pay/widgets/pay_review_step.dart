@@ -100,7 +100,7 @@ class PayReviewStep extends StatelessWidget {
                 ReviewInfoRow(
                   key: const ValueKey('pay_review_to_row'),
                   rowHeight: 76,
-                  label: context.l10n.payReviewTo,
+                  label: context.l10n.commonTo,
                   value: contact?.label ?? compactRecipient,
                   valueStyle: valueStyle,
                   leading: contact != null
@@ -112,7 +112,7 @@ class PayReviewStep extends StatelessWidget {
                   bottomLeftText: contact != null
                       ? compactRecipient
                       : context.l10n.payReviewUnknownAddress,
-                  trailingActionLabel: context.l10n.payReviewShowFullAddress,
+                  trailingActionLabel: context.l10n.commonShowFullAddress,
                   trailingActionKey: const ValueKey(
                     'pay_review_show_full_address',
                   ),
@@ -267,7 +267,7 @@ class PayReviewAction extends StatelessWidget {
             expired
                 ? context.l10n.payReviewRefreshTheQuote
                 : startBlockedReason != null
-                ? context.l10n.payNotEnoughZec
+                ? context.l10n.commonNotEnoughZec
                 : starting
                 ? context.l10n.payReviewPaying
                 : context.l10n.payReviewConfirmPay,

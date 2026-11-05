@@ -732,7 +732,7 @@ class _SwapLedgerSigningOverlayState
                   (_deviceGuidance?.bluetoothRecovery ?? false),
               title: postBroadcastRecovery
                   ? expiredRecovery
-                        ? context.l10n.swapLedgerTitleExpired
+                        ? context.l10n.commonTransactionExpired
                         : broadcastConfirmed
                         ? context.l10n.swapLedgerTitleSent
                         : context.l10n.swapLedgerTitlePending
@@ -740,14 +740,14 @@ class _SwapLedgerSigningOverlayState
                   ? context.l10n.swapLedgerTitleRecovery
                   : upgradeHold
                   ? kNetworkUpgradeHoldActionLabel
-                  : context.l10n.homeLedgerSigningFailedTitle,
+                  : context.l10n.commonLedgerSigningFailed,
               statusLabel: postBroadcastRecovery
                   ? expiredRecovery
                         ? context.l10n.swapLedgerStatusCleanup
                         : context.l10n.swapLedgerStatusSaving
                   : _operationClaimUnavailable
                   ? context.l10n.swapLedgerStatusWait
-                  : context.l10n.homeLedgerActionNeeded,
+                  : context.l10n.commonActionNeeded,
               message: postBroadcastRecovery
                   ? expiredRecovery
                         ? context.l10n.swapLedgerMessageExpired
@@ -770,7 +770,7 @@ class _SwapLedgerSigningOverlayState
                   : postBroadcastRecovery
                   ? expiredRecovery
                         ? context.l10n.swapLedgerRetryCleanup
-                        : context.l10n.swapLedgerRetrySaving
+                        : context.l10n.commonRetrySaving
                   : context.l10n.commonTryAgain,
             )
           : null,

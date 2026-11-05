@@ -261,7 +261,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
     final scanOptimizedQr = activeAccount?.isKeystone ?? false;
     final l10n = context.l10n;
     final copyLabel = _isShielded
-        ? l10n.receiveCopyShieldedAddress
+        ? l10n.commonCopyShieldedAddress
         : l10n.receiveCopyTransparentAddress;
     final shareLabel = _isShielded
         ? l10n.receiveShareShieldedAddress
@@ -544,7 +544,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
   Widget _buildWideActions() {
     final l10n = context.l10n;
     final copyLabel = _isShielded
-        ? l10n.receiveCopyShieldedAddress
+        ? l10n.commonCopyShieldedAddress
         : l10n.receiveCopyTransparentAddress;
     final shareLabel = _isShielded
         ? l10n.receiveShareShieldedAddress

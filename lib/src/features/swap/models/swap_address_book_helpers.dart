@@ -87,6 +87,6 @@ String swapContactPickerEmptyTitle(AppLocalizations l10n, SwapState state) {
 String swapAddressBookLabel(AppLocalizations l10n, SwapState state) {
   final symbol = state.externalAsset.symbol;
   return state.direction.sendsZec
-      ? l10n.swapActivityAddressBookRecipient(symbol)
+      ? l10n.commonSymbolRecipient(symbol)
       : l10n.swapActivityAddressBookRefund(symbol);
 }

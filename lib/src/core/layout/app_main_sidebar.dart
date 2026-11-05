@@ -1221,7 +1221,7 @@ class _SidebarCopyAddressButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: context.l10n.sidebarCopyShieldedAddress,
+      label: context.l10n.commonCopyShieldedAddress,
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
         child: GestureDetector(

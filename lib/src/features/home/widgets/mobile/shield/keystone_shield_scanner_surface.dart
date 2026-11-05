@@ -116,7 +116,7 @@ class KeystoneShieldScannerSurface extends StatelessWidget {
                 child: Icon(
                   Icons.flashlight_on_outlined,
                   color: const Color(0xFFFFFFFF),
-                  semanticLabel: context.l10n.homeShieldToggleFlashlight,
+                  semanticLabel: context.l10n.commonToggleFlashlight,
                 ),
               ),
             ),

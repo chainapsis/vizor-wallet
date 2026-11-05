@@ -265,7 +265,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         item(
           key: const ValueKey('mobile_account_menu_send'),
           iconName: AppIcons.plane,
-          label: context.l10n.accountsSendZec,
+          label: context.l10n.commonSendZec,
           action: _AccountAction.send,
         ),
       item(
@@ -842,7 +842,7 @@ class MobileAccountRemovalSheet extends StatelessWidget {
               child: Text(
                 isLastAccount
                     ? context.l10n.commonResetVizor
-                    : context.l10n.accountsRemoveConfirm,
+                    : context.l10n.commonRemove,
                 style: AppTypography.labelLarge.copyWith(
                   color: colors.button.destructive.label,
                 ),

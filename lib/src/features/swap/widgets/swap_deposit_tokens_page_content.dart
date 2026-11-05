@@ -568,7 +568,7 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  context.l10n.swapDepositTimeoutTitle,
+                  context.l10n.commonSwapFailed,
                   key: const ValueKey('swap_deposit_timeout_title'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1010,7 +1010,7 @@ class _DepositDetailsList extends StatelessWidget {
           _detailRow(
             label: mobile
                 ? context.l10n.swapDepositAmountToDeposit
-                : context.l10n.swapDepositAmount,
+                : context.l10n.commonAmount,
             value: amountText,
             copyText: _depositAmountCopyText(amountText, asset),
             toastMessage: mobile
@@ -1036,7 +1036,7 @@ class _DepositDetailsList extends StatelessWidget {
           ),
           if (memo?.trim().isNotEmpty ?? false)
             _detailRow(
-              label: context.l10n.swapDepositMemo,
+              label: context.l10n.commonMemo,
               value: memo!.trim(),
               copyText: memo!.trim(),
               toastMessage: context.l10n.swapDepositMemoCopied,
@@ -1423,13 +1423,13 @@ String _formatDepositDurationLabel(AppLocalizations l10n, Duration remaining) {
 
 String _formatHourLabel(AppLocalizations l10n, int hours) {
   return hours == 1
-      ? l10n.swapDepositHourOne
+      ? l10n.commonDurationOneHour
       : l10n.swapDepositHoursMany(hours);
 }
 
 String _formatMinuteLabel(AppLocalizations l10n, int minutes) {
   return minutes == 1
-      ? l10n.swapDepositMinuteOne
+      ? l10n.commonDurationOneMinute
       : l10n.swapDepositMinutesMany(minutes);
 }
 

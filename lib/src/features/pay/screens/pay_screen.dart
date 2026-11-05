@@ -326,19 +326,19 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     final startBlockedReason =
         quote != null &&
             swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
-        ? context.l10n.payInsufficientZec
+        ? context.l10n.commonPayInsufficientZec
         : null;
 
     final title = switch (_wizardStep) {
       _PayWizardStep.amount => context.l10n.payTitleAmount(
         swapState.externalAsset.symbol,
       ),
-      _PayWizardStep.recipient => context.l10n.payTitleRecipient,
-      _PayWizardStep.review => context.l10n.payTitleReview,
+      _PayWizardStep.recipient => context.l10n.commonSelectRecipient,
+      _PayWizardStep.review => context.l10n.commonReviewPayment,
     };
     final backLabel = switch (_wizardStep) {
       _PayWizardStep.amount => context.l10n.payBackHome,
-      _PayWizardStep.recipient => context.l10n.payStepAmount,
+      _PayWizardStep.recipient => context.l10n.commonAmount,
       _PayWizardStep.review => context.l10n.payStepRecipient,
     };
     final recipientActions = PayRecipientActions(

@@ -178,8 +178,7 @@ class _MobilePaySubmittedScreenState
               l10n.paySubmittedUncertainTitle,
             MobileTransactionProgressPhase.succeeded =>
               l10n.paySubmittedSucceededTitle,
-            MobileTransactionProgressPhase.failed =>
-              l10n.paySubmittedFailedTitle,
+            MobileTransactionProgressPhase.failed => l10n.commonPaymentFailed,
           };
     final body = switch (progress.phase) {
       MobileTransactionProgressPhase.inProgress =>
@@ -214,8 +213,8 @@ class _MobilePaySubmittedScreenState
         primaryActionKey: const ValueKey('pay_submitted_done'),
         primaryActionLabel: terminal
             ? progress.phase == MobileTransactionProgressPhase.failed
-                  ? l10n.paySubmittedReturnHome
-                  : l10n.paySubmittedDone
+                  ? l10n.commonReturnHome
+                  : l10n.commonDone
             : null,
         onPrimaryAction: terminal ? () => context.go('/home') : null,
         secondaryActionKey: const ValueKey('pay_submitted_activity'),

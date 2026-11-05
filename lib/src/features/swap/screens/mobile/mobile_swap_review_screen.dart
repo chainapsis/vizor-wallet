@@ -318,7 +318,7 @@ class _MobileSwapReviewScreenState
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
         ? widget.payMode
-              ? context.l10n.swapReviewInsufficientZecPay
+              ? context.l10n.commonPayInsufficientZec
               : context.l10n.swapReviewInsufficientZecSwap
         : null;
     _ensureExpiryTicker(widget.payMode ? quote : null);
@@ -362,8 +362,8 @@ class _MobileSwapReviewScreenState
           children: [
             MobileTopNav.back(
               title: widget.payMode
-                  ? context.l10n.swapReviewTitlePay
-                  : context.l10n.swapReviewTitleSwap,
+                  ? context.l10n.commonReviewPayment
+                  : context.l10n.commonReviewQuote,
               onBack: _startIntentInFlight ? null : _returnToSwap,
             ),
             Expanded(

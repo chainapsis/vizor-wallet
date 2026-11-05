@@ -22,7 +22,7 @@ enum ActivityPendingFallback {
 
   String text(AppLocalizations l10n) => switch (this) {
     waitingForConnection => l10n.activityRowWaitingForConnection,
-    checkingStatus => l10n.activityRowCheckingStatus,
+    checkingStatus => l10n.commonCheckingStatus,
   };
 }
 

@@ -419,7 +419,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         bottom: false,
         child: Column(
           children: [
-            MobileTopNav.back(title: context.l10n.activityScreenTitle),
+            MobileTopNav.back(title: context.l10n.navActivity),
             Expanded(
               child: CustomScrollView(
                 controller: _scrollAnchor.controller,

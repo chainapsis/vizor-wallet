@@ -437,7 +437,7 @@ class _TransparentBalancePreviewLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final balanceText = switch (state.status) {
-      _TransparentBalanceStatus.loading => context.l10n.onboardingLoading,
+      _TransparentBalanceStatus.loading => context.l10n.commonLoading,
       _TransparentBalanceStatus.failed => '-',
       _TransparentBalanceStatus.loaded => ZecAmount.fromZatoshi(
         state.zatoshi ?? BigInt.zero,

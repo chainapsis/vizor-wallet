@@ -114,7 +114,7 @@ class _SwapKeystoneSigningOverlayState
             if (!mounted) return;
             setState(() {
               _phase = _SwapKeystonePhase.failed;
-              _error = context.l10n.swapKeystoneCancelledBeforeParams;
+              _error = context.l10n.commonSigningCancelledBeforeParams;
             });
             return;
           }
@@ -313,7 +313,7 @@ class _SwapKeystoneSigningOverlayState
       setState(() {
         _cancelling = false;
         _phase = _SwapKeystonePhase.failed;
-        _error = context.l10n.swapKeystoneCancelFailed;
+        _error = context.l10n.commonCancelFailedRetry;
       });
     }
   }
@@ -366,10 +366,10 @@ class _SwapKeystoneSigningOverlayState
                 ? context.l10n.homeShieldKeepOpen
                 : _phase == _SwapKeystonePhase.failed
                 ? null
-                : _error ?? context.l10n.swapKeystoneAfterScan,
+                : _error ?? context.l10n.commonKeystoneAfterScan,
             primaryLabel: _phase == _SwapKeystonePhase.failed || isBroadcasting
                 ? null
-                : context.l10n.swapKeystoneGetSignature,
+                : context.l10n.commonGetSignature,
             onPrimary:
                 !_cancelling &&
                     _phase == _SwapKeystonePhase.ready &&
@@ -377,7 +377,7 @@ class _SwapKeystoneSigningOverlayState
                 ? () => unawaited(_getSignature())
                 : null,
             secondaryLabel: _cancelling
-                ? context.l10n.swapKeystoneCancelling
+                ? context.l10n.commonCancelling
                 : isBroadcasting
                 ? null
                 : context.l10n.commonCancel,
@@ -408,10 +408,10 @@ class _SwapKeystoneSigningOverlayState
     );
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
-      return context.l10n.homeShieldErrorProvingParams;
+      return context.l10n.commonProvingParamsFailed;
     }
     if (lower.contains('proposal not found')) {
-      return context.l10n.swapKeystoneExpired;
+      return context.l10n.commonSigningExpired;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
       return context.l10n.swapKeystoneBroadcastFailed;

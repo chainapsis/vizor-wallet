@@ -2945,7 +2945,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
   _WindowsUpdatePromptAction _primaryAction(AppLocalizations l10n) {
     return switch (state.status) {
       WindowsUpdateStatus.available => _WindowsUpdatePromptAction(
-        label: l10n.appUpdateDownload,
+        label: l10n.commonDownload,
         onPressed: onDownload,
       ),
       WindowsUpdateStatus.ready => _WindowsUpdatePromptAction(

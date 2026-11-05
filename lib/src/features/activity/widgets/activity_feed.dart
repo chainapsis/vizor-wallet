@@ -446,7 +446,7 @@ class _ActivityFeedSliverItemView extends StatelessWidget {
         width: cardWidth,
         position: item.segmentPosition!,
         child: Semantics(
-          label: context.l10n.activityFeedLoading,
+          label: context.l10n.commonLoadingActivity,
           child: Padding(
             padding: EdgeInsets.fromLTRB(
               16,
@@ -694,7 +694,7 @@ class _ActivityFeedTitleRow extends StatelessWidget {
         children: [
           Center(
             child: Text(
-              context.l10n.activityScreenTitle,
+              context.l10n.navActivity,
               style: AppTypography.headlineLarge.copyWith(
                 color: colors.text.accent,
                 letterSpacing: 0,

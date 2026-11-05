@@ -129,7 +129,7 @@ class _ActivityTransactionStatusScreenState
         widget.args.txidHex,
         ZcashExplorerTxidOrder.protocol,
       ),
-      toastMessage: context.l10n.activityToastHashCopiedDesktop,
+      toastMessage: context.l10n.commonTransactionHashCopied,
     );
   }
 
@@ -188,7 +188,7 @@ class _ActivityTransactionStatusScreenState
 
   String _feeLabel(rust_sync.TransactionInfo tx) => _showsNetworkFee(tx)
       ? context.l10n.activityReceiptNetworkFee
-      : context.l10n.activityReceiptTxFee;
+      : context.l10n.txFeeInfoTitle;
 
   String _feeHelpText(rust_sync.TransactionInfo tx) => _showsNetworkFee(tx)
       ? context.l10n.activityReceiptUnattributedFeeHelp
@@ -371,10 +371,10 @@ class _ActivityTransactionStatusScreenState
       recipientRow: recipient != null
           ? null
           : receiptDetailsLoading
-          ? ReceiptCounterpartySkeleton(label: context.l10n.activityReceiptTo)
+          ? ReceiptCounterpartySkeleton(label: context.l10n.commonTo)
           : ReviewInfoRow(
               key: const ValueKey('receipt_unknown_recipient'),
-              label: context.l10n.activityReceiptTo,
+              label: context.l10n.commonTo,
               value: context.l10n.activityDetailsUnknownRecipient,
               struckThrough: _sentPhaseFor(tx) == SendStatusPhase.failed,
               leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
@@ -447,19 +447,15 @@ class _ActivityTransactionStatusScreenState
         !isFailed &&
         (tx.minedHeight == BigInt.zero || giftCard.isClaimInFlight);
     final (statusText, statusIconName, statusColor) = isFailed
-        ? (
-            context.l10n.activityStatusFailed,
-            AppIcons.cancel,
-            colors.text.destructive,
-          )
+        ? (context.l10n.commonFailed, AppIcons.cancel, colors.text.destructive)
         : isInFlight
         ? (
-            context.l10n.activityStatusInProgress,
+            context.l10n.commonInProgress,
             AppIcons.loader,
             colors.text.secondary,
           )
         : (
-            context.l10n.activityStatusCompleted,
+            context.l10n.commonCompleted,
             AppIcons.checkCircle,
             colors.text.positiveStrong,
           );
@@ -586,19 +582,15 @@ class _ActivityTransactionStatusScreenState
 
     final isMigration = tx.txKind == 'migration';
     final (statusValue, statusIconName, statusColor) = tx.expiredUnmined
-        ? (
-            context.l10n.activityStatusFailed,
-            AppIcons.cancel,
-            colors.text.destructive,
-          )
+        ? (context.l10n.commonFailed, AppIcons.cancel, colors.text.destructive)
         : tx.minedHeight == BigInt.zero
         ? (
-            context.l10n.activityStatusInProgress,
+            context.l10n.commonInProgress,
             AppIcons.loader,
             colors.text.secondary,
           )
         : (
-            context.l10n.activityStatusCompleted,
+            context.l10n.commonCompleted,
             AppIcons.checkCircle,
             colors.text.positiveStrong,
           );
@@ -641,7 +633,7 @@ class _ActivityTransactionStatusScreenState
                   ? context.l10n.activityReceiptAmountMigrated
                   : switch (feePresentation) {
                       TransactionFeePresentation.separate =>
-                        context.l10n.activityReceiptAmount,
+                        context.l10n.commonAmount,
                       TransactionFeePresentation.includedInAmount =>
                         context.l10n.activityReceiptNetChange,
                       TransactionFeePresentation.feeOnly =>
@@ -670,7 +662,7 @@ class _ActivityTransactionStatusScreenState
                   leadingIconName: AppIcons.migrationSplit,
                 ),
                 ReviewListRow(
-                  label: context.l10n.activityReceiptTo,
+                  label: context.l10n.commonTo,
                   value: context.l10n.activityBalanceIronwood,
                   leadingIconName: AppIcons.shieldKeyholeOutline,
                 ),
@@ -683,11 +675,11 @@ class _ActivityTransactionStatusScreenState
                 leadingIconName: statusIconName,
               ),
               ReviewListRow(
-                label: context.l10n.activityReceiptTimestamp,
+                label: context.l10n.commonTimestamp,
                 value: _timestampText(tx),
               ),
               ReviewListRow(
-                label: context.l10n.activityReceiptTxId,
+                label: context.l10n.commonTxId,
                 value: _truncatedDisplayTxid(widget.args.txidHex),
                 trailingIconName: AppIcons.arrowTopRight,
                 onPressed: () => unawaited(_openTransactionExplorer()),

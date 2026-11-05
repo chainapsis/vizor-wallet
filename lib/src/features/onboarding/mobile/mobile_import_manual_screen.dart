@@ -405,7 +405,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
             onPressed: _finish,
             trailing: const AppIcon(AppIcons.chevronForward),
             child: Text(
-              context.l10n.onboardingManualReviewFinish,
+              context.l10n.commonReviewAndFinish,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

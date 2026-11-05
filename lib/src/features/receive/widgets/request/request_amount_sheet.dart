@@ -410,7 +410,7 @@ class _AmountUnitToggle extends StatelessWidget {
         button: true,
         enabled: enabled,
         label: enterUsdMode
-            ? context.l10n.receiveRequestEnterUsd
+            ? context.l10n.commonEnterAmountInUsd
             : context.l10n.receiveRequestEnterZec,
         child: GestureDetector(
           key: const ValueKey('request_amount_mode_toggle'),
@@ -491,7 +491,7 @@ class RequestMessageRow extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  context.l10n.receiveRequestAddMessage,
+                  context.l10n.commonAddAMessage,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
@@ -526,7 +526,7 @@ class RequestMessageRow extends StatelessWidget {
     if (onTap == null) return row;
     return Semantics(
       button: true,
-      label: context.l10n.receiveRequestAddMessage,
+      label: context.l10n.commonAddAMessage,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,

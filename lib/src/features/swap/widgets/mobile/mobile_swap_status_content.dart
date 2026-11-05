@@ -172,7 +172,7 @@ class MobilePayStatusHeader extends StatelessWidget {
                 size: 40,
                 showChainBadge: !asset.isNativeZec,
               ),
-              label: label ?? context.l10n.swapStatusPayLabel,
+              label: label ?? context.l10n.commonYourePaying,
               value: amountText,
               valueFit: BoxFit.scaleDown,
               bottomLeftText: fiatText,
@@ -185,18 +185,18 @@ class MobilePayStatusHeader extends StatelessWidget {
                       size: AppProfilePictureSize.navLarge,
                     )
                   : _MobilePayRecipientPlaceholder(),
-              label: context.l10n.swapPayStatusTo,
+              label: context.l10n.commonTo,
               value: name == null || name.isEmpty ? compactAddress : name,
               bottomLeftText: name == null || name.isEmpty
                   ? null
                   : compactAddress,
-              trailingActionLabel: context.l10n.swapFullAddress,
+              trailingActionLabel: context.l10n.commonFullAddress,
               trailingActionKey: const ValueKey(
                 'mobile_pay_status_full_address',
               ),
               onTrailingAction: () => showMobileAddressVerifySheet(
                 context,
-                title: context.l10n.swapChainAddressTitle(asset.chainLabel),
+                title: context.l10n.commonAddressForChain(asset.chainLabel),
                 address: recipientAddress,
                 leading: SwapAssetIcon(
                   asset: asset,
@@ -352,17 +352,17 @@ class _MobileStatusChipRow extends StatelessWidget {
     final (iconName, defaultText, defaultColor) = switch (badgeKind) {
       SwapStatusBadgeKind.completed => (
         AppIcons.checkCircle,
-        context.l10n.swapStatusBadgeCompleted,
+        context.l10n.commonCompleted,
         colors.text.positiveStrong,
       ),
       SwapStatusBadgeKind.refunded => (
         AppIcons.uturnUp,
-        context.l10n.swapStatusBadgeRefunded,
+        context.l10n.commonRefunded,
         colors.text.positiveStrong,
       ),
       SwapStatusBadgeKind.failed => (
         AppIcons.cross,
-        context.l10n.swapStatusBadgeFailed,
+        context.l10n.commonFailed,
         colors.text.destructive,
       ),
       SwapStatusBadgeKind.warning => (
@@ -372,7 +372,7 @@ class _MobileStatusChipRow extends StatelessWidget {
       ),
       SwapStatusBadgeKind.liveQuote => (
         AppIcons.loader,
-        context.l10n.swapStatusBadgeInProgress,
+        context.l10n.commonInProgress,
         colors.text.secondary,
       ),
     };
@@ -456,14 +456,14 @@ class _MobilePaymentDetails extends StatelessWidget {
             SwapStatusDetailKind.timestamp,
           )
         : SwapStatusDetailRowData(
-            label: context.l10n.swapPayStatusTimestamp,
+            label: context.l10n.commonTimestamp,
             kind: SwapStatusDetailKind.timestamp,
             value: payStatus.timestampText,
           );
     final txId = payStatus == null
         ? _paymentDetailRow(presentation.details, SwapStatusDetailKind.txId)
         : SwapStatusDetailRowData(
-            label: context.l10n.swapPayStatusTxId,
+            label: context.l10n.commonTxId,
             kind: SwapStatusDetailKind.txId,
             value: payStatus.txIdText,
             linkUri: payStatus.txIdUri,
@@ -475,7 +475,7 @@ class _MobilePaymentDetails extends StatelessWidget {
     final displayFee = payStatus == null
         ? null
         : SwapStatusDetailRowData(
-            label: context.l10n.swapPayStatusTxFee,
+            label: context.l10n.txFeeInfoTitle,
             kind: SwapStatusDetailKind.txFee,
             value: payStatus.transactionFeeText,
             help: true,
@@ -493,13 +493,13 @@ class _MobilePaymentDetails extends StatelessWidget {
       if (payStatus?.phase == PayActivityStatusPhase.refunded &&
           payStatus?.refundedAmountText?.isNotEmpty == true)
         SwapStatusDetailRowData(
-          label: context.l10n.swapPayStatusRefundedAmount,
+          label: context.l10n.commonRefundedAmount,
           kind: SwapStatusDetailKind.refundedAmount,
           value: payStatus!.refundedAmountText!,
         ),
       if (terminalOutcome && payStatus?.refundAddress?.isNotEmpty == true)
         SwapStatusDetailRowData(
-          label: context.l10n.swapPayStatusRefundTo,
+          label: context.l10n.commonRefundTo,
           kind: SwapStatusDetailKind.refundTo,
           value: compactSwapAddress(payStatus!.refundAddress!),
           copyable: true,
@@ -508,7 +508,7 @@ class _MobilePaymentDetails extends StatelessWidget {
       if (payStatus?.phase == PayActivityStatusPhase.refunded &&
           payStatus?.refundFeeText?.isNotEmpty == true)
         SwapStatusDetailRowData(
-          label: context.l10n.swapPayStatusRefundFee,
+          label: context.l10n.commonRefundFee,
           kind: SwapStatusDetailKind.refundFee,
           value: payStatus!.refundFeeText!,
         ),
@@ -830,7 +830,7 @@ String _mobileStatusDetailLabel(
   SwapStatusDetailRowData row,
 ) {
   if (row.kind == SwapStatusDetailKind.totalFees) {
-    return l10n.swapActivityDetailSwapFee;
+    return l10n.commonSwapFee;
   }
   return row.label;
 }

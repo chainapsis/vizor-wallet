@@ -163,7 +163,7 @@ class _MobileTransactionStatusScreenState
 
     if (_isShielding) {
       return switch (_phase) {
-        _TxPhase.pending => context.l10n.activityTitleShielding,
+        _TxPhase.pending => context.l10n.commonShielding,
         _TxPhase.succeeded => context.l10n.activityTitleShielded,
         _TxPhase.failed => context.l10n.activityTitleShieldingFailed,
       };
@@ -190,9 +190,9 @@ class _MobileTransactionStatusScreenState
       return context.l10n.activityTitleTransaction;
     }
     return switch (_phase) {
-      _TxPhase.pending => context.l10n.activityTitleSending,
-      _TxPhase.succeeded => context.l10n.activityTitleSentSuccessfully,
-      _TxPhase.failed => context.l10n.activityTitleSendFailed,
+      _TxPhase.pending => context.l10n.commonSending,
+      _TxPhase.succeeded => context.l10n.commonSentSuccessfully,
+      _TxPhase.failed => context.l10n.commonSendFailed,
     };
   }
 
@@ -379,7 +379,7 @@ class _MobileTransactionStatusScreenState
         : null;
     final amountRow = _reviewRow(
       label: switch (feePresentation) {
-        TransactionFeePresentation.separate => l10n.activityReceiptAmount,
+        TransactionFeePresentation.separate => l10n.commonAmount,
         TransactionFeePresentation.includedInAmount =>
           l10n.activityReceiptNetChange,
         TransactionFeePresentation.feeOnly => l10n.activityReceiptNetChange,
@@ -400,9 +400,7 @@ class _MobileTransactionStatusScreenState
     final addressRow = (address == null || address.isEmpty)
         ? null
         : _reviewRow(
-            label: _isIncoming
-                ? l10n.activityReceiptFrom
-                : l10n.activityReceiptTo,
+            label: _isIncoming ? l10n.activityReceiptFrom : l10n.commonTo,
             value: namedRecipient != null
                 ? namedRecipient.name
                 : _truncateAddress(address),
@@ -432,7 +430,7 @@ class _MobileTransactionStatusScreenState
                   ? _truncateAddress(address)
                   : poolLabel,
             ),
-            trailingActionLabel: l10n.activityReceiptShowFullAddress,
+            trailingActionLabel: l10n.commonShowFullAddress,
             trailingActionKey: const ValueKey(
               'mobile_tx_status_show_full_address',
             ),
@@ -508,12 +506,12 @@ class _MobileTransactionStatusScreenState
     // A send whose recipient the account did not record keeps the To row,
     // naming no one and offering nothing to verify.
     final toRow = _isSent && detailsLoading
-        ? ReceiptCounterpartySkeleton(label: l10n.activityReceiptTo)
+        ? ReceiptCounterpartySkeleton(label: l10n.commonTo)
         : addressRow ??
               (giftCard == null && receiptHasUnknownRecipient(tx, detail)
                   ? _reviewRow(
                       key: const ValueKey('receipt_unknown_recipient'),
-                      label: l10n.activityReceiptTo,
+                      label: l10n.commonTo,
                       value: l10n.activityDetailsUnknownRecipient,
                       strikethrough: failed,
                       leading: MobileReviewIconBadge(
@@ -536,7 +534,7 @@ class _MobileTransactionStatusScreenState
         ? <Widget>[
             amountRow,
             _reviewRow(
-              label: l10n.activityReceiptTo,
+              label: l10n.commonTo,
               value: l10n.activityBalanceIronwood,
               leading: MobileReviewIconBadge(
                 child: AppIcon(
@@ -555,7 +553,7 @@ class _MobileTransactionStatusScreenState
         : _isShielding
         ? <Widget>[
             _reviewRow(
-              label: l10n.activityReceiptAmount,
+              label: l10n.commonAmount,
               value: amountText,
               leading: const MobileReviewZecBadge(),
               bottom: _BottomInfo(
@@ -565,8 +563,8 @@ class _MobileTransactionStatusScreenState
               ),
             ),
             _reviewRow(
-              label: l10n.activityReceiptTo,
-              value: l10n.activityBalanceShielded,
+              label: l10n.commonTo,
+              value: l10n.commonShieldedBalance,
               leading: MobileReviewIconBadge(
                 child: AppIcon(
                   AppIcons.shieldKeyholeOutline,
@@ -661,7 +659,7 @@ class _MobileTransactionStatusScreenState
                                   giftCard.kind == GiftCardActivityKind.created
                                       ? l10n.activityGiftStatusCreated
                                       : l10n.activityGiftStatusRedeemed,
-                                _TxPhase.failed => l10n.activityStatusFailed,
+                                _TxPhase.failed => l10n.commonFailed,
                               },
                         failed: failed,
                         memo: memo,
@@ -872,9 +870,9 @@ class _MobileTransactionStatusScreenState
   String _addressVerifyTitle(String address) {
     final lower = address.trim().toLowerCase();
     if (lower.startsWith('u1')) return context.l10n.activityAddressUnified;
-    if (lower.startsWith('zs')) return context.l10n.activityAddressShielded;
-    if (lower.startsWith('t')) return context.l10n.activityAddressTransparent;
-    return context.l10n.activityAddressZcash;
+    if (lower.startsWith('zs')) return context.l10n.commonShieldedAddress;
+    if (lower.startsWith('t')) return context.l10n.commonTransparentAddress;
+    return context.l10n.commonZcashAddress;
   }
 
   String _truncateAddress(String address) {
@@ -1015,7 +1013,7 @@ class _DetailCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
           ] else if (memoText != null && memoText.isNotEmpty) ...[
             _ListRow(
-              label: context.l10n.activityReceiptMessage,
+              label: context.l10n.commonMessage,
               value: _ValueWithIcon(
                 key: const ValueKey('mobile_tx_status_message_toggle'),
                 text: messageExpanded ? null : _previewMemo(memoText),
@@ -1040,13 +1038,13 @@ class _DetailCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
           ],
           _ListRow(
-            label: context.l10n.activityReceiptTimestamp,
+            label: context.l10n.commonTimestamp,
             value: _ValueWithIcon(text: timestampText),
           ),
           const SizedBox(height: AppSpacing.xs),
           _ListRow(
             key: const ValueKey('mobile_tx_status_txid'),
-            label: context.l10n.activityReceiptTxId,
+            label: context.l10n.commonTxId,
             value: _ValueWithIcon(
               text: txidText,
               iconName: AppIcons.arrowTopRight,
@@ -1083,7 +1081,7 @@ class _DetailCard extends StatelessWidget {
                   ? context.l10n.activityReceiptCardFee
                   : showsNetworkFee
                   ? context.l10n.activityReceiptNetworkFee
-                  : context.l10n.activityReceiptTxFee,
+                  : context.l10n.txFeeInfoTitle,
               labelStyle: AppTypography.labelLarge,
               value: _ValueWithIcon(
                 text: feeText,
@@ -1240,12 +1238,12 @@ class _StatusChip extends StatelessWidget {
     final (iconName, text, color) = switch (phase) {
       _TxPhase.pending => (
         AppIcons.loader,
-        context.l10n.activityStatusInProgress,
+        context.l10n.commonInProgress,
         colors.text.secondary,
       ),
       _TxPhase.succeeded => (
         AppIcons.checkCircle,
-        context.l10n.activityStatusCompleted,
+        context.l10n.commonCompleted,
         colors.text.positiveStrong,
       ),
       // The Figma frame says "Failed, refunded minus tx fee", but the

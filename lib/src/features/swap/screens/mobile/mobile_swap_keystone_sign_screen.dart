@@ -131,10 +131,10 @@ class _MobileSwapKeystoneSignScreenState
           absorbing: _cancelling,
           child: MobileKeystonePcztSigningFlow(
             title: _cancelling
-                ? context.l10n.swapKeystoneCancelling
+                ? context.l10n.commonCancelling
                 : context.l10n.swapSignZecDeposit,
             failedTitle: context.l10n.swapKeystoneFailedTitle,
-            description: context.l10n.swapKeystoneScanDescription,
+            description: context.l10n.commonKeystoneScanTransaction,
             preparePczt: _preparePczt,
             onSigned: _handleSignedPczt,
             friendlyError: _friendlyError,
@@ -142,7 +142,7 @@ class _MobileSwapKeystoneSignScreenState
             signedPcztDecoder:
                 widget.signedPcztDecoder ?? _decodeSigningResponse,
             expectedSignedUrType: 'zcash-batch-sig-result',
-            unexpectedUrMessage: context.l10n.swapKeystoneUnexpectedUr,
+            unexpectedUrMessage: context.l10n.commonKeystoneScanSignatureResult,
             scannerBuilder: widget.scannerBuilder,
             forceScannerActiveForTesting: widget.forceScannerActiveForTesting,
             keyPrefix: 'mobile_swap_keystone_sign',
@@ -387,7 +387,7 @@ class _MobileSwapKeystoneSignScreenState
       if (mounted) {
         showAppToast(
           context,
-          context.l10n.swapKeystoneCancelFailed,
+          context.l10n.commonCancelFailedRetry,
           iconName: AppIcons.warningCircle,
           tone: AppToastTone.destructive,
         );
@@ -461,10 +461,10 @@ class _MobileSwapKeystoneSignScreenState
     );
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
-      return context.l10n.homeShieldErrorProvingParams;
+      return context.l10n.commonProvingParamsFailed;
     }
     if (lower.contains('proposal not found')) {
-      return context.l10n.swapKeystoneExpired;
+      return context.l10n.commonSigningExpired;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
       return context.l10n.homeShieldErrorSignatureNotApplied;

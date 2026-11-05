@@ -82,7 +82,7 @@ class _MobileSoftwareShieldScreenState
     resultAmount: formatZecAmount(_resultAmount ?? _expected),
     title: switch (_phase) {
       MobileShieldPhase.review => context.l10n.homeShieldBalanceTitle,
-      MobileShieldPhase.succeeded => context.l10n.homeShieldSucceededTitle,
+      MobileShieldPhase.succeeded => context.l10n.commonShieldedSuccessfully,
       MobileShieldPhase.pending => context.l10n.homeShieldQueuedTitle,
       MobileShieldPhase.failed => context.l10n.homeShieldFailedTitle,
       _ => context.l10n.homeShieldingBalance,
@@ -98,7 +98,7 @@ class _MobileSoftwareShieldScreenState
         ? AppButton(
             onPressed: _close,
             expand: true,
-            child: Text(context.l10n.homeShieldBackToWallet),
+            child: Text(context.l10n.commonBackToWallet),
           )
         : null,
   );

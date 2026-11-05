@@ -253,7 +253,7 @@ class SendComposeView extends StatelessWidget {
       ),
       rightSlot: _SendRecipientLink(onTap: onContactsPressed),
       initialValue: recipientText,
-      hintText: recipientHint ?? context.l10n.sendZcashAddress,
+      hintText: recipientHint ?? context.l10n.commonZcashAddress,
       leading: AppIcon(leadingName, size: 20, color: leadingColor),
       showClearButton: true,
       keyboardType: TextInputType.text,
@@ -283,7 +283,7 @@ class SendComposeView extends StatelessWidget {
 
     return AppTextField(
       key: const ValueKey('send_amount_field'),
-      label: context.l10n.sendAmountLabel,
+      label: context.l10n.commonAmount,
       labelStyle: AppTypography.labelLarge.copyWith(
         color: colors.text.secondary,
       ),
@@ -347,7 +347,7 @@ class SendComposeView extends StatelessWidget {
             ),
           ),
           initialValue: memoText,
-          hintText: memoHint ?? context.l10n.sendMessageHint,
+          hintText: memoHint ?? context.l10n.commonAddAMessage,
           tone: isError
               ? AppTextFieldTone.destructive
               : AppTextFieldTone.neutral,
@@ -388,7 +388,7 @@ class _SendRecipientLink extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            context.l10n.sendContactsLink,
+            context.l10n.commonContacts,
             style: AppTypography.labelLarge.copyWith(
               color: colors.text.secondary,
             ),

@@ -81,7 +81,7 @@ class MobileSwapReviewContent extends StatelessWidget {
         : context.l10n.swapReviewFromAddress(externalAddressText);
 
     final payRow = MobileSwapReviewHeaderRow(
-      label: context.l10n.swapStatusPayLabel,
+      label: context.l10n.commonYourePaying,
       amountText: trimSwapAmountText(
         compactSwapAmountText(quote.sellAmountText),
       ),
@@ -89,7 +89,7 @@ class MobileSwapReviewContent extends StatelessWidget {
       bottomText: sendsZec ? payFiatTextOverride : null,
     );
     final receiveRow = MobileSwapReviewHeaderRow(
-      label: context.l10n.swapStatusReceiveLabel,
+      label: context.l10n.commonYoureReceiving,
       amountText: trimSwapAmountText(
         compactSwapAmountText(quote.receiveEstimateText),
       ),
@@ -158,11 +158,11 @@ class _ReviewCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ReviewRow(
-            label: context.l10n.swapReviewSlippageTolerance,
+            label: context.l10n.commonSlippageTolerance,
             value: swapReviewSlippageToleranceText(quote),
           ),
           _ReviewRow(
-            label: context.l10n.swapReviewGuaranteedMinimum,
+            label: context.l10n.commonGuaranteedMinimum,
             value: compactSwapAmountText(quote.minimumReceiveText),
             helpTooltip: swapMinimumReceiveTooltip(
               context.l10n,
@@ -174,7 +174,7 @@ class _ReviewCard extends StatelessWidget {
           Container(height: 1, color: colors.border.regular),
           const SizedBox(height: AppSpacing.sm),
           _ReviewRow(
-            label: context.l10n.swapReviewSwapFee,
+            label: context.l10n.commonSwapFee,
             value: quote.feeLabel,
             helpTooltip: swapFeeTooltip(context.l10n),
           ),
@@ -325,7 +325,7 @@ class MobileSwapReviewActions extends StatelessWidget {
         : expired
         ? context.l10n.swapReviewReviewAgain
         : startBlockedReason != null
-        ? context.l10n.swapActionNotEnoughZec
+        ? context.l10n.commonNotEnoughZec
         : starting
         ? startingLabel
         : context.l10n.swapReviewConfirmAndSwap;

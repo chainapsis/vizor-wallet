@@ -741,7 +741,7 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
               child: _Header(
                 // The title is constant: the requester is never promoted into it, because
                 // a link-supplied name is not this card's identity.
-                title: context.l10n.sendPaymentRequestTitle,
+                title: context.l10n.commonPaymentRequest,
                 isMobileLayout: widget.isMobileLayout,
                 onClose: widget.onCancel,
               ),
@@ -1259,7 +1259,7 @@ class _ExternalRequestIntroduction extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        context.l10n.sendPaymentRequestTitle,
+                        context.l10n.commonPaymentRequest,
                         key: const ValueKey('payment_request_title'),
                         style: AppTypography.bodySmall.copyWith(
                           fontWeight: FontWeight.w500,
@@ -1403,7 +1403,7 @@ class _ExternalScanActions extends StatelessWidget {
           growWithContent: true,
           constrainContent: true,
           leading: const AppIcon(AppIcons.qr),
-          child: Text(context.l10n.sendPaymentRequestScanOriginalQr),
+          child: Text(context.l10n.commonScanOriginalQr),
         ),
         const SizedBox(height: AppSpacing.xs),
       ],
@@ -1763,7 +1763,7 @@ class _Actions extends StatelessWidget {
   bool get _recheckable => status.offersRecheck && hasAmount;
 
   String _primaryLabel(AppLocalizations l10n) => _checking
-      ? l10n.sendPaymentRequestChecking
+      ? l10n.commonCheckingEllipsis
       : _recheckable
       ? l10n.sendPaymentRequestCheckAgain
       : hasAmount
@@ -1772,7 +1772,7 @@ class _Actions extends StatelessWidget {
       // address or the check is the problem — so naming the button after
       // the amount would point at the wrong fix.
       : _blocked
-      ? l10n.sendPaymentRequestEdit
+      ? l10n.commonEdit
       : l10n.sendPaymentRequestEnterAmount;
 
   @override
@@ -1876,7 +1876,7 @@ class _Actions extends StatelessWidget {
   Widget _editFill(AppLocalizations l10n) => _fillButton(
     l10n: l10n,
     key: const ValueKey('payment_request_edit'),
-    label: l10n.sendPaymentRequestEdit,
+    label: l10n.commonEdit,
     onPressed: onEdit,
     variant: AppButtonVariant.ghost,
   );

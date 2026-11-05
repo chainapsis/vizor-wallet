@@ -75,9 +75,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountsRemoveCheckingSwaps => '正在检查此账户在移除前是否有进行中的兑换。';
 
   @override
-  String get accountsRemoveConfirm => '移除';
-
-  @override
   String get accountsRemoveFailed => '无法移除账户。';
 
   @override
@@ -136,9 +133,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountsSendFailed => '无法开始发送';
 
   @override
-  String get accountsSendZec => '发送 ZEC';
-
-  @override
   String get accountsTitle => '账户';
 
   @override
@@ -151,16 +145,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountsViewViewingKey => '显示查看密钥';
 
   @override
-  String get activityAddressShielded => '屏蔽地址';
-
-  @override
-  String get activityAddressTransparent => '透明地址';
-
-  @override
   String get activityAddressUnified => '统一地址';
-
-  @override
-  String get activityAddressZcash => 'Zcash 地址';
 
   @override
   String get activityBalanceFromOrchard => '来自 Orchard 余额';
@@ -173,9 +158,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityBalanceOrchard => 'Orchard 余额';
-
-  @override
-  String get activityBalanceShielded => '屏蔽余额';
 
   @override
   String get activityDetailsLoadFailed => '失败，请重试';
@@ -224,9 +206,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityFeedEmpty => '暂无活动';
-
-  @override
-  String get activityFeedLoading => '正在加载活动';
 
   @override
   String get activityFeedRetry => '重新加载活动';
@@ -328,18 +307,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityOmissionShieldedFunding => '资金中的屏蔽部分';
 
   @override
-  String get activityPayFailed => '付款失败';
-
-  @override
   String get activityPayFromShielded => '来自屏蔽 ZEC';
 
   @override
   String activityPayFromShieldedOnChain(String network) {
     return '来自屏蔽 ZEC · $network';
   }
-
-  @override
-  String get activityPayInProgress => '付款进行中';
 
   @override
   String get activityPayIncomplete => '付款不完整';
@@ -349,9 +322,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityPayPaying => '支付中 ...';
-
-  @override
-  String get activityPayRefunded => '付款已退款';
 
   @override
   String get activityPoolMixed => '混合';
@@ -365,9 +335,6 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get activityPublicLookupWarning =>
       '服务器会得知此钱包对这笔交易感兴趣，如果没有使用 Tor，还会得知你的 IP 地址。';
-
-  @override
-  String get activityReceiptAmount => '金额';
 
   @override
   String get activityReceiptAmountMigrated => '迁移金额';
@@ -404,16 +371,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityReceiptLoading => '正在加载交易…';
 
   @override
-  String get activityReceiptMessage => '留言';
-
-  @override
   String get activityReceiptNetChange => '净变动';
 
   @override
   String get activityReceiptNetworkFee => '网络手续费';
-
-  @override
-  String get activityReceiptNoAccount => '没有活跃账户。';
 
   @override
   String get activityReceiptOutput => '输出';
@@ -422,31 +383,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityReceiptRefreshFailed => '无法刷新最新的交易状态。';
 
   @override
-  String get activityReceiptShowFullAddress => '显示完整地址';
-
-  @override
   String get activityReceiptStatus => '状态';
-
-  @override
-  String get activityReceiptTimestamp => '时间';
-
-  @override
-  String get activityReceiptTo => '收款方';
-
-  @override
-  String get activityReceiptTxFee => '交易手续费';
-
-  @override
-  String get activityReceiptTxId => '交易 ID';
 
   @override
   String get activityReceiptUnattributedFeeHelp => '此交易的总手续费。你的账户承担的部分未知。';
 
   @override
   String get activityReceiptUnknownFee => '未知';
-
-  @override
-  String get activityRowCheckingStatus => '正在检查状态';
 
   @override
   String activityRowToday(String time) {
@@ -462,9 +405,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get activityScreenTitle => '活动';
-
-  @override
   String get activitySectionEarlier => '更早';
 
   @override
@@ -477,22 +417,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activitySenderUnknown => '未知发送方';
 
   @override
-  String get activityStatusCompleted => '已完成';
-
-  @override
-  String get activityStatusFailed => '失败';
-
-  @override
   String get activityStatusFailedFundsReturned => '失败，资金已退回';
 
   @override
-  String get activityStatusInProgress => '进行中';
-
-  @override
   String get activityStatusIncompleteDeposit => '入账不足';
-
-  @override
-  String get activityStatusRefunded => '已退款';
 
   @override
   String activitySwapAssetOnChain(String symbol, String chain) {
@@ -505,12 +433,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get activitySwapFailed => '兑换失败';
-
-  @override
-  String get activitySwapJustNow => '刚刚';
-
-  @override
   String activitySwapMinutesAgo(int minutes) {
     return '$minutes 分钟前';
   }
@@ -519,12 +441,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String activitySwapReceivedAsset(String symbol) {
     return '已接收 $symbol';
   }
-
-  @override
-  String get activitySwapRefunded => '兑换已退款';
-
-  @override
-  String get activitySwapReviewQuote => '查看报价';
 
   @override
   String activitySwapStep(int current, int total) {
@@ -574,28 +490,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityTitleReceivingVerb => '接收中';
 
   @override
-  String get activityTitleSendFailed => '发送失败';
-
-  @override
-  String get activityTitleSending => '发送中...';
-
-  @override
   String get activityTitleSendingVerb => '发送中';
 
   @override
   String get activityTitleSent => '已发送';
 
   @override
-  String get activityTitleSentSuccessfully => '发送成功';
-
-  @override
   String get activityTitleShielded => '已屏蔽';
-
-  @override
-  String get activityTitleShieldedSuccessfully => '屏蔽成功';
-
-  @override
-  String get activityTitleShielding => '屏蔽中...';
 
   @override
   String get activityTitleShieldingFailed => '屏蔽失败';
@@ -608,9 +509,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityTitleTransaction => '交易';
-
-  @override
-  String get activityToastHashCopiedDesktop => '交易哈希已复制';
 
   @override
   String get activityToastHashCopiedMobile => '交易哈希已复制';
@@ -631,16 +529,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressBookAddressMissing => '请添加地址';
 
   @override
-  String get addressBookChainAndAddress => '链和地址';
-
-  @override
-  String get addressBookChangePicture => '更换联系人头像';
-
-  @override
   String get addressBookClearAddress => '清除地址';
-
-  @override
-  String get addressBookClearLabel => '清除联系人标签';
 
   @override
   String get addressBookClearName => '清除姓名';
@@ -652,9 +541,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String addressBookContactActions(String label) {
     return '$label 操作';
   }
-
-  @override
-  String get addressBookContactsTitle => '联系人';
 
   @override
   String get addressBookEditContact => '编辑联系人';
@@ -679,12 +565,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addressBookInvalidZcash => '无效的 Zcash 地址';
-
-  @override
-  String get addressBookLabelFieldLabel => '地址标签';
-
-  @override
-  String get addressBookLabelHint => '添加 1-20 个字符的标签';
 
   @override
   String get addressBookLabelLength => '请使用 1-20 个字符';
@@ -729,9 +609,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressBookPickerSearchHint => '搜索联系人';
 
   @override
-  String get addressBookRemove => '删除';
-
-  @override
   String addressBookRemoveBody(String label) {
     return '将从你的联系人中删除 $label。';
   }
@@ -755,9 +632,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addressBookRemoveFailedMobile => '无法删除联系人。请重试。';
-
-  @override
-  String get addressBookSaveContact => '保存联系人';
 
   @override
   String get addressBookSaveFailed => '无法保存联系人。请重试。';
@@ -786,15 +660,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressBookSelectNetwork => '选择网络';
 
   @override
-  String get addressBookSelectPicture => '选择联系人头像';
-
-  @override
-  String get addressBookSelectedContact => '已选联系人';
-
-  @override
-  String get addressBookSendZec => '发送 ZEC';
-
-  @override
   String get addressScanAddressCameraNeeded => '扫描地址二维码需要此设备配备摄像头。';
 
   @override
@@ -815,12 +680,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressScanCameraRestricted => '屏幕使用时间或设备管理正在阻止此设备使用摄像头。';
 
   @override
-  String get addressScanCameraUnavailable => '摄像头不可用';
-
-  @override
-  String get addressScanCameraUnavailableNow => '摄像头目前不可用。';
-
-  @override
   String get addressScanCloseScanner => '关闭扫描器';
 
   @override
@@ -830,25 +689,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressScanDeniedTitle => '你已拒绝摄像头访问';
 
   @override
-  String get addressScanDeniedTitleMobile => '你已拒绝摄像头访问';
-
-  @override
   String get addressScanEnableWindowsAccess => '请启用 Windows 摄像头访问';
 
   @override
   String get addressScanGrantAccess => '请授予摄像头访问权限';
 
   @override
-  String get addressScanLoading => '加载中';
-
-  @override
   String get addressScanLoadingCamera => '正在加载摄像头...';
 
   @override
   String get addressScanLoadingEllipsis => '正在加载...';
-
-  @override
-  String get addressScanNoAddress => '二维码中不包含地址。';
 
   @override
   String get addressScanNoCamera => '未找到摄像头';
@@ -860,22 +710,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressScanOpenSettings => '打开设置';
 
   @override
-  String get addressScanRequestAgain => '重新请求';
-
-  @override
-  String get addressScanRequestAgainHint => '请重新请求，或在\n系统设置中手动开启。';
-
-  @override
-  String get addressScanRestrictedBody => '屏幕使用时间或设备管理\n正在阻止使用摄像头。';
-
-  @override
-  String get addressScanRestrictedTitle => '摄像头访问受限';
-
-  @override
   String get addressScanTitle => '扫描地址二维码';
-
-  @override
-  String get addressScanToggleFlashlight => '切换手电筒';
 
   @override
   String get addressScanWindowsAccessHint =>
@@ -883,12 +718,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addressScanZcashPrompt => '请扫描 Zcash 二维码以继续';
-
-  @override
-  String get appBackAmount => '金额';
-
-  @override
-  String get appBackContacts => '联系人';
 
   @override
   String get appBackDonation => '捐赠';
@@ -972,9 +801,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appUpdateDismiss => '关闭';
 
   @override
-  String get appUpdateDownload => '下载';
-
-  @override
   String get appUpdateDownloading => '下载中';
 
   @override
@@ -1027,10 +853,27 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get commonActionNeeded => '需要操作';
+
+  @override
+  String get commonAddAMessage => '添加留言';
+
+  @override
   String get commonAddAccount => '添加账户';
 
   @override
   String get commonAddressCopied => '地址已复制';
+
+  @override
+  String commonAddressForChain(String chain) {
+    return '$chain 地址';
+  }
+
+  @override
+  String get commonAddressLabel => '地址标签';
+
+  @override
+  String get commonAmount => '金额';
 
   @override
   String get commonBack => '返回';
@@ -1041,16 +884,61 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get commonBackToWallet => '返回钱包';
+
+  @override
+  String get commonCameraDeniedTitle => '你已拒绝摄像头访问';
+
+  @override
+  String get commonCameraRequestAgainHint => '请重新请求，或在\n系统设置中手动开启。';
+
+  @override
+  String get commonCameraRestrictedBody => '屏幕使用时间或设备管理\n正在阻止使用摄像头。';
+
+  @override
+  String get commonCameraRestrictedTitle => '摄像头访问受限';
+
+  @override
+  String get commonCameraUnavailable => '摄像头不可用';
+
+  @override
+  String get commonCameraUnavailableNow => '摄像头目前不可用。';
+
+  @override
   String get commonCancel => '取消';
+
+  @override
+  String get commonCancelFailedRetry => '无法完成取消，请重试。';
 
   @override
   String get commonCancellationFailed => '无法完成取消，请重试。';
 
   @override
+  String get commonCancelling => '正在取消…';
+
+  @override
   String get commonCannotBeUndone => '此操作无法撤销。';
 
   @override
+  String get commonChainAndAddress => '链和地址';
+
+  @override
+  String get commonChangeContactPicture => '更换联系人头像';
+
+  @override
   String get commonChecking => '正在检查...';
+
+  @override
+  String get commonCheckingEllipsis => '正在检查…';
+
+  @override
+  String get commonCheckingStatus => '正在检查状态';
+
+  @override
+  String get commonClear => '清除';
+
+  @override
+  String get commonClearContactLabel => '清除联系人标签';
 
   @override
   String get commonClearText => '清除文本';
@@ -1059,7 +947,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonClose => '关闭';
 
   @override
+  String get commonCloseMessage => '关闭留言';
+
+  @override
   String get commonCoinholderVoting => '持币者投票';
+
+  @override
+  String get commonCompleted => '已完成';
+
+  @override
+  String get commonContactLabelHint => '添加 1-20 个字符的标签';
+
+  @override
+  String get commonContacts => '联系人';
 
   @override
   String get commonContinue => '继续';
@@ -1074,19 +974,58 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonCopyAddress => '复制地址';
 
   @override
+  String get commonCopyShieldedAddress => '复制屏蔽地址';
+
+  @override
   String get commonDismissNotification => '关闭通知';
+
+  @override
+  String get commonDone => '完成';
+
+  @override
+  String get commonDownload => '下载';
+
+  @override
+  String get commonDurationOneHour => '1 小时';
+
+  @override
+  String get commonDurationOneMinute => '1 分钟';
+
+  @override
+  String get commonEdit => '编辑';
+
+  @override
+  String get commonEnterAmountInUsd => '以 USD 输入金额';
+
+  @override
+  String get commonFailed => '失败';
 
   @override
   String get commonFeatureInProgress => '此功能仍在开发中。';
 
   @override
+  String get commonFullAddress => '完整地址';
+
+  @override
+  String get commonGetSignature => '获取签名';
+
+  @override
   String get commonGoBack => '返回';
+
+  @override
+  String get commonGuaranteedMinimum => '保证最低金额';
 
   @override
   String get commonImporting => '正在导入...';
 
   @override
+  String get commonInProgress => '进行中';
+
+  @override
   String get commonInformation => '信息';
+
+  @override
+  String get commonJustNow => '刚刚';
 
   @override
   String get commonKeepQrSteady => '请保持二维码稳定且完整可见。';
@@ -1095,13 +1034,110 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonKeepScreenAwake => '保持屏幕常亮';
 
   @override
+  String get commonKeystoneAfterScan => '扫描后，请点击“获取签名”。';
+
+  @override
+  String get commonKeystoneScanSignatureResult =>
+      '请在 Keystone 上打开签名结果二维码，然后重新扫描。';
+
+  @override
+  String get commonKeystoneScanTransaction =>
+      '请用 Keystone 钱包扫描此交易二维码，并按设备上的步骤操作。';
+
+  @override
+  String get commonLedgerSigningFailed => 'Ledger 签名失败';
+
+  @override
+  String get commonLoading => '加载中';
+
+  @override
+  String get commonLoadingActivity => '正在加载活动';
+
+  @override
+  String get commonMemo => '备注';
+
+  @override
+  String get commonMessage => '留言';
+
+  @override
+  String get commonMessageIsTooLong => '留言太长';
+
+  @override
+  String get commonNetworkConversionFees => '网络 + 兑换手续费';
+
+  @override
+  String get commonNoActiveAccount => '没有活跃的账户';
+
+  @override
+  String get commonNoActiveAccountSentence => '没有活跃账户。';
+
+  @override
   String get commonNotAvailableYet => '暂不可用';
+
+  @override
+  String get commonNotEnoughZec => 'ZEC 不足';
 
   @override
   String get commonOk => '好';
 
   @override
+  String get commonPayInsufficientZec => '你的 ZEC 不足以完成此支付。请尝试较小的金额。';
+
+  @override
+  String get commonPaymentFailed => '支付失败';
+
+  @override
+  String get commonPaymentInProgress => '付款进行中';
+
+  @override
+  String get commonPaymentProgress => '支付进度';
+
+  @override
+  String get commonPaymentRefunded => '付款已退款';
+
+  @override
+  String get commonPaymentRequest => '收款请求';
+
+  @override
+  String get commonPrivatelyFromShieldedBalance => '从屏蔽余额私密支付';
+
+  @override
+  String get commonProvingParamsFailed => '无法准备所需的证明参数。';
+
+  @override
+  String get commonQrNoAddress => '二维码中不包含地址。';
+
+  @override
   String get commonQuit => '退出';
+
+  @override
+  String get commonRate => '汇率';
+
+  @override
+  String get commonRecipientGets => '收款方将收到金额';
+
+  @override
+  String get commonRefundFee => '退款手续费';
+
+  @override
+  String get commonRefundTo => '退款至';
+
+  @override
+  String commonRefundToAddress(String address) {
+    return '退款地址：$address';
+  }
+
+  @override
+  String get commonRefunded => '已退款';
+
+  @override
+  String get commonRefundedAmount => '退款金额';
+
+  @override
+  String get commonRemove => '移除';
+
+  @override
+  String get commonRequestAgain => '重新请求';
 
   @override
   String get commonResetVizor => '重置 Vizor';
@@ -1110,16 +1146,139 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonRetry => '重试';
 
   @override
+  String get commonRetrySaving => '重试保存';
+
+  @override
+  String get commonReturnHome => '返回首页';
+
+  @override
+  String get commonReviewAndFinish => '检查并完成';
+
+  @override
+  String get commonReviewPayment => '确认支付';
+
+  @override
+  String get commonReviewQuote => '查看报价';
+
+  @override
+  String get commonReviewSwap => '查看兑换';
+
+  @override
+  String get commonSave => '保存';
+
+  @override
+  String get commonSaveContact => '保存联系人';
+
+  @override
+  String get commonScanOriginalQr => '扫描原始二维码';
+
+  @override
   String get commonScanQrCode => '扫描二维码';
 
   @override
   String get commonSelectAccount => '选择账户';
 
   @override
+  String get commonSelectContactPicture => '选择联系人头像';
+
+  @override
+  String get commonSelectRecipient => '选择收款方';
+
+  @override
+  String get commonSelectedContact => '已选联系人';
+
+  @override
+  String get commonSendFailed => '发送失败';
+
+  @override
+  String get commonSendZec => '发送 ZEC';
+
+  @override
+  String get commonSending => '发送中...';
+
+  @override
   String get commonSensitiveContentHidden => '敏感内容已隐藏';
 
   @override
+  String get commonSentSuccessfully => '发送成功';
+
+  @override
+  String get commonShieldedAddress => '屏蔽地址';
+
+  @override
+  String get commonShieldedBalance => '屏蔽余额';
+
+  @override
+  String get commonShieldedSuccessfully => '屏蔽成功';
+
+  @override
+  String get commonShielding => '屏蔽中...';
+
+  @override
+  String get commonShowFullAddress => '显示完整地址';
+
+  @override
+  String get commonSigningCancelledBeforeParams => '在下载证明参数之前，签名已取消。';
+
+  @override
+  String get commonSigningExpired => '交易在签名前已过期。';
+
+  @override
+  String get commonSlippageTolerance => '滑点容忍度';
+
+  @override
+  String get commonSupportVizor => '支持 Vizor';
+
+  @override
+  String get commonSwapFailed => '兑换失败';
+
+  @override
+  String get commonSwapFee => '兑换手续费';
+
+  @override
+  String get commonSwapProgress => '兑换进度';
+
+  @override
+  String get commonSwapRefunded => '兑换已退款';
+
+  @override
+  String commonSymbolRecipient(String symbol) {
+    return '$symbol 收款方';
+  }
+
+  @override
+  String commonSymbolRefundAddress(String symbol) {
+    return '$symbol 退款地址';
+  }
+
+  @override
+  String get commonTimestamp => '时间';
+
+  @override
+  String get commonTo => '收款方';
+
+  @override
+  String commonToAddressOnChain(String address, String chain) {
+    return '收款地址：$address（$chain）';
+  }
+
+  @override
+  String get commonToggleFlashlight => '切换手电筒';
+
+  @override
+  String get commonTransactionExpired => '交易已过期';
+
+  @override
+  String get commonTransactionHashCopied => '交易哈希已复制';
+
+  @override
+  String get commonTransparentAddress => '透明地址';
+
+  @override
   String get commonTryAgain => '重试';
+
+  @override
+  String get commonTxId => '交易 ID';
 
   @override
   String get commonUnlockVizor => '解锁 Vizor';
@@ -1132,6 +1291,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonWelcomeBack => '欢迎回来';
+
+  @override
+  String get commonYouPay => '你支付';
+
+  @override
+  String get commonYourePaying => '正在支付金额';
+
+  @override
+  String get commonYoureReceiving => '正在接收金额';
+
+  @override
+  String get commonZcashAddress => 'Zcash 地址';
 
   @override
   String endpointCurrent(String endpoint) {
@@ -1155,9 +1326,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeActivityEmptyHintMobile => '不如发起你的\n第一笔 ZEC 交易？';
-
-  @override
-  String get homeActivityLoading => '正在加载活动';
 
   @override
   String get homeActivityUnavailable => '无法加载活动。';
@@ -1208,9 +1376,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeKeepAwakeTitle => '同步时保持屏幕常亮？';
-
-  @override
-  String get homeLedgerActionNeeded => '需要操作';
 
   @override
   String get homeLedgerApprovalNotAccepted => '你的 Ledger 无法接受此次批准。之前的批准已发送。';
@@ -1271,9 +1436,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeLedgerShieldingFailed => '无法使用 Ledger 完成屏蔽。';
-
-  @override
-  String get homeLedgerSigningFailedTitle => 'Ledger 签名失败';
 
   @override
   String homeLoadFailed(String details) {
@@ -1364,9 +1526,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeShieldAttentionTitle => '屏蔽需要处理';
 
   @override
-  String get homeShieldBackToWallet => '返回钱包';
-
-  @override
   String get homeShieldBackToWalletTitleCase => '返回钱包';
 
   @override
@@ -1384,12 +1543,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeShieldCameraDenied => '请在设置中允许访问相机，以扫描 Keystone 签名。';
-
-  @override
-  String get homeShieldCameraUnavailable => '相机暂时不可用。';
-
-  @override
-  String get homeShieldCancelFailed => '无法完成取消，请重试。';
 
   @override
   String get homeShieldCancelled => '屏蔽已取消。';
@@ -1417,9 +1570,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeShieldErrorNotFinalized => '无法完成屏蔽交易。';
-
-  @override
-  String get homeShieldErrorProvingParams => '无法准备所需的证明参数。';
 
   @override
   String get homeShieldErrorSeedUnavailable => '此账户的助记词不可用。';
@@ -1453,9 +1603,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeShieldNextStep => '下一步';
-
-  @override
-  String get homeShieldNoActiveAccount => '没有活动账户。';
 
   @override
   String get homeShieldNow => '立即屏蔽';
@@ -1502,23 +1649,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeShieldSubmitting => '正在提交交易';
 
   @override
-  String get homeShieldSucceededTitle => '屏蔽成功';
-
-  @override
-  String get homeShieldToggleFlashlight => '切换手电筒';
-
-  @override
   String get homeShieldWaitingForPrivateRecovery =>
       '私密恢复正在追赶最新区块。请稍后重试；你的 Keystone 签名已保留。';
 
   @override
-  String get homeShieldedBalance => '屏蔽余额';
-
-  @override
   String get homeShieldingBalance => '正在屏蔽你的余额…';
-
-  @override
-  String get homeShieldingProgress => '正在屏蔽...';
 
   @override
   String homeTransparentBalance(String balance) {
@@ -1583,7 +1718,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get keyringSaveUnconfirmedBody =>
-      'Vizor 无法确认您的更改是否已保存。请先退出并重新启动 Vizor 再继续。';
+      'Vizor 无法确认你的更改是否已保存。请先退出并重新启动 Vizor 再继续。';
 
   @override
   String get keyringSaveUnconfirmedTitle => '无法确认保存';
@@ -1619,32 +1754,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneBirthdaySubtitle => '这有助于我们更快地导入你的钱包。';
 
   @override
-  String get keystoneCameraDeniedBody => '请重新请求，或在系统设置中\n手动开启。';
-
-  @override
-  String get keystoneCameraDeniedTitle => '你已拒绝相机权限';
-
-  @override
   String get keystoneCameraEnableBody => '连接 Keystone 需要使用相机。\n你之后可随时在设置中更改。';
 
   @override
   String get keystoneCameraEnableTitle => '启用相机权限';
 
   @override
-  String get keystoneCameraRequestAgain => '重新请求';
-
-  @override
-  String get keystoneCameraRestrictedBody => '屏幕使用时间或设备管理\n正在阻止使用相机。';
-
-  @override
-  String get keystoneCameraRestrictedTitle => '相机访问受限';
-
-  @override
   String get keystoneCameraUnavailableBody =>
       'Keystone 导入仅支持摄像头扫描二维码。\n请连接摄像头后重试。';
-
-  @override
-  String get keystoneCameraUnavailableTitle => '相机不可用';
 
   @override
   String get keystoneConfirmSelection => '确认选择';
@@ -1970,9 +2087,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get lockSyncPausedTitle => '同步已暂停';
 
   @override
-  String get lockSyncedSemantics => 'Vizor 已同步';
-
-  @override
   String get lockSyncingMessage => 'Vizor 正在同步';
 
   @override
@@ -2030,17 +2144,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get onboardingAddressShieldedLabel => '屏蔽地址';
-
-  @override
   String get onboardingAddressShieldedTitleMobile => '屏蔽地址';
 
   @override
   String get onboardingAddressTransparentDescription =>
       '地址以 t 开头，与 Bitcoin 类似，该地址的余额和交易记录对所有人公开可见。';
-
-  @override
-  String get onboardingAddressTransparentLabel => '透明地址';
 
   @override
   String get onboardingAddressTransparentTitleMobile => '透明地址';
@@ -2167,9 +2275,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingCheckingAccounts => '正在检查账户...';
 
   @override
-  String get onboardingClear => '清除';
-
-  @override
   String get onboardingConnectHardwareSubtitleDesktop => '请选择你的硬件钱包。';
 
   @override
@@ -2207,9 +2312,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingDiscoveryTitle => '发现其他账户';
-
-  @override
-  String get onboardingEdit => '编辑';
 
   @override
   String get onboardingEditBip39Passphrase => '编辑 BIP39 密码短语';
@@ -2366,9 +2468,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingLinkVizorDesktopDescription => '扫码并连接 Vizor 桌面版';
 
   @override
-  String get onboardingLoading => '加载中';
-
-  @override
   String onboardingLostPasswordBody(String resetAction, String importAction) {
     return '如果你忘记了密码，恢复账户的唯一方法是$resetAction。\n这会删除所有账户和未分享的礼品卡链接。\n你需要$importAction。';
   }
@@ -2392,9 +2491,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingManualNextWord => '下一个单词';
-
-  @override
-  String get onboardingManualReviewFinish => '检查并完成';
 
   @override
   String onboardingManualStoppedAt(String word) {
@@ -2472,9 +2568,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingReviewImportTitle => '检查导入内容';
-
-  @override
-  String get onboardingSave => '保存';
 
   @override
   String get onboardingSavingWallet => '正在保存钱包...';
@@ -2662,13 +2755,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get passwordsDoNotMatch => '两次输入的密码不一致。';
 
   @override
-  String get payAddLabelHint => '添加 1-20 个字符的标签';
-
-  @override
   String get payAddToContacts => '添加到联系人';
-
-  @override
-  String get payAddressLabel => '地址标签';
 
   @override
   String payAddressSemantics(String address) {
@@ -2684,9 +2771,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get payAmountEnterInUsd => '以 USD 输入金额';
-
-  @override
   String get payAmountEstimated => '预估：';
 
   @override
@@ -2699,42 +2783,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get payAmountPayingIn => '支付币种';
 
   @override
-  String get payAmountShieldedBalance => '屏蔽余额';
-
-  @override
   String get payBackHome => '首页';
 
   @override
-  String payChainAddressHint(String chain) {
-    return '$chain 地址';
-  }
-
-  @override
-  String get payChainAndAddress => '链和地址';
-
-  @override
-  String get payChangeContactPicture => '更换联系人头像';
-
-  @override
-  String get payClearContactLabel => '清除联系人标签';
-
-  @override
-  String get payContacts => '联系人';
-
-  @override
   String get payFetchingQuote => '正在获取报价';
-
-  @override
-  String get payInsufficientZec => '你的 ZEC 不足以完成此支付。请尝试较小的金额。';
 
   @override
   String get payNewAddressDetected => '检测到新地址。';
 
   @override
   String get payNewAddressWarning => '你之前未与此地址交互过。';
-
-  @override
-  String get payNotEnoughZec => 'ZEC 不足';
 
   @override
   String payRecentDaysAgo(int days) {
@@ -2745,9 +2803,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String payRecentHoursAgo(int hours) {
     return '$hours 小时前';
   }
-
-  @override
-  String get payRecentJustNow => '刚刚';
 
   @override
   String payRecentMinutesAgo(int minutes) {
@@ -2779,9 +2834,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get payReviewConvertedAmount => '兑换金额';
 
   @override
-  String get payReviewFullAddress => '完整地址';
-
-  @override
   String get payReviewPaying => '支付金额';
 
   @override
@@ -2800,19 +2852,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get payReviewReturnToPay => '返回支付';
 
   @override
-  String get payReviewShowFullAddress => '显示完整地址';
-
-  @override
-  String get payReviewTo => '收款方';
-
-  @override
   String get payReviewUnknownAddress => '未知地址';
-
-  @override
-  String get paySave => '保存';
-
-  @override
-  String get paySaveContact => '保存联系人';
 
   @override
   String get paySaveContactError => '无法保存此联系人。请重试。';
@@ -2827,9 +2867,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get payScanCaption => '扫描收款地址二维码';
 
   @override
-  String get payScanNoAddress => '二维码中不包含地址。';
-
-  @override
   String get payScanPermissionTitle => '扫描收款地址';
 
   @override
@@ -2839,19 +2876,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get payScanQrTitle => '扫描二维码';
 
   @override
-  String get payScanSteadyHint => '请保持二维码稳定且完整可见。';
-
-  @override
-  String get paySelectContactPicture => '选择联系人头像';
-
-  @override
   String get paySelectRecipient => '选择收款方';
-
-  @override
-  String get paySelectedContact => '已选联系人';
-
-  @override
-  String get payStepAmount => '金额';
 
   @override
   String get payStepRecipient => '收款方';
@@ -2860,19 +2885,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get payStepReview => '确认';
 
   @override
-  String get paySubmittedDone => '完成';
-
-  @override
   String get paySubmittedFailedBody => '无法提交支付。请重试。';
 
   @override
-  String get paySubmittedFailedTitle => '支付失败';
-
-  @override
   String get paySubmittedGoToActivity => '前往活动记录';
-
-  @override
-  String get paySubmittedReturnHome => '返回首页';
 
   @override
   String get paySubmittedStatusUncertainNotice => '支付状态不确定。重试之前请先查看活动记录。';
@@ -2904,12 +2920,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get payTitleRecipient => '选择收款方';
-
-  @override
-  String get payTitleReview => '确认支付';
-
-  @override
   String get poolShielded => '屏蔽';
 
   @override
@@ -2925,9 +2935,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get profilePictureUpdateFailed => '无法更改头像。';
 
   @override
-  String get receiptMessageLabel => '消息';
-
-  @override
   String get receiveAboutAddressType => '关于此地址类型';
 
   @override
@@ -2935,9 +2942,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get receiveAddressLoadFailed => '无法加载你的地址。请稍后重试。';
-
-  @override
-  String get receiveCopyShieldedAddress => '复制屏蔽地址';
 
   @override
   String get receiveCopyTransparentAddress => '复制透明地址';
@@ -2972,9 +2976,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveInfoShieldedSubtitle => '默认提供强隐私保护。';
 
   @override
-  String get receiveInfoShieldedTitle => '屏蔽地址';
-
-  @override
   String get receiveInfoTransparentExchanges =>
       '常用于要求透明度或监管明确性的交易所，也是许多钱包兼容时的默认选项。';
 
@@ -2999,12 +3000,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveInfoTransparentSubtitle => '公开可见';
 
   @override
-  String get receiveInfoTransparentTitle => '透明地址';
-
-  @override
-  String get receiveNoActiveAccount => '没有活跃的账户';
-
-  @override
   String get receiveQrSaveFailed => '无法保存二维码图片。请尝试其他文件夹，或改为复制请求链接。';
 
   @override
@@ -3019,16 +3014,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveRenewAddressError => '无法刷新你的屏蔽地址。请重试，或继续使用当前地址。';
 
   @override
-  String get receiveRequestAddMessage => '添加留言';
-
-  @override
   String get receiveRequestAmountDecimalsError => '最多输入 8 位小数';
 
   @override
   String get receiveRequestAmountFormatError => '请输入类似 0.5 的金额';
-
-  @override
-  String get receiveRequestAmountLabel => '金额';
 
   @override
   String get receiveRequestAmountSupplyError => '金额超过 ZEC 总供应量';
@@ -3037,9 +3026,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String receiveRequestButton(String ticker) {
     return '请求 $ticker';
   }
-
-  @override
-  String get receiveRequestCloseMessage => '关闭留言';
 
   @override
   String get receiveRequestCloseRequest => '关闭请求';
@@ -3057,9 +3043,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveRequestCreate => '创建请求';
 
   @override
-  String get receiveRequestEnterUsd => '以 USD 输入金额';
-
-  @override
   String get receiveRequestEnterZec => '以 ZEC 输入金额';
 
   @override
@@ -3070,12 +3053,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get receiveRequestMessageHint => '任何收到链接的人都能读取此内容';
-
-  @override
-  String get receiveRequestMessageLabel => '留言';
-
-  @override
-  String get receiveRequestMessageTooLong => '留言太长';
 
   @override
   String get receiveRequestSaveQr => '保存二维码图片';
@@ -3116,25 +3093,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendAddMemo => '添加备注';
 
   @override
-  String get sendAddressTypeShielded => '屏蔽地址';
-
-  @override
   String get sendAddressTypeTex => 'TEX 地址';
-
-  @override
-  String get sendAddressTypeTransparent => '透明地址';
 
   @override
   String get sendAddressValidationFailed => '地址验证失败';
 
   @override
   String get sendAmountCtaEnterAmount => '输入金额以继续';
-
-  @override
-  String get sendAmountCtaReviewAndFinish => '查看并完成';
-
-  @override
-  String get sendAmountLabel => '金额';
 
   @override
   String get sendBroadcastCancelledBeforeParams => '在下载证明参数之前，发送已取消。';
@@ -3190,19 +3155,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendCalculatingMax => '正在计算最大金额';
 
   @override
-  String get sendClearAction => '清除';
-
-  @override
-  String get sendCloseMessageField => '关闭留言';
-
-  @override
   String get sendContactPickerEmpty => '没有 Zcash 联系人';
 
   @override
   String get sendContactPickerTitle => 'Zcash 联系人';
-
-  @override
-  String get sendContactsLink => '联系人';
 
   @override
   String get sendDonationAddressTitle => 'Vizor 捐赠地址';
@@ -3304,16 +3260,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendInvalidAmount => '金额无效';
 
   @override
-  String get sendKeystoneAfterScan => '扫描后，请点击“获取签名”。';
-
-  @override
   String get sendKeystoneConfirmTitle => '使用 Keystone 确认';
-
-  @override
-  String get sendKeystoneExpired => '交易在签名前已过期。';
-
-  @override
-  String get sendKeystoneGetSignature => '获取签名';
 
   @override
   String get sendKeystonePrepareFailedGoBack => '无法准备 Keystone 签名。请返回后重试。';
@@ -3324,12 +3271,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sendKeystonePreparing => '准备中';
-
-  @override
-  String get sendKeystoneProvingCancelled => '在下载证明参数之前，签名已取消。';
-
-  @override
-  String get sendKeystoneProvingParamsFailed => '无法准备所需的证明参数。';
 
   @override
   String get sendKeystoneQrMismatch => '此二维码与当前的 Keystone 签名请求不匹配。';
@@ -3354,14 +3295,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sendKeystoneScanToFinish => '请扫描 Keystone 上的二维码以完成发送';
-
-  @override
-  String get sendKeystoneScanTransactionInstruction =>
-      '请用 Keystone 钱包扫描此交易二维码，并按设备上的步骤操作。';
-
-  @override
-  String get sendKeystoneScanUnexpectedSignature =>
-      '请在 Keystone 上打开签名结果二维码，然后重新扫描。';
 
   @override
   String get sendKeystoneScanUnexpectedTransaction =>
@@ -3401,9 +3334,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendLedgerExpiredMessage => '此交易无法再签名。请新建并确认交易。';
 
   @override
-  String get sendLedgerExpiredTitle => '交易已过期';
-
-  @override
   String get sendLedgerKeepOpenRetry => '请保持 Vizor 打开并重试。无需再次在 Ledger 上确认。';
 
   @override
@@ -3417,9 +3347,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendLedgerRejectedOnDevice => '交易已在 Ledger 上被拒绝。';
 
   @override
-  String get sendLedgerRetrySaving => '重试保存';
-
-  @override
   String get sendLedgerSignaturePreservedMessage =>
       '你的 Ledger 签名已保留。请重试保存，无需再确认其他交易。';
 
@@ -3427,16 +3354,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendLedgerSignedNeedsAttentionTitle => '已签名的交易需要处理';
 
   @override
-  String get sendLedgerSigningFailedTitle => 'Ledger 签名失败';
-
-  @override
   String get sendLedgerSigningIncomplete => '无法完成 Ledger 签名。请检查设备后重试。';
 
   @override
   String get sendLedgerSigningUnavailableTitle => '无法使用 Ledger 签名';
-
-  @override
-  String get sendLedgerStatusActionNeeded => '需要操作';
 
   @override
   String get sendLedgerStatusNewTransactionRequired => '需要新建交易';
@@ -3486,22 +3407,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendMemoShieldedOnly => '仅屏蔽地址支持留言';
 
   @override
-  String get sendMemoTooLong => '留言过长';
-
-  @override
   String get sendMemoWhitespaceOnly => '仅含空白字符';
-
-  @override
-  String get sendMessageHint => '添加留言';
-
-  @override
-  String get sendMessageLabel => '留言';
-
-  @override
-  String get sendNoActiveAccount => '没有活动账户';
-
-  @override
-  String get sendNotEnoughZec => 'ZEC 不足';
 
   @override
   String get sendOpenContacts => '打开联系人';
@@ -3525,16 +3431,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendPaymentRequestCheckFailed => '无法检查此请求';
 
   @override
-  String get sendPaymentRequestChecking => '正在检查…';
-
-  @override
   String get sendPaymentRequestClose => '关闭收款请求';
 
   @override
   String get sendPaymentRequestConfirmWithSender => '请与发送者确认详情。';
-
-  @override
-  String get sendPaymentRequestEdit => '编辑';
 
   @override
   String get sendPaymentRequestEnterAmount => '输入金额';
@@ -3616,9 +3516,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendPaymentRequestScanOriginalHint => '请直接在 Vizor 中扫描原始二维码。';
 
   @override
-  String get sendPaymentRequestScanOriginalQr => '扫描原始二维码';
-
-  @override
   String get sendPaymentRequestShowFullAddress => '显示完整收款地址';
 
   @override
@@ -3634,9 +3531,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sendPaymentRequestSyncing => '钱包仍在同步——同步完成后将自动更新';
-
-  @override
-  String get sendPaymentRequestTitle => '收款请求';
 
   @override
   String get sendPaymentRequestTransactionMemo => '交易备注';
@@ -3679,9 +3573,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendRecipientWrongNetwork => '此地址属于另一个 Zcash 网络';
 
   @override
-  String get sendRequestScanBackLabel => '收款请求';
-
-  @override
   String get sendRequestScanCheckFailed => '无法检查此二维码，请重试。';
 
   @override
@@ -3705,16 +3596,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendRequestScanTipOriginal => '请在另一台设备上全屏打开请求方的原始二维码。';
 
   @override
-  String get sendRequestScanTitle => '扫描原始二维码';
-
-  @override
   String get sendRequestScanUnavailable => '请连接摄像头，或返回查看链接详情。';
 
   @override
   String get sendReviewAction => '查看确认';
-
-  @override
-  String get sendReviewBackSupportVizor => '支持 Vizor';
 
   @override
   String get sendReviewCalculatingFee => '正在计算手续费...';
@@ -3738,12 +3623,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendReviewFinishingSyncButton => '正在完成钱包同步...';
 
   @override
-  String get sendReviewFullAddress => '完整地址';
-
-  @override
-  String get sendReviewPaymentTitle => '查看付款确认';
-
-  @override
   String get sendReviewPreparing => '准备中...';
 
   @override
@@ -3755,19 +3634,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendReviewRequestedBy => '请求方';
 
   @override
-  String get sendReviewShowFullAddress => '显示完整地址';
-
-  @override
   String get sendReviewTitle => '查看发送确认';
 
   @override
-  String get sendReviewTo => '收款方';
-
-  @override
   String get sendSaplingDownloadBody => '要创建这笔隐私交易，钱包需要下载约 50MB 的加密参数。';
-
-  @override
-  String get sendSaplingDownloadButton => '下载';
 
   @override
   String get sendSaplingDownloadNote => '只需下载一次。\n可能会产生流量费用。';
@@ -3808,12 +3678,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendSendingToLabel => '发送至';
 
   @override
-  String get sendSignCancelFailed => '无法完成取消，请重试。';
-
-  @override
-  String get sendSignCancelling => '正在取消…';
-
-  @override
   String get sendSignConfirmTransaction => '确认交易';
 
   @override
@@ -3830,9 +3694,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sendSpendableTooltipTitle => '可用余额可能低于总余额。';
-
-  @override
-  String get sendStatusBackToWallet => '返回钱包';
 
   @override
   String get sendStatusDonationFailed => '捐赠失败';
@@ -3858,9 +3719,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendStatusMobileDonationThanks => '感谢你\n支持 Vizor';
 
   @override
-  String get sendStatusMobileDone => '完成';
-
-  @override
   String get sendStatusMobileNothingSent => '未发送任何内容，你的资金没有变动。请重试。';
 
   @override
@@ -3870,13 +3728,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendStatusMobileQueued => '已排队等待发送';
 
   @override
-  String get sendStatusMobileReturnHome => '返回首页';
-
-  @override
   String get sendStatusMobileReturnToSettings => '返回设置';
-
-  @override
-  String get sendStatusMobileSending => '正在发送...';
 
   @override
   String get sendStatusMobileSendingDonation => '正在发送捐赠...';
@@ -3894,34 +3746,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendStatusRowStatus => '状态';
 
   @override
-  String get sendStatusRowTimestamp => '时间';
-
-  @override
-  String get sendStatusRowTxId => '交易 ID';
-
-  @override
   String get sendStatusScanKeystoneTitle => '请扫描 Keystone 二维码';
 
   @override
-  String get sendStatusTitleCompleted => '发送成功';
-
-  @override
-  String get sendStatusTitleFailed => '发送失败';
-
-  @override
   String get sendStatusTitleInProgress => '正在发送...';
-
-  @override
-  String get sendStatusTxHashCopied => '已复制交易哈希';
-
-  @override
-  String get sendStatusValueCompleted => '已完成';
-
-  @override
-  String get sendStatusValueFailed => '失败';
-
-  @override
-  String get sendStatusValueInProgress => '进行中';
 
   @override
   String get sendStepEnterAmount => '输入金额';
@@ -3931,9 +3759,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sendStepReviewSend => '查看发送确认';
-
-  @override
-  String get sendStepSelectRecipient => '选择收款方';
 
   @override
   String sendTitle(String currency) {
@@ -3960,9 +3785,6 @@ class AppLocalizationsZh extends AppLocalizations {
     );
     return '$_temp0';
   }
-
-  @override
-  String get sendZcashAddress => 'Zcash 地址';
 
   @override
   String get settingsAccountChangedPasscode => '所选账户已更改。请重新输入数字密码。';
@@ -4305,9 +4127,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsRowSecretPassphrase => '助记词';
 
   @override
-  String get settingsRowSupportVizor => '支持 Vizor';
-
-  @override
   String get settingsRowUpdates => '更新';
 
   @override
@@ -4489,9 +4308,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsTorStatusDirect => '直接连接';
 
   @override
-  String get settingsTorStatusFailed => '失败';
-
-  @override
   String get settingsTorStatusNotSaved => '设置未保存';
 
   @override
@@ -4583,9 +4399,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsUpdateChecking => '检查中';
 
   @override
-  String get settingsUpdateCheckingButton => '正在检查…';
-
-  @override
   String get settingsUpdateCurrentLabel => '当前';
 
   @override
@@ -4593,9 +4406,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsUpdateDownloadingButton => '正在下载…';
-
-  @override
-  String get settingsUpdateFailed => '失败';
 
   @override
   String get settingsUpdatePasswordTitle => '更新密码';
@@ -4765,9 +4575,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidebarAddressCopyFailed => '无法复制地址';
 
   @override
-  String get sidebarCopyShieldedAddress => '复制屏蔽地址';
-
-  @override
   String get sidebarHideBalance => '隐藏余额';
 
   @override
@@ -4804,23 +4611,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapActionGettingQuote => '正在获取报价';
 
   @override
-  String get swapActionNotEnoughZec => 'ZEC 不足';
-
-  @override
-  String get swapActionReview => '查看兑换';
-
-  @override
-  String swapActivityAddressBookRecipient(String symbol) {
-    return '$symbol 收款方';
-  }
-
-  @override
   String swapActivityAddressBookRefund(String symbol) {
     return '$symbol 退款';
   }
-
-  @override
-  String get swapActivityAmount => '金额';
 
   @override
   String swapActivityDeadlineHours(int hours) {
@@ -4831,12 +4624,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String swapActivityDeadlineMinutes(int minutes) {
     return '$minutes 分钟';
   }
-
-  @override
-  String get swapActivityDeadlineOneHour => '1 小时';
-
-  @override
-  String get swapActivityDeadlineOneMinute => '1 分钟';
 
   @override
   String get swapActivityDepositAmount => '存入金额';
@@ -4905,53 +4692,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapActivityDetailFees => '费用';
 
   @override
-  String get swapActivityDetailGuaranteedMinimum => '保证最低金额';
-
-  @override
   String get swapActivityDetailIncluded => '已包含';
 
   @override
   String get swapActivityDetailIncludedInRate => '已包含在所示汇率中';
 
   @override
-  String get swapActivityDetailMemo => '备注';
-
-  @override
   String get swapActivityDetailMissingDeposit => '缺少的存入金额';
-
-  @override
-  String get swapActivityDetailNetworkConversionFees => '网络 + 兑换手续费';
-
-  @override
-  String get swapActivityDetailRate => '汇率';
 
   @override
   String get swapActivityDetailRealizedSlippage => '实际滑点';
 
   @override
-  String swapActivityDetailRecipient(String symbol) {
-    return '$symbol 收款方';
-  }
-
-  @override
-  String swapActivityDetailRefundAddress(String symbol) {
-    return '$symbol 退款地址';
-  }
-
-  @override
-  String get swapActivityDetailRefundFee => '退款手续费';
-
-  @override
-  String get swapActivityDetailRefundTo => '退款地址';
-
-  @override
-  String get swapActivityDetailRefundedAmount => '退款金额';
-
-  @override
   String get swapActivityDetailRequiredDeposit => '所需存入金额';
-
-  @override
-  String get swapActivityDetailSlippageTolerance => '滑点容忍度';
 
   @override
   String swapActivityDetailSourceTxShielded(String symbol) {
@@ -4959,16 +4712,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get swapActivityDetailSwapFee => '兑换手续费';
-
-  @override
-  String get swapActivityDetailTimestamp => '时间';
-
-  @override
   String get swapActivityDetailTotalFees => '总费用';
-
-  @override
-  String get swapActivityDetailTxId => '交易 ID';
 
   @override
   String get swapActivityExpectedToReceive => '预计收到金额';
@@ -4997,31 +4741,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapActivityPayInProgressTitle => '支付进行中...';
 
   @override
-  String get swapActivityPayStatusCompleted => '已完成';
-
-  @override
-  String get swapActivityPayStatusFailed => '失败';
-
-  @override
-  String get swapActivityPayStatusInProgress => '进行中';
-
-  @override
-  String get swapActivityPayStatusRefunded => '已退款';
-
-  @override
   String get swapActivityPaymentComplete => '支付完成';
-
-  @override
-  String get swapActivityPaymentFailed => '支付失败';
-
-  @override
-  String get swapActivityPaymentInProgress => '支付进行中';
-
-  @override
-  String get swapActivityPaymentProgressTab => '支付进度';
-
-  @override
-  String get swapActivityPaymentRefunded => '支付已退款';
 
   @override
   String swapActivityPickerNoRecipients(String symbol) {
@@ -5044,26 +4764,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get swapActivityPrivatelyFromShielded => '从屏蔽余额私密支付';
-
-  @override
   String get swapActivityReceiveAssetFallback => '接收资产';
 
   @override
-  String get swapActivityRecipientGets => '收款方将收到金额';
-
-  @override
   String get swapActivityRecipientReceived => '收款方已收到金额';
-
-  @override
-  String swapActivityRefundToAddress(String address) {
-    return '退款地址：$address';
-  }
-
-  @override
-  String swapActivityStateAddressHint(String chain) {
-    return '$chain 地址';
-  }
 
   @override
   String swapActivityStateAddressOrAccountHint(String chain) {
@@ -5103,18 +4807,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String swapActivityStateRefundAddressLabel(String symbol) {
-    return '$symbol 退款地址';
-  }
-
-  @override
   String get swapActivityStatusAwaitingDeposit => '等待存入';
 
   @override
   String get swapActivityStatusAwaitingExternalDeposit => '等待外部存入';
-
-  @override
-  String get swapActivityStatusCheckingStatus => '正在检查状态';
 
   @override
   String get swapActivityStatusComplete => '已完成';
@@ -5247,21 +4943,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapActivitySwapCompleted => '兑换完成';
 
   @override
-  String get swapActivitySwapFailed => '兑换失败';
-
-  @override
   String get swapActivitySwapInProgress => '兑换进行中...';
-
-  @override
-  String get swapActivitySwapProgressTab => '兑换进度';
-
-  @override
-  String get swapActivitySwapRefunded => '兑换已退款';
-
-  @override
-  String swapActivityToAddressOnChain(String address, String chain) {
-    return '收款地址：$address（$chain）';
-  }
 
   @override
   String get swapActivityTooltipFees => '包含我们的手续费以及路径服务商处理此兑换的成本。已计入上方汇率。';
@@ -5286,20 +4968,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapActivityYouPaid => '已支付金额';
 
   @override
-  String get swapActivityYouPay => '支付金额';
-
-  @override
   String get swapActivityYouReceived => '已收到金额';
 
   @override
-  String get swapActivityYourePaying => '正在支付金额';
-
-  @override
-  String get swapActivityYoureReceiving => '正在接收金额';
-
-  @override
   String swapAddressRecipientDescription(String symbol) {
-    return '您的 $symbol 将发送到此地址。';
+    return '你的 $symbol 将发送到此地址。';
   }
 
   @override
@@ -5313,14 +4986,6 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String swapAddressRefundDescription(String symbol, String chain) {
     return '如果兑换失败或汇率变动，将扣除手续费后以 $chain 上的 $symbol 退款。';
-  }
-
-  @override
-  String get swapAddressRefundFieldLabel => '退款至';
-
-  @override
-  String swapAddressRefundTitle(String symbol) {
-    return '$symbol 退款地址';
   }
 
   @override
@@ -5339,11 +5004,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapAssetSelectorTitle => '选择资产';
 
   @override
-  String swapChainAddressTitle(String chain) {
-    return '$chain 地址';
-  }
-
-  @override
   String get swapComposerAddRecipientAddressEllipsis => '添加收款地址...';
 
   @override
@@ -5355,19 +5015,13 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get swapComposerYouPay => '您支付';
+  String get swapComposerYouReceive => '你收到';
 
   @override
-  String get swapComposerYouReceive => '您收到';
+  String get swapContactAlreadyInAddressBook => '已在你的通讯录中';
 
   @override
-  String get swapContactAlreadyInAddressBook => '已在您的通讯录中';
-
-  @override
-  String get swapContactAlreadySaved => '已在您的联系人中';
-
-  @override
-  String get swapDepositAmount => '金额';
+  String get swapContactAlreadySaved => '已在你的联系人中';
 
   @override
   String get swapDepositAmountCopiedDesktop => '已复制金额';
@@ -5388,21 +5042,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapDepositDoneMobile => '我已充值代币';
 
   @override
-  String get swapDepositHourOne => '1 小时';
-
-  @override
   String swapDepositHoursMany(int count) {
     return '$count 小时';
   }
 
   @override
-  String get swapDepositMemo => '备注';
-
-  @override
   String get swapDepositMemoCopied => '已复制备注';
-
-  @override
-  String get swapDepositMinuteOne => '1 分钟';
 
   @override
   String swapDepositMinutesMany(int count) {
@@ -5421,9 +5066,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapDepositTimeoutBody => '此充值地址已失效。\n请重新发起一笔兑换。';
 
   @override
-  String get swapDepositTimeoutTitle => '兑换失败';
-
-  @override
   String get swapDepositTitle => '充值代币';
 
   @override
@@ -5436,37 +5078,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapDismissBarrierLabel => '关闭';
 
   @override
-  String get swapFullAddress => '完整地址';
-
-  @override
-  String get swapKeystoneAfterScan => '扫描后，请点击“获取签名”。';
-
-  @override
   String get swapKeystoneBroadcastFailed => '无法广播交易。';
 
   @override
   String get swapKeystoneBroadcastingTitle => '正在广播 ZEC 充值';
 
   @override
-  String get swapKeystoneCancelFailed => '无法完成取消。请重试。';
-
-  @override
-  String get swapKeystoneCancelledBeforeParams => '在下载证明参数之前，签名已被取消。';
-
-  @override
-  String get swapKeystoneCancelling => '正在取消…';
-
-  @override
-  String get swapKeystoneExpired => '交易在签名前已过期。';
-
-  @override
   String get swapKeystoneFailedTitle => 'Keystone 签名失败';
 
   @override
   String get swapKeystoneFinalizing => '正在广播 ZEC 充值...';
-
-  @override
-  String get swapKeystoneGetSignature => '获取签名';
 
   @override
   String get swapKeystoneIncomplete => '无法完成 ZEC 充值签名。';
@@ -5481,10 +5102,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapKeystoneScanCaption => '扫描 Keystone 上的二维码以完成 ZEC 充值';
 
   @override
-  String get swapKeystoneScanDescription =>
-      '请使用您的 Keystone 钱包扫描此交易二维码，并按设备上的提示操作。';
-
-  @override
   String get swapKeystoneScanToSign => '扫描以签名';
 
   @override
@@ -5494,16 +5111,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapKeystoneStatusUncertain => '交易状态不确定。请先刷新活动再重试。';
 
   @override
-  String get swapKeystoneUnexpectedUr => '请在 Keystone 上打开签名结果二维码，然后再次扫描。';
-
-  @override
   String get swapLedgerBackToActivity => '返回活动';
 
   @override
   String get swapLedgerBroadcastFailed => '无法广播 ZEC 充值。';
 
   @override
-  String get swapLedgerDeclined => 'ZEC 充值已在您的 Ledger 上被拒绝。';
+  String get swapLedgerDeclined => 'ZEC 充值已在你的 Ledger 上被拒绝。';
 
   @override
   String get swapLedgerMessageBackground => 'Vizor 已在后台完成此交易。';
@@ -5521,9 +5135,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapLedgerRetryCleanup => '重试清理';
 
   @override
-  String get swapLedgerRetrySaving => '重试保存';
-
-  @override
   String get swapLedgerSigningIncomplete => '无法完成 Ledger 签名。';
 
   @override
@@ -5534,9 +5145,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapLedgerStatusWait => '请稍候';
-
-  @override
-  String get swapLedgerTitleExpired => '交易已过期';
 
   @override
   String get swapLedgerTitlePending => '交易状态待确认';
@@ -5622,34 +5230,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapPayStatusNewAddress => '新地址';
 
   @override
-  String get swapPayStatusProgressTab => '支付进度';
-
-  @override
-  String get swapPayStatusRefundFee => '退款手续费';
-
-  @override
-  String get swapPayStatusRefundTo => '退款至';
-
-  @override
-  String get swapPayStatusRefundedAmount => '退款金额';
-
-  @override
-  String get swapPayStatusShowFullAddress => '显示完整地址';
-
-  @override
   String get swapPayStatusSourceAmount => '原始金额';
-
-  @override
-  String get swapPayStatusTimestamp => '时间';
-
-  @override
-  String get swapPayStatusTo => '收款方';
-
-  @override
-  String get swapPayStatusTxFee => '交易手续费';
-
-  @override
-  String get swapPayStatusTxId => '交易 ID';
 
   @override
   String get swapPoweredByLabel => '由以下提供支持';
@@ -5672,24 +5253,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get swapReviewGuaranteedMinimum => '保证最低收到数额';
-
-  @override
-  String get swapReviewInsufficientZecPay => '您的 ZEC 不足以完成此次支付。请尝试较小的金额。';
-
-  @override
-  String get swapReviewInsufficientZecSwap => '您的 ZEC 不足以完成此次兑换。请尝试较小的金额。';
-
-  @override
-  String get swapReviewNetworkFees => '网络与兑换手续费';
+  String get swapReviewInsufficientZecSwap => '你的 ZEC 不足以完成此次兑换。请尝试较小的金额。';
 
   @override
   String swapReviewPayAmount(String amount) {
     return '支付 $amount';
   }
-
-  @override
-  String get swapReviewPrivately => '从隐私余额中私密支付';
 
   @override
   String get swapReviewQuoteExpired => '报价已过期。请重新查看以获取最新汇率。';
@@ -5701,24 +5270,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapReviewQuoteInactive => '此报价已失效。';
 
   @override
-  String get swapReviewRate => '汇率';
-
-  @override
-  String get swapReviewRecipientGets => '收款方将收到';
-
-  @override
-  String swapReviewRefundToAddress(String address) {
-    return '退款至：$address';
-  }
-
-  @override
   String get swapReviewReturnToSwap => '返回兑换';
 
   @override
   String get swapReviewReviewAgain => '重新查看';
-
-  @override
-  String get swapReviewSlippageTolerance => '滑点容差';
 
   @override
   String get swapReviewStartingLockingQuote => '正在锁定报价';
@@ -5730,32 +5285,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapReviewStartingSending => '发送中';
 
   @override
-  String get swapReviewSwapFee => '兑换手续费';
-
-  @override
-  String get swapReviewSwapTitle => '查看兑换';
-
-  @override
-  String get swapReviewTitlePay => '查看支付';
-
-  @override
-  String get swapReviewTitleSwap => '查看报价';
-
-  @override
   String swapReviewToAddress(String address) {
     return '收款至：$address';
   }
-
-  @override
-  String swapReviewToAddressOnChain(String address, String chain) {
-    return '收款至：$chain 上的 $address';
-  }
-
-  @override
-  String get swapReviewYouPay => '您支付';
-
-  @override
-  String get swapScanNoAddress => '二维码中不包含地址。';
 
   @override
   String get swapSignPayment => '签署支付';
@@ -5771,7 +5303,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '在执行失败之前，允许报价波动所需的额外 ZEC 数额。网络手续费另计。';
 
   @override
-  String get swapSlippageDescriptionSwap => '设置您可接受的最大汇率变动。网络手续费另计。';
+  String get swapSlippageDescriptionSwap => '设置你可接受的最大汇率变动。网络手续费另计。';
 
   @override
   String get swapSlippageRangeError => '滑点必须在 0.1 - 5% 之间';
@@ -5780,31 +5312,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapSlippageTitle => '滑点';
 
   @override
-  String get swapStatusBadgeCompleted => '已完成';
-
-  @override
-  String get swapStatusBadgeFailed => '失败';
-
-  @override
-  String get swapStatusBadgeInProgress => '进行中';
-
-  @override
   String get swapStatusBadgeNeedsAttention => '需要处理';
 
   @override
-  String get swapStatusBadgeRefunded => '已退款';
-
-  @override
   String get swapStatusDetailsTab => '交易详情';
-
-  @override
-  String get swapStatusPayLabel => '您正在支付';
-
-  @override
-  String get swapStatusProgressTab => '兑换进度';
-
-  @override
-  String get swapStatusReceiveLabel => '您将收到';
 
   @override
   String get swapStatusRowLabel => '状态';
@@ -5823,9 +5334,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapViewOnNearIntents => '在 NEAR Intents 中查看';
-
-  @override
-  String get swapZcashAddressTitle => 'Zcash 地址';
 
   @override
   String syncCheckingPercentSemantics(String percent) {

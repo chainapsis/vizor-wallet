@@ -93,7 +93,9 @@ class MobilePayAmountStep extends StatelessWidget {
                 if (errorText != null || balanceExceeded) ...[
                   const SizedBox(height: AppSpacing.s),
                   Text(
-                    balanceExceeded ? context.l10n.payNotEnoughZec : errorText!,
+                    balanceExceeded
+                        ? context.l10n.commonNotEnoughZec
+                        : errorText!,
                     key: const ValueKey('mobile_pay_amount_error'),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -399,7 +401,7 @@ class _MobilePayAmountField extends StatelessWidget {
               button: true,
               label: inputIsFiat
                   ? context.l10n.payAmountEnterIn(asset.symbol)
-                  : context.l10n.payAmountEnterInUsd,
+                  : context.l10n.commonEnterAmountInUsd,
               child: GestureDetector(
                 key: const ValueKey('mobile_pay_amount_mode_toggle'),
                 behavior: HitTestBehavior.opaque,

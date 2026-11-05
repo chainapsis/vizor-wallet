@@ -241,8 +241,8 @@ class _AddressTypeHeader extends StatelessWidget {
               Flexible(
                 child: Text(
                   _isShielded
-                      ? context.l10n.onboardingAddressShieldedLabel
-                      : context.l10n.onboardingAddressTransparentLabel,
+                      ? context.l10n.commonShieldedAddress
+                      : context.l10n.commonTransparentAddress,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.bodyLarge.copyWith(

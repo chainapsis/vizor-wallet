@@ -345,7 +345,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                       MobileListRow(
                         key: const ValueKey('mobile_settings_donation_row'),
                         leading: _RowIcon(AppIcons.donation, glyphSize: 16.5),
-                        label: context.l10n.settingsRowSupportVizor,
+                        label: context.l10n.commonSupportVizor,
                         minRowHeight: _settingsRowHeight,
                         textStyle: settingsRowStyle,
                         chevronColor: settingsChevronColor,

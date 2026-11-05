@@ -214,9 +214,9 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final payLabel = widget.payLabel ?? context.l10n.swapStatusPayLabel;
+    final payLabel = widget.payLabel ?? context.l10n.commonYourePaying;
     final receiveLabel =
-        widget.receiveLabel ?? context.l10n.swapStatusReceiveLabel;
+        widget.receiveLabel ?? context.l10n.commonYoureReceiving;
     return SizedBox(
       key: const ValueKey('swap_status_page_content'),
       width: 400,
@@ -277,7 +277,7 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             SwapStatusTabs(
               activeTab: widget.activeTab,
               progressLabel:
-                  widget.progressTabLabel ?? context.l10n.swapStatusProgressTab,
+                  widget.progressTabLabel ?? context.l10n.commonSwapProgress,
               onChanged: widget.onTabChanged,
             ),
             const SizedBox(height: AppSpacing.sm),

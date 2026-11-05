@@ -86,7 +86,7 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
               const SizedBox(height: AppSpacing.md),
               ReviewInfoRow(
                 key: const ValueKey('mobile_pay_review_recipient_row'),
-                label: context.l10n.payReviewTo,
+                label: context.l10n.commonTo,
                 value: contact?.label ?? compactRecipient,
                 leading: contact == null
                     ? const ReviewInfoIconCircle(iconName: AppIcons.wallet)
@@ -97,13 +97,13 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
                 bottomLeftText: contact == null
                     ? context.l10n.payReviewUnknownAddress
                     : compactRecipient,
-                trailingActionLabel: context.l10n.payReviewFullAddress,
+                trailingActionLabel: context.l10n.commonFullAddress,
                 trailingActionKey: const ValueKey(
                   'mobile_pay_review_full_address_button',
                 ),
                 onTrailingAction: () => showMobileAddressVerifySheet(
                   context,
-                  title: context.l10n.payChainAddressHint(
+                  title: context.l10n.commonAddressForChain(
                     quote.receiveAsset.chainLabel,
                   ),
                   address: widget.recipientAddress,
@@ -257,7 +257,7 @@ class MobilePayReviewActions extends StatelessWidget {
         : expired
         ? context.l10n.payReviewRefreshQuote
         : blocked
-        ? context.l10n.payNotEnoughZec
+        ? context.l10n.commonNotEnoughZec
         : starting
         ? context.l10n.payReviewPaying
         : context.l10n.payReviewConfirmPay;

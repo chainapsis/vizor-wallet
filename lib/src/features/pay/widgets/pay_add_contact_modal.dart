@@ -97,7 +97,7 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
     final colors = context.colors;
     if (_pickingPicture) {
       return AppProfilePicturePickerModal(
-        title: context.l10n.paySelectContactPicture,
+        title: context.l10n.commonSelectContactPicture,
         currentProfilePictureId: _profilePictureId,
         onCancel: () => setState(() => _pickingPicture = false),
         onUpdate: (id) async {
@@ -157,9 +157,9 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
           const SizedBox(height: AppSpacing.md),
           AppTextField(
             key: const ValueKey('pay_add_contact_label_field'),
-            label: context.l10n.payAddressLabel,
+            label: context.l10n.commonAddressLabel,
             controller: _labelController,
-            hintText: context.l10n.payAddLabelHint,
+            hintText: context.l10n.commonContactLabelHint,
             autofocus: true,
             inputFormatters: [LengthLimitingTextInputFormatter(20)],
             onSubmitted: (_) => _save(),
@@ -171,7 +171,7 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  context.l10n.payChainAndAddress,
+                  context.l10n.commonChainAndAddress,
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.secondary,
                   ),
@@ -227,7 +227,7 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
             cancelKey: const ValueKey('pay_add_contact_cancel_button'),
             actionKey: const ValueKey('pay_add_contact_save_button'),
             onCancel: widget.onCancel,
-            actionLabel: context.l10n.paySave,
+            actionLabel: context.l10n.commonSave,
             onAction: _canSave ? _save : null,
           ),
         ],

@@ -170,7 +170,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                           const SizedBox(height: AppSpacing.md),
                           MobileRecipientSection(
                             key: const ValueKey('mobile_pay_contacts_section'),
-                            title: context.l10n.payContacts,
+                            title: context.l10n.commonContacts,
                             children: [
                               for (final contact in suggestions.contacts)
                                 MobileRecipientRow(
@@ -347,7 +347,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
             controller: widget.controller,
             focusNode: _focusNode,
             enabled: !widget.busy,
-            hintText: context.l10n.payChainAddressHint(
+            hintText: context.l10n.commonAddressForChain(
               widget.externalAsset.chainLabel,
             ),
             keyboardType: TextInputType.text,

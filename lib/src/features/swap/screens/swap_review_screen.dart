@@ -139,7 +139,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
         ? widget.payMode
-              ? context.l10n.swapReviewInsufficientZecPay
+              ? context.l10n.commonPayInsufficientZec
               : context.l10n.swapReviewInsufficientZecSwap
         : null;
 

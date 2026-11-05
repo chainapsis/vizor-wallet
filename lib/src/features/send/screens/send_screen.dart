@@ -717,7 +717,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   String? get _memoError {
     final memo = _effectiveMemo;
-    if (utf8.encode(memo).length > 512) return context.l10n.sendMemoTooLong;
+    if (utf8.encode(memo).length > 512) {
+      return context.l10n.commonMessageIsTooLong;
+    }
     if (memo.isNotEmpty && !_isShieldedAddress) {
       return context.l10n.sendMemoShieldedOnly;
     }
@@ -765,7 +767,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   String? _maxEstimatePreconditionError() {
     if (widget.activeAccountUuid == null) {
-      return context.l10n.sendNoActiveAccount;
+      return context.l10n.commonNoActiveAccount;
     }
     if (!_hasValidAddress) return context.l10n.sendMaxNeedsAddress;
     return _memoError;
@@ -1066,7 +1068,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final accountUuid = widget.activeAccountUuid;
       if (accountUuid == null) {
         setState(() {
-          _error = context.l10n.sendNoActiveAccount;
+          _error = context.l10n.commonNoActiveAccount;
           _isSending = false;
         });
         return;
@@ -1364,7 +1366,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                     label: context.l10n.sendRecipientLabel,
                                     labelStyle: sendFieldLabelStyle,
                                     rightSlot: _SendContactsLabelButton(
-                                      label: context.l10n.sendContactsLink,
+                                      label: context.l10n.commonContacts,
                                       onTap: _openContactPicker,
                                     ),
                                     tone: addressTone,
@@ -1415,7 +1417,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                           const SizedBox(height: _singleLineFieldGap),
                           AppTextField(
                             key: const ValueKey('send_amount_field'),
-                            label: context.l10n.sendAmountLabel,
+                            label: context.l10n.commonAmount,
                             labelStyle: sendFieldLabelStyle,
                             tone: _showAmountError
                                 ? AppTextFieldTone.destructive
@@ -1499,7 +1501,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             ] else ...[
                               AppTextField(
                                 key: const ValueKey('send_memo_field'),
-                                label: context.l10n.sendMessageLabel,
+                                label: context.l10n.commonMessage,
                                 labelStyle: sendFieldLabelStyle,
                                 tone: _memoError != null
                                     ? AppTextFieldTone.destructive
@@ -1509,7 +1511,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                     : null,
                                 focusNode: _memoFocusNode,
                                 controller: _memoController,
-                                hintText: context.l10n.sendMessageHint,
+                                hintText: context.l10n.commonAddAMessage,
                                 leading: AppIcon(
                                   AppIcons.scroll,
                                   size: 20,
@@ -1543,7 +1545,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                 showClearButton: true,
                                 clearButtonRequiresText: false,
                                 clearButtonSemanticLabel:
-                                    context.l10n.sendCloseMessageField,
+                                    context.l10n.commonCloseMessage,
                                 onClear: () {
                                   setState(() {
                                     _messageExpanded = false;

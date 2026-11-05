@@ -243,7 +243,7 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
     final normalized = normalizeAddressScanPayload(value);
     if (normalized == null || normalized.isEmpty) {
       setState(() {
-        _error = context.l10n.addressScanNoAddress;
+        _error = context.l10n.commonQrNoAddress;
         _scanResetToken++;
       });
       return;
@@ -529,7 +529,7 @@ class _AddressQrCameraViewport extends StatelessWidget {
               _AddressQrCameraMessage(
                 iconName: AppIcons.camera,
                 title: context.l10n.addressScanGrantAccess,
-                description: context.l10n.addressScanRequestAgainHint,
+                description: context.l10n.commonCameraRequestAgainHint,
               ),
             if (status == AddressQrCameraStatus.denied)
               _AddressQrCameraMessage(
@@ -543,13 +543,13 @@ class _AddressQrCameraViewport extends StatelessWidget {
                   size: AppButtonSize.medium,
                   minWidth: 96,
                   leading: const AppIcon(AppIcons.renew, size: 16),
-                  child: Text(context.l10n.addressScanRequestAgain),
+                  child: Text(context.l10n.commonRequestAgain),
                 ),
               ),
             if (status == AddressQrCameraStatus.unavailable)
               _AddressQrCameraMessage(
                 iconName: AppIcons.cameraDenied,
-                title: context.l10n.addressScanCameraUnavailable,
+                title: context.l10n.commonCameraUnavailable,
                 description:
                     unavailableDescription ??
                     context.l10n.addressScanCameraRequired,
@@ -594,7 +594,7 @@ class _AddressQrCameraViewport extends StatelessWidget {
 
   String _cameraDeniedDescription(BuildContext context) => Platform.isWindows
       ? context.l10n.addressScanWindowsAccessHint
-      : context.l10n.addressScanRequestAgainHint;
+      : context.l10n.commonCameraRequestAgainHint;
 }
 
 class _AddressQrCameraMessage extends StatelessWidget {
@@ -735,7 +735,7 @@ class _AddressQrLoadingOverlay extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.xxs),
                 Text(
-                  context.l10n.addressScanLoading,
+                  context.l10n.commonLoading,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: _foregroundColor,
                   ),

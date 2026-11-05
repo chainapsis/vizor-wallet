@@ -435,7 +435,7 @@ class _AddressBookPane extends StatelessWidget {
               // 4098:554201 shows only the back link above the empty block).
               if (state.hasContacts) ...[
                 Text(
-                  context.l10n.addressBookContactsTitle,
+                  context.l10n.commonContacts,
                   textAlign: TextAlign.center,
                   style: AppTypography.headlineLarge.copyWith(
                     color: colors.text.accent,
@@ -916,7 +916,7 @@ class _ContactContextMenu extends StatelessWidget {
           const SizedBox(height: AppSpacing.xxs),
           AppContextMenuItem(
             iconName: AppIcons.plane,
-            label: context.l10n.addressBookSendZec,
+            label: context.l10n.commonSendZec,
             onTap: onSend,
           ),
         ],
@@ -1163,12 +1163,12 @@ class _ContactFormModalState extends State<_ContactFormModal> {
             height: 86,
             child: AppTextField(
               key: const ValueKey('address_book_contact_label_field'),
-              label: context.l10n.addressBookLabelFieldLabel,
+              label: context.l10n.commonAddressLabel,
               controller: _labelController,
-              hintText: context.l10n.addressBookLabelHint,
+              hintText: context.l10n.commonContactLabelHint,
               trailing: widget.editing
                   ? AppTappable(
-                      semanticsLabel: context.l10n.addressBookClearLabel,
+                      semanticsLabel: context.l10n.commonClearContactLabel,
                       onTap: _clearLabel,
                       child: const AppIcon(AppIcons.cross),
                     )
@@ -1243,7 +1243,7 @@ class _EditableContactAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppTappable(
-      semanticsLabel: context.l10n.addressBookChangePicture,
+      semanticsLabel: context.l10n.commonChangeContactPicture,
       onTap: onPressed,
       child: SizedBox(
         width: 62,
@@ -1299,7 +1299,7 @@ class _ChainAddressSelector extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(left: AppSpacing.xxs),
               child: Text(
-                context.l10n.addressBookChainAndAddress,
+                context.l10n.commonChainAndAddress,
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -1363,7 +1363,7 @@ class _ContactAvatarPickerModal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppProfilePicturePickerModal(
-      title: context.l10n.addressBookSelectPicture,
+      title: context.l10n.commonSelectContactPicture,
       currentProfilePictureId: selectedProfilePictureId,
       onCancel: onCancel,
       onUpdate: (profilePictureId) async => onSelected(profilePictureId),
@@ -1629,7 +1629,7 @@ class _RemoveContactModal extends StatelessWidget {
             cancelKey: const ValueKey('address_book_remove_cancel_button'),
             actionKey: const ValueKey('address_book_remove_confirm_button'),
             onCancel: onCancel,
-            actionLabel: context.l10n.addressBookRemove,
+            actionLabel: context.l10n.commonRemove,
             actionVariant: AppButtonVariant.destructive,
             onAction: () => unawaited(onRemove()),
           ),

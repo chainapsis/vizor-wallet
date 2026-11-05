@@ -196,7 +196,7 @@ class SwapState {
 
   String destinationFieldLabel(AppLocalizations l10n) => direction.sendsZec
       ? l10n.swapActivityStateDestination
-      : l10n.swapActivityStateRefundAddressLabel(externalAsset.symbol);
+      : l10n.commonSymbolRefundAddress(externalAsset.symbol);
 
   // The address belongs to a chain, not the token (you don't have a "USDC
   // address" — you have an Ethereum address that holds USDC), so name the
@@ -204,7 +204,7 @@ class SwapState {
   // modal field (the old "Refund address on the ET…" cut off the chain).
   String destinationFieldHint(AppLocalizations l10n) => direction.sendsZec
       ? l10n.swapActivityStateAddressOrAccountHint(externalAsset.chainLabel)
-      : l10n.swapActivityStateAddressHint(externalAsset.chainLabel);
+      : l10n.commonAddressForChain(externalAsset.chainLabel);
 
   /// Best-effort format check of [destinationText] against the external asset's
   /// chain. Returns null when empty, when the chain has no validator, or when

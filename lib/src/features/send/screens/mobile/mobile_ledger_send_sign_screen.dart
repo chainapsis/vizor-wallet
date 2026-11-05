@@ -282,7 +282,7 @@ class _MobileLedgerSendSignScreenState
           _phase = LedgerSigningModalPhase.failed;
           _failure = LedgerSigningFailurePresentation(
             title: context.l10n.sendLedgerCouldNotFinishTitle,
-            statusLabel: context.l10n.sendLedgerStatusActionNeeded,
+            statusLabel: context.l10n.commonActionNeeded,
             message: _signingComplete
                 ? context.l10n.sendLedgerKeepOpenRetry
                 : context.l10n.sendLedgerCouldNotPrepare,
@@ -426,7 +426,7 @@ class _MobileLedgerSendSignScreenState
       // Nothing to do here until the upgrade; the sheet only closes.
       presentation = LedgerSigningFailurePresentation(
         title: kNetworkUpgradeHoldActionLabel,
-        statusLabel: context.l10n.sendLedgerStatusActionNeeded,
+        statusLabel: context.l10n.commonActionNeeded,
         message: upgradeHold,
         showDeviceAppPrompt: false,
       );
@@ -434,7 +434,7 @@ class _MobileLedgerSendSignScreenState
     } else if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
       presentation = LedgerSigningFailurePresentation(
-        title: context.l10n.sendLedgerExpiredTitle,
+        title: context.l10n.commonTransactionExpired,
         statusLabel: context.l10n.sendLedgerStatusNewTransactionRequired,
         message: context.l10n.sendLedgerExpiredMessage,
         showDeviceAppPrompt: false,
@@ -463,7 +463,7 @@ class _MobileLedgerSendSignScreenState
       presentation = LedgerSigningFailurePresentation(
         title: context.l10n.sendLedgerNeedsAttentionTitle,
         requestFailure: LedgerRequestFailure.fromError(error),
-        statusLabel: context.l10n.sendLedgerStatusActionNeeded,
+        statusLabel: context.l10n.commonActionNeeded,
         message: guidance.message,
         showDeviceAppPrompt: guidance.showDeviceAppPrompt,
         bluetoothRecovery: guidance.bluetoothRecovery,
@@ -482,9 +482,9 @@ class _MobileLedgerSendSignScreenState
         _ => context.l10n.sendLedgerSigningIncomplete,
       };
       presentation = LedgerSigningFailurePresentation(
-        title: context.l10n.sendLedgerSigningFailedTitle,
+        title: context.l10n.commonLedgerSigningFailed,
         requestFailure: LedgerRequestFailure.fromError(error),
-        statusLabel: context.l10n.sendLedgerStatusActionNeeded,
+        statusLabel: context.l10n.commonActionNeeded,
         message: message,
         showDeviceAppPrompt: false,
         actionLabel: context.l10n.commonTryAgain,
@@ -540,12 +540,12 @@ class _MobileLedgerSendSignScreenState
               : context.l10n.sendLedgerCouldNotSaveTitle,
           statusLabel: terminal
               ? context.l10n.sendLedgerStatusRecoveryRequired
-              : context.l10n.sendLedgerStatusActionNeeded,
+              : context.l10n.commonActionNeeded,
           message: terminal
               ? context.l10n.sendLedgerCouldNotVerifySaved
               : context.l10n.sendLedgerKeepOpenRetrySaving,
           showDeviceAppPrompt: false,
-          actionLabel: terminal ? null : context.l10n.sendLedgerRetrySaving,
+          actionLabel: terminal ? null : context.l10n.commonRetrySaving,
         );
         _recoveryAction = terminal
             ? null
@@ -603,7 +603,7 @@ class _MobileLedgerSendSignScreenState
           title: failure.title,
           requestFailure: failure.requestFailure,
           statusLabel: failure.statusLabel,
-          message: context.l10n.sendSignCancelFailed,
+          message: context.l10n.commonCancelFailedRetry,
           showDeviceAppPrompt: false,
           actionLabel: failure.actionLabel,
         );

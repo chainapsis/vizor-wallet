@@ -418,7 +418,7 @@ class MobileAddressScanCardContent extends StatelessWidget {
             top: AppSpacing.base,
             left: AppSpacing.base,
             child: _CameraGlyphButton(
-              semanticLabel: context.l10n.addressScanToggleFlashlight,
+              semanticLabel: context.l10n.commonToggleFlashlight,
               icon: const Icon(
                 Icons.flashlight_on_outlined,
                 color: Color(0xFFFFFFFF),
@@ -689,8 +689,8 @@ class _ScanPermissionCard extends StatelessWidget {
       case AddressQrCameraStatus.denied:
         return _ScanCameraMessage(
           iconName: AppIcons.camera,
-          title: context.l10n.addressScanDeniedTitleMobile,
-          description: context.l10n.addressScanRequestAgainHint,
+          title: context.l10n.commonCameraDeniedTitle,
+          description: context.l10n.commonCameraRequestAgainHint,
           action: AppButton(
             key: const ValueKey('mobile_address_scan_retry_button'),
             variant: AppButtonVariant.secondary,
@@ -698,7 +698,7 @@ class _ScanPermissionCard extends StatelessWidget {
             minWidth: 96,
             leading: const AppIcon(AppIcons.renew),
             onPressed: onRetry,
-            child: Text(context.l10n.addressScanRequestAgain),
+            child: Text(context.l10n.commonRequestAgain),
           ),
         );
       case AddressQrCameraStatus.restricted:
@@ -707,10 +707,10 @@ class _ScanPermissionCard extends StatelessWidget {
         return _ScanCameraMessage(
           iconName: AppIcons.cameraDenied,
           title: restricted
-              ? context.l10n.addressScanRestrictedTitle
-              : context.l10n.addressScanCameraUnavailable,
+              ? context.l10n.commonCameraRestrictedTitle
+              : context.l10n.commonCameraUnavailable,
           description: restricted
-              ? context.l10n.addressScanRestrictedBody
+              ? context.l10n.commonCameraRestrictedBody
               : unavailableDescription ??
                     context.l10n.addressScanAddressCameraNeeded,
           // A runtime open failure (camera busy / in use by another app) is
@@ -732,7 +732,7 @@ class _ScanPermissionCard extends StatelessWidget {
         return _ScanCameraMessage(
           iconName: AppIcons.camera,
           title: context.l10n.addressScanGrantAccess,
-          description: context.l10n.addressScanRequestAgainHint,
+          description: context.l10n.commonCameraRequestAgainHint,
         );
     }
   }

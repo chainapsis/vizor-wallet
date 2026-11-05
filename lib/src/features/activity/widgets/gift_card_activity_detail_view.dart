@@ -178,11 +178,11 @@ class GiftCardActivityDetailView extends StatelessWidget {
                           onToggle: onToggleMessage,
                         ),
                       ReviewListRow(
-                        label: context.l10n.activityReceiptTimestamp,
+                        label: context.l10n.commonTimestamp,
                         value: timestampText,
                       ),
                       ReviewListRow(
-                        label: context.l10n.activityReceiptTxId,
+                        label: context.l10n.commonTxId,
                         value: txIdText,
                         trailingIconName: AppIcons.arrowTopRight,
                         onPressed: onTxIdPressed,
@@ -195,7 +195,7 @@ class GiftCardActivityDetailView extends StatelessWidget {
                     ReviewListRow(
                       label: kind == GiftCardActivityKind.created
                           ? context.l10n.activityReceiptCardFee
-                          : context.l10n.activityReceiptTxFee,
+                          : context.l10n.txFeeInfoTitle,
                       value: feeText!,
                       trailingIconName: AppIcons.help,
                       trailingIconColor: context.colors.text.secondary,

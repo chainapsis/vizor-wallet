@@ -823,8 +823,8 @@ String receiveAddressInfoTitle(
   AppLocalizations l10n,
   ReceiveAddressType type,
 ) => type == ReceiveAddressType.shielded
-    ? l10n.receiveInfoShieldedTitle
-    : l10n.receiveInfoTransparentTitle;
+    ? l10n.commonShieldedAddress
+    : l10n.commonTransparentAddress;
 
 String receiveAddressInfoSubtitle(
   AppLocalizations l10n,

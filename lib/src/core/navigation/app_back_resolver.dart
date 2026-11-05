@@ -40,7 +40,7 @@ abstract final class AppBackResolver {
   static final _routeLabels = <String, String Function(AppLocalizations)>{
     '/home': (l) => l.navHome,
     '/send': (l) => l.appBackSend,
-    '/send/amount': (l) => l.appBackAmount,
+    '/send/amount': (l) => l.commonAmount,
     '/send/review': (l) => l.appBackReview,
     '/send/keystone/scan': (_) => 'Keystone', // l10n-ignore: device name
     '/send/status': (l) => l.appBackStatus,
@@ -48,7 +48,7 @@ abstract final class AppBackResolver {
     '/swap': (l) => l.navSwap,
     '/swap/review': (l) => l.appBackReview,
     '/receive': (l) => l.appBackReceive,
-    '/address-book': (l) => l.appBackContacts,
+    '/address-book': (l) => l.commonContacts,
     '/activity': (l) => l.navActivity,
     '/activity/tx/:txid': (l) => l.appBackTransaction,
     '/accounts': (l) => l.accountsTitle,

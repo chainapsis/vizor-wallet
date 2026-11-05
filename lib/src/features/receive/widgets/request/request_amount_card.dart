@@ -371,7 +371,7 @@ class RequestAmountField extends StatelessWidget {
       children: [
         AppTextField(
           key: const ValueKey('request_amount_field'),
-          label: context.l10n.receiveRequestAmountLabel,
+          label: context.l10n.commonAmount,
           labelStyle: AppTypography.labelLarge.copyWith(
             color: colors.text.secondary,
           ),
@@ -483,7 +483,7 @@ class _RequestAmountConversionRow extends StatelessWidget {
         button: true,
         enabled: enabled,
         label: enterUsdMode
-            ? context.l10n.receiveRequestEnterUsd
+            ? context.l10n.commonEnterAmountInUsd
             : context.l10n.receiveRequestEnterZec,
         child: GestureDetector(
           key: const ValueKey('request_amount_mode_toggle'),
@@ -559,7 +559,7 @@ class RequestAddMessageCard extends StatelessWidget {
               const SizedBox(width: AppSpacing.xxs),
               Flexible(
                 child: Text(
-                  context.l10n.receiveRequestAddMessage,
+                  context.l10n.commonAddAMessage,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
@@ -586,7 +586,7 @@ class RequestAddMessageCard extends StatelessWidget {
     if (onTap == null) return card;
     return Semantics(
       button: true,
-      label: context.l10n.receiveRequestAddMessage,
+      label: context.l10n.commonAddAMessage,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
@@ -638,7 +638,7 @@ class RequestMessageField extends StatelessWidget {
 
     final field = AppTextField(
       key: const ValueKey('request_message_field'),
-      label: context.l10n.receiveRequestMessageLabel,
+      label: context.l10n.commonMessage,
       labelStyle: AppTypography.labelLarge.copyWith(
         color: colors.text.secondary,
       ),
@@ -656,7 +656,7 @@ class RequestMessageField extends StatelessWidget {
       borderColor: overLimit ? colors.border.utilityDestructive : null,
       leading: AppIcon(AppIcons.scroll, size: 20, color: colors.icon.regular),
       messageText: overLimit && !inlineValidationMessage
-          ? context.l10n.receiveRequestMessageTooLong
+          ? context.l10n.commonMessageIsTooLong
           : null,
       minLines: visibleLines ?? 3,
       maxLines: visibleLines ?? 3,
@@ -664,7 +664,7 @@ class RequestMessageField extends StatelessWidget {
       textStyle: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
       showClearButton: true,
       clearButtonRequiresText: false,
-      clearButtonSemanticLabel: context.l10n.receiveRequestCloseMessage,
+      clearButtonSemanticLabel: context.l10n.commonCloseMessage,
       onClear: onClose,
       onChanged: onChanged,
     );
@@ -691,7 +691,7 @@ class RequestMessageField extends StatelessWidget {
               const SizedBox(width: AppSpacing.xxs),
               Expanded(
                 child: Text(
-                  context.l10n.receiveRequestMessageTooLong,
+                  context.l10n.commonMessageIsTooLong,
                   style: AppTypography.labelMedium.copyWith(
                     color: colors.text.destructive,
                   ),

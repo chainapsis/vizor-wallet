@@ -217,7 +217,7 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
             controller: _controller,
             maxWidth: viewfinderSize,
             permissionDeniedMessage: context.l10n.addressScanCameraOff,
-            unavailableMessage: context.l10n.addressScanCameraUnavailableNow,
+            unavailableMessage: context.l10n.commonCameraUnavailableNow,
             onOpenSettings: _openCameraSettings,
           ),
           SafeArea(
@@ -232,7 +232,7 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
                     children: [
                       Semantics(
                         button: true,
-                        label: context.l10n.addressScanToggleFlashlight,
+                        label: context.l10n.commonToggleFlashlight,
                         excludeSemantics: true,
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,

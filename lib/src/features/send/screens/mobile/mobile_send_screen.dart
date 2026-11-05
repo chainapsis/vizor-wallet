@@ -688,7 +688,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       _addressType != 'invalid' &&
       _addressType != 'error';
 
-  String get _notEnoughZecText => context.l10n.sendNotEnoughZec;
+  String get _notEnoughZecText => context.l10n.commonNotEnoughZec;
 
   HardwareSignerKind? get _activeHardwareSignerKind {
     final uuid = ref.read(accountProvider).value?.activeAccountUuid;
@@ -1329,7 +1329,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (_activeAccountUuid == null) return context.l10n.sendMaxUnavailable;
     if (!_hasValidAddress) return context.l10n.sendMaxUnavailable;
     if (utf8.encode(_effectiveMemo).length > 512) {
-      return context.l10n.sendMemoTooLong;
+      return context.l10n.commonMessageIsTooLong;
     }
     return null;
   }
@@ -1556,7 +1556,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   String get _amountCtaLabel {
     if (_isResolvingMax) return context.l10n.sendCalculatingMax;
-    if (_amountReady) return context.l10n.sendAmountCtaReviewAndFinish;
+    if (_amountReady) return context.l10n.commonReviewAndFinish;
 
     final error = _amountError;
     if (error != null && error.isNotEmpty) {
@@ -2188,11 +2188,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   String _fallbackAddressTypeLabel() {
     return switch (_addressType) {
-      'unified' => context.l10n.sendAddressTypeShielded,
-      'sapling' => context.l10n.sendAddressTypeShielded,
-      'transparent' => context.l10n.sendAddressTypeTransparent,
+      'unified' => context.l10n.commonShieldedAddress,
+      'sapling' => context.l10n.commonShieldedAddress,
+      'transparent' => context.l10n.commonTransparentAddress,
       'tex' => context.l10n.sendAddressTypeTex,
-      _ => context.l10n.sendZcashAddress,
+      _ => context.l10n.commonZcashAddress,
     };
   }
 
@@ -2263,19 +2263,19 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
     final title = switch (_phase) {
       _SendPhase.compose => switch (_step) {
-        _SendStep.recipient => context.l10n.sendStepSelectRecipient,
+        _SendStep.recipient => context.l10n.commonSelectRecipient,
         _SendStep.amount => context.l10n.sendStepEnterAmount,
         _SendStep.review =>
           _isDonation
               ? context.l10n.sendStepReviewDonation
               : _isAnsweringPaymentRequest
-              ? context.l10n.sendReviewPaymentTitle
+              ? context.l10n.commonReviewPayment
               : context.l10n.sendStepReviewSend,
       },
       _SendPhase.failed =>
         _isDonation
             ? context.l10n.sendStatusDonationFailed
-            : context.l10n.sendStatusTitleFailed,
+            : context.l10n.commonSendFailed,
     };
 
     final body = switch (_phase) {
@@ -2577,7 +2577,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       const SizedBox(height: AppSpacing.md),
                       MobileRecipientSection(
                         key: const ValueKey('mobile_send_contacts_section'),
-                        title: context.l10n.sendContactsLink,
+                        title: context.l10n.commonContacts,
                         children: [
                           for (final contact in suggestions.contacts)
                             MobileRecipientRow(
@@ -2670,7 +2670,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 child: _AddressFieldActionButton(
                   label: _addressController.text.trim().isEmpty
                       ? context.l10n.sendPasteAction
-                      : context.l10n.sendClearAction,
+                      : context.l10n.commonClear,
                   onTap: _addressController.text.trim().isEmpty
                       ? () => unawaited(_pasteAddress())
                       : _clearAddress,
@@ -3295,7 +3295,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       leading: recipient.buildReviewLeading(),
       label: _isAnsweringPaymentRequest
           ? context.l10n.sendReviewRequestedBy
-          : context.l10n.sendReviewTo,
+          : context.l10n.commonTo,
       value: recipient.headline,
       bottomLeftIconName: _isShieldedAddress
           ? AppIcons.shieldKeyhole
@@ -3306,7 +3306,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       bottomLeftText: _isTexAddressType(_addressType)
           ? 'TEX - $compactAddress' // l10n-ignore: protocol name and address
           : compactAddress,
-      trailingActionLabel: context.l10n.sendReviewFullAddress,
+      trailingActionLabel: context.l10n.commonFullAddress,
       trailingActionKey: const ValueKey('mobile_send_full_address'),
       onTrailingAction: () =>
           unawaited(_showFullAddressSheet(address, recipient)),
@@ -3389,7 +3389,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                           rows: [
                             ReviewInfoRow(
                               leading: const _ReviewZecIcon(),
-                              label: context.l10n.sendAmountLabel,
+                              label: context.l10n.commonAmount,
                               value: amountText,
                               valueKey: const ValueKey(
                                 'mobile_send_review_amount',
@@ -3553,7 +3553,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 Text(
                   _isDonation
                       ? context.l10n.sendStatusDonationFailed
-                      : context.l10n.sendStatusTitleFailed,
+                      : context.l10n.commonSendFailed,
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
                     color: colors.text.accent,
@@ -3600,7 +3600,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   child: Text(
                     _isDonation
                         ? context.l10n.sendStatusMobileReturnToSettings
-                        : context.l10n.sendStatusBackToWallet,
+                        : context.l10n.commonBackToWallet,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.primary,
                     ),
@@ -3923,7 +3923,7 @@ class _ReviewWrap extends StatelessWidget {
               _ReviewListRow(
                 key: const ValueKey('mobile_send_memo_row'),
                 onTap: onMemoTap,
-                leftLabel: memo.isEmpty ? null : context.l10n.sendMessageLabel,
+                leftLabel: memo.isEmpty ? null : context.l10n.commonMessage,
                 rightLabel: memo.isEmpty
                     ? context.l10n.sendMemoAddShortEncrypted
                     : memo,
@@ -4088,7 +4088,7 @@ class _MemoSheetState extends State<_MemoSheet> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final overLimit = _usedBytes > _memoByteLimit;
-    final error = overLimit ? context.l10n.sendMemoTooLong : null;
+    final error = overLimit ? context.l10n.commonMessageIsTooLong : null;
     final labelStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.secondary,
       fontWeight: FontWeight.w400,
@@ -4116,7 +4116,7 @@ class _MemoSheetState extends State<_MemoSheet> {
                     height: _kMobileSendRecipientLineHeight,
                     child: Row(
                       children: [
-                        Text(context.l10n.sendMessageLabel, style: labelStyle),
+                        Text(context.l10n.commonMessage, style: labelStyle),
                         const Spacer(),
                         Text(
                           // Used/total bytes, like the Add Memo frame's
@@ -4587,7 +4587,7 @@ class MobileSaplingParamsSheet extends StatelessWidget {
           AppButton(
             key: const ValueKey('mobile_send_sapling_download'),
             onPressed: () => Navigator.of(context).pop(true),
-            child: Text(context.l10n.sendSaplingDownloadButton),
+            child: Text(context.l10n.commonDownload),
           ),
           const SizedBox(height: AppSpacing.xs),
           Semantics(

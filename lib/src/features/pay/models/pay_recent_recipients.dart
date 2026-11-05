@@ -286,7 +286,7 @@ String? payRecentTimeLabel(
   final reference = now ?? DateTime.now();
   final elapsed = reference.difference(local);
   if (elapsed.isNegative) return null;
-  if (elapsed.inMinutes < 1) return l10n.payRecentJustNow;
+  if (elapsed.inMinutes < 1) return l10n.commonJustNow;
   if (elapsed.inHours < 1) return l10n.payRecentMinutesAgo(elapsed.inMinutes);
   if (elapsed.inDays < 1) return l10n.payRecentHoursAgo(elapsed.inHours);
   if (elapsed.inDays < 7) return l10n.payRecentDaysAgo(elapsed.inDays);
