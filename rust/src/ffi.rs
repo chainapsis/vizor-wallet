@@ -28,9 +28,8 @@ use zcash_primitives::transaction::TxId;
 
 #[repr(C)]
 pub struct CMigrationPreparationProgress {
-    /// 0 waiting for denomination preparation, 1 proof can be created,
-    /// 2 needs user action, 3 cancelled, 4 no matching active preparation,
-    /// 5 waiting for the prepared-note anchor to become usable.
+    /// 0 waiting for denomination preparation, 2 needs user action,
+    /// 4 no matching active preparation.
     pub state: u8,
     pub confirmation_count: u32,
     pub confirmation_target: u32,
