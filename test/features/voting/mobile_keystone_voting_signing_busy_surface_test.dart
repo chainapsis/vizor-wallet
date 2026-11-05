@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_keystone_voting_signing_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/payment_uri_busy_surface_expectations.dart';
 
@@ -53,7 +54,10 @@ Widget Function(Widget) _host(ProviderContainer container) =>
       container: container,
       child: AppTheme(
         data: AppThemeData.dark,
-        child: MaterialApp(home: Scaffold(body: child)),
+        child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
+          home: Scaffold(body: child),
+        ),
       ),
     );
 

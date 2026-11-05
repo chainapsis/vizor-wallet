@@ -28,6 +28,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   setUpAll(() async {
@@ -1582,6 +1583,7 @@ Widget _sidebarHarness(
         linuxKeyringCoordinatorProvider.overrideWithValue(keyringCoordinator),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         // The syncing sidebar's shimmer and glow animate forever. Tests default

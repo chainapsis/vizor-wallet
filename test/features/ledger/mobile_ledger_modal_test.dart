@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_sh
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
 import 'ledger_pairing_recovery_test.dart' as fixture;
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_modal.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Future<void> frames(WidgetTester tester) async {
   for (var i = 0; i < 8; i++) {
@@ -25,6 +26,7 @@ Future<void> frames(WidgetTester tester) async {
 }
 
 Widget harness(Widget child, {double scale = 1}) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   home: AppTheme(
     data: AppThemeData.light,
     child: Builder(

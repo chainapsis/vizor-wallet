@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_split_view.dart';
 import 'package:zcash_wallet/src/features/onboarding/keystone/keystone_onboarding_flow.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _customiseAccountAsset =
     'assets/illustrations/desktop/onboarding_customise_account_sidebar.webp';
@@ -92,6 +93,7 @@ Finder _customiseAccountImage() {
 
 Widget _harness(Widget child) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(data: AppThemeData.light, child: child),
   );
 }

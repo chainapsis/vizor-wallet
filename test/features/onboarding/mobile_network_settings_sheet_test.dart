@@ -23,6 +23,7 @@ import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 import '../../support/payment_link_navigation_support.dart';
@@ -174,6 +175,7 @@ Future<(ProviderContainer, GoRouter)> _pump(
         builder: (context, ref, _) {
           container = ProviderScope.containerOf(context);
           return MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (context, child) => AppTheme(
               data: AppThemeData.dark,

@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/features/wallet_link/models/wallet_link_models.
 import 'package:zcash_wallet/src/features/wallet_link/providers/mobile_wallet_link_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 class _WalletLinkController extends MobileWalletLinkController {
   _WalletLinkController(this.initialState);
@@ -39,6 +40,7 @@ Widget _app(Widget child, {required MobileWalletLinkState state}) {
       ),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, c) => AppTheme(
         data: AppThemeData.light,
         child: MobileOnboardingProgressFrame(child: c!),
@@ -77,6 +79,7 @@ Widget _routerApp(
       ...overrides,
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, c) => AppTheme(
         data: AppThemeData.light,

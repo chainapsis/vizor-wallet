@@ -34,6 +34,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _ufvk =
     'uview1qthqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
@@ -115,6 +116,7 @@ Widget _app({
       biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock()),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
       home: MobileViewingKeyScreen(
         accountUuid: accountUuid,
@@ -662,6 +664,7 @@ void main() {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           builder: (context, child) => AppTheme(
             data: AppThemeData.dark,
             child: MediaQuery(
@@ -733,6 +736,7 @@ Future<void> _pumpRevealLayout(
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       key: UniqueKey(),
       builder: (context, child) => AppTheme(
         data: AppThemeData.dark,
@@ -853,6 +857,7 @@ Future<GoRouter> _adaptiveApp(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),

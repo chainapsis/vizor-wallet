@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -26,6 +27,7 @@ void main() {
         addTearDown(() => tester.binding.setSurfaceSize(null));
         await tester.pumpWidget(
           MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.light, child: child!),
             home: const Scaffold(
@@ -64,6 +66,7 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           builder: (context, child) => AppTheme(
             data: AppThemeData.dark,
             child: MediaQuery(
@@ -113,6 +116,7 @@ void main() {
     var createCalls = 0;
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (_, navigator) =>
             AppTheme(data: AppThemeData.light, child: navigator!),
         home: PaymentLinksHomeMobileView(
@@ -340,6 +344,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (_, navigator) =>
             AppTheme(data: AppThemeData.light, child: navigator!),
         home: const Directionality(
@@ -442,6 +447,7 @@ Future<void> _pumpReview(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, navigator) => AppTheme(
         data: AppThemeData.light,
         child: MediaQuery(
@@ -535,6 +541,7 @@ Future<void> _pumpAmount(WidgetTester tester) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, navigator) =>
           AppTheme(data: AppThemeData.light, child: navigator!),
       home: Directionality(
@@ -568,6 +575,7 @@ Future<void> _pumpRedeem(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, navigator) =>
           AppTheme(data: AppThemeData.light, child: navigator!),
       home: Directionality(
@@ -599,6 +607,7 @@ Future<void> _pumpReceived(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, navigator) =>
           AppTheme(data: AppThemeData.light, child: navigator!),
       home: Directionality(

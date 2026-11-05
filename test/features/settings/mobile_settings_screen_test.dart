@@ -34,6 +34,7 @@ import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
@@ -177,6 +178,7 @@ Widget _app({
   );
   final app = router == null
       ? MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           builder: themedBuilder,
           home: withTabBar
               ? AppMobileShell(
@@ -195,7 +197,11 @@ Widget _app({
                 )
               : const MobileSettingsScreen(),
         )
-      : MaterialApp.router(routerConfig: router, builder: themedBuilder);
+      : MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
+          routerConfig: router,
+          builder: themedBuilder,
+        );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -290,6 +296,7 @@ Widget _routedApp({PaymentLinkCardsLoader? cardsLoader}) {
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) =>
           AppTheme(data: AppThemeData.dark, child: child!),

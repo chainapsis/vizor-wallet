@@ -69,6 +69,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart'
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
     show ZcashBatchMessageInput;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_zec_market_data_cache.dart';
 
@@ -2771,7 +2772,10 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: MaterialApp.router(routerConfig: router),
+        child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
+          routerConfig: router,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -3003,6 +3007,7 @@ List<Override> _harnessOverrides({
 Widget _routerHarness(GoRouter router) => ProviderScope(
   overrides: _harnessOverrides(),
   child: MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   ),
@@ -3115,6 +3120,7 @@ Widget _harness(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

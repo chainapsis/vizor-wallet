@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void registerLedgerWaitGuidanceTests() {
   for (final model in <String?>['stax', 'nanoX', null]) {
@@ -31,6 +32,7 @@ void registerLedgerWaitGuidanceTests() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.dark,
               child: const Center(

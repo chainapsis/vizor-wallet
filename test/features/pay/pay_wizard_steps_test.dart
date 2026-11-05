@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/pay/widgets/pay_review_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_wizard_page.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_wizard_stepper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/leading_decimal_input.dart';
 
@@ -47,6 +48,7 @@ final _recentContact = AddressBookContact(
 
 Widget _harness(Widget child) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
       data: AppThemeData.light,
       child: Material(

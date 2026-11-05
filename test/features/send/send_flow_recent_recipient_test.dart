@@ -23,6 +23,7 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _account = 'test-account';
 const _recipient = 'u1recipient000000000000000000000000000000';
@@ -65,6 +66,7 @@ void main() {
           sendRecentRecipientStoreProvider.overrideWithValue(store),
         ],
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: Consumer(
             builder: (_, ref, _) {
               widgetRef = ref;

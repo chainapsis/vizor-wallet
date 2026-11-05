@@ -32,6 +32,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   setUpAll(() async {
@@ -1177,6 +1178,7 @@ void main() {
           child: AppTheme(
             data: AppThemeData.light,
             child: MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
               routerConfig: GoRouter(
                 initialLocation: '/migration/immediate/keystone/sign',
                 routes: [
@@ -6011,6 +6013,7 @@ Widget _migrationOptionsHarness({
         ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
@@ -6232,6 +6235,7 @@ class _MutablePrivateStatusHarnessState
       child: Builder(
         key: _scopeKey,
         builder: (context) => MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: _router,
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(
@@ -6305,6 +6309,7 @@ Widget _migrationFlowDataHarness({
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(
@@ -6384,6 +6389,7 @@ Widget _migrationPrepareHarness({
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(
@@ -6528,6 +6534,7 @@ Widget _migrationEntryHarness({
         ironwoodMigrationServiceProvider.overrideWithValue(migrationService),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(

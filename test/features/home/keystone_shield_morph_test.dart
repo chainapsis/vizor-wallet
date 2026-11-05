@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/keystone_sh
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/particles/particle_field.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/keystone_shield_scanner_surface.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _parts = ['ur:zcash-pczt/first-frame', 'ur:zcash-pczt/second-frame'];
 final _cloud = List.generate(
@@ -61,6 +62,7 @@ void main() {
       addTearDown(phase.dispose);
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: ListenableBuilder(
             listenable: Listenable.merge([stage, phase]),
             builder: (_, _) => MobileShieldScene(
@@ -147,6 +149,7 @@ void main() {
     addTearDown(stage.dispose);
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,

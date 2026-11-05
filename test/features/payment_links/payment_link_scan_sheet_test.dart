@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_scan_sheet.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/payment_links_screen_support.dart';
 
@@ -86,6 +87,7 @@ Future<void> _pumpScanner(
   scanner.value = scanner.value.copyWith(isInitialized: true, isRunning: true);
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Align(

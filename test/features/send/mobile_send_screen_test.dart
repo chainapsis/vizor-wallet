@@ -41,6 +41,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_zec_market_data_cache.dart';
 
@@ -582,6 +583,7 @@ Widget _app({
         paymentRequestPrecheckProvider.overrideWithValue(precheck),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, c) {
         final mediaQuery = MediaQuery.of(
@@ -617,6 +619,7 @@ Widget _amountStepWithPriceLoadingApp() {
       ),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendScreen(
@@ -660,6 +663,7 @@ Widget _reviewApp({
       ),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendScreen(
@@ -854,6 +858,7 @@ Widget _sendFlowRouterApp({
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),

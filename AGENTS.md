@@ -202,6 +202,11 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
   storage read during bootstrap, like the theme mode.
 - Every `MaterialApp` root passes `appSupportedLocales()` and
   `appLocalizationsDelegates`. A new root must too.
+- Widgets read strings through `context.l10n` (`lib/src/core/l10n/l10n.dart`),
+  which names the fix when localizations are missing. Every test
+  `MaterialApp` passes `localizationsDelegates: appLocalizationsDelegates`;
+  a test without a `MaterialApp` wraps its tree in `LocalizedTestScope`
+  (`test/support/localized_test_scope.dart`). There is no English fallback.
 - Every `app_en.arb` key needs an `@key` description
   (`required-resource-attributes`). Never translate Rust error strings or
   strings that code matches with `.contains` or uses as keys.

@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_se
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_keystone_signing_overlay.dart';
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('Keystone signs one PCZT for a two-card batch', (tester) async {
@@ -55,6 +56,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -129,6 +131,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -207,6 +210,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -283,6 +287,7 @@ void main() {
             ),
           ],
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.dark, child: child!),
@@ -345,6 +350,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -409,6 +415,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),

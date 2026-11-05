@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_submitte
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Future<void> _setMobileViewport(WidgetTester tester) async {
   tester.view.physicalSize = const Size(393, 852);
@@ -364,7 +365,10 @@ Widget _app(GoRouter router, SwapState state) {
     overrides: [
       swapStateProvider.overrideWith(() => _PayStatusNotifier(state)),
     ],
-    child: MaterialApp.router(routerConfig: router),
+    child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
+      routerConfig: router,
+    ),
   );
 }
 

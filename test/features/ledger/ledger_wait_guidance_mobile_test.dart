@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'ledger_wait_guidance_test_support.dart';
 
@@ -29,6 +30,7 @@ void main() {
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
         ],
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: Builder(

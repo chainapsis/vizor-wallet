@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_motion.dart';
 import 'package:zcash_wallet/widgetbook/payment_link_mobile_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../figma_compare/figma_compare_font_loader.dart';
 
@@ -339,6 +340,7 @@ Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Builder(builder: builder),
@@ -357,6 +359,7 @@ Future<void> _pumpInteractivePreview(WidgetTester tester) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: GestureDetector(

@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/ledger/widgets/ledger_procedure.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_modal_content.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -94,6 +95,7 @@ void main() {
             appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
           ],
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: ValueListenableBuilder<bool>(
@@ -355,6 +357,7 @@ void main() {
       var visible = false;
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: StatefulBuilder(
@@ -408,6 +411,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: MediaQuery(
@@ -572,6 +576,7 @@ Widget _harness({
         accountProvider.overrideWith(() => _StaticAccountNotifier(account)),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       debugShowCheckedModeBanner: false,
       home: Builder(
         builder: (context) => AppTheme(

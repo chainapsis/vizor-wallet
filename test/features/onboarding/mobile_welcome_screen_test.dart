@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_scree
 import 'package:zcash_wallet/src/features/onboarding/shared/welcome_art_assets.dart';
 import 'package:zcash_wallet/src/features/payment_links/screens/gift_claim_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/welcome_button_tokens.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 
 Widget _app({
@@ -63,6 +64,7 @@ Widget _app({
       ledgerTargetPlatformProvider.overrideWithValue(platform),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(

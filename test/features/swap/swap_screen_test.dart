@@ -76,6 +76,7 @@ import 'support/swap_activity_fixture_intents.dart';
 import '../../support/leading_decimal_input.dart';
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 part 'support/swap_screen_test_fakes.dart';
 
@@ -10727,6 +10728,7 @@ Widget _routerHarness(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) {
         final media = MediaQuery.maybeOf(context);

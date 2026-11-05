@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_keystone_
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -255,6 +256,7 @@ Future<void> _pumpSigningScreen(
   await tester.pumpWidget(
     ProviderScope(
       child: MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         theme: ThemeData.dark(),
         home: AppTheme(
           data: AppThemeData.dark,

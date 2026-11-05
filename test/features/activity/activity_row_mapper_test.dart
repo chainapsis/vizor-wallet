@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fixtures/private_shielding_activity.dart';
+import '../../support/localized_test_scope.dart';
 
 void main() {
   Future<ActivityRowData> mapRow(
@@ -29,22 +30,24 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Builder(
-          builder: (context) {
-            row = buildTransactionActivityRow(
-              context: context,
-              transaction: transaction,
-              privateQueriesEnabled: privateQueriesEnabled,
-              pendingLabel: pendingLabel,
-              showPendingEstimate: showPendingEstimate,
-              giftCardKind: giftCardKind,
-              giftCardAmountZatoshi: giftCardAmountZatoshi,
-              giftCardBatchCount: giftCardBatchCount,
-              giftCardClaimInFlight: giftCardClaimInFlight,
-              giftCardDisplayPool: giftCardDisplayPool,
-            );
-            return const SizedBox.shrink();
-          },
+        child: LocalizedTestScope(
+          child: Builder(
+            builder: (context) {
+              row = buildTransactionActivityRow(
+                context: context,
+                transaction: transaction,
+                privateQueriesEnabled: privateQueriesEnabled,
+                pendingLabel: pendingLabel,
+                showPendingEstimate: showPendingEstimate,
+                giftCardKind: giftCardKind,
+                giftCardAmountZatoshi: giftCardAmountZatoshi,
+                giftCardBatchCount: giftCardBatchCount,
+                giftCardClaimInFlight: giftCardClaimInFlight,
+                giftCardDisplayPool: giftCardDisplayPool,
+              );
+              return const SizedBox.shrink();
+            },
+          ),
         ),
       ),
     );

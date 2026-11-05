@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_car
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   test('card artwork exposes every exported design', () {
@@ -937,6 +938,7 @@ void main() {
 Future<void> _pump(WidgetTester tester, Widget child) {
   return tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, appChild) =>
           AppTheme(data: AppThemeData.dark, child: appChild!),
       home: Scaffold(body: Center(child: child)),

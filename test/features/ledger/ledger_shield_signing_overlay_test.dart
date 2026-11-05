@@ -30,6 +30,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   final rustApi = _RustApiFake();
@@ -647,6 +648,7 @@ Widget _harness({
       ledgerSignedOperationServiceProvider.overrideWithValue(operationService),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
       home: LedgerShieldSigningOverlay(
         onCancel: onCancel ?? () {},

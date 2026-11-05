@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import '../../support/localized_test_scope.dart';
 
 void main() {
   testWidgets(
@@ -215,8 +216,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+        child: LocalizedTestScope(
           child: SensitivePrivacyOverlay(
             sensitiveContentVisible: true,
             controller: controller,
@@ -254,8 +254,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+        child: LocalizedTestScope(
           child: SensitivePrivacyOverlay(
             sensitiveContentVisible: true,
             controller: controller,
@@ -307,8 +306,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+        child: LocalizedTestScope(
           child: SensitivePrivacyOverlay(
             sensitiveContentVisible: false,
             controller: controller,
@@ -336,8 +334,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+        child: LocalizedTestScope(
           child: SensitivePrivacyOverlay(
             sensitiveContentVisible: true,
             controller: controller,
@@ -369,8 +366,7 @@ void main() {
       await tester.pumpWidget(
         AppTheme(
           data: AppThemeData.light,
-          child: Directionality(
-            textDirection: TextDirection.ltr,
+          child: LocalizedTestScope(
             child: SensitivePrivacyOverlay(
               sensitiveContentVisible: true,
               controller: controller,
@@ -405,8 +401,7 @@ void main() {
       await tester.pumpWidget(
         AppTheme(
           data: AppThemeData.light,
-          child: Directionality(
-            textDirection: TextDirection.ltr,
+          child: LocalizedTestScope(
             child: SensitivePrivacyOverlay(
               sensitiveContentVisible: true,
               controller: controller,
@@ -474,8 +469,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+        child: LocalizedTestScope(
           child: SensitivePrivacyOverlay(
             sensitiveContentVisible: true,
             controller: controller,
@@ -528,8 +522,7 @@ void main() {
       await tester.pumpWidget(
         AppTheme(
           data: AppThemeData.light,
-          child: const Directionality(
-            textDirection: TextDirection.ltr,
+          child: const LocalizedTestScope(
             child: SensitivePrivacyOverlay(
               sensitiveContentVisible: false,
               child: SizedBox(
@@ -547,8 +540,7 @@ void main() {
       await tester.pumpWidget(
         AppTheme(
           data: AppThemeData.light,
-          child: const Directionality(
-            textDirection: TextDirection.ltr,
+          child: const LocalizedTestScope(
             child: SensitivePrivacyOverlay(
               sensitiveContentVisible: true,
               child: SizedBox(

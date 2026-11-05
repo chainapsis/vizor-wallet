@@ -23,6 +23,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fakes/fake_sync_notifier.dart';
 import 'support/payment_link_navigation_support.dart';
@@ -129,6 +130,7 @@ void main() {
           syncProvider.overrideWith(FakeSyncNotifier.new),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               buildIncomingLinkHostForTest(router: router, child: child!),

@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/providers/wallet_pir_latency_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/services/wallet_pir/wallet_pir_config.dart';
 import 'package:zcash_wallet/src/services/wallet_pir/wallet_pir_latency.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _sourceA = 'https://config.example/a/static.json?checksum=sha256:aaaa';
 const _sourceB = 'https://config.example/b/static.json?checksum=sha256:bbbb';
@@ -365,6 +366,7 @@ void main() {
       UncontrolledProviderScope(
         container: h.container,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.dark,
             child: Scaffold(
@@ -438,6 +440,7 @@ void main() {
       UncontrolledProviderScope(
         container: h.container,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.dark,
             child: Scaffold(
@@ -486,6 +489,7 @@ void main() {
       UncontrolledProviderScope(
         container: h.container,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.dark,
             child: const Scaffold(
@@ -529,6 +533,7 @@ void main() {
         UncontrolledProviderScope(
           container: h.container,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.dark,
               child: const Scaffold(

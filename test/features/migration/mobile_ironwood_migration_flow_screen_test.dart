@@ -53,6 +53,7 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
     as rust_keystone_wallet;
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
@@ -842,6 +843,7 @@ Widget _app({
     child: AppTheme(
       data: theme,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
@@ -1064,6 +1066,7 @@ Widget _productionApp({
     child: AppTheme(
       data: AppThemeData.light,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
@@ -1595,6 +1598,7 @@ void main() {
             ironwoodMigrationServiceProvider.overrideWithValue(service),
           ],
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.light, child: child!),
@@ -1701,6 +1705,7 @@ void main() {
             ironwoodMigrationServiceProvider.overrideWithValue(service),
           ],
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.light, child: child!),
@@ -4236,6 +4241,7 @@ void main() {
         child: AppTheme(
           data: AppThemeData.light,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: MobileIronwoodMigrationKeystoneDenominationSignScreen(
               previewRequest: request,
               previewUrParts: const ['UR:ZCASH-SIGN-BATCH/PREVIEW'],
@@ -4314,6 +4320,7 @@ void main() {
         child: AppTheme(
           data: AppThemeData.dark,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: MobileIronwoodMigrationKeystoneImmediateSignScreen(
               approvedPlan: _immediatePlan,
               previewRequest: request,
@@ -4792,6 +4799,7 @@ void main() {
         child: AppTheme(
           data: AppThemeData.light,
           child: const MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: MobileIronwoodMigrationKeystoneDenominationSignScreen(),
           ),
         ),

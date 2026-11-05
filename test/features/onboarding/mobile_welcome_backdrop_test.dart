@@ -13,6 +13,7 @@ import 'package:video_player/video_player.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_backdrop.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/welcome_art_assets.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 class _PendingPlaybackCommand {
   _PendingPlaybackCommand(this.name, this.completer);
@@ -149,6 +150,7 @@ Widget _app({
   GlobalKey<NavigatorState>? navigatorKey,
 }) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     navigatorKey: navigatorKey,
     builder: (context, child) => MediaQuery(
       data: MediaQuery.of(
