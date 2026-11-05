@@ -67,10 +67,22 @@ count the code produces.
   parameter resolved in `build`: `label ?? context.l10n.commonCancel`.
 - A label getter on an enum becomes a method that takes `AppLocalizations`:
   `step.label(context.l10n)`.
-- Dates use `DateFormat(..., context.l10n.localeName)` from `intl`, not ARB
-  keys for month or weekday names.
-- Services and providers without a `BuildContext` keep their strings for now.
-  Do not thread a `BuildContext` into them.
+- A function or mapper outside a widget whose output is shown (status
+  presenters, row mappers, error mappers) takes `AppLocalizations l10n` as its
+  first parameter. Widgets pass `context.l10n`; tests pass `testL10n` from
+  `test/support/test_l10n.dart`. Never pass a `BuildContext` into them.
+- A provider or notifier that keeps display text in its state stores an enum
+  or code instead, and the widget turns it into text (`ActivityEta`,
+  `AddressFormatFinding`). Text written to persisted records stays English
+  until the record stores a code.
+- Never decide behaviour by comparing a label: a localized label differs in
+  every language. Give the data a kind (`SwapStatusDetailKind`) and branch on
+  that.
+- Dates go through `lib/src/core/formatting/date_format.dart` or
+  `DateFormat(..., l10n.localeName)` from `intl`, never ARB keys for month or
+  weekday names. `DateFormat` throws until the localization delegates have
+  loaded intl's date data, even for `'en'`, so format dates only below an app
+  root. Tests get the data from `test/flutter_test_config.dart`.
 
 ## Leave these as literals
 
@@ -86,7 +98,9 @@ it:
 - addresses, sample keys, URLs and the Welcome tagline.
 
 A file that holds only data, such as generated account names that are saved
-as the account name, starts a line with `// l10n-ignore-file: <reason>`.
+as the account name, starts a line with `// l10n-ignore-file: <reason>`. Never
+use it to hide display text that is still English (state messages, persisted
+labels): that text has to stay visible to the scanner as remaining work.
 
 ## Finish
 
