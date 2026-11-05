@@ -60,10 +60,16 @@ Its deadline is three times that latency plus 500ms direct / one second Tor,
 clamped to 1.5–4 seconds direct / 5–8 seconds Tor. Without a positive latency it
 uses the route's lower bound. This wall budget includes bridge queue time and
 never consumes more than two thirds of the total recovery budget.
-If it fails or is too slow, the failed host is excluded and regular selection
-uses the remainder of the same six-/fifteen-second total budget. Only this public
+If it fails or is too slow, the host is excluded from this recovery and regular
+selection uses the remainder of the same six-/fifteen-second total budget. Only this public
 read is retried; transaction submission, durable operation leases and ambiguous
 broadcast handling keep their existing contracts.
+
+A warm-read failure leaves host health unconfirmed and does not create the
+one-minute host cooldown: it can originate in local runtime work, and native
+probes may hide the underlying error. A subsequent selection can evaluate the
+host again, and every recovery still requires a fresh successful sample.
+Ordinary RPC failure recovery retains its existing cooldown policy.
 
 A freshly selected server already supplied a tip during its probe. The first
 preflight can consume that live result once, within five seconds and only for
@@ -111,8 +117,8 @@ Two slow successful tip reads (2s direct / 5s Tor) also request a recheck withou
 holding up the successful read. A failed exploratory recheck preserves a working
 connection.
 
-Transient network failures immediately exclude the attempted endpoint for one
-minute and run another bounded selection. Complete selection failure backs off
+Transient failures of ordinary RPC operations exclude the attempted endpoint
+for one minute and run another bounded selection. Complete selection failure backs off
 from 5 to 60 seconds. A route change clears route-specific failure/backoff state.
 Automatic mode never returns to a fixed US primary simply because it recovered.
 Manual-preset failover and custom endpoint isolation retain their existing policy.

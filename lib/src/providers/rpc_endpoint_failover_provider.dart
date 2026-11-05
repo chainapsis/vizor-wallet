@@ -976,9 +976,8 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       if (error.toString().toLowerCase().contains('network privacy blocked')) {
         rethrow;
       }
-      _cooldowns[endpoint.normalizedLightwalletdUrl] = ref
-          .read(rpcEndpointFailoverClockProvider)()
-          .add(settings.failureCooldown);
+      // A warm-read error may be local or hide its underlying cause. Exclude
+      // this host for this recovery only, without recording a host cooldown.
       _needsWarmTipRead = false;
       _selectionIsWarmRead = false;
       _pendingTip = null;

@@ -562,6 +562,82 @@ void main() {
     },
   );
 
+  for (final tor in [false, true]) {
+    for (final (label, error) in <(String, Object)>[
+      ('Dart deadline', TimeoutException('warm read deadline')),
+      (
+        'native failure',
+        StateError('automatic endpoint selection: no healthy candidates'),
+      ),
+      ('local runtime', StateError('tokio: Too many open files (os error 24)')),
+      ('panic', StateError('Rust panic: local failure')),
+      (
+        'admission',
+        StateError('automatic endpoint selection: too many active selections'),
+      ),
+      ('unknown', StateError('unrecognized failure')),
+      ('connection reset', StateError('network: connection reset by peer')),
+    ]) {
+      test(
+        '${tor ? 'Tor' : 'direct'} warm failure only excludes the current request: $label',
+        () async {
+          const peer = 'https://eu.zec.rocks:443';
+          const global = 'https://zec.rocks:443';
+          final harness = _WarmHarness(
+            route: tor ? _tor : const NetworkPrivacyState.off(),
+          )..seedTrusted('eu-zec-stardust', tor: tor);
+          harness.warmRead = (_) async => throw error;
+          harness.probe = (call) async {
+            expect(harness.state.automaticReady, isFalse);
+            return [
+              if (call.urls.contains(_eu)) _sample(_eu, 120, 10),
+              if (call.urls.contains(_kr)) _sample(_kr, 120, 20),
+              if (call.urls.contains(peer)) _sample(peer, 120, 40),
+              if (call.urls.contains(global)) _sample(global, 120, 60),
+            ];
+          };
+
+          expect(
+            await harness.notifier.getLatestBlockHeight(),
+            BigInt.from(120),
+          );
+          expect(harness.probes.single.urls, isNot(contains(_eu)));
+          expect(harness.state.current.lightwalletdUrl, _kr);
+
+          // Still in the same minute: a warm-read failure must not exclude A
+          // from B's ordinary RPC recovery. A new successful sample is needed.
+          expect(
+            await harness.notifier.switchToFallbackFor(
+              StateError('network: connection reset'),
+              endpoint: harness.state.current,
+              operation: 'ordinary RPC on replacement',
+            ),
+            isTrue,
+          );
+          expect(harness.probes.last.urls, contains(_eu));
+          expect(harness.probes.last.urls, isNot(contains(_kr)));
+          expect(harness.state.current.lightwalletdUrl, _eu);
+
+          // Ordinary RPC failures continue to create the existing cooldown.
+          expect(
+            await harness.notifier.switchToFallbackFor(
+              StateError('network: connection reset'),
+              endpoint: harness.state.current,
+              operation: 'ordinary RPC on original',
+            ),
+            isTrue,
+          );
+          expect(harness.probes.last.urls, isNot(contains(_eu)));
+          expect(harness.probes.last.urls, isNot(contains(_kr)));
+          expect(harness.state.current.lightwalletdUrl, peer);
+          expect(harness.probes, hasLength(3));
+          expect(harness.warmReads, hasLength(1));
+          expect(harness.ordinaryReads, isEmpty);
+        },
+      );
+    }
+  }
+
   test(
     'isolated replacement cannot inherit the previous server peer proof',
     () async {
