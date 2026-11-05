@@ -2853,6 +2853,10 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get txFeeHelpTooltip =>
+      '이 거⁠래⁠를 처⁠리⁠하⁠도⁠록 Zcash 네⁠트⁠워⁠크⁠에 내⁠는 수⁠수⁠료⁠예⁠요.';
+
+  @override
   String get txFeeInfoDescription =>
       '네⁠트⁠워⁠크 수⁠수⁠료⁠는 Zcash 프⁠로⁠토⁠콜(ZIP 317)이 거⁠래 크⁠기⁠에 따⁠라 정⁠해⁠요. Vizor⁠는 추⁠가 수⁠수⁠료⁠를 받⁠지 않⁠아⁠요.';
 

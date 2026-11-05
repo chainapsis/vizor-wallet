@@ -2914,6 +2914,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get txFeeHelpTooltip =>
+      'Fee paid to the Zcash network to process this transaction.';
+
+  @override
   String get txFeeInfoDescription =>
       'The network fee is set by the Zcash protocol (ZIP 317) based on the transaction size. Vizor adds no extra fee.';
 

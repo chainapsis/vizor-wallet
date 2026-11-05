@@ -2701,6 +2701,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get txFeeHelpTooltip => '支付给 Zcash 网络以处理此交易的费用。';
+
+  @override
   String get txFeeInfoDescription =>
       '网络手续费由 Zcash 协议（ZIP 317）根据交易大小确定。Vizor 不收取额外费用。';
 

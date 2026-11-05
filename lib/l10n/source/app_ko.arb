@@ -835,6 +835,7 @@
   "sidebarShowBalance": "잔액 보기",
   "syncSynced": "동기화 완료",
   "syncSyncedAtBlock": "{height} 블록까지 동기화 완료",
+  "txFeeHelpTooltip": "이 거래를 처리하도록 Zcash 네트워크에 내는 수수료예요.",
   "txFeeInfoDescription": "네트워크 수수료는 Zcash 프로토콜(ZIP 317)이 거래 크기에 따라 정해요. Vizor는 추가 수수료를 받지 않아요.",
   "txFeeInfoTitle": "거래 수수료",
   "updateFailedMessage": "업데이트를 완료하지 못했어요. 다시 시도해 주세요.",

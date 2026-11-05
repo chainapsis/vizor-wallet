@@ -835,6 +835,7 @@
   "sidebarShowBalance": "显示余额",
   "syncSynced": "已同步",
   "syncSyncedAtBlock": "已同步至区块 {height}",
+  "txFeeHelpTooltip": "支付给 Zcash 网络以处理此交易的费用。",
   "txFeeInfoDescription": "网络手续费由 Zcash 协议（ZIP 317）根据交易大小确定。Vizor 不收取额外费用。",
   "txFeeInfoTitle": "交易手续费",
   "updateFailedMessage": "无法完成更新。请重试。",

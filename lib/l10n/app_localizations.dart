@@ -5118,6 +5118,12 @@ abstract class AppLocalizations {
   /// **'Synced at block {height}'**
   String syncSyncedAtBlock(String height);
 
+  /// Tooltip on the fee row of transaction review and receipt screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Fee paid to the Zcash network to process this transaction.'**
+  String get txFeeHelpTooltip;
+
   /// Body of the transaction fee info sheet.
   ///
   /// In en, this message translates to:

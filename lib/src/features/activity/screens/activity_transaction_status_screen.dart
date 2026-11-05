@@ -8,6 +8,7 @@ import '../../../core/config/zcash_explorer.dart';
 import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/date_format.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -190,7 +191,7 @@ class _ActivityTransactionStatusScreenState
 
   String _feeHelpText(rust_sync.TransactionInfo tx) => _showsNetworkFee(tx)
       ? kUnattributedNetworkFeeHelpText
-      : kTxFeeHelpTooltip;
+      : context.l10n.txFeeHelpTooltip;
 
   String _feeText(
     rust_sync.TransactionInfo? tx, {
@@ -217,11 +218,13 @@ class _ActivityTransactionStatusScreenState
 
   /// Figma receipt timestamp ("25 May, 13:30") for the redesigned views.
   String _timestampText(rust_sync.TransactionInfo tx, {DateTime? override}) {
-    if (override != null) return formatDayMonthTime(override);
+    final localeName = context.l10n.localeName;
+    if (override != null) return formatDayMonthTime(override, localeName);
     final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
     if (seconds <= BigInt.zero) return '--';
     return formatDayMonthTime(
       DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000),
+      localeName,
     );
   }
 

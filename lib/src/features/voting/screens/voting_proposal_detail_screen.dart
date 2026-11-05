@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../providers/voting/voting_participation_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -905,7 +906,7 @@ class _DesktopVotedPollHeader extends StatelessWidget {
             _MetaText(
               votedAt == null
                   ? 'Voted'
-                  : 'Voted ${formatMonthDayYear(votedAt!)}',
+                  : 'Voted ${formatMonthDayYear(votedAt!, context.l10n.localeName)}',
             ),
             const _MetaText('·'),
             _VotingPowerMeta(
@@ -1288,7 +1289,7 @@ class _MobilePollSummary extends StatelessWidget {
             _MetaText(
               endDate == null
                   ? 'Voting active'
-                  : 'Ends ${formatMonthDayYear(endDate!)}',
+                  : 'Ends ${formatMonthDayYear(endDate!, context.l10n.localeName)}',
             ),
             if (!isIneligible) ...[
               const _MetaText('·'),
@@ -1451,7 +1452,7 @@ class _PollSummary extends StatelessWidget {
             _MetaText(
               endDate == null
                   ? 'Voting active'
-                  : 'Ends ${formatMonthDayYear(endDate!)}',
+                  : 'Ends ${formatMonthDayYear(endDate!, context.l10n.localeName)}',
             ),
             const _MetaText('·'),
             _VotingPowerMeta(
@@ -1894,7 +1895,7 @@ class _VotedPollHeader extends StatelessWidget {
                 label: 'Voted',
                 value: votedAt == null
                     ? 'Not available'
-                    : formatMonthDayYear(votedAt!),
+                    : formatMonthDayYear(votedAt!, context.l10n.localeName),
               ),
               const SizedBox(height: AppSpacing.sm),
               _VotedReviewRow(

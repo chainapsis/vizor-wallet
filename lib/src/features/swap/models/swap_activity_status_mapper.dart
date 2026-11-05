@@ -12,6 +12,7 @@ import 'swap_fiat_value_formatting.dart';
 import 'swap_models.dart';
 import 'swap_status_presentation.dart';
 import 'swap_token_amount_formatting.dart';
+import '../../../core/l10n/l10n.dart';
 
 class SwapActivityAccountDetail {
   const SwapActivityAccountDetail({required this.name, this.profilePictureId});
@@ -141,6 +142,7 @@ class SwapActivityStatusPresentation {
 }
 
 SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
+  AppLocalizations l10n,
   SwapState state,
   SwapIntent intent, {
   SwapActivityAccountDetail? accountDetail,
@@ -153,6 +155,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   final payMode = intent.payMode && sendsZec;
   final payStatus = payMode
       ? _payActivityStatusPresentation(
+          l10n,
           intent,
           confirmedDepositFeeZatoshi: confirmedDepositFeeZatoshi,
         )
@@ -261,6 +264,7 @@ bool _payIntentShowsPaidCopy(SwapIntent intent) {
 }
 
 PayActivityStatusPresentation? _payActivityStatusPresentation(
+  AppLocalizations l10n,
   SwapIntent intent, {
   BigInt? confirmedDepositFeeZatoshi,
 }) {
@@ -281,7 +285,7 @@ PayActivityStatusPresentation? _payActivityStatusPresentation(
     phase: phase,
     timestampText: timestamp == null
         ? 'Not reported'
-        : formatDayMonthTime(timestamp),
+        : formatDayMonthTime(timestamp, l10n.localeName),
     txIdText: explorerId == null
         ? 'Not reported'
         : compactSwapAddress(

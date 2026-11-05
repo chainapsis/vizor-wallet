@@ -13,6 +13,7 @@ import '../models/swap_address_formatting.dart';
 import 'swap_asset_icon.dart';
 import 'swap_status_page_content.dart';
 import 'swap_progress_explorer_footer.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Desktop Pay activity status for Figma nodes 6245:109737 / 6245:110194 and
 /// their dark variants. The Activity pane host already provides the toolbar
@@ -273,7 +274,7 @@ class PayActivityStatusContent extends StatelessWidget {
                   value: status.transactionFeeText,
                   trailingIconName: AppIcons.help,
                   trailingIconColor: colors.text.secondary,
-                  trailingIconTooltip: kTxFeeHelpTooltip,
+                  trailingIconTooltip: context.l10n.txFeeHelpTooltip,
                 ),
               ],
             ],

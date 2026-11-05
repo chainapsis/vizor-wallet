@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart'
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../support/test_l10n.dart';
 
 Widget _harness(Widget child) {
   return MaterialApp(
@@ -199,7 +200,11 @@ void main() {
       intents: [intent],
     );
 
-    final presentation = swapActivityStatusPresentationForIntent(state, intent);
+    final presentation = swapActivityStatusPresentationForIntent(
+      testL10n,
+      state,
+      intent,
+    );
     final refund = presentation.details.singleWhere(
       (row) => row.label == 'Refund to',
     );

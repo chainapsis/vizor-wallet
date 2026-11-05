@@ -26,6 +26,7 @@ import '../src/features/swap/models/swap_intent_presentation_mapper.dart';
 import '../src/features/swap/widgets/pay_activity_status_content.dart';
 import '../src/features/swap/widgets/swap_asset_selector_modal.dart';
 import '../src/features/swap/models/swap_status_presentation.dart';
+import '../src/core/l10n/l10n.dart';
 
 const _previewWindowSize = Size(1080, 720);
 const _contactAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
@@ -409,8 +410,8 @@ class _PayStatusPreviewState extends State<_PayStatusPreview> {
   @override
   Widget build(BuildContext context) {
     final failurePresentation = switch (phase) {
-      PayActivityStatusPhase.failed ||
-      PayActivityStatusPhase.refunded => _payFailurePresentation(phase),
+      PayActivityStatusPhase.failed || PayActivityStatusPhase.refunded =>
+        _payFailurePresentation(context.l10n, phase),
       _ => null,
     };
     return AppPaneScrollScaffold(
@@ -442,7 +443,7 @@ class _PayStatusPreviewState extends State<_PayStatusPreview> {
           onShowFullAddress: () {},
           onOpenExplorer: () {},
           progressPresentation: phase == PayActivityStatusPhase.inProgress
-              ? _payProgressPresentation()
+              ? _payProgressPresentation(context.l10n)
               : null,
           activeTab: _activeTab,
           onTabChanged: (tab) => setState(() => _activeTab = tab),
@@ -452,7 +453,7 @@ class _PayStatusPreviewState extends State<_PayStatusPreview> {
   }
 }
 
-SwapActivityStatusPresentation _payProgressPresentation() {
+SwapActivityStatusPresentation _payProgressPresentation(AppLocalizations l10n) {
   const intent = SwapIntent(
     id: 'widgetbook-pay-progress',
     pair: 'ZEC -> USDC',
@@ -468,6 +469,7 @@ SwapActivityStatusPresentation _payProgressPresentation() {
     payMode: true,
   );
   return swapActivityStatusPresentationForIntent(
+    l10n,
     const SwapState(
       direction: SwapDirection.zecToExternal,
       amountText: '',
@@ -482,6 +484,7 @@ SwapActivityStatusPresentation _payProgressPresentation() {
 }
 
 SwapActivityStatusPresentation _payFailurePresentation(
+  AppLocalizations l10n,
   PayActivityStatusPhase phase,
 ) {
   final refunded = phase == PayActivityStatusPhase.refunded;
@@ -528,7 +531,7 @@ SwapActivityStatusPresentation _payFailurePresentation(
     intents: [intent],
     payMode: true,
   );
-  return swapActivityStatusPresentationForIntent(state, intent);
+  return swapActivityStatusPresentationForIntent(l10n, state, intent);
 }
 
 class _PreviewSlippageControl extends StatelessWidget {

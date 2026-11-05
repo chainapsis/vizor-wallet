@@ -28,6 +28,7 @@ import '../src/features/swap/widgets/swap_near_intents_attribution.dart';
 import '../src/features/swap/widgets/swap_review_page_content.dart';
 import '../src/features/swap/widgets/swap_slippage_modal.dart';
 import '../src/features/swap/widgets/swap_status_page_content.dart';
+import '../src/core/l10n/l10n.dart';
 
 Widget buildSwapPageFigmaNode1UseCase(BuildContext context) {
   return _SwapPageFrame(
@@ -546,6 +547,7 @@ class _SwapFailureBranchesPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final intent = _swapFailureIntent(scenario);
     final presentation = swapActivityStatusPresentationForIntent(
+      context.l10n,
       const SwapState(
         direction: SwapDirection.externalToZec,
         amountText: '',

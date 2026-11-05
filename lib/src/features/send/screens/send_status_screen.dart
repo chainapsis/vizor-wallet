@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../providers/sync_provider.dart';
 
 import '../../../core/config/zcash_explorer.dart';
@@ -419,6 +420,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         recipient: recipient,
                         timestampText: formatDayMonthTime(
                           _completedAt ?? _startedAt,
+                          context.l10n.localeName,
                         ),
                         txIdText: _txid == null ? null : truncatedTxid(_txid!),
                         feeText: _formatFee(widget.args.feeZatoshi),

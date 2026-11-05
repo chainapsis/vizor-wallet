@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart' show DateFormat;
+import 'package:zcash_wallet/src/core/formatting/date_format.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/l10n/l10n.dart';
 
@@ -16,6 +17,7 @@ void main() {
     ) async {
       late String month;
       late String weekday;
+      late List<String> shared;
       await tester.pumpWidget(
         LocalizedTestScope(
           locale: language.locale,
@@ -24,6 +26,12 @@ void main() {
               final name = context.l10n.localeName;
               month = DateFormat.yMMMM(name).format(DateTime(2025));
               weekday = DateFormat.E(name).format(DateTime(2023));
+              final day = DateTime(2026, 5, 25, 13, 30);
+              shared = [
+                formatMonthDay(day, name),
+                formatMonthDayYear(day, name),
+                formatDayMonthTime(day, name),
+              ];
               return const SizedBox();
             },
           ),
@@ -39,6 +47,11 @@ void main() {
         AppLanguage.en => 'Sun',
         AppLanguage.ko => '일',
         AppLanguage.zh => '周日',
+      });
+      expect(shared, switch (language) {
+        AppLanguage.en => ['May 25', 'May 25, 2026', '25 May, 13:30'],
+        AppLanguage.ko => ['5월 25일', '2026년 5월 25일', '5월 25일 13:30'],
+        AppLanguage.zh => ['5月25日', '2026年5月25日', '5月25日 13:30'],
       });
     });
   }

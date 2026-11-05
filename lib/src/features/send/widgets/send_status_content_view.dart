@@ -8,6 +8,7 @@ import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import 'send_review_layout.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Display phase of a submitted send on the redesigned status screens.
 enum SendStatusPhase { inProgress, completed, failed }
@@ -35,7 +36,7 @@ class SendStatusContentView extends StatelessWidget {
     this.recipientAddressType,
     this.fiatText,
     this.feeLabel = 'Tx fee',
-    this.feeHelpText = kTxFeeHelpTooltip,
+    this.feeHelpText,
     this.memoText,
     this.memoExpanded = false,
     this.memoLoading = false,
@@ -78,7 +79,7 @@ class SendStatusContentView extends StatelessWidget {
 
   /// Optional memo; the Message row is omitted when null.
   final String feeLabel;
-  final String feeHelpText;
+  final String? feeHelpText;
   final String? memoText;
 
   /// Whether the Message row shows the full memo (see [ReviewMemoRows]).
@@ -212,7 +213,7 @@ class SendStatusContentView extends StatelessWidget {
               value: feeText,
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.text.secondary,
-              trailingIconTooltip: feeHelpText,
+              trailingIconTooltip: feeHelpText ?? context.l10n.txFeeHelpTooltip,
               onPressed: onFeeHelp,
             ),
           ],

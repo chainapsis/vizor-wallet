@@ -6,6 +6,7 @@ import '../../../core/widgets/review_buttons_stack.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import 'send_review_layout.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Presentational content view for the redesigned **Review send** step.
 ///
@@ -118,7 +119,7 @@ class SendReviewContentView extends StatelessWidget {
               value: feeText,
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.text.secondary,
-              trailingIconTooltip: kTxFeeHelpTooltip,
+              trailingIconTooltip: context.l10n.txFeeHelpTooltip,
               onPressed: onFeeHelp,
             ),
           ],

@@ -36,6 +36,7 @@ import 'mobile/mobile_swap_status_content.dart';
 import 'mobile/mobile_swap_timeout_content.dart';
 import 'pay_activity_status_content.dart';
 import 'swap_status_page_content.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Which rendering the detail surface uses. The orchestration (intent
 /// selection, status refresh, deposit submission, hardware signing)
@@ -864,6 +865,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           .value;
     }
     final presentation = swapActivityStatusPresentationForIntent(
+      context.l10n,
       state,
       intent,
       accountDetail: accountInfo == null

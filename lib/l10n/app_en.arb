@@ -3684,6 +3684,10 @@
       }
     }
   },
+  "txFeeHelpTooltip": "Fee paid to the Zcash network to process this transaction.",
+  "@txFeeHelpTooltip": {
+    "description": "Tooltip on the fee row of transaction review and receipt screens."
+  },
   "txFeeInfoDescription": "The network fee is set by the Zcash protocol (ZIP 317) based on the transaction size. Vizor adds no extra fee.",
   "@txFeeInfoDescription": {
     "description": "Body of the transaction fee info sheet."

@@ -10,7 +10,6 @@ import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/review_info_row.dart';
-import '../../../../core/widgets/review_list_row.dart' show kTxFeeHelpTooltip;
 import '../../domain/swap_contract.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_activity_status_mapper.dart'
@@ -21,6 +20,7 @@ import '../swap_asset_icon.dart';
 import '../swap_status_page_content.dart' show SwapAnimatedProgressRoute;
 import '../swap_progress_explorer_footer.dart';
 import 'mobile_swap_review_header.dart';
+import '../../../../core/l10n/l10n.dart';
 
 const _mobileStatusDetailIconSize = 16.0;
 const _mobileStatusHeaderToBodyGap = AppSpacing.sm + AppSpacing.s;
@@ -474,7 +474,7 @@ class _MobilePaymentDetails extends StatelessWidget {
             label: 'Tx fee',
             value: payStatus.transactionFeeText,
             help: true,
-            helpTooltip: kTxFeeHelpTooltip,
+            helpTooltip: context.l10n.txFeeHelpTooltip,
           );
     final terminalOutcome =
         payStatus?.phase == PayActivityStatusPhase.failed ||

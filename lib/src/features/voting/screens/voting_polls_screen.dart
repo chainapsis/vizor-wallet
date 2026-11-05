@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../providers/voting/voting_participation_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -485,7 +486,11 @@ class _MobilePollCardContent extends ConsumerWidget {
     final previewDescription = _mobileRoundDescription(description);
     final forumUri = votingRoundForumUriFromJson(round.rawJson);
     final state = _pollCardState(round);
-    final dateLabel = _roundDateLabel(round.rawJson, state);
+    final dateLabel = _roundDateLabel(
+      round.rawJson,
+      state,
+      context.l10n.localeName,
+    );
     final eligibility = state == _PollCardState.active
         ? ref.watch(votingPollEligibilityProvider(round.roundId))
         : null;
@@ -665,7 +670,11 @@ class _PollCardContent extends StatelessWidget {
     final description = _roundDescription(round.rawJson);
     final forumUri = votingRoundForumUriFromJson(round.rawJson);
     final state = _pollCardState(round);
-    final dateLabel = _roundDateLabel(round.rawJson, state);
+    final dateLabel = _roundDateLabel(
+      round.rawJson,
+      state,
+      context.l10n.localeName,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -843,7 +852,11 @@ String _mobileRoundDescription(String description) {
       .join('\n');
 }
 
-String? _roundDateLabel(Map<String, dynamic> json, _PollCardState state) {
+String? _roundDateLabel(
+  Map<String, dynamic> json,
+  _PollCardState state,
+  String localeName,
+) {
   final start = votingRoundStartDate(json);
   final end = votingRoundEndDate(json);
   if (end != null) {
@@ -853,9 +866,9 @@ String? _roundDateLabel(Map<String, dynamic> json, _PollCardState state) {
       _PollCardState.voted => 'Closes',
       _PollCardState.tallying || _PollCardState.closed => 'Closed',
     };
-    return '$label ${formatMonthDay(end)}';
+    return '$label ${formatMonthDay(end, localeName)}';
   }
-  if (start != null) return 'Starts ${formatMonthDay(start)}';
+  if (start != null) return 'Starts ${formatMonthDay(start, localeName)}';
   return null;
 }
 

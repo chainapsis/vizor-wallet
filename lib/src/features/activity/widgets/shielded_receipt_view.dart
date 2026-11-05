@@ -7,6 +7,7 @@ import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../send/widgets/send_review_layout.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Display status of a transparent-balance shielding transaction.
 enum ShieldedReceiptStatus { inProgress, completed, failed }
@@ -25,7 +26,7 @@ class ShieldedReceiptView extends StatelessWidget {
     this.status = ShieldedReceiptStatus.completed,
     this.feeText,
     this.feeLabel = 'Tx fee',
-    this.feeHelpText = kTxFeeHelpTooltip,
+    this.feeHelpText,
     this.memoText,
     this.memoExpanded = false,
     this.memoLoading = false,
@@ -41,7 +42,7 @@ class ShieldedReceiptView extends StatelessWidget {
   final ShieldedReceiptStatus status;
   final String? feeText;
   final String feeLabel;
-  final String feeHelpText;
+  final String? feeHelpText;
   final String? memoText;
   final bool memoExpanded;
 
@@ -160,7 +161,8 @@ class ShieldedReceiptView extends StatelessWidget {
                 value: feeText!,
                 trailingIconName: AppIcons.help,
                 trailingIconColor: colors.text.secondary,
-                trailingIconTooltip: feeHelpText,
+                trailingIconTooltip:
+                    feeHelpText ?? context.l10n.txFeeHelpTooltip,
                 onPressed: onFeeHelpPressed,
               ),
             ],

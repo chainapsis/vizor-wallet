@@ -9,6 +9,7 @@ import '../../payment_links/widgets/payment_link_gift_card.dart';
 import '../../payment_links/widgets/payment_link_copy.dart';
 import '../../send/widgets/send_review_layout.dart';
 import '../gift_card_activity_index.dart';
+import '../../../core/l10n/l10n.dart';
 import '../activity_row_mapper.dart' show giftCardActivityTitle;
 
 /// Totals for a receipt that funded a group of cards in one transaction.
@@ -195,7 +196,7 @@ class GiftCardActivityDetailView extends StatelessWidget {
                       trailingIconColor: context.colors.text.secondary,
                       trailingIconTooltip: kind == GiftCardActivityKind.created
                           ? kPaymentLinkCardFeeHelpText
-                          : kTxFeeHelpTooltip,
+                          : context.l10n.txFeeHelpTooltip,
                     )
                   else if (batch != null)
                     ReviewListRow(
