@@ -42,6 +42,7 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 
@@ -1755,6 +1756,55 @@ void main() {
 
     expect(privacy.retryCalls, 1);
   });
+
+  testWidgets(
+    'home desktop retries Tor for the actual automatic endpoint readiness failure',
+    (tester) async {
+      final privacy = _FakeNetworkPrivacyNotifier();
+      await tester.pumpWidget(_appHarness('/home', networkPrivacy: privacy));
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(HomeScreen)),
+      );
+      final endpoints = container.read(rpcEndpointFailoverProvider.notifier);
+      expect(
+        isAutomaticRpcEndpointConfig(
+          container.read(rpcEndpointFailoverProvider).primary,
+        ),
+        isTrue,
+      );
+      Object? readinessError;
+      try {
+        await endpoints.ensureReady();
+      } catch (error) {
+        readinessError = error;
+      }
+      expect(readinessError, isA<StateError>());
+      final failure = classifySyncFailure(readinessError!);
+      expect(failure.kind, SyncFailureKind.torUnavailable);
+
+      final sync = container.read(syncProvider.notifier) as FakeSyncNotifier;
+      sync.emit(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          failure: failure,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text("Tor couldn't connect. Retry, or turn Tor off in Settings."),
+        findsOneWidget,
+      );
+      expect(sync.startSyncs, 0);
+
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+
+      expect(privacy.retryCalls, 1);
+      expect(sync.startSyncs, 0);
+    },
+  );
 
   testWidgets('home desktop does not re-run a pending Tor disable from Retry', (
     tester,

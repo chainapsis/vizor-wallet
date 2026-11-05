@@ -525,6 +525,33 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     }
   }
 
+  StateError _automaticSelectionStopped({bool routeBlocked = false}) {
+    if (ref.mounted &&
+        _selectionPauseCount == 0 &&
+        isAutomaticRpcEndpointConfig(state.primary) &&
+        !ref.read(appSecurityProvider).requiresUnlock &&
+        canRunAppProcessWork(
+          isInForeground: _inForeground,
+          shutdownSignal: ref.read(appShutdownSignalProvider),
+        )) {
+      final route = ref.read(networkPrivacyProvider);
+      if (route.torRouteRetained &&
+          route.status == NetworkPrivacyConnectionStatus.failed) {
+        // A failed bootstrap also cancels pending selection work. Preserve
+        // its actionable cause so Home Retry restarts Tor rather than sync.
+        return StateError(
+          'Network privacy blocked automatic endpoint selection: '
+          'Tor is enabled but unavailable.',
+        );
+      }
+    }
+    return StateError(
+      routeBlocked
+          ? 'Network privacy blocked automatic endpoint selection.'
+          : 'Automatic endpoint selection cancelled.',
+    );
+  }
+
   Future<bool> _waitForRoute(Completer<void> cancelled) async {
     bool ready(NetworkPrivacyState route) =>
         !route.isBusy &&
@@ -542,12 +569,12 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         subscription.close();
       }
       if (cancelled.isCompleted || !ref.mounted) {
-        throw StateError('Automatic endpoint selection cancelled.');
+        throw _automaticSelectionStopped();
       }
       route = ref.read(networkPrivacyProvider);
     }
     if (!ready(route)) {
-      throw StateError('Network privacy blocked automatic endpoint selection.');
+      throw _automaticSelectionStopped(routeBlocked: true);
     }
     return route.torEnabled;
   }
@@ -558,9 +585,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     BigInt? minimumHeight,
   }) {
     if (!ref.mounted) {
-      return Future.error(
-        StateError('Automatic endpoint selection cancelled.'),
-      );
+      return Future.error(_automaticSelectionStopped());
     }
     _trackAutomaticLifecycle();
     if (_selectionPauseCount > 0 ||
@@ -626,7 +651,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     final tor = await _waitForRoute(cancelled);
     void requireCurrent() {
       if (!ref.mounted || epoch != _automaticEpoch || cancelled.isCompleted) {
-        throw StateError('Automatic endpoint selection cancelled.');
+        throw _automaticSelectionStopped();
       }
     }
 
@@ -921,7 +946,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           epoch != _automaticEpoch ||
           cancelled.isCompleted ||
           !_sameEndpointIdentity(endpoint, state.current)) {
-        throw StateError('Automatic endpoint selection cancelled.');
+        throw _automaticSelectionStopped();
       }
       _requireAutomaticEligibility();
     }
@@ -943,8 +968,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           await Future.any([
             read(endpoint: endpoint, selectionId: id, timeout: timeout),
             cancelled.future.then<RpcEndpointCandidateSample>(
-              (_) =>
-                  throw StateError('Automatic endpoint selection cancelled.'),
+              (_) => throw _automaticSelectionStopped(),
             ),
           ]).timeout(
             timeout,
@@ -1062,7 +1086,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     required int maxConcurrency,
   }) async {
     if (!ref.mounted || epoch != _automaticEpoch || cancelled.isCompleted) {
-      throw StateError('Automatic endpoint selection cancelled.');
+      throw _automaticSelectionStopped();
     }
     final id =
         '${DateTime.now().microsecondsSinceEpoch}-${_selectionSequence++}';
@@ -1078,7 +1102,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
             maxConcurrency: maxConcurrency,
           ),
           cancelled.future.then<List<RpcEndpointCandidateSample>>(
-            (_) => throw StateError('Automatic endpoint selection cancelled.'),
+            (_) => throw _automaticSelectionStopped(),
           ),
         ]).timeout(
           remaining,
@@ -1236,7 +1260,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           cancelled.isCompleted ||
           !_sameEndpointIdentity(current, state.current) ||
           !state.automaticReady) {
-        throw StateError('Automatic endpoint selection cancelled.');
+        throw _automaticSelectionStopped();
       }
     }
 

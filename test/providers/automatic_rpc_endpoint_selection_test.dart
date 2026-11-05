@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/providers/automatic_rpc_endpoint_selection.dart
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_failure.dart';
 
 const _eu = 'https://eu.zec.stardust.rest:443';
 const _kr = 'https://kr.zec.stardust.rest:443';
@@ -345,6 +346,124 @@ void main() {
       ),
     );
     await expectLater(harness.notifier.ensureReady(), throwsStateError);
+    expect(harness.calls, isEmpty);
+  });
+
+  for (final phase in ['before selection', 'route wait', 'candidate probe']) {
+    test('retained Tor failure remains retryable $phase', () async {
+      final harness = _Harness(
+        route: phase == 'before selection'
+            ? const NetworkPrivacyState(
+                torEnabled: true,
+                status: NetworkPrivacyConnectionStatus.failed,
+              )
+            : phase == 'route wait'
+            ? const NetworkPrivacyState(
+                torEnabled: true,
+                status: NetworkPrivacyConnectionStatus.connecting,
+              )
+            : _torReady,
+      );
+      final response = Completer<List<RpcEndpointCandidateSample>>();
+      harness.respond = (_) => response.future;
+      final result = harness.notifier.ensureReady().then<Object>(
+        (_) => throw TestFailure('Expected failed Tor selection'),
+        onError: (Object error, StackTrace _) => error,
+      );
+      await _flush();
+      if (phase != 'before selection') {
+        harness.privacy.publish(
+          const NetworkPrivacyState(
+            torEnabled: true,
+            status: NetworkPrivacyConnectionStatus.failed,
+          ),
+        );
+      }
+      final failure = classifySyncFailure(await result);
+      expect(failure.kind, SyncFailureKind.torUnavailable);
+      expect(failure.retriesTorRoute, isTrue);
+      expect(harness.calls, hasLength(phase == 'candidate probe' ? 1 : 0));
+      expect(harness.store.writes, isEmpty);
+      if (phase == 'candidate probe') {
+        expect(harness.cancelled, hasLength(1));
+        response.complete([_sample(_kr)]);
+        await _flush();
+        expect(harness.store.writes, isEmpty);
+        expect(
+          harness.container.read(rpcEndpointFailoverProvider).automaticReady,
+          isFalse,
+        );
+      }
+    });
+  }
+
+  test(
+    'lock cancellation stays ordinary when Tor subsequently fails',
+    () async {
+      final harness = _Harness(route: _torReady);
+      final response = Completer<List<RpcEndpointCandidateSample>>();
+      harness.respond = (_) => response.future;
+      final result = harness.notifier.ensureReady().then<Object>(
+        (_) => throw TestFailure('Expected lock cancellation'),
+        onError: (Object error, StackTrace _) => error,
+      );
+      await _flush();
+      harness.security.publish(
+        const AppSecurityState(isPasswordConfigured: true, isUnlocked: false),
+      );
+      harness.privacy.publish(
+        const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.failed,
+        ),
+      );
+      expect(classifySyncFailure(await result).retriesTorRoute, isFalse);
+      response.complete([_sample(_kr)]);
+      await _flush();
+      expect(harness.store.writes, isEmpty);
+    },
+  );
+
+  for (final route in const [
+    NetworkPrivacyState(
+      torEnabled: true,
+      targetTorEnabled: false,
+      status: NetworkPrivacyConnectionStatus.failed,
+    ),
+    NetworkPrivacyState(
+      torEnabled: false,
+      targetTorEnabled: true,
+      status: NetworkPrivacyConnectionStatus.failed,
+    ),
+  ]) {
+    test(
+      'failed toggle without retained Tor does not request bootstrap: ${route.torEnabled}',
+      () async {
+        final harness = _Harness(route: route);
+        final error = await harness.notifier.ensureReady().then<Object>(
+          (_) => throw TestFailure('Expected a blocked route'),
+          onError: (Object error, StackTrace _) => error,
+        );
+        expect(classifySyncFailure(error).retriesTorRoute, isFalse);
+        expect(harness.calls, isEmpty);
+      },
+    );
+  }
+
+  test('turning Tor off while waiting remains ordinary cancellation', () async {
+    final harness = _Harness(
+      route: const NetworkPrivacyState(
+        torEnabled: true,
+        status: NetworkPrivacyConnectionStatus.connecting,
+      ),
+    );
+    final result = harness.notifier.ensureReady().then<Object>(
+      (_) => throw TestFailure('Expected route-change cancellation'),
+      onError: (Object error, StackTrace _) => error,
+    );
+    await _flush();
+    harness.privacy.publish(const NetworkPrivacyState.off());
+    expect(classifySyncFailure(await result).retriesTorRoute, isFalse);
     expect(harness.calls, isEmpty);
   });
 

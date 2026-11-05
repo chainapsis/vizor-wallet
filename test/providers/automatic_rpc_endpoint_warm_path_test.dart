@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/providers/automatic_rpc_endpoint_selection.dart
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_failure.dart';
 
 const _eu = 'https://eu.zec.stardust.rest:443';
 const _kr = 'https://kr.zec.stardust.rest:443';
@@ -717,6 +718,35 @@ void main() {
       },
     );
   }
+
+  test(
+    'Tor warm-read cancellation preserves a failed route for Retry',
+    () async {
+      final harness = _WarmHarness(route: _tor)
+        ..seedTrusted('kr-zec-stardust', tor: true);
+      final response = Completer<RpcEndpointCandidateSample>();
+      harness.warmRead = (_) => response.future;
+      final result = harness.notifier.getLatestBlockHeight().then<Object>(
+        (_) => throw TestFailure('Expected failed Tor warm read'),
+        onError: (Object error, StackTrace _) => error,
+      );
+      await _flush();
+      expect(harness.warmReads, hasLength(1));
+      harness.privacy.publish(
+        const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.failed,
+        ),
+      );
+      expect(classifySyncFailure(await result).retriesTorRoute, isTrue);
+      expect(harness.probes, isEmpty);
+      expect(harness.cancelled, hasLength(1));
+      response.complete(_sample(_kr, 999));
+      await _flush();
+      expect(harness.store.writes, isEmpty);
+      expect(harness.state.automaticReady, isFalse);
+    },
+  );
 
   test(
     'route switch restores only the new route cache and never carries its live tip across',
