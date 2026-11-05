@@ -117,7 +117,7 @@ terms:
   - id: shielded
     en: shielded
     definition: Funds or addresses in an encrypted Zcash pool (Orchard, Sapling, Ironwood).
-    ko: {term: 차폐됨, status: candidate, note: "Alternatives 보호됨, 실드. Confirm with Korean Zcash users."}
+    ko: {term: 차폐, status: candidate, note: "Stem: 차폐된 주소, 차폐됨, 차폐 잔액. Alternatives 보호됨, 실드. Confirm with Korean Zcash users."}
     zh: {term: 屏蔽, status: candidate, note: "Zcash community usage, but everyday 屏蔽 also means blocked or muted; check that a label cannot read as 'blocked'."}
   - id: transparent
     en: transparent
@@ -127,7 +127,7 @@ terms:
   - id: shield_verb
     en: shield
     definition: Move transparent funds into a shielded pool.
-    ko: {term: 차폐하기, status: candidate}
+    ko: {term: 차폐, status: candidate, note: "Stem: 차폐하기, 차폐하는 중, 차폐했어요."}
     zh: {term: 屏蔽, status: candidate}
   - id: unified_address
     en: unified address

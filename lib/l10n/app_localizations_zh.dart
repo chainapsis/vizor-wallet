@@ -1675,15 +1675,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeTransparentStopLegacyDiscrepancy =>
-      '之前的公开记录与私密恢复结果不一致。关闭私密查询会丢弃私密恢复的记录，并公开查询透明资金。';
+      '之前的公开记录与私密恢复结果不一致。关闭隐私查询会丢弃私密恢复的记录，并公开查询透明资金。';
 
   @override
   String get homeTransparentStopOptOutUnfinished =>
-      '关闭私密查询未完成。请在设置中再次关闭，以公开查询透明资金。';
+      '关闭隐私查询未完成。请在设置中再次关闭，以公开查询透明资金。';
 
   @override
   String get homeTransparentStopQuarantined =>
-      '私密恢复发现此账户的记录相互冲突。关闭私密查询会丢弃私密恢复的记录，并公开查询透明资金。';
+      '私密恢复发现此账户的记录相互冲突。关闭隐私查询会丢弃私密恢复的记录，并公开查询透明资金。';
 
   @override
   String get homeTransparentStopStalled => '此账户的私密恢复无法继续。Vizor 稍后会重试。';
@@ -3646,7 +3646,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendSaplingDownloadTitle => '需要下载';
 
   @override
-  String get sendScanDowngradePastedMalformedRequest => '仅粘贴了地址——无法读取此付款请求';
+  String get sendScanDowngradePastedMalformedRequest => '仅粘贴了地址——无法读取此收款请求';
 
   @override
   String get sendScanDowngradePastedMultipleRecipients =>
@@ -3656,7 +3656,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendScanDowngradePastedUnsupportedMemo => '仅粘贴了地址——无法读取此请求中的留言';
 
   @override
-  String get sendScanDowngradeScannedMalformedRequest => '仅扫描了地址——无法读取此付款请求';
+  String get sendScanDowngradeScannedMalformedRequest => '仅扫描了地址——无法读取此收款请求';
 
   @override
   String get sendScanDowngradeScannedMultipleRecipients =>
@@ -3927,19 +3927,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsExplorerCustom => '自定义';
 
   @override
-  String get settingsExplorerCustomSubtitle => '任何你喜欢的浏览器';
+  String get settingsExplorerCustomSubtitle => '任何你喜欢的区块浏览器';
 
   @override
-  String get settingsExplorerSaveFailed => '无法保存该浏览器网址。';
+  String get settingsExplorerSaveFailed => '无法保存该区块浏览器网址。';
 
   @override
   String get settingsExplorerTitle => '区块浏览器';
 
   @override
-  String get settingsExplorerUpdate => '更新浏览器';
+  String get settingsExplorerUpdate => '更新区块浏览器';
 
   @override
-  String get settingsExplorerUrlLabel => '浏览器网址';
+  String get settingsExplorerUrlLabel => '区块浏览器网址';
 
   @override
   String get settingsIncorrectPasscode => '数字密码错误';
@@ -4088,7 +4088,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsPrivateQueriesTurnOffDisclosure =>
-      '服务器会收到每个账户的所有透明地址，以及隐私恢复找到的交易 ID。它可以将这些信息相互关联；不使用 Tor 时，还能与你的 IP 地址关联。';
+      '服务器会收到每个账户的所有透明地址，以及私密恢复找到的交易 ID。它可以将这些信息相互关联；不使用 Tor 时，还能与你的 IP 地址关联。';
 
   @override
   String get settingsPrivateQueriesTurnOffTitle => '要关闭隐私查询吗？';
@@ -5018,7 +5018,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapComposerYouReceive => '你收到';
 
   @override
-  String get swapContactAlreadyInAddressBook => '已在你的通讯录中';
+  String get swapContactAlreadyInAddressBook => '已在你的地址簿中';
 
   @override
   String get swapContactAlreadySaved => '已在你的联系人中';
@@ -5364,7 +5364,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get syncErrorNetwork => '网络错误';
 
   @override
-  String get syncErrorPrivateLookup => '私密查询';
+  String get syncErrorPrivateLookup => '隐私查询';
 
   @override
   String get syncErrorUnknown => '未知错误';
