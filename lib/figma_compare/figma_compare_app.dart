@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../src/core/l10n/app_language.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/theme/app_theme_host.dart';
 import '../src/core/theme/legacy_material_theme.dart';
@@ -44,6 +45,8 @@ class FigmaCompareApp extends StatelessWidget {
       theme: buildLegacyLightTheme(),
       darkTheme: buildLegacyDarkTheme(),
       themeMode: themeMode,
+      supportedLocales: appSupportedLocales(),
+      localizationsDelegates: appLocalizationsDelegates,
       home: scenario.outsideScaffold
           ? const SizedBox.shrink()
           : Scaffold(body: capture),

@@ -30,6 +30,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  # Pinned by flutter_localizations; `any` lets the SDK choose.
+  intl: any
 
   characters: ^1.4.1
   # The following adds the Cupertino Icons font to your application.
@@ -115,6 +119,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Generates lib/l10n/app_localizations*.dart from the ARB files (l10n.yaml).
+  generate: true
 
   shaders:
     - shaders/liquid_metal.frag

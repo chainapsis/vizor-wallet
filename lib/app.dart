@@ -145,6 +145,8 @@ import 'src/features/voting/screens/voting_software_account_guard.dart';
 import 'src/features/voting/screens/voting_status_screen.dart';
 import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
+import 'src/providers/app_language_provider.dart';
+import 'src/core/l10n/app_language.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/sync_keep_awake_provider.dart';
 import 'src/providers/enhance_pir_provider.dart';
@@ -1857,6 +1859,7 @@ class ZcashWalletApp extends ConsumerWidget {
     final appRouter = ref.watch(_routerProvider);
     final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);
+    final appLanguage = ref.watch(appLanguageProvider);
 
     return MaterialApp.router(
       title: 'Vizor',
@@ -1864,6 +1867,9 @@ class ZcashWalletApp extends ConsumerWidget {
       theme: buildLegacyLightTheme(),
       darkTheme: buildLegacyDarkTheme(),
       themeMode: themeMode,
+      locale: appLocaleFor(appLanguage),
+      supportedLocales: appSupportedLocales(),
+      localizationsDelegates: appLocalizationsDelegates,
       routeInformationProvider: router.routeInformationProvider,
       routeInformationParser: router.routeInformationParser,
       routerDelegate: router.routerDelegate,

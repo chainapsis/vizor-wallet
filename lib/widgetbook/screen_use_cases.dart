@@ -50,6 +50,7 @@ import '../src/core/layout/mobile/app_mobile_tab_bar.dart';
 import '../src/core/privacy/sensitive_privacy_overlay.dart';
 import '../src/core/security/software_wallet_secret.dart';
 import '../src/core/profile_pictures.dart';
+import '../src/core/l10n/app_language.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_button.dart';
@@ -7136,6 +7137,10 @@ class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
       child: MaterialApp.router(
         routerConfig: _router,
         debugShowCheckedModeBanner: false,
+        // Keep the Widgetbook locale selection inside this nested app.
+        locale: Localizations.maybeLocaleOf(context),
+        supportedLocales: appSupportedLocales(preview: true),
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, child) => _MobilePreviewFrame(
           child: Material(
             color: context.colors.background.window,

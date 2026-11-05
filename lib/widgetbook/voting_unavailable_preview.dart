@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../src/core/l10n/app_language.dart';
 import '../src/core/layout/app_form_factor.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/voting/screens/mobile/mobile_voting_screens.dart';
@@ -91,6 +92,10 @@ class _VotingUnavailablePreviewState extends State<VotingUnavailablePreview> {
       routerConfig: _router,
       debugShowCheckedModeBanner: false,
       theme: Theme.of(context),
+      // Keep the Widgetbook locale selection inside this nested app.
+      locale: Localizations.maybeLocaleOf(context),
+      supportedLocales: appSupportedLocales(preview: true),
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) => AppTheme(
         data: theme,
         child: MediaQuery(data: media, child: child!),

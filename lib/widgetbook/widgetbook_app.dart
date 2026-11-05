@@ -7,6 +7,7 @@ import 'desktop_gift_import_use_cases.dart';
 import 'package:flutter/widgets.dart';
 import 'package:widgetbook/widgetbook.dart';
 
+import '../src/core/l10n/app_language.dart';
 import '../src/core/theme/app_theme.dart';
 import 'address_book_use_cases.dart';
 import 'address_verify_use_cases.dart';
@@ -81,6 +82,12 @@ class WidgetbookApp extends StatelessWidget {
             name: 'Dark',
             data: AppThemeData.dark,
           ),
+        ),
+        // Previews every language, released or not.
+        LocalizationAddon(
+          locales: appSupportedLocales(preview: true),
+          localizationsDelegates: appLocalizationsDelegates,
+          initialLocale: AppLanguage.en.locale,
         ),
       ],
       directories: [

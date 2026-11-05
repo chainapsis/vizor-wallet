@@ -1,0 +1,18 @@
+{
+  "@@locale": "en",
+  "languageSystemOption": "System ({language})",
+  "@languageSystemOption": {
+    "description": "Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.",
+    "placeholders": {
+      "language": {
+        "type": "String",
+        "example": "English",
+        "description": "The resolved language, written in its own script."
+      }
+    }
+  },
+  "settingsLanguageLabel": "Language",
+  "@settingsLanguageLabel": {
+    "description": "Settings > System row label and picker title for choosing the app language."
+  }
+}
