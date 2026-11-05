@@ -14,7 +14,6 @@ import '../../domain/swap_contract.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_activity_status_mapper.dart'
     show PayActivityStatusPhase, SwapActivityStatusPresentation;
-import '../../models/swap_detail_tooltips.dart';
 import '../../models/swap_status_presentation.dart';
 import '../swap_asset_icon.dart';
 import '../swap_status_page_content.dart' show SwapAnimatedProgressRoute;
@@ -454,27 +453,30 @@ class _MobilePaymentDetails extends StatelessWidget {
     final timestamp = payStatus == null
         ? _paymentDetailRow(
             presentation.details,
-            'Timestamp', // l10n-ignore: matched by English label
+            SwapStatusDetailKind.timestamp,
           )
         : SwapStatusDetailRowData(
-            label: 'Timestamp', // l10n-ignore: matched by English label
+            label: context.l10n.swapPayStatusTimestamp,
+            kind: SwapStatusDetailKind.timestamp,
             value: payStatus.timestampText,
           );
     final txId = payStatus == null
-        ? _paymentDetailRow(presentation.details, 'Tx ID')
+        ? _paymentDetailRow(presentation.details, SwapStatusDetailKind.txId)
         : SwapStatusDetailRowData(
-            label: 'Tx ID', // l10n-ignore: matched by English label
+            label: context.l10n.swapPayStatusTxId,
+            kind: SwapStatusDetailKind.txId,
             value: payStatus.txIdText,
             linkUri: payStatus.txIdUri,
           );
     final convertedFrom = SwapStatusDetailRowData(
-      label: 'Converted from', // l10n-ignore: matched by English label
+      label: context.l10n.swapPayStatusConvertedFrom,
       value: payStatus?.convertedFromText ?? presentation.payAmountText,
     );
     final displayFee = payStatus == null
         ? null
         : SwapStatusDetailRowData(
-            label: 'Tx fee', // l10n-ignore: matched by English label
+            label: context.l10n.swapPayStatusTxFee,
+            kind: SwapStatusDetailKind.txFee,
             value: payStatus.transactionFeeText,
             help: true,
             helpTooltip: context.l10n.txFeeHelpTooltip,
@@ -485,18 +487,20 @@ class _MobilePaymentDetails extends StatelessWidget {
     final outcomeRows = <SwapStatusDetailRowData>[
       if (payStatus?.phase == PayActivityStatusPhase.failed)
         SwapStatusDetailRowData(
-          label: 'Source amount', // l10n-ignore: matched by English label
+          label: context.l10n.swapPayStatusSourceAmount,
           value: payStatus!.convertedFromText,
         ),
       if (payStatus?.phase == PayActivityStatusPhase.refunded &&
           payStatus?.refundedAmountText?.isNotEmpty == true)
         SwapStatusDetailRowData(
-          label: 'Refunded amount', // l10n-ignore: matched by English label
+          label: context.l10n.swapPayStatusRefundedAmount,
+          kind: SwapStatusDetailKind.refundedAmount,
           value: payStatus!.refundedAmountText!,
         ),
       if (terminalOutcome && payStatus?.refundAddress?.isNotEmpty == true)
         SwapStatusDetailRowData(
-          label: 'Refund to', // l10n-ignore: matched by English label
+          label: context.l10n.swapPayStatusRefundTo,
+          kind: SwapStatusDetailKind.refundTo,
           value: compactSwapAddress(payStatus!.refundAddress!),
           copyable: true,
           copyText: payStatus.refundAddress,
@@ -504,7 +508,8 @@ class _MobilePaymentDetails extends StatelessWidget {
       if (payStatus?.phase == PayActivityStatusPhase.refunded &&
           payStatus?.refundFeeText?.isNotEmpty == true)
         SwapStatusDetailRowData(
-          label: 'Refund fee', // l10n-ignore: matched by English label
+          label: context.l10n.swapPayStatusRefundFee,
+          kind: SwapStatusDetailKind.refundFee,
           value: payStatus!.refundFeeText!,
         ),
     ];
@@ -559,10 +564,10 @@ class _MobilePaymentDetails extends StatelessWidget {
 
 SwapStatusDetailRowData? _paymentDetailRow(
   Iterable<SwapStatusDetailRowData> rows,
-  String label,
+  SwapStatusDetailKind kind,
 ) {
   for (final row in rows) {
-    if (row.label == label) return row;
+    if (row.kind == kind) return row;
   }
   return null;
 }
@@ -625,7 +630,7 @@ class _MobileDetailRows extends StatelessWidget {
     // Like desktop, a recorded refund starts the outcome group so its amount
     // and fee stay together below the transaction metadata.
     final refundIndex = visibleRows.indexWhere(
-      (row) => row.label == 'Refunded amount',
+      (row) => row.kind == SwapStatusDetailKind.refundedAmount,
     );
     final dividerIndex = refundIndex > 0
         ? refundIndex
@@ -659,8 +664,7 @@ List<SwapStatusDetailRowData> _mobileVisibleDetailRows(
             !_isMobileProgressTransactionDetailRow(row)) {
           return false;
         }
-        return row.label != 'Price protection' &&
-            row.label != 'Account' &&
+        return !row.kind.hiddenOnMobile &&
             (!hideSuccessAddressRows || !_isMobileSuccessAddressDetailRow(row));
       })
       .toList(growable: false);
@@ -671,39 +675,13 @@ List<SwapStatusDetailRowData> _mobileVisibleDetailRows(
   return [...nonFeeRows, ...feeRows];
 }
 
-bool _isMobileProgressTransactionDetailRow(SwapStatusDetailRowData row) {
-  final label = row.label.toLowerCase();
-  return _isMobileDepositAddressDetailRow(row) ||
-      label == 'slippage tolerance' ||
-      label == 'guaranteed minimum' ||
-      label == 'memo' ||
-      label == 'missing deposit' ||
-      label == 'required deposit' ||
-      label == 'detected deposit' ||
-      label == 'deposit deadline' ||
-      label == 'refund fee' ||
-      label == 'timestamp' ||
-      label == 'tx id';
-}
+bool _isMobileProgressTransactionDetailRow(SwapStatusDetailRowData row) =>
+    row.kind.inMobileProgressTransactionDetails;
 
-bool _isMobileDepositAddressDetailRow(SwapStatusDetailRowData row) {
-  final label = row.label.toLowerCase();
-  return label.contains(' deposit to') ||
-      (label.startsWith('deposit ') && label.endsWith(' to'));
-}
+bool _isMobileSuccessAddressDetailRow(SwapStatusDetailRowData row) =>
+    row.kind.isSuccessAddress;
 
-bool _isMobileSuccessAddressDetailRow(SwapStatusDetailRowData row) {
-  final label = row.label.toLowerCase();
-  return label.contains('recipient') || _isMobileDepositAddressDetailRow(row);
-}
-
-bool _isMobileFeeDetailRow(SwapStatusDetailRowData row) {
-  final label = row.label.toLowerCase();
-  return label == 'swap fee' ||
-      label == 'total fees' ||
-      label == 'tx fee' ||
-      label == 'refund fee';
-}
+bool _isMobileFeeDetailRow(SwapStatusDetailRowData row) => row.kind.isFee;
 
 class _MobileFinalDetailRow extends StatelessWidget {
   const _MobileFinalDetailRow({
@@ -723,7 +701,7 @@ class _MobileFinalDetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final displayLabel = _mobileStatusDetailLabel(row);
+    final displayLabel = _mobileStatusDetailLabel(context.l10n, row);
     final displayValue = _mobileStatusDetailDisplayValue(row);
     final linkUri = row.linkUri;
     final canTap = linkUri != null || row.copyable;
@@ -797,10 +775,7 @@ class _MobileFinalDetailRow extends StatelessWidget {
                             color: actionIconColor,
                             tooltipMessage: row.help
                                 ? row.helpTooltip ??
-                                      _mobileStatusHelpTooltip(
-                                        context.l10n,
-                                        row.label,
-                                      )
+                                      row.kind.helpTooltipFor(context.l10n)
                                 : null,
                           ),
                         ],
@@ -850,12 +825,14 @@ Future<void> _launchExternalUri(Uri uri) async {
   }
 }
 
-String _mobileStatusDetailLabel(SwapStatusDetailRowData row) {
-  final label = row.label;
-  if (label == 'Total fees') {
-    return 'Swap fee'; // l10n-ignore: matched by English label
+String _mobileStatusDetailLabel(
+  AppLocalizations l10n,
+  SwapStatusDetailRowData row,
+) {
+  if (row.kind == SwapStatusDetailKind.totalFees) {
+    return l10n.swapActivityDetailSwapFee;
   }
-  return label;
+  return row.label;
 }
 
 String _mobileStatusDetailDisplayValue(SwapStatusDetailRowData row) {
@@ -876,13 +853,7 @@ bool _shouldCompactMobileStatusDetailValue(
   String source,
 ) {
   if (source.length <= 18) return false;
-  final label = row.label.toLowerCase();
-  return label.contains('address') ||
-      label.contains('recipient') ||
-      label.contains('refund') ||
-      label == 'tx id' ||
-      label.contains(' tx') ||
-      (label.startsWith('deposit ') && label.endsWith(' to'));
+  return row.kind.compactsValue;
 }
 
 class _MobileStatusDetailActionIcon extends StatelessWidget {
@@ -919,13 +890,4 @@ class _MobileStatusDetailActionIcon extends StatelessWidget {
     }
     return AppTooltip(message: message, tapToShow: true, child: child);
   }
-}
-
-String _mobileStatusHelpTooltip(AppLocalizations l10n, String label) {
-  return switch (label) {
-    'Swap fee' => swapFeeTooltip(l10n),
-    'Guaranteed minimum' => swapGenericMinimumReceiveTooltip(l10n),
-    'Total fees' => swapTotalFeesTooltip(l10n),
-    _ => swapStatusDetailTooltip(l10n),
-  };
 }

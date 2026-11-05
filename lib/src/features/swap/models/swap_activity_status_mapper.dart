@@ -594,6 +594,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       if (timestamp != null)
         SwapStatusDetailRowData(
           label: l10n.swapActivityDetailTimestamp,
+          kind: SwapStatusDetailKind.timestamp,
           value: timestamp,
         ),
       if (payRateText != null)
@@ -604,6 +605,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       if (depositTxHash != null && depositTxHash.isNotEmpty)
         SwapStatusDetailRowData(
           label: sourceTxLabel,
+          kind: SwapStatusDetailKind.sourceTx,
           value: compactSwapAddress(depositTxHash),
           copyable: true,
           copyText: depositTxHash,
@@ -614,6 +616,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
           destinationChainTxHash.isNotEmpty)
         SwapStatusDetailRowData(
           label: l10n.swapActivityDetailDeliveryTx(receiveSymbol),
+          kind: SwapStatusDetailKind.deliveryTx,
           value: compactSwapAddress(destinationChainTxHash),
           copyable: true,
           copyText: destinationChainTxHash,
@@ -628,6 +631,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
               kAppFormFactor == AppFormFactor.mobile))
         ..._addressDetailRows(
           label: l10n.swapActivityDetailRefundTo,
+          kind: SwapStatusDetailKind.refundTo,
           address: refundAddress,
           asset: sourceAsset,
           addressBookContacts: addressBookContacts,
@@ -637,16 +641,21 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       if (failed && intent.providerRefundInfo?.hasRecordedRefund == true)
         SwapStatusDetailRowData(
           label: l10n.swapActivityDetailRefundedAmount,
+          kind: SwapStatusDetailKind.refundedAmount,
           value: intent.providerRefundInfo!.refundedAmountText!,
         ),
       if (failed && recordedRefundFee != null)
         SwapStatusDetailRowData(
           label: l10n.swapActivityDetailRefundFee,
+          kind: SwapStatusDetailKind.refundFee,
           value: recordedRefundFee,
         ),
       if (!failed)
         SwapStatusDetailRowData(
           label: feesLabel,
+          kind: payMode
+              ? SwapStatusDetailKind.other
+              : SwapStatusDetailKind.totalFees,
           value:
               intent.totalFeesText ??
               intent.swapFeeText ??
@@ -683,6 +692,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     if (sendsZec && recipientAddress != null && recipientAddress.isNotEmpty)
       ..._addressDetailRows(
         label: l10n.swapActivityDetailRecipient(receiveSymbol),
+        kind: SwapStatusDetailKind.recipient,
         address: recipientAddress,
         asset: receiveAsset,
         addressBookContacts: addressBookContacts,
@@ -691,6 +701,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     if (!sendsZec && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
         label: l10n.swapActivityDetailRefundAddress(sourceSymbol),
+        kind: SwapStatusDetailKind.refundAddress,
         address: refundAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
@@ -699,6 +710,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     if (depositAddress != null && depositAddress.isNotEmpty)
       ..._addressDetailRows(
         label: l10n.swapActivityDetailDepositTo(sourceSymbol),
+        kind: SwapStatusDetailKind.depositAddress,
         address: depositAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
@@ -709,6 +721,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     if (!sendsZec && depositMemo != null && depositMemo.isNotEmpty)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailMemo,
+        kind: SwapStatusDetailKind.memo,
         value: depositMemo,
         copyable: true,
         copyText: depositMemo,
@@ -716,6 +729,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     if (!payMode)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailSlippageTolerance,
+        kind: SwapStatusDetailKind.slippageTolerance,
         value:
             intent.slippageToleranceText ??
             l10n.swapActivityDetailConfiguredQuote,
@@ -723,6 +737,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     if (!payMode)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailGuaranteedMinimum,
+        kind: SwapStatusDetailKind.guaranteedMinimum,
         value: intent.minimumReceiveText ?? intent.receiveEstimate,
         help: true,
         helpTooltip: swapMinimumReceiveTooltip(l10n, receiveSymbol),
@@ -730,6 +745,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     if (timestamp != null)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailTimestamp,
+        kind: SwapStatusDetailKind.timestamp,
         value: timestamp,
       ),
     if (payRateText != null)
@@ -741,6 +757,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     if (sendsZec && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
         label: l10n.swapActivityDetailRefundAddress(sourceSymbol),
+        kind: SwapStatusDetailKind.refundAddress,
         address: refundAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
@@ -748,6 +765,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     if (!sendsZec && recipientAddress != null && recipientAddress.isNotEmpty)
       ..._addressDetailRows(
         label: l10n.swapActivityDetailRecipient(receiveSymbol),
+        kind: SwapStatusDetailKind.recipient,
         address: recipientAddress,
         asset: receiveAsset,
         addressBookContacts: addressBookContacts,
@@ -755,6 +773,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     if (depositTxHash != null && depositTxHash.isNotEmpty)
       SwapStatusDetailRowData(
         label: sourceTxLabel,
+        kind: SwapStatusDetailKind.sourceTx,
         value: compactSwapAddress(depositTxHash),
         copyable: true,
         copyText: depositTxHash,
@@ -762,12 +781,14 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     if (destinationChainTxHash != null && destinationChainTxHash.isNotEmpty)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailDeliveryTx(receiveSymbol),
+        kind: SwapStatusDetailKind.deliveryTx,
         value: compactSwapAddress(destinationChainTxHash),
         copyable: true,
         copyText: destinationChainTxHash,
       ),
     SwapStatusDetailRowData(
       label: l10n.swapActivityDetailSwapFee,
+      kind: SwapStatusDetailKind.swapFee,
       value: intent.swapFeeText ?? l10n.swapActivityDetailIncludedInRate,
       help: true,
       helpTooltip: swapFeeTooltip(l10n),
@@ -821,17 +842,20 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
     if (failed && intent.providerRefundInfo?.hasRecordedRefund == true)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailRefundedAmount,
+        kind: SwapStatusDetailKind.refundedAmount,
         value: intent.providerRefundInfo!.refundedAmountText!,
       ),
     if (failed && recordedRefundFee != null)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailRefundFee,
+        kind: SwapStatusDetailKind.refundFee,
         value: recordedRefundFee,
       ),
     ?_swapActivityTxIdRow(l10n, intent),
     if (depositTxHash != null && depositTxHash.isNotEmpty)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailSourceTxShielded(sourceSymbol),
+        kind: SwapStatusDetailKind.sourceTx,
         value: compactSwapAddress(depositTxHash),
         copyable: true,
         copyText: depositTxHash,
@@ -839,6 +863,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
     if (destinationChainTxHash != null && destinationChainTxHash.isNotEmpty)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailDeliveryTx(receiveSymbol),
+        kind: SwapStatusDetailKind.deliveryTx,
         value: compactSwapAddress(destinationChainTxHash),
         copyable: true,
         copyText: destinationChainTxHash,
@@ -846,6 +871,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
     if (failed && refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
         label: l10n.swapActivityDetailRefundTo,
+        kind: SwapStatusDetailKind.refundTo,
         address: refundAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
@@ -884,6 +910,7 @@ SwapStatusDetailRowData? _swapActivityTxIdRow(
 
   return SwapStatusDetailRowData(
     label: l10n.swapActivityDetailTxId,
+    kind: SwapStatusDetailKind.txId,
     value: compactSwapAddress(txId),
     linkUri: linkUri,
   );
@@ -925,11 +952,13 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
     if (missingDepositText != null)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailMissingDeposit,
+        kind: SwapStatusDetailKind.missingDeposit,
         value: missingDepositText,
       ),
     if (depositMemo != null && depositMemo.isNotEmpty)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailMemo,
+        kind: SwapStatusDetailKind.memo,
         value: depositMemo,
         copyable: true,
         copyText: depositMemo,
@@ -937,32 +966,38 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
     if (depositAddress != null && depositAddress.isNotEmpty)
       ..._addressDetailRows(
         label: l10n.swapActivityDetailDepositTo(sourceSymbol),
+        kind: SwapStatusDetailKind.depositAddress,
         address: depositAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
       ),
     SwapStatusDetailRowData(
       label: l10n.swapActivityDetailRequiredDeposit,
+      kind: SwapStatusDetailKind.requiredDeposit,
       value: requiredDepositText,
     ),
     if (providerInfo?.depositedAmountText != null)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailDetectedDeposit,
+        kind: SwapStatusDetailKind.detectedDeposit,
         value: providerInfo!.depositedAmountText!,
       ),
     if (deadlineText != null)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailDepositDeadline,
+        kind: SwapStatusDetailKind.depositDeadline,
         value: deadlineText,
       ),
     if (providerInfo?.refundFeeText != null)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailRefundFee,
+        kind: SwapStatusDetailKind.refundFee,
         value: providerInfo!.refundFeeText!,
       ),
     if (refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(
         label: l10n.swapActivityDetailRefundAddress(sourceSymbol),
+        kind: SwapStatusDetailKind.refundAddress,
         address: refundAddress,
         asset: sourceAsset,
         addressBookContacts: addressBookContacts,
@@ -971,6 +1006,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
     if (!sendsZec && recipientAddress != null && recipientAddress.isNotEmpty)
       ..._addressDetailRows(
         label: l10n.swapActivityDetailRecipient(receiveSymbol),
+        kind: SwapStatusDetailKind.recipient,
         address: recipientAddress,
         asset: receiveAsset,
         addressBookContacts: addressBookContacts,
@@ -978,6 +1014,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
     if (depositTxHash != null && depositTxHash.isNotEmpty)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailDepositTx(sourceSymbol),
+        kind: SwapStatusDetailKind.sourceTx,
         value: compactSwapAddress(depositTxHash),
         copyable: true,
         copyText: depositTxHash,
@@ -1007,6 +1044,7 @@ String _headerAddressText(
 
 List<SwapStatusDetailRowData> _addressDetailRows({
   required String label,
+  required SwapStatusDetailKind kind,
   required String address,
   required SwapAsset? asset,
   required Iterable<AddressBookContact> addressBookContacts,
@@ -1034,6 +1072,7 @@ List<SwapStatusDetailRowData> _addressDetailRows({
   return [
     SwapStatusDetailRowData(
       label: label,
+      kind: kind,
       value: value,
       copyable: true,
       copyText: address,

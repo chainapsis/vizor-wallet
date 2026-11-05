@@ -1487,6 +1487,7 @@ void main() {
           details: const [
             SwapStatusDetailRowData(
               label: 'USDC deposit to',
+              kind: SwapStatusDetailKind.depositAddress,
               value: '0x123kjhc ... 4x98g20',
               copyable: true,
             ),
@@ -1496,10 +1497,12 @@ void main() {
             ),
             SwapStatusDetailRowData(
               label: 'Timestamp',
+              kind: SwapStatusDetailKind.timestamp,
               value: 'May 20, 2026 13:20',
             ),
             SwapStatusDetailRowData(
               label: 'Total fees',
+              kind: SwapStatusDetailKind.totalFees,
               value: '~0.25 USDC',
               help: true,
             ),
@@ -1550,14 +1553,17 @@ void main() {
           details: const [
             SwapStatusDetailRowData(
               label: 'Refund to',
+              kind: SwapStatusDetailKind.refundTo,
               value: '0x123kjhc ... 4x98g20',
             ),
             SwapStatusDetailRowData(
               label: 'Timestamp',
+              kind: SwapStatusDetailKind.timestamp,
               value: 'May 20, 2026 13:20',
             ),
             SwapStatusDetailRowData(
               label: 'Total fees',
+              kind: SwapStatusDetailKind.totalFees,
               value: '~0.25 USDC',
               help: true,
             ),
@@ -2129,9 +2135,14 @@ void main() {
         _statusTestPage(
           activeTab: SwapStatusTab.details,
           details: const [
-            SwapStatusDetailRowData(label: 'Account', value: 'John'),
+            SwapStatusDetailRowData(
+              label: 'Account',
+              kind: SwapStatusDetailKind.account,
+              value: 'John',
+            ),
             SwapStatusDetailRowData(
               label: 'USDC recipient',
+              kind: SwapStatusDetailKind.recipient,
               value: '0x123kjhc ... 4x98g20',
               copyable: true,
               addressBookLabel: 'Treasury',
@@ -2139,6 +2150,7 @@ void main() {
             ),
             SwapStatusDetailRowData(
               label: 'Swap fee',
+              kind: SwapStatusDetailKind.swapFee,
               value: 'Included in shown rate',
               help: true,
             ),
@@ -2174,9 +2186,14 @@ void main() {
         _statusTestPage(
           activeTab: SwapStatusTab.details,
           details: const [
-            SwapStatusDetailRowData(label: 'Account', value: 'John'),
+            SwapStatusDetailRowData(
+              label: 'Account',
+              kind: SwapStatusDetailKind.account,
+              value: 'John',
+            ),
             SwapStatusDetailRowData(
               label: 'USDC recipient',
+              kind: SwapStatusDetailKind.recipient,
               value: '0x1234567…89abc',
               copyable: true,
               addressBookLabel: 'eth account',
@@ -2184,19 +2201,23 @@ void main() {
             ),
             SwapStatusDetailRowData(
               label: 'Deposit ZEC to',
+              kind: SwapStatusDetailKind.depositAddress,
               value: 't1V4tMBk8 ... hunXYpe',
             ),
             SwapStatusDetailRowData(
               label: 'Swap fee',
+              kind: SwapStatusDetailKind.swapFee,
               value: 'Included in shown rate',
               help: true,
             ),
             SwapStatusDetailRowData(
               label: 'Slippage tolerance',
+              kind: SwapStatusDetailKind.slippageTolerance,
               value: '0.01 USDC (1.0%)',
             ),
             SwapStatusDetailRowData(
               label: 'Guaranteed minimum',
+              kind: SwapStatusDetailKind.guaranteedMinimum,
               value: '52.00 USDC',
               help: true,
             ),
@@ -2227,15 +2248,21 @@ void main() {
         _statusTestPage(
           activeTab: SwapStatusTab.details,
           details: const [
-            SwapStatusDetailRowData(label: 'Account', value: 'John'),
+            SwapStatusDetailRowData(
+              label: 'Account',
+              kind: SwapStatusDetailKind.account,
+              value: 'John',
+            ),
             SwapStatusDetailRowData(
               label: 'Deposit USDC to',
+              kind: SwapStatusDetailKind.depositAddress,
               value: compactAddress,
               copyable: true,
               copyText: fullAddress,
             ),
             SwapStatusDetailRowData(
               label: 'Swap fee',
+              kind: SwapStatusDetailKind.swapFee,
               value: 'Included in shown rate',
               help: true,
             ),
@@ -2271,6 +2298,7 @@ void main() {
           details: [
             SwapStatusDetailRowData(
               label: 'USDC deposit tx',
+              kind: SwapStatusDetailKind.sourceTx,
               value: compactTxHash,
               copyable: true,
               copyText: fullTxHash,
@@ -2278,6 +2306,7 @@ void main() {
             ),
             const SwapStatusDetailRowData(
               label: 'Total fees',
+              kind: SwapStatusDetailKind.totalFees,
               value: 'Included',
               help: true,
             ),
@@ -11039,23 +11068,28 @@ Widget _statusTestPage({
           const [
             SwapStatusDetailRowData(
               label: 'USDC refund address',
+              kind: SwapStatusDetailKind.refundAddress,
               value: '0x123kjhc ... 4x98g20',
             ),
             SwapStatusDetailRowData(
               label: 'Deposit USDC to',
+              kind: SwapStatusDetailKind.depositAddress,
               value: '0x123kjhc ... 4x98g20',
             ),
             SwapStatusDetailRowData(
               label: 'Swap fee',
+              kind: SwapStatusDetailKind.swapFee,
               value: 'Included in shown rate',
               help: true,
             ),
             SwapStatusDetailRowData(
               label: 'Slippage tolerance',
+              kind: SwapStatusDetailKind.slippageTolerance,
               value: '0.25 USDC (0.5%)',
             ),
             SwapStatusDetailRowData(
               label: 'Guaranteed minimum',
+              kind: SwapStatusDetailKind.guaranteedMinimum,
               value: '0.249 ZEC',
               help: true,
             ),

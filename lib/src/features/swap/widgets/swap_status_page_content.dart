@@ -12,7 +12,6 @@ import '../../../core/widgets/app_tooltip.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../address_book/widgets/address_book_network_icon.dart';
-import '../models/swap_detail_tooltips.dart';
 import '../models/swap_models.dart';
 import '../models/swap_status_presentation.dart';
 import 'swap_review_info.dart';
@@ -843,8 +842,8 @@ class _SwapTerminalDetails extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         ..._detailRowsWithFeeDivider(
           rows,
-          dividerBeforeLabel: badgeKind == SwapStatusBadgeKind.refunded
-              ? 'Refunded amount' // l10n-ignore: matched against row labels
+          dividerBeforeKind: badgeKind == SwapStatusBadgeKind.refunded
+              ? SwapStatusDetailKind.refundedAmount
               : null,
         ),
       ],
@@ -856,16 +855,16 @@ class _SwapTerminalDetails extends StatelessWidget {
 /// other detail lists retain the divider before their final fee row.
 List<Widget> _detailRowsWithFeeDivider(
   List<SwapStatusDetailRowData> rows, {
-  String? dividerBeforeLabel,
+  SwapStatusDetailKind? dividerBeforeKind,
 }) {
   if (rows.isEmpty) return const [];
   final lastIndex = rows.length - 1;
-  final outcomeIndex = dividerBeforeLabel == null
+  final outcomeIndex = dividerBeforeKind == null
       ? -1
-      : rows.indexWhere((row) => row.label == dividerBeforeLabel);
+      : rows.indexWhere((row) => row.kind == dividerBeforeKind);
   final dividerIndex = outcomeIndex >= 0
       ? (outcomeIndex > 0 ? outcomeIndex : -1)
-      : rows.length > 1 && _isFeeRow(rows[lastIndex].label)
+      : rows.length > 1 && rows[lastIndex].kind.isFee
       ? lastIndex
       : -1;
   return [
@@ -874,13 +873,6 @@ List<Widget> _detailRowsWithFeeDivider(
       _DetailRow(row: rows[index]),
     ],
   ];
-}
-
-bool _isFeeRow(String label) {
-  return label == 'Swap fee' ||
-      label == 'Total fees' ||
-      label == 'Tx fee' ||
-      label == 'Refund fee';
 }
 
 class _DetailDivider extends StatelessWidget {
@@ -979,7 +971,7 @@ class _DetailRow extends StatelessWidget {
         trailingIconName: AppIcons.help,
         trailingIconColor: colors.icon.muted,
         trailingIconTooltip:
-            row.helpTooltip ?? _swapStatusHelpTooltip(context.l10n, row.label),
+            row.helpTooltip ?? row.kind.helpTooltipFor(context.l10n),
       );
     }
 
@@ -1099,13 +1091,7 @@ bool _shouldScaleDetailValue(SwapStatusDetailRowData row) {
   final source = row.copyText?.trim();
   if (source == null || source.isEmpty || source.length <= 18) return false;
 
-  final label = row.label.toLowerCase();
-  return label.contains('address') ||
-      label.contains('recipient') ||
-      label.contains('refund') ||
-      label == 'tx id' ||
-      label.contains(' tx') ||
-      (label.startsWith('deposit ') && label.endsWith(' to'));
+  return row.kind.compactsValue;
 }
 
 class _StatusDetailActionIcon extends StatelessWidget {
@@ -1138,15 +1124,6 @@ class _StatusDetailActionIcon extends StatelessWidget {
     }
     return AppTooltip(message: message, child: child);
   }
-}
-
-String _swapStatusHelpTooltip(AppLocalizations l10n, String label) {
-  return switch (label) {
-    'Swap fee' => swapFeeTooltip(l10n),
-    'Guaranteed minimum' => swapGenericMinimumReceiveTooltip(l10n),
-    'Total fees' => swapTotalFeesTooltip(l10n),
-    _ => swapStatusDetailTooltip(l10n),
-  };
 }
 
 /// Animated wrapper around [SwapProgressRoute]: walks the displayed active
