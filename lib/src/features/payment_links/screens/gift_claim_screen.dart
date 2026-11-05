@@ -1025,11 +1025,15 @@ class _GiftClaimActions extends ConsumerWidget {
             ? [
                 _primary(
                   addingAccount
+                      ? 'gift_claim_create_an_account_to_claim'
+                      : 'gift_claim_create_a_wallet_to_claim',
+                  addingAccount
                       ? context.l10n.paymentLinkClaimActionCreateAccount
                       : context.l10n.paymentLinkClaimActionCreateWallet,
                   null,
                 ),
                 _secondary(
+                  'gift_claim_claim_with_an_existing_wallet',
                   context.l10n.paymentLinkClaimActionExistingWallet,
                   null,
                 ),
@@ -1038,16 +1042,32 @@ class _GiftClaimActions extends ConsumerWidget {
       GiftClaimPhase.failed =>
         flow.failure == GiftClaimFailure.network ||
                 flow.failure == GiftClaimFailure.interrupted
-            ? [_primary(context.l10n.commonTryAgain, notifier.recheck)]
-            : [_secondary(context.l10n.commonGoBack, onClose)],
+            ? [
+                _primary(
+                  'gift_claim_try_again',
+                  context.l10n.commonTryAgain,
+                  notifier.recheck,
+                ),
+              ]
+            : [
+                _secondary(
+                  'gift_claim_go_back',
+                  context.l10n.commonGoBack,
+                  onClose,
+                ),
+              ],
       GiftClaimPhase.inspected when canClaimLater => [
         _primary(
+          addingAccount
+              ? 'gift_claim_create_an_account_to_claim'
+              : 'gift_claim_create_a_wallet_to_claim',
           addingAccount
               ? context.l10n.paymentLinkClaimActionCreateAccount
               : context.l10n.paymentLinkClaimActionCreateWallet,
           onCreate,
         ),
         _secondary(
+          'gift_claim_claim_with_an_existing_wallet',
           context.l10n.paymentLinkClaimActionExistingWallet,
           onExisting,
         ),
@@ -1055,8 +1075,12 @@ class _GiftClaimActions extends ConsumerWidget {
       GiftClaimPhase.inspected => [
         // An empty scan is not proof the Card will never be funded.
         if (inspection!.availability == PaymentLinkAvailability.noBalance)
-          _primary(context.l10n.commonCheckAgain, notifier.recheck),
-        _secondary(context.l10n.commonGoBack, onClose),
+          _primary(
+            'gift_claim_check_again',
+            context.l10n.commonCheckAgain,
+            notifier.recheck,
+          ),
+        _secondary('gift_claim_go_back', context.l10n.commonGoBack, onClose),
       ],
     };
     return Column(
@@ -1072,32 +1096,34 @@ class _GiftClaimActions extends ConsumerWidget {
   }
 
   // Labels wrap instead of clipping under large text.
-  Widget _primary(String label, VoidCallback? onPressed) => Semantics(
-    key: ValueKey('gift_claim_${label.toLowerCase().replaceAll(' ', '_')}'),
-    button: true,
-    enabled: onPressed != null,
-    child: AppButton(
-      onPressed: onPressed,
-      size: AppButtonSize.large,
-      expand: true,
-      constrainContent: true,
-      growWithContent: true,
-      child: Text(label, textAlign: TextAlign.center),
-    ),
-  );
+  Widget _primary(String key, String label, VoidCallback? onPressed) =>
+      Semantics(
+        key: ValueKey(key),
+        button: true,
+        enabled: onPressed != null,
+        child: AppButton(
+          onPressed: onPressed,
+          size: AppButtonSize.large,
+          expand: true,
+          constrainContent: true,
+          growWithContent: true,
+          child: Text(label, textAlign: TextAlign.center),
+        ),
+      );
 
-  Widget _secondary(String label, VoidCallback? onPressed) => Semantics(
-    key: ValueKey('gift_claim_${label.toLowerCase().replaceAll(' ', '_')}'),
-    button: true,
-    enabled: onPressed != null,
-    child: AppButton(
-      onPressed: onPressed,
-      variant: AppButtonVariant.ghost,
-      size: AppButtonSize.large,
-      expand: true,
-      constrainContent: true,
-      growWithContent: true,
-      child: Text(label, textAlign: TextAlign.center),
-    ),
-  );
+  Widget _secondary(String key, String label, VoidCallback? onPressed) =>
+      Semantics(
+        key: ValueKey(key),
+        button: true,
+        enabled: onPressed != null,
+        child: AppButton(
+          onPressed: onPressed,
+          variant: AppButtonVariant.ghost,
+          size: AppButtonSize.large,
+          expand: true,
+          constrainContent: true,
+          growWithContent: true,
+          child: Text(label, textAlign: TextAlign.center),
+        ),
+      );
 }
