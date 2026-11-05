@@ -381,7 +381,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Forgot Passcode?'), findsOneWidget);
-    expect(find.text(kForgotPasscodeUnbackedAccountWarning), findsOneWidget);
+    expect(
+      find.text(
+        'If you haven’t backed up an account’s secret passphrase, '
+        'you can’t recover its funds after resetting Vizor.',
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
     expect(find.text('Continue to reset Vizor'), findsOneWidget);
 

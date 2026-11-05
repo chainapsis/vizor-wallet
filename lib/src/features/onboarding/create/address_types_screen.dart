@@ -1,9 +1,11 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../shared/onboarding_rich_text.dart';
 import 'onboarding_split_view.dart';
 
 class AddressTypesScreen extends StatelessWidget {
@@ -23,7 +25,7 @@ class AddressTypesScreen extends StatelessWidget {
       backTarget:
           backTarget ??
           OnboardingBackTarget.route(
-            label: OnboardingStep.intro.label,
+            label: OnboardingStep.intro.label(context.l10n),
             routePath: OnboardingStep.intro.routePath,
           ),
       bodyPadding: EdgeInsets.zero,
@@ -105,7 +107,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Zcash Address Types',
+            context.l10n.onboardingAddressTypesTitle,
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
@@ -114,8 +116,7 @@ class _TitleBlock extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Zcash has two address types.\n'
-          'One for privacy, one for transparency.',
+          context.l10n.onboardingAddressTypesSubtitle,
           style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
           textAlign: TextAlign.center,
         ),
@@ -239,7 +240,9 @@ class _AddressTypeHeader extends StatelessWidget {
               const SizedBox(width: AppSpacing.xs),
               Flexible(
                 child: Text(
-                  _isShielded ? 'Shielded address' : 'Transparent address',
+                  _isShielded
+                      ? context.l10n.onboardingAddressShieldedLabel
+                      : context.l10n.onboardingAddressTransparentLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.bodyLarge.copyWith(
@@ -287,7 +290,9 @@ class _AddressChip extends StatelessWidget {
           _AddressBadge(kind: kind),
           const SizedBox(width: AppSpacing.xxs),
           Text(
-            _isShielded ? 'vtr42...3F5wF' : 'vt5r2...3F8wF',
+            _isShielded
+                ? 'vtr42...3F5wF' // l10n-ignore: sample address
+                : 'vt5r2...3F8wF', // l10n-ignore: sample address
             maxLines: 1,
             overflow: TextOverflow.clip,
             softWrap: false,
@@ -349,26 +354,25 @@ class _AddressTypeDescription extends StatelessWidget {
     );
 
     if (_isShielded) {
+      const unifiedPrefix = 'u1'; // l10n-ignore: address prefix
+      const legacyPrefix = 'zs'; // l10n-ignore: address prefix
       return Text.rich(
         TextSpan(
           style: bodyStyle,
-          children: [
-            const TextSpan(text: 'Address starts with '),
-            TextSpan(text: 'u1', style: emphasisStyle),
-            const TextSpan(text: ' (or '),
-            TextSpan(text: 'zs', style: emphasisStyle),
-            const TextSpan(
-              text:
-                  ' for legacy). Only you can see your account balance and transaction history.',
+          children: onboardingEmphasisSpans(
+            context.l10n.onboardingAddressShieldedDescription(
+              unifiedPrefix,
+              legacyPrefix,
             ),
-          ],
+            const [unifiedPrefix, legacyPrefix],
+            emphasisStyle,
+          ),
         ),
       );
     }
 
     return Text(
-      "Address starts with t, similar to Bitcoin, your address' balance "
-      'and transaction history are publicly visible.',
+      context.l10n.onboardingAddressTransparentDescription,
       style: bodyStyle,
     );
   }
@@ -392,7 +396,7 @@ class _ButtonStack extends StatelessWidget {
       variant: AppButtonVariant.primary,
       minWidth: _buttonMinWidth,
       trailing: const AppIcon(AppIcons.chevronForward),
-      child: const Text('Tell me how Zcash works'),
+      child: Text(context.l10n.onboardingTellMeHowZcashWorks),
     );
   }
 }

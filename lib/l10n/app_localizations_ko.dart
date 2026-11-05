@@ -1335,6 +1335,862 @@ class AppLocalizationsKo extends AppLocalizations {
   String get navVote => '투⁠표';
 
   @override
+  String get onboardingAccountName => '계⁠정 이⁠름';
+
+  @override
+  String get onboardingAdd => '추⁠가';
+
+  @override
+  String get onboardingAddBip39PassphraseOptional => 'BIP39 암⁠호 문⁠구 추⁠가(선⁠택)';
+
+  @override
+  String get onboardingAddBip39PassphraseSemantics => 'BIP39 암⁠호 문⁠구 추⁠가';
+
+  @override
+  String get onboardingAddressShieldedBodyMobile =>
+      '주⁠소⁠는 u1⁠로 시⁠작⁠해⁠요(예⁠전 형⁠식⁠은 zs).\n계⁠정 잔⁠액⁠과 거⁠래 내⁠역⁠은 나⁠만 볼 수 있⁠어⁠요.';
+
+  @override
+  String onboardingAddressShieldedDescription(
+    String unifiedPrefix,
+    String legacyPrefix,
+  ) {
+    return '주⁠소⁠는 $unifiedPrefix⁠로 시⁠작⁠해⁠요(예⁠전 형⁠식⁠은 $legacyPrefix). 계⁠정 잔⁠액⁠과 거⁠래 내⁠역⁠은 나⁠만 볼 수 있⁠어⁠요.';
+  }
+
+  @override
+  String get onboardingAddressShieldedLabel => '차⁠폐 주⁠소';
+
+  @override
+  String get onboardingAddressShieldedTitleMobile => '차⁠폐 주⁠소';
+
+  @override
+  String get onboardingAddressTransparentDescription =>
+      '주⁠소⁠는 t⁠로 시⁠작⁠하⁠며 Bitcoin⁠과 비⁠슷⁠해⁠요. 이 주⁠소⁠의 잔⁠액⁠과 거⁠래 내⁠역⁠은 누⁠구⁠나 볼 수 있⁠어⁠요.';
+
+  @override
+  String get onboardingAddressTransparentLabel => '투⁠명 주⁠소';
+
+  @override
+  String get onboardingAddressTransparentTitleMobile => '투⁠명 주⁠소';
+
+  @override
+  String get onboardingAddressTypesSubtitle =>
+      'Zcash⁠에⁠는 두 가⁠지 주⁠소 유⁠형⁠이 있⁠어⁠요.\n하⁠나⁠는 프⁠라⁠이⁠버⁠시⁠용, 하⁠나⁠는 투⁠명⁠성⁠용⁠이⁠에⁠요.';
+
+  @override
+  String get onboardingAddressTypesSubtitleMobile =>
+      'Zcash⁠에⁠는 두 가⁠지 주⁠소 유⁠형⁠이 있⁠어⁠요.\n하⁠나⁠는 프⁠라⁠이⁠버⁠시⁠용, 하⁠나⁠는 투⁠명⁠성⁠용⁠이⁠에⁠요.';
+
+  @override
+  String get onboardingAddressTypesTitle => 'Zcash 주⁠소 유⁠형';
+
+  @override
+  String get onboardingAddressTypesTitleMobile => 'Zcash 주⁠소 유⁠형';
+
+  @override
+  String onboardingBiometricEnableFailed(String method) {
+    return '$method⁠을(를) 켜⁠지 못⁠했⁠어⁠요. 설⁠정⁠에⁠서 다⁠시 시⁠도⁠할 수 있⁠어⁠요.';
+  }
+
+  @override
+  String onboardingBiometricSetUpFirst(String method) {
+    return '먼⁠저 기⁠기 설⁠정⁠에⁠서 $method⁠을(를) 설⁠정⁠해 주⁠세⁠요.';
+  }
+
+  @override
+  String get onboardingBiometricSubtitle =>
+      '쉽⁠고 빠⁠르⁠게 로⁠그⁠인⁠하⁠는 방⁠법⁠이⁠에⁠요.\n언⁠제⁠든 암⁠호 입⁠력⁠으⁠로 다⁠시 바⁠꿀 수 있⁠어⁠요.';
+
+  @override
+  String onboardingBiometricTitle(String method) {
+    return '$method(으)로\n지⁠갑 잠⁠금 해⁠제';
+  }
+
+  @override
+  String get onboardingBip39PassphraseClear => 'BIP39 암⁠호 문⁠구 지⁠우⁠기';
+
+  @override
+  String get onboardingBip39PassphraseExplanation =>
+      '선⁠택 사⁠항⁠인 암⁠호 문⁠구(“25⁠번⁠째 단⁠어”)를 추⁠가⁠하⁠면 같⁠은 복⁠구 문⁠구⁠로 별⁠도⁠의 지⁠갑⁠을 만⁠들⁠거⁠나 가⁠져⁠올 수 있⁠어⁠요.';
+
+  @override
+  String get onboardingBip39PassphraseFieldLabel => 'BIP39 암⁠호 문⁠구';
+
+  @override
+  String get onboardingBip39PassphraseHint => '1–100⁠자';
+
+  @override
+  String onboardingBip39PassphrasePreview(String passphrase) {
+    return 'BIP39 암⁠호 문⁠구: $passphrase';
+  }
+
+  @override
+  String get onboardingBip39PassphraseTitle => 'BIP39 암⁠호 문⁠구';
+
+  @override
+  String get onboardingBip39PassphraseTitleOptional => 'BIP39 암⁠호 문⁠구(선⁠택)';
+
+  @override
+  String get onboardingBirthdayCantRemember => '기⁠억⁠나⁠지 않⁠아⁠요';
+
+  @override
+  String get onboardingBirthdayDateHint => 'mm/dd/yyyy';
+
+  @override
+  String get onboardingBirthdayDontRemember => '기⁠억⁠나⁠지 않⁠아⁠요';
+
+  @override
+  String get onboardingBirthdayEnterBlockHeight => '블⁠록 높⁠이 입⁠력';
+
+  @override
+  String get onboardingBirthdayEnterDate => '날⁠짜 입⁠력';
+
+  @override
+  String get onboardingBirthdayEnterMonth => '월 입⁠력';
+
+  @override
+  String get onboardingBirthdayEstimateFailed =>
+      '지⁠갑 생⁠성 높⁠이⁠를 추⁠정⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String onboardingBirthdayHeightAtLeast(String height) {
+    return '$height 이⁠상⁠이⁠어⁠야 해⁠요.';
+  }
+
+  @override
+  String onboardingBirthdayHeightBetween(String min, String max) {
+    return '$min⁠에⁠서 $max 사⁠이⁠여⁠야 해⁠요.';
+  }
+
+  @override
+  String get onboardingBirthdayInvalidHeight => '올⁠바⁠른 블⁠록 높⁠이⁠가 아⁠닌 것 같⁠아⁠요';
+
+  @override
+  String get onboardingBirthdayMetadataFailed =>
+      '지⁠갑 생⁠성 시⁠점 정⁠보⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get onboardingBirthdayMobileEstimateFailed =>
+      '해⁠당 날⁠짜⁠의 높⁠이⁠를 추⁠정⁠하⁠지 못⁠했⁠어⁠요. 대⁠신 블⁠록 높⁠이⁠를 직⁠접 입⁠력⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingBirthdayMonthHint => 'mm/yyyy';
+
+  @override
+  String get onboardingBirthdayPickDate => '날⁠짜 고⁠르⁠기';
+
+  @override
+  String get onboardingBirthdayPickMonth => '월 고⁠르⁠기';
+
+  @override
+  String get onboardingBirthdaySelectDate => '날⁠짜 선⁠택';
+
+  @override
+  String get onboardingBirthdaySelectMonth => '월 선⁠택';
+
+  @override
+  String get onboardingBirthdayStatusEstimating => '높⁠이 추⁠정⁠하⁠는 중...';
+
+  @override
+  String get onboardingBirthdayStatusImporting => '지⁠갑 가⁠져⁠오⁠는 중...';
+
+  @override
+  String get onboardingBirthdayStatusPausingSync => '동⁠기⁠화 일⁠시 중⁠지⁠하⁠는 중...';
+
+  @override
+  String get onboardingBirthdaySubtitleMobile =>
+      '대⁠략⁠적⁠이⁠어⁠도 괜⁠찮⁠아⁠요.\n그 시⁠점⁠부⁠터 동⁠기⁠화⁠를 시⁠작⁠해⁠요.';
+
+  @override
+  String get onboardingBirthdayTitle => '지⁠갑⁠을 대⁠략 언⁠제 만⁠드⁠셨⁠나⁠요?';
+
+  @override
+  String get onboardingBlockHeight => '블⁠록 높⁠이';
+
+  @override
+  String get onboardingCalendarMonthApril => '사⁠월';
+
+  @override
+  String get onboardingCalendarMonthAugust => '팔⁠월';
+
+  @override
+  String get onboardingCalendarMonthDecember => '십⁠이⁠월';
+
+  @override
+  String get onboardingCalendarMonthFebruary => '이⁠월';
+
+  @override
+  String get onboardingCalendarMonthJanuary => '일⁠월';
+
+  @override
+  String get onboardingCalendarMonthJuly => '칠⁠월';
+
+  @override
+  String get onboardingCalendarMonthJune => '유⁠월';
+
+  @override
+  String get onboardingCalendarMonthMarch => '삼⁠월';
+
+  @override
+  String get onboardingCalendarMonthMay => '오⁠월';
+
+  @override
+  String get onboardingCalendarMonthNovember => '십⁠일⁠월';
+
+  @override
+  String get onboardingCalendarMonthOctober => '시⁠월';
+
+  @override
+  String get onboardingCalendarMonthSeptember => '구⁠월';
+
+  @override
+  String get onboardingCalendarMonthShortApr => '사⁠월';
+
+  @override
+  String get onboardingCalendarMonthShortAug => '팔⁠월';
+
+  @override
+  String get onboardingCalendarMonthShortDec => '십⁠이⁠월';
+
+  @override
+  String get onboardingCalendarMonthShortFeb => '이⁠월';
+
+  @override
+  String get onboardingCalendarMonthShortJan => '일⁠월';
+
+  @override
+  String get onboardingCalendarMonthShortJul => '칠⁠월';
+
+  @override
+  String get onboardingCalendarMonthShortJun => '유⁠월';
+
+  @override
+  String get onboardingCalendarMonthShortMar => '삼⁠월';
+
+  @override
+  String get onboardingCalendarMonthShortMay => '오⁠월';
+
+  @override
+  String get onboardingCalendarMonthShortNov => '십⁠일⁠월';
+
+  @override
+  String get onboardingCalendarMonthShortOct => '시⁠월';
+
+  @override
+  String get onboardingCalendarMonthShortSep => '구⁠월';
+
+  @override
+  String get onboardingCalendarWeekdayFri => '금';
+
+  @override
+  String get onboardingCalendarWeekdayMon => '월';
+
+  @override
+  String get onboardingCalendarWeekdaySat => '토';
+
+  @override
+  String get onboardingCalendarWeekdaySun => '일';
+
+  @override
+  String get onboardingCalendarWeekdayThu => '목';
+
+  @override
+  String get onboardingCalendarWeekdayTue => '화';
+
+  @override
+  String get onboardingCalendarWeekdayWed => '수';
+
+  @override
+  String get onboardingChangeProfilePicture => '프⁠로⁠필 사⁠진 변⁠경';
+
+  @override
+  String get onboardingCheckingAccounts => '계⁠정 확⁠인⁠하⁠는 중...';
+
+  @override
+  String get onboardingClear => '지⁠우⁠기';
+
+  @override
+  String get onboardingConfirmPassword => '비⁠밀⁠번⁠호 확⁠인';
+
+  @override
+  String get onboardingConnectHardwareSubtitleDesktop =>
+      '하⁠드⁠웨⁠어 지⁠갑⁠을 선⁠택⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingConnectHardwareSubtitleMobile =>
+      '하⁠드⁠웨⁠어 기⁠기⁠를 선⁠택⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingConnectHardwareTitle => '하⁠드⁠웨⁠어 지⁠갑\n연⁠결';
+
+  @override
+  String get onboardingConnectHardwareWallet => '하⁠드⁠웨⁠어 지⁠갑 연⁠결';
+
+  @override
+  String get onboardingConnectKeystone => 'Keystone 연⁠결';
+
+  @override
+  String get onboardingConnectLedger => 'Ledger 연⁠결';
+
+  @override
+  String get onboardingContinue => '계⁠속';
+
+  @override
+  String get onboardingContinueAnywayDesktop => '그⁠래⁠도 계⁠속';
+
+  @override
+  String get onboardingContinueAnywayMobile => '그⁠래⁠도 계⁠속';
+
+  @override
+  String get onboardingCopy => '복⁠사';
+
+  @override
+  String get onboardingCopySecretPassphrase => '복⁠구 문⁠구 복⁠사';
+
+  @override
+  String get onboardingCreatingWallet => '지⁠갑 만⁠드⁠는 중...';
+
+  @override
+  String get onboardingCustomiseAccount => '계⁠정 꾸⁠미⁠기';
+
+  @override
+  String get onboardingCustomiseAccountSubtitle =>
+      '계⁠정 이⁠름⁠을 정⁠하⁠고 프⁠로⁠필 사⁠진⁠을 골⁠라 계⁠정⁠에 개⁠성⁠을 더⁠해 보⁠세⁠요.';
+
+  @override
+  String get onboardingDiscoverySubtitle => '가⁠져⁠올 추⁠가 계⁠정⁠을 선⁠택⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingDiscoveryTitle => '추⁠가 계⁠정⁠을 찾⁠았⁠어⁠요';
+
+  @override
+  String get onboardingEdit => '수⁠정';
+
+  @override
+  String get onboardingEditBip39Passphrase => 'BIP39 암⁠호 문⁠구 수⁠정';
+
+  @override
+  String get onboardingEnterPassword => '비⁠밀⁠번⁠호 입⁠력';
+
+  @override
+  String get onboardingEstimating => '추⁠정⁠하⁠는 중...';
+
+  @override
+  String get onboardingFinishSetup => '설⁠정 완⁠료';
+
+  @override
+  String get onboardingForgotPasscodeAreYouSure => '정⁠말 진⁠행⁠할⁠까⁠요?';
+
+  @override
+  String get onboardingForgotPasscodeBody =>
+      '암⁠호⁠가 기⁠억⁠나⁠지 않⁠으⁠면 계⁠정⁠을 복⁠구⁠하⁠는 유⁠일⁠한 방⁠법⁠은 Vizor 앱⁠을 완⁠전⁠히 초⁠기⁠화⁠하⁠는 것⁠뿐⁠이⁠에⁠요. 모⁠든 계⁠정⁠이 삭⁠제⁠되⁠고 계⁠정⁠을 다⁠시 가⁠져⁠와⁠야 해⁠요. 공⁠유⁠하⁠지 않⁠은 기⁠프⁠트 카⁠드 링⁠크⁠는 영⁠구⁠적⁠으⁠로 사⁠라⁠져⁠요.';
+
+  @override
+  String get onboardingForgotPasscodeCantBeUndone => '되⁠돌⁠릴 수 없⁠어⁠요.\n';
+
+  @override
+  String get onboardingForgotPasscodeContinueToReset => 'Vizor 초⁠기⁠화 계⁠속';
+
+  @override
+  String get onboardingForgotPasscodeProceed => '본⁠인 책⁠임⁠하⁠에 진⁠행⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingForgotPasscodeTitle => '암⁠호⁠를 잊⁠으⁠셨⁠나⁠요?';
+
+  @override
+  String get onboardingForgotPasscodeUnbackedWarning =>
+      '계⁠정⁠의 복⁠구 문⁠구⁠를 백⁠업⁠하⁠지 않⁠았⁠다⁠면 Vizor⁠를 초⁠기⁠화⁠한 뒤⁠에⁠는 해⁠당 자⁠금⁠을 복⁠구⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get onboardingForgotPassword => '비⁠밀⁠번⁠호⁠를 잊⁠으⁠셨⁠나⁠요?';
+
+  @override
+  String get onboardingGiftEducationClosing =>
+      '지⁠갑⁠이 준⁠비⁠됐⁠어⁠요. Zcash⁠가 프⁠라⁠이⁠버⁠시⁠를 지⁠키⁠는 방⁠법⁠과 어⁠떤 주⁠소⁠를 써⁠야 하⁠는⁠지 알⁠아⁠보⁠세⁠요.';
+
+  @override
+  String get onboardingGiftEducationSaveFailed =>
+      '진⁠행 상⁠황⁠을 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingGoBackDesktop => '돌⁠아⁠가⁠기';
+
+  @override
+  String get onboardingGoBackMobile => '돌⁠아⁠가⁠기';
+
+  @override
+  String get onboardingHardwareKeystoneOnly => 'Keystone 지⁠갑';
+
+  @override
+  String get onboardingHardwareLedgerOrKeystone => 'Ledger 또⁠는 Keystone 지⁠갑';
+
+  @override
+  String get onboardingIKnowHowToUseZcash => 'Zcash 사⁠용⁠법⁠을 알⁠아⁠요';
+
+  @override
+  String get onboardingImport => '가⁠져⁠오⁠기';
+
+  @override
+  String get onboardingImportAcceptWordCounts =>
+      '12, 15, 18, 21 또⁠는 24⁠개 단⁠어⁠를 입⁠력⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get onboardingImportCheckFailedError => '복⁠구 문⁠구⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get onboardingImportClipboardEmpty => '클⁠립⁠보⁠드⁠가 비⁠어 있⁠어⁠요';
+
+  @override
+  String get onboardingImportClipboardReadError => '클⁠립⁠보⁠드⁠를 읽⁠을 수 없⁠어⁠요';
+
+  @override
+  String get onboardingImportEnterManuallySemantics => '복⁠구 문⁠구 직⁠접 입⁠력';
+
+  @override
+  String get onboardingImportFromKeystone => 'Keystone 지⁠갑⁠에⁠서 가⁠져⁠오⁠기';
+
+  @override
+  String get onboardingImportFromLedger => 'Ledger 지⁠갑⁠에⁠서 가⁠져⁠오⁠기';
+
+  @override
+  String get onboardingImportInvalidPhraseError => '올⁠바⁠르⁠지 않⁠은 복⁠구 문⁠구⁠예⁠요';
+
+  @override
+  String get onboardingImportInvalidSecretPassphrase =>
+      '12, 15, 18, 21 또⁠는 24⁠개 단⁠어⁠로 된 올⁠바⁠른 복⁠구 문⁠구⁠를 입⁠력⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingImportManualCardSubtitle => '단⁠어⁠를 하⁠나⁠씩 입⁠력⁠해⁠요.';
+
+  @override
+  String get onboardingImportManualCardTitle => '복⁠구 문⁠구\n직⁠접 입⁠력';
+
+  @override
+  String get onboardingImportMethodSubtitle => '원⁠하⁠는 방⁠법⁠을 선⁠택⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingImportMethodTitle => 'Vizor⁠로\n계⁠정 가⁠져⁠오⁠기';
+
+  @override
+  String get onboardingImportNoPhraseError => '복⁠구 문⁠구⁠를 찾⁠을 수 없⁠어⁠요';
+
+  @override
+  String get onboardingImportPasteFromClipboard => '또⁠는 클⁠립⁠보⁠드⁠에⁠서 붙⁠여⁠넣⁠기';
+
+  @override
+  String get onboardingImportPasteHelper =>
+      '12, 15, 18, 21 또⁠는 24⁠개 단⁠어⁠로 된\n복⁠구 문⁠구⁠를 입⁠력⁠할 수 있⁠어⁠요';
+
+  @override
+  String get onboardingImportReadingClipboard => '클⁠립⁠보⁠드 읽⁠는 중...';
+
+  @override
+  String get onboardingImportSecretPassphrase => '복⁠구 문⁠구 가⁠져⁠오⁠기';
+
+  @override
+  String get onboardingImportSecretPassphraseDescriptionDesktop =>
+      'Vizor 또⁠는 다⁠른 Zcash 지⁠갑';
+
+  @override
+  String get onboardingImportSecretPassphraseDescriptionMobile =>
+      'Vizor, ZODL 또⁠는 다⁠른 지⁠갑';
+
+  @override
+  String get onboardingImportWalletTitle => '지⁠갑 가⁠져⁠오⁠기';
+
+  @override
+  String get onboardingImportWalletTitleMobile => '지⁠갑 가⁠져⁠오⁠기';
+
+  @override
+  String get onboardingImporting => '가⁠져⁠오⁠는 중...';
+
+  @override
+  String get onboardingIntroCard =>
+      'Bitcoin⁠이⁠나 Ethereum⁠과 달⁠리 차⁠폐⁠된 Zcash 거⁠래⁠는 보⁠낸 사⁠람, 받⁠는 사⁠람, 금⁠액⁠을 숨⁠겨⁠요. 신⁠뢰⁠가 아⁠니⁠라 암⁠호⁠학⁠으⁠로 검⁠증⁠돼⁠요.';
+
+  @override
+  String get onboardingIntroClosing =>
+      '첫 프⁠라⁠이⁠빗 지⁠갑⁠까⁠지 몇 단⁠계⁠만 남⁠았⁠어⁠요.\n함⁠께 설⁠정⁠해 볼⁠까⁠요.';
+
+  @override
+  String get onboardingIntroClosingMobile =>
+      '첫 프⁠라⁠이⁠빗 지⁠갑⁠까⁠지 몇 단⁠계⁠만 남⁠았⁠어⁠요. 함⁠께 설⁠정⁠해 볼⁠까⁠요.';
+
+  @override
+  String get onboardingIntroSubtitle =>
+      'Zcash(ZEC)는 금⁠융 프⁠라⁠이⁠버⁠시⁠와 자⁠기 수⁠탁⁠을 중⁠심⁠으⁠로 만⁠들⁠어⁠졌⁠어⁠요.';
+
+  @override
+  String get onboardingIntroSubtitleMobile =>
+      'Zcash(ZEC)는 금⁠융 프⁠라⁠이⁠버⁠시⁠와\n자⁠기 수⁠탁⁠을 중⁠심⁠으⁠로 만⁠들⁠어⁠졌⁠어⁠요.';
+
+  @override
+  String get onboardingIntroTitle => '차⁠폐⁠된 세⁠상';
+
+  @override
+  String get onboardingLinkVizorDesktop => 'Vizor 데⁠스⁠크⁠톱 연⁠결';
+
+  @override
+  String get onboardingLinkVizorDesktopDescription =>
+      '스⁠캔⁠해⁠서 Vizor 데⁠스⁠크⁠톱⁠에 연⁠결';
+
+  @override
+  String get onboardingLoading => '불⁠러⁠오⁠는 중';
+
+  @override
+  String onboardingLostPasswordBody(String resetAction, String importAction) {
+    return '비⁠밀⁠번⁠호⁠를 잊⁠으⁠셨⁠다⁠면 계⁠정⁠을 복⁠구⁠하⁠는 유⁠일⁠한 방⁠법⁠은 $resetAction⁠뿐⁠이⁠에⁠요.\n모⁠든 계⁠정⁠과 공⁠유⁠하⁠지 않⁠은 기⁠프⁠트 카⁠드 링⁠크⁠가 삭⁠제⁠돼⁠요.\n이⁠후⁠에⁠는 $importAction.';
+  }
+
+  @override
+  String get onboardingLostPasswordImportAction => '계⁠정⁠을 다⁠시 가⁠져⁠와⁠야 해⁠요';
+
+  @override
+  String get onboardingLostPasswordResetAction => 'Vizor 앱⁠을 완⁠전⁠히 초⁠기⁠화⁠하⁠는 것';
+
+  @override
+  String onboardingLostPasswordResetCountdown(int seconds) {
+    return '$seconds⁠초 후 초⁠기⁠화...';
+  }
+
+  @override
+  String get onboardingLostPasswordTitle => '비⁠밀⁠번⁠호⁠를 잊⁠으⁠셨⁠나⁠요?';
+
+  @override
+  String get onboardingManualInvalidWord => '복⁠구 문⁠구⁠에 없⁠는 단⁠어⁠예⁠요.';
+
+  @override
+  String get onboardingManualNextWord => '다⁠음 단⁠어';
+
+  @override
+  String get onboardingManualReviewFinish => '검⁠토⁠하⁠고 완⁠료';
+
+  @override
+  String onboardingManualStoppedAt(String word) {
+    return '\'$word\'에⁠서 멈⁠췄⁠어⁠요. 복⁠구 문⁠구 단⁠어 목⁠록⁠에 없⁠는 단⁠어⁠예⁠요.';
+  }
+
+  @override
+  String get onboardingManualSubtitle =>
+      '12, 15, 18, 21 또⁠는 24⁠개 단⁠어⁠를 입⁠력⁠할 수 있⁠어⁠요';
+
+  @override
+  String get onboardingManualTitle => '복⁠구 문⁠구 입⁠력';
+
+  @override
+  String get onboardingManualUndoLastWord => '마⁠지⁠막 단⁠어 취⁠소';
+
+  @override
+  String get onboardingNetworkCheckingEndpoint => '엔⁠드⁠포⁠인⁠트 확⁠인⁠하⁠는 중…';
+
+  @override
+  String onboardingNetworkCurrentEndpoint(String endpoint) {
+    return '현⁠재: $endpoint';
+  }
+
+  @override
+  String get onboardingNetworkCustomEndpoint => '사⁠용⁠자 지⁠정 엔⁠드⁠포⁠인⁠트';
+
+  @override
+  String get onboardingNetworkEndpointHelper =>
+      '이 지⁠갑⁠의 네⁠트⁠워⁠크⁠용 lightwalletd 서⁠버⁠를 사⁠용⁠하⁠세⁠요.';
+
+  @override
+  String get onboardingNetworkEndpointUpdated => '엔⁠드⁠포⁠인⁠트⁠를 업⁠데⁠이⁠트⁠했⁠어⁠요';
+
+  @override
+  String get onboardingNetworkSaveFailed =>
+      '엔⁠드⁠포⁠인⁠트⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingNetworkSettings => '네⁠트⁠워⁠크 설⁠정';
+
+  @override
+  String get onboardingNetworkUpdateEndpoint => '엔⁠드⁠포⁠인⁠트 업⁠데⁠이⁠트';
+
+  @override
+  String get onboardingNetworkVerifyFailed =>
+      '해⁠당 엔⁠드⁠포⁠인⁠트⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 주⁠소⁠를 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingNext => '다⁠음';
+
+  @override
+  String get onboardingNotNow => '나⁠중⁠에';
+
+  @override
+  String get onboardingPasscodeConfirmTitle => '암⁠호 확⁠인';
+
+  @override
+  String get onboardingPasscodeCreateTitle => '암⁠호 만⁠들⁠기';
+
+  @override
+  String onboardingPasscodeDigitSemantics(int digit) {
+    return '숫⁠자 $digit';
+  }
+
+  @override
+  String get onboardingPasscodeIncorrect => '암⁠호⁠가 맞⁠지 않⁠아⁠요';
+
+  @override
+  String get onboardingPasscodeReEnter => '암⁠호⁠를 다⁠시 입⁠력⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingPasscodeSettingUp => '지⁠갑⁠을 설⁠정⁠하⁠는 중...';
+
+  @override
+  String get onboardingPasscodeSixDigits => '6⁠자⁠리 숫⁠자';
+
+  @override
+  String get onboardingPasscodesDidNotMatch =>
+      '암⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingPassword => '비⁠밀⁠번⁠호';
+
+  @override
+  String get onboardingPasswordsDoNotMatch => '비⁠밀⁠번⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get onboardingQuit => '종⁠료';
+
+  @override
+  String get onboardingRandomiseAccountPersona =>
+      '계⁠정 이⁠름⁠과 프⁠로⁠필 사⁠진 무⁠작⁠위⁠로 바⁠꾸⁠기';
+
+  @override
+  String get onboardingRecoveringWallet => '지⁠갑 복⁠구⁠하⁠는 중...';
+
+  @override
+  String get onboardingResetAppFailed =>
+      '앱⁠을 초⁠기⁠화⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingResetCannotBeUndone => '되⁠돌⁠릴 수 없⁠어⁠요.';
+
+  @override
+  String get onboardingResetVizor => 'Vizor 초⁠기⁠화';
+
+  @override
+  String get onboardingResumeSetupFailed =>
+      '설⁠정⁠을 이⁠어⁠가⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingRetry => '다⁠시 시⁠도';
+
+  @override
+  String get onboardingRetrySetup => '설⁠정 다⁠시 시⁠도';
+
+  @override
+  String get onboardingRetrying => '다⁠시 시⁠도⁠하⁠는 중';
+
+  @override
+  String get onboardingReviewClearSecretPassphrase => '복⁠구 문⁠구 지⁠우⁠기';
+
+  @override
+  String get onboardingReviewConfirmContinue => '확⁠인⁠하⁠고 계⁠속';
+
+  @override
+  String get onboardingReviewImportSubtitle =>
+      '가⁠져⁠오⁠기⁠를 시⁠작⁠하⁠기 전⁠에\n복⁠구 문⁠구⁠를 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingReviewImportTitle => '가⁠져⁠오⁠기 검⁠토';
+
+  @override
+  String get onboardingSave => '저⁠장';
+
+  @override
+  String get onboardingSavingWallet => '지⁠갑 저⁠장⁠하⁠는 중...';
+
+  @override
+  String get onboardingSecretPassphrase => '복⁠구 문⁠구';
+
+  @override
+  String get onboardingSecretPassphraseAboutToSee => '곧 복⁠구 문⁠구⁠가 표⁠시⁠돼⁠요.';
+
+  @override
+  String get onboardingSecretPassphraseAboutToSeeMobile =>
+      '곧 복⁠구 문⁠구⁠가\n표⁠시⁠돼⁠요.';
+
+  @override
+  String get onboardingSecretPassphraseReveal => '문⁠구 보⁠기';
+
+  @override
+  String get onboardingSecretPassphraseRevealMobile => '문⁠구 보⁠기';
+
+  @override
+  String get onboardingSecretPassphraseSubtitleDesktop => '지⁠갑⁠의 마⁠스⁠터 키⁠예⁠요.';
+
+  @override
+  String get onboardingSecretPassphraseSubtitleMobile => '지⁠갑⁠의 마⁠스⁠터 키⁠예⁠요.';
+
+  @override
+  String get onboardingSecretPassphraseWarning =>
+      '이 문⁠구⁠는 내 자⁠금⁠의 마⁠스⁠터 키⁠예⁠요. 안⁠전⁠하⁠게 보⁠관⁠하⁠고 절⁠대 공⁠개⁠하⁠지 마⁠세⁠요. 잃⁠어⁠버⁠리⁠면 누⁠구⁠도 지⁠갑 복⁠구⁠를 도⁠와⁠줄 수 없⁠어⁠요. 저⁠희⁠도 마⁠찬⁠가⁠지⁠예⁠요.';
+
+  @override
+  String get onboardingSeedWordHint => '단⁠어';
+
+  @override
+  String get onboardingSelectProfilePicture => '프⁠로⁠필 사⁠진 선⁠택';
+
+  @override
+  String get onboardingSetPassword => '비⁠밀⁠번⁠호 설⁠정';
+
+  @override
+  String get onboardingSetPasswordAndFinish => '비⁠밀⁠번⁠호 설⁠정⁠하⁠고 완⁠료';
+
+  @override
+  String get onboardingSetPasswordPlaceholder => '8⁠자 이⁠상, 기⁠호 포⁠함';
+
+  @override
+  String get onboardingSetPasswordSubtitle =>
+      'Vizor 지⁠갑⁠에 로⁠그⁠인⁠할 비⁠밀⁠번⁠호⁠를 설⁠정⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingSettingPassword => '비⁠밀⁠번⁠호 설⁠정⁠하⁠는 중...';
+
+  @override
+  String get onboardingSetupInterrupted =>
+      '설⁠정⁠이 중⁠단⁠됐⁠어⁠요. 다⁠시 시⁠도⁠해⁠서 지⁠갑⁠을 복⁠구⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingStepAddressTypes => '주⁠소 유⁠형';
+
+  @override
+  String get onboardingStepCustomiseWallet => '지⁠갑 꾸⁠미⁠기';
+
+  @override
+  String get onboardingStepImportContacts => '연⁠락⁠처 가⁠져⁠오⁠기';
+
+  @override
+  String get onboardingStepIntroToZcash => 'Zcash 소⁠개';
+
+  @override
+  String get onboardingStepWalletBirthdayHeight => '지⁠갑 생⁠성 높⁠이';
+
+  @override
+  String get onboardingStopSyncing => '동⁠기⁠화 중⁠지⁠하⁠는 중...';
+
+  @override
+  String get onboardingStorageDbMigrationBody =>
+      '이 버⁠전⁠을 열⁠려⁠면 Vizor⁠가 로⁠컬 지⁠갑 데⁠이⁠터⁠베⁠이⁠스⁠를 업⁠데⁠이⁠트⁠해⁠야 해⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 Vizor⁠를 종⁠료⁠한 뒤 다⁠시 실⁠행⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingStorageDbMigrationTitle =>
+      '지⁠갑 데⁠이⁠터⁠베⁠이⁠스⁠를 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get onboardingStorageKeyringLockedBody =>
+      '지⁠갑⁠을 열⁠려⁠면 Vizor⁠가 시⁠스⁠템 키⁠링⁠에 접⁠근⁠할 수 있⁠어⁠야 해⁠요. 키⁠링⁠을 잠⁠금 해⁠제⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingStorageKeyringLockedTitle => '키⁠링⁠을 잠⁠금 해⁠제⁠해 주⁠세⁠요';
+
+  @override
+  String get onboardingStorageRetrySecureStorageFailed =>
+      '보⁠안 저⁠장⁠소⁠를 아⁠직 사⁠용⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get onboardingStorageRetryWalletDbFailed =>
+      '지⁠갑 데⁠이⁠터⁠베⁠이⁠스 업⁠데⁠이⁠트⁠에 또 실⁠패⁠했⁠어⁠요.';
+
+  @override
+  String get onboardingStorageSecureStorageLockedBody =>
+      '지⁠갑⁠을 열⁠려⁠면 Vizor⁠가 보⁠안 저⁠장⁠소⁠에 접⁠근⁠할 수 있⁠어⁠야 해⁠요. 보⁠안 저⁠장⁠소⁠를 잠⁠금 해⁠제⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingStorageSecureStorageLockedTitle =>
+      '보⁠안 저⁠장⁠소⁠가 잠⁠겨 있⁠어⁠요';
+
+  @override
+  String get onboardingStorageStartupFailureBody =>
+      'Vizor⁠가 로⁠컬 시⁠작 상⁠태⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 Vizor⁠를 종⁠료⁠한 뒤 다⁠시 실⁠행⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingStorageStartupFailureTitle => 'Vizor⁠를 열 수 없⁠어⁠요';
+
+  @override
+  String get onboardingTellMeHowZcashWorks => 'Zcash 작⁠동 방⁠식 알⁠아⁠보⁠기';
+
+  @override
+  String get onboardingThingsKeepPrivacyBody =>
+      '일⁠부 거⁠래⁠소⁠는 차⁠폐 주⁠소⁠로 보⁠낼 수 없⁠어⁠요. 거⁠래⁠소⁠에⁠서 출⁠금⁠한⁠다⁠면 투⁠명 주⁠소⁠를 사⁠용⁠하⁠세⁠요. ZEC⁠가 도⁠착⁠한 뒤⁠에 차⁠폐⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get onboardingThingsKeepPrivacyTitle => '프⁠라⁠이⁠버⁠시 지⁠키⁠는 방⁠법';
+
+  @override
+  String get onboardingThingsSubtitleMobile => '시⁠작⁠하⁠기 전⁠에 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingThingsTimeToSyncBody =>
+      '지⁠갑⁠은 서⁠버⁠에 의⁠존⁠하⁠지 않⁠고 Zcash 네⁠트⁠워⁠크⁠와 직⁠접 동⁠기⁠화⁠해⁠요. 프⁠라⁠이⁠버⁠시⁠는 지⁠켜⁠지⁠지⁠만 시⁠간⁠이 조⁠금 걸⁠려⁠요. 앱⁠이 따⁠라⁠잡⁠는 동⁠안⁠에⁠도 자⁠금⁠은 안⁠전⁠해⁠요.';
+
+  @override
+  String get onboardingThingsTimeToSyncTitle => '동⁠기⁠화 시⁠간';
+
+  @override
+  String get onboardingThingsToKnow => '알⁠아 두⁠세⁠요';
+
+  @override
+  String get onboardingTryAgain => '다⁠시 시⁠도';
+
+  @override
+  String get onboardingUnknownHeightBody =>
+      '지⁠갑 생⁠성 높⁠이 없⁠이 계⁠속⁠하⁠면 Vizor⁠가 지⁠원⁠하⁠는 가⁠장 오⁠래⁠된 차⁠폐 높⁠이⁠부⁠터 스⁠캔⁠해⁠요. 안⁠전⁠하⁠지⁠만 첫 동⁠기⁠화⁠에 아⁠주 오⁠랜 시⁠간⁠이 걸⁠릴 수 있⁠어⁠요.';
+
+  @override
+  String get onboardingUnknownHeightHint => '대⁠략⁠적⁠인 날⁠짜⁠만 골⁠라⁠도 훨⁠씬 빨⁠라⁠요.';
+
+  @override
+  String get onboardingUnknownHeightTitle => '가⁠장 오⁠래⁠된 높⁠이⁠부⁠터 가⁠져⁠올⁠까⁠요?';
+
+  @override
+  String get onboardingUnlockBiometricReason => '지⁠갑 잠⁠금 해⁠제';
+
+  @override
+  String get onboardingUnlockButton => 'Vizor 잠⁠금 해⁠제';
+
+  @override
+  String get onboardingUnlockDescription =>
+      'Vizor⁠를 열⁠려⁠면 비⁠밀⁠번⁠호⁠를 입⁠력⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingUnlockEnterPasscode => 'Vizor⁠를 열⁠려⁠면 암⁠호⁠를 입⁠력⁠해 주⁠세⁠요';
+
+  @override
+  String get onboardingUnlockIncorrectPassword =>
+      '비⁠밀⁠번⁠호⁠가 맞⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingUnlockOpenFailed =>
+      '지⁠갑⁠을 열⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingUnlockOpening => '지⁠갑⁠을 여⁠는 중...';
+
+  @override
+  String get onboardingUnlockWelcomeBack => '다⁠시 오⁠신 걸 환⁠영⁠해⁠요';
+
+  @override
+  String get onboardingUnlockWelcomeBackMobile => '다⁠시 오⁠신 걸 환⁠영⁠해⁠요';
+
+  @override
+  String get onboardingWelcome => '시⁠작 화⁠면';
+
+  @override
+  String get onboardingWelcomeActivateGiftCard => '기⁠프⁠트 카⁠드 활⁠성⁠화';
+
+  @override
+  String get onboardingWelcomeGetStarted => '시⁠작⁠하⁠기';
+
+  @override
+  String get onboardingWelcomeImportWallet => '지⁠갑 가⁠져⁠오⁠기';
+
+  @override
   String get poolShielded => '차⁠폐⁠됨';
 
   @override

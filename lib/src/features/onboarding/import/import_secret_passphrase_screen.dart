@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import 'desktop_import_navigation.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
@@ -284,7 +285,7 @@ class _ImportSecretPassphraseScreenState
     if (_showValidationError && !_isMnemonicValid) {
       // Deliberately diverges from the Figma copy ('Some words are
       // incorrect'): the word-count guidance is more actionable.
-      return 'Enter a valid secret passphrase with 12, 15, 18, 21, or 24 words.';
+      return context.l10n.onboardingImportInvalidSecretPassphrase;
     }
     return null;
   }
@@ -540,7 +541,10 @@ class _ImportSecretPassphraseScreenState
     return ImportOnboardingTrailingPane(
       backTarget:
           widget.backTarget ??
-          OnboardingBackTarget.callback(label: 'Welcome', onTap: _handleBack),
+          OnboardingBackTarget.callback(
+            label: context.l10n.onboardingWelcome,
+            onTap: _handleBack,
+          ),
       overlay: SensitivePrivacyOverlay(
         sensitiveContentVisible: _hasSensitiveImportMaterial,
         controller: _privacyOverlayController,
@@ -659,7 +663,9 @@ class _ImportSecretPassphraseScreenState
                         onPressed: _canSubmit ? _submit : null,
                         minWidth: _buttonWidth,
                         child: Text(
-                          _isSubmitting ? 'Importing...' : 'Continue',
+                          _isSubmitting
+                              ? context.l10n.onboardingImporting
+                              : context.l10n.onboardingContinue,
                         ),
                       ),
                     ),
@@ -702,7 +708,7 @@ class _ImportSecretTitle extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Import a Wallet',
+            context.l10n.onboardingImportWalletTitle,
             style: AppTypography.displayLarge.copyWith(color: textColor),
             maxLines: 1,
             overflow: TextOverflow.visible,
@@ -714,7 +720,7 @@ class _ImportSecretTitle extends StatelessWidget {
         SizedBox(
           width: _ImportSecretPassphraseScreenState._subtitleWidth,
           child: Text(
-            'Accept 12, 15, 18, 21, or 24 words.',
+            context.l10n.onboardingImportAcceptWordCounts,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.primary,
             ),
@@ -805,7 +811,7 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
                     ),
                     child: Semantics(
                       button: true,
-                      label: 'Add BIP39 passphrase',
+                      label: context.l10n.onboardingAddBip39PassphraseSemantics,
                       child: MouseRegion(
                         cursor: SystemMouseCursors.click,
                         child: GestureDetector(
@@ -819,7 +825,9 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
                                   ._visiblePassphraseFooterHeight,
                               child: Center(
                                 child: Text(
-                                  'Add BIP39 Passphrase (Optional)',
+                                  context
+                                      .l10n
+                                      .onboardingAddBip39PassphraseOptional,
                                   style: AppTypography.labelLarge.copyWith(
                                     color: colors.text.muted,
                                   ),
@@ -859,7 +867,7 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
                           const SizedBox(width: AppSpacing.xxs),
                           Expanded(
                             child: Text(
-                              'Secret Passphrase',
+                              context.l10n.onboardingSecretPassphrase,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: AppTypography.headlineSmall.copyWith(
@@ -923,7 +931,7 @@ class _SavedBip39PassphraseFooter extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       button: true,
-      label: 'Edit BIP39 passphrase',
+      label: context.l10n.onboardingEditBip39Passphrase,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
@@ -947,7 +955,9 @@ class _SavedBip39PassphraseFooter extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'BIP39 Passphrase: $passphrase',
+                        context.l10n.onboardingBip39PassphrasePreview(
+                          passphrase,
+                        ),
                         key: const ValueKey('bip39_passphrase_preview'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -958,7 +968,7 @@ class _SavedBip39PassphraseFooter extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     Text(
-                      'Edit',
+                      context.l10n.onboardingEdit,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                       ),
@@ -993,7 +1003,7 @@ class _ClearMnemonicButton extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
         expand: true,
         constrainContent: true,
-        child: const Text('Clear'),
+        child: Text(context.l10n.onboardingClear),
       ),
     );
   }
@@ -1026,7 +1036,9 @@ class _Bip39PassphraseModal extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            isEditing ? 'BIP39 Passphrase' : 'BIP39 Passphrase (Optional)',
+            isEditing
+                ? context.l10n.onboardingBip39PassphraseTitle
+                : context.l10n.onboardingBip39PassphraseTitleOptional,
             style: AppTypography.headlineSmall.copyWith(
               color: context.colors.text.accent,
             ),
@@ -1034,8 +1046,7 @@ class _Bip39PassphraseModal extends StatelessWidget {
           if (!isEditing) ...[
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Add an optional passphrase (“25th word”) to create/import a '
-              'separate wallet from the same recovery phrase.',
+              context.l10n.onboardingBip39PassphraseExplanation,
               style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.primary,
               ),
@@ -1045,10 +1056,10 @@ class _Bip39PassphraseModal extends StatelessWidget {
           KeyedSubtree(
             key: const ValueKey('bip39_passphrase_field'),
             child: AppTextField(
-              label: 'BIP39 passphrase',
+              label: context.l10n.onboardingBip39PassphraseFieldLabel,
               showLabel: false,
               controller: controller,
-              hintText: '1–100 characters',
+              hintText: context.l10n.onboardingBip39PassphraseHint,
               minLines: 6,
               maxLines: 6,
               autofocus: true,
@@ -1057,7 +1068,8 @@ class _Bip39PassphraseModal extends StatelessWidget {
               autocorrect: false,
               enableSuggestions: false,
               showClearButton: true,
-              clearButtonSemanticLabel: 'Clear BIP39 passphrase',
+              clearButtonSemanticLabel:
+                  context.l10n.onboardingBip39PassphraseClear,
               inputFormatters: [
                 LengthLimitingTextInputFormatter(
                   _kBip39PassphraseMaxCharacters,
@@ -1072,7 +1084,9 @@ class _Bip39PassphraseModal extends StatelessWidget {
             cancelKey: const ValueKey('bip39_passphrase_cancel_button'),
             actionKey: const ValueKey('bip39_passphrase_save_button'),
             onCancel: onCancel,
-            actionLabel: isEditing ? 'Save' : 'Add',
+            actionLabel: isEditing
+                ? context.l10n.onboardingSave
+                : context.l10n.onboardingAdd,
             onAction: canSave ? onSave : null,
           ),
         ],
@@ -1493,7 +1507,7 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                                 cursorColor: colors.text.homeCard,
                                 selectAllOnFocus: false,
                                 decoration: InputDecoration.collapsed(
-                                  hintText: 'Seed word',
+                                  hintText: context.l10n.onboardingSeedWordHint,
                                   hintStyle: hintStyle,
                                 ),
                                 onChanged: (value) {

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/feedback/app_haptics.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
 import '../../../core/privacy/route_coverage_aware.dart';
@@ -16,6 +17,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
     show MobileSeedScreenshotWarningSheet;
+import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_review_screen.dart';
 import 'mobile_import_screens.dart';
@@ -23,7 +25,9 @@ import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
 
-const _kManualInvalidWordMessage = 'Invalid secret passphrase word.';
+final _kManualInvalidWordError = OnboardingSubmitError.localized(
+  (l10n) => l10n.onboardingManualInvalidWord,
+);
 const _kManualSuggestionsHeight = 60.0;
 const _kManualSuggestionChipHeight = 36.0;
 
@@ -81,7 +85,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
   final List<String> _accepted = [];
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
-  String? _error;
+  OnboardingSubmitError? _error;
 
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
@@ -116,7 +120,10 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
         offset: initialTypedWord.length,
       );
     }
-    _error = widget.initialError;
+    final initialError = widget.initialError;
+    _error = initialError == null
+        ? null
+        : OnboardingSubmitError.text(initialError);
     _controller.addListener(() => setState(() {}));
   }
 
@@ -198,7 +205,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
       final tokens = tokenizeMnemonicWords(_typed);
       final word = tokens.isEmpty ? '' : tokens.first;
       if (word.isEmpty || !_wordList.contains(word)) {
-        setState(() => _error = _kManualInvalidWordMessage);
+        setState(() => _error = _kManualInvalidWordError);
         _focusNode.requestFocus();
         return;
       }
@@ -246,7 +253,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
         _wordList.isEmpty || _wordList.any((word) => word.startsWith(prefix));
     final nextError = hasOnlyLetters && hasMatchingPrefix
         ? null
-        : _kManualInvalidWordMessage;
+        : _kManualInvalidWordError;
     if (_error != nextError) setState(() => _error = nextError);
   }
 
@@ -268,9 +275,12 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
       }
       _controller.clear();
       // Light heads-up so the user knows why the fill stopped early.
-      _error = stoppedAt == null
+      final stopped = stoppedAt;
+      _error = stopped == null
           ? null
-          : "Stopped at '$stoppedAt' — it isn't in the passphrase word list.";
+          : OnboardingSubmitError.localized(
+              (l10n) => l10n.onboardingManualStoppedAt(stopped),
+            );
     });
     if (_accepted.length >= kMnemonicMaxWords) {
       _continueToReview();
@@ -296,7 +306,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
       _acceptWord(word);
     } else {
       setState(() {
-        _error = _kManualInvalidWordMessage;
+        _error = _kManualInvalidWordError;
       });
       _focusNode.requestFocus();
     }
@@ -331,7 +341,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
     final words = [..._accepted];
     final error = (widget.mnemonicValidator ?? validateImportedMnemonic)(words);
     if (error != null) {
-      setState(() => _error = error);
+      setState(() => _error = OnboardingSubmitError.text(error));
       return;
     }
     // The shield stays engaged through the push transition and drops only once
@@ -373,8 +383,8 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
           : null,
       onPressed: nextEnabled ? _acceptTyped : null,
       trailing: _showFinish ? null : const AppIcon(AppIcons.chevronForward),
-      child: const Text(
-        'Next word',
+      child: Text(
+        context.l10n.onboardingManualNextWord,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -394,8 +404,8 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
             ),
             onPressed: _finish,
             trailing: const AppIcon(AppIcons.chevronForward),
-            child: const Text(
-              'Review & finish',
+            child: Text(
+              context.l10n.onboardingManualReviewFinish,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -422,8 +432,8 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
           context,
         ).at(OnboardingFlow.importWallet, OnboardingStage.phraseEntry).value,
         onBack: () => Navigator.of(context).maybePop(),
-        title: 'Enter your Secret Passphrase',
-        subtitle: 'Accept 12, 15, 18, 21 or 24 words',
+        title: context.l10n.onboardingManualTitle,
+        subtitle: context.l10n.onboardingManualSubtitle,
         // Only the CTA is pinned — it rides up above the keyboard (Figma
         // 4746:83516). The autocomplete chips stay attached under the word
         // field and scroll with the content. The stretch Column gives the
@@ -469,7 +479,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
             if (_error != null) ...[
               const SizedBox(height: AppSpacing.sm),
               Text(
-                _error!,
+                _error!.resolve(context.l10n),
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.destructive,
@@ -495,7 +505,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
                     height: 36,
                     child: Center(
                       child: Text(
-                        'Undo last word',
+                        context.l10n.onboardingManualUndoLastWord,
                         style: AppTypography.labelMedium.copyWith(
                           color: colors.text.secondary,
                         ),

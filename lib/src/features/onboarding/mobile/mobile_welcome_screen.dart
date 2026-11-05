@@ -254,7 +254,7 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                           const SizedBox(width: AppSpacing.xs),
                         ],
                         Semantics(
-                          label: 'Network settings',
+                          label: context.l10n.onboardingNetworkSettings,
                           button: true,
                           child: GestureDetector(
                             key: const ValueKey(
@@ -288,7 +288,7 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                     top: MediaQuery.paddingOf(context).top + AppSpacing.xs,
                     left: (landscape ? insets.left : 0) + AppSpacing.s,
                     child: Semantics(
-                      label: 'Back',
+                      label: context.l10n.commonBack,
                       button: true,
                       child: AppButton(
                         variant: AppButtonVariant.ghost,
@@ -318,7 +318,7 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
         const VizorWordmark(width: 106, height: 40, color: Color(0xffffffff)),
         const SizedBox(height: AppSpacing.md),
         Text(
-          'Shielded\nby default',
+          'Shielded\nby default', // l10n-ignore: brand tagline
           textAlign: TextAlign.center,
           style: AppTypography.displayLarge.copyWith(
             color: const Color(0xffffffff),
@@ -358,8 +358,8 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                   leading: const AppIcon(AppIcons.importWallet),
                   growWithContent: true,
                   constrainContent: true,
-                  child: const Text(
-                    'Import wallet',
+                  child: Text(
+                    context.l10n.onboardingWelcomeImportWallet,
                     textAlign: TextAlign.center,
                   ),
                 ),

@@ -2457,6 +2457,1557 @@ abstract class AppLocalizations {
   /// **'Vote'**
   String get navVote;
 
+  /// Label above the account name on the customise-account card.
+  ///
+  /// In en, this message translates to:
+  /// **'Account name'**
+  String get onboardingAccountName;
+
+  /// Dialog button that adds the entered value.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get onboardingAdd;
+
+  /// [security] Visible label of the button that opens the optional BIP39 passphrase (25th word) dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Add BIP39 Passphrase (Optional)'**
+  String get onboardingAddBip39PassphraseOptional;
+
+  /// [security] Accessibility label of the button that opens the optional BIP39 passphrase (25th word) dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Add BIP39 passphrase'**
+  String get onboardingAddBip39PassphraseSemantics;
+
+  /// Body of the shielded address card on the mobile address types step. u1 and zs are literal address prefixes shown in bold; keep them unchanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Address starts with u1 (or zs for legacy).\nOnly you can see your account balance and transaction history.'**
+  String get onboardingAddressShieldedBodyMobile;
+
+  /// Explains shielded addresses on the desktop address types step. {unifiedPrefix} and {legacyPrefix} are the literal address prefixes and are shown in bold; keep them unchanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Address starts with {unifiedPrefix} (or {legacyPrefix} for legacy). Only you can see your account balance and transaction history.'**
+  String onboardingAddressShieldedDescription(
+    String unifiedPrefix,
+    String legacyPrefix,
+  );
+
+  /// Caption of the shielded example address card on the address types step.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded address'**
+  String get onboardingAddressShieldedLabel;
+
+  /// Heading of the shielded address card on the mobile address types step.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded Address'**
+  String get onboardingAddressShieldedTitleMobile;
+
+  /// Explains transparent addresses on the address types step, desktop and mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Address starts with t, similar to Bitcoin, your address\' balance and transaction history are publicly visible.'**
+  String get onboardingAddressTransparentDescription;
+
+  /// Caption of the transparent example address card on the address types step.
+  ///
+  /// In en, this message translates to:
+  /// **'Transparent address'**
+  String get onboardingAddressTransparentLabel;
+
+  /// Heading of the transparent address card on the mobile address types step.
+  ///
+  /// In en, this message translates to:
+  /// **'Transparent Address'**
+  String get onboardingAddressTransparentTitleMobile;
+
+  /// Subtitle on the desktop address types and things-to-know steps; two lines on purpose.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash has two address types.\nOne for privacy, one for transparency.'**
+  String get onboardingAddressTypesSubtitle;
+
+  /// Subtitle of the mobile address types step; two lines on purpose.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash has two addresses types.\nOne for Privacy, one for Transparency.'**
+  String get onboardingAddressTypesSubtitleMobile;
+
+  /// Heading of the desktop step that explains Zcash address types.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash Address Types'**
+  String get onboardingAddressTypesTitle;
+
+  /// Heading of the mobile step that explains Zcash address types.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash Address Types'**
+  String get onboardingAddressTypesTitleMobile;
+
+  /// Toast when enabling biometric unlock failed; {method} is the biometric name such as Face ID.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t enable {method}. You can try again in settings.'**
+  String onboardingBiometricEnableFailed(String method);
+
+  /// Toast when the user taps enable biometric unlock but the device has none set up; {method} is the biometric name such as Face ID.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up {method} in your device settings first.'**
+  String onboardingBiometricSetUpFirst(String method);
+
+  /// Subtitle of the biometric opt-in step; two lines on purpose.
+  ///
+  /// In en, this message translates to:
+  /// **'This is an easy and fast way to sign in.\nYou can switch back to passcode anytime.'**
+  String get onboardingBiometricSubtitle;
+
+  /// Heading of the biometric opt-in step; {method} is the biometric name such as Face ID. The line break matches the design.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock your wallet\nwith {method}'**
+  String onboardingBiometricTitle(String method);
+
+  /// [security] Accessibility label of the clear button inside the BIP39 passphrase field.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear BIP39 passphrase'**
+  String get onboardingBip39PassphraseClear;
+
+  /// [security] Explains the BIP39 passphrase (25th word) in the dialog; a different passphrase yields a separate wallet from the same secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Add an optional passphrase (“25th word”) to create/import a separate wallet from the same recovery phrase.'**
+  String get onboardingBip39PassphraseExplanation;
+
+  /// [security] Accessibility label of the text field in the BIP39 passphrase dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'BIP39 passphrase'**
+  String get onboardingBip39PassphraseFieldLabel;
+
+  /// Placeholder of the BIP39 passphrase field describing the allowed length.
+  ///
+  /// In en, this message translates to:
+  /// **'1–100 characters'**
+  String get onboardingBip39PassphraseHint;
+
+  /// [security] Bar under the secret passphrase showing the BIP39 passphrase the user entered; {passphrase} is the secret value.
+  ///
+  /// In en, this message translates to:
+  /// **'BIP39 Passphrase: {passphrase}'**
+  String onboardingBip39PassphrasePreview(String passphrase);
+
+  /// [security] Title of the BIP39 passphrase dialog when editing an existing passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'BIP39 Passphrase'**
+  String get onboardingBip39PassphraseTitle;
+
+  /// [security] Title of the BIP39 passphrase dialog when adding a passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'BIP39 Passphrase (Optional)'**
+  String get onboardingBip39PassphraseTitleOptional;
+
+  /// Ghost button on the desktop wallet birthday step for users who do not know when the wallet was created.
+  ///
+  /// In en, this message translates to:
+  /// **'I can’t remember'**
+  String get onboardingBirthdayCantRemember;
+
+  /// Placeholder of the birthday date field; shows the expected month/day/year order.
+  ///
+  /// In en, this message translates to:
+  /// **'mm/dd/yyyy'**
+  String get onboardingBirthdayDateHint;
+
+  /// Ghost button on the mobile birthday step for users who do not know when the wallet was created.
+  ///
+  /// In en, this message translates to:
+  /// **'I don’t remember'**
+  String get onboardingBirthdayDontRemember;
+
+  /// Tab label on the wallet birthday step for entering a block height instead of a date.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the block height'**
+  String get onboardingBirthdayEnterBlockHeight;
+
+  /// Tab label on the wallet birthday step for entering a calendar date.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the date'**
+  String get onboardingBirthdayEnterDate;
+
+  /// Tab label on the iOS birthday step for entering a month.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the month'**
+  String get onboardingBirthdayEnterMonth;
+
+  /// Inline error on the desktop birthday step when the chosen date could not be converted into a block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not estimate the wallet birthday height.'**
+  String get onboardingBirthdayEstimateFailed;
+
+  /// Hint under the block height field before the chain tip is known; {height} is the lowest allowed block height.
+  ///
+  /// In en, this message translates to:
+  /// **'At least {height}.'**
+  String onboardingBirthdayHeightAtLeast(String height);
+
+  /// Hint under the block height field; {min} and {max} are the lowest and highest allowed block heights.
+  ///
+  /// In en, this message translates to:
+  /// **'Between {min} and {max}.'**
+  String onboardingBirthdayHeightBetween(String min, String max);
+
+  /// Inline error under the block height field when the number is outside the valid range.
+  ///
+  /// In en, this message translates to:
+  /// **'Doesn\'t seem like a legit block height'**
+  String get onboardingBirthdayInvalidHeight;
+
+  /// Inline error on the desktop birthday step when the chain data needed to estimate dates could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load wallet birthday metadata.'**
+  String get onboardingBirthdayMetadataFailed;
+
+  /// Inline error on the mobile birthday step when the chosen date could not be converted to a block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t estimate a height for that date. Enter a block height instead.'**
+  String get onboardingBirthdayMobileEstimateFailed;
+
+  /// Placeholder of the iOS birthday field; shows the expected month/year order.
+  ///
+  /// In en, this message translates to:
+  /// **'mm/yyyy'**
+  String get onboardingBirthdayMonthHint;
+
+  /// Accessibility label of the Android birthday field that opens the date picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a date'**
+  String get onboardingBirthdayPickDate;
+
+  /// Accessibility label of the iOS birthday field that opens the month picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a month'**
+  String get onboardingBirthdayPickMonth;
+
+  /// Primary button on Android that opens the date picker of the birthday step.
+  ///
+  /// In en, this message translates to:
+  /// **'Select date'**
+  String get onboardingBirthdaySelectDate;
+
+  /// Primary button on iOS that opens the month picker of the birthday step.
+  ///
+  /// In en, this message translates to:
+  /// **'Select month'**
+  String get onboardingBirthdaySelectMonth;
+
+  /// Status line on the mobile birthday step while the block height for the chosen date is being estimated.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimating height...'**
+  String get onboardingBirthdayStatusEstimating;
+
+  /// Status line on the mobile birthday step while the wallet is being imported.
+  ///
+  /// In en, this message translates to:
+  /// **'Importing wallet...'**
+  String get onboardingBirthdayStatusImporting;
+
+  /// Status line on the mobile birthday step while the running sync is paused before importing.
+  ///
+  /// In en, this message translates to:
+  /// **'Pausing sync...'**
+  String get onboardingBirthdayStatusPausingSync;
+
+  /// Subtitle of the mobile birthday step; two lines on purpose.
+  ///
+  /// In en, this message translates to:
+  /// **'An estimate is enough — sync starts\nfrom there.'**
+  String get onboardingBirthdaySubtitleMobile;
+
+  /// Heading of the wallet birthday step on desktop and mobile; asks roughly when the imported wallet was created.
+  ///
+  /// In en, this message translates to:
+  /// **'Around when did you create your wallet?'**
+  String get onboardingBirthdayTitle;
+
+  /// Placeholder of the field where the user types a block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Block height'**
+  String get onboardingBlockHeight;
+
+  /// Full month name (April) shown in the birthday calendar title, followed by the year.
+  ///
+  /// In en, this message translates to:
+  /// **'April'**
+  String get onboardingCalendarMonthApril;
+
+  /// Full month name (August) shown in the birthday calendar title, followed by the year.
+  ///
+  /// In en, this message translates to:
+  /// **'August'**
+  String get onboardingCalendarMonthAugust;
+
+  /// Full month name (December) shown in the birthday calendar title, followed by the year.
+  ///
+  /// In en, this message translates to:
+  /// **'December'**
+  String get onboardingCalendarMonthDecember;
+
+  /// Full month name (February) shown in the birthday calendar title, followed by the year.
+  ///
+  /// In en, this message translates to:
+  /// **'February'**
+  String get onboardingCalendarMonthFebruary;
+
+  /// Full month name (January) shown in the birthday calendar title, followed by the year.
+  ///
+  /// In en, this message translates to:
+  /// **'January'**
+  String get onboardingCalendarMonthJanuary;
+
+  /// Full month name (July) shown in the birthday calendar title, followed by the year.
+  ///
+  /// In en, this message translates to:
+  /// **'July'**
+  String get onboardingCalendarMonthJuly;
+
+  /// Full month name (June) shown in the birthday calendar title, followed by the year.
+  ///
+  /// In en, this message translates to:
+  /// **'June'**
+  String get onboardingCalendarMonthJune;
+
+  /// Full month name (March) shown in the birthday calendar title, followed by the year.
+  ///
+  /// In en, this message translates to:
+  /// **'March'**
+  String get onboardingCalendarMonthMarch;
+
+  /// Full month name (May) shown in the birthday calendar title, followed by the year.
+  ///
+  /// In en, this message translates to:
+  /// **'May'**
+  String get onboardingCalendarMonthMay;
+
+  /// Full month name (November) shown in the birthday calendar title, followed by the year.
+  ///
+  /// In en, this message translates to:
+  /// **'November'**
+  String get onboardingCalendarMonthNovember;
+
+  /// Full month name (October) shown in the birthday calendar title, followed by the year.
+  ///
+  /// In en, this message translates to:
+  /// **'October'**
+  String get onboardingCalendarMonthOctober;
+
+  /// Full month name (September) shown in the birthday calendar title, followed by the year.
+  ///
+  /// In en, this message translates to:
+  /// **'September'**
+  String get onboardingCalendarMonthSeptember;
+
+  /// Abbreviated month name (April) on the birthday calendar month grid. Must fit a small cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Apr'**
+  String get onboardingCalendarMonthShortApr;
+
+  /// Abbreviated month name (August) on the birthday calendar month grid. Must fit a small cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Aug'**
+  String get onboardingCalendarMonthShortAug;
+
+  /// Abbreviated month name (December) on the birthday calendar month grid. Must fit a small cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Dec'**
+  String get onboardingCalendarMonthShortDec;
+
+  /// Abbreviated month name (February) on the birthday calendar month grid. Must fit a small cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Feb'**
+  String get onboardingCalendarMonthShortFeb;
+
+  /// Abbreviated month name (January) on the birthday calendar month grid. Must fit a small cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Jan'**
+  String get onboardingCalendarMonthShortJan;
+
+  /// Abbreviated month name (July) on the birthday calendar month grid. Must fit a small cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Jul'**
+  String get onboardingCalendarMonthShortJul;
+
+  /// Abbreviated month name (June) on the birthday calendar month grid. Must fit a small cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Jun'**
+  String get onboardingCalendarMonthShortJun;
+
+  /// Abbreviated month name (March) on the birthday calendar month grid. Must fit a small cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Mar'**
+  String get onboardingCalendarMonthShortMar;
+
+  /// Abbreviated month name (May) on the birthday calendar month grid. Must fit a small cell.
+  ///
+  /// In en, this message translates to:
+  /// **'May'**
+  String get onboardingCalendarMonthShortMay;
+
+  /// Abbreviated month name (November) on the birthday calendar month grid. Must fit a small cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Nov'**
+  String get onboardingCalendarMonthShortNov;
+
+  /// Abbreviated month name (October) on the birthday calendar month grid. Must fit a small cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Oct'**
+  String get onboardingCalendarMonthShortOct;
+
+  /// Abbreviated month name (September) on the birthday calendar month grid. Must fit a small cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Sep'**
+  String get onboardingCalendarMonthShortSep;
+
+  /// Column header of the birthday calendar: abbreviated weekday (Fri). Keep it very short, it must fit a 40 px cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Fri'**
+  String get onboardingCalendarWeekdayFri;
+
+  /// Column header of the birthday calendar: abbreviated weekday (Mon). Keep it very short, it must fit a 40 px cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Mon'**
+  String get onboardingCalendarWeekdayMon;
+
+  /// Column header of the birthday calendar: abbreviated weekday (Sat). Keep it very short, it must fit a 40 px cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Sat'**
+  String get onboardingCalendarWeekdaySat;
+
+  /// Column header of the birthday calendar: abbreviated weekday (Sun). Keep it very short, it must fit a 40 px cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Sun'**
+  String get onboardingCalendarWeekdaySun;
+
+  /// Column header of the birthday calendar: abbreviated weekday (Thu). Keep it very short, it must fit a 40 px cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Thu'**
+  String get onboardingCalendarWeekdayThu;
+
+  /// Column header of the birthday calendar: abbreviated weekday (Tue). Keep it very short, it must fit a 40 px cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Tue'**
+  String get onboardingCalendarWeekdayTue;
+
+  /// Column header of the birthday calendar: abbreviated weekday (Wed). Keep it very short, it must fit a 40 px cell.
+  ///
+  /// In en, this message translates to:
+  /// **'Wed'**
+  String get onboardingCalendarWeekdayWed;
+
+  /// Accessibility label of the button that opens the profile picture picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Change profile picture'**
+  String get onboardingChangeProfilePicture;
+
+  /// Disabled primary button label while the import looks for additional accounts of the same secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking accounts...'**
+  String get onboardingCheckingAccounts;
+
+  /// Button that clears the secret passphrase words entered so far.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get onboardingClear;
+
+  /// [security] Label and placeholder of the field where the user retypes the new wallet password.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm password'**
+  String get onboardingConfirmPassword;
+
+  /// Subtitle of the desktop hardware wallet picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Select your hardware wallet.'**
+  String get onboardingConnectHardwareSubtitleDesktop;
+
+  /// Subtitle of the mobile hardware wallet picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Select your hardware device.'**
+  String get onboardingConnectHardwareSubtitleMobile;
+
+  /// Heading of the hardware wallet picker on desktop and mobile; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect\nHardware Wallet'**
+  String get onboardingConnectHardwareTitle;
+
+  /// Option on the import method picker for importing an account from a hardware wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect hardware wallet'**
+  String get onboardingConnectHardwareWallet;
+
+  /// Title of the Keystone option on the hardware wallet picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect Keystone'**
+  String get onboardingConnectKeystone;
+
+  /// Title of the Ledger option on the hardware wallet picker, and back label that returns to the Ledger connection step.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect Ledger'**
+  String get onboardingConnectLedger;
+
+  /// Primary button that moves to the next step of an onboarding flow.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get onboardingContinue;
+
+  /// Confirm button of the desktop unknown-birthday dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue Anyway'**
+  String get onboardingContinueAnywayDesktop;
+
+  /// Confirm button of the mobile unknown-birthday sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue anyway'**
+  String get onboardingContinueAnywayMobile;
+
+  /// Button that copies the text shown next to it to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get onboardingCopy;
+
+  /// [security] Accessibility label of the button on the secret passphrase card that copies the phrase to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy secret passphrase'**
+  String get onboardingCopySecretPassphrase;
+
+  /// Disabled primary button label while the new wallet is being created.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating wallet...'**
+  String get onboardingCreatingWallet;
+
+  /// Heading of the step where the user names the account and picks a profile picture; also the back label pointing to it.
+  ///
+  /// In en, this message translates to:
+  /// **'Customise Account'**
+  String get onboardingCustomiseAccount;
+
+  /// Subtitle under the customise-account heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Add personality to your account by setting an account name and choosing a profile picture.'**
+  String get onboardingCustomiseAccountSubtitle;
+
+  /// Instruction under the additional accounts title; the user ticks the accounts to import.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the additional accounts to import.'**
+  String get onboardingDiscoverySubtitle;
+
+  /// Title of the dialog shown when the secret passphrase has more accounts with activity than the first one.
+  ///
+  /// In en, this message translates to:
+  /// **'Additional accounts found'**
+  String get onboardingDiscoveryTitle;
+
+  /// Button that edits the value shown next to it.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit'**
+  String get onboardingEdit;
+
+  /// [security] Accessibility label of the bar that reopens the BIP39 passphrase dialog for editing.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit BIP39 passphrase'**
+  String get onboardingEditBip39Passphrase;
+
+  /// Placeholder inside the wallet password field on the unlock screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter password'**
+  String get onboardingEnterPassword;
+
+  /// Disabled primary button label while the block height for the chosen date is being estimated.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimating...'**
+  String get onboardingEstimating;
+
+  /// Primary button on the last customise-account step that creates the wallet and finishes onboarding.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish setup'**
+  String get onboardingFinishSetup;
+
+  /// [security] Title of the final confirmation sheet before the app is reset.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure?'**
+  String get onboardingForgotPasscodeAreYouSure;
+
+  /// [security] Explains that a forgotten passcode can only be fixed by wiping the app, which deletes all accounts and unshared gift card links.
+  ///
+  /// In en, this message translates to:
+  /// **'If you can\'t remember your passcode, the only way to recover your account is to completely reset the Vizor app, which means deleting all accounts and requiring you to import accounts again. Unshared gift card links will be permanently lost.'**
+  String get onboardingForgotPasscodeBody;
+
+  /// [security] First line of the final reset confirmation, shown in red; the trailing line break separates it from the next sentence.
+  ///
+  /// In en, this message translates to:
+  /// **'This can\'t be undone.\n'**
+  String get onboardingForgotPasscodeCantBeUndone;
+
+  /// [security] Destructive-flow button in the forgot-passcode sheet that goes on to the final reset confirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue to reset Vizor'**
+  String get onboardingForgotPasscodeContinueToReset;
+
+  /// [security] Second line of the final reset confirmation; the user accepts responsibility for the loss of data.
+  ///
+  /// In en, this message translates to:
+  /// **'Proceed on your responsibility.'**
+  String get onboardingForgotPasscodeProceed;
+
+  /// [security] Title of the sheet shown from the unlock screen when the user cannot remember the passcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Forgot Passcode?'**
+  String get onboardingForgotPasscodeTitle;
+
+  /// [security] Warning in the forgot-passcode sheet: without a backed-up secret passphrase, the funds are lost after a reset.
+  ///
+  /// In en, this message translates to:
+  /// **'If you haven’t backed up an account’s secret passphrase, you can’t recover its funds after resetting Vizor.'**
+  String get onboardingForgotPasscodeUnbackedWarning;
+
+  /// Button on the desktop unlock screen that opens the lost-password flow.
+  ///
+  /// In en, this message translates to:
+  /// **'Forgot password?'**
+  String get onboardingForgotPassword;
+
+  /// Closing line of the Zcash intro shown after redeeming a gift card, desktop and mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Your wallet is ready. Learn how Zcash protects your privacy and which address to use.'**
+  String get onboardingGiftEducationClosing;
+
+  /// Toast on the post-gift education steps when marking them as completed failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to save your progress. Try again.'**
+  String get onboardingGiftEducationSaveFailed;
+
+  /// Cancel button of the desktop unknown-birthday dialog that returns to the birthday step.
+  ///
+  /// In en, this message translates to:
+  /// **'Go Back'**
+  String get onboardingGoBackDesktop;
+
+  /// Cancel button of the mobile unknown-birthday sheet that returns to the birthday step.
+  ///
+  /// In en, this message translates to:
+  /// **'Go back'**
+  String get onboardingGoBackMobile;
+
+  /// Description of the hardware wallet option when only Keystone is available.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone wallet'**
+  String get onboardingHardwareKeystoneOnly;
+
+  /// Description of the hardware wallet option when both Ledger and Keystone are available.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger or Keystone wallet'**
+  String get onboardingHardwareLedgerOrKeystone;
+
+  /// Ghost button on the Zcash intro that skips the education steps.
+  ///
+  /// In en, this message translates to:
+  /// **'I know how to use Zcash'**
+  String get onboardingIKnowHowToUseZcash;
+
+  /// Button that confirms importing the selected accounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Import'**
+  String get onboardingImport;
+
+  /// [security] Subtitle on the desktop import step listing the allowed secret passphrase lengths.
+  ///
+  /// In en, this message translates to:
+  /// **'Accept 12, 15, 18, 21, or 24 words.'**
+  String get onboardingImportAcceptWordCounts;
+
+  /// [security] Toast on the mobile import step when the pasted secret passphrase could not be checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check secret passphrase'**
+  String get onboardingImportCheckFailedError;
+
+  /// Toast on the mobile import step when the clipboard has no text.
+  ///
+  /// In en, this message translates to:
+  /// **'Clipboard is empty'**
+  String get onboardingImportClipboardEmpty;
+
+  /// Toast on the mobile import step when the clipboard could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Can\'t read the clipboard'**
+  String get onboardingImportClipboardReadError;
+
+  /// [security] Accessibility label of the card that opens the manual word-by-word entry.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter secret passphrase manually'**
+  String get onboardingImportEnterManuallySemantics;
+
+  /// Description of the Keystone option on the hardware wallet picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Import from Keystone wallet'**
+  String get onboardingImportFromKeystone;
+
+  /// Description of the Ledger option on the hardware wallet picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Import from Ledger wallet'**
+  String get onboardingImportFromLedger;
+
+  /// [security] Toast on the mobile import step when the pasted words are not a valid secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid secret passphrase'**
+  String get onboardingImportInvalidPhraseError;
+
+  /// [security] Inline error on the desktop import step when the typed secret passphrase is not valid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid secret passphrase with 12, 15, 18, 21, or 24 words.'**
+  String get onboardingImportInvalidSecretPassphrase;
+
+  /// Subtitle on the manual entry card.
+  ///
+  /// In en, this message translates to:
+  /// **'Word by word.'**
+  String get onboardingImportManualCardSubtitle;
+
+  /// [security] Title on the card that opens manual word-by-word entry; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Manually Enter\nSecret Passphrase'**
+  String get onboardingImportManualCardTitle;
+
+  /// Subtitle of the import method picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Select the method you want.'**
+  String get onboardingImportMethodSubtitle;
+
+  /// Heading of the screen where the user picks how to import an account; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Import Account\nto Vizor'**
+  String get onboardingImportMethodTitle;
+
+  /// [security] Toast on the mobile import step when the pasted text contains no secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'No secret passphrase found'**
+  String get onboardingImportNoPhraseError;
+
+  /// Button on the mobile import step that pastes a secret passphrase from the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Or paste from clipboard'**
+  String get onboardingImportPasteFromClipboard;
+
+  /// [security] Subtitle of the mobile import step listing the allowed secret passphrase lengths; two lines on purpose.
+  ///
+  /// In en, this message translates to:
+  /// **'Accept 12, 15, 18, 21, or 24-word\nsecret passphrases'**
+  String get onboardingImportPasteHelper;
+
+  /// Label of the paste button while the clipboard is being read.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading clipboard data...'**
+  String get onboardingImportReadingClipboard;
+
+  /// [security] Option on the import method picker for importing a wallet from its secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Import secret passphrase'**
+  String get onboardingImportSecretPassphrase;
+
+  /// Description of the secret passphrase option on the desktop import method picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor or any other Zcash wallet'**
+  String get onboardingImportSecretPassphraseDescriptionDesktop;
+
+  /// Description of the secret passphrase option on the mobile import method picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor, ZODL, or any other wallet'**
+  String get onboardingImportSecretPassphraseDescriptionMobile;
+
+  /// Heading of the desktop step where the user enters their secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Import a Wallet'**
+  String get onboardingImportWalletTitle;
+
+  /// Heading of the mobile step where the user imports a secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Import Wallet'**
+  String get onboardingImportWalletTitleMobile;
+
+  /// Disabled primary button label while the wallet is being imported.
+  ///
+  /// In en, this message translates to:
+  /// **'Importing...'**
+  String get onboardingImporting;
+
+  /// Explains what shielded transactions hide, in the Zcash intro card on desktop and mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount — verified by cryptography, not trust.'**
+  String get onboardingIntroCard;
+
+  /// Closing line of the desktop Zcash intro step above the buttons; two lines on purpose.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re a few steps away from your first private wallet.\nLet\'s get you set up.'**
+  String get onboardingIntroClosing;
+
+  /// Closing paragraph of the mobile Zcash intro step above the buttons.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re a few steps away from your first private wallet. Let\'s get you set up.'**
+  String get onboardingIntroClosingMobile;
+
+  /// Subtitle of the Zcash intro step; also used on the import birthday step.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash (ZEC) built around financial privacy & self-custody.'**
+  String get onboardingIntroSubtitle;
+
+  /// Subtitle of the mobile Zcash intro step; the line break matches the design.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash (ZEC) built around financial\nprivacy & self-custody.'**
+  String get onboardingIntroSubtitleMobile;
+
+  /// Heading of the Zcash intro step.
+  ///
+  /// In en, this message translates to:
+  /// **'The Shielded World'**
+  String get onboardingIntroTitle;
+
+  /// Option on the mobile import method picker for linking accounts from the Vizor desktop app.
+  ///
+  /// In en, this message translates to:
+  /// **'Link Vizor Desktop'**
+  String get onboardingLinkVizorDesktop;
+
+  /// Description of the option that links accounts from the Vizor desktop app by scanning a QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan & connect to Vizor Desktop'**
+  String get onboardingLinkVizorDesktopDescription;
+
+  /// Placeholder shown instead of the transparent balance of a found account while it is being loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading'**
+  String get onboardingLoading;
+
+  /// [security] Explanation on the lost-password screen. {resetAction} and {importAction} are bold phrases supplied by onboardingLostPasswordResetAction and onboardingLostPasswordImportAction; keep them in the sentence. The line breaks match the design.
+  ///
+  /// In en, this message translates to:
+  /// **'If you\'ve lost your password, the only way to recover\nyour account is to {resetAction}.\nThis deletes all accounts and unshared gift card links.\nYou will need to {importAction}.'**
+  String onboardingLostPasswordBody(String resetAction, String importAction);
+
+  /// Bold phrase inside onboardingLostPasswordBody; the user has to import their accounts again after the reset.
+  ///
+  /// In en, this message translates to:
+  /// **'import accounts again'**
+  String get onboardingLostPasswordImportAction;
+
+  /// [security] Bold phrase inside onboardingLostPasswordBody; the action of wiping the whole app. Written so that it fits after 'the only way ... is to'.
+  ///
+  /// In en, this message translates to:
+  /// **'completely reset Vizor app'**
+  String get onboardingLostPasswordResetAction;
+
+  /// Disabled label of the destructive reset button while its safety countdown runs; {seconds} is the number of seconds left.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset after {seconds}s...'**
+  String onboardingLostPasswordResetCountdown(int seconds);
+
+  /// Heading of the lost-password screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Lost password?'**
+  String get onboardingLostPasswordTitle;
+
+  /// [security] Inline error under the word field when the typed word is not in the secret passphrase word list.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid secret passphrase word.'**
+  String get onboardingManualInvalidWord;
+
+  /// Button on the manual import step that accepts the typed word and moves to the next one.
+  ///
+  /// In en, this message translates to:
+  /// **'Next word'**
+  String get onboardingManualNextWord;
+
+  /// Button on the manual import step shown after the last word that moves to the review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Review & finish'**
+  String get onboardingManualReviewFinish;
+
+  /// [security] Notice after pasting several words: the fill stopped at {word} because it is not a valid secret passphrase word. {word} is the first invalid word.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped at \'{word}\' — it isn\'t in the passphrase word list.'**
+  String onboardingManualStoppedAt(String word);
+
+  /// [security] Subtitle of the mobile manual import step listing the allowed secret passphrase lengths.
+  ///
+  /// In en, this message translates to:
+  /// **'Accept 12, 15, 18, 21 or 24 words'**
+  String get onboardingManualSubtitle;
+
+  /// [security] Heading of the mobile manual import step.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your Secret Passphrase'**
+  String get onboardingManualTitle;
+
+  /// Button on the manual import step that removes the most recently accepted word.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo last word'**
+  String get onboardingManualUndoLastWord;
+
+  /// Disabled button label while the custom endpoint is being verified.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking endpoint…'**
+  String get onboardingNetworkCheckingEndpoint;
+
+  /// Line under the custom endpoint heading showing the host and port currently in use; {endpoint} is that host:port.
+  ///
+  /// In en, this message translates to:
+  /// **'Current: {endpoint}'**
+  String onboardingNetworkCurrentEndpoint(String endpoint);
+
+  /// Section heading on the network settings sheet for the custom lightwalletd server address.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom endpoint'**
+  String get onboardingNetworkCustomEndpoint;
+
+  /// Helper text under the custom endpoint field; the server must be a lightwalletd server for the wallet's Zcash network.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a lightwalletd server for this wallet’s network.'**
+  String get onboardingNetworkEndpointHelper;
+
+  /// Toast after the custom lightwalletd endpoint was saved on the mobile network settings sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoint updated'**
+  String get onboardingNetworkEndpointUpdated;
+
+  /// Error on the network settings sheet when saving the custom endpoint failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the endpoint. Try again.'**
+  String get onboardingNetworkSaveFailed;
+
+  /// Tooltip, accessibility label and sheet title for the button that opens the lightwalletd endpoint settings on the welcome screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Network settings'**
+  String get onboardingNetworkSettings;
+
+  /// Button on the network settings sheet that saves the custom endpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'Update endpoint'**
+  String get onboardingNetworkUpdateEndpoint;
+
+  /// Error on the network settings sheet when the custom endpoint did not respond as a valid lightwalletd server.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t verify that endpoint. Check the address and try again.'**
+  String get onboardingNetworkVerifyFailed;
+
+  /// Primary button that moves to the next step.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get onboardingNext;
+
+  /// Ghost button that skips an optional step for now.
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get onboardingNotNow;
+
+  /// [security] Heading of the step where the user re-enters the new passcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Passcode'**
+  String get onboardingPasscodeConfirmTitle;
+
+  /// [security] Heading of the step where the user chooses the 6-digit passcode of the wallet on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Create Passcode'**
+  String get onboardingPasscodeCreateTitle;
+
+  /// Accessibility label of a passcode keypad key; {digit} is the number on the key.
+  ///
+  /// In en, this message translates to:
+  /// **'Digit {digit}'**
+  String onboardingPasscodeDigitSemantics(int digit);
+
+  /// [security] Error under the passcode dots on the mobile unlock screen when the entered passcode is wrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect Passcode'**
+  String get onboardingPasscodeIncorrect;
+
+  /// [security] Subtitle of the confirm-passcode step.
+  ///
+  /// In en, this message translates to:
+  /// **'Re-enter your passcode.'**
+  String get onboardingPasscodeReEnter;
+
+  /// Subtitle of the create-passcode step while the wallet is being set up.
+  ///
+  /// In en, this message translates to:
+  /// **'Setting up your wallet...'**
+  String get onboardingPasscodeSettingUp;
+
+  /// [security] Subtitle of the create-passcode step stating that the passcode has 6 digits.
+  ///
+  /// In en, this message translates to:
+  /// **'6 digits length'**
+  String get onboardingPasscodeSixDigits;
+
+  /// [security] Error under the passcode dots when the re-entered passcode differs from the first one.
+  ///
+  /// In en, this message translates to:
+  /// **'Passcodes didn\'t match. Try again.'**
+  String get onboardingPasscodesDidNotMatch;
+
+  /// Label of a wallet password field on the unlock and password setup screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get onboardingPassword;
+
+  /// [security] Error under the confirm-password field when it differs from the password.
+  ///
+  /// In en, this message translates to:
+  /// **'Passwords do not match.'**
+  String get onboardingPasswordsDoNotMatch;
+
+  /// Desktop button on the startup failure screen that closes the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Quit'**
+  String get onboardingQuit;
+
+  /// Tooltip and accessibility label of the dice button that picks a random account name and profile picture during account setup.
+  ///
+  /// In en, this message translates to:
+  /// **'Randomise account name and profile picture'**
+  String get onboardingRandomiseAccountPersona;
+
+  /// Disabled primary button label while an interrupted wallet setup is being recovered.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovering wallet...'**
+  String get onboardingRecoveringWallet;
+
+  /// [security] Error on the mobile unlock screen when resetting the app after a forgotten passcode failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reset the app. Please try again.'**
+  String get onboardingResetAppFailed;
+
+  /// [security] Warning line above the reset button on the lost-password screen; the reset deletes every account.
+  ///
+  /// In en, this message translates to:
+  /// **'This cannot be undone.'**
+  String get onboardingResetCannotBeUndone;
+
+  /// [security] Destructive button that wipes all accounts from the app after the user lost their password or passcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset Vizor'**
+  String get onboardingResetVizor;
+
+  /// Error shown on the final onboarding step when recovering an interrupted setup failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t resume setup. Please try again.'**
+  String get onboardingResumeSetupFailed;
+
+  /// Button on the startup failure screen that tries to open the wallet again.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get onboardingRetry;
+
+  /// Primary button on the final onboarding step that resumes an interrupted setup.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry setup'**
+  String get onboardingRetrySetup;
+
+  /// Label of the retry button on the startup failure screen while a retry is running.
+  ///
+  /// In en, this message translates to:
+  /// **'Retrying'**
+  String get onboardingRetrying;
+
+  /// [security] Button on the review step that discards the entered secret passphrase and goes back.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear secret passphrase'**
+  String get onboardingReviewClearSecretPassphrase;
+
+  /// Primary button on the review step that accepts the secret passphrase and goes on to the birthday step.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm & continue'**
+  String get onboardingReviewConfirmContinue;
+
+  /// [security] Subtitle of the review step; two lines on purpose.
+  ///
+  /// In en, this message translates to:
+  /// **'Review your secret passphrase\nbefore import starts.'**
+  String get onboardingReviewImportSubtitle;
+
+  /// [security] Heading of the step where the user reviews the entered secret passphrase before importing.
+  ///
+  /// In en, this message translates to:
+  /// **'Review Import'**
+  String get onboardingReviewImportTitle;
+
+  /// Dialog button that saves the edited value.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get onboardingSave;
+
+  /// Disabled primary button label while the already-created wallet is being saved after a retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving wallet...'**
+  String get onboardingSavingWallet;
+
+  /// [security] Title, sidebar step label and card heading for the secret recovery phrase (seed phrase) of the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Secret Passphrase'**
+  String get onboardingSecretPassphrase;
+
+  /// [security] Heading of the cover shown before the secret passphrase is revealed on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'You are about to see your Secret Passphrase.'**
+  String get onboardingSecretPassphraseAboutToSee;
+
+  /// [security] Heading of the cover shown before the secret passphrase is revealed on mobile; two lines on purpose.
+  ///
+  /// In en, this message translates to:
+  /// **'You are about to see your\nSecret Passphrase.'**
+  String get onboardingSecretPassphraseAboutToSeeMobile;
+
+  /// [security] Primary button on the desktop step that reveals the secret passphrase for the first time.
+  ///
+  /// In en, this message translates to:
+  /// **'Reveal the phrase'**
+  String get onboardingSecretPassphraseReveal;
+
+  /// [security] Primary button on the mobile step that reveals the secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Reveal phrase'**
+  String get onboardingSecretPassphraseRevealMobile;
+
+  /// [security] Subtitle under the Secret Passphrase heading on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'The master key to your wallet.'**
+  String get onboardingSecretPassphraseSubtitleDesktop;
+
+  /// [security] Subtitle under the Secret Passphrase heading on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'The Master Key to your wallet.'**
+  String get onboardingSecretPassphraseSubtitleMobile;
+
+  /// [security] Warning on the cover before the secret passphrase is revealed, desktop and mobile. Must not be softened.
+  ///
+  /// In en, this message translates to:
+  /// **'This phrase is the master key to your funds. Keep it safe, keep it secret. If you lose it, no one can help you recover your wallet. Not even us.'**
+  String get onboardingSecretPassphraseWarning;
+
+  /// [security] Placeholder inside an empty secret passphrase word box.
+  ///
+  /// In en, this message translates to:
+  /// **'Seed word'**
+  String get onboardingSeedWordHint;
+
+  /// Title of the dialog where the user picks a profile picture for the new account.
+  ///
+  /// In en, this message translates to:
+  /// **'Select profile picture'**
+  String get onboardingSelectProfilePicture;
+
+  /// Sidebar step label and heading of the step where the user chooses the wallet password on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Set Password'**
+  String get onboardingSetPassword;
+
+  /// Primary button on the desktop set-password step that saves the password and completes setup.
+  ///
+  /// In en, this message translates to:
+  /// **'Set password & finish'**
+  String get onboardingSetPasswordAndFinish;
+
+  /// [security] Placeholder in the new wallet password field describing the password rules.
+  ///
+  /// In en, this message translates to:
+  /// **'Min. 8 characters and symbols'**
+  String get onboardingSetPasswordPlaceholder;
+
+  /// Subtitle under the set-password heading on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Set password for signing in to Vizor wallet.'**
+  String get onboardingSetPasswordSubtitle;
+
+  /// Disabled primary button label while the wallet password is being saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Setting password...'**
+  String get onboardingSettingPassword;
+
+  /// Error shown on the final onboarding step when account setup was cut off part-way; the primary button retries and recovers the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Setup interrupted. Retry to recover your wallet.'**
+  String get onboardingSetupInterrupted;
+
+  /// Sidebar step label for the explanation of shielded and transparent address types.
+  ///
+  /// In en, this message translates to:
+  /// **'Address types'**
+  String get onboardingStepAddressTypes;
+
+  /// Sidebar step label for naming the account and choosing its profile picture.
+  ///
+  /// In en, this message translates to:
+  /// **'Customise wallet'**
+  String get onboardingStepCustomiseWallet;
+
+  /// Back-button label that returns to the contacts import step of wallet linking on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Import contacts'**
+  String get onboardingStepImportContacts;
+
+  /// Sidebar step label for the introduction to Zcash during wallet creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Intro to Zcash'**
+  String get onboardingStepIntroToZcash;
+
+  /// Sidebar step label for the step where the user enters the block height at which the wallet was created.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet Birthday Height'**
+  String get onboardingStepWalletBirthdayHeight;
+
+  /// Disabled primary button label while the app stops the running sync before it finishes wallet setup.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop syncing...'**
+  String get onboardingStopSyncing;
+
+  /// Body of the startup failure screen when the wallet database migration failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor needs to update the local wallet database before opening this version. Try again, or quit and restart Vizor.'**
+  String get onboardingStorageDbMigrationBody;
+
+  /// Title of the startup failure screen when the wallet database could not be migrated.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to update wallet database'**
+  String get onboardingStorageDbMigrationTitle;
+
+  /// Body of the Linux startup screen when the system keyring is locked.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor needs access to the system keyring before it can open your wallet. Unlock the keyring, then try again.'**
+  String get onboardingStorageKeyringLockedBody;
+
+  /// Title of the startup screen on Linux when the system keyring is locked.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock your keyring'**
+  String get onboardingStorageKeyringLockedTitle;
+
+  /// Error shown on the startup failure screen after the user retried and the device secure storage could still not be opened.
+  ///
+  /// In en, this message translates to:
+  /// **'Secure storage is still unavailable.'**
+  String get onboardingStorageRetrySecureStorageFailed;
+
+  /// Error shown on the startup failure screen after the user retried and the wallet database migration failed again.
+  ///
+  /// In en, this message translates to:
+  /// **'The wallet database update still failed.'**
+  String get onboardingStorageRetryWalletDbFailed;
+
+  /// Body of the startup screen when the device secure storage is locked or unavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor needs access to secure storage before it can open your wallet. Unlock secure storage, then try again.'**
+  String get onboardingStorageSecureStorageLockedBody;
+
+  /// Title of the startup screen when the device secure storage is locked or unavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Secure storage is locked'**
+  String get onboardingStorageSecureStorageLockedTitle;
+
+  /// Body of the startup failure screen when the app's local startup state could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not load the local startup state. Try again, or quit and restart Vizor.'**
+  String get onboardingStorageStartupFailureBody;
+
+  /// Title of the startup failure screen when the app's local startup state could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to open Vizor'**
+  String get onboardingStorageStartupFailureTitle;
+
+  /// Primary button on the Zcash education steps that continues to the next explanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Tell me how Zcash works'**
+  String get onboardingTellMeHowZcashWorks;
+
+  /// Body of the keep-privacy fact on the things-to-know step; advises using the transparent address for exchange withdrawals and shielding afterwards.
+  ///
+  /// In en, this message translates to:
+  /// **'Some exchanges can\'t send to shielded addresses. If you\'re withdrawing from an exchange, use your transparent address. You can shield your ZEC after it arrives.'**
+  String get onboardingThingsKeepPrivacyBody;
+
+  /// Heading of the second fact on the things-to-know step.
+  ///
+  /// In en, this message translates to:
+  /// **'How to keep privacy'**
+  String get onboardingThingsKeepPrivacyTitle;
+
+  /// Subtitle of the mobile things-to-know step.
+  ///
+  /// In en, this message translates to:
+  /// **'Before you dive in.'**
+  String get onboardingThingsSubtitleMobile;
+
+  /// Body of the time-to-sync fact on the things-to-know step.
+  ///
+  /// In en, this message translates to:
+  /// **'Your wallet syncs directly with the Zcash network instead of relying on a server. This protects your privacy, but takes a moment. Your funds are safe while the app catches up.'**
+  String get onboardingThingsTimeToSyncBody;
+
+  /// Heading of the first fact on the things-to-know step: the wallet needs a while to sync.
+  ///
+  /// In en, this message translates to:
+  /// **'Time to sync'**
+  String get onboardingThingsTimeToSyncTitle;
+
+  /// Sidebar step label and heading of the step that lists a few facts to know before using the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Things to know'**
+  String get onboardingThingsToKnow;
+
+  /// Primary button on the customise-account step that retries saving the wallet after a failure.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get onboardingTryAgain;
+
+  /// Explains that skipping the wallet birthday makes Vizor scan from the earliest supported shielded block, which is safe but slow.
+  ///
+  /// In en, this message translates to:
+  /// **'If you continue without a wallet birthday, Vizor will scan from the earliest supported shielded height. This is safe, but the first sync can take a very long time.'**
+  String get onboardingUnknownHeightBody;
+
+  /// Tip under the unknown-birthday explanation; an approximate date speeds up the first sync.
+  ///
+  /// In en, this message translates to:
+  /// **'Choosing even an approximate date will be much faster.'**
+  String get onboardingUnknownHeightHint;
+
+  /// Title of the confirmation shown when the user does not know the wallet birthday, desktop and mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Import from the earliest height?'**
+  String get onboardingUnknownHeightTitle;
+
+  /// Reason line shown in the system biometric prompt when the wallet is unlocked with Face ID, Touch ID or fingerprint.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock your wallet'**
+  String get onboardingUnlockBiometricReason;
+
+  /// Button on the desktop unlock screen that submits the password and opens the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Vizor'**
+  String get onboardingUnlockButton;
+
+  /// Subtitle on the desktop unlock screen asking for the wallet password.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your password to open Vizor.'**
+  String get onboardingUnlockDescription;
+
+  /// Subtitle of the mobile unlock screen asking for the 6-digit passcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your passcode to open Vizor'**
+  String get onboardingUnlockEnterPasscode;
+
+  /// [security] Error under the password field on the desktop unlock screen when the typed wallet password is wrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect password. Try again.'**
+  String get onboardingUnlockIncorrectPassword;
+
+  /// Error under the password field on the desktop unlock screen when unlocking failed because of an unexpected error.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open your wallet. Please try again.'**
+  String get onboardingUnlockOpenFailed;
+
+  /// Subtitle of the mobile unlock screen while the wallet is being opened after the passcode was entered.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening your wallet...'**
+  String get onboardingUnlockOpening;
+
+  /// Heading of the desktop unlock screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome back'**
+  String get onboardingUnlockWelcomeBack;
+
+  /// Heading of the mobile unlock screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome Back'**
+  String get onboardingUnlockWelcomeBackMobile;
+
+  /// Back-button label that returns to the welcome screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome'**
+  String get onboardingWelcome;
+
+  /// Button on the welcome screen that starts redeeming a gift card.
+  ///
+  /// In en, this message translates to:
+  /// **'Activate gift card'**
+  String get onboardingWelcomeActivateGiftCard;
+
+  /// Primary button on the welcome screen that starts creating a new wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Get started'**
+  String get onboardingWelcomeGetStarted;
+
+  /// Button on the welcome screen that starts importing an existing wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Import wallet'**
+  String get onboardingWelcomeImportWallet;
+
   /// Badge naming a shielded pool or address. See the glossary entry for shielded.
   ///
   /// In en, this message translates to:

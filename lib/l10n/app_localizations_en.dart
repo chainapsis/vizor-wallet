@@ -1369,6 +1369,877 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navVote => 'Vote';
 
   @override
+  String get onboardingAccountName => 'Account name';
+
+  @override
+  String get onboardingAdd => 'Add';
+
+  @override
+  String get onboardingAddBip39PassphraseOptional =>
+      'Add BIP39 Passphrase (Optional)';
+
+  @override
+  String get onboardingAddBip39PassphraseSemantics => 'Add BIP39 passphrase';
+
+  @override
+  String get onboardingAddressShieldedBodyMobile =>
+      'Address starts with u1 (or zs for legacy).\nOnly you can see your account balance and transaction history.';
+
+  @override
+  String onboardingAddressShieldedDescription(
+    String unifiedPrefix,
+    String legacyPrefix,
+  ) {
+    return 'Address starts with $unifiedPrefix (or $legacyPrefix for legacy). Only you can see your account balance and transaction history.';
+  }
+
+  @override
+  String get onboardingAddressShieldedLabel => 'Shielded address';
+
+  @override
+  String get onboardingAddressShieldedTitleMobile => 'Shielded Address';
+
+  @override
+  String get onboardingAddressTransparentDescription =>
+      'Address starts with t, similar to Bitcoin, your address\' balance and transaction history are publicly visible.';
+
+  @override
+  String get onboardingAddressTransparentLabel => 'Transparent address';
+
+  @override
+  String get onboardingAddressTransparentTitleMobile => 'Transparent Address';
+
+  @override
+  String get onboardingAddressTypesSubtitle =>
+      'Zcash has two address types.\nOne for privacy, one for transparency.';
+
+  @override
+  String get onboardingAddressTypesSubtitleMobile =>
+      'Zcash has two addresses types.\nOne for Privacy, one for Transparency.';
+
+  @override
+  String get onboardingAddressTypesTitle => 'Zcash Address Types';
+
+  @override
+  String get onboardingAddressTypesTitleMobile => 'Zcash Address Types';
+
+  @override
+  String onboardingBiometricEnableFailed(String method) {
+    return 'Couldn\'t enable $method. You can try again in settings.';
+  }
+
+  @override
+  String onboardingBiometricSetUpFirst(String method) {
+    return 'Set up $method in your device settings first.';
+  }
+
+  @override
+  String get onboardingBiometricSubtitle =>
+      'This is an easy and fast way to sign in.\nYou can switch back to passcode anytime.';
+
+  @override
+  String onboardingBiometricTitle(String method) {
+    return 'Unlock your wallet\nwith $method';
+  }
+
+  @override
+  String get onboardingBip39PassphraseClear => 'Clear BIP39 passphrase';
+
+  @override
+  String get onboardingBip39PassphraseExplanation =>
+      'Add an optional passphrase (“25th word”) to create/import a separate wallet from the same recovery phrase.';
+
+  @override
+  String get onboardingBip39PassphraseFieldLabel => 'BIP39 passphrase';
+
+  @override
+  String get onboardingBip39PassphraseHint => '1–100 characters';
+
+  @override
+  String onboardingBip39PassphrasePreview(String passphrase) {
+    return 'BIP39 Passphrase: $passphrase';
+  }
+
+  @override
+  String get onboardingBip39PassphraseTitle => 'BIP39 Passphrase';
+
+  @override
+  String get onboardingBip39PassphraseTitleOptional =>
+      'BIP39 Passphrase (Optional)';
+
+  @override
+  String get onboardingBirthdayCantRemember => 'I can’t remember';
+
+  @override
+  String get onboardingBirthdayDateHint => 'mm/dd/yyyy';
+
+  @override
+  String get onboardingBirthdayDontRemember => 'I don’t remember';
+
+  @override
+  String get onboardingBirthdayEnterBlockHeight => 'Enter the block height';
+
+  @override
+  String get onboardingBirthdayEnterDate => 'Enter the date';
+
+  @override
+  String get onboardingBirthdayEnterMonth => 'Enter the month';
+
+  @override
+  String get onboardingBirthdayEstimateFailed =>
+      'Could not estimate the wallet birthday height.';
+
+  @override
+  String onboardingBirthdayHeightAtLeast(String height) {
+    return 'At least $height.';
+  }
+
+  @override
+  String onboardingBirthdayHeightBetween(String min, String max) {
+    return 'Between $min and $max.';
+  }
+
+  @override
+  String get onboardingBirthdayInvalidHeight =>
+      'Doesn\'t seem like a legit block height';
+
+  @override
+  String get onboardingBirthdayMetadataFailed =>
+      'Could not load wallet birthday metadata.';
+
+  @override
+  String get onboardingBirthdayMobileEstimateFailed =>
+      'Couldn\'t estimate a height for that date. Enter a block height instead.';
+
+  @override
+  String get onboardingBirthdayMonthHint => 'mm/yyyy';
+
+  @override
+  String get onboardingBirthdayPickDate => 'Pick a date';
+
+  @override
+  String get onboardingBirthdayPickMonth => 'Pick a month';
+
+  @override
+  String get onboardingBirthdaySelectDate => 'Select date';
+
+  @override
+  String get onboardingBirthdaySelectMonth => 'Select month';
+
+  @override
+  String get onboardingBirthdayStatusEstimating => 'Estimating height...';
+
+  @override
+  String get onboardingBirthdayStatusImporting => 'Importing wallet...';
+
+  @override
+  String get onboardingBirthdayStatusPausingSync => 'Pausing sync...';
+
+  @override
+  String get onboardingBirthdaySubtitleMobile =>
+      'An estimate is enough — sync starts\nfrom there.';
+
+  @override
+  String get onboardingBirthdayTitle =>
+      'Around when did you create your wallet?';
+
+  @override
+  String get onboardingBlockHeight => 'Block height';
+
+  @override
+  String get onboardingCalendarMonthApril => 'April';
+
+  @override
+  String get onboardingCalendarMonthAugust => 'August';
+
+  @override
+  String get onboardingCalendarMonthDecember => 'December';
+
+  @override
+  String get onboardingCalendarMonthFebruary => 'February';
+
+  @override
+  String get onboardingCalendarMonthJanuary => 'January';
+
+  @override
+  String get onboardingCalendarMonthJuly => 'July';
+
+  @override
+  String get onboardingCalendarMonthJune => 'June';
+
+  @override
+  String get onboardingCalendarMonthMarch => 'March';
+
+  @override
+  String get onboardingCalendarMonthMay => 'May';
+
+  @override
+  String get onboardingCalendarMonthNovember => 'November';
+
+  @override
+  String get onboardingCalendarMonthOctober => 'October';
+
+  @override
+  String get onboardingCalendarMonthSeptember => 'September';
+
+  @override
+  String get onboardingCalendarMonthShortApr => 'Apr';
+
+  @override
+  String get onboardingCalendarMonthShortAug => 'Aug';
+
+  @override
+  String get onboardingCalendarMonthShortDec => 'Dec';
+
+  @override
+  String get onboardingCalendarMonthShortFeb => 'Feb';
+
+  @override
+  String get onboardingCalendarMonthShortJan => 'Jan';
+
+  @override
+  String get onboardingCalendarMonthShortJul => 'Jul';
+
+  @override
+  String get onboardingCalendarMonthShortJun => 'Jun';
+
+  @override
+  String get onboardingCalendarMonthShortMar => 'Mar';
+
+  @override
+  String get onboardingCalendarMonthShortMay => 'May';
+
+  @override
+  String get onboardingCalendarMonthShortNov => 'Nov';
+
+  @override
+  String get onboardingCalendarMonthShortOct => 'Oct';
+
+  @override
+  String get onboardingCalendarMonthShortSep => 'Sep';
+
+  @override
+  String get onboardingCalendarWeekdayFri => 'Fri';
+
+  @override
+  String get onboardingCalendarWeekdayMon => 'Mon';
+
+  @override
+  String get onboardingCalendarWeekdaySat => 'Sat';
+
+  @override
+  String get onboardingCalendarWeekdaySun => 'Sun';
+
+  @override
+  String get onboardingCalendarWeekdayThu => 'Thu';
+
+  @override
+  String get onboardingCalendarWeekdayTue => 'Tue';
+
+  @override
+  String get onboardingCalendarWeekdayWed => 'Wed';
+
+  @override
+  String get onboardingChangeProfilePicture => 'Change profile picture';
+
+  @override
+  String get onboardingCheckingAccounts => 'Checking accounts...';
+
+  @override
+  String get onboardingClear => 'Clear';
+
+  @override
+  String get onboardingConfirmPassword => 'Confirm password';
+
+  @override
+  String get onboardingConnectHardwareSubtitleDesktop =>
+      'Select your hardware wallet.';
+
+  @override
+  String get onboardingConnectHardwareSubtitleMobile =>
+      'Select your hardware device.';
+
+  @override
+  String get onboardingConnectHardwareTitle => 'Connect\nHardware Wallet';
+
+  @override
+  String get onboardingConnectHardwareWallet => 'Connect hardware wallet';
+
+  @override
+  String get onboardingConnectKeystone => 'Connect Keystone';
+
+  @override
+  String get onboardingConnectLedger => 'Connect Ledger';
+
+  @override
+  String get onboardingContinue => 'Continue';
+
+  @override
+  String get onboardingContinueAnywayDesktop => 'Continue Anyway';
+
+  @override
+  String get onboardingContinueAnywayMobile => 'Continue anyway';
+
+  @override
+  String get onboardingCopy => 'Copy';
+
+  @override
+  String get onboardingCopySecretPassphrase => 'Copy secret passphrase';
+
+  @override
+  String get onboardingCreatingWallet => 'Creating wallet...';
+
+  @override
+  String get onboardingCustomiseAccount => 'Customise Account';
+
+  @override
+  String get onboardingCustomiseAccountSubtitle =>
+      'Add personality to your account by setting an account name and choosing a profile picture.';
+
+  @override
+  String get onboardingDiscoverySubtitle =>
+      'Choose the additional accounts to import.';
+
+  @override
+  String get onboardingDiscoveryTitle => 'Additional accounts found';
+
+  @override
+  String get onboardingEdit => 'Edit';
+
+  @override
+  String get onboardingEditBip39Passphrase => 'Edit BIP39 passphrase';
+
+  @override
+  String get onboardingEnterPassword => 'Enter password';
+
+  @override
+  String get onboardingEstimating => 'Estimating...';
+
+  @override
+  String get onboardingFinishSetup => 'Finish setup';
+
+  @override
+  String get onboardingForgotPasscodeAreYouSure => 'Are you sure?';
+
+  @override
+  String get onboardingForgotPasscodeBody =>
+      'If you can\'t remember your passcode, the only way to recover your account is to completely reset the Vizor app, which means deleting all accounts and requiring you to import accounts again. Unshared gift card links will be permanently lost.';
+
+  @override
+  String get onboardingForgotPasscodeCantBeUndone => 'This can\'t be undone.\n';
+
+  @override
+  String get onboardingForgotPasscodeContinueToReset =>
+      'Continue to reset Vizor';
+
+  @override
+  String get onboardingForgotPasscodeProceed =>
+      'Proceed on your responsibility.';
+
+  @override
+  String get onboardingForgotPasscodeTitle => 'Forgot Passcode?';
+
+  @override
+  String get onboardingForgotPasscodeUnbackedWarning =>
+      'If you haven’t backed up an account’s secret passphrase, you can’t recover its funds after resetting Vizor.';
+
+  @override
+  String get onboardingForgotPassword => 'Forgot password?';
+
+  @override
+  String get onboardingGiftEducationClosing =>
+      'Your wallet is ready. Learn how Zcash protects your privacy and which address to use.';
+
+  @override
+  String get onboardingGiftEducationSaveFailed =>
+      'Unable to save your progress. Try again.';
+
+  @override
+  String get onboardingGoBackDesktop => 'Go Back';
+
+  @override
+  String get onboardingGoBackMobile => 'Go back';
+
+  @override
+  String get onboardingHardwareKeystoneOnly => 'Keystone wallet';
+
+  @override
+  String get onboardingHardwareLedgerOrKeystone => 'Ledger or Keystone wallet';
+
+  @override
+  String get onboardingIKnowHowToUseZcash => 'I know how to use Zcash';
+
+  @override
+  String get onboardingImport => 'Import';
+
+  @override
+  String get onboardingImportAcceptWordCounts =>
+      'Accept 12, 15, 18, 21, or 24 words.';
+
+  @override
+  String get onboardingImportCheckFailedError =>
+      'Couldn\'t check secret passphrase';
+
+  @override
+  String get onboardingImportClipboardEmpty => 'Clipboard is empty';
+
+  @override
+  String get onboardingImportClipboardReadError => 'Can\'t read the clipboard';
+
+  @override
+  String get onboardingImportEnterManuallySemantics =>
+      'Enter secret passphrase manually';
+
+  @override
+  String get onboardingImportFromKeystone => 'Import from Keystone wallet';
+
+  @override
+  String get onboardingImportFromLedger => 'Import from Ledger wallet';
+
+  @override
+  String get onboardingImportInvalidPhraseError => 'Invalid secret passphrase';
+
+  @override
+  String get onboardingImportInvalidSecretPassphrase =>
+      'Enter a valid secret passphrase with 12, 15, 18, 21, or 24 words.';
+
+  @override
+  String get onboardingImportManualCardSubtitle => 'Word by word.';
+
+  @override
+  String get onboardingImportManualCardTitle =>
+      'Manually Enter\nSecret Passphrase';
+
+  @override
+  String get onboardingImportMethodSubtitle => 'Select the method you want.';
+
+  @override
+  String get onboardingImportMethodTitle => 'Import Account\nto Vizor';
+
+  @override
+  String get onboardingImportNoPhraseError => 'No secret passphrase found';
+
+  @override
+  String get onboardingImportPasteFromClipboard => 'Or paste from clipboard';
+
+  @override
+  String get onboardingImportPasteHelper =>
+      'Accept 12, 15, 18, 21, or 24-word\nsecret passphrases';
+
+  @override
+  String get onboardingImportReadingClipboard => 'Reading clipboard data...';
+
+  @override
+  String get onboardingImportSecretPassphrase => 'Import secret passphrase';
+
+  @override
+  String get onboardingImportSecretPassphraseDescriptionDesktop =>
+      'Vizor or any other Zcash wallet';
+
+  @override
+  String get onboardingImportSecretPassphraseDescriptionMobile =>
+      'Vizor, ZODL, or any other wallet';
+
+  @override
+  String get onboardingImportWalletTitle => 'Import a Wallet';
+
+  @override
+  String get onboardingImportWalletTitleMobile => 'Import Wallet';
+
+  @override
+  String get onboardingImporting => 'Importing...';
+
+  @override
+  String get onboardingIntroCard =>
+      'Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount — verified by cryptography, not trust.';
+
+  @override
+  String get onboardingIntroClosing =>
+      'You\'re a few steps away from your first private wallet.\nLet\'s get you set up.';
+
+  @override
+  String get onboardingIntroClosingMobile =>
+      'You\'re a few steps away from your first private wallet. Let\'s get you set up.';
+
+  @override
+  String get onboardingIntroSubtitle =>
+      'Zcash (ZEC) built around financial privacy & self-custody.';
+
+  @override
+  String get onboardingIntroSubtitleMobile =>
+      'Zcash (ZEC) built around financial\nprivacy & self-custody.';
+
+  @override
+  String get onboardingIntroTitle => 'The Shielded World';
+
+  @override
+  String get onboardingLinkVizorDesktop => 'Link Vizor Desktop';
+
+  @override
+  String get onboardingLinkVizorDesktopDescription =>
+      'Scan & connect to Vizor Desktop';
+
+  @override
+  String get onboardingLoading => 'Loading';
+
+  @override
+  String onboardingLostPasswordBody(String resetAction, String importAction) {
+    return 'If you\'ve lost your password, the only way to recover\nyour account is to $resetAction.\nThis deletes all accounts and unshared gift card links.\nYou will need to $importAction.';
+  }
+
+  @override
+  String get onboardingLostPasswordImportAction => 'import accounts again';
+
+  @override
+  String get onboardingLostPasswordResetAction => 'completely reset Vizor app';
+
+  @override
+  String onboardingLostPasswordResetCountdown(int seconds) {
+    return 'Reset after ${seconds}s...';
+  }
+
+  @override
+  String get onboardingLostPasswordTitle => 'Lost password?';
+
+  @override
+  String get onboardingManualInvalidWord => 'Invalid secret passphrase word.';
+
+  @override
+  String get onboardingManualNextWord => 'Next word';
+
+  @override
+  String get onboardingManualReviewFinish => 'Review & finish';
+
+  @override
+  String onboardingManualStoppedAt(String word) {
+    return 'Stopped at \'$word\' — it isn\'t in the passphrase word list.';
+  }
+
+  @override
+  String get onboardingManualSubtitle => 'Accept 12, 15, 18, 21 or 24 words';
+
+  @override
+  String get onboardingManualTitle => 'Enter your Secret Passphrase';
+
+  @override
+  String get onboardingManualUndoLastWord => 'Undo last word';
+
+  @override
+  String get onboardingNetworkCheckingEndpoint => 'Checking endpoint…';
+
+  @override
+  String onboardingNetworkCurrentEndpoint(String endpoint) {
+    return 'Current: $endpoint';
+  }
+
+  @override
+  String get onboardingNetworkCustomEndpoint => 'Custom endpoint';
+
+  @override
+  String get onboardingNetworkEndpointHelper =>
+      'Use a lightwalletd server for this wallet’s network.';
+
+  @override
+  String get onboardingNetworkEndpointUpdated => 'Endpoint updated';
+
+  @override
+  String get onboardingNetworkSaveFailed =>
+      'Couldn\'t save the endpoint. Try again.';
+
+  @override
+  String get onboardingNetworkSettings => 'Network settings';
+
+  @override
+  String get onboardingNetworkUpdateEndpoint => 'Update endpoint';
+
+  @override
+  String get onboardingNetworkVerifyFailed =>
+      'Couldn\'t verify that endpoint. Check the address and try again.';
+
+  @override
+  String get onboardingNext => 'Next';
+
+  @override
+  String get onboardingNotNow => 'Not now';
+
+  @override
+  String get onboardingPasscodeConfirmTitle => 'Confirm Passcode';
+
+  @override
+  String get onboardingPasscodeCreateTitle => 'Create Passcode';
+
+  @override
+  String onboardingPasscodeDigitSemantics(int digit) {
+    return 'Digit $digit';
+  }
+
+  @override
+  String get onboardingPasscodeIncorrect => 'Incorrect Passcode';
+
+  @override
+  String get onboardingPasscodeReEnter => 'Re-enter your passcode.';
+
+  @override
+  String get onboardingPasscodeSettingUp => 'Setting up your wallet...';
+
+  @override
+  String get onboardingPasscodeSixDigits => '6 digits length';
+
+  @override
+  String get onboardingPasscodesDidNotMatch =>
+      'Passcodes didn\'t match. Try again.';
+
+  @override
+  String get onboardingPassword => 'Password';
+
+  @override
+  String get onboardingPasswordsDoNotMatch => 'Passwords do not match.';
+
+  @override
+  String get onboardingQuit => 'Quit';
+
+  @override
+  String get onboardingRandomiseAccountPersona =>
+      'Randomise account name and profile picture';
+
+  @override
+  String get onboardingRecoveringWallet => 'Recovering wallet...';
+
+  @override
+  String get onboardingResetAppFailed =>
+      'Couldn\'t reset the app. Please try again.';
+
+  @override
+  String get onboardingResetCannotBeUndone => 'This cannot be undone.';
+
+  @override
+  String get onboardingResetVizor => 'Reset Vizor';
+
+  @override
+  String get onboardingResumeSetupFailed =>
+      'Couldn\'t resume setup. Please try again.';
+
+  @override
+  String get onboardingRetry => 'Retry';
+
+  @override
+  String get onboardingRetrySetup => 'Retry setup';
+
+  @override
+  String get onboardingRetrying => 'Retrying';
+
+  @override
+  String get onboardingReviewClearSecretPassphrase => 'Clear secret passphrase';
+
+  @override
+  String get onboardingReviewConfirmContinue => 'Confirm & continue';
+
+  @override
+  String get onboardingReviewImportSubtitle =>
+      'Review your secret passphrase\nbefore import starts.';
+
+  @override
+  String get onboardingReviewImportTitle => 'Review Import';
+
+  @override
+  String get onboardingSave => 'Save';
+
+  @override
+  String get onboardingSavingWallet => 'Saving wallet...';
+
+  @override
+  String get onboardingSecretPassphrase => 'Secret Passphrase';
+
+  @override
+  String get onboardingSecretPassphraseAboutToSee =>
+      'You are about to see your Secret Passphrase.';
+
+  @override
+  String get onboardingSecretPassphraseAboutToSeeMobile =>
+      'You are about to see your\nSecret Passphrase.';
+
+  @override
+  String get onboardingSecretPassphraseReveal => 'Reveal the phrase';
+
+  @override
+  String get onboardingSecretPassphraseRevealMobile => 'Reveal phrase';
+
+  @override
+  String get onboardingSecretPassphraseSubtitleDesktop =>
+      'The master key to your wallet.';
+
+  @override
+  String get onboardingSecretPassphraseSubtitleMobile =>
+      'The Master Key to your wallet.';
+
+  @override
+  String get onboardingSecretPassphraseWarning =>
+      'This phrase is the master key to your funds. Keep it safe, keep it secret. If you lose it, no one can help you recover your wallet. Not even us.';
+
+  @override
+  String get onboardingSeedWordHint => 'Seed word';
+
+  @override
+  String get onboardingSelectProfilePicture => 'Select profile picture';
+
+  @override
+  String get onboardingSetPassword => 'Set Password';
+
+  @override
+  String get onboardingSetPasswordAndFinish => 'Set password & finish';
+
+  @override
+  String get onboardingSetPasswordPlaceholder =>
+      'Min. 8 characters and symbols';
+
+  @override
+  String get onboardingSetPasswordSubtitle =>
+      'Set password for signing in to Vizor wallet.';
+
+  @override
+  String get onboardingSettingPassword => 'Setting password...';
+
+  @override
+  String get onboardingSetupInterrupted =>
+      'Setup interrupted. Retry to recover your wallet.';
+
+  @override
+  String get onboardingStepAddressTypes => 'Address types';
+
+  @override
+  String get onboardingStepCustomiseWallet => 'Customise wallet';
+
+  @override
+  String get onboardingStepImportContacts => 'Import contacts';
+
+  @override
+  String get onboardingStepIntroToZcash => 'Intro to Zcash';
+
+  @override
+  String get onboardingStepWalletBirthdayHeight => 'Wallet Birthday Height';
+
+  @override
+  String get onboardingStopSyncing => 'Stop syncing...';
+
+  @override
+  String get onboardingStorageDbMigrationBody =>
+      'Vizor needs to update the local wallet database before opening this version. Try again, or quit and restart Vizor.';
+
+  @override
+  String get onboardingStorageDbMigrationTitle =>
+      'Unable to update wallet database';
+
+  @override
+  String get onboardingStorageKeyringLockedBody =>
+      'Vizor needs access to the system keyring before it can open your wallet. Unlock the keyring, then try again.';
+
+  @override
+  String get onboardingStorageKeyringLockedTitle => 'Unlock your keyring';
+
+  @override
+  String get onboardingStorageRetrySecureStorageFailed =>
+      'Secure storage is still unavailable.';
+
+  @override
+  String get onboardingStorageRetryWalletDbFailed =>
+      'The wallet database update still failed.';
+
+  @override
+  String get onboardingStorageSecureStorageLockedBody =>
+      'Vizor needs access to secure storage before it can open your wallet. Unlock secure storage, then try again.';
+
+  @override
+  String get onboardingStorageSecureStorageLockedTitle =>
+      'Secure storage is locked';
+
+  @override
+  String get onboardingStorageStartupFailureBody =>
+      'Vizor could not load the local startup state. Try again, or quit and restart Vizor.';
+
+  @override
+  String get onboardingStorageStartupFailureTitle => 'Unable to open Vizor';
+
+  @override
+  String get onboardingTellMeHowZcashWorks => 'Tell me how Zcash works';
+
+  @override
+  String get onboardingThingsKeepPrivacyBody =>
+      'Some exchanges can\'t send to shielded addresses. If you\'re withdrawing from an exchange, use your transparent address. You can shield your ZEC after it arrives.';
+
+  @override
+  String get onboardingThingsKeepPrivacyTitle => 'How to keep privacy';
+
+  @override
+  String get onboardingThingsSubtitleMobile => 'Before you dive in.';
+
+  @override
+  String get onboardingThingsTimeToSyncBody =>
+      'Your wallet syncs directly with the Zcash network instead of relying on a server. This protects your privacy, but takes a moment. Your funds are safe while the app catches up.';
+
+  @override
+  String get onboardingThingsTimeToSyncTitle => 'Time to sync';
+
+  @override
+  String get onboardingThingsToKnow => 'Things to know';
+
+  @override
+  String get onboardingTryAgain => 'Try again';
+
+  @override
+  String get onboardingUnknownHeightBody =>
+      'If you continue without a wallet birthday, Vizor will scan from the earliest supported shielded height. This is safe, but the first sync can take a very long time.';
+
+  @override
+  String get onboardingUnknownHeightHint =>
+      'Choosing even an approximate date will be much faster.';
+
+  @override
+  String get onboardingUnknownHeightTitle => 'Import from the earliest height?';
+
+  @override
+  String get onboardingUnlockBiometricReason => 'Unlock your wallet';
+
+  @override
+  String get onboardingUnlockButton => 'Unlock Vizor';
+
+  @override
+  String get onboardingUnlockDescription =>
+      'Enter your password to open Vizor.';
+
+  @override
+  String get onboardingUnlockEnterPasscode =>
+      'Enter your passcode to open Vizor';
+
+  @override
+  String get onboardingUnlockIncorrectPassword =>
+      'Incorrect password. Try again.';
+
+  @override
+  String get onboardingUnlockOpenFailed =>
+      'Couldn\'t open your wallet. Please try again.';
+
+  @override
+  String get onboardingUnlockOpening => 'Opening your wallet...';
+
+  @override
+  String get onboardingUnlockWelcomeBack => 'Welcome back';
+
+  @override
+  String get onboardingUnlockWelcomeBackMobile => 'Welcome Back';
+
+  @override
+  String get onboardingWelcome => 'Welcome';
+
+  @override
+  String get onboardingWelcomeActivateGiftCard => 'Activate gift card';
+
+  @override
+  String get onboardingWelcomeGetStarted => 'Get started';
+
+  @override
+  String get onboardingWelcomeImportWallet => 'Import wallet';
+
+  @override
   String get poolShielded => 'Shielded';
 
   @override

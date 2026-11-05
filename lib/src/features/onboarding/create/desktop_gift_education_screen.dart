@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -70,7 +71,7 @@ class _DesktopGiftEducationScreenState
       setState(() => _saving = false);
       showAppToast(
         context,
-        'Unable to save your progress. Try again.',
+        context.l10n.onboardingGiftEducationSaveFailed,
         iconName: AppIcons.warning,
         tone: AppToastTone.destructive,
       );
@@ -87,7 +88,7 @@ class _DesktopGiftEducationScreenState
       DesktopGiftEducationPage.thingsToKnow => OnboardingStep.thingsToKnow,
     };
     final backTarget = OnboardingBackTarget.route(
-      label: 'Home',
+      label: context.l10n.navHome,
       routePath: '/home',
     );
     final content = switch (widget.page) {
@@ -95,9 +96,7 @@ class _DesktopGiftEducationScreenState
         resetCreateDraft: false,
         backTarget: backTarget,
         actionsEnabled: !_saving,
-        closingText:
-            'Your wallet is ready. Learn how Zcash protects your '
-            'privacy and which address to use.',
+        closingText: context.l10n.onboardingGiftEducationClosing,
         onContinue: () => _open('/setup/education/address-types'),
         onSkip: _finish,
       ),
@@ -128,7 +127,7 @@ class _DesktopGiftEducationScreenState
             OnboardingStep.thingsToKnow,
           ])
             OnboardingSidebarStepData(
-              label: item.label,
+              label: item.label(context.l10n),
               iconName: item.iconName,
               active: item == step,
             ),

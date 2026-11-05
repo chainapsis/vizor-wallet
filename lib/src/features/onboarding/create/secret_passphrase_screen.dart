@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/clipboard/sensitive_clipboard.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
@@ -162,7 +163,7 @@ class _SecretPassphraseScreenState
         ),
         child: OnboardingPaneScaffold(
           backTarget: OnboardingBackTarget.route(
-            label: OnboardingStep.thingsToKnow.label,
+            label: OnboardingStep.thingsToKnow.label(context.l10n),
             routePath: OnboardingStep.thingsToKnow.routePath,
           ),
           bodyPadding: EdgeInsets.zero,
@@ -296,7 +297,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Secret Passphrase',
+            context.l10n.onboardingSecretPassphrase,
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
@@ -305,7 +306,7 @@ class _TitleBlock extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         Text(
-          'The master key to your wallet.',
+          context.l10n.onboardingSecretPassphraseSubtitleDesktop,
           style: AppTypography.bodyMediumStrong.copyWith(
             color: colors.text.accent,
           ),
@@ -337,7 +338,11 @@ class _BottomActions extends StatelessWidget {
       variant: AppButtonVariant.primary,
       minWidth: _buttonWidth,
       trailing: const AppIcon(AppIcons.chevronForward),
-      child: Text(revealed ? 'Continue' : 'Reveal the phrase'),
+      child: Text(
+        revealed
+            ? context.l10n.onboardingContinue
+            : context.l10n.onboardingSecretPassphraseReveal,
+      ),
     );
   }
 }
@@ -425,14 +430,9 @@ class _HiddenWarning extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         SizedBox(
           width: 202,
-          child: Text.rich(
-            TextSpan(
-              style: AppTypography.headlineSmall.copyWith(color: textColor),
-              children: const [
-                TextSpan(text: 'You are about to see your '),
-                TextSpan(text: 'Secret Passphrase.'),
-              ],
-            ),
+          child: Text(
+            context.l10n.onboardingSecretPassphraseAboutToSee,
+            style: AppTypography.headlineSmall.copyWith(color: textColor),
             textAlign: TextAlign.center,
           ),
         ),
@@ -440,9 +440,7 @@ class _HiddenWarning extends StatelessWidget {
         SizedBox(
           width: 298,
           child: Text(
-            'This phrase is the master key to your funds. Keep it safe, keep '
-            'it secret. If you lose it, no one can help you recover your '
-            'wallet. Not even us.',
+            context.l10n.onboardingSecretPassphraseWarning,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: textColor.withValues(alpha: 0.7),
@@ -505,7 +503,7 @@ class _SeedGrid extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                'Secret Passphrase',
+                context.l10n.onboardingSecretPassphrase,
                 style: AppTypography.bodyLarge.copyWith(
                   color: textColor,
                   fontWeight: FontWeight.w600,
@@ -587,7 +585,9 @@ class _CopyButton extends StatelessWidget {
       variant: AppButtonVariant.primary,
       size: AppButtonSize.small,
       trailing: AppIcon(copied ? AppIcons.check : AppIcons.copy),
-      child: Text(copied ? 'Copied' : 'Copy'),
+      child: Text(
+        copied ? context.l10n.commonCopied : context.l10n.onboardingCopy,
+      ),
     );
   }
 }

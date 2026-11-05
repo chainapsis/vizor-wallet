@@ -1263,6 +1263,828 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navVote => '投票';
 
   @override
+  String get onboardingAccountName => '账户名称';
+
+  @override
+  String get onboardingAdd => '添加';
+
+  @override
+  String get onboardingAddBip39PassphraseOptional => '添加 BIP39 密码短语（可选）';
+
+  @override
+  String get onboardingAddBip39PassphraseSemantics => '添加 BIP39 密码短语';
+
+  @override
+  String get onboardingAddressShieldedBodyMobile =>
+      '地址以 u1 开头（旧版为 zs）。\n只有你能看到账户余额和交易记录。';
+
+  @override
+  String onboardingAddressShieldedDescription(
+    String unifiedPrefix,
+    String legacyPrefix,
+  ) {
+    return '地址以 $unifiedPrefix 开头（旧版为 $legacyPrefix）。只有你能看到账户余额和交易记录。';
+  }
+
+  @override
+  String get onboardingAddressShieldedLabel => '屏蔽地址';
+
+  @override
+  String get onboardingAddressShieldedTitleMobile => '屏蔽地址';
+
+  @override
+  String get onboardingAddressTransparentDescription =>
+      '地址以 t 开头，与 Bitcoin 类似，该地址的余额和交易记录对所有人公开可见。';
+
+  @override
+  String get onboardingAddressTransparentLabel => '透明地址';
+
+  @override
+  String get onboardingAddressTransparentTitleMobile => '透明地址';
+
+  @override
+  String get onboardingAddressTypesSubtitle => 'Zcash 有两种地址类型。\n一种用于隐私，一种用于透明。';
+
+  @override
+  String get onboardingAddressTypesSubtitleMobile =>
+      'Zcash 有两种地址类型。\n一种用于隐私，一种用于透明。';
+
+  @override
+  String get onboardingAddressTypesTitle => 'Zcash 地址类型';
+
+  @override
+  String get onboardingAddressTypesTitleMobile => 'Zcash 地址类型';
+
+  @override
+  String onboardingBiometricEnableFailed(String method) {
+    return '无法启用 $method。你可以稍后在设置中重试。';
+  }
+
+  @override
+  String onboardingBiometricSetUpFirst(String method) {
+    return '请先在设备设置中设置 $method。';
+  }
+
+  @override
+  String get onboardingBiometricSubtitle => '这是一种便捷快速的登录方式。\n你随时可以切换回数字密码。';
+
+  @override
+  String onboardingBiometricTitle(String method) {
+    return '使用 $method\n解锁你的钱包';
+  }
+
+  @override
+  String get onboardingBip39PassphraseClear => '清除 BIP39 密码短语';
+
+  @override
+  String get onboardingBip39PassphraseExplanation =>
+      '添加可选的密码短语（“第 25 个单词”），即可用同一助记词创建/导入另一个独立的钱包。';
+
+  @override
+  String get onboardingBip39PassphraseFieldLabel => 'BIP39 密码短语';
+
+  @override
+  String get onboardingBip39PassphraseHint => '1–100 个字符';
+
+  @override
+  String onboardingBip39PassphrasePreview(String passphrase) {
+    return 'BIP39 密码短语：$passphrase';
+  }
+
+  @override
+  String get onboardingBip39PassphraseTitle => 'BIP39 密码短语';
+
+  @override
+  String get onboardingBip39PassphraseTitleOptional => 'BIP39 密码短语（可选）';
+
+  @override
+  String get onboardingBirthdayCantRemember => '我不记得了';
+
+  @override
+  String get onboardingBirthdayDateHint => 'mm/dd/yyyy';
+
+  @override
+  String get onboardingBirthdayDontRemember => '我不记得了';
+
+  @override
+  String get onboardingBirthdayEnterBlockHeight => '输入区块高度';
+
+  @override
+  String get onboardingBirthdayEnterDate => '输入日期';
+
+  @override
+  String get onboardingBirthdayEnterMonth => '输入月份';
+
+  @override
+  String get onboardingBirthdayEstimateFailed => '无法估算钱包创建高度。';
+
+  @override
+  String onboardingBirthdayHeightAtLeast(String height) {
+    return '至少为 $height。';
+  }
+
+  @override
+  String onboardingBirthdayHeightBetween(String min, String max) {
+    return '介于 $min 和 $max 之间。';
+  }
+
+  @override
+  String get onboardingBirthdayInvalidHeight => '这似乎不是有效的区块高度';
+
+  @override
+  String get onboardingBirthdayMetadataFailed => '无法加载钱包创建时间数据。';
+
+  @override
+  String get onboardingBirthdayMobileEstimateFailed =>
+      '无法估算该日期对应的区块高度。请改为输入区块高度。';
+
+  @override
+  String get onboardingBirthdayMonthHint => 'mm/yyyy';
+
+  @override
+  String get onboardingBirthdayPickDate => '选择日期';
+
+  @override
+  String get onboardingBirthdayPickMonth => '选择月份';
+
+  @override
+  String get onboardingBirthdaySelectDate => '选择日期';
+
+  @override
+  String get onboardingBirthdaySelectMonth => '选择月份';
+
+  @override
+  String get onboardingBirthdayStatusEstimating => '正在估算高度...';
+
+  @override
+  String get onboardingBirthdayStatusImporting => '正在导入钱包...';
+
+  @override
+  String get onboardingBirthdayStatusPausingSync => '正在暂停同步...';
+
+  @override
+  String get onboardingBirthdaySubtitleMobile => '大概时间就够了——\n将从那时开始同步。';
+
+  @override
+  String get onboardingBirthdayTitle => '你大约是什么时候创建的钱包？';
+
+  @override
+  String get onboardingBlockHeight => '区块高度';
+
+  @override
+  String get onboardingCalendarMonthApril => '四月';
+
+  @override
+  String get onboardingCalendarMonthAugust => '八月';
+
+  @override
+  String get onboardingCalendarMonthDecember => '十二月';
+
+  @override
+  String get onboardingCalendarMonthFebruary => '二月';
+
+  @override
+  String get onboardingCalendarMonthJanuary => '一月';
+
+  @override
+  String get onboardingCalendarMonthJuly => '七月';
+
+  @override
+  String get onboardingCalendarMonthJune => '六月';
+
+  @override
+  String get onboardingCalendarMonthMarch => '三月';
+
+  @override
+  String get onboardingCalendarMonthMay => '五月';
+
+  @override
+  String get onboardingCalendarMonthNovember => '十一月';
+
+  @override
+  String get onboardingCalendarMonthOctober => '十月';
+
+  @override
+  String get onboardingCalendarMonthSeptember => '九月';
+
+  @override
+  String get onboardingCalendarMonthShortApr => '四月';
+
+  @override
+  String get onboardingCalendarMonthShortAug => '八月';
+
+  @override
+  String get onboardingCalendarMonthShortDec => '十二月';
+
+  @override
+  String get onboardingCalendarMonthShortFeb => '二月';
+
+  @override
+  String get onboardingCalendarMonthShortJan => '一月';
+
+  @override
+  String get onboardingCalendarMonthShortJul => '七月';
+
+  @override
+  String get onboardingCalendarMonthShortJun => '六月';
+
+  @override
+  String get onboardingCalendarMonthShortMar => '三月';
+
+  @override
+  String get onboardingCalendarMonthShortMay => '五月';
+
+  @override
+  String get onboardingCalendarMonthShortNov => '十一月';
+
+  @override
+  String get onboardingCalendarMonthShortOct => '十月';
+
+  @override
+  String get onboardingCalendarMonthShortSep => '九月';
+
+  @override
+  String get onboardingCalendarWeekdayFri => '周五';
+
+  @override
+  String get onboardingCalendarWeekdayMon => '周一';
+
+  @override
+  String get onboardingCalendarWeekdaySat => '周六';
+
+  @override
+  String get onboardingCalendarWeekdaySun => '周日';
+
+  @override
+  String get onboardingCalendarWeekdayThu => '周四';
+
+  @override
+  String get onboardingCalendarWeekdayTue => '周二';
+
+  @override
+  String get onboardingCalendarWeekdayWed => '周三';
+
+  @override
+  String get onboardingChangeProfilePicture => '更换头像';
+
+  @override
+  String get onboardingCheckingAccounts => '正在检查账户...';
+
+  @override
+  String get onboardingClear => '清除';
+
+  @override
+  String get onboardingConfirmPassword => '确认密码';
+
+  @override
+  String get onboardingConnectHardwareSubtitleDesktop => '请选择你的硬件钱包。';
+
+  @override
+  String get onboardingConnectHardwareSubtitleMobile => '请选择你的硬件设备。';
+
+  @override
+  String get onboardingConnectHardwareTitle => '连接\n硬件钱包';
+
+  @override
+  String get onboardingConnectHardwareWallet => '连接硬件钱包';
+
+  @override
+  String get onboardingConnectKeystone => '连接 Keystone';
+
+  @override
+  String get onboardingConnectLedger => '连接 Ledger';
+
+  @override
+  String get onboardingContinue => '继续';
+
+  @override
+  String get onboardingContinueAnywayDesktop => '仍然继续';
+
+  @override
+  String get onboardingContinueAnywayMobile => '仍然继续';
+
+  @override
+  String get onboardingCopy => '复制';
+
+  @override
+  String get onboardingCopySecretPassphrase => '复制助记词';
+
+  @override
+  String get onboardingCreatingWallet => '正在创建钱包...';
+
+  @override
+  String get onboardingCustomiseAccount => '自定义账户';
+
+  @override
+  String get onboardingCustomiseAccountSubtitle => '设置账户名称并选择头像，为你的账户增添个性。';
+
+  @override
+  String get onboardingDiscoverySubtitle => '请选择要导入的其他账户。';
+
+  @override
+  String get onboardingDiscoveryTitle => '发现其他账户';
+
+  @override
+  String get onboardingEdit => '编辑';
+
+  @override
+  String get onboardingEditBip39Passphrase => '编辑 BIP39 密码短语';
+
+  @override
+  String get onboardingEnterPassword => '输入密码';
+
+  @override
+  String get onboardingEstimating => '正在估算...';
+
+  @override
+  String get onboardingFinishSetup => '完成设置';
+
+  @override
+  String get onboardingForgotPasscodeAreYouSure => '确定要继续吗？';
+
+  @override
+  String get onboardingForgotPasscodeBody =>
+      '如果你记不起数字密码，恢复账户的唯一方法是完全重置 Vizor 应用，这意味着删除所有账户，并需要你重新导入账户。未分享的礼品卡链接将永久丢失。';
+
+  @override
+  String get onboardingForgotPasscodeCantBeUndone => '此操作无法撤销。\n';
+
+  @override
+  String get onboardingForgotPasscodeContinueToReset => '继续重置 Vizor';
+
+  @override
+  String get onboardingForgotPasscodeProceed => '请自行承担风险后继续。';
+
+  @override
+  String get onboardingForgotPasscodeTitle => '忘记数字密码？';
+
+  @override
+  String get onboardingForgotPasscodeUnbackedWarning =>
+      '如果你没有备份某个账户的助记词，重置 Vizor 后将无法找回该账户的资金。';
+
+  @override
+  String get onboardingForgotPassword => '忘记密码？';
+
+  @override
+  String get onboardingGiftEducationClosing =>
+      '你的钱包已准备就绪。了解 Zcash 如何保护你的隐私，以及应使用哪种地址。';
+
+  @override
+  String get onboardingGiftEducationSaveFailed => '无法保存你的进度。请重试。';
+
+  @override
+  String get onboardingGoBackDesktop => '返回';
+
+  @override
+  String get onboardingGoBackMobile => '返回';
+
+  @override
+  String get onboardingHardwareKeystoneOnly => 'Keystone 钱包';
+
+  @override
+  String get onboardingHardwareLedgerOrKeystone => 'Ledger 或 Keystone 钱包';
+
+  @override
+  String get onboardingIKnowHowToUseZcash => '我已了解 Zcash 用法';
+
+  @override
+  String get onboardingImport => '导入';
+
+  @override
+  String get onboardingImportAcceptWordCounts => '支持 12、15、18、21 或 24 个单词。';
+
+  @override
+  String get onboardingImportCheckFailedError => '无法检查助记词';
+
+  @override
+  String get onboardingImportClipboardEmpty => '剪贴板为空';
+
+  @override
+  String get onboardingImportClipboardReadError => '无法读取剪贴板';
+
+  @override
+  String get onboardingImportEnterManuallySemantics => '手动输入助记词';
+
+  @override
+  String get onboardingImportFromKeystone => '从 Keystone 钱包导入';
+
+  @override
+  String get onboardingImportFromLedger => '从 Ledger 钱包导入';
+
+  @override
+  String get onboardingImportInvalidPhraseError => '助记词无效';
+
+  @override
+  String get onboardingImportInvalidSecretPassphrase =>
+      '请输入由 12、15、18、21 或 24 个单词组成的有效助记词。';
+
+  @override
+  String get onboardingImportManualCardSubtitle => '逐个单词输入。';
+
+  @override
+  String get onboardingImportManualCardTitle => '手动输入\n助记词';
+
+  @override
+  String get onboardingImportMethodSubtitle => '请选择你想要的方式。';
+
+  @override
+  String get onboardingImportMethodTitle => '将账户\n导入 Vizor';
+
+  @override
+  String get onboardingImportNoPhraseError => '未找到助记词';
+
+  @override
+  String get onboardingImportPasteFromClipboard => '或从剪贴板粘贴';
+
+  @override
+  String get onboardingImportPasteHelper => '支持 12、15、18、21 或 24 个单词的\n助记词';
+
+  @override
+  String get onboardingImportReadingClipboard => '正在读取剪贴板...';
+
+  @override
+  String get onboardingImportSecretPassphrase => '导入助记词';
+
+  @override
+  String get onboardingImportSecretPassphraseDescriptionDesktop =>
+      'Vizor 或任何其他 Zcash 钱包';
+
+  @override
+  String get onboardingImportSecretPassphraseDescriptionMobile =>
+      'Vizor、ZODL 或任何其他钱包';
+
+  @override
+  String get onboardingImportWalletTitle => '导入钱包';
+
+  @override
+  String get onboardingImportWalletTitleMobile => '导入钱包';
+
+  @override
+  String get onboardingImporting => '正在导入...';
+
+  @override
+  String get onboardingIntroCard =>
+      '与 Bitcoin 或 Ethereum 不同，屏蔽的 Zcash 交易会隐藏发送方、接收方和金额——由密码学验证，而非依赖信任。';
+
+  @override
+  String get onboardingIntroClosing => '距离你的第一个隐私钱包只差几步。\n让我们开始设置吧。';
+
+  @override
+  String get onboardingIntroClosingMobile => '距离你的第一个隐私钱包只差几步。让我们开始设置吧。';
+
+  @override
+  String get onboardingIntroSubtitle => 'Zcash（ZEC）围绕金融隐私与自主托管而构建。';
+
+  @override
+  String get onboardingIntroSubtitleMobile => 'Zcash（ZEC）围绕金融隐私\n与自主托管而构建。';
+
+  @override
+  String get onboardingIntroTitle => '屏蔽世界';
+
+  @override
+  String get onboardingLinkVizorDesktop => '关联 Vizor 桌面版';
+
+  @override
+  String get onboardingLinkVizorDesktopDescription => '扫码并连接 Vizor 桌面版';
+
+  @override
+  String get onboardingLoading => '加载中';
+
+  @override
+  String onboardingLostPasswordBody(String resetAction, String importAction) {
+    return '如果你忘记了密码，恢复账户的唯一方法是$resetAction。\n这会删除所有账户和未分享的礼品卡链接。\n你需要$importAction。';
+  }
+
+  @override
+  String get onboardingLostPasswordImportAction => '重新导入账户';
+
+  @override
+  String get onboardingLostPasswordResetAction => '完全重置 Vizor 应用';
+
+  @override
+  String onboardingLostPasswordResetCountdown(int seconds) {
+    return '$seconds 秒后重置...';
+  }
+
+  @override
+  String get onboardingLostPasswordTitle => '忘记密码？';
+
+  @override
+  String get onboardingManualInvalidWord => '助记词中没有这个单词。';
+
+  @override
+  String get onboardingManualNextWord => '下一个单词';
+
+  @override
+  String get onboardingManualReviewFinish => '检查并完成';
+
+  @override
+  String onboardingManualStoppedAt(String word) {
+    return '已在 \'$word\' 处停止——它不在助记词单词表中。';
+  }
+
+  @override
+  String get onboardingManualSubtitle => '支持 12、15、18、21 或 24 个单词';
+
+  @override
+  String get onboardingManualTitle => '输入你的助记词';
+
+  @override
+  String get onboardingManualUndoLastWord => '撤销上一个单词';
+
+  @override
+  String get onboardingNetworkCheckingEndpoint => '正在检查端点…';
+
+  @override
+  String onboardingNetworkCurrentEndpoint(String endpoint) {
+    return '当前：$endpoint';
+  }
+
+  @override
+  String get onboardingNetworkCustomEndpoint => '自定义端点';
+
+  @override
+  String get onboardingNetworkEndpointHelper =>
+      '请使用适用于此钱包所在网络的 lightwalletd 服务器。';
+
+  @override
+  String get onboardingNetworkEndpointUpdated => '端点已更新';
+
+  @override
+  String get onboardingNetworkSaveFailed => '无法保存端点。请重试。';
+
+  @override
+  String get onboardingNetworkSettings => '网络设置';
+
+  @override
+  String get onboardingNetworkUpdateEndpoint => '更新端点';
+
+  @override
+  String get onboardingNetworkVerifyFailed => '无法验证该端点。请检查地址后重试。';
+
+  @override
+  String get onboardingNext => '下一步';
+
+  @override
+  String get onboardingNotNow => '暂不';
+
+  @override
+  String get onboardingPasscodeConfirmTitle => '确认数字密码';
+
+  @override
+  String get onboardingPasscodeCreateTitle => '创建数字密码';
+
+  @override
+  String onboardingPasscodeDigitSemantics(int digit) {
+    return '数字 $digit';
+  }
+
+  @override
+  String get onboardingPasscodeIncorrect => '数字密码不正确';
+
+  @override
+  String get onboardingPasscodeReEnter => '请再次输入数字密码。';
+
+  @override
+  String get onboardingPasscodeSettingUp => '正在设置你的钱包...';
+
+  @override
+  String get onboardingPasscodeSixDigits => '6 位数字';
+
+  @override
+  String get onboardingPasscodesDidNotMatch => '两次输入的数字密码不一致。请重试。';
+
+  @override
+  String get onboardingPassword => '密码';
+
+  @override
+  String get onboardingPasswordsDoNotMatch => '两次输入的密码不一致。';
+
+  @override
+  String get onboardingQuit => '退出';
+
+  @override
+  String get onboardingRandomiseAccountPersona => '随机更换账户名称和头像';
+
+  @override
+  String get onboardingRecoveringWallet => '正在恢复钱包...';
+
+  @override
+  String get onboardingResetAppFailed => '无法重置应用。请重试。';
+
+  @override
+  String get onboardingResetCannotBeUndone => '此操作无法撤销。';
+
+  @override
+  String get onboardingResetVizor => '重置 Vizor';
+
+  @override
+  String get onboardingResumeSetupFailed => '无法继续设置。请重试。';
+
+  @override
+  String get onboardingRetry => '重试';
+
+  @override
+  String get onboardingRetrySetup => '重试设置';
+
+  @override
+  String get onboardingRetrying => '正在重试';
+
+  @override
+  String get onboardingReviewClearSecretPassphrase => '清除助记词';
+
+  @override
+  String get onboardingReviewConfirmContinue => '确认并继续';
+
+  @override
+  String get onboardingReviewImportSubtitle => '开始导入前\n请检查你的助记词。';
+
+  @override
+  String get onboardingReviewImportTitle => '检查导入内容';
+
+  @override
+  String get onboardingSave => '保存';
+
+  @override
+  String get onboardingSavingWallet => '正在保存钱包...';
+
+  @override
+  String get onboardingSecretPassphrase => '助记词';
+
+  @override
+  String get onboardingSecretPassphraseAboutToSee => '你即将看到你的助记词。';
+
+  @override
+  String get onboardingSecretPassphraseAboutToSeeMobile => '你即将看到\n你的助记词。';
+
+  @override
+  String get onboardingSecretPassphraseReveal => '显示助记词';
+
+  @override
+  String get onboardingSecretPassphraseRevealMobile => '显示助记词';
+
+  @override
+  String get onboardingSecretPassphraseSubtitleDesktop => '你钱包的主密钥。';
+
+  @override
+  String get onboardingSecretPassphraseSubtitleMobile => '你钱包的主密钥。';
+
+  @override
+  String get onboardingSecretPassphraseWarning =>
+      '此助记词是你资金的主密钥。请妥善保管，切勿泄露。一旦丢失，任何人都无法帮你恢复钱包，我们也无能为力。';
+
+  @override
+  String get onboardingSeedWordHint => '单词';
+
+  @override
+  String get onboardingSelectProfilePicture => '选择头像';
+
+  @override
+  String get onboardingSetPassword => '设置密码';
+
+  @override
+  String get onboardingSetPasswordAndFinish => '设置密码并完成';
+
+  @override
+  String get onboardingSetPasswordPlaceholder => '至少 8 个字符，包含符号';
+
+  @override
+  String get onboardingSetPasswordSubtitle => '设置用于登录 Vizor 钱包的密码。';
+
+  @override
+  String get onboardingSettingPassword => '正在设置密码...';
+
+  @override
+  String get onboardingSetupInterrupted => '设置已中断。请重试以恢复你的钱包。';
+
+  @override
+  String get onboardingStepAddressTypes => '地址类型';
+
+  @override
+  String get onboardingStepCustomiseWallet => '自定义钱包';
+
+  @override
+  String get onboardingStepImportContacts => '导入联系人';
+
+  @override
+  String get onboardingStepIntroToZcash => 'Zcash 简介';
+
+  @override
+  String get onboardingStepWalletBirthdayHeight => '钱包创建高度';
+
+  @override
+  String get onboardingStopSyncing => '正在停止同步...';
+
+  @override
+  String get onboardingStorageDbMigrationBody =>
+      '打开此版本前，Vizor 需要先更新本地钱包数据库。请重试，或退出后重新启动 Vizor。';
+
+  @override
+  String get onboardingStorageDbMigrationTitle => '无法更新钱包数据库';
+
+  @override
+  String get onboardingStorageKeyringLockedBody =>
+      '打开钱包前，Vizor 需要访问系统密钥环。请解锁密钥环后重试。';
+
+  @override
+  String get onboardingStorageKeyringLockedTitle => '请解锁密钥环';
+
+  @override
+  String get onboardingStorageRetrySecureStorageFailed => '安全存储仍然不可用。';
+
+  @override
+  String get onboardingStorageRetryWalletDbFailed => '钱包数据库更新仍然失败。';
+
+  @override
+  String get onboardingStorageSecureStorageLockedBody =>
+      '打开钱包前，Vizor 需要访问安全存储。请解锁安全存储后重试。';
+
+  @override
+  String get onboardingStorageSecureStorageLockedTitle => '安全存储已锁定';
+
+  @override
+  String get onboardingStorageStartupFailureBody =>
+      'Vizor 无法加载本地启动状态。请重试，或退出后重新启动 Vizor。';
+
+  @override
+  String get onboardingStorageStartupFailureTitle => '无法打开 Vizor';
+
+  @override
+  String get onboardingTellMeHowZcashWorks => '了解 Zcash 如何运作';
+
+  @override
+  String get onboardingThingsKeepPrivacyBody =>
+      '部分交易所无法向屏蔽地址转账。如果从交易所提现，请使用你的透明地址，ZEC 到账后再进行屏蔽。';
+
+  @override
+  String get onboardingThingsKeepPrivacyTitle => '如何保持隐私';
+
+  @override
+  String get onboardingThingsSubtitleMobile => '开始之前请了解以下内容。';
+
+  @override
+  String get onboardingThingsTimeToSyncBody =>
+      '你的钱包直接与 Zcash 网络同步，而不依赖服务器。这样可以保护你的隐私，但需要一点时间。应用同步期间，你的资金是安全的。';
+
+  @override
+  String get onboardingThingsTimeToSyncTitle => '同步时间';
+
+  @override
+  String get onboardingThingsToKnow => '须知';
+
+  @override
+  String get onboardingTryAgain => '重试';
+
+  @override
+  String get onboardingUnknownHeightBody =>
+      '如果在没有钱包创建高度的情况下继续，Vizor 将从受支持的最早屏蔽高度开始扫描。这是安全的，但首次同步可能需要很长时间。';
+
+  @override
+  String get onboardingUnknownHeightHint => '即使只选一个大概的日期，速度也会快得多。';
+
+  @override
+  String get onboardingUnknownHeightTitle => '从最早的区块高度开始导入吗？';
+
+  @override
+  String get onboardingUnlockBiometricReason => '解锁你的钱包';
+
+  @override
+  String get onboardingUnlockButton => '解锁 Vizor';
+
+  @override
+  String get onboardingUnlockDescription => '输入密码以打开 Vizor。';
+
+  @override
+  String get onboardingUnlockEnterPasscode => '输入数字密码以打开 Vizor';
+
+  @override
+  String get onboardingUnlockIncorrectPassword => '密码不正确。请重试。';
+
+  @override
+  String get onboardingUnlockOpenFailed => '无法打开你的钱包。请重试。';
+
+  @override
+  String get onboardingUnlockOpening => '正在打开你的钱包...';
+
+  @override
+  String get onboardingUnlockWelcomeBack => '欢迎回来';
+
+  @override
+  String get onboardingUnlockWelcomeBackMobile => '欢迎回来';
+
+  @override
+  String get onboardingWelcome => '欢迎';
+
+  @override
+  String get onboardingWelcomeActivateGiftCard => '激活礼品卡';
+
+  @override
+  String get onboardingWelcomeGetStarted => '开始使用';
+
+  @override
+  String get onboardingWelcomeImportWallet => '导入钱包';
+
+  @override
   String get poolShielded => '屏蔽';
 
   @override

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -22,7 +23,12 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   test('import flow ends with account customisation', () {
-    expect(ImportOnboardingStep.customiseAccount.label, 'Customise wallet');
+    expect(
+      ImportOnboardingStep.customiseAccount.label(
+        lookupAppLocalizations(const Locale('en')),
+      ),
+      'Customise wallet',
+    );
     expect(
       importOnboardingStepFromLocation('/import/customise-account'),
       ImportOnboardingStep.customiseAccount,

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app_bootstrap.dart';
+import '../../../core/l10n/l10n.dart';
 import '../import/desktop_import_navigation.dart';
 import '../../../core/input/app_password_input_source.dart';
 import '../../../../main.dart' show log;
@@ -100,7 +101,7 @@ class _CustomiseAccountScreenState
     extends ConsumerState<CustomiseAccountScreen> {
   late final AccountPersonaDraft _persona;
   var _finishPhase = _FinishPhase.idle;
-  String? _submitError;
+  OnboardingSubmitError? _submitError;
   var _showProfilePicturePicker = false;
   var _requiresSetupRecovery = false;
 
@@ -114,7 +115,7 @@ class _CustomiseAccountScreenState
       !_isSubmitting && (_requiresSetupRecovery || _nameValid);
 
   String? get _nameMessage {
-    if (_submitError != null) return _submitError;
+    if (_submitError != null) return _submitError!.resolve(context.l10n);
     return _nameLength > kAccountNameMaxCharacters
         ? kAccountNameLengthMessage
         : null;
@@ -195,9 +196,10 @@ class _CustomiseAccountScreenState
         _finishPhase = _FinishPhase.idle;
         _requiresSetupRecovery =
             _requiresSetupRecovery || _isInterruptedSetup(e);
-        _submitError = _requiresSetupRecovery
-            ? 'Setup interrupted. Retry to recover your wallet.'
-            : onboardingSubmitErrorMessage(e);
+        _submitError = OnboardingSubmitError.fromError(
+          e,
+          requiresRecovery: _requiresSetupRecovery,
+        );
       });
     }
   }
@@ -214,7 +216,7 @@ class _CustomiseAccountScreenState
       if (mounted) {
         setState(() {
           _finishPhase = _FinishPhase.idle;
-          _submitError = "Couldn't resume setup. Please try again.";
+          _submitError = OnboardingSubmitError.resumeFailed();
         });
       }
     }
@@ -334,7 +336,7 @@ class _CustomiseAccountScreenState
     final args = widget.args!;
     if (args.configuresPassword) {
       return OnboardingBackTarget.route(
-        label: 'Set Password',
+        label: context.l10n.onboardingSetPassword,
         routePath: switch (args.flow) {
           SetPasswordFlow.importLedger => throw StateError(
             'Desktop Ledger uses its dedicated setup routes.',
@@ -360,9 +362,11 @@ class _CustomiseAccountScreenState
         SetPasswordFlow.importLedger => throw StateError(
           'Desktop Ledger uses its dedicated setup routes.',
         ),
-        SetPasswordFlow.create => OnboardingStep.secretPassphrase.label,
+        SetPasswordFlow.create => OnboardingStep.secretPassphrase.label(
+          context.l10n,
+        ),
         SetPasswordFlow.importWallet =>
-          ImportOnboardingStep.walletBirthdayHeight.label,
+          ImportOnboardingStep.walletBirthdayHeight.label(context.l10n),
         SetPasswordFlow.importKeystone =>
           KeystoneOnboardingStep.walletBirthdayHeight.label,
         SetPasswordFlow.importWalletLink => throw StateError(
@@ -383,7 +387,7 @@ class _CustomiseAccountScreenState
             borderRadius: const BorderRadius.all(Radius.circular(20)),
             onDismiss: _closeProfilePicturePicker,
             child: AppProfilePicturePickerModal(
-              title: 'Select profile picture',
+              title: context.l10n.onboardingSelectProfilePicture,
               currentProfilePictureId: _persona.profilePictureId,
               optionKeyPrefix: 'customise_account_pfp_option_',
               cancelKey: const ValueKey('customise_account_pfp_cancel'),
@@ -537,13 +541,15 @@ class _CustomiseAccountContent extends StatelessWidget {
               child: Text(switch (finishPhase) {
                 _FinishPhase.idle =>
                   requiresSetupRecovery
-                      ? 'Retry setup'
+                      ? context.l10n.onboardingRetrySetup
                       : continueToSecurity
-                      ? 'Continue'
-                      : 'Finish setup',
-                _FinishPhase.stoppingSync => 'Stop syncing...',
-                _FinishPhase.creatingWallet => 'Creating wallet...',
-                _FinishPhase.recoveringSetup => 'Recovering wallet...',
+                      ? context.l10n.onboardingContinue
+                      : context.l10n.onboardingFinishSetup,
+                _FinishPhase.stoppingSync => context.l10n.onboardingStopSyncing,
+                _FinishPhase.creatingWallet =>
+                  context.l10n.onboardingCreatingWallet,
+                _FinishPhase.recoveringSetup =>
+                  context.l10n.onboardingRecoveringWallet,
               }),
             ),
           ],
@@ -564,7 +570,7 @@ class _CustomiseAccountTitle extends StatelessWidget {
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
-            'Customise Account',
+            context.l10n.onboardingCustomiseAccount,
             textAlign: TextAlign.center,
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
@@ -575,8 +581,7 @@ class _CustomiseAccountTitle extends StatelessWidget {
         SizedBox(
           width: 308,
           child: Text(
-            'Add personality to your account by setting an account name and '
-            'choosing a profile picture.',
+            context.l10n.onboardingCustomiseAccountSubtitle,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.accent,
@@ -641,7 +646,7 @@ class _AccountProfileCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Account name',
+                        context.l10n.onboardingAccountName,
                         style: AppTypography.labelLarge.copyWith(
                           color: cardTextColor.withValues(alpha: 0.5),
                           fontWeight: FontWeight.w400,
@@ -730,7 +735,7 @@ class _EditableProfilePicture extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: 'Change profile picture',
+      label: context.l10n.onboardingChangeProfilePicture,
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
         child: GestureDetector(

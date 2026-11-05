@@ -1752,6 +1752,1107 @@
   "@navVote": {
     "description": "Sidebar destination: coinholder voting."
   },
+  "onboardingAccountName": "Account name",
+  "@onboardingAccountName": {
+    "description": "Label above the account name on the customise-account card."
+  },
+  "onboardingAdd": "Add",
+  "@onboardingAdd": {
+    "description": "Dialog button that adds the entered value."
+  },
+  "onboardingAddBip39PassphraseOptional": "Add BIP39 Passphrase (Optional)",
+  "@onboardingAddBip39PassphraseOptional": {
+    "description": "[security] Visible label of the button that opens the optional BIP39 passphrase (25th word) dialog."
+  },
+  "onboardingAddBip39PassphraseSemantics": "Add BIP39 passphrase",
+  "@onboardingAddBip39PassphraseSemantics": {
+    "description": "[security] Accessibility label of the button that opens the optional BIP39 passphrase (25th word) dialog."
+  },
+  "onboardingAddressShieldedBodyMobile": "Address starts with u1 (or zs for legacy).\nOnly you can see your account balance and transaction history.",
+  "@onboardingAddressShieldedBodyMobile": {
+    "description": "Body of the shielded address card on the mobile address types step. u1 and zs are literal address prefixes shown in bold; keep them unchanged."
+  },
+  "onboardingAddressShieldedDescription": "Address starts with {unifiedPrefix} (or {legacyPrefix} for legacy). Only you can see your account balance and transaction history.",
+  "@onboardingAddressShieldedDescription": {
+    "description": "Explains shielded addresses on the desktop address types step. {unifiedPrefix} and {legacyPrefix} are the literal address prefixes and are shown in bold; keep them unchanged.",
+    "placeholders": {
+      "unifiedPrefix": {
+        "type": "String"
+      },
+      "legacyPrefix": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingAddressShieldedLabel": "Shielded address",
+  "@onboardingAddressShieldedLabel": {
+    "description": "Caption of the shielded example address card on the address types step."
+  },
+  "onboardingAddressShieldedTitleMobile": "Shielded Address",
+  "@onboardingAddressShieldedTitleMobile": {
+    "description": "Heading of the shielded address card on the mobile address types step."
+  },
+  "onboardingAddressTransparentDescription": "Address starts with t, similar to Bitcoin, your address' balance and transaction history are publicly visible.",
+  "@onboardingAddressTransparentDescription": {
+    "description": "Explains transparent addresses on the address types step, desktop and mobile."
+  },
+  "onboardingAddressTransparentLabel": "Transparent address",
+  "@onboardingAddressTransparentLabel": {
+    "description": "Caption of the transparent example address card on the address types step."
+  },
+  "onboardingAddressTransparentTitleMobile": "Transparent Address",
+  "@onboardingAddressTransparentTitleMobile": {
+    "description": "Heading of the transparent address card on the mobile address types step."
+  },
+  "onboardingAddressTypesSubtitle": "Zcash has two address types.\nOne for privacy, one for transparency.",
+  "@onboardingAddressTypesSubtitle": {
+    "description": "Subtitle on the desktop address types and things-to-know steps; two lines on purpose."
+  },
+  "onboardingAddressTypesSubtitleMobile": "Zcash has two addresses types.\nOne for Privacy, one for Transparency.",
+  "@onboardingAddressTypesSubtitleMobile": {
+    "description": "Subtitle of the mobile address types step; two lines on purpose."
+  },
+  "onboardingAddressTypesTitle": "Zcash Address Types",
+  "@onboardingAddressTypesTitle": {
+    "description": "Heading of the desktop step that explains Zcash address types."
+  },
+  "onboardingAddressTypesTitleMobile": "Zcash Address Types",
+  "@onboardingAddressTypesTitleMobile": {
+    "description": "Heading of the mobile step that explains Zcash address types."
+  },
+  "onboardingBiometricEnableFailed": "Couldn't enable {method}. You can try again in settings.",
+  "@onboardingBiometricEnableFailed": {
+    "description": "Toast when enabling biometric unlock failed; {method} is the biometric name such as Face ID.",
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingBiometricSetUpFirst": "Set up {method} in your device settings first.",
+  "@onboardingBiometricSetUpFirst": {
+    "description": "Toast when the user taps enable biometric unlock but the device has none set up; {method} is the biometric name such as Face ID.",
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingBiometricSubtitle": "This is an easy and fast way to sign in.\nYou can switch back to passcode anytime.",
+  "@onboardingBiometricSubtitle": {
+    "description": "Subtitle of the biometric opt-in step; two lines on purpose."
+  },
+  "onboardingBiometricTitle": "Unlock your wallet\nwith {method}",
+  "@onboardingBiometricTitle": {
+    "description": "Heading of the biometric opt-in step; {method} is the biometric name such as Face ID. The line break matches the design.",
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingBip39PassphraseClear": "Clear BIP39 passphrase",
+  "@onboardingBip39PassphraseClear": {
+    "description": "[security] Accessibility label of the clear button inside the BIP39 passphrase field."
+  },
+  "onboardingBip39PassphraseExplanation": "Add an optional passphrase (“25th word”) to create/import a separate wallet from the same recovery phrase.",
+  "@onboardingBip39PassphraseExplanation": {
+    "description": "[security] Explains the BIP39 passphrase (25th word) in the dialog; a different passphrase yields a separate wallet from the same secret passphrase."
+  },
+  "onboardingBip39PassphraseFieldLabel": "BIP39 passphrase",
+  "@onboardingBip39PassphraseFieldLabel": {
+    "description": "[security] Accessibility label of the text field in the BIP39 passphrase dialog."
+  },
+  "onboardingBip39PassphraseHint": "1–100 characters",
+  "@onboardingBip39PassphraseHint": {
+    "description": "Placeholder of the BIP39 passphrase field describing the allowed length."
+  },
+  "onboardingBip39PassphrasePreview": "BIP39 Passphrase: {passphrase}",
+  "@onboardingBip39PassphrasePreview": {
+    "description": "[security] Bar under the secret passphrase showing the BIP39 passphrase the user entered; {passphrase} is the secret value.",
+    "placeholders": {
+      "passphrase": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingBip39PassphraseTitle": "BIP39 Passphrase",
+  "@onboardingBip39PassphraseTitle": {
+    "description": "[security] Title of the BIP39 passphrase dialog when editing an existing passphrase."
+  },
+  "onboardingBip39PassphraseTitleOptional": "BIP39 Passphrase (Optional)",
+  "@onboardingBip39PassphraseTitleOptional": {
+    "description": "[security] Title of the BIP39 passphrase dialog when adding a passphrase."
+  },
+  "onboardingBirthdayCantRemember": "I can’t remember",
+  "@onboardingBirthdayCantRemember": {
+    "description": "Ghost button on the desktop wallet birthday step for users who do not know when the wallet was created."
+  },
+  "onboardingBirthdayDateHint": "mm/dd/yyyy",
+  "@onboardingBirthdayDateHint": {
+    "description": "Placeholder of the birthday date field; shows the expected month/day/year order."
+  },
+  "onboardingBirthdayDontRemember": "I don’t remember",
+  "@onboardingBirthdayDontRemember": {
+    "description": "Ghost button on the mobile birthday step for users who do not know when the wallet was created."
+  },
+  "onboardingBirthdayEnterBlockHeight": "Enter the block height",
+  "@onboardingBirthdayEnterBlockHeight": {
+    "description": "Tab label on the wallet birthday step for entering a block height instead of a date."
+  },
+  "onboardingBirthdayEnterDate": "Enter the date",
+  "@onboardingBirthdayEnterDate": {
+    "description": "Tab label on the wallet birthday step for entering a calendar date."
+  },
+  "onboardingBirthdayEnterMonth": "Enter the month",
+  "@onboardingBirthdayEnterMonth": {
+    "description": "Tab label on the iOS birthday step for entering a month."
+  },
+  "onboardingBirthdayEstimateFailed": "Could not estimate the wallet birthday height.",
+  "@onboardingBirthdayEstimateFailed": {
+    "description": "Inline error on the desktop birthday step when the chosen date could not be converted into a block height."
+  },
+  "onboardingBirthdayHeightAtLeast": "At least {height}.",
+  "@onboardingBirthdayHeightAtLeast": {
+    "description": "Hint under the block height field before the chain tip is known; {height} is the lowest allowed block height.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingBirthdayHeightBetween": "Between {min} and {max}.",
+  "@onboardingBirthdayHeightBetween": {
+    "description": "Hint under the block height field; {min} and {max} are the lowest and highest allowed block heights.",
+    "placeholders": {
+      "min": {
+        "type": "String"
+      },
+      "max": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingBirthdayInvalidHeight": "Doesn't seem like a legit block height",
+  "@onboardingBirthdayInvalidHeight": {
+    "description": "Inline error under the block height field when the number is outside the valid range."
+  },
+  "onboardingBirthdayMetadataFailed": "Could not load wallet birthday metadata.",
+  "@onboardingBirthdayMetadataFailed": {
+    "description": "Inline error on the desktop birthday step when the chain data needed to estimate dates could not be loaded."
+  },
+  "onboardingBirthdayMobileEstimateFailed": "Couldn't estimate a height for that date. Enter a block height instead.",
+  "@onboardingBirthdayMobileEstimateFailed": {
+    "description": "Inline error on the mobile birthday step when the chosen date could not be converted to a block height."
+  },
+  "onboardingBirthdayMonthHint": "mm/yyyy",
+  "@onboardingBirthdayMonthHint": {
+    "description": "Placeholder of the iOS birthday field; shows the expected month/year order."
+  },
+  "onboardingBirthdayPickDate": "Pick a date",
+  "@onboardingBirthdayPickDate": {
+    "description": "Accessibility label of the Android birthday field that opens the date picker."
+  },
+  "onboardingBirthdayPickMonth": "Pick a month",
+  "@onboardingBirthdayPickMonth": {
+    "description": "Accessibility label of the iOS birthday field that opens the month picker."
+  },
+  "onboardingBirthdaySelectDate": "Select date",
+  "@onboardingBirthdaySelectDate": {
+    "description": "Primary button on Android that opens the date picker of the birthday step."
+  },
+  "onboardingBirthdaySelectMonth": "Select month",
+  "@onboardingBirthdaySelectMonth": {
+    "description": "Primary button on iOS that opens the month picker of the birthday step."
+  },
+  "onboardingBirthdayStatusEstimating": "Estimating height...",
+  "@onboardingBirthdayStatusEstimating": {
+    "description": "Status line on the mobile birthday step while the block height for the chosen date is being estimated."
+  },
+  "onboardingBirthdayStatusImporting": "Importing wallet...",
+  "@onboardingBirthdayStatusImporting": {
+    "description": "Status line on the mobile birthday step while the wallet is being imported."
+  },
+  "onboardingBirthdayStatusPausingSync": "Pausing sync...",
+  "@onboardingBirthdayStatusPausingSync": {
+    "description": "Status line on the mobile birthday step while the running sync is paused before importing."
+  },
+  "onboardingBirthdaySubtitleMobile": "An estimate is enough — sync starts\nfrom there.",
+  "@onboardingBirthdaySubtitleMobile": {
+    "description": "Subtitle of the mobile birthday step; two lines on purpose."
+  },
+  "onboardingBirthdayTitle": "Around when did you create your wallet?",
+  "@onboardingBirthdayTitle": {
+    "description": "Heading of the wallet birthday step on desktop and mobile; asks roughly when the imported wallet was created."
+  },
+  "onboardingBlockHeight": "Block height",
+  "@onboardingBlockHeight": {
+    "description": "Placeholder of the field where the user types a block height."
+  },
+  "onboardingCalendarMonthApril": "April",
+  "@onboardingCalendarMonthApril": {
+    "description": "Full month name (April) shown in the birthday calendar title, followed by the year."
+  },
+  "onboardingCalendarMonthAugust": "August",
+  "@onboardingCalendarMonthAugust": {
+    "description": "Full month name (August) shown in the birthday calendar title, followed by the year."
+  },
+  "onboardingCalendarMonthDecember": "December",
+  "@onboardingCalendarMonthDecember": {
+    "description": "Full month name (December) shown in the birthday calendar title, followed by the year."
+  },
+  "onboardingCalendarMonthFebruary": "February",
+  "@onboardingCalendarMonthFebruary": {
+    "description": "Full month name (February) shown in the birthday calendar title, followed by the year."
+  },
+  "onboardingCalendarMonthJanuary": "January",
+  "@onboardingCalendarMonthJanuary": {
+    "description": "Full month name (January) shown in the birthday calendar title, followed by the year."
+  },
+  "onboardingCalendarMonthJuly": "July",
+  "@onboardingCalendarMonthJuly": {
+    "description": "Full month name (July) shown in the birthday calendar title, followed by the year."
+  },
+  "onboardingCalendarMonthJune": "June",
+  "@onboardingCalendarMonthJune": {
+    "description": "Full month name (June) shown in the birthday calendar title, followed by the year."
+  },
+  "onboardingCalendarMonthMarch": "March",
+  "@onboardingCalendarMonthMarch": {
+    "description": "Full month name (March) shown in the birthday calendar title, followed by the year."
+  },
+  "onboardingCalendarMonthMay": "May",
+  "@onboardingCalendarMonthMay": {
+    "description": "Full month name (May) shown in the birthday calendar title, followed by the year."
+  },
+  "onboardingCalendarMonthNovember": "November",
+  "@onboardingCalendarMonthNovember": {
+    "description": "Full month name (November) shown in the birthday calendar title, followed by the year."
+  },
+  "onboardingCalendarMonthOctober": "October",
+  "@onboardingCalendarMonthOctober": {
+    "description": "Full month name (October) shown in the birthday calendar title, followed by the year."
+  },
+  "onboardingCalendarMonthSeptember": "September",
+  "@onboardingCalendarMonthSeptember": {
+    "description": "Full month name (September) shown in the birthday calendar title, followed by the year."
+  },
+  "onboardingCalendarMonthShortApr": "Apr",
+  "@onboardingCalendarMonthShortApr": {
+    "description": "Abbreviated month name (April) on the birthday calendar month grid. Must fit a small cell."
+  },
+  "onboardingCalendarMonthShortAug": "Aug",
+  "@onboardingCalendarMonthShortAug": {
+    "description": "Abbreviated month name (August) on the birthday calendar month grid. Must fit a small cell."
+  },
+  "onboardingCalendarMonthShortDec": "Dec",
+  "@onboardingCalendarMonthShortDec": {
+    "description": "Abbreviated month name (December) on the birthday calendar month grid. Must fit a small cell."
+  },
+  "onboardingCalendarMonthShortFeb": "Feb",
+  "@onboardingCalendarMonthShortFeb": {
+    "description": "Abbreviated month name (February) on the birthday calendar month grid. Must fit a small cell."
+  },
+  "onboardingCalendarMonthShortJan": "Jan",
+  "@onboardingCalendarMonthShortJan": {
+    "description": "Abbreviated month name (January) on the birthday calendar month grid. Must fit a small cell."
+  },
+  "onboardingCalendarMonthShortJul": "Jul",
+  "@onboardingCalendarMonthShortJul": {
+    "description": "Abbreviated month name (July) on the birthday calendar month grid. Must fit a small cell."
+  },
+  "onboardingCalendarMonthShortJun": "Jun",
+  "@onboardingCalendarMonthShortJun": {
+    "description": "Abbreviated month name (June) on the birthday calendar month grid. Must fit a small cell."
+  },
+  "onboardingCalendarMonthShortMar": "Mar",
+  "@onboardingCalendarMonthShortMar": {
+    "description": "Abbreviated month name (March) on the birthday calendar month grid. Must fit a small cell."
+  },
+  "onboardingCalendarMonthShortMay": "May",
+  "@onboardingCalendarMonthShortMay": {
+    "description": "Abbreviated month name (May) on the birthday calendar month grid. Must fit a small cell."
+  },
+  "onboardingCalendarMonthShortNov": "Nov",
+  "@onboardingCalendarMonthShortNov": {
+    "description": "Abbreviated month name (November) on the birthday calendar month grid. Must fit a small cell."
+  },
+  "onboardingCalendarMonthShortOct": "Oct",
+  "@onboardingCalendarMonthShortOct": {
+    "description": "Abbreviated month name (October) on the birthday calendar month grid. Must fit a small cell."
+  },
+  "onboardingCalendarMonthShortSep": "Sep",
+  "@onboardingCalendarMonthShortSep": {
+    "description": "Abbreviated month name (September) on the birthday calendar month grid. Must fit a small cell."
+  },
+  "onboardingCalendarWeekdayFri": "Fri",
+  "@onboardingCalendarWeekdayFri": {
+    "description": "Column header of the birthday calendar: abbreviated weekday (Fri). Keep it very short, it must fit a 40 px cell."
+  },
+  "onboardingCalendarWeekdayMon": "Mon",
+  "@onboardingCalendarWeekdayMon": {
+    "description": "Column header of the birthday calendar: abbreviated weekday (Mon). Keep it very short, it must fit a 40 px cell."
+  },
+  "onboardingCalendarWeekdaySat": "Sat",
+  "@onboardingCalendarWeekdaySat": {
+    "description": "Column header of the birthday calendar: abbreviated weekday (Sat). Keep it very short, it must fit a 40 px cell."
+  },
+  "onboardingCalendarWeekdaySun": "Sun",
+  "@onboardingCalendarWeekdaySun": {
+    "description": "Column header of the birthday calendar: abbreviated weekday (Sun). Keep it very short, it must fit a 40 px cell."
+  },
+  "onboardingCalendarWeekdayThu": "Thu",
+  "@onboardingCalendarWeekdayThu": {
+    "description": "Column header of the birthday calendar: abbreviated weekday (Thu). Keep it very short, it must fit a 40 px cell."
+  },
+  "onboardingCalendarWeekdayTue": "Tue",
+  "@onboardingCalendarWeekdayTue": {
+    "description": "Column header of the birthday calendar: abbreviated weekday (Tue). Keep it very short, it must fit a 40 px cell."
+  },
+  "onboardingCalendarWeekdayWed": "Wed",
+  "@onboardingCalendarWeekdayWed": {
+    "description": "Column header of the birthday calendar: abbreviated weekday (Wed). Keep it very short, it must fit a 40 px cell."
+  },
+  "onboardingChangeProfilePicture": "Change profile picture",
+  "@onboardingChangeProfilePicture": {
+    "description": "Accessibility label of the button that opens the profile picture picker."
+  },
+  "onboardingCheckingAccounts": "Checking accounts...",
+  "@onboardingCheckingAccounts": {
+    "description": "Disabled primary button label while the import looks for additional accounts of the same secret passphrase."
+  },
+  "onboardingClear": "Clear",
+  "@onboardingClear": {
+    "description": "Button that clears the secret passphrase words entered so far."
+  },
+  "onboardingConfirmPassword": "Confirm password",
+  "@onboardingConfirmPassword": {
+    "description": "[security] Label and placeholder of the field where the user retypes the new wallet password."
+  },
+  "onboardingConnectHardwareSubtitleDesktop": "Select your hardware wallet.",
+  "@onboardingConnectHardwareSubtitleDesktop": {
+    "description": "Subtitle of the desktop hardware wallet picker."
+  },
+  "onboardingConnectHardwareSubtitleMobile": "Select your hardware device.",
+  "@onboardingConnectHardwareSubtitleMobile": {
+    "description": "Subtitle of the mobile hardware wallet picker."
+  },
+  "onboardingConnectHardwareTitle": "Connect\nHardware Wallet",
+  "@onboardingConnectHardwareTitle": {
+    "description": "Heading of the hardware wallet picker on desktop and mobile; the line break is intentional."
+  },
+  "onboardingConnectHardwareWallet": "Connect hardware wallet",
+  "@onboardingConnectHardwareWallet": {
+    "description": "Option on the import method picker for importing an account from a hardware wallet."
+  },
+  "onboardingConnectKeystone": "Connect Keystone",
+  "@onboardingConnectKeystone": {
+    "description": "Title of the Keystone option on the hardware wallet picker."
+  },
+  "onboardingConnectLedger": "Connect Ledger",
+  "@onboardingConnectLedger": {
+    "description": "Title of the Ledger option on the hardware wallet picker, and back label that returns to the Ledger connection step."
+  },
+  "onboardingContinue": "Continue",
+  "@onboardingContinue": {
+    "description": "Primary button that moves to the next step of an onboarding flow."
+  },
+  "onboardingContinueAnywayDesktop": "Continue Anyway",
+  "@onboardingContinueAnywayDesktop": {
+    "description": "Confirm button of the desktop unknown-birthday dialog."
+  },
+  "onboardingContinueAnywayMobile": "Continue anyway",
+  "@onboardingContinueAnywayMobile": {
+    "description": "Confirm button of the mobile unknown-birthday sheet."
+  },
+  "onboardingCopy": "Copy",
+  "@onboardingCopy": {
+    "description": "Button that copies the text shown next to it to the clipboard."
+  },
+  "onboardingCopySecretPassphrase": "Copy secret passphrase",
+  "@onboardingCopySecretPassphrase": {
+    "description": "[security] Accessibility label of the button on the secret passphrase card that copies the phrase to the clipboard."
+  },
+  "onboardingCreatingWallet": "Creating wallet...",
+  "@onboardingCreatingWallet": {
+    "description": "Disabled primary button label while the new wallet is being created."
+  },
+  "onboardingCustomiseAccount": "Customise Account",
+  "@onboardingCustomiseAccount": {
+    "description": "Heading of the step where the user names the account and picks a profile picture; also the back label pointing to it."
+  },
+  "onboardingCustomiseAccountSubtitle": "Add personality to your account by setting an account name and choosing a profile picture.",
+  "@onboardingCustomiseAccountSubtitle": {
+    "description": "Subtitle under the customise-account heading."
+  },
+  "onboardingDiscoverySubtitle": "Choose the additional accounts to import.",
+  "@onboardingDiscoverySubtitle": {
+    "description": "Instruction under the additional accounts title; the user ticks the accounts to import."
+  },
+  "onboardingDiscoveryTitle": "Additional accounts found",
+  "@onboardingDiscoveryTitle": {
+    "description": "Title of the dialog shown when the secret passphrase has more accounts with activity than the first one."
+  },
+  "onboardingEdit": "Edit",
+  "@onboardingEdit": {
+    "description": "Button that edits the value shown next to it."
+  },
+  "onboardingEditBip39Passphrase": "Edit BIP39 passphrase",
+  "@onboardingEditBip39Passphrase": {
+    "description": "[security] Accessibility label of the bar that reopens the BIP39 passphrase dialog for editing."
+  },
+  "onboardingEnterPassword": "Enter password",
+  "@onboardingEnterPassword": {
+    "description": "Placeholder inside the wallet password field on the unlock screen."
+  },
+  "onboardingEstimating": "Estimating...",
+  "@onboardingEstimating": {
+    "description": "Disabled primary button label while the block height for the chosen date is being estimated."
+  },
+  "onboardingFinishSetup": "Finish setup",
+  "@onboardingFinishSetup": {
+    "description": "Primary button on the last customise-account step that creates the wallet and finishes onboarding."
+  },
+  "onboardingForgotPasscodeAreYouSure": "Are you sure?",
+  "@onboardingForgotPasscodeAreYouSure": {
+    "description": "[security] Title of the final confirmation sheet before the app is reset."
+  },
+  "onboardingForgotPasscodeBody": "If you can't remember your passcode, the only way to recover your account is to completely reset the Vizor app, which means deleting all accounts and requiring you to import accounts again. Unshared gift card links will be permanently lost.",
+  "@onboardingForgotPasscodeBody": {
+    "description": "[security] Explains that a forgotten passcode can only be fixed by wiping the app, which deletes all accounts and unshared gift card links."
+  },
+  "onboardingForgotPasscodeCantBeUndone": "This can't be undone.\n",
+  "@onboardingForgotPasscodeCantBeUndone": {
+    "description": "[security] First line of the final reset confirmation, shown in red; the trailing line break separates it from the next sentence."
+  },
+  "onboardingForgotPasscodeContinueToReset": "Continue to reset Vizor",
+  "@onboardingForgotPasscodeContinueToReset": {
+    "description": "[security] Destructive-flow button in the forgot-passcode sheet that goes on to the final reset confirmation."
+  },
+  "onboardingForgotPasscodeProceed": "Proceed on your responsibility.",
+  "@onboardingForgotPasscodeProceed": {
+    "description": "[security] Second line of the final reset confirmation; the user accepts responsibility for the loss of data."
+  },
+  "onboardingForgotPasscodeTitle": "Forgot Passcode?",
+  "@onboardingForgotPasscodeTitle": {
+    "description": "[security] Title of the sheet shown from the unlock screen when the user cannot remember the passcode."
+  },
+  "onboardingForgotPasscodeUnbackedWarning": "If you haven’t backed up an account’s secret passphrase, you can’t recover its funds after resetting Vizor.",
+  "@onboardingForgotPasscodeUnbackedWarning": {
+    "description": "[security] Warning in the forgot-passcode sheet: without a backed-up secret passphrase, the funds are lost after a reset."
+  },
+  "onboardingForgotPassword": "Forgot password?",
+  "@onboardingForgotPassword": {
+    "description": "Button on the desktop unlock screen that opens the lost-password flow."
+  },
+  "onboardingGiftEducationClosing": "Your wallet is ready. Learn how Zcash protects your privacy and which address to use.",
+  "@onboardingGiftEducationClosing": {
+    "description": "Closing line of the Zcash intro shown after redeeming a gift card, desktop and mobile."
+  },
+  "onboardingGiftEducationSaveFailed": "Unable to save your progress. Try again.",
+  "@onboardingGiftEducationSaveFailed": {
+    "description": "Toast on the post-gift education steps when marking them as completed failed."
+  },
+  "onboardingGoBackDesktop": "Go Back",
+  "@onboardingGoBackDesktop": {
+    "description": "Cancel button of the desktop unknown-birthday dialog that returns to the birthday step."
+  },
+  "onboardingGoBackMobile": "Go back",
+  "@onboardingGoBackMobile": {
+    "description": "Cancel button of the mobile unknown-birthday sheet that returns to the birthday step."
+  },
+  "onboardingHardwareKeystoneOnly": "Keystone wallet",
+  "@onboardingHardwareKeystoneOnly": {
+    "description": "Description of the hardware wallet option when only Keystone is available."
+  },
+  "onboardingHardwareLedgerOrKeystone": "Ledger or Keystone wallet",
+  "@onboardingHardwareLedgerOrKeystone": {
+    "description": "Description of the hardware wallet option when both Ledger and Keystone are available."
+  },
+  "onboardingIKnowHowToUseZcash": "I know how to use Zcash",
+  "@onboardingIKnowHowToUseZcash": {
+    "description": "Ghost button on the Zcash intro that skips the education steps."
+  },
+  "onboardingImport": "Import",
+  "@onboardingImport": {
+    "description": "Button that confirms importing the selected accounts."
+  },
+  "onboardingImportAcceptWordCounts": "Accept 12, 15, 18, 21, or 24 words.",
+  "@onboardingImportAcceptWordCounts": {
+    "description": "[security] Subtitle on the desktop import step listing the allowed secret passphrase lengths."
+  },
+  "onboardingImportCheckFailedError": "Couldn't check secret passphrase",
+  "@onboardingImportCheckFailedError": {
+    "description": "[security] Toast on the mobile import step when the pasted secret passphrase could not be checked."
+  },
+  "onboardingImportClipboardEmpty": "Clipboard is empty",
+  "@onboardingImportClipboardEmpty": {
+    "description": "Toast on the mobile import step when the clipboard has no text."
+  },
+  "onboardingImportClipboardReadError": "Can't read the clipboard",
+  "@onboardingImportClipboardReadError": {
+    "description": "Toast on the mobile import step when the clipboard could not be read."
+  },
+  "onboardingImportEnterManuallySemantics": "Enter secret passphrase manually",
+  "@onboardingImportEnterManuallySemantics": {
+    "description": "[security] Accessibility label of the card that opens the manual word-by-word entry."
+  },
+  "onboardingImportFromKeystone": "Import from Keystone wallet",
+  "@onboardingImportFromKeystone": {
+    "description": "Description of the Keystone option on the hardware wallet picker."
+  },
+  "onboardingImportFromLedger": "Import from Ledger wallet",
+  "@onboardingImportFromLedger": {
+    "description": "Description of the Ledger option on the hardware wallet picker."
+  },
+  "onboardingImportInvalidPhraseError": "Invalid secret passphrase",
+  "@onboardingImportInvalidPhraseError": {
+    "description": "[security] Toast on the mobile import step when the pasted words are not a valid secret passphrase."
+  },
+  "onboardingImportInvalidSecretPassphrase": "Enter a valid secret passphrase with 12, 15, 18, 21, or 24 words.",
+  "@onboardingImportInvalidSecretPassphrase": {
+    "description": "[security] Inline error on the desktop import step when the typed secret passphrase is not valid."
+  },
+  "onboardingImportManualCardSubtitle": "Word by word.",
+  "@onboardingImportManualCardSubtitle": {
+    "description": "Subtitle on the manual entry card."
+  },
+  "onboardingImportManualCardTitle": "Manually Enter\nSecret Passphrase",
+  "@onboardingImportManualCardTitle": {
+    "description": "[security] Title on the card that opens manual word-by-word entry; the line break is intentional."
+  },
+  "onboardingImportMethodSubtitle": "Select the method you want.",
+  "@onboardingImportMethodSubtitle": {
+    "description": "Subtitle of the import method picker."
+  },
+  "onboardingImportMethodTitle": "Import Account\nto Vizor",
+  "@onboardingImportMethodTitle": {
+    "description": "Heading of the screen where the user picks how to import an account; the line break is intentional."
+  },
+  "onboardingImportNoPhraseError": "No secret passphrase found",
+  "@onboardingImportNoPhraseError": {
+    "description": "[security] Toast on the mobile import step when the pasted text contains no secret passphrase."
+  },
+  "onboardingImportPasteFromClipboard": "Or paste from clipboard",
+  "@onboardingImportPasteFromClipboard": {
+    "description": "Button on the mobile import step that pastes a secret passphrase from the clipboard."
+  },
+  "onboardingImportPasteHelper": "Accept 12, 15, 18, 21, or 24-word\nsecret passphrases",
+  "@onboardingImportPasteHelper": {
+    "description": "[security] Subtitle of the mobile import step listing the allowed secret passphrase lengths; two lines on purpose."
+  },
+  "onboardingImportReadingClipboard": "Reading clipboard data...",
+  "@onboardingImportReadingClipboard": {
+    "description": "Label of the paste button while the clipboard is being read."
+  },
+  "onboardingImportSecretPassphrase": "Import secret passphrase",
+  "@onboardingImportSecretPassphrase": {
+    "description": "[security] Option on the import method picker for importing a wallet from its secret passphrase."
+  },
+  "onboardingImportSecretPassphraseDescriptionDesktop": "Vizor or any other Zcash wallet",
+  "@onboardingImportSecretPassphraseDescriptionDesktop": {
+    "description": "Description of the secret passphrase option on the desktop import method picker."
+  },
+  "onboardingImportSecretPassphraseDescriptionMobile": "Vizor, ZODL, or any other wallet",
+  "@onboardingImportSecretPassphraseDescriptionMobile": {
+    "description": "Description of the secret passphrase option on the mobile import method picker."
+  },
+  "onboardingImportWalletTitle": "Import a Wallet",
+  "@onboardingImportWalletTitle": {
+    "description": "Heading of the desktop step where the user enters their secret passphrase."
+  },
+  "onboardingImportWalletTitleMobile": "Import Wallet",
+  "@onboardingImportWalletTitleMobile": {
+    "description": "Heading of the mobile step where the user imports a secret passphrase."
+  },
+  "onboardingImporting": "Importing...",
+  "@onboardingImporting": {
+    "description": "Disabled primary button label while the wallet is being imported."
+  },
+  "onboardingIntroCard": "Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount — verified by cryptography, not trust.",
+  "@onboardingIntroCard": {
+    "description": "Explains what shielded transactions hide, in the Zcash intro card on desktop and mobile."
+  },
+  "onboardingIntroClosing": "You're a few steps away from your first private wallet.\nLet's get you set up.",
+  "@onboardingIntroClosing": {
+    "description": "Closing line of the desktop Zcash intro step above the buttons; two lines on purpose."
+  },
+  "onboardingIntroClosingMobile": "You're a few steps away from your first private wallet. Let's get you set up.",
+  "@onboardingIntroClosingMobile": {
+    "description": "Closing paragraph of the mobile Zcash intro step above the buttons."
+  },
+  "onboardingIntroSubtitle": "Zcash (ZEC) built around financial privacy & self-custody.",
+  "@onboardingIntroSubtitle": {
+    "description": "Subtitle of the Zcash intro step; also used on the import birthday step."
+  },
+  "onboardingIntroSubtitleMobile": "Zcash (ZEC) built around financial\nprivacy & self-custody.",
+  "@onboardingIntroSubtitleMobile": {
+    "description": "Subtitle of the mobile Zcash intro step; the line break matches the design."
+  },
+  "onboardingIntroTitle": "The Shielded World",
+  "@onboardingIntroTitle": {
+    "description": "Heading of the Zcash intro step."
+  },
+  "onboardingLinkVizorDesktop": "Link Vizor Desktop",
+  "@onboardingLinkVizorDesktop": {
+    "description": "Option on the mobile import method picker for linking accounts from the Vizor desktop app."
+  },
+  "onboardingLinkVizorDesktopDescription": "Scan & connect to Vizor Desktop",
+  "@onboardingLinkVizorDesktopDescription": {
+    "description": "Description of the option that links accounts from the Vizor desktop app by scanning a QR code."
+  },
+  "onboardingLoading": "Loading",
+  "@onboardingLoading": {
+    "description": "Placeholder shown instead of the transparent balance of a found account while it is being loaded."
+  },
+  "onboardingLostPasswordBody": "If you've lost your password, the only way to recover\nyour account is to {resetAction}.\nThis deletes all accounts and unshared gift card links.\nYou will need to {importAction}.",
+  "@onboardingLostPasswordBody": {
+    "description": "[security] Explanation on the lost-password screen. {resetAction} and {importAction} are bold phrases supplied by onboardingLostPasswordResetAction and onboardingLostPasswordImportAction; keep them in the sentence. The line breaks match the design.",
+    "placeholders": {
+      "resetAction": {
+        "type": "String"
+      },
+      "importAction": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingLostPasswordImportAction": "import accounts again",
+  "@onboardingLostPasswordImportAction": {
+    "description": "Bold phrase inside onboardingLostPasswordBody; the user has to import their accounts again after the reset."
+  },
+  "onboardingLostPasswordResetAction": "completely reset Vizor app",
+  "@onboardingLostPasswordResetAction": {
+    "description": "[security] Bold phrase inside onboardingLostPasswordBody; the action of wiping the whole app. Written so that it fits after 'the only way ... is to'."
+  },
+  "onboardingLostPasswordResetCountdown": "Reset after {seconds}s...",
+  "@onboardingLostPasswordResetCountdown": {
+    "description": "Disabled label of the destructive reset button while its safety countdown runs; {seconds} is the number of seconds left.",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "onboardingLostPasswordTitle": "Lost password?",
+  "@onboardingLostPasswordTitle": {
+    "description": "Heading of the lost-password screen."
+  },
+  "onboardingManualInvalidWord": "Invalid secret passphrase word.",
+  "@onboardingManualInvalidWord": {
+    "description": "[security] Inline error under the word field when the typed word is not in the secret passphrase word list."
+  },
+  "onboardingManualNextWord": "Next word",
+  "@onboardingManualNextWord": {
+    "description": "Button on the manual import step that accepts the typed word and moves to the next one."
+  },
+  "onboardingManualReviewFinish": "Review & finish",
+  "@onboardingManualReviewFinish": {
+    "description": "Button on the manual import step shown after the last word that moves to the review step."
+  },
+  "onboardingManualStoppedAt": "Stopped at '{word}' — it isn't in the passphrase word list.",
+  "@onboardingManualStoppedAt": {
+    "description": "[security] Notice after pasting several words: the fill stopped at {word} because it is not a valid secret passphrase word. {word} is the first invalid word.",
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingManualSubtitle": "Accept 12, 15, 18, 21 or 24 words",
+  "@onboardingManualSubtitle": {
+    "description": "[security] Subtitle of the mobile manual import step listing the allowed secret passphrase lengths."
+  },
+  "onboardingManualTitle": "Enter your Secret Passphrase",
+  "@onboardingManualTitle": {
+    "description": "[security] Heading of the mobile manual import step."
+  },
+  "onboardingManualUndoLastWord": "Undo last word",
+  "@onboardingManualUndoLastWord": {
+    "description": "Button on the manual import step that removes the most recently accepted word."
+  },
+  "onboardingNetworkCheckingEndpoint": "Checking endpoint…",
+  "@onboardingNetworkCheckingEndpoint": {
+    "description": "Disabled button label while the custom endpoint is being verified."
+  },
+  "onboardingNetworkCurrentEndpoint": "Current: {endpoint}",
+  "@onboardingNetworkCurrentEndpoint": {
+    "description": "Line under the custom endpoint heading showing the host and port currently in use; {endpoint} is that host:port.",
+    "placeholders": {
+      "endpoint": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingNetworkCustomEndpoint": "Custom endpoint",
+  "@onboardingNetworkCustomEndpoint": {
+    "description": "Section heading on the network settings sheet for the custom lightwalletd server address."
+  },
+  "onboardingNetworkEndpointHelper": "Use a lightwalletd server for this wallet’s network.",
+  "@onboardingNetworkEndpointHelper": {
+    "description": "Helper text under the custom endpoint field; the server must be a lightwalletd server for the wallet's Zcash network."
+  },
+  "onboardingNetworkEndpointUpdated": "Endpoint updated",
+  "@onboardingNetworkEndpointUpdated": {
+    "description": "Toast after the custom lightwalletd endpoint was saved on the mobile network settings sheet."
+  },
+  "onboardingNetworkSaveFailed": "Couldn't save the endpoint. Try again.",
+  "@onboardingNetworkSaveFailed": {
+    "description": "Error on the network settings sheet when saving the custom endpoint failed."
+  },
+  "onboardingNetworkSettings": "Network settings",
+  "@onboardingNetworkSettings": {
+    "description": "Tooltip, accessibility label and sheet title for the button that opens the lightwalletd endpoint settings on the welcome screen."
+  },
+  "onboardingNetworkUpdateEndpoint": "Update endpoint",
+  "@onboardingNetworkUpdateEndpoint": {
+    "description": "Button on the network settings sheet that saves the custom endpoint."
+  },
+  "onboardingNetworkVerifyFailed": "Couldn't verify that endpoint. Check the address and try again.",
+  "@onboardingNetworkVerifyFailed": {
+    "description": "Error on the network settings sheet when the custom endpoint did not respond as a valid lightwalletd server."
+  },
+  "onboardingNext": "Next",
+  "@onboardingNext": {
+    "description": "Primary button that moves to the next step."
+  },
+  "onboardingNotNow": "Not now",
+  "@onboardingNotNow": {
+    "description": "Ghost button that skips an optional step for now."
+  },
+  "onboardingPasscodeConfirmTitle": "Confirm Passcode",
+  "@onboardingPasscodeConfirmTitle": {
+    "description": "[security] Heading of the step where the user re-enters the new passcode."
+  },
+  "onboardingPasscodeCreateTitle": "Create Passcode",
+  "@onboardingPasscodeCreateTitle": {
+    "description": "[security] Heading of the step where the user chooses the 6-digit passcode of the wallet on mobile."
+  },
+  "onboardingPasscodeDigitSemantics": "Digit {digit}",
+  "@onboardingPasscodeDigitSemantics": {
+    "description": "Accessibility label of a passcode keypad key; {digit} is the number on the key.",
+    "placeholders": {
+      "digit": {
+        "type": "int"
+      }
+    }
+  },
+  "onboardingPasscodeIncorrect": "Incorrect Passcode",
+  "@onboardingPasscodeIncorrect": {
+    "description": "[security] Error under the passcode dots on the mobile unlock screen when the entered passcode is wrong."
+  },
+  "onboardingPasscodeReEnter": "Re-enter your passcode.",
+  "@onboardingPasscodeReEnter": {
+    "description": "[security] Subtitle of the confirm-passcode step."
+  },
+  "onboardingPasscodeSettingUp": "Setting up your wallet...",
+  "@onboardingPasscodeSettingUp": {
+    "description": "Subtitle of the create-passcode step while the wallet is being set up."
+  },
+  "onboardingPasscodeSixDigits": "6 digits length",
+  "@onboardingPasscodeSixDigits": {
+    "description": "[security] Subtitle of the create-passcode step stating that the passcode has 6 digits."
+  },
+  "onboardingPasscodesDidNotMatch": "Passcodes didn't match. Try again.",
+  "@onboardingPasscodesDidNotMatch": {
+    "description": "[security] Error under the passcode dots when the re-entered passcode differs from the first one."
+  },
+  "onboardingPassword": "Password",
+  "@onboardingPassword": {
+    "description": "Label of a wallet password field on the unlock and password setup screens."
+  },
+  "onboardingPasswordsDoNotMatch": "Passwords do not match.",
+  "@onboardingPasswordsDoNotMatch": {
+    "description": "[security] Error under the confirm-password field when it differs from the password."
+  },
+  "onboardingQuit": "Quit",
+  "@onboardingQuit": {
+    "description": "Desktop button on the startup failure screen that closes the app."
+  },
+  "onboardingRandomiseAccountPersona": "Randomise account name and profile picture",
+  "@onboardingRandomiseAccountPersona": {
+    "description": "Tooltip and accessibility label of the dice button that picks a random account name and profile picture during account setup."
+  },
+  "onboardingRecoveringWallet": "Recovering wallet...",
+  "@onboardingRecoveringWallet": {
+    "description": "Disabled primary button label while an interrupted wallet setup is being recovered."
+  },
+  "onboardingResetAppFailed": "Couldn't reset the app. Please try again.",
+  "@onboardingResetAppFailed": {
+    "description": "[security] Error on the mobile unlock screen when resetting the app after a forgotten passcode failed."
+  },
+  "onboardingResetCannotBeUndone": "This cannot be undone.",
+  "@onboardingResetCannotBeUndone": {
+    "description": "[security] Warning line above the reset button on the lost-password screen; the reset deletes every account."
+  },
+  "onboardingResetVizor": "Reset Vizor",
+  "@onboardingResetVizor": {
+    "description": "[security] Destructive button that wipes all accounts from the app after the user lost their password or passcode."
+  },
+  "onboardingResumeSetupFailed": "Couldn't resume setup. Please try again.",
+  "@onboardingResumeSetupFailed": {
+    "description": "Error shown on the final onboarding step when recovering an interrupted setup failed."
+  },
+  "onboardingRetry": "Retry",
+  "@onboardingRetry": {
+    "description": "Button on the startup failure screen that tries to open the wallet again."
+  },
+  "onboardingRetrySetup": "Retry setup",
+  "@onboardingRetrySetup": {
+    "description": "Primary button on the final onboarding step that resumes an interrupted setup."
+  },
+  "onboardingRetrying": "Retrying",
+  "@onboardingRetrying": {
+    "description": "Label of the retry button on the startup failure screen while a retry is running."
+  },
+  "onboardingReviewClearSecretPassphrase": "Clear secret passphrase",
+  "@onboardingReviewClearSecretPassphrase": {
+    "description": "[security] Button on the review step that discards the entered secret passphrase and goes back."
+  },
+  "onboardingReviewConfirmContinue": "Confirm & continue",
+  "@onboardingReviewConfirmContinue": {
+    "description": "Primary button on the review step that accepts the secret passphrase and goes on to the birthday step."
+  },
+  "onboardingReviewImportSubtitle": "Review your secret passphrase\nbefore import starts.",
+  "@onboardingReviewImportSubtitle": {
+    "description": "[security] Subtitle of the review step; two lines on purpose."
+  },
+  "onboardingReviewImportTitle": "Review Import",
+  "@onboardingReviewImportTitle": {
+    "description": "[security] Heading of the step where the user reviews the entered secret passphrase before importing."
+  },
+  "onboardingSave": "Save",
+  "@onboardingSave": {
+    "description": "Dialog button that saves the edited value."
+  },
+  "onboardingSavingWallet": "Saving wallet...",
+  "@onboardingSavingWallet": {
+    "description": "Disabled primary button label while the already-created wallet is being saved after a retry."
+  },
+  "onboardingSecretPassphrase": "Secret Passphrase",
+  "@onboardingSecretPassphrase": {
+    "description": "[security] Title, sidebar step label and card heading for the secret recovery phrase (seed phrase) of the wallet."
+  },
+  "onboardingSecretPassphraseAboutToSee": "You are about to see your Secret Passphrase.",
+  "@onboardingSecretPassphraseAboutToSee": {
+    "description": "[security] Heading of the cover shown before the secret passphrase is revealed on desktop."
+  },
+  "onboardingSecretPassphraseAboutToSeeMobile": "You are about to see your\nSecret Passphrase.",
+  "@onboardingSecretPassphraseAboutToSeeMobile": {
+    "description": "[security] Heading of the cover shown before the secret passphrase is revealed on mobile; two lines on purpose."
+  },
+  "onboardingSecretPassphraseReveal": "Reveal the phrase",
+  "@onboardingSecretPassphraseReveal": {
+    "description": "[security] Primary button on the desktop step that reveals the secret passphrase for the first time."
+  },
+  "onboardingSecretPassphraseRevealMobile": "Reveal phrase",
+  "@onboardingSecretPassphraseRevealMobile": {
+    "description": "[security] Primary button on the mobile step that reveals the secret passphrase."
+  },
+  "onboardingSecretPassphraseSubtitleDesktop": "The master key to your wallet.",
+  "@onboardingSecretPassphraseSubtitleDesktop": {
+    "description": "[security] Subtitle under the Secret Passphrase heading on desktop."
+  },
+  "onboardingSecretPassphraseSubtitleMobile": "The Master Key to your wallet.",
+  "@onboardingSecretPassphraseSubtitleMobile": {
+    "description": "[security] Subtitle under the Secret Passphrase heading on mobile."
+  },
+  "onboardingSecretPassphraseWarning": "This phrase is the master key to your funds. Keep it safe, keep it secret. If you lose it, no one can help you recover your wallet. Not even us.",
+  "@onboardingSecretPassphraseWarning": {
+    "description": "[security] Warning on the cover before the secret passphrase is revealed, desktop and mobile. Must not be softened."
+  },
+  "onboardingSeedWordHint": "Seed word",
+  "@onboardingSeedWordHint": {
+    "description": "[security] Placeholder inside an empty secret passphrase word box."
+  },
+  "onboardingSelectProfilePicture": "Select profile picture",
+  "@onboardingSelectProfilePicture": {
+    "description": "Title of the dialog where the user picks a profile picture for the new account."
+  },
+  "onboardingSetPassword": "Set Password",
+  "@onboardingSetPassword": {
+    "description": "Sidebar step label and heading of the step where the user chooses the wallet password on desktop."
+  },
+  "onboardingSetPasswordAndFinish": "Set password & finish",
+  "@onboardingSetPasswordAndFinish": {
+    "description": "Primary button on the desktop set-password step that saves the password and completes setup."
+  },
+  "onboardingSetPasswordPlaceholder": "Min. 8 characters and symbols",
+  "@onboardingSetPasswordPlaceholder": {
+    "description": "[security] Placeholder in the new wallet password field describing the password rules."
+  },
+  "onboardingSetPasswordSubtitle": "Set password for signing in to Vizor wallet.",
+  "@onboardingSetPasswordSubtitle": {
+    "description": "Subtitle under the set-password heading on desktop."
+  },
+  "onboardingSettingPassword": "Setting password...",
+  "@onboardingSettingPassword": {
+    "description": "Disabled primary button label while the wallet password is being saved."
+  },
+  "onboardingSetupInterrupted": "Setup interrupted. Retry to recover your wallet.",
+  "@onboardingSetupInterrupted": {
+    "description": "Error shown on the final onboarding step when account setup was cut off part-way; the primary button retries and recovers the wallet."
+  },
+  "onboardingStepAddressTypes": "Address types",
+  "@onboardingStepAddressTypes": {
+    "description": "Sidebar step label for the explanation of shielded and transparent address types."
+  },
+  "onboardingStepCustomiseWallet": "Customise wallet",
+  "@onboardingStepCustomiseWallet": {
+    "description": "Sidebar step label for naming the account and choosing its profile picture."
+  },
+  "onboardingStepImportContacts": "Import contacts",
+  "@onboardingStepImportContacts": {
+    "description": "Back-button label that returns to the contacts import step of wallet linking on desktop."
+  },
+  "onboardingStepIntroToZcash": "Intro to Zcash",
+  "@onboardingStepIntroToZcash": {
+    "description": "Sidebar step label for the introduction to Zcash during wallet creation."
+  },
+  "onboardingStepWalletBirthdayHeight": "Wallet Birthday Height",
+  "@onboardingStepWalletBirthdayHeight": {
+    "description": "Sidebar step label for the step where the user enters the block height at which the wallet was created."
+  },
+  "onboardingStopSyncing": "Stop syncing...",
+  "@onboardingStopSyncing": {
+    "description": "Disabled primary button label while the app stops the running sync before it finishes wallet setup."
+  },
+  "onboardingStorageDbMigrationBody": "Vizor needs to update the local wallet database before opening this version. Try again, or quit and restart Vizor.",
+  "@onboardingStorageDbMigrationBody": {
+    "description": "Body of the startup failure screen when the wallet database migration failed."
+  },
+  "onboardingStorageDbMigrationTitle": "Unable to update wallet database",
+  "@onboardingStorageDbMigrationTitle": {
+    "description": "Title of the startup failure screen when the wallet database could not be migrated."
+  },
+  "onboardingStorageKeyringLockedBody": "Vizor needs access to the system keyring before it can open your wallet. Unlock the keyring, then try again.",
+  "@onboardingStorageKeyringLockedBody": {
+    "description": "Body of the Linux startup screen when the system keyring is locked."
+  },
+  "onboardingStorageKeyringLockedTitle": "Unlock your keyring",
+  "@onboardingStorageKeyringLockedTitle": {
+    "description": "Title of the startup screen on Linux when the system keyring is locked."
+  },
+  "onboardingStorageRetrySecureStorageFailed": "Secure storage is still unavailable.",
+  "@onboardingStorageRetrySecureStorageFailed": {
+    "description": "Error shown on the startup failure screen after the user retried and the device secure storage could still not be opened."
+  },
+  "onboardingStorageRetryWalletDbFailed": "The wallet database update still failed.",
+  "@onboardingStorageRetryWalletDbFailed": {
+    "description": "Error shown on the startup failure screen after the user retried and the wallet database migration failed again."
+  },
+  "onboardingStorageSecureStorageLockedBody": "Vizor needs access to secure storage before it can open your wallet. Unlock secure storage, then try again.",
+  "@onboardingStorageSecureStorageLockedBody": {
+    "description": "Body of the startup screen when the device secure storage is locked or unavailable."
+  },
+  "onboardingStorageSecureStorageLockedTitle": "Secure storage is locked",
+  "@onboardingStorageSecureStorageLockedTitle": {
+    "description": "Title of the startup screen when the device secure storage is locked or unavailable."
+  },
+  "onboardingStorageStartupFailureBody": "Vizor could not load the local startup state. Try again, or quit and restart Vizor.",
+  "@onboardingStorageStartupFailureBody": {
+    "description": "Body of the startup failure screen when the app's local startup state could not be loaded."
+  },
+  "onboardingStorageStartupFailureTitle": "Unable to open Vizor",
+  "@onboardingStorageStartupFailureTitle": {
+    "description": "Title of the startup failure screen when the app's local startup state could not be loaded."
+  },
+  "onboardingTellMeHowZcashWorks": "Tell me how Zcash works",
+  "@onboardingTellMeHowZcashWorks": {
+    "description": "Primary button on the Zcash education steps that continues to the next explanation."
+  },
+  "onboardingThingsKeepPrivacyBody": "Some exchanges can't send to shielded addresses. If you're withdrawing from an exchange, use your transparent address. You can shield your ZEC after it arrives.",
+  "@onboardingThingsKeepPrivacyBody": {
+    "description": "Body of the keep-privacy fact on the things-to-know step; advises using the transparent address for exchange withdrawals and shielding afterwards."
+  },
+  "onboardingThingsKeepPrivacyTitle": "How to keep privacy",
+  "@onboardingThingsKeepPrivacyTitle": {
+    "description": "Heading of the second fact on the things-to-know step."
+  },
+  "onboardingThingsSubtitleMobile": "Before you dive in.",
+  "@onboardingThingsSubtitleMobile": {
+    "description": "Subtitle of the mobile things-to-know step."
+  },
+  "onboardingThingsTimeToSyncBody": "Your wallet syncs directly with the Zcash network instead of relying on a server. This protects your privacy, but takes a moment. Your funds are safe while the app catches up.",
+  "@onboardingThingsTimeToSyncBody": {
+    "description": "Body of the time-to-sync fact on the things-to-know step."
+  },
+  "onboardingThingsTimeToSyncTitle": "Time to sync",
+  "@onboardingThingsTimeToSyncTitle": {
+    "description": "Heading of the first fact on the things-to-know step: the wallet needs a while to sync."
+  },
+  "onboardingThingsToKnow": "Things to know",
+  "@onboardingThingsToKnow": {
+    "description": "Sidebar step label and heading of the step that lists a few facts to know before using the wallet."
+  },
+  "onboardingTryAgain": "Try again",
+  "@onboardingTryAgain": {
+    "description": "Primary button on the customise-account step that retries saving the wallet after a failure."
+  },
+  "onboardingUnknownHeightBody": "If you continue without a wallet birthday, Vizor will scan from the earliest supported shielded height. This is safe, but the first sync can take a very long time.",
+  "@onboardingUnknownHeightBody": {
+    "description": "Explains that skipping the wallet birthday makes Vizor scan from the earliest supported shielded block, which is safe but slow."
+  },
+  "onboardingUnknownHeightHint": "Choosing even an approximate date will be much faster.",
+  "@onboardingUnknownHeightHint": {
+    "description": "Tip under the unknown-birthday explanation; an approximate date speeds up the first sync."
+  },
+  "onboardingUnknownHeightTitle": "Import from the earliest height?",
+  "@onboardingUnknownHeightTitle": {
+    "description": "Title of the confirmation shown when the user does not know the wallet birthday, desktop and mobile."
+  },
+  "onboardingUnlockBiometricReason": "Unlock your wallet",
+  "@onboardingUnlockBiometricReason": {
+    "description": "Reason line shown in the system biometric prompt when the wallet is unlocked with Face ID, Touch ID or fingerprint."
+  },
+  "onboardingUnlockButton": "Unlock Vizor",
+  "@onboardingUnlockButton": {
+    "description": "Button on the desktop unlock screen that submits the password and opens the wallet."
+  },
+  "onboardingUnlockDescription": "Enter your password to open Vizor.",
+  "@onboardingUnlockDescription": {
+    "description": "Subtitle on the desktop unlock screen asking for the wallet password."
+  },
+  "onboardingUnlockEnterPasscode": "Enter your passcode to open Vizor",
+  "@onboardingUnlockEnterPasscode": {
+    "description": "Subtitle of the mobile unlock screen asking for the 6-digit passcode."
+  },
+  "onboardingUnlockIncorrectPassword": "Incorrect password. Try again.",
+  "@onboardingUnlockIncorrectPassword": {
+    "description": "[security] Error under the password field on the desktop unlock screen when the typed wallet password is wrong."
+  },
+  "onboardingUnlockOpenFailed": "Couldn't open your wallet. Please try again.",
+  "@onboardingUnlockOpenFailed": {
+    "description": "Error under the password field on the desktop unlock screen when unlocking failed because of an unexpected error."
+  },
+  "onboardingUnlockOpening": "Opening your wallet...",
+  "@onboardingUnlockOpening": {
+    "description": "Subtitle of the mobile unlock screen while the wallet is being opened after the passcode was entered."
+  },
+  "onboardingUnlockWelcomeBack": "Welcome back",
+  "@onboardingUnlockWelcomeBack": {
+    "description": "Heading of the desktop unlock screen."
+  },
+  "onboardingUnlockWelcomeBackMobile": "Welcome Back",
+  "@onboardingUnlockWelcomeBackMobile": {
+    "description": "Heading of the mobile unlock screen."
+  },
+  "onboardingWelcome": "Welcome",
+  "@onboardingWelcome": {
+    "description": "Back-button label that returns to the welcome screen."
+  },
+  "onboardingWelcomeActivateGiftCard": "Activate gift card",
+  "@onboardingWelcomeActivateGiftCard": {
+    "description": "Button on the welcome screen that starts redeeming a gift card."
+  },
+  "onboardingWelcomeGetStarted": "Get started",
+  "@onboardingWelcomeGetStarted": {
+    "description": "Primary button on the welcome screen that starts creating a new wallet."
+  },
+  "onboardingWelcomeImportWallet": "Import wallet",
+  "@onboardingWelcomeImportWallet": {
+    "description": "Button on the welcome screen that starts importing an existing wallet."
+  },
   "poolShielded": "Shielded",
   "@poolShielded": {
     "description": "Badge naming a shielded pool or address. See the glossary entry for shielded."

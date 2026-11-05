@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -196,14 +197,14 @@ class _MobileImportAccountDiscoverySheetState
 
     return MobileModalScaffold(
       key: const ValueKey('mobile_import_account_discovery_sheet'),
-      title: 'Additional accounts found',
+      title: context.l10n.onboardingDiscoveryTitle,
       onClose: widget.onCancel,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Choose the additional accounts to import.',
+            context.l10n.onboardingDiscoverySubtitle,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -262,7 +263,7 @@ class _MobileImportAccountDiscoverySheetState
             key: const ValueKey('mobile_import_account_discovery_confirm'),
             expand: true,
             onPressed: canConfirm ? _confirm : null,
-            child: const Text('Import'),
+            child: Text(context.l10n.onboardingImport),
           ),
           const SizedBox(height: AppSpacing.xs),
           AppButton(
@@ -270,7 +271,7 @@ class _MobileImportAccountDiscoverySheetState
             variant: AppButtonVariant.ghost,
             expand: true,
             onPressed: widget.onCancel,
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
         ],
       ),
@@ -408,7 +409,7 @@ class _TransparentBalancePreviewLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final balanceText = switch (state.status) {
-      _TransparentBalanceStatus.loading => 'Loading',
+      _TransparentBalanceStatus.loading => context.l10n.onboardingLoading,
       _TransparentBalanceStatus.failed => '-',
       _TransparentBalanceStatus.loaded => ZecAmount.fromZatoshi(
         state.zatoshi ?? BigInt.zero,
@@ -424,7 +425,7 @@ class _TransparentBalancePreviewLabel extends StatelessWidget {
       key: const ValueKey('mobile_import_account_discovery_balance_label'),
       children: [
         Text(
-          'Transparent',
+          context.l10n.poolTransparent,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: AppTypography.labelMedium.copyWith(
