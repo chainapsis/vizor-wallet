@@ -13,6 +13,8 @@ Options:
   --scenario <id>          Registered scenario (default: pay-recipient)
   --theme <dark|light>     Theme (default: dark)
   --form-factor <value>    desktop or mobile (default: desktop)
+  --locale <en|ko|zh>      UI language, including preview-only ones (widget
+                           ko/zh captures need scripts/fetch-capture-fonts.sh)
   --width <logical-px>     Widget-test logical width
   --height <logical-px>    Widget-test logical height
   --pixel-ratio <ratio>    Widget simulated DPR / native content scale
@@ -48,6 +50,7 @@ esac
 SCENARIO="pay-recipient"
 THEME="dark"
 FORM_FACTOR="desktop"
+LOCALE=""
 WIDTH=""
 HEIGHT=""
 PIXEL_RATIO=""
@@ -59,6 +62,7 @@ while (($# > 0)); do
     --scenario) SCENARIO="$(take_value "$1" "${2:-}")"; shift 2 ;;
     --theme) THEME="$(take_value "$1" "${2:-}")"; shift 2 ;;
     --form-factor) FORM_FACTOR="$(take_value "$1" "${2:-}")"; shift 2 ;;
+    --locale) LOCALE="$(take_value "$1" "${2:-}")"; shift 2 ;;
     --width) WIDTH="$(take_value "$1" "${2:-}")"; shift 2 ;;
     --height) HEIGHT="$(take_value "$1" "${2:-}")"; shift 2 ;;
     --pixel-ratio) PIXEL_RATIO="$(take_value "$1" "${2:-}")"; shift 2 ;;
@@ -73,13 +77,17 @@ done
   fail "--theme must be dark or light"
 [[ "$FORM_FACTOR" == "desktop" || "$FORM_FACTOR" == "mobile" ]] || \
   fail "--form-factor must be desktop or mobile"
+[[ -z "$LOCALE" || "$LOCALE" == "en" || "$LOCALE" == "ko" || "$LOCALE" == "zh" ]] || \
+  fail "--locale must be en, ko, or zh"
 
 OUTPUT_ROOT="$HOME/Library/Containers/com.keplr.vizor/Data/tmp/vizor-figma-compare"
 if [[ -z "$OUTPUT" ]]; then
+  SCENARIO_DIR="$OUTPUT_ROOT/$SCENARIO"
+  [[ -z "$LOCALE" ]] || SCENARIO_DIR="$SCENARIO_DIR/$LOCALE"
   if [[ "$MODE" == "widget" ]]; then
-    OUTPUT="$OUTPUT_ROOT/$SCENARIO/content.widget.png"
+    OUTPUT="$SCENARIO_DIR/content.widget.png"
   else
-    OUTPUT="$OUTPUT_ROOT/$SCENARIO/content.png"
+    OUTPUT="$SCENARIO_DIR/content.png"
   fi
 fi
 [[ "$OUTPUT" == /* ]] || fail "--output must be an absolute path"
@@ -89,6 +97,7 @@ DEFINES=(
   "--dart-define=FIGMA_COMPARE_THEME=$THEME"
   "--dart-define=FIGMA_COMPARE_OUTPUT=$OUTPUT"
 )
+[[ -z "$LOCALE" ]] || DEFINES+=("--dart-define=FIGMA_COMPARE_LOCALE=$LOCALE")
 [[ -z "$WIDTH" ]] || DEFINES+=("--dart-define=FIGMA_COMPARE_WIDTH=$WIDTH")
 [[ -z "$HEIGHT" ]] || DEFINES+=("--dart-define=FIGMA_COMPARE_HEIGHT=$HEIGHT")
 [[ -z "$PIXEL_RATIO" ]] || \
