@@ -26,6 +26,7 @@ import 'mobile_import_birthday_unknown_height_sheet.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
+import '../../../core/formatting/date_format.dart';
 
 enum _BirthdayEntryMode { date, blockHeight }
 
@@ -403,10 +404,8 @@ class _MobileImportBirthdayScreenState
   };
 
   String _formattedDate(DateTime date) => Platform.isIOS
-      ? '${date.month.toString().padLeft(2, '0')}/${date.year}'
-      : '${date.month.toString().padLeft(2, '0')}/' // l10n-ignore: numeric date format
-            '${date.day.toString().padLeft(2, '0')}/'
-            '${date.year}';
+      ? formatNumericMonthYear(date, context.l10n.localeName)
+      : formatNumericDate(date, context.l10n.localeName);
 
   @override
   Widget build(BuildContext context) {

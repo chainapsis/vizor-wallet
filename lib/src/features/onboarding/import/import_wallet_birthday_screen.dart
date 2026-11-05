@@ -24,6 +24,7 @@ import 'import_birthday_estimator.dart';
 import 'import_birthday_calendar_overlay.dart';
 import 'import_birthday_unknown_height_modal.dart';
 import 'import_split_view.dart';
+import '../../../core/formatting/date_format.dart';
 
 enum ImportBirthdayTab { date, blockHeight }
 
@@ -580,7 +581,10 @@ class _ImportWalletBirthdayScreenState
                                     width: _fieldWidth,
                                     valueText: _selectedDate == null
                                         ? null
-                                        : _formatDate(_selectedDate!),
+                                        : formatNumericDate(
+                                            _selectedDate!,
+                                            context.l10n.localeName,
+                                          ),
                                     enabled: !_isSubmitting,
                                     onTap: _pickDate,
                                   )
@@ -971,10 +975,4 @@ DateTime _clampDate(DateTime value, DateTime min, DateTime max) {
 
 DateTime _dateOnly(DateTime value) {
   return DateTime(value.year, value.month, value.day);
-}
-
-String _formatDate(DateTime date) {
-  final month = date.month.toString().padLeft(2, '0');
-  final day = date.day.toString().padLeft(2, '0');
-  return '$month/$day/${date.year}';
 }

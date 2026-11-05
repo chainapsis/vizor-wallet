@@ -5634,7 +5634,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingBirthdayCantRemember => '기⁠억⁠나⁠지 않⁠아⁠요';
 
   @override
-  String get onboardingBirthdayDateHint => 'mm/dd/yyyy';
+  String get onboardingBirthdayDateHint => 'yyyy. mm. dd.';
 
   @override
   String get onboardingBirthdayDontRemember => '기⁠억⁠나⁠지 않⁠아⁠요';
@@ -5674,7 +5674,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '해⁠당 날⁠짜⁠의 높⁠이⁠를 추⁠정⁠하⁠지 못⁠했⁠어⁠요. 대⁠신 블⁠록 높⁠이⁠를 직⁠접 입⁠력⁠해 주⁠세⁠요.';
 
   @override
-  String get onboardingBirthdayMonthHint => 'mm/yyyy';
+  String get onboardingBirthdayMonthHint => 'yyyy. mm.';
 
   @override
   String get onboardingBirthdayPickDate => '날⁠짜 고⁠르⁠기';

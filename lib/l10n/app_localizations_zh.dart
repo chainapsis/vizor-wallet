@@ -5331,7 +5331,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingBirthdayCantRemember => '我不记得了';
 
   @override
-  String get onboardingBirthdayDateHint => 'mm/dd/yyyy';
+  String get onboardingBirthdayDateHint => 'yyyy/mm/dd';
 
   @override
   String get onboardingBirthdayDontRemember => '我不记得了';
@@ -5369,7 +5369,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '无法估算该日期对应的区块高度。请改为输入区块高度。';
 
   @override
-  String get onboardingBirthdayMonthHint => 'mm/yyyy';
+  String get onboardingBirthdayMonthHint => 'yyyy/mm';
 
   @override
   String get onboardingBirthdayPickDate => '选择日期';

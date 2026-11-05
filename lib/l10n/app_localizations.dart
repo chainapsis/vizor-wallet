@@ -9560,7 +9560,7 @@ abstract class AppLocalizations {
   /// **'I can’t remember'**
   String get onboardingBirthdayCantRemember;
 
-  /// Placeholder of the date field (month/day/year order).
+  /// Placeholder of the birthday date field. The picked date replaces it, written in your language's numeric order with two-digit month and day (Korean 2026. 05. 25., Chinese 2026/05/25), so write the same order and separators with letter placeholders.
   ///
   /// In en, this message translates to:
   /// **'mm/dd/yyyy'**
@@ -9626,7 +9626,7 @@ abstract class AppLocalizations {
   /// **'Couldn\'t estimate a height for that date. Enter a block height instead.'**
   String get onboardingBirthdayMobileEstimateFailed;
 
-  /// Placeholder of the iOS birthday field; shows the expected month/year order.
+  /// Placeholder of the iOS birthday month field. The picked month replaces it in your language's numeric order (Korean 2026. 05., Chinese 2026/05), so write the same order and separators with letter placeholders.
   ///
   /// In en, this message translates to:
   /// **'mm/yyyy'**
