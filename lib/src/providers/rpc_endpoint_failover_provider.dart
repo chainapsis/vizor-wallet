@@ -158,12 +158,14 @@ class _FallbackHealth {
 class _FailoverContext {
   const _FailoverContext({
     required this.generation,
+    required this.automaticEpoch,
     required this.primary,
     required this.current,
     required this.fallbackCandidates,
   });
 
   final int generation;
+  final int automaticEpoch;
   final RpcEndpointConfig primary;
   final RpcEndpointConfig current;
   final List<RpcEndpointConfig> fallbackCandidates;
@@ -245,6 +247,21 @@ final rpcEndpointFailoverLatestBlockHeightGetterProvider =
           ),
     );
 
+class _AutomaticTipObservation {
+  const _AutomaticTipObservation({
+    required this.endpoint,
+    required this.sample,
+    required this.epoch,
+    required this.tor,
+    required this.observedAt,
+  });
+  final RpcEndpointConfig endpoint;
+  final RpcEndpointCandidateSample sample;
+  final int epoch;
+  final bool tor;
+  final DateTime observedAt;
+}
+
 class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   int _eventSequence = 0;
   int _configGeneration = 0;
@@ -252,7 +269,17 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   int _selectionPauseCount = 0;
   static int _selectionSequence = 0;
   Future<RpcEndpointConfig>? _automaticSelection;
+  Future<BigInt>? _automaticTipFlight;
   bool _selectionIsValidation = false;
+  bool _selectionIsWarmRead = false;
+  bool _needsWarmTipRead = false;
+  DateTime? _lastSuccessAt;
+  DateTime? _lastPeerValidatedAt;
+  DateTime? _lastBenchmarkAt;
+  DateTime? _lastNetworkVerifiedAt;
+  DateTime? _lastCacheWriteAt;
+  bool? _evaluatedTor;
+  _AutomaticTipObservation? _pendingTip;
   DateTime? _validationDueAt;
   Duration? _selectedLatency;
   String? _selectionExcludeUrl;
@@ -275,6 +302,14 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     _configGeneration += 1;
     _cancelAutomaticWork();
     _selectedAt = null;
+    _lastSuccessAt = null;
+    _lastPeerValidatedAt = null;
+    _lastBenchmarkAt = null;
+    _lastNetworkVerifiedAt = null;
+    _lastCacheWriteAt = null;
+    _evaluatedTor = null;
+    _pendingTip = null;
+    _needsWarmTipRead = false;
     _selectedLatency = null;
     _validationDueAt = null;
     _checkedAt = null;
@@ -298,7 +333,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         _retryAt = null;
         _failedSelections = 0;
         _cooldowns.clear();
-        cancelAutomaticSelection();
+        invalidateAutomaticSelection();
       }
     });
     ref.listen(appSecurityProvider.select((s) => s.requiresUnlock), (
@@ -320,10 +355,59 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
 
   /// A single network boundary for all automatic-mode consumers. Reading the
   /// preference or building a settings widget never starts endpoint probes.
-  Future<RpcEndpointConfig> ensureReady() async {
+  Future<RpcEndpointConfig> ensureReady() => _ensureReadyForOperation();
+
+  Future<RpcEndpointConfig> _ensureReadyForOperation({
+    bool forTipRead = false,
+  }) async {
     if (!isAutomaticRpcEndpointConfig(state.primary)) return state.current;
     _trackAutomaticLifecycle();
-    if (_selectionPauseCount > 0 ||
+    _requireAutomaticEligibility();
+    final nowBefore = ref.read(rpcEndpointFailoverClockProvider)();
+    final policy = ref.read(automaticRpcEndpointSettingsProvider);
+    if (state.automaticReady &&
+        _evaluatedTor != null &&
+        (!isRecentEndpointObservation(
+              _lastNetworkVerifiedAt,
+              nowBefore,
+              policy.cacheMaxAge,
+            ) ||
+            (_needsWarmTipRead &&
+                !isRecentEndpointObservation(
+                  _lastSuccessAt,
+                  nowBefore,
+                  policy.warmReuseMaxAge,
+                )))) {
+      invalidateAutomaticSelection();
+    }
+    if (!state.automaticReady) await _ensureAutomatic();
+    _requireAutomaticEligibility();
+    if (!forTipRead && _needsWarmTipRead) await _ensureWarmTipRead();
+    final settings = ref.read(automaticRpcEndpointSettingsProvider);
+    final now = ref.read(rpcEndpointFailoverClockProvider)();
+    if (!_hasFreshPeerProof(now)) {
+      state = state.copyWith(automaticProvisional: true);
+    }
+    if (!_needsWarmTipRead &&
+        (_checkedAt == null ||
+            now.difference(_checkedAt!) >= settings.recheckInterval)) {
+      unawaited(
+        _ensureAutomatic(force: true).then<void>(
+          (_) {},
+          onError: (Object error, StackTrace stack) {
+            log('Automatic endpoint recheck failed: $error');
+          },
+        ),
+      );
+    } else if (state.automaticProvisional) {
+      _startProvisionalValidationIfDue();
+    }
+    return state.current;
+  }
+
+  void _requireAutomaticEligibility() {
+    if (!ref.mounted ||
+        _selectionPauseCount > 0 ||
         ref.read(appSecurityProvider).requiresUnlock ||
         !canRunAppProcessWork(
           isInForeground: _inForeground,
@@ -331,26 +415,26 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         )) {
       throw StateError('Automatic endpoint selection is paused.');
     }
-    final settings = ref.read(automaticRpcEndpointSettingsProvider);
-    final now = ref.read(rpcEndpointFailoverClockProvider)();
-    if (state.automaticReady) {
-      final current = state.current;
-      if (state.automaticProvisional) {
-        _startProvisionalValidationIfDue();
-      } else if (_checkedAt == null ||
-          now.difference(_checkedAt!) >= settings.recheckInterval) {
-        unawaited(
-          _ensureAutomatic(force: true).then<void>(
-            (_) {},
-            onError: (Object error, StackTrace stack) {
-              log('Automatic endpoint recheck failed: $error');
-            },
-          ),
+  }
+
+  bool _hasFreshPeerProof(DateTime now) => isRecentEndpointObservation(
+    _lastPeerValidatedAt,
+    now,
+    ref.read(automaticRpcEndpointSettingsProvider).recheckInterval,
+  );
+
+  bool _canRetainAutomaticHealth() {
+    if (!ref.mounted || !state.automaticReady) return false;
+    final route = ref.read(networkPrivacyProvider);
+    return !route.isBusy &&
+        (route.status == NetworkPrivacyConnectionStatus.off ||
+            route.status == NetworkPrivacyConnectionStatus.connected) &&
+        _evaluatedTor == route.torEnabled &&
+        isRecentEndpointObservation(
+          _lastSuccessAt,
+          ref.read(rpcEndpointFailoverClockProvider)(),
+          ref.read(automaticRpcEndpointSettingsProvider).warmReuseMaxAge,
         );
-      }
-      return current;
-    }
-    return _ensureAutomatic();
   }
 
   void _trackAutomaticLifecycle() {
@@ -379,21 +463,49 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     if (signal != null && !signal.isCompleted) signal.complete();
     _selectionId = null;
     _automaticSelection = null;
+    _automaticTipFlight = null;
     _selectionIsValidation = false;
+    _selectionIsWarmRead = false;
     _selectionCancelled = null;
+    _pendingTip = null;
   }
 
+  /// Stops process work without throwing away recent public server evidence.
   void cancelAutomaticSelection() {
+    final retain = _canRetainAutomaticHealth();
+    _cancelAutomaticWork();
+    _needsWarmTipRead = retain;
+    if (ref.mounted && isAutomaticRpcEndpointConfig(state.primary)) {
+      state = state.copyWith(automaticReady: retain);
+    }
+  }
+
+  /// Route, preferences and destructive operations invalidate cached readiness.
+  void invalidateAutomaticSelection() {
     _cancelAutomaticWork();
     _checkedAt = null;
+    _lastSuccessAt = null;
+    _lastPeerValidatedAt = null;
+    _lastBenchmarkAt = null;
+    _lastNetworkVerifiedAt = null;
+    _lastCacheWriteAt = null;
+    _evaluatedTor = null;
+    _needsWarmTipRead = false;
     if (ref.mounted && isAutomaticRpcEndpointConfig(state.primary)) {
-      state = state.copyWith(automaticReady: false);
+      state = state.copyWith(
+        automaticReady: false,
+        automaticProvisional: false,
+        clearLastObservedHeight: true,
+        clearLastObservedAt: true,
+        clearHeightWindowStartedAt: true,
+        clearHeightWindowStartHeight: true,
+      );
     }
   }
 
   void pauseAutomaticSelection() {
     _selectionPauseCount++;
-    cancelAutomaticSelection();
+    invalidateAutomaticSelection();
   }
 
   void resumeAutomaticSelection() {
@@ -401,7 +513,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   }
 
   Future<void> clearAutomaticSelectionCache() async {
-    cancelAutomaticSelection();
+    invalidateAutomaticSelection();
     _cooldowns.clear();
     _retryAt = null;
     _failedSelections = 0;
@@ -472,6 +584,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       _cancelAutomaticWork();
     }
     _selectionIsValidation = false;
+    _selectionIsWarmRead = false;
     _selectionExcludeUrl = excludeUrl;
     _selectionMinimumHeight = minimumHeight;
     final now = ref.read(rpcEndpointFailoverClockProvider)();
@@ -508,6 +621,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     required bool force,
     String? excludeUrl,
     BigInt? minimumHeight,
+    Duration? budgetOverride,
   }) async {
     final tor = await _waitForRoute(cancelled);
     void requireCurrent() {
@@ -563,7 +677,8 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       }
     }
     requireCurrent();
-    final budget = tor ? settings.torBudget : settings.directBudget;
+    final budget =
+        budgetOverride ?? (tor ? settings.torBudget : settings.directBudget);
     final timeout = tor
         ? settings.torProbeTimeout
         : settings.directProbeTimeout;
@@ -594,6 +709,45 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           cacheAge != null &&
           !cacheAge.isNegative &&
           cacheAge < settings.cacheMaxAge) {
+        if (cached!.isWarm(
+          now,
+          settings,
+          expectedUrl: preferred.normalizedLightwalletdUrl,
+        )) {
+          _lastSuccessAt = cached.lastSuccessAt;
+          _lastPeerValidatedAt =
+              isRecentEndpointObservation(
+                cached.lastPeerValidatedAt,
+                now,
+                settings.recheckInterval,
+              )
+              ? cached.lastPeerValidatedAt
+              : null;
+          _lastBenchmarkAt =
+              cached.lastBenchmarkAt != null &&
+                  !cached.lastBenchmarkAt!.isAfter(now)
+              ? cached.lastBenchmarkAt
+              : null;
+          _lastNetworkVerifiedAt =
+              cached.lastNetworkVerifiedAt ?? cached.lastBenchmarkAt;
+          _checkedAt = _lastBenchmarkAt;
+          _selectedAt = cached.observedAt;
+          _selectedLatency = cached.latencyMs == null
+              ? null
+              : Duration(milliseconds: cached.latencyMs!);
+          _evaluatedTor = tor;
+          _needsWarmTipRead = true;
+          state = state.copyWith(
+            current: preferred,
+            automaticReady: true,
+            automaticProvisional: !_hasFreshPeerProof(now),
+            clearLastObservedHeight: true,
+            clearLastObservedAt: true,
+            clearHeightWindowStartedAt: true,
+            clearHeightWindowStartHeight: true,
+          );
+          return preferred;
+        }
         // A cached endpoint gets a short head start, never an entire long
         // request timeout before other regions become eligible.
         try {
@@ -676,6 +830,13 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         epoch: epoch,
         provisional: provisional,
       );
+      _pendingTip = _AutomaticTipObservation(
+        endpoint: selected,
+        sample: winner,
+        epoch: epoch,
+        tor: tor,
+        observedAt: clock(),
+      );
       if (provisional) {
         _validationDueAt = clock();
         // The selection slot must be released before independent validation
@@ -719,6 +880,175 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       }
       rethrow;
     }
+  }
+
+  Future<RpcEndpointConfig> _ensureWarmTipRead() {
+    if (!_needsWarmTipRead) return Future.value(state.current);
+    _requireAutomaticEligibility();
+    final pending = _automaticSelection;
+    if (pending != null) {
+      if (_selectionIsWarmRead) return pending;
+      return pending.then((_) => _ensureWarmTipRead());
+    }
+    final epoch = _automaticEpoch;
+    final cancelled = Completer<void>();
+    _selectionCancelled = cancelled;
+    _selectionIsValidation = false;
+    _selectionIsWarmRead = true;
+    _selectionExcludeUrl = null;
+    _selectionMinimumHeight = null;
+    late final Future<RpcEndpointConfig> read;
+    read = _readWarmTip(epoch, cancelled).whenComplete(() {
+      if (identical(_automaticSelection, read)) {
+        _automaticSelection = null;
+        _selectionIsWarmRead = false;
+        _selectionId = null;
+        _selectionCancelled = null;
+      }
+    });
+    _automaticSelection = read;
+    return read;
+  }
+
+  Future<RpcEndpointConfig> _readWarmTip(
+    int epoch,
+    Completer<void> cancelled,
+  ) async {
+    final endpoint = state.current;
+    final tor = await _waitForRoute(cancelled);
+    void requireCurrent() {
+      if (!ref.mounted ||
+          epoch != _automaticEpoch ||
+          cancelled.isCompleted ||
+          !_sameEndpointIdentity(endpoint, state.current)) {
+        throw StateError('Automatic endpoint selection cancelled.');
+      }
+      _requireAutomaticEligibility();
+    }
+
+    requireCurrent();
+    final settings = ref.read(automaticRpcEndpointSettingsProvider);
+    final timeout = tor
+        ? settings.torWarmTipTimeout
+        : settings.directWarmTipTimeout;
+    final watch = Stopwatch()..start();
+    final read = ref.read(rpcEndpointWarmTipReaderProvider);
+    _cancelProbe = ref.read(rpcEndpointSelectionCancelProvider);
+    final id =
+        '${DateTime.now().microsecondsSinceEpoch}-${_selectionSequence++}';
+    _selectionId = id;
+    try {
+      final sample =
+          await Future.any([
+            read(endpoint: endpoint, selectionId: id, timeout: timeout),
+            cancelled.future.then<RpcEndpointCandidateSample>(
+              (_) =>
+                  throw StateError('Automatic endpoint selection cancelled.'),
+            ),
+          ]).timeout(
+            timeout,
+            onTimeout: () {
+              _cancelProbe?.call(id);
+              throw TimeoutException(
+                'Cached endpoint tip read timed out.',
+                timeout,
+              );
+            },
+          );
+      requireCurrent();
+      if (sample.url != endpoint.normalizedLightwalletdUrl) {
+        throw StateError('Cached endpoint returned a different route.');
+      }
+      final now = ref.read(rpcEndpointFailoverClockProvider)();
+      _needsWarmTipRead = false;
+      _recordAutomaticTipSuccess(endpoint, sample, epoch, tor, now);
+      _pendingTip = _AutomaticTipObservation(
+        endpoint: endpoint,
+        sample: sample,
+        epoch: epoch,
+        tor: tor,
+        observedAt: now,
+      );
+      return endpoint;
+    } catch (error) {
+      requireCurrent();
+      if (error.toString().toLowerCase().contains('network privacy blocked')) {
+        rethrow;
+      }
+      _cooldowns[endpoint.normalizedLightwalletdUrl] = ref
+          .read(rpcEndpointFailoverClockProvider)()
+          .add(settings.failureCooldown);
+      _needsWarmTipRead = false;
+      _selectionIsWarmRead = false;
+      _pendingTip = null;
+      state = state.copyWith(automaticReady: false);
+      // This is still the same cancellable, coalesced read operation. Selection
+      // supplies a real replacement tip; callers never replay a broadcast.
+      final remaining =
+          (tor ? settings.torBudget : settings.directBudget) - watch.elapsed;
+      if (remaining <= Duration.zero) {
+        throw TimeoutException('Automatic endpoint recovery timed out.');
+      }
+      return _selectAutomatic(
+        epoch: epoch,
+        cancelled: cancelled,
+        force: true,
+        excludeUrl: endpoint.normalizedLightwalletdUrl,
+        budgetOverride: remaining,
+      );
+    }
+  }
+
+  bool _sameAutomaticRoute(bool tor) {
+    final route = ref.read(networkPrivacyProvider);
+    return !route.isBusy &&
+        route.torEnabled == tor &&
+        (route.status == NetworkPrivacyConnectionStatus.off ||
+            route.status == NetworkPrivacyConnectionStatus.connected);
+  }
+
+  RpcEndpointCandidateSample? _takePendingAutomaticTip(
+    RpcEndpointConfig endpoint,
+  ) {
+    final tip = _pendingTip;
+    _pendingTip = null;
+    if (tip == null ||
+        tip.epoch != _automaticEpoch ||
+        !_sameEndpointIdentity(tip.endpoint, endpoint) ||
+        !_sameAutomaticRoute(tip.tor) ||
+        !isRecentEndpointObservation(
+          tip.observedAt,
+          ref.read(rpcEndpointFailoverClockProvider)(),
+          ref.read(automaticRpcEndpointSettingsProvider).tipReuseMaxAge,
+        )) {
+      return null;
+    }
+    return tip.sample;
+  }
+
+  void _recordAutomaticTipSuccess(
+    RpcEndpointConfig endpoint,
+    RpcEndpointCandidateSample sample,
+    int epoch,
+    bool tor,
+    DateTime observedAt,
+  ) {
+    if (!ref.mounted ||
+        epoch != _automaticEpoch ||
+        !_sameAutomaticRoute(tor) ||
+        !_isCurrentEndpoint(endpoint) ||
+        !isAutomaticRpcEndpointConfig(state.primary)) {
+      return;
+    }
+    _lastSuccessAt = observedAt;
+    _evaluatedTor = tor;
+    _selectedLatency = sample.latency;
+    state = state.copyWith(
+      lastObservedHeight: sample.height,
+      lastObservedAt: observedAt,
+      automaticProvisional: !_hasFreshPeerProof(observedAt),
+    );
+    _queueAutomaticCacheWrite(epoch);
   }
 
   Future<List<RpcEndpointCandidateSample>> _probeAutomaticCandidates({
@@ -771,14 +1101,24 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     required bool tor,
     required int epoch,
     required bool provisional,
+    bool benchmark = true,
   }) {
     final observedAt = ref.read(rpcEndpointFailoverClockProvider)();
-    if (!_sameEndpointIdentity(selected, state.current)) {
+    final changed = !_sameEndpointIdentity(selected, state.current);
+    if (changed) {
       _selectedAt = observedAt;
+      _lastPeerValidatedAt = null;
+      _pendingTip = null;
     }
     _selectedAt ??= observedAt;
     _selectedLatency = sample.latency;
-    _checkedAt = observedAt;
+    _lastSuccessAt = observedAt;
+    _evaluatedTor = tor;
+    _needsWarmTipRead = false;
+    if (!provisional) _lastPeerValidatedAt = observedAt;
+    if (benchmark) _lastBenchmarkAt = observedAt;
+    if (benchmark || changed) _lastNetworkVerifiedAt = observedAt;
+    _checkedAt = _lastBenchmarkAt;
     _retryAt = null;
     _failedSelections = 0;
     _slowResponses = 0;
@@ -792,26 +1132,56 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       lastObservedHeight: sample.height,
       lastObservedAt: observedAt,
     );
+    _queueAutomaticCacheWrite(epoch, force: true);
+    return selected;
+  }
+
+  void _queueAutomaticCacheWrite(int epoch, {bool force = false}) {
+    if (!ref.mounted ||
+        epoch != _automaticEpoch ||
+        _lastSuccessAt == null ||
+        _evaluatedTor == null) {
+      return;
+    }
+    final now = ref.read(rpcEndpointFailoverClockProvider)();
+    if (!force &&
+        isRecentEndpointObservation(
+          _lastCacheWriteAt,
+          now,
+          ref.read(automaticRpcEndpointSettingsProvider).cacheWriteInterval,
+        )) {
+      return;
+    }
+    _lastCacheWriteAt = now;
     final store = ref.read(automaticRpcEndpointStoreProvider);
+    final endpoint = state.current;
+    final tor = _evaluatedTor!;
     final cache = AutomaticRpcEndpointCache(
-      presetId: selected.presetId!,
-      observedAt: observedAt,
+      presetId: endpoint.presetId!,
+      observedAt: _lastSuccessAt!,
+      lastSuccessAt: _lastSuccessAt,
+      lastPeerValidatedAt: _lastPeerValidatedAt,
+      lastBenchmarkAt: _lastBenchmarkAt,
+      lastNetworkVerifiedAt: _lastNetworkVerifiedAt,
+      latencyMs: _selectedLatency?.inMilliseconds,
+      endpointUrl: endpoint.normalizedLightwalletdUrl,
     );
     _cacheWrites = _cacheWrites.then((_) async {
       if (!ref.mounted || epoch != _automaticEpoch) return;
       try {
-        await store.write(primary.networkName, tor, cache);
+        await store.write(endpoint.networkName, tor, cache);
       } catch (error) {
         log('Automatic endpoint cache write failed: $error');
       }
     });
-    return selected;
   }
 
   void _startProvisionalValidationIfDue() {
     if (!ref.mounted ||
         _automaticSelection != null ||
         !state.automaticReady ||
+        _needsWarmTipRead ||
+        state.lastObservedHeight == null ||
         !state.automaticProvisional ||
         _selectionPauseCount > 0 ||
         ref.read(appSecurityProvider).requiresUnlock ||
@@ -966,6 +1336,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         tor: tor,
         epoch: epoch,
         provisional: false,
+        benchmark: false,
       );
     } catch (error) {
       requireCurrent();
@@ -976,9 +1347,26 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     }
   }
 
-  Future<BigInt> getLatestBlockHeight() async {
+  Future<BigInt> getLatestBlockHeight() {
+    if (!isAutomaticRpcEndpointConfig(state.primary)) {
+      return _getLatestBlockHeight();
+    }
+    final pending = _automaticTipFlight;
+    if (pending != null) return pending;
+    late final Future<BigInt> read;
+    read = _getLatestBlockHeight().whenComplete(() {
+      if (identical(_automaticTipFlight, read)) _automaticTipFlight = null;
+    });
+    _automaticTipFlight = read;
+    return read;
+  }
+
+  Future<BigInt> _getLatestBlockHeight() async {
     const operation = 'latest block height';
-    await ensureReady();
+    await _ensureReadyForOperation(forTipRead: true);
+    if (isAutomaticRpcEndpointConfig(state.primary) && _needsWarmTipRead) {
+      await _ensureWarmTipRead();
+    }
     await maybeProbePrimary();
     final endpoint = state.current;
     final operationEpoch = _automaticEpoch;
@@ -986,15 +1374,37 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       rpcEndpointFailoverLatestBlockHeightGetterProvider,
     );
     final stopwatch = Stopwatch()..start();
+    final tor = ref.read(networkPrivacyProvider).torEnabled;
 
     try {
-      final height = await getLatestBlockHeight(
-        endpoint.normalizedLightwalletdUrl,
-        endpoint.networkName,
-      );
+      final reuse = isAutomaticRpcEndpointConfig(state.primary)
+          ? _takePendingAutomaticTip(endpoint)
+          : null;
+      final height =
+          reuse?.height ??
+          await getLatestBlockHeight(
+            endpoint.normalizedLightwalletdUrl,
+            endpoint.networkName,
+          );
       if (!ref.mounted || operationEpoch != _automaticEpoch) return height;
       _recordEndpointSuccess(endpoint);
-      unawaited(_recordAutomaticResponse(endpoint, stopwatch.elapsed));
+      if (reuse == null) {
+        _recordAutomaticTipSuccess(
+          endpoint,
+          RpcEndpointCandidateSample(
+            url: endpoint.normalizedLightwalletdUrl,
+            height: height,
+            latency: stopwatch.elapsed,
+          ),
+          operationEpoch,
+          tor,
+          ref.read(rpcEndpointFailoverClockProvider)(),
+        );
+      }
+      _startProvisionalValidationIfDue();
+      unawaited(
+        _recordAutomaticResponse(endpoint, reuse?.latency ?? stopwatch.elapsed),
+      );
       final slowFallback = await _maybeSwitchFromSlowHeight(
         endpoint,
         height,
@@ -1015,12 +1425,35 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       }
 
       final fallbackEndpoint = state.current;
+      final fallbackEpoch = _automaticEpoch;
+      final fallbackTor = ref.read(networkPrivacyProvider).torEnabled;
       try {
-        final fallbackHeight = await getLatestBlockHeight(
-          fallbackEndpoint.normalizedLightwalletdUrl,
-          fallbackEndpoint.networkName,
-        );
+        final replacementTip = isAutomaticRpcEndpointConfig(state.primary)
+            ? _takePendingAutomaticTip(fallbackEndpoint)
+            : null;
+        final fallbackHeight =
+            replacementTip?.height ??
+            await getLatestBlockHeight(
+              fallbackEndpoint.normalizedLightwalletdUrl,
+              fallbackEndpoint.networkName,
+            );
+        if (!ref.mounted || fallbackEpoch != _automaticEpoch) {
+          return fallbackHeight;
+        }
         _recordEndpointSuccess(fallbackEndpoint);
+        if (replacementTip == null) {
+          _recordAutomaticTipSuccess(
+            fallbackEndpoint,
+            RpcEndpointCandidateSample(
+              url: fallbackEndpoint.normalizedLightwalletdUrl,
+              height: fallbackHeight,
+              latency: stopwatch.elapsed,
+            ),
+            fallbackEpoch,
+            fallbackTor,
+            ref.read(rpcEndpointFailoverClockProvider)(),
+          );
+        }
         _resetHeightWindow(fallbackEndpoint, fallbackHeight);
         return fallbackHeight;
       } catch (fallbackError, fallbackStack) {
@@ -1062,8 +1495,10 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       }
 
       final fallbackEndpoint = state.current;
+      final fallbackEpoch = _automaticEpoch;
       try {
         final result = await action(fallbackEndpoint);
+        if (!ref.mounted || fallbackEpoch != _automaticEpoch) return result;
         _recordEndpointSuccess(fallbackEndpoint);
         return result;
       } catch (fallbackError, fallbackStack) {
@@ -1518,6 +1953,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   _FailoverContext _captureContext() {
     return _FailoverContext(
       generation: _configGeneration,
+      automaticEpoch: _automaticEpoch,
       primary: state.primary,
       current: state.current,
       fallbackCandidates: state.fallbackCandidates,
@@ -1526,6 +1962,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
 
   bool _isCurrentContext(_FailoverContext context) {
     return _configGeneration == context.generation &&
+        _automaticEpoch == context.automaticEpoch &&
         _sameEndpointIdentity(state.primary, context.primary) &&
         _sameEndpointIdentity(state.current, context.current);
   }

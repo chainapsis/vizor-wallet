@@ -81,6 +81,12 @@ fn with_cache<T>(f: impl FnOnce(&mut LatestBlockCache) -> T) -> T {
     f(&mut cache)
 }
 
+/// Records an already validated public tip. Callers outside the normal tip
+/// getter must check their route and operation cancellation before publishing.
+pub(crate) fn record_latest_block(lightwalletd_url: &str, network: WalletNetwork, tip: BlockId) {
+    with_cache(|cache| cache.record(lightwalletd_url, network, tip, Instant::now()));
+}
+
 /// Fetches the latest block and records the successful response for later
 /// transaction operations.
 pub(crate) async fn get_latest_block_recorded(
@@ -89,7 +95,7 @@ pub(crate) async fn get_latest_block_recorded(
     network: WalletNetwork,
 ) -> Result<BlockId, SyncError> {
     let tip = get_latest_block(client).await?;
-    with_cache(|cache| cache.record(lightwalletd_url, network, tip.clone(), Instant::now()));
+    record_latest_block(lightwalletd_url, network, tip.clone());
     Ok(tip)
 }
 

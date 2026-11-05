@@ -36,16 +36,60 @@ while Tor is bootstrapping. Tor failures remain route failures and never permit
 a direct fallback. These are initial policy values rather than measured global
 service-level guarantees.
 
-The optional 12-hour cache is keyed by network and direct/Tor route. A cached
-candidate gets a short verification attempt (750ms direct, 2s Tor) deducted from
-the total budget, before the rest of the pool is measured. Cache reads are
-bounded and cache errors do not block connectivity. The existing wallet store
-holds preset ID and observation time only. Reset cancels selection, drains cache
-writes, and clears both route records before destroying wallet storage.
+The optional cache is keyed by network and direct/Tor route. It stores the
+selected preset and normalized physical URL, successful-request time, peer
+validation time, full benchmark time, network-name verification time, and a
+latency summary. It never stores a tip height for reuse after restart. Old
+`preset`/`observedAt` records remain compatible as candidate hints, without
+implying verified health. A changed preset URL also invalidates warm confidence.
+Cache reads are bounded and errors do not prevent connectivity.
+
+## Restart, unlock and foreground fast paths
+
+This policy is region-independent: it reuses whichever server most recently
+worked on the selected route. A success within five minutes and a network-name
+verification within twelve hours permit the bounded warm read. The real first
+`GetLatestBlock` runs directly against that server, with no selection-only
+`GetLightdInfo`. Generic operations still await this public read before consuming
+proposals or entering their native network operation. Concurrent first readers
+share one read. Native tip caching also lets subsequent transaction preparation
+reuse the tip under the existing fifteen-second native cache policy.
+
+The warm read has a 750ms direct / 2s Tor wall budget, including bridge queue time.
+If it fails or is too slow, the failed host is excluded and regular selection
+uses the remainder of the same six-/fifteen-second total budget. Only this public
+read is retried; transaction submission, durable operation leases and ambiguous
+broadcast handling keep their existing contracts.
+
+A freshly selected server already supplied a tip during its probe. The first
+preflight can consume that live result once, within five seconds and only for
+the same endpoint, route and cancellation epoch. A warm read can likewise supply
+the tip to its waiting preflight. Later sequential reads are fresh. Cancellation
+always drops both the reusable tip and any in-flight-read admission pointer.
+
+Lock and mobile backgrounding stop native selection work and advance its epoch,
+but retain recent public server health. After unlock/foreground the existing tip
+read performs bounded verification; a fresh peer check is not repeated merely
+because the app was locked. Longer absences, expired evidence, preference and
+route changes invalidate readiness. Reset pauses admission, drains cache writes,
+and removes both durable route records before destroying wallet storage.
+
+Successful actual tip reads update only success time. They do not renew peer,
+benchmark or network-name evidence. Independent peer confidence lasts fifteen
+minutes; full network-name verification has its own twelve-hour ceiling. Cache
+writes are serialized and ordinary successful-read writes are limited to once
+per minute, while selection/corroboration records are persisted immediately.
+
+These are request-count improvements, not measured global latency claims. With
+a recently verified cache on either direct or Tor, the first tip/preflight makes
+one `GetLatestBlock` call, zero candidate probes and zero selection-only
+`GetLightdInfo` calls. If peer confidence is fresh, no immediate peer sweep is
+needed. The same request-count contract applies after a short lock/foreground
+cycle, with all stale-result and privacy-route guards still enforced.
 
 ## Rechecks and failures
 
-An isolated or cached winner is provisional until independent peers corroborate
+An isolated or legacy-cache winner is provisional until independent peers corroborate
 its height. Background validation excludes the current server, so a very fast
 but lagging winner cannot repeatedly cancel every slower freshness check. If
 peers conflict, further distinct hosts are queried within the same validation
@@ -53,7 +97,8 @@ budget until heights corroborate or the candidates/budget are exhausted. Each
 round excludes every host already observed; only an agreeing height cluster can
 replace the current server for freshness. Unresolved checks retain the usable server and retry no more than
 once a minute on subsequent network operations. No recurring timer is needed.
-Lock, reset, and route changes cancel this work just like initial selection.
+Lock, reset, and route changes cancel this work just like initial selection;
+short transient cancellation preserves previously corroborated public health.
 
 A corroborated healthy selection is reused for 15 minutes. Periodic rechecks start
 with the current server. Performance-only changes respect a five-minute minimum residence

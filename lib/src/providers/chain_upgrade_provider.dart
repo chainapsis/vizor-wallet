@@ -255,9 +255,15 @@ class ChainUpgradeStatusNotifier
           ? previous!
           : ChainUpgradeStatusState.unobserved(endpoint);
     }
+    final previous = state.value;
     endpoint = await ref
         .read(rpcEndpointFailoverProvider.notifier)
         .ensureReady();
+    if (!_canFetchMetadata(generation, endpoint)) {
+      return previous?.network == endpoint.networkName
+          ? previous!
+          : ChainUpgradeStatusState.unobserved(endpoint);
+    }
     final status = await getChainUpgradeStatus(
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       network: endpoint.networkName,
@@ -296,7 +302,7 @@ class ChainUpgradeStatusNotifier
       endpoint = await ref
           .read(rpcEndpointFailoverProvider.notifier)
           .ensureReady();
-      if (generation != _generation) return;
+      if (!_canFetchMetadata(generation, endpoint)) return;
       final status = await ref.read(chainUpgradeStatusGetterProvider)(
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         network: endpoint.networkName,
@@ -318,6 +324,21 @@ class ChainUpgradeStatusNotifier
         state = AsyncError(e, st);
       }
     }
+  }
+
+  bool _canFetchMetadata(int generation, RpcEndpointConfig endpoint) {
+    if (!ref.mounted ||
+        generation != _generation ||
+        ref.read(appSecurityProvider).requiresUnlock) {
+      return false;
+    }
+    final route = ref.read(rpcEndpointFailoverProvider);
+    return (!isAutomaticRpcEndpointConfig(route.primary) ||
+            route.automaticReady) &&
+        route.current.networkName == endpoint.networkName &&
+        route.current.effectivePresetId == endpoint.effectivePresetId &&
+        route.current.normalizedLightwalletdUrl ==
+            endpoint.normalizedLightwalletdUrl;
   }
 
   Future<void> refreshAtTip(BigInt tipHeight) async {

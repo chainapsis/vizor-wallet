@@ -311,6 +311,33 @@ pub fn probe_lightwalletd_candidates(
     })
 }
 
+/// Read one live tip from a recently chain-verified endpoint on the selected
+/// route. The caller must reserve a unique selection ID before dispatch and
+/// must only use this fast path while its endpoint verification is fresh.
+/// Unlike a full candidate probe, this sends only GetLatestBlock.
+pub fn read_lightwalletd_tip(
+    lightwalletd_url: String,
+    expected_network: String,
+    selection_id: String,
+    timeout_ms: u32,
+) -> Result<LightwalletdCandidateProbe, String> {
+    catch(|| {
+        crate::wallet::endpoint_selection::read_tip(
+            lightwalletd_url,
+            &expected_network,
+            &selection_id,
+            timeout_ms,
+        )
+        .map(|probe| LightwalletdCandidateProbe {
+            url: probe.url,
+            height: probe.height,
+            latency_ms: probe.latency_ms,
+            connect_ms: probe.connect_ms,
+            rpc_ms: probe.rpc_ms,
+        })
+    })
+}
+
 /// Reserves one bounded selection slot before its async FRB dispatch. IDs
 /// must be unique. A cancelled queued call keeps this slot until its worker
 /// consumes it, so queue delays can never make cancelled work live again.

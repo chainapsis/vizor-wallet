@@ -51,6 +51,22 @@ Future<List<LightwalletdCandidateProbe>> probeLightwalletdCandidates({
   maxConcurrency: maxConcurrency,
 );
 
+/// Read one live tip from a recently chain-verified endpoint on the selected
+/// route. The caller must reserve a unique selection ID before dispatch and
+/// must only use this fast path while its endpoint verification is fresh.
+/// Unlike a full candidate probe, this sends only GetLatestBlock.
+Future<LightwalletdCandidateProbe> readLightwalletdTip({
+  required String lightwalletdUrl,
+  required String expectedNetwork,
+  required String selectionId,
+  required int timeoutMs,
+}) => RustLib.instance.api.crateApiWalletReadLightwalletdTip(
+  lightwalletdUrl: lightwalletdUrl,
+  expectedNetwork: expectedNetwork,
+  selectionId: selectionId,
+  timeoutMs: timeoutMs,
+);
+
 /// Reserves one bounded selection slot before its async FRB dispatch. IDs
 /// must be unique. A cancelled queued call keeps this slot until its worker
 /// consumes it, so queue delays can never make cancelled work live again.

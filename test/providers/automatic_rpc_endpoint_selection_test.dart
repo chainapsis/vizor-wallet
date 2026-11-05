@@ -496,6 +496,9 @@ void main() {
       () async {
         final harness = _Harness();
         await harness.notifier.ensureReady();
+        // Consume the one-use live tip returned by candidate selection before
+        // gating the ordinary network read whose late completion is tested.
+        expect(await harness.notifier.getLatestBlockHeight(), BigInt.from(100));
         final height = Completer<BigInt>();
         harness.readHeight = () => height.future;
         final pending = harness.notifier.getLatestBlockHeight();
@@ -516,7 +519,7 @@ void main() {
         expect(harness.calls, hasLength(1));
         expect(
           harness.container.read(rpcEndpointFailoverProvider).automaticReady,
-          isFalse,
+          isTrue,
         );
       },
     );
@@ -965,7 +968,7 @@ void main() {
         await _flush();
         expect(
           harness.container.read(rpcEndpointFailoverProvider).automaticReady,
-          isFalse,
+          !reset,
         );
         expect(
           harness.container

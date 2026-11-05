@@ -85,7 +85,7 @@ pub(crate) use lwd::{
 use lwd::{download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block};
 pub(crate) use tip_cache::{
     get_latest_block_recorded, latest_block_for_transaction,
-    latest_block_for_transaction_with_client,
+    latest_block_for_transaction_with_client, record_latest_block,
 };
 
 /// What a [`SyncProgressEvent`] reports.

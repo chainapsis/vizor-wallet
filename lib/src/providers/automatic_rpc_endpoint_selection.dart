@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/storage/app_secure_store.dart';
+import '../core/config/rpc_endpoint_config.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
 
 /// Selection uses public chain metadata only, never a wallet-derived request.
@@ -65,6 +66,31 @@ final rpcEndpointSelectionCancelProvider = Provider<void Function(String)>(
       (id) => rust_wallet.cancelLightwalletdSelection(selectionId: id),
 );
 
+/// A bounded real tip read used only after a recently verified cached route.
+typedef RpcEndpointWarmTipReader =
+    Future<RpcEndpointCandidateSample> Function({
+      required RpcEndpointConfig endpoint,
+      required String selectionId,
+      required Duration timeout,
+    });
+
+final rpcEndpointWarmTipReaderProvider = Provider<RpcEndpointWarmTipReader>(
+  (_) => ({required endpoint, required selectionId, required timeout}) async {
+    rust_wallet.beginLightwalletdSelection(selectionId: selectionId);
+    final result = await rust_wallet.readLightwalletdTip(
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      expectedNetwork: endpoint.networkName,
+      selectionId: selectionId,
+      timeoutMs: timeout.inMilliseconds,
+    );
+    return RpcEndpointCandidateSample(
+      url: result.url,
+      height: result.height,
+      latency: Duration(milliseconds: result.latencyMs),
+    );
+  },
+);
+
 class AutomaticRpcEndpointSettings {
   const AutomaticRpcEndpointSettings({
     this.directBudget = const Duration(seconds: 6),
@@ -72,6 +98,11 @@ class AutomaticRpcEndpointSettings {
     this.directProbeTimeout = const Duration(seconds: 3),
     this.torProbeTimeout = const Duration(seconds: 8),
     this.cacheMaxAge = const Duration(hours: 12),
+    this.warmReuseMaxAge = const Duration(minutes: 5),
+    this.tipReuseMaxAge = const Duration(seconds: 5),
+    this.directWarmTipTimeout = const Duration(milliseconds: 750),
+    this.torWarmTipTimeout = const Duration(seconds: 2),
+    this.cacheWriteInterval = const Duration(minutes: 1),
     this.recheckInterval = const Duration(minutes: 15),
     this.provisionalRecheckInterval = const Duration(minutes: 1),
     this.minimumResidence = const Duration(minutes: 5),
@@ -85,6 +116,11 @@ class AutomaticRpcEndpointSettings {
   final Duration directProbeTimeout;
   final Duration torProbeTimeout;
   final Duration cacheMaxAge;
+  final Duration warmReuseMaxAge;
+  final Duration tipReuseMaxAge;
+  final Duration directWarmTipTimeout;
+  final Duration torWarmTipTimeout;
+  final Duration cacheWriteInterval;
   final Duration recheckInterval;
   final Duration provisionalRecheckInterval;
   final Duration minimumResidence;
@@ -102,10 +138,47 @@ class AutomaticRpcEndpointCache {
   const AutomaticRpcEndpointCache({
     required this.presetId,
     required this.observedAt,
+    this.lastSuccessAt,
+    this.lastPeerValidatedAt,
+    this.lastBenchmarkAt,
+    this.lastNetworkVerifiedAt,
+    this.latencyMs,
+    this.endpointUrl,
   });
 
   final String presetId;
   final DateTime observedAt;
+  final DateTime? lastSuccessAt;
+  final DateTime? lastPeerValidatedAt;
+  final DateTime? lastBenchmarkAt;
+  final DateTime? lastNetworkVerifiedAt;
+  final int? latencyMs;
+  final String? endpointUrl;
+
+  bool isWarm(
+    DateTime now,
+    AutomaticRpcEndpointSettings settings, {
+    String? expectedUrl,
+  }) =>
+      endpointUrl != null &&
+      (expectedUrl == null || endpointUrl == expectedUrl) &&
+      isRecentEndpointObservation(observedAt, now, settings.cacheMaxAge) &&
+      isRecentEndpointObservation(
+        lastSuccessAt,
+        now,
+        settings.warmReuseMaxAge,
+      ) &&
+      isRecentEndpointObservation(
+        lastNetworkVerifiedAt ?? lastBenchmarkAt,
+        now,
+        settings.cacheMaxAge,
+      );
+}
+
+bool isRecentEndpointObservation(DateTime? at, DateTime now, Duration maxAge) {
+  if (at == null) return false;
+  final age = now.difference(at);
+  return !age.isNegative && age < maxAge;
 }
 
 abstract interface class AutomaticRpcEndpointStore {
@@ -130,6 +203,20 @@ class SecureAutomaticRpcEndpointStore implements AutomaticRpcEndpointStore {
     return AutomaticRpcEndpointCache(
       presetId: value['preset'] as String,
       observedAt: DateTime.parse(value['observedAt'] as String),
+      lastSuccessAt: value['lastSuccessAt'] == null
+          ? null
+          : DateTime.parse(value['lastSuccessAt'] as String),
+      lastPeerValidatedAt: value['lastPeerValidatedAt'] == null
+          ? null
+          : DateTime.parse(value['lastPeerValidatedAt'] as String),
+      lastBenchmarkAt: value['lastBenchmarkAt'] == null
+          ? null
+          : DateTime.parse(value['lastBenchmarkAt'] as String),
+      lastNetworkVerifiedAt: value['lastNetworkVerifiedAt'] == null
+          ? null
+          : DateTime.parse(value['lastNetworkVerifiedAt'] as String),
+      latencyMs: value['latencyMs'] as int?,
+      endpointUrl: value['endpointUrl'] as String?,
     );
   }
 
@@ -143,6 +230,20 @@ class SecureAutomaticRpcEndpointStore implements AutomaticRpcEndpointStore {
     jsonEncode({
       'preset': cache.presetId,
       'observedAt': cache.observedAt.toUtc().toIso8601String(),
+      if (cache.lastSuccessAt != null)
+        'lastSuccessAt': cache.lastSuccessAt!.toUtc().toIso8601String(),
+      if (cache.lastPeerValidatedAt != null)
+        'lastPeerValidatedAt': cache.lastPeerValidatedAt!
+            .toUtc()
+            .toIso8601String(),
+      if (cache.lastBenchmarkAt != null)
+        'lastBenchmarkAt': cache.lastBenchmarkAt!.toUtc().toIso8601String(),
+      if (cache.lastNetworkVerifiedAt != null)
+        'lastNetworkVerifiedAt': cache.lastNetworkVerifiedAt!
+            .toUtc()
+            .toIso8601String(),
+      if (cache.latencyMs != null) 'latencyMs': cache.latencyMs,
+      if (cache.endpointUrl != null) 'endpointUrl': cache.endpointUrl,
     }),
   );
 

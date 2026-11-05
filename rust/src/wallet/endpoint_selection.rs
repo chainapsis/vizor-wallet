@@ -301,8 +301,52 @@ pub(crate) fn probe_candidates(
             Duration::from_millis(u64::from(total_timeout_ms)),
             cancellation,
             || ready_route_revision().is_ok_and(|revision| revision == route_revision),
-            |url| probe_candidate(url, expected_network, cancellation),
+            |url| probe_candidate(url, expected_network, cancellation, route_revision),
         ))
+    })
+}
+
+/// Fast path for a recently chain-verified cached endpoint. Only the public
+/// chain tip is requested; identity freshness is the caller's responsibility.
+pub(crate) fn read_tip(
+    url: String,
+    expected_network: &str,
+    selection_id: &str,
+    timeout_ms: u32,
+) -> Result<CandidateProbe, String> {
+    let lease = SelectionLease::claim(selection_id, false)?;
+    if lease.signal.is_cancelled() {
+        return Err(CANCELLED.to_string());
+    }
+    keys::parse_network(expected_network)?;
+    if url.is_empty() || url.len() > 2048 || timeout_ms == 0 || timeout_ms > 30_000 {
+        return Err("automatic endpoint selection: invalid tip request".to_string());
+    }
+    let route_revision = ready_route_revision()?;
+    run_with_selection_runtime(lease, |runtime, cancellation| {
+        runtime.block_on(async {
+            let mut probes = run_probe_batch(
+                vec![url],
+                1,
+                Duration::from_millis(u64::from(timeout_ms)),
+                Duration::from_millis(u64::from(timeout_ms)),
+                cancellation,
+                || ready_route_revision().is_ok_and(|revision| revision == route_revision),
+                |url| {
+                    request_candidate_tip(
+                        url,
+                        expected_network,
+                        cancellation,
+                        route_revision,
+                        false,
+                    )
+                },
+            )
+            .await?;
+            probes
+                .pop()
+                .ok_or_else(|| NO_HEALTHY_CANDIDATES.to_string())
+        })
     })
 }
 
@@ -327,29 +371,65 @@ async fn probe_candidate(
     url: String,
     expected_network: &str,
     cancellation: &CancellationSignal,
+    route_revision: u64,
 ) -> Result<CandidateProbe, String> {
+    request_candidate_tip(url, expected_network, cancellation, route_revision, true).await
+}
+
+fn require_current_selection(
+    cancellation: &CancellationSignal,
+    route_revision: u64,
+) -> Result<(), String> {
+    if cancellation.is_cancelled() {
+        return Err(CANCELLED.to_string());
+    }
+    if !ready_route_revision().is_ok_and(|revision| revision == route_revision) {
+        return Err(ROUTE_BLOCKED.to_string());
+    }
+    Ok(())
+}
+
+async fn request_candidate_tip(
+    url: String,
+    expected_network: &str,
+    cancellation: &CancellationSignal,
+    route_revision: u64,
+    verify_chain: bool,
+) -> Result<CandidateProbe, String> {
+    let network = keys::parse_network(expected_network)?;
+    require_current_selection(cancellation, route_revision)?;
     let started = Instant::now();
     let mut client =
         super::sync_engine::open_lwd_channel_with_cancel(&url, || cancellation.is_cancelled())
             .await
             .map_err(|error| error.to_string())?;
     let connected = Instant::now();
-    let info = client
-        .get_lightd_info(Request::new(Empty {}))
-        .await
-        .map_err(|error| error.to_string())?
-        .into_inner();
-    if info.chain_name != expected_network {
-        return Err("automatic endpoint selection: wrong network".to_string());
+    require_current_selection(cancellation, route_revision)?;
+    if verify_chain {
+        let info = client
+            .get_lightd_info(Request::new(Empty {}))
+            .await
+            .map_err(|error| error.to_string())?
+            .into_inner();
+        if info.chain_name != expected_network {
+            return Err("automatic endpoint selection: wrong network".to_string());
+        }
+        require_current_selection(cancellation, route_revision)?;
     }
     let tip = client
         .get_latest_block(Request::new(ChainSpec {}))
         .await
         .map_err(|error| error.to_string())?
         .into_inner();
+    require_current_selection(cancellation, route_revision)?;
+    // The endpoint's network was verified above (or by the caller's fresh
+    // verification cache on the warm path). Reuse this same public response
+    // for native transaction preparation instead of issuing another tip RPC.
+    let height = tip.height;
+    super::sync_engine::record_latest_block(&url, network, tip);
     Ok(CandidateProbe {
         url,
-        height: tip.height,
+        height,
         latency_ms: millis(started.elapsed()),
         connect_ms: millis(connected.duration_since(started)),
         rpc_ms: millis(connected.elapsed()),
@@ -594,14 +674,220 @@ mod tests {
         )
         .await;
         let signal = CancellationSignal::default();
-        let probe = probe_candidate(server.url.clone(), "main", &signal)
-            .await
-            .unwrap();
+        let probe = probe_candidate(
+            server.url.clone(),
+            "main",
+            &signal,
+            ready_route_revision().unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(probe.height, 3_000_000);
         let requests = server.requests();
         assert_eq!(requests.len(), 2);
         assert!(requests[0].ends_with("/GetLightdInfo"));
         assert!(requests[1].ends_with("/GetLatestBlock"));
+        let cached = super::super::sync_engine::latest_block_for_transaction(
+            &server.url,
+            super::super::network::WalletNetwork::Main,
+        )
+        .await
+        .unwrap();
+        assert_eq!(cached.height, 3_000_000);
+        assert_eq!(
+            server.requests().len(),
+            2,
+            "verified full probe should seed native transaction tip cache"
+        );
+    }
+
+    async fn wait_for_tip_request(server: &super::super::sync_engine::test_lwd::CapturingLwd) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while server.count("/GetLatestBlock") == 0 {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("tip request did not reach the local server");
+    }
+
+    #[tokio::test]
+    async fn warm_tip_sends_one_latest_block_and_seeds_native_transaction_cache() {
+        let _registry = registry_test_lock();
+        let _route = network_privacy::test_route_policy::lock_route_policy();
+        let server = super::super::sync_engine::test_lwd::CapturingLwd::start_with(
+            Vec::new(),
+            3_000_100,
+            |_| {},
+        )
+        .await;
+        let url = server.url.clone();
+        let id = "warm-tip-one-rpc";
+        begin_selection(id).unwrap();
+        let probe = tokio::task::spawn_blocking(move || {
+            crate::api::wallet::read_lightwalletd_tip(
+                url,
+                "main".to_string(),
+                id.to_string(),
+                1_000,
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(probe.url, server.url);
+        assert_eq!(probe.height, 3_000_100);
+        assert_eq!(server.count("/GetLatestBlock"), 1);
+        assert_eq!(server.count("/GetLightdInfo"), 0);
+        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        let cached = super::super::sync_engine::latest_block_for_transaction(
+            &server.url,
+            super::super::network::WalletNetwork::Main,
+        )
+        .await
+        .unwrap();
+        assert_eq!(cached.height, 3_000_100);
+        assert_eq!(
+            server.requests().len(),
+            1,
+            "native transaction preparation must reuse the public tip"
+        );
+    }
+
+    #[tokio::test]
+    async fn warm_tip_timeout_releases_its_claim_without_caching_a_late_reply() {
+        let _registry = registry_test_lock();
+        let _route = network_privacy::test_route_policy::lock_route_policy();
+        let server = super::super::sync_engine::test_lwd::CapturingLwd::start_with(
+            Vec::new(),
+            3_000_200,
+            |_| {},
+        )
+        .await;
+        let gate = server.hold_responses("/GetLatestBlock");
+        let url = server.url.clone();
+        let id = "warm-tip-held-timeout";
+        begin_selection(id).unwrap();
+        let started = Instant::now();
+        let error = tokio::time::timeout(
+            Duration::from_secs(2),
+            tokio::task::spawn_blocking(move || read_tip(url, "main", id, 100)),
+        )
+        .await
+        .expect("warm tip exceeded its test guard")
+        .unwrap()
+        .unwrap_err();
+        assert_eq!(error, NO_HEALTHY_CANDIDATES);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        assert_eq!(server.count("/GetLatestBlock"), 1);
+        gate.notify_waiters();
+        gate.notify_one();
+        let fresh = super::super::sync_engine::latest_block_for_transaction(
+            &server.url,
+            super::super::network::WalletNetwork::Main,
+        )
+        .await
+        .unwrap();
+        assert_eq!(fresh.height, 3_000_200);
+        assert_eq!(
+            server.count("/GetLatestBlock"),
+            2,
+            "a timed-out reply must not seed the tip cache"
+        );
+    }
+
+    #[tokio::test]
+    async fn warm_tip_cancellation_drops_active_rpc_and_releases_its_claim() {
+        let _registry = registry_test_lock();
+        let _route = network_privacy::test_route_policy::lock_route_policy();
+        let server = super::super::sync_engine::test_lwd::CapturingLwd::start_with(
+            Vec::new(),
+            3_000_300,
+            |_| {},
+        )
+        .await;
+        let gate = server.hold_responses("/GetLatestBlock");
+        let url = server.url.clone();
+        let id = "warm-tip-cancel-active-rpc";
+        begin_selection(id).unwrap();
+        let worker = tokio::task::spawn_blocking(move || read_tip(url, "main", id, 5_000));
+        wait_for_tip_request(&server).await;
+        cancel_selection(id);
+        let error = tokio::time::timeout(Duration::from_secs(2), worker)
+            .await
+            .expect("cancelled warm tip did not return")
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error, CANCELLED);
+        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        gate.notify_waiters();
+        gate.notify_one();
+        super::super::sync_engine::latest_block_for_transaction(
+            &server.url,
+            super::super::network::WalletNetwork::Main,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            server.count("/GetLatestBlock"),
+            2,
+            "cancelled work must not cache its late reply"
+        );
+        assert_eq!(server.count("/GetLightdInfo"), 0);
+    }
+
+    #[tokio::test]
+    async fn warm_tip_route_change_drops_active_rpc_without_caching_its_reply() {
+        let _registry = registry_test_lock();
+        let _route = network_privacy::test_route_policy::lock_route_policy();
+        let server = super::super::sync_engine::test_lwd::CapturingLwd::start_with(
+            Vec::new(),
+            3_000_400,
+            |_| {},
+        )
+        .await;
+        let gate = server.hold_responses("/GetLatestBlock");
+        let url = server.url.clone();
+        let id = "warm-tip-route-change";
+        begin_selection(id).unwrap();
+        let worker = tokio::task::spawn_blocking(move || read_tip(url, "main", id, 5_000));
+        wait_for_tip_request(&server).await;
+        network_privacy::begin_tor_enable();
+        let error = tokio::time::timeout(Duration::from_secs(2), worker)
+            .await
+            .expect("route-changed warm tip did not return")
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error, ROUTE_BLOCKED);
+        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        network_privacy::disable_tor();
+        gate.notify_waiters();
+        gate.notify_one();
+        super::super::sync_engine::latest_block_for_transaction(
+            &server.url,
+            super::super::network::WalletNetwork::Main,
+        )
+        .await
+        .unwrap();
+        assert_eq!(server.count("/GetLatestBlock"), 2);
+    }
+
+    #[test]
+    fn warm_tip_pre_worker_cancel_and_invalid_arguments_release_the_claim() {
+        let _registry = registry_test_lock();
+        let id = "warm-tip-pre-worker-cancel";
+        begin_selection(id).unwrap();
+        cancel_selection(id);
+        let error = read_tip("http://127.0.0.1:1".to_string(), "main", id, 50).unwrap_err();
+        assert_eq!(error, CANCELLED);
+        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        let id = "warm-tip-invalid-budget";
+        begin_selection(id).unwrap();
+        assert!(read_tip("http://127.0.0.1:1".to_string(), "main", id, 0)
+            .unwrap_err()
+            .contains("invalid tip request"));
+        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
     }
 
     #[tokio::test]
@@ -609,9 +895,14 @@ mod tests {
         let _route = network_privacy::test_route_policy::lock_route_policy();
         let server = super::super::sync_engine::test_lwd::CapturingLwd::start(Vec::new()).await;
         let signal = CancellationSignal::default();
-        let error = probe_candidate(server.url.clone(), "test", &signal)
-            .await
-            .unwrap_err();
+        let error = probe_candidate(
+            server.url.clone(),
+            "test",
+            &signal,
+            ready_route_revision().unwrap(),
+        )
+        .await
+        .unwrap_err();
         assert!(error.contains("wrong network"));
         assert_eq!(server.requests().len(), 1);
     }
