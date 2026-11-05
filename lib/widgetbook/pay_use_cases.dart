@@ -25,6 +25,7 @@ import '../src/features/swap/models/swap_activity_status_mapper.dart';
 import '../src/features/swap/models/swap_intent_presentation_mapper.dart';
 import '../src/features/swap/widgets/pay_activity_status_content.dart';
 import '../src/features/swap/widgets/swap_asset_selector_modal.dart';
+import '../src/features/swap/models/swap_status_presentation.dart';
 
 const _previewWindowSize = Size(1080, 720);
 const _contactAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
@@ -296,6 +297,7 @@ class _PayRecipientPreviewState extends State<_PayRecipientPreview> {
         controller: _controller,
         typedAddress: _typedAddress,
         addressError: issue,
+        network: AddressBookNetwork.ethereum,
         contacts: _previewContacts,
         recents: _previewRecents,
         busy: false,
@@ -391,10 +393,18 @@ class _PayAddContactPreview extends StatelessWidget {
   }
 }
 
-class _PayStatusPreview extends StatelessWidget {
+class _PayStatusPreview extends StatefulWidget {
   const _PayStatusPreview({required this.phase});
 
   final PayActivityStatusPhase phase;
+
+  @override
+  State<_PayStatusPreview> createState() => _PayStatusPreviewState();
+}
+
+class _PayStatusPreviewState extends State<_PayStatusPreview> {
+  SwapStatusTab _activeTab = SwapStatusTab.progress;
+  PayActivityStatusPhase get phase => widget.phase;
 
   @override
   Widget build(BuildContext context) {
@@ -431,10 +441,44 @@ class _PayStatusPreview extends StatelessWidget {
           recipientAddress: _newRecipientAddress,
           onShowFullAddress: () {},
           onOpenExplorer: () {},
+          progressPresentation: phase == PayActivityStatusPhase.inProgress
+              ? _payProgressPresentation()
+              : null,
+          activeTab: _activeTab,
+          onTabChanged: (tab) => setState(() => _activeTab = tab),
         ),
       ),
     );
   }
+}
+
+SwapActivityStatusPresentation _payProgressPresentation() {
+  const intent = SwapIntent(
+    id: 'widgetbook-pay-progress',
+    pair: 'ZEC -> USDC',
+    sellAmount: '2.45125 ZEC',
+    receiveEstimate: '990 USDC',
+    provider: 'NEAR Intents',
+    status: SwapIntentStatus.processing,
+    nextAction: 'Payment is processing',
+    direction: SwapDirection.zecToExternal,
+    externalAsset: SwapAsset.usdc,
+    depositAddress: '0123123124512512',
+    oneClickRecipient: _newRecipientAddress,
+    payMode: true,
+  );
+  return swapActivityStatusPresentationForIntent(
+    const SwapState(
+      direction: SwapDirection.zecToExternal,
+      amountText: '',
+      receiveAmountText: '',
+      destinationText: '',
+      externalAsset: SwapAsset.usdc,
+      reviewVisible: false,
+      intents: [intent],
+    ),
+    intent,
+  );
 }
 
 SwapActivityStatusPresentation _payFailurePresentation(

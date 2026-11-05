@@ -26,7 +26,23 @@ void main() {
     expect(find.text('Receive ZEC'), findsOneWidget);
     expect(find.text('Account Name'), findsOneWidget);
     expect(find.text('Request ZEC'), findsOneWidget);
-    expect(find.text('Copy shielded address'), findsOneWidget);
+    expect(find.text('Copy address'), findsOneWidget);
+    final copyLabel = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.text('Copy address'),
+        matching: find.byType(RichText),
+      ),
+    );
+    expect(copyLabel.size.height, moreOrLessEquals(17, epsilon: 0.1));
+    expect(copyLabel.text.style?.fontSize, AppTypography.labelLarge.fontSize);
+    final requestLabel = tester.renderObject<RenderParagraph>(
+      find.text('Request ZEC'),
+    );
+    expect(
+      requestLabel.text.style?.fontSize,
+      AppTypography.labelLarge.fontSize,
+    );
+
     final scrollable = tester.state<ScrollableState>(
       find.byType(Scrollable).first,
     );
@@ -84,7 +100,22 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Request ZEC'), findsOneWidget);
-    expect(find.text('Copy transparent address'), findsOneWidget);
+    expect(find.text('Copy address'), findsOneWidget);
+    final copyLabel = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.text('Copy address'),
+        matching: find.byType(RichText),
+      ),
+    );
+    expect(copyLabel.size.height, moreOrLessEquals(17, epsilon: 0.1));
+    expect(copyLabel.text.style?.fontSize, AppTypography.labelLarge.fontSize);
+    final requestLabel = tester.renderObject<RenderParagraph>(
+      find.text('Request ZEC'),
+    );
+    expect(
+      requestLabel.text.style?.fontSize,
+      AppTypography.labelLarge.fontSize,
+    );
   });
 
   testWidgets('receive mobile shielded sheet use case opens info sheet', (

@@ -96,6 +96,26 @@ pub(crate) fn estimated_preparation_spacing_delay_blocks(
         .ok_or_else(|| "Migration preparation spacing estimate overflow".to_string())
 }
 
+/// The longest spacing `transaction_count` preparation transactions can draw,
+/// in reference blocks: every delay at its maximum.
+pub(crate) fn latest_preparation_spacing_delay_blocks(
+    network: WalletNetwork,
+    preparation_policy: PreparationTimingPolicy,
+    transaction_count: u32,
+) -> Result<u32, String> {
+    if preparation_policy == PreparationTimingPolicy::Immediate {
+        return Ok(0);
+    }
+    preparation_schedule_parameters_for_transaction_count(
+        network,
+        configured_timing_policy(network),
+        transaction_count as usize,
+    )
+    .1
+    .checked_mul(transaction_count)
+    .ok_or_else(|| "Migration preparation spacing bound overflow".to_string())
+}
+
 fn preparation_delay_with_rng<R: RngCore + CryptoRng + ?Sized>(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
@@ -155,14 +175,11 @@ pub(crate) fn planned_preparation_scheduled_heights<
         let mut scheduled_height = layer_base;
         for stage_index in stage_indices {
             if preparation_policy == PreparationTimingPolicy::Zip318Spaced {
-                scheduled_height = scheduled_height
-                    .checked_add(preparation_delay_with_rng(
-                        network,
-                        timing_policy,
-                        transaction_count,
-                        rng,
-                    ))
-                    .ok_or("Migration preparation scheduled height overflow")?;
+                scheduled_height = zip318_advance(
+                    network,
+                    scheduled_height,
+                    preparation_delay_with_rng(network, timing_policy, transaction_count, rng),
+                )?;
             }
             heights[stage_index] = scheduled_height;
         }
@@ -221,14 +238,11 @@ pub(crate) fn rerandomize_remaining_preparation_broadcast_heights<
 
     let mut preceding_height = chain_tip_height;
     for (stage_index, scheduled_height, existing_not_before_height) in &remaining {
-        let randomized_height = preceding_height
-            .checked_add(preparation_delay_with_rng(
-                network,
-                timing_policy,
-                transaction_count,
-                rng,
-            ))
-            .ok_or("Migration preparation catch-up height overflow")?;
+        let randomized_height = zip318_advance(
+            network,
+            preceding_height,
+            preparation_delay_with_rng(network, timing_policy, transaction_count, rng),
+        )?;
         let effective_height = randomized_height
             .max(*scheduled_height)
             .max(existing_not_before_height.unwrap_or(0));

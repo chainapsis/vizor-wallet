@@ -810,22 +810,12 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
   bool _detailsExpanded = false;
 
   @override
-  void initState() {
-    super.initState();
-    if (_usesMobilePayStatus(widget.intent, widget.layout)) {
-      _activeTab = SwapStatusTab.details;
-    }
-  }
-
-  @override
   void didUpdateWidget(covariant _SwapStatusForIntent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.intent.id != widget.intent.id ||
         oldWidget.intent.payMode != widget.intent.payMode ||
         oldWidget.layout != widget.layout) {
-      _activeTab = _usesMobilePayStatus(widget.intent, widget.layout)
-          ? SwapStatusTab.details
-          : SwapStatusTab.progress;
+      _activeTab = SwapStatusTab.progress;
       _detailsExpanded = false;
     }
   }
@@ -888,8 +878,6 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       ),
     );
     if (widget.layout == SwapActivityDetailLayout.mobile) {
-      final headerLabels = mobileSwapStatusHeaderLabels(intent.status);
-      final paymentMode = presentation.paymentMode;
       final recipient = intent.oneClickRecipient?.trim();
       final hasRecipient = recipient != null && recipient.isNotEmpty;
       final recipientContactId = intent.direction == SwapDirection.externalToZec
@@ -913,29 +901,20 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
                 asset: presentation.receiveAsset,
                 amountText: trimSwapAmountText(presentation.receiveAmountText),
                 fiatText: presentation.receiveFiatText,
-                label: switch (payStatus.phase) {
-                  PayActivityStatusPhase.completed => 'You paid',
-                  PayActivityStatusPhase.failed ||
-                  PayActivityStatusPhase.refunded => 'Amount',
-                  PayActivityStatusPhase.inProgress => "You're paying",
-                },
+                label: payActivityStatusAmountLabel(payStatus.phase),
                 recipientAddress: recipient,
                 recipientName: recipientContact?.label,
                 recipientProfilePictureId: recipientContact?.profilePictureId,
               )
             : null,
         payHeaderRow: MobileSwapReviewHeaderRow(
-          label: !paymentMode && headerLabels.pay != null
-              ? headerLabels.pay!
-              : presentation.payLabel,
+          label: presentation.payLabel,
           amountText: trimSwapAmountText(presentation.payAmountText),
           asset: presentation.payAsset,
           bottomText: presentation.payDetailText,
         ),
         receiveHeaderRow: MobileSwapReviewHeaderRow(
-          label: !paymentMode && headerLabels.receive != null
-              ? headerLabels.receive!
-              : presentation.receiveLabel,
+          label: presentation.receiveLabel,
           amountText: trimSwapAmountText(presentation.receiveAmountText),
           asset: presentation.receiveAsset,
           bottomText: hasRecipient
@@ -976,6 +955,9 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
         amountFiatText: presentation.receiveFiatText,
         recipientAddress: recipientAddress,
         recipientContact: recipientContact,
+        progressPresentation: presentation,
+        activeTab: _activeTab,
+        onTabChanged: (tab) => setState(() => _activeTab = tab),
         onShowFullAddress: () => widget.onShowPayRecipientAddress?.call(
           recipientAddress,
           recipientContact,
@@ -1009,6 +991,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       progressTabLabel: presentation.progressTabLabel,
       paymentMode: presentation.paymentMode,
       showTabs: presentation.showTabs,
+      explorerUri: presentation.explorerUri,
       onTabChanged: (tab) {
         setState(() {
           _activeTab = tab;
@@ -1019,17 +1002,6 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
     );
   }
 }
-
-({String? pay, String? receive}) mobileSwapStatusHeaderLabels(
-  SwapIntentStatus status,
-) => switch (status) {
-  SwapIntentStatus.complete => (pay: 'You paid', receive: 'You received'),
-  SwapIntentStatus.failed || SwapIntentStatus.refunded => (
-    pay: 'Deposit amount',
-    receive: 'Expected to receive',
-  ),
-  _ => (pay: null, receive: null),
-};
 
 BigInt? _confirmedPayDepositFeeZatoshi(rust_sync.TransactionInfo? transaction) {
   if (transaction == null ||
@@ -1065,12 +1037,6 @@ String? _payDepositTxid(SwapIntent intent) {
   return providerDepositTxid == null || providerDepositTxid.isEmpty
       ? null
       : providerDepositTxid;
-}
-
-bool _usesMobilePayStatus(SwapIntent intent, SwapActivityDetailLayout layout) {
-  return layout == SwapActivityDetailLayout.mobile &&
-      intent.payMode &&
-      intent.direction == SwapDirection.zecToExternal;
 }
 
 /// Figma-style 6 ... 5 truncation for the header's "To:" line.

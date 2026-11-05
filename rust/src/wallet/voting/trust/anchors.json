@@ -1,0 +1,14 @@
+{
+  "main": {
+    "chain_id": "zvote-1",
+    "validator_set_hash": "E2E8170C807DAB936C75A02E092E9EE81C9F4776B03BA672FCD3DFF7AB2FD8C1",
+    "captured_at": "2026-11-02",
+    "height": 10033812
+  },
+  "test": {
+    "chain_id": "svote-1",
+    "validator_set_hash": "6E81F631CB63A527AB5A659529BA8942C46CCF78BA87D1B3AD4CF8AE5BDC2E8B",
+    "captured_at": "2026-09-10",
+    "height": 8812607
+  }
+}

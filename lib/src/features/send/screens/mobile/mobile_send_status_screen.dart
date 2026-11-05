@@ -8,8 +8,10 @@ import '../../../../providers/sync_provider.dart';
 
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/zcash/network_upgrade_hold.dart';
 import '../../../../core/widgets/mobile/mobile_transaction_progress_screen.dart';
 import '../../services/send_flow.dart';
+import '../../../donation/widgets/donation_views.dart';
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
 
 enum _MobileSendStatusPhase { sending, pendingBroadcast, succeeded, failed }
@@ -49,6 +51,7 @@ class MobileSendStatusScreen extends ConsumerStatefulWidget {
 
 class _MobileSendStatusScreenState
     extends ConsumerState<MobileSendStatusScreen> {
+  bool get _isDonation => widget.args.flowKind == SendFlowKind.donation;
   var _phase = _MobileSendStatusPhase.sending;
   var _proposalConsumed = false;
 
@@ -218,6 +221,10 @@ class _MobileSendStatusScreenState
 
   void _handleBack() {
     if (_phase == _MobileSendStatusPhase.sending) return;
+    if (_isDonation) {
+      context.go('/settings');
+      return;
+    }
     if (context.canPop()) {
       context.pop();
       return;
@@ -240,6 +247,14 @@ class _MobileSendStatusScreenState
   }
 
   String get _title {
+    if (_isDonation) {
+      return switch (_phase) {
+        _MobileSendStatusPhase.sending => 'Sending donation...',
+        _MobileSendStatusPhase.pendingBroadcast => 'Donation queued',
+        _MobileSendStatusPhase.succeeded => 'Thank you for\nsupporting Vizor',
+        _MobileSendStatusPhase.failed => 'Donation failed',
+      };
+    }
     return switch (_phase) {
       _MobileSendStatusPhase.sending => 'Sending...',
       _MobileSendStatusPhase.pendingBroadcast => 'Queued to send',
@@ -249,6 +264,9 @@ class _MobileSendStatusScreenState
   }
 
   String get _subtitle {
+    if (_isDonation && _phase == _MobileSendStatusPhase.succeeded) {
+      return 'Your support keeps Vizor going.';
+    }
     final statusMessage = _statusMessage?.trim();
     return switch (_phase) {
       _MobileSendStatusPhase.sending =>
@@ -265,6 +283,8 @@ class _MobileSendStatusScreenState
         _canRetryBroadcast
             ? (_error ??
                   'Wait for wallet sync, then retry this signed transaction.')
+            : _error == kNetworkUpgradeHoldMessage
+            ? kNetworkUpgradeHoldMessage
             : "Nothing was sent, your funds haven't moved. Try again.",
     };
   }
@@ -275,7 +295,11 @@ class _MobileSendStatusScreenState
       _MobileSendStatusPhase.pendingBroadcast ||
       _MobileSendStatusPhase.succeeded => 'Done',
       _MobileSendStatusPhase.failed =>
-        _canRetryBroadcast ? 'Retry' : 'Return home',
+        _canRetryBroadcast
+            ? 'Retry'
+            : _isDonation
+            ? 'Return to settings'
+            : 'Return home',
     };
   }
 
@@ -291,14 +315,17 @@ class _MobileSendStatusScreenState
         body: _subtitle,
         bodyMaxWidth: _phase == _MobileSendStatusPhase.pendingBroadcast
             ? null
+            : _isDonation && _phase == _MobileSendStatusPhase.succeeded
+            ? 260
             : _statusSubtitleWidth,
-        canPop: _routePopAllowed,
+        canPop: _routePopAllowed && !_isDonation,
         onPopBlocked: _handleBack,
         titleKey: ValueKey('mobile_send_status_${_phase.name}'),
         progressIconKey: const ValueKey('mobile_send_status_icon_loader'),
         successIconKey: const ValueKey('mobile_send_status_icon_success'),
         failureIconKey: const ValueKey('mobile_send_status_icon_failed'),
         successRippleKey: const ValueKey('mobile_send_status_success_ripple'),
+        successBadge: _isDonation ? const DonationHeartBadge(size: 112) : null,
         primaryActionKey: const ValueKey('mobile_send_status_button'),
         primaryActionLabel: _buttonLabel,
         onPrimaryAction: _buttonLabel == null
@@ -306,7 +333,9 @@ class _MobileSendStatusScreenState
             : _canRetryBroadcast
             ? () => unawaited(_startBroadcast())
             : _handleBack,
-        secondaryActionLabel: _canRetryBroadcast ? 'Return home' : null,
+        secondaryActionLabel: _canRetryBroadcast
+            ? (_isDonation ? 'Return to settings' : 'Return home')
+            : null,
         onSecondaryAction: _canRetryBroadcast ? _handleBack : null,
       ),
     );

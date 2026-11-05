@@ -12,6 +12,7 @@ import '../../ledger/services/ledger_immediate_migration_service.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../../ledger/widgets/mobile_ledger_signing_surface.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 typedef LedgerImmediateMigrationCompleted =
     Future<void> Function(rust_sync.IronwoodMigrationResult result);
@@ -141,6 +142,8 @@ class _LedgerImmediateMigrationSigningOverlayState
       requestKind: LedgerRequestKind.migration,
     );
     if (_deviceGuidance != null) return _deviceGuidance!.message;
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) return upgradeHold;
     final message = error.toString().toLowerCase();
     if (LedgerRequestFailure.fromError(error) ==
         LedgerRequestFailure.declined) {
@@ -206,6 +209,9 @@ class _LedgerImmediateMigrationSigningOverlayState
         children: [
           AppPaneModalOverlay(
             key: const ValueKey('ledger_immediate_migration_signing_overlay'),
+            // The modal replaces the review inside the migration card, so a
+            // scrim would only dim an empty card.
+            scrimColor: const Color(0x00000000),
             onDismiss: _canLeave ? () => unawaited(_cancel()) : () {},
             child: modal,
           ),

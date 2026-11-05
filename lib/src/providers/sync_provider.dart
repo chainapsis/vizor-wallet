@@ -2341,6 +2341,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (_walletMutationPauseCount > 0) return;
     final restartSync = resume && _pendingMutationRestartSync;
     final restartPolling = resume && _pendingMutationRestartPolling;
+    // A configuration fetch can finish after mobile hides. Keep its restart
+    // pending until resume instead of starting foreground work while hidden.
+    // Locked wallets still discard the request below, as before.
+    if ((restartSync || restartPolling) &&
+        !_requiresUnlock &&
+        !canRunAppProcessWork(isInForeground: _isInForeground)) {
+      return;
+    }
     _pendingMutationRestartSync = false;
     _pendingMutationRestartPolling = false;
     // Check nothing else when there is nothing to restart: the opt-out exit
@@ -2464,6 +2472,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// [forceRestart] resumes sync and polling regardless of what the pause
   /// snapshot captured — the recovery toggle stops sync itself, so it must
   /// bring it back even when nothing was running when it took the pause.
+  /// Mobile defers that request while hidden and consumes it on resume;
+  /// locking or resetting the wallet discards the deferred request.
   ///
   /// A pause that outlived a wallet reset contributes neither its snapshot
   /// nor [forceRestart]: both describe the deleted wallet. It only releases
@@ -2646,6 +2656,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ref.read(pendingActivityEvidenceProvider.notifier).setForeground(true);
     // A resume is public: the recovery restart schedule starts over.
     _recoveryRestartGate.reset();
+    // Consume a restart deferred by a mutation that finished while hidden.
+    // An ongoing mutation keeps ownership until its own last pause exits.
+    if (_walletMutationPauseCount == 0 &&
+        (_pendingMutationRestartSync || _pendingMutationRestartPolling)) {
+      _endWalletMutationPause(resume: true);
+    }
     unawaited(_refreshBalanceAfterResume());
     // Coalesce repeated focus/resume events. An old mobile check spanning
     // backgrounding cannot certify foreground freshness; follow it immediately.

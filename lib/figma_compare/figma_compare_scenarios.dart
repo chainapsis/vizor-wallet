@@ -1,3 +1,4 @@
+import 'near_intents_service_notice_capture.dart';
 import 'activity_pagination_capture.dart';
 import 'mobile_shield_capture.dart';
 import 'mobile_passcode_capture.dart';
@@ -33,6 +34,7 @@ import '../widgetbook/keystone_use_cases.dart';
 import '../widgetbook/payment_link_claim_outcome_use_cases.dart';
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
+import '../widgetbook/mobile_donation_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/mobile_gift_onboarding_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
@@ -53,12 +55,15 @@ import '../widgetbook/address_book_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
+import 'gift_card_artwork_capture.dart';
 import 'mobile_method_selection_capture.dart';
 import 'mobile_hardware_selection_capture.dart';
 import 'mobile_onboarding_intro_capture.dart';
 import 'ledger_recovery_capture.dart';
 import 'ledger_onboarding_guidance_capture.dart';
+import 'review_info_capture.dart';
 import 'swap_asset_icons_capture.dart';
+import 'swap_activity_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -108,6 +113,38 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'near-intents-service-current',
+    description: 'Current NEAR Intents maintenance modal with affected chains',
+    builder: buildCurrentServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'near-intents-service-all-chains',
+    description: 'Current NEAR Intents maintenance modal for all chains',
+    builder: buildAllChainsServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'near-intents-service-pay',
+    description: 'Current NEAR Intents service modal on Pay',
+    builder: buildPayServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-swap-processing',
+    description: 'Production Activity swap detail while processing',
+    builder: buildSwapActivityProcessingCapture,
+    mobile: true,
+    allowPointer: true,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-pay-processing',
+    description: 'Production Activity Pay detail while processing',
+    builder: buildPayActivityProcessingCapture,
+    mobile: true,
+    allowPointer: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-shield-ledger-connection-help',
     description: 'Ledger pairing recovery inside the mobile shielding scene',
     builder: buildLedgerInlineConnectionHelpUseCase,
@@ -145,6 +182,12 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ledger-onboarding-access-restricted',
     description: 'Ledger onboarding: restricted access with close and settings',
     builder: buildLedgerOnboardingAccessRestricted,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-onboarding-viewing-key-approval',
+    description: 'Ledger onboarding: viewing-key approval names the account',
+    builder: buildLedgerOnboardingViewingKeyApproval,
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
@@ -706,6 +749,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'gift-card-amount-zec',
     description: 'Gift card amount in ZEC with its USD estimate',
     builder: buildGiftCardZecAmountUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-rogue-cat-amount',
+    description: 'Rogue cat gift card amount and artwork selector',
+    builder: buildRogueCatGiftCardAmountCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-rogue-cat-qr',
+    description: 'Rogue cat gift card QR share artwork',
+    builder: buildRogueCatGiftCardQrCapture,
     mobile: true,
   ),
   FigmaCompareScenario(
@@ -1286,6 +1341,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: _buildLedgerSigningMemoHashUpdate,
   ),
   FigmaCompareScenario(
+    id: 'ledger-signing-app-update',
+    description: 'Ledger signing: transaction needs Zcash app 3.10.0',
+    builder: _buildLedgerSigningAppUpdate,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-signing-voting-processing',
     description: 'Ledger voting: processing panel without caller background',
     builder: _buildLedgerVotingProcessing,
@@ -1349,6 +1409,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-gift-card-usage-ready',
     description: 'Gift Card sender usage preview',
     builder: buildGiftCardUsageReadyCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-send-recipient-recents',
+    description: 'Mobile recipient step with recents and contacts',
+    builder: buildMobileSendRecipientRecentsUseCase,
     desktop: false,
     mobile: true,
   ),
@@ -1565,6 +1632,83 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'donation-zec-empty',
     description: 'Desktop donation composer with an empty ZEC amount',
     builder: buildDonationZecEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-empty',
+    description: 'Mobile donation empty amount',
+    builder: buildMobileDonationEmptyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-amount',
+    description: 'Mobile donation ZEC preset',
+    builder: buildMobileDonationAmountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-usd',
+    description: 'Mobile donation USD preset',
+    builder: buildMobileDonationUsdUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-insufficient',
+    description: 'Mobile donation insufficient funds',
+    builder: buildMobileDonationInsufficientUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-review',
+    description: 'Mobile donation review',
+    builder: buildMobileDonationReviewUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-sending',
+    description: 'Mobile donation broadcast in progress',
+    builder: buildMobileDonationSendingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-success',
+    description: 'Mobile donation thank you',
+    builder: buildMobileDonationSuccessUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-pending',
+    description: 'Mobile donation queued broadcast',
+    builder: buildMobileDonationPendingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-failure',
+    description: 'Mobile donation failed broadcast',
+    builder: buildMobileDonationFailureUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-review-large-text',
+    description: 'Mobile donation review with 200 percent text',
+    builder: buildMobileDonationReviewLargeTextUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-success-large-text',
+    description: 'Mobile donation thank you with 200 percent text',
+    builder: buildMobileDonationSuccessLargeTextUseCase,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'donation-zec-selected',
@@ -1857,6 +2001,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPayRecipientNewAddressUseCase,
   ),
   FigmaCompareScenario(
+    id: 'mobile-pay-amount',
+    description: 'Mobile Pay amount entry with a filled amount',
+    builder: buildMobilePayAmountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-pay-recipient',
     description: 'Mobile Pay recipient selection with recent contacts',
     builder: buildMobilePayRecipientUseCase,
@@ -1872,6 +2023,30 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'pay-completed',
     description: 'Pay activity completed state',
     builder: buildPayCompletedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-review-default',
+    description: 'Desktop swap review summary',
+    builder: buildSwapReviewDefaultUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-status-completed',
+    description: 'Desktop swap completed status',
+    builder: buildSwapStatusCompletedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-pay-review',
+    description: 'Mobile Pay review cards',
+    builder: buildMobilePayReviewUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-review-info-headers',
+    description: 'Mobile swap and Pay status review headers',
+    builder: buildMobileReviewInfoHeadersCapture,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'activity-list-skeleton',
@@ -2932,6 +3107,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-home-nu7-announcement',
+    description: 'Mobile NU7 announcement sheet',
+    builder: buildMobileHomeNu7AnnouncementUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-nu7-announcement',
+    description: 'Desktop NU7 announcement modal',
+    builder: buildDesktopHomeNu7AnnouncementUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-announcement-modal',
     description: 'Ironwood migration announcement modal',
     builder: buildIronwoodMigrationAnnouncementModalUseCase,
@@ -2952,6 +3139,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     description:
         'Desktop home showing spendable Ironwood balance during migration',
     builder: buildDesktopHomeIronwoodMigrationInProgressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-ironwood-upgrade-stopped',
+    description: 'Desktop home CTA for an upgrade-stopped migration',
+    builder: buildDesktopHomeIronwoodMigrationUpgradeStoppedUseCase,
   ),
   FigmaCompareScenario(
     id: 'desktop-home-sidebar-compact-balances',
@@ -3093,6 +3285,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ironwood-migration-stop-confirmation',
     description: 'Ironwood migration cancellation final confirmation',
     builder: buildIronwoodMigrationStopConfirmationUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-upgrade-stopped',
+    description: 'Desktop migration stopped by the network upgrade',
+    builder: buildIronwoodMigrationUpgradeStoppedUseCase,
   ),
   FigmaCompareScenario(
     id: 'ironwood-migration-complete',
@@ -3274,6 +3471,27 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-home-ironwood-migration-attention',
     description: 'Mobile home migration signature attention card',
     builder: buildMobileIronwoodMigrationHomeAttentionUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-upgrade-stopped',
+    description: 'Mobile migration stopped by the network upgrade',
+    builder: buildMobileIronwoodMigrationUpgradeStoppedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-ironwood-upgrade-stopped',
+    description: 'Mobile home banner for an upgrade-stopped migration',
+    builder: buildMobileIronwoodMigrationHomeUpgradeStoppedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-ironwood-upgrade-stopped-modal',
+    description: 'Mobile home sheet for an upgrade-stopped migration',
+    builder: buildMobileIronwoodMigrationHomeUpgradeStoppedModalUseCase,
     desktop: false,
     mobile: true,
   ),
@@ -3668,6 +3886,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-receive-transparent',
+    description: 'Mobile receive screen on the transparent pool',
+    builder: buildReceiveMobileTransparentUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-receive-wide',
     description:
         'Adaptive receive with safe pane geometry and a deterministic wallet',
@@ -3724,6 +3949,14 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'receive-desktop-shielded',
     description: 'Desktop receive pane with copy/share and a labelled request',
     builder: buildReceiveDesktopRequestEntryUseCase,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-desktop-transparent',
+    description:
+        'Desktop transparent receive with copy/share and a text request',
+    builder: buildReceiveDesktopTransparentRequestEntryUseCase,
     desktop: true,
     mobile: false,
   ),
@@ -3868,6 +4101,12 @@ Widget _buildLedgerSigningMemoHashUpdate(BuildContext context) =>
     buildLedgerSigningPreview(
       phase: LedgerSigningModalPhase.failed,
       failureMode: LedgerSigningPlaygroundFailure.memoHashUpdate,
+    );
+
+Widget _buildLedgerSigningAppUpdate(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.failed,
+      failureMode: LedgerSigningPlaygroundFailure.appUpdate,
     );
 
 Widget _buildLedgerVotingProcessing(BuildContext context) =>

@@ -598,6 +598,59 @@ void main() {
     });
   }
 
+  for (final forceRestart in [false, true]) {
+    for (final resetBeforeResume in [false, true]) {
+      testWidgets(
+        'wallet mutation restart waits for foreground (forced: $forceRestart, reset: $resetBeforeResume)',
+        (tester) async {
+          final sync = _PollingTestSyncNotifier();
+          final container = ProviderContainer(
+            overrides: [
+              appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+              accountProvider.overrideWith(_ExistingAccountNotifier.new),
+              syncProvider.overrideWith(() => sync),
+              rpcEndpointFailoverProvider.overrideWith(
+                () => _TipTestNotifier(() async => BigInt.from(100)),
+              ),
+              chainUpgradeStatusProvider.overrideWith(_TipUpgradeNotifier.new),
+              enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+            ],
+          );
+          addTearDown(container.dispose);
+          await container.read(accountProvider.future);
+          await container.read(syncProvider.future);
+          sync.handleAppHideForTesting();
+          // Model the last pause exiting after a configuration refresh. The
+          // wallet was idle for a forced restart, or had work to resume.
+          sync.resumeAfterWalletMutation(
+            WalletMutationSyncPause(
+              hadActiveSync: !forceRestart,
+              hadPolling: false,
+              hadMempoolObserver: false,
+              resetEpoch: 0,
+            ),
+            forceRestart: forceRestart,
+          );
+          final mobile = kAppFormFactor == AppFormFactor.mobile;
+          expect(sync.startSyncs, mobile ? 0 : 1);
+          if (resetBeforeResume) sync.endWalletMutationPause();
+          sync.handleAppResumeForTesting();
+          await tester.pump();
+          final expected = mobile && resetBeforeResume ? 0 : 1;
+          expect(sync.startSyncs, expected);
+          sync.handleAppResumeForTesting();
+          await tester.pump();
+          expect(
+            sync.startSyncs,
+            expected,
+            reason: 'a deferred restart is consumed once',
+          );
+          sync.stopTipChecksForTesting();
+        },
+      );
+    }
+  }
+
   testWidgets('a resumed tip check discovers a new block and withdraws ETA', (
     tester,
   ) async {

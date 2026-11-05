@@ -20,6 +20,7 @@ enum ReceiveDesktopPreviewState {
   /// the single-CTA row the pane had before the request flow landed, so the
   /// two can still be compared.
   shieldedRequestEntry,
+  transparentRequestEntry,
 }
 
 class ReceiveDesktopPreview extends StatelessWidget {
@@ -35,7 +36,8 @@ class ReceiveDesktopPreview extends StatelessWidget {
       state == ReceiveDesktopPreviewState.shieldedRequestEntry;
 
   bool get _showsRequestEntry =>
-      state == ReceiveDesktopPreviewState.shieldedRequestEntry;
+      state == ReceiveDesktopPreviewState.shieldedRequestEntry ||
+      state == ReceiveDesktopPreviewState.transparentRequestEntry;
 
   bool get _showsModal =>
       state == ReceiveDesktopPreviewState.shieldedModal ||

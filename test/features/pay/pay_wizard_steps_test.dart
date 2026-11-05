@@ -60,6 +60,7 @@ Widget _harness(Widget child) {
 
 Widget _recipientStep({
   String typedAddress = '',
+  AddressBookNetwork network = AddressBookNetwork.ethereum,
   String? addressError,
   List<AddressBookContact> contacts = const [],
   List<PayRecentRecipient> recents = const [],
@@ -75,6 +76,7 @@ Widget _recipientStep({
     controller: TextEditingController(text: typedAddress),
     typedAddress: typedAddress,
     addressError: addressError,
+    network: network,
     contacts: contacts,
     recents: recents,
     busy: busy,
@@ -868,6 +870,46 @@ void main() {
         find.byKey(const ValueKey('pay_select_recipient_button')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('an address end finds the contact and hides the error', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            typedAddress: '9EE7',
+            addressError: 'Not a valid Ethereum address.',
+            contacts: [_contact],
+            recents: const [PayRecentRecipient(address: _recentAddress)],
+          ),
+        ),
+      );
+
+      expect(find.byKey(const ValueKey('pay_contacts_card')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('pay_recent_recipients_card')),
+        findsNothing,
+      );
+      expect(find.text('Not a valid Ethereum address.'), findsNothing);
+    });
+
+    testWidgets('a bare 0x prefix lists nothing and shows the error', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            typedAddress: '0x',
+            addressError: 'Not a valid Ethereum address.',
+            contacts: [_contact],
+            recents: const [PayRecentRecipient(address: _recentAddress)],
+          ),
+        ),
+      );
+
+      expect(find.byKey(const ValueKey('pay_contacts_card')), findsNothing);
+      expect(find.text('Not a valid Ethereum address.'), findsOneWidget);
     });
 
     testWidgets('invalid address disables continue and shows the error', (

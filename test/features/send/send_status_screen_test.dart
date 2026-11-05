@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/zcash_explorer.dart';
@@ -1110,6 +1111,42 @@ void main() {
     expect(find.textContaining('will retry automatically'), findsNothing);
     expect(find.text('Tx ID'), findsNothing);
     expect(rustApi.discardCalls, isEmpty);
+  });
+  testWidgets('Keystone signing outlasted by the upgrade shows the hold copy', (
+    tester,
+  ) async {
+    rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      txids: _txid,
+      status: 'expired',
+      broadcastedCount: 0,
+      totalCount: 1,
+      message:
+          "Transactions can't be sent this close to the network upgrade. "
+          'Try again after it activates.',
+    );
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(),
+        keystone: KeystoneBroadcastArgs(
+          reviewArgs: _reviewArgs(),
+          pcztWithProofs: const [
+            [3, 3, 3],
+          ],
+          pcztWithSignatures: const [
+            [9, 9],
+          ],
+        ),
+        isHardware: true,
+      ),
+    );
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(find.text('Send failed'), findsOneWidget);
+    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.textContaining('expired before broadcast'), findsNothing);
   });
 }
 

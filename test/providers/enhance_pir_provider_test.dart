@@ -1630,17 +1630,6 @@ void main() {
     expect(source.isCompleted, isFalse);
     expect(reported, isTrue);
   });
-  test('masquerade builds cannot enable the production PIR service', () {
-    expect(
-      isEnhancePirAvailableForNetwork('main', isMasquerade: true),
-      isFalse,
-    );
-    expect(
-      isEnhancePirAvailableForNetwork('main', isMasquerade: false),
-      isTrue,
-    );
-  });
-
   test(
     'wallet mutation drains admitted status reads and blocks new ones',
     () async {

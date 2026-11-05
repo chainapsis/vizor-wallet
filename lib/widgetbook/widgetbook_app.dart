@@ -43,6 +43,7 @@ import 'token_use_cases.dart';
 import 'toast_use_cases.dart';
 import 'typography_use_cases.dart';
 import 'voting_use_cases.dart';
+import 'wallet_pir_server_use_cases.dart';
 
 /// Top-level Widgetbook app for the Zcash design system.
 ///
@@ -87,6 +88,7 @@ class WidgetbookApp extends StatelessWidget {
         WidgetbookFolder(
           name: 'Screens',
           children: [
+            buildWalletPirServerWidgetbookComponent(),
             WidgetbookComponent(
               name: 'Voting',
               useCases: [
@@ -567,6 +569,10 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Accounts modal',
                       builder: buildMobileHomeAccountsModalUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'NU7 announcement',
+                      builder: buildMobileHomeNu7AnnouncementUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(
@@ -575,6 +581,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Gift Cards',
                       builder: buildDesktopHomeGiftCardsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'NU7 announcement',
+                      builder: buildDesktopHomeNu7AnnouncementUseCase,
                     ),
                   ],
                 ),
@@ -632,6 +642,15 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Migration complete',
                       builder: buildIronwoodMigrationCompleteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration stopped by network upgrade',
+                      builder: buildIronwoodMigrationUpgradeStoppedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Migration stopped by network upgrade',
+                      builder:
+                          buildDesktopHomeIronwoodMigrationUpgradeStoppedUseCase,
                     ),
                   ],
                 ),
@@ -764,6 +783,21 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Home - Migration needs input modal',
                       builder:
                           buildMobileIronwoodMigrationHomeAttentionModalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Upgrade - Migration stopped',
+                      builder:
+                          buildMobileIronwoodMigrationUpgradeStoppedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Upgrade - Home banner',
+                      builder:
+                          buildMobileIronwoodMigrationHomeUpgradeStoppedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Upgrade - Home sheet',
+                      builder:
+                          buildMobileIronwoodMigrationHomeUpgradeStoppedModalUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Keystone - QR scan help',
@@ -2210,6 +2244,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Recipient contacts',
                       builder: buildMobileSendRecipientContactsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient recents',
+                      builder: buildMobileSendRecipientRecentsUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Recipient filled',

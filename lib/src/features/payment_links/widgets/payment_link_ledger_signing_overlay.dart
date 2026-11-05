@@ -8,7 +8,7 @@ import '../../../../main.dart' show log;
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
-import '../../ledger/ledger_capability.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
@@ -29,6 +29,7 @@ class PaymentLinkLedgerSigningOverlay extends ConsumerStatefulWidget {
     required this.onCancel,
     required this.onFundingBroadcast,
     this.presentation,
+    this.expectedQuote,
     this.batch,
     this.onBatchRefused,
     super.key,
@@ -36,6 +37,7 @@ class PaymentLinkLedgerSigningOverlay extends ConsumerStatefulWidget {
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation? presentation;
+  final PaymentLinkFundingQuote? expectedQuote;
   final PaymentLinkBatchDraft? batch;
 
   /// A group whose proposal no longer matches its quote, or that its signer
@@ -126,6 +128,7 @@ class _PaymentLinkLedgerSigningOverlayState
               accountUuid: widget.sourceAccountUuid,
               amountZatoshi: widget.amountZatoshi,
               presentation: widget.presentation,
+              expectedQuote: widget.expectedQuote,
             )
           : await _service.prepareBatch(widget.batch!);
       if (!_active) return;
@@ -208,13 +211,13 @@ class _PaymentLinkLedgerSigningOverlayState
               !_terminal &&
               !_checkpointed &&
               _deviceGuidance?.retryable == false;
-          _error = _terminal
-              ? LedgerGiftFundingTerminalException.message
-              : isLedgerLegacyOrchardRecoveryUnsupported(error)
-              ? kLedgerLegacyOrchardRecoveryUnavailableMessage
+          _error = error is LedgerGiftFundingTerminalException
+              ? error.userMessage
               : _checkpointed
               ? 'Gift card funding is saved for recovery. Try again to check its status and finish saving.'
-              : _deviceGuidance?.message ?? _ledgerFailureMessage(error);
+              : networkUpgradeHoldMessage(error) ??
+                    _deviceGuidance?.message ??
+                    _ledgerFailureMessage(error);
         });
       }
     }
@@ -308,9 +311,8 @@ class _PaymentLinkLedgerSigningOverlayState
 
   @override
   Widget build(BuildContext context) {
-    final unavailable =
-        _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
-    final canRetry = !unavailable && !_terminal && !_requestNeedsRebuilding;
+    final upgradeHold = _error == kNetworkUpgradeHoldMessage;
+    final canRetry = !_terminal && !_requestNeedsRebuilding;
     final canLeave = !_durableBusy && !_cancelled;
     final modal = LedgerSigningModal(
       cancelling: _cancelled,
@@ -329,8 +331,8 @@ class _PaymentLinkLedgerSigningOverlayState
                   !_checkpointed &&
                   !_terminal &&
                   (_deviceGuidance?.bluetoothRecovery ?? false),
-              title: unavailable
-                  ? 'Ledger app update required'
+              title: upgradeHold
+                  ? kNetworkUpgradeHoldActionLabel
                   : 'Gift card funding needs attention',
               statusLabel: _requestNeedsRebuilding
                   ? 'New gift card required'
@@ -338,8 +340,8 @@ class _PaymentLinkLedgerSigningOverlayState
               message: _error!,
               showDeviceAppPrompt:
                   !_checkpointed &&
-                  !unavailable &&
                   (_deviceGuidance?.showDeviceAppPrompt ?? false),
+              showConnectionPicker: !upgradeHold,
               actionLabel: canRetry ? 'Try again' : null,
             )
           : null,

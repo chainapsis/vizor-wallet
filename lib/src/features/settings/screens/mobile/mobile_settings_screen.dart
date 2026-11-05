@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../payment_links/providers/payment_link_cards_provider.dart';
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/app_version_config.dart';
 import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -35,6 +36,7 @@ import '../../../onboarding/shared/onboarding_welcome_art.dart'
     show VizorWordmark;
 import '../../widgets/mobile/mobile_network_privacy_card.dart';
 import '../../widgets/settings_new_badge.dart';
+import '../../../donation/donation_config.dart';
 
 /// Mobile settings tab — Figma `SETTINGS` root frame (4494:65997).
 ///
@@ -151,7 +153,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                     ),
                     MobileListRow(
                       leading: _RowIcon(AppIcons.lock),
-                      label: 'Password',
+                      label: 'Change passcode',
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
@@ -295,6 +297,26 @@ class MobileSettingsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 const MobileNetworkPrivacyCard(),
+                if (donationFeatureEnabledForNetwork(
+                  endpointConfig.networkName,
+                )) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  _SettingsGroup(
+                    title: 'Misc',
+                    rows: [
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_donation_row'),
+                        leading: _RowIcon(AppIcons.donation, glyphSize: 16.5),
+                        label: 'Support Vizor',
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        chevronColor: settingsChevronColor,
+                        showChevron: true,
+                        onTap: () => context.push('/donation'),
+                      ),
+                    ],
+                  ),
+                ],
                 // The About row stays hidden until the legal documents
                 // are ready — the /about screen exists but must not be
                 // user-reachable (product decision, 2026-06).
@@ -391,6 +413,7 @@ class MobileSettingsScreen extends ConsumerWidget {
         );
         if (!context.mounted || confirmed != true) return;
         await notifier.disable();
+        unawaited(AppHaptics.selection());
         if (context.mounted) {
           showAppToast(
             context,
@@ -411,6 +434,7 @@ class MobileSettingsScreen extends ConsumerWidget {
           .read(appSecurityProvider.notifier)
           .requireSessionPasswordForNativeSecretUse();
       await notifier.enable(passcode);
+      unawaited(AppHaptics.selection());
       if (context.mounted) {
         showAppToast(
           context,
@@ -447,6 +471,10 @@ class MobileSettingsScreen extends ConsumerWidget {
   }) async {
     try {
       await ref.read(syncKeepAwakeProvider.notifier).setEnabled(!enabled);
+      if (context.mounted &&
+          ref.read(syncKeepAwakeProvider).enabled != enabled) {
+        unawaited(AppHaptics.selection());
+      }
     } catch (_) {
       if (!context.mounted) return;
       showAppToast(context, "Couldn't update screen awake setting.");
@@ -475,13 +503,6 @@ class _DisableBiometricSheet extends StatelessWidget {
     height: 21 / 14,
     letterSpacing: -0.21,
   );
-  static const _buttonLabelStyle = TextStyle(
-    fontFamily: 'Geist',
-    fontWeight: FontWeight.w500,
-    fontSize: 14,
-    height: 16 / 14,
-    letterSpacing: -0.06,
-  );
 
   @override
   Widget build(BuildContext context) {
@@ -508,7 +529,7 @@ class _DisableBiometricSheet extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(true),
             child: Text(
               'Turn off',
-              style: _buttonLabelStyle.copyWith(
+              style: AppTypography.labelLarge.copyWith(
                 color: colors.button.destructive.label,
               ),
             ),
@@ -516,7 +537,7 @@ class _DisableBiometricSheet extends StatelessWidget {
           const SizedBox(height: AppSpacing.s),
           MobileSheetCancel(
             onTap: () => Navigator.of(context).pop(false),
-            textStyle: _buttonLabelStyle.copyWith(
+            textStyle: AppTypography.labelLarge.copyWith(
               color: colors.button.ghost.label,
             ),
           ),
@@ -743,15 +764,19 @@ class _SyncKeepAwakeToggle extends StatelessWidget {
 const _settingsRowHeight = 44.0;
 
 class _RowIcon extends StatelessWidget {
-  const _RowIcon(this.iconName);
+  const _RowIcon(this.iconName, {this.glyphSize = 20});
 
   final String iconName;
+  final double glyphSize;
 
   @override
   Widget build(BuildContext context) {
     // Muted per the Figma settings rows — the leading glyphs are
     // decorative, not max-contrast.
-    return AppIcon(iconName, size: 20, color: context.colors.icon.muted);
+    final icon = AppIcon(iconName, size: 20, color: context.colors.icon.muted);
+    return glyphSize == 20
+        ? icon
+        : Transform.scale(scale: glyphSize / 20, child: icon);
   }
 }
 
@@ -836,7 +861,10 @@ class _ThemeOptionCard extends StatelessWidget {
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTap: () {
+          if (!selected) unawaited(AppHaptics.selection());
+          onTap();
+        },
         child: Container(
           height: 64,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),

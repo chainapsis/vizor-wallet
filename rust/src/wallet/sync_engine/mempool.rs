@@ -42,9 +42,12 @@
 //!     the stream every time a new block is mined — normal EOF,
 //!     not an error. We treat that as "sleep 1s, reconnect". Real
 //!     errors use a 1s / 30s backoff ladder (first failure: 1s,
-//!     subsequent consecutive failures: 30s), reset to zero on any
-//!     successful connect. Cancel is checked inside the sleep so
-//!     we don't block `stop_mempool_observer()` for 30s.
+//!     subsequent consecutive failures: 30s). The counter resets
+//!     only on stream progress (a received tx or a clean EOF), not
+//!     when the stream is merely accepted, so a server that accepts
+//!     every stream and then errors it still climbs to 30s.
+//!     Cancel is checked inside the sleep so we don't block
+//!     `stop_mempool_observer()` for 30s.
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -398,28 +401,10 @@ pub(crate) async fn run_mempool_observer<F>(
 where
     F: Fn(MempoolTxEvent) + Send + Sync,
 {
-    const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
-    const LATER_BACKOFF: Duration = Duration::from_secs(30);
-
-    let mut consecutive_errors: u32 = 0;
+    let mut backoff = ReconnectBackoff::default();
     let mut seen_cache = TxidSeenCache::new(2048);
     let mut unmatched_cache = TxidTtlCache::new(2048, UNMATCHED_TXID_TTL);
     let mut stats = MempoolObserverStats::new(Instant::now());
-
-    /// Pick the backoff delay based on how many consecutive errors
-    /// we've accumulated. First failure: 1s. Subsequent: 30s.
-    /// Matches the SDK's `LightWalletClientImpl.kt:313–327`
-    /// reconnect ladder and is applied uniformly to *all* error
-    /// paths (channel-open, RPC-start, AND stream-read failures —
-    /// the old code only applied it to the first two, leaving
-    /// stream-read errors on a fixed 1s reconnect forever).
-    fn backoff_for(consecutive_errors: u32) -> Duration {
-        if consecutive_errors <= 1 {
-            INITIAL_BACKOFF
-        } else {
-            LATER_BACKOFF
-        }
-    }
 
     loop {
         if cancel.load(Ordering::Relaxed) {
@@ -448,8 +433,7 @@ where
             Ok(pair) => pair,
             Err(e) => {
                 log::warn!("mempool: open_lwd_channel failed: {e}");
-                consecutive_errors += 1;
-                sleep_respecting_cancel(backoff_for(consecutive_errors), &cancel).await;
+                sleep_respecting_cancel(backoff.record_error(), &cancel).await;
                 continue;
             }
         };
@@ -477,8 +461,7 @@ where
             Ok(tip) => tip,
             Err(e) => {
                 log::warn!("mempool: get_latest_block before stream failed: {e}");
-                consecutive_errors += 1;
-                sleep_respecting_cancel(backoff_for(consecutive_errors), &cancel).await;
+                sleep_respecting_cancel(backoff.record_error(), &cancel).await;
                 continue;
             }
         };
@@ -489,8 +472,7 @@ where
                     "mempool: update_chain_tip({}) before stream failed: {e}",
                     tip.height
                 );
-                consecutive_errors += 1;
-                sleep_respecting_cancel(backoff_for(consecutive_errors), &cancel).await;
+                sleep_respecting_cancel(backoff.record_error(), &cancel).await;
                 continue;
             }
         };
@@ -508,8 +490,7 @@ where
             Ok(s) => s,
             Err(e) => {
                 log::warn!("mempool: start_mempool_stream failed: {e}");
-                consecutive_errors += 1;
-                sleep_respecting_cancel(backoff_for(consecutive_errors), &cancel).await;
+                sleep_respecting_cancel(backoff.record_error(), &cancel).await;
                 continue;
             }
         };
@@ -517,7 +498,10 @@ where
         log::info!("mempool: observer connected");
         stats.record_stream_connect();
         log_stats_if_due(&mut stats);
-        consecutive_errors = 0;
+        // Deliberately no backoff reset here: an accepted stream is
+        // not yet a healthy one. Resetting on accept would pin a
+        // server that accepts and then immediately errors every
+        // stream to the 1s first-failure tier forever.
 
         // Consume the stream until EOF, error, or cancel.
         //
@@ -555,6 +539,7 @@ where
                 msg = stream.message() => {
                     match msg {
                         Ok(Some(raw_tx)) => {
+                            backoff.record_progress();
                             handle_mempool_tx(
                                 &db_path,
                                 network,
@@ -581,7 +566,6 @@ where
                         }
                         Err(e) => {
                             log::warn!("mempool: stream error: {e}");
-                            consecutive_errors += 1;
                             stats.record_stream_error();
                             break StreamExit::Error;
                         }
@@ -608,20 +592,17 @@ where
         //
         //   * Error (tonic / HTTP/2 failure on the stream): apply
         //     the same 1s/30s backoff ladder as the channel-open
-        //     and stream-start error paths. `consecutive_errors`
-        //     was already incremented inside the inner loop; use
-        //     it directly.
+        //     and stream-start error paths. The counter was reset
+        //     only if this stream delivered a tx, so repeated
+        //     accept-then-fail streams keep climbing the ladder.
         //
         // Before this fix, both branches unconditionally slept 1s,
         // so a server that accepted the stream but immediately
         // errored it caused a tight 1s reconnect loop forever
         // (Codex 4th-round finding 2).
         let reconnect_delay = match stream_exit {
-            StreamExit::CleanEof => {
-                consecutive_errors = 0;
-                INITIAL_BACKOFF
-            }
-            StreamExit::Error => backoff_for(consecutive_errors),
+            StreamExit::CleanEof => backoff.record_clean_eof(),
+            StreamExit::Error => backoff.record_error(),
         };
         log_stats_if_due(&mut stats);
         sleep_respecting_cancel(reconnect_delay, &cancel).await;
@@ -632,13 +613,56 @@ where
 /// consumption. Used only for its symbol — the outer loop
 /// currently treats clean EOF and tonic errors identically
 /// (reconnect with 1s backoff for EOF, 1s/30s ladder for errors
-/// is governed by `consecutive_errors` instead), but keeping
+/// is governed by `ReconnectBackoff` instead), but keeping
 /// the enum makes future "EOF is normal / error backs off more
 /// aggressively" tweaks a local change instead of a signature
 /// churn.
 enum StreamExit {
     CleanEof,
     Error,
+}
+
+/// The observer's reconnect ladder: 1s after the first consecutive
+/// failure, 30s after each later one. Matches the SDK's
+/// `LightWalletClientImpl.kt:313–327` reconnect ladder and applies
+/// uniformly to channel-open, tip-refresh, stream-start, and
+/// stream-read failures.
+///
+/// The failure count resets only on evidence that a stream is
+/// healthy: a received mempool tx or the server's clean EOF at a
+/// new block. Accepting the stream is not enough, since a server
+/// can accept every stream and then fail it immediately.
+#[derive(Default)]
+struct ReconnectBackoff {
+    consecutive_errors: u32,
+}
+
+impl ReconnectBackoff {
+    const INITIAL: Duration = Duration::from_secs(1);
+    const LATER: Duration = Duration::from_secs(30);
+
+    /// Counts one more consecutive failure and returns the delay
+    /// before the next attempt.
+    fn record_error(&mut self) -> Duration {
+        self.consecutive_errors = self.consecutive_errors.saturating_add(1);
+        if self.consecutive_errors <= 1 {
+            Self::INITIAL
+        } else {
+            Self::LATER
+        }
+    }
+
+    /// Resets the ladder after the stream delivered data.
+    fn record_progress(&mut self) {
+        self.consecutive_errors = 0;
+    }
+
+    /// Resets the ladder after the server's normal end-of-block
+    /// close and returns the reconnect delay.
+    fn record_clean_eof(&mut self) -> Duration {
+        self.consecutive_errors = 0;
+        Self::INITIAL
+    }
 }
 
 /// Returns when `cancel` flips to `true`. Used inside the
@@ -1046,6 +1070,42 @@ mod tests {
             rusqlite::params![account_uuid.as_bytes().as_slice(), txid, mined_height],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn reconnect_backoff_climbs_on_consecutive_errors() {
+        let mut backoff = ReconnectBackoff::default();
+        assert_eq!(backoff.record_error(), ReconnectBackoff::INITIAL);
+        assert_eq!(backoff.record_error(), ReconnectBackoff::LATER);
+        assert_eq!(backoff.record_error(), ReconnectBackoff::LATER);
+    }
+
+    #[test]
+    fn reconnect_backoff_accept_then_fail_streams_keep_climbing() {
+        // An accepted stream that errors before delivering any tx
+        // records no progress, so the second such failure already
+        // waits the later delay.
+        let mut backoff = ReconnectBackoff::default();
+        assert_eq!(backoff.record_error(), ReconnectBackoff::INITIAL);
+        assert_eq!(backoff.record_error(), ReconnectBackoff::LATER);
+    }
+
+    #[test]
+    fn reconnect_backoff_resets_after_stream_progress() {
+        let mut backoff = ReconnectBackoff::default();
+        backoff.record_error();
+        backoff.record_error();
+        backoff.record_progress();
+        assert_eq!(backoff.record_error(), ReconnectBackoff::INITIAL);
+    }
+
+    #[test]
+    fn reconnect_backoff_resets_after_clean_eof() {
+        let mut backoff = ReconnectBackoff::default();
+        backoff.record_error();
+        backoff.record_error();
+        assert_eq!(backoff.record_clean_eof(), ReconnectBackoff::INITIAL);
+        assert_eq!(backoff.record_error(), ReconnectBackoff::INITIAL);
     }
 
     #[test]

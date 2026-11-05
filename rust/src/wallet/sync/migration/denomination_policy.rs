@@ -69,17 +69,48 @@ pub(crate) fn is_zip318_canonical_denomination(value_zatoshi: u64) -> bool {
     largest_zip318_denomination_at_or_below(value_zatoshi) == Some(value_zatoshi)
 }
 
-pub(crate) fn zip318_canonical_migration_expiry_height(
+/// The ZIP 318 canonical expiry for a part scheduled at `scheduled_height`.
+/// The expiry modulus is 34,560 blocks before NU7 activation and 103,680
+/// blocks from it, both about 30 days.
+pub(crate) fn zip318_canonical_migration_expiry_height<P: Parameters>(
+    network: &P,
     scheduled_height: u32,
 ) -> Result<u32, String> {
-    let boundary = scheduled_height - (scheduled_height % ZIP318_EXPIRY_MODULUS);
-    let window = ZIP318_EXPIRY_MODULUS
-        .checked_mul(2)
-        .ok_or_else(|| "ZIP 318 expiry window overflow".to_string())?;
+    canonical_expiry_with_spacing(BlockSpacing::for_network(network), scheduled_height)
+}
 
-    boundary
-        .checked_add(window)
+fn canonical_expiry_with_spacing(spacing: BlockSpacing, scheduled_height: u32) -> Result<u32, String> {
+    let expiry = u32::from(zcash_protocol::zip318::expiry_height(
+        &spacing,
+        BlockHeight::from_u32(scheduled_height),
+    ));
+    // The library saturates instead of failing.
+    (expiry < u32::MAX)
+        .then_some(expiry)
         .ok_or_else(|| "ZIP 318 canonical expiry height overflow".to_string())
+}
+
+/// The canonical expiry under the pre-NU7 modulus, which every build before
+/// NU7 support used at every height.
+pub(crate) fn legacy_zip318_canonical_migration_expiry_height(
+    scheduled_height: u32,
+) -> Result<u32, String> {
+    canonical_expiry_with_spacing(BlockSpacing::UNIFORM, scheduled_height)
+}
+
+/// Whether a stored part's expiry is canonical. Builds before NU7 support
+/// used the pre-NU7 modulus at every height. Their parts scheduled past
+/// activation are held and then stopped, so reading them must not fail the
+/// whole run before that.
+pub(crate) fn is_stored_migration_expiry_canonical(
+    network: WalletNetwork,
+    scheduled_height: u32,
+    expiry_height: u32,
+) -> Result<bool, String> {
+    Ok(
+        expiry_height == zip318_canonical_migration_expiry_height(&network, scheduled_height)?
+            || expiry_height == legacy_zip318_canonical_migration_expiry_height(scheduled_height)?,
+    )
 }
 
 fn largest_zip318_denomination_at_or_below(value_zatoshi: u64) -> Option<u64> {
@@ -122,6 +153,18 @@ pub(crate) fn anchor_bucket_modulus(
         }
         WalletNetwork::Main | WalletNetwork::Test => ZIP318_ANCHOR_BUCKET_MODULUS,
     }
+}
+
+/// The boundaries a run anchors to. The modulus is in ZIP 318 reference
+/// blocks, so from NU7 activation boundaries fall every 3 × 144 blocks, the
+/// same grid the wallet library retains its durable anchors on.
+pub(crate) fn anchor_grid(network: WalletNetwork, timing_policy: MigrationTimingPolicy) -> AnchorGrid {
+    let interval = NonZeroU32::new(anchor_bucket_modulus(network, timing_policy))
+        .expect("anchor bucket modulus is nonzero");
+    AnchorGrid::new(
+        AnchorBucketInterval::custom(interval),
+        BlockSpacing::for_network(&network),
+    )
 }
 
 fn anchor_bucket_min_age(network: WalletNetwork, timing_policy: MigrationTimingPolicy) -> u32 {
@@ -176,19 +219,22 @@ pub(crate) fn proof_ready_height_for_note_mined_height(
     timing_policy: MigrationTimingPolicy,
     mined_height: u32,
 ) -> Result<u32, String> {
-    let modulus = anchor_bucket_modulus(network, timing_policy);
+    let grid = anchor_grid(network, timing_policy);
     let confirmation_lag = ConfirmationsPolicy::default()
         .trusted()
         .get()
         .saturating_sub(1);
-    let containing_boundary =
-        anchor_boundary_containing_note_with_policy(network, timing_policy, mined_height)?;
-    let aging_blocks = modulus
-        .checked_mul(anchor_bucket_min_age(network, timing_policy))
-        .ok_or("Migration proof readiness height overflow")?;
-    containing_boundary
-        .checked_add(aging_blocks)
-        .and_then(|height| height.checked_add(confirmation_lag))
+    let mut boundary = BlockHeight::from_u32(anchor_boundary_containing_note_with_policy(
+        network,
+        timing_policy,
+        mined_height,
+    )?);
+    for _ in 0..anchor_bucket_min_age(network, timing_policy) {
+        boundary = grid.boundary_after(boundary);
+    }
+    u32::from(boundary)
+        .checked_add(confirmation_lag)
+        .filter(|height| *height < u32::MAX)
         .ok_or_else(|| "Migration proof readiness height overflow".to_string())
 }
 
@@ -197,15 +243,13 @@ pub(crate) fn anchor_boundary_containing_note_with_policy(
     timing_policy: MigrationTimingPolicy,
     mined_height: u32,
 ) -> Result<u32, String> {
-    let modulus = anchor_bucket_modulus(network, timing_policy);
-    let remainder = mined_height % modulus;
-    if remainder == 0 {
-        Ok(mined_height)
-    } else {
-        mined_height
-            .checked_add(modulus - remainder)
-            .ok_or_else(|| "Migration anchor boundary overflow".to_string())
+    let grid = anchor_grid(network, timing_policy);
+    let boundary = grid.boundary_at_or_above(BlockHeight::from_u32(mined_height));
+    // The grid saturates at the top of the height range instead of failing.
+    if !grid.is_boundary(boundary) {
+        return Err("Migration anchor boundary overflow".to_string());
     }
+    Ok(u32::from(boundary))
 }
 
 pub(crate) fn next_anchor_retry_height_after(
@@ -213,7 +257,7 @@ pub(crate) fn next_anchor_retry_height_after(
     timing_policy: MigrationTimingPolicy,
     fully_scanned_height: u32,
 ) -> Result<u32, String> {
-    let modulus = anchor_bucket_modulus(network, timing_policy);
+    let grid = anchor_grid(network, timing_policy);
     let confirmation_lag = ConfirmationsPolicy::default()
         .trusted()
         .get()
@@ -226,10 +270,9 @@ pub(crate) fn next_anchor_retry_height_after(
     } else {
         fully_scanned_height
     };
-    let distance = modulus - (boundary_reference % modulus);
-    boundary_reference
-        .checked_add(distance)
-        .and_then(|boundary| boundary.checked_add(confirmation_lag))
+    u32::from(grid.boundary_after(BlockHeight::from_u32(boundary_reference)))
+        .checked_add(confirmation_lag)
+        .filter(|height| *height < u32::MAX)
         .ok_or_else(|| "Migration proof retry height overflow".to_string())
 }
 
@@ -250,8 +293,9 @@ pub(crate) fn zip318_anchor_boundary_at_or_before_with_policy(
     timing_policy: MigrationTimingPolicy,
     height: u32,
 ) -> Option<u32> {
-    let modulus = anchor_bucket_modulus(network, timing_policy);
-    let boundary = height - (height % modulus);
+    let boundary = u32::from(
+        anchor_grid(network, timing_policy).boundary_at_or_below(BlockHeight::from_u32(height)),
+    );
     (boundary > 0).then_some(boundary)
 }
 
@@ -264,15 +308,21 @@ fn zip318_anchor_boundary_age(
     if anchor_boundary > latest_boundary {
         return None;
     }
-    let delta = latest_boundary.checked_sub(anchor_boundary)?;
-    let modulus = anchor_bucket_modulus(network, timing_policy);
-    if delta % modulus != 0 {
-        return None;
+    // Ages count boundaries, whose spacing changes at NU7 activation.
+    let grid = anchor_grid(network, timing_policy);
+    let anchor = BlockHeight::from_u32(anchor_boundary);
+    let mut boundary = BlockHeight::from_u32(latest_boundary);
+    let mut age = 0;
+    while boundary > anchor {
+        if age == ZIP318_ANCHOR_AGE_CAP {
+            return None;
+        }
+        boundary = grid.boundary_before(boundary)?;
+        age += 1;
     }
-    let age = delta / modulus;
-    (anchor_bucket_min_age(network, timing_policy)..=ZIP318_ANCHOR_AGE_CAP)
-        .contains(&age)
-        .then_some(age)
+    (boundary == anchor
+        && (anchor_bucket_min_age(network, timing_policy)..=ZIP318_ANCHOR_AGE_CAP).contains(&age))
+    .then_some(age)
 }
 
 #[cfg(test)]
@@ -306,18 +356,21 @@ pub(crate) fn zip318_anchor_candidate_boundaries_with_policy(
         return Vec::new();
     };
     let lower_bound = note_mined_height.max(nu6_3_activation_height.saturating_add(1));
+    let grid = anchor_grid(network, timing_policy);
+    let min_age = anchor_bucket_min_age(network, timing_policy);
     let mut candidates = Vec::new();
-    for age in anchor_bucket_min_age(network, timing_policy)..=ZIP318_ANCHOR_AGE_CAP {
-        let Some(distance) = age.checked_mul(anchor_bucket_modulus(network, timing_policy)) else {
+    let mut boundary = Some(BlockHeight::from_u32(latest_boundary));
+    for age in 0..=ZIP318_ANCHOR_AGE_CAP {
+        let Some(current) = boundary else {
             break;
         };
-        let Some(boundary) = latest_boundary.checked_sub(distance) else {
-            break;
-        };
-        if boundary < lower_bound {
+        if u32::from(current) < lower_bound {
             break;
         }
-        candidates.push(boundary);
+        if age >= min_age {
+            candidates.push(u32::from(current));
+        }
+        boundary = grid.boundary_before(current);
     }
     candidates
 }
@@ -348,7 +401,8 @@ pub(crate) fn zip318_anchor_boundary_is_candidate_with_policy(
     note_mined_height: u32,
     nu6_3_activation_height: u32,
 ) -> bool {
-    if anchor_boundary == 0 || !anchor_boundary.is_multiple_of(anchor_bucket_modulus(network, timing_policy))
+    if anchor_boundary == 0
+        || !anchor_grid(network, timing_policy).is_boundary(BlockHeight::from_u32(anchor_boundary))
     {
         return false;
     }

@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -46,15 +47,23 @@ MobileSendBroadcastRunner _runner(Future<SendBroadcastOutcome> outcome) {
 
 Widget _app({
   required MobileSendBroadcastRunner broadcastRunner,
+  SendReviewArgs? args,
+  double textScale = 1,
   KeystoneBroadcastArgs? keystone,
 }) {
   return ProviderScope(
     overrides: [syncProvider.overrideWith(FakeSyncNotifier.new)],
     child: MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child!,
+      ),
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendStatusScreen(
-          args: _args,
+          args: args ?? _args,
           keystone: keystone,
           broadcastRunner: broadcastRunner,
         ),
@@ -142,6 +151,88 @@ void main() {
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
   });
+
+  for (final phase in [
+    SendBroadcastPhase.succeeded,
+    SendBroadcastPhase.pendingBroadcast,
+    SendBroadcastPhase.failed,
+  ]) {
+    testWidgets(
+      'donation receipt presents $phase without replaying the review',
+      (tester) async {
+        final args = SendReviewArgs(
+          proposalId: _args.proposalId,
+          sendFlowId: _args.sendFlowId,
+          proposalAccountUuid: _args.proposalAccountUuid,
+          address: _args.address,
+          addressType: _args.addressType,
+          amountZatoshi: _args.amountZatoshi,
+          feeZatoshi: _args.feeZatoshi,
+          needsSaplingParams: false,
+          flowKind: SendFlowKind.donation,
+        );
+        await tester.pumpWidget(
+          _app(
+            args: args,
+            broadcastRunner: _runner(
+              Future.value(
+                SendBroadcastOutcome(phase: phase, proposalConsumed: true),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 800));
+        expect(
+          find.text(switch (phase) {
+            SendBroadcastPhase.succeeded => 'Thank you for\nsupporting Vizor',
+            SendBroadcastPhase.pendingBroadcast => 'Donation queued',
+            _ => 'Donation failed',
+          }),
+          findsOneWidget,
+        );
+        expect(_statusRouteCanPop(tester), isFalse);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'donation thank you remains accessible with large text on a short phone',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      final args = SendReviewArgs(
+        proposalId: _args.proposalId,
+        sendFlowId: _args.sendFlowId,
+        proposalAccountUuid: _args.proposalAccountUuid,
+        address: _args.address,
+        addressType: _args.addressType,
+        amountZatoshi: _args.amountZatoshi,
+        feeZatoshi: _args.feeZatoshi,
+        needsSaplingParams: false,
+        flowKind: SendFlowKind.donation,
+      );
+      await tester.pumpWidget(
+        _app(
+          args: args,
+          textScale: 2,
+          broadcastRunner: _runner(
+            Future.value(
+              const SendBroadcastOutcome(
+                phase: SendBroadcastPhase.succeeded,
+                proposalConsumed: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('Done'));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.text('Done')).bottom, lessThanOrEqualTo(640));
+    },
+  );
 
   testWidgets(
     'Keystone recovery keeps a retry action and reuses the signed payload',
@@ -437,6 +528,29 @@ void main() {
     );
     expect(subtitleFinder, findsOneWidget);
     expect(tester.getSize(subtitleFinder).width, greaterThan(300));
+  });
+
+  testWidgets('a failure from the upgrade hold shows the hold copy', (
+    tester,
+  ) async {
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(_app(broadcastRunner: _runner(broadcast.future)));
+    await tester.pump();
+
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.failed,
+        proposalConsumed: true,
+        error: kNetworkUpgradeHoldMessage,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Send failed'), findsOneWidget);
+    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text('Return home'), findsOneWidget);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('broadcast failure shows the failed state with custom haptic', (

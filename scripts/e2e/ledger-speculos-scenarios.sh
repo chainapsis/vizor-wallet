@@ -10,7 +10,7 @@ ledger_speculos_scenarios() {
       run_flutter_scenario "swaps with Ledger through Speculos"
       run_flutter_scenario "creates four gift cards with Ledger through Speculos"
       run_flutter_scenario "signs sequential voting bundles with Ledger through Speculos"
-      if [[ "${VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY:-false}" == "true" ]]; then
+      if [[ "${VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY:-true}" != "false" ]]; then
         run_flutter_scenario "signs Orchard to Ironwood crossing through Speculos"
       fi
       run_flutter_scenario "signs sequential Ledger operations in one app lifecycle"
@@ -25,7 +25,7 @@ ledger_speculos_scenarios() {
       run_flutter_scenario "pays with Ledger through Speculos"
       run_flutter_scenario "swaps with Ledger through Speculos"
       run_flutter_scenario "signs sequential voting bundles with Ledger through Speculos"
-      if [[ "${VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY:-false}" == "true" ]]; then
+      if [[ "${VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY:-true}" != "false" ]]; then
         run_flutter_scenario "signs Orchard to Ironwood crossing through Speculos"
       fi
       ;;

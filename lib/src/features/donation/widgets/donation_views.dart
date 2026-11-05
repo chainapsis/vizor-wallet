@@ -487,7 +487,7 @@ class DonationVizorBadge extends StatelessWidget {
     return SizedBox.square(
       dimension: size,
       child: Image.asset(
-        'assets/illustrations/desktop/donation_vizor_badge.webp',
+        'assets/illustrations/donation_vizor_badge.webp',
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
       ),
@@ -543,15 +543,14 @@ class DonationReviewContentView extends StatelessWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                child: Column(
-                  children: [
+                child: ReviewInfoFlow(
+                  rows: [
                     ReviewInfoRow(
                       label: 'Amount',
                       value: amountText,
                       leading: const ReviewZecCoinImage(),
                       bottomLeftText: fiatText,
                     ),
-                    const ReviewConnectorIcon(iconName: AppIcons.arrowDown),
                     const DonationRecipientInfoRow(),
                   ],
                 ),
@@ -629,7 +628,7 @@ class DonationSuccessView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const _DonationHeartBadge(),
+            const DonationHeartBadge(),
             const SizedBox(height: AppSpacing.s),
             SizedBox(
               width: 302,
@@ -667,15 +666,16 @@ class DonationSuccessView extends StatelessWidget {
   }
 }
 
-class _DonationHeartBadge extends StatelessWidget {
-  const _DonationHeartBadge();
+class DonationHeartBadge extends StatelessWidget {
+  const DonationHeartBadge({this.size = 60, super.key});
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox.square(
-      dimension: 60,
+      dimension: size,
       child: Image.asset(
-        'assets/illustrations/desktop/donation_vizor_heart.webp',
+        'assets/illustrations/donation_vizor_heart.webp',
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
       ),

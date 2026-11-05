@@ -19,6 +19,7 @@ import '../../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
+import '../../../../core/widgets/review_info_row.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
@@ -348,13 +349,13 @@ class _MobileTransactionStatusScreenState
 
     final hasAddress = address != null && address.isNotEmpty;
     final amountBottom = _isMigration
-        ? _BottomInfoRow(
+        ? _BottomInfo(
             iconName: AppIcons.migrationSplit,
             iconColor: colors.icon.regular,
             text: 'From Orchard balance',
           )
         : _isIncoming && receivingAddress != null && receivingAddress.isNotEmpty
-        ? _BottomInfoRow(
+        ? _BottomInfo(
             iconName: _poolIconNameFor(
               receivingPoolLabel,
               address: receivingAddress,
@@ -367,13 +368,13 @@ class _MobileTransactionStatusScreenState
             text: _truncateAddress(receivingAddress),
           )
         : !hasAddress && !(_isSent && detailsLoading) && poolLabel != null
-        ? _BottomInfoRow(
+        ? _BottomInfo(
             iconName: _poolIconNameFor(poolLabel),
             iconColor: _poolIconColorFor(context, poolLabel),
             text: poolLabel,
           )
         : null;
-    final amountRow = MobileReviewInfoRow(
+    final amountRow = _reviewRow(
       label: switch (feePresentation) {
         TransactionFeePresentation.separate => 'Amount',
         TransactionFeePresentation.includedInAmount => kNetChangeText,
@@ -384,16 +385,17 @@ class _MobileTransactionStatusScreenState
       // With no counterparty row (shielded senders are unknown), the
       // pool tag moves under the amount — Figma `Received` keeps the
       // pool on the bottom strip.
-      bottom: detailsLoading && _isIncoming
+      bottom: detailsLoading && _isIncoming ? null : amountBottom,
+      bottomPlaceholder: detailsLoading && _isIncoming
           ? const Align(
               alignment: Alignment.centerLeft,
               child: ReceiptValueSkeleton(),
             )
-          : amountBottom,
+          : null,
     );
     final addressRow = (address == null || address.isEmpty)
         ? null
-        : MobileReviewInfoRow(
+        : _reviewRow(
             label: _isIncoming ? 'From' : 'To',
             value: namedRecipient != null
                 ? namedRecipient.name
@@ -411,7 +413,7 @@ class _MobileTransactionStatusScreenState
                       color: colors.icon.regular,
                     ),
                   ),
-            bottom: _BottomInfoRow(
+            bottom: _BottomInfo(
               iconName: poolLabel == null
                   ? null
                   : _poolIconNameFor(poolLabel, address: address),
@@ -423,13 +425,12 @@ class _MobileTransactionStatusScreenState
               text: namedRecipient != null
                   ? _truncateAddress(address)
                   : poolLabel,
-              trailing: _GhostIconLabelButton(
-                key: const ValueKey('mobile_tx_status_show_full_address'),
-                iconName: AppIcons.eye,
-                label: 'Show full address',
-                onTap: () => unawaited(_showFullAddressSheet(address)),
-              ),
             ),
+            trailingActionLabel: 'Show full address',
+            trailingActionKey: const ValueKey(
+              'mobile_tx_status_show_full_address',
+            ),
+            onTrailingAction: () => unawaited(_showFullAddressSheet(address)),
           );
     // Without an exact source address, the account the wallet recorded as
     // sending the received outputs still names where the funds came from.
@@ -446,7 +447,7 @@ class _MobileTransactionStatusScreenState
     };
     final sourceAccountRow = sourceAccount == null
         ? null
-        : MobileReviewInfoRow(
+        : _reviewRow(
             key: const ValueKey('received_from_account'),
             label: 'From',
             value: sourceAccount.name,
@@ -456,7 +457,7 @@ class _MobileTransactionStatusScreenState
             ),
             bottom: sourceAccountPool == null
                 ? null
-                : _BottomInfoRow(
+                : _BottomInfo(
                     iconName: _poolIconNameFor(sourceAccountPool),
                     iconColor: _poolIconColorFor(context, sourceAccountPool),
                     text: sourceAccountPool,
@@ -471,7 +472,7 @@ class _MobileTransactionStatusScreenState
         : null;
     final unknownFromRow = unknownFromLabel == null
         ? null
-        : MobileReviewInfoRow(
+        : _reviewRow(
             label: 'From',
             value: unknownFromLabel,
             leading: MobileReviewIconBadge(
@@ -482,7 +483,7 @@ class _MobileTransactionStatusScreenState
               ),
             ),
             bottom: sourcePool == 'shielded'
-                ? _BottomInfoRow(
+                ? _BottomInfo(
                     iconName: _poolIconNameFor('Shielded'),
                     iconColor: _poolIconColorFor(context, 'Shielded'),
                     text: 'Shielded',
@@ -504,7 +505,7 @@ class _MobileTransactionStatusScreenState
         ? const ReceiptCounterpartySkeleton(label: 'To')
         : addressRow ??
               (giftCard == null && receiptHasUnknownRecipient(tx, detail)
-                  ? MobileReviewInfoRow(
+                  ? _reviewRow(
                       key: const ValueKey('receipt_unknown_recipient'),
                       label: 'To',
                       value: kUnknownRecipientText,
@@ -528,8 +529,7 @@ class _MobileTransactionStatusScreenState
         : _isMigration
         ? <Widget>[
             amountRow,
-            const MobileReviewFlowArrow(),
-            MobileReviewInfoRow(
+            _reviewRow(
               label: 'To',
               value: 'Ironwood balance',
               leading: MobileReviewIconBadge(
@@ -539,7 +539,7 @@ class _MobileTransactionStatusScreenState
                   color: colors.icon.regular,
                 ),
               ),
-              bottom: _BottomInfoRow(
+              bottom: _BottomInfo(
                 iconName: AppIcons.shieldKeyhole,
                 iconColor: colors.icon.success,
                 text: 'Ironwood',
@@ -548,18 +548,17 @@ class _MobileTransactionStatusScreenState
           ]
         : _isShielding
         ? <Widget>[
-            MobileReviewInfoRow(
+            _reviewRow(
               label: 'Amount',
               value: amountText,
               leading: const MobileReviewZecBadge(),
-              bottom: _BottomInfoRow(
+              bottom: _BottomInfo(
                 iconName: AppIcons.transparentBalance,
                 iconColor: colors.icon.muted,
                 text: 'From transparent balance',
               ),
             ),
-            const MobileReviewFlowArrow(),
-            MobileReviewInfoRow(
+            _reviewRow(
               label: 'To',
               value: 'Shielded balance',
               leading: MobileReviewIconBadge(
@@ -569,7 +568,7 @@ class _MobileTransactionStatusScreenState
                   color: colors.icon.regular,
                 ),
               ),
-              bottom: _BottomInfoRow(
+              bottom: _BottomInfo(
                 iconName: AppIcons.shieldKeyhole,
                 iconColor: colors.icon.brandCrimson,
                 text: 'Shielded',
@@ -578,12 +577,12 @@ class _MobileTransactionStatusScreenState
           ]
         : _isIncoming
         ? <Widget>[
-            if (fromRow != null) ...[fromRow, const MobileReviewFlowArrow()],
+            ?fromRow,
             amountRow,
           ]
         : toRow == null
         ? <Widget>[amountRow]
-        : <Widget>[amountRow, const MobileReviewFlowArrow(), toRow];
+        : <Widget>[amountRow, toRow];
 
     return Scaffold(
       backgroundColor: colors.background.window,
@@ -643,20 +642,7 @@ class _MobileTransactionStatusScreenState
                           padding: const EdgeInsets.symmetric(
                             vertical: AppSpacing.md,
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              for (
-                                var i = 0;
-                                i < reviewChildren.length;
-                                i++
-                              ) ...[
-                                if (i > 0)
-                                  const SizedBox(height: AppSpacing.xs),
-                                reviewChildren[i],
-                              ],
-                            ],
-                          ),
+                          child: ReviewInfoFlow(rows: reviewChildren),
                         ),
                       const SizedBox(height: AppSpacing.md),
                       _DetailCard(
@@ -920,119 +906,41 @@ class _AddressVerifyZecIcon extends StatelessWidget {
 
 enum _TxPhase { pending, succeeded, failed }
 
-class _BottomInfoRow extends StatelessWidget {
-  const _BottomInfoRow({
-    required this.text,
-    this.iconName,
-    this.iconColor,
-    this.trailing,
-  });
+/// Bottom strip of a review row: an optional pool glyph and its text.
+class _BottomInfo {
+  const _BottomInfo({required this.text, this.iconName, this.iconColor});
 
   final String? text;
   final String? iconName;
   final Color? iconColor;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = text;
-    final trailingWidget = trailing;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final leadingWidth = iconName == null
-            ? 0.0
-            : AppIconSize.medium + AppSpacing.xxs;
-        final maxTrailingWidth = constraints.hasBoundedWidth
-            ? (constraints.maxWidth - leadingWidth)
-                  .clamp(0.0, constraints.maxWidth)
-                  .toDouble()
-            : double.infinity;
-
-        return Row(
-          children: [
-            if (iconName != null) ...[
-              AppIcon(
-                iconName!,
-                size: AppIconSize.medium,
-                color: iconColor ?? context.colors.text.secondary,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-            ],
-            if (label != null)
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: context.colors.text.secondary,
-                  ),
-                ),
-              )
-            else
-              const Spacer(),
-            if (trailingWidget != null)
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxTrailingWidth),
-                child: trailingWidget,
-              ),
-          ],
-        );
-      },
-    );
-  }
 }
 
-/// Ghost icon+label action, 24px tall — Figma ghost `Button`.
-class _GhostIconLabelButton extends StatelessWidget {
-  const _GhostIconLabelButton({
-    required this.iconName,
-    required this.label,
-    required this.onTap,
-    super.key,
-  });
-
-  final String iconName;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xxs),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              AppIcon(
-                iconName,
-                size: AppIconSize.medium,
-                color: colors.button.ghost.label,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.button.ghost.label,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+ReviewInfoRow _reviewRow({
+  required String label,
+  required String value,
+  required Widget leading,
+  _BottomInfo? bottom,
+  Widget? bottomPlaceholder,
+  bool strikethrough = false,
+  String? trailingActionLabel,
+  Key? trailingActionKey,
+  VoidCallback? onTrailingAction,
+  Key? key,
+}) {
+  return ReviewInfoRow(
+    key: key,
+    label: label,
+    value: value,
+    leading: leading,
+    struckThrough: strikethrough,
+    bottomLeftIconName: bottom?.iconName,
+    bottomLeftIconColor: bottom?.iconColor,
+    bottomLeftText: bottom?.text,
+    bottomLeftPlaceholder: bottomPlaceholder,
+    trailingActionLabel: trailingActionLabel,
+    trailingActionKey: trailingActionKey,
+    onTrailingAction: onTrailingAction,
+  );
 }
 
 /// The rounded detail card — Figma `Review Wrap`: status chip, message

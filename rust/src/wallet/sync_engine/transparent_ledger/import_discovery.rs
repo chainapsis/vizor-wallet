@@ -34,10 +34,11 @@ use zakura_pir_client::transparent::{
 };
 
 use super::pir::{
-    origin_for, origin_override, MAX_PRIVATE_BYTES, MAX_QUERIES, MAX_RESPONSE_BYTES, MAX_SHARDS,
+    origin_for, source_origin, MAX_PRIVATE_BYTES, MAX_QUERIES, MAX_RESPONSE_BYTES, MAX_SHARDS,
 };
 use crate::wallet::bounded_runtime::{run_detached, Detached};
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::pir_config::{process_selection, SelectedServer};
 use crate::wallet::sync_engine::enhancement::RoutedExchange;
 
 /// Wall-clock bound on one discovery. A walk from Sapling activation
@@ -53,6 +54,8 @@ pub(crate) struct PrivateDiscoveryFailed;
 pub(crate) struct PrivateAccountDiscovery {
     /// `None` off mainnet: private discovery is unavailable.
     origin: Option<String>,
+    selection: &'static SelectedServer,
+    generation: u64,
     #[cfg(test)]
     transport: Option<super::pir::test_transport::Seam>,
     #[cfg(test)]
@@ -68,12 +71,16 @@ pub(crate) type Canned = (
 
 impl PrivateAccountDiscovery {
     /// Discovery for an import into the wallet at `db_path`, existing or not:
-    /// the path keys only the test transport.
+    /// the path keys only a test's transport and origin.
     pub(crate) fn new(db_path: &str, network: WalletNetwork) -> Self {
-        #[cfg(not(test))]
-        let _ = db_path;
+        // Read the generation first: a switch racing the origin capture also
+        // revokes this discovery, rather than giving an old origin a new lease.
+        let selection = process_selection();
+        let generation = selection.generation();
         Self {
-            origin: origin_for(network, origin_override(|name| std::env::var(name).ok())),
+            origin: origin_for(network, source_origin(db_path)),
+            selection,
+            generation,
             #[cfg(test)]
             transport: super::pir::test_transport::get(db_path),
             #[cfg(test)]
@@ -86,7 +93,9 @@ impl PrivateAccountDiscovery {
     #[cfg(test)]
     pub(crate) fn canned(answer: Result<BTreeSet<usize>, PrivateDiscoveryFailed>) -> Self {
         Self {
-            origin: Some(super::pir::DEFAULT_MAINNET_ORIGIN.to_owned()),
+            origin: Some(super::pir::TEST_ORIGIN.to_owned()),
+            selection: process_selection(),
+            generation: process_selection().generation(),
             transport: None,
             canned: Some((answer, Default::default())),
         }
@@ -123,6 +132,11 @@ impl PrivateAccountDiscovery {
                 .push((floor, addresses));
             return answer.clone();
         }
+        let selection = self.selection;
+        let generation = self.generation;
+        if selection.generation() != generation {
+            return Err(PrivateDiscoveryFailed);
+        }
         let Some(origin) = self.origin.clone() else {
             return Err(PrivateDiscoveryFailed);
         };
@@ -132,7 +146,8 @@ impl PrivateAccountDiscovery {
             return Err(PrivateDiscoveryFailed);
         };
         let deadline = Instant::now() + DISCOVERY_DEADLINE;
-        let past_deadline = move || Instant::now() >= deadline;
+        let past_deadline =
+            move || Instant::now() >= deadline || selection.generation() != generation;
         let cancel = Arc::new(AtomicBool::new(false));
         let stop = cancel.clone();
         let ran = run_detached(
@@ -140,7 +155,11 @@ impl PrivateAccountDiscovery {
             cancel,
             &past_deadline,
             move |io| {
-                let exit = || stop.load(Ordering::SeqCst) || Instant::now() >= deadline;
+                let exit = || {
+                    stop.load(Ordering::SeqCst)
+                        || Instant::now() >= deadline
+                        || selection.generation() != generation
+                };
                 let result = (|| {
                     let exchange = RoutedExchange::transparent(&origin, &exit, io)
                         .map_err(|_| "transport refused the origin")?;
@@ -174,6 +193,10 @@ impl PrivateAccountDiscovery {
             },
         )
         .await;
+        // A reply racing revocation is never an answer from the current server.
+        if selection.generation() != generation {
+            return Err(PrivateDiscoveryFailed);
+        }
         match ran {
             Detached::Returned(result) => result,
             Detached::NotStarted => {
@@ -267,6 +290,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn switching_servers_revokes_discovery_before_another_request() {
+        use crate::wallet::sync_engine::enhancement::RequestObserver;
+        for revoke in [false, true] {
+            // A private selection keeps this test independent of other wallets.
+            let selection: &'static SelectedServer = Box::leak(Box::new(SelectedServer::new()));
+            selection.finish_switch(
+                selection
+                    .begin_switch(Some(super::super::pir::TEST_ORIGIN))
+                    .unwrap()
+                    .unwrap(),
+            );
+            let generation = selection.generation();
+            let observer = RequestObserver::answering(move |request| {
+                let (status, body) = if request.path == "/transparent/v1/filters/shards" {
+                    // This valid map requires a second protocol request. The
+                    // control below proves that the fixture reaches that step.
+                    if revoke {
+                        selection.finish_switch(selection.begin_switch(None).unwrap().unwrap());
+                    }
+                    (200, serde_json::to_vec(&serde_json::json!({
+                        "genesis_hash": "00040fe8ec8471911baa1db1266ea15dd06b4a8a5c453883c000b031973dce08",
+                        "network": "main", "profile": "zcash-transparent-range-v1",
+                        "range_envelope_version": 1, "start_height": 1,
+                        "seal": {"archive-wide": {"max_scripts": 1629038, "max_page_rows": 63488, "max_txids": 0}},
+                        "shards": [{"shard_id": 0, "geometry": "archive-wide", "start_height": 1, "end_height": 20,
+                            "parent_block_hash": "00".repeat(32), "terminal_block_hash": "33".repeat(32),
+                            "filter_hash": "11".repeat(32), "scripts": 1, "page_rows": 1, "txids": 1,
+                            "directory_segments": 1, "page_segments": 1, "manifest_digest": "22".repeat(32),
+                            "revision": 0, "sealed": false}]
+                    })).unwrap())
+                } else {
+                    (503, vec![])
+                };
+                http::Response::builder()
+                    .status(status)
+                    .body(http_body_util::Full::new(bytes::Bytes::from(body)))
+                    .unwrap()
+            });
+            let seam =
+                super::super::pir::test_transport::set("/discovery-revocation", observer.clone());
+            let mut discovery =
+                PrivateAccountDiscovery::new("/discovery-revocation", WalletNetwork::Main);
+            discovery.selection = selection;
+            discovery.generation = generation;
+            let addresses = vec![TransparentAddress::PublicKeyHash([1; 20])];
+            assert_eq!(
+                discovery.active(1, addresses.clone()).await,
+                Err(PrivateDiscoveryFailed)
+            );
+            assert_eq!(observer.requests().len(), if revoke { 1 } else { 2 });
+            if revoke {
+                assert_eq!(
+                    discovery.active(1, addresses).await,
+                    Err(PrivateDiscoveryFailed)
+                );
+                assert_eq!(
+                    observer.requests().len(),
+                    1,
+                    "revoked discovery sends nothing else"
+                );
+            }
+            drop(seam);
+        }
+    }
+
+    #[tokio::test]
     async fn off_mainnet_there_is_no_private_discovery() {
         let discovery = PrivateAccountDiscovery::new("/nonexistent", WalletNetwork::Test);
         assert!(!discovery.is_available());
@@ -279,9 +368,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn without_a_test_transport_nothing_is_sent() {
+    async fn without_a_selected_server_there_is_no_private_discovery() {
         let discovery = PrivateAccountDiscovery::new("/nonexistent", WalletNetwork::Main);
-        assert!(discovery.is_available());
+        assert!(!discovery.is_available());
         assert_eq!(
             discovery
                 .active(1, vec![TransparentAddress::PublicKeyHash([1; 20])])

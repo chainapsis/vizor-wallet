@@ -19,6 +19,7 @@ import '../../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import '../../services/sapling_params.dart';
 import '../../services/send_flow.dart';
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
+import '../../../../core/zcash/network_upgrade_hold.dart';
 
 /// Mobile Keystone signing. The send-specific work here is only PCZT
 /// preparation and the result payload; the QR display and signed-PCZT scan are
@@ -329,6 +330,8 @@ class _MobileKeystoneSignScreenState
   }
 
   String _friendlyError(Object error) {
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {

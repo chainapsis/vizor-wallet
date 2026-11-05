@@ -13,6 +13,7 @@ import '../src/core/widgets/app_back_link.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_pane_modal_overlay.dart';
+import '../src/features/swap/domain/near_intents_explorer.dart';
 import '../src/features/swap/models/swap_fiat_amount.dart';
 import '../src/features/swap/models/swap_activity_status_mapper.dart';
 import '../src/features/swap/models/swap_intent_presentation_mapper.dart';
@@ -471,6 +472,8 @@ Widget buildSwapStatusCapturedFiatUseCase(BuildContext context) {
       receiveFiatText: r'$123.45',
       payAmountText: '2.0000 ZEC',
       receiveAmountText: '123.45 USDC',
+      payLabel: 'You paid',
+      receiveLabel: 'You received',
     ),
   );
 }
@@ -498,6 +501,8 @@ Widget buildSwapStatusCompletedUseCase(BuildContext context) {
       showTabs: false,
       steps: const [],
       details: _designCompletedDetails,
+      payLabel: 'You paid',
+      receiveLabel: 'You received',
     ),
   );
 }
@@ -1208,6 +1213,8 @@ class _SwapStatusPreview extends StatefulWidget {
     this.receiveFiatText = '\$110.24',
     this.payAmountText = '999,999.99 USDC',
     this.receiveAmountText = '0.251 ZEC',
+    this.payLabel = "You're paying",
+    this.receiveLabel = "You're receiving",
   });
 
   final String title;
@@ -1224,6 +1231,8 @@ class _SwapStatusPreview extends StatefulWidget {
   final String receiveFiatText;
   final String payAmountText;
   final String receiveAmountText;
+  final String payLabel;
+  final String receiveLabel;
 
   @override
   State<_SwapStatusPreview> createState() => _SwapStatusPreviewState();
@@ -1248,6 +1257,8 @@ class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
       receiveAsset: widget.receiveAsset,
       payAmountText: widget.payAmountText,
       receiveAmountText: widget.receiveAmountText,
+      payLabel: widget.payLabel,
+      receiveLabel: widget.receiveLabel,
       payDetailText: widget.payFiatText,
       receiveDetailText: widget.receiveFiatText,
       statusLabel: widget.statusLabel,
@@ -1257,6 +1268,9 @@ class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
       steps: widget.steps,
       details: widget.details,
       showTabs: widget.showTabs,
+      explorerUri: nearIntentsExplorerTransactionUri(
+        '0x123kjhc4e984ac1832f10aa4x98g20',
+      ),
       onTabChanged: widget.showTabs
           ? (tab) {
               setState(() {

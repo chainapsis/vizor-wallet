@@ -208,9 +208,16 @@ write_app_run() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-APPDIR="\${APPDIR:-\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)}"
+APPDIR="\$(cd -- "\${APPDIR:-\$(dirname "\${BASH_SOURCE[0]}")}" && pwd)"
+case "\${APPDIR}" in
+  *:*|*';'*)
+    echo 'AppDir path contains a library-path separator' >&2
+    exit 1
+    ;;
+esac
 export XDG_DATA_DIRS="\${APPDIR}/usr/share:\${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
-export LD_LIBRARY_PATH="\${APPDIR}/usr/bin/lib:\${APPDIR}/usr/lib:\${LD_LIBRARY_PATH:-}"
+# Do not inherit search paths outside the bundle. Host libraries use loader defaults.
+export LD_LIBRARY_PATH="\${APPDIR}/usr/bin/lib:\${APPDIR}/usr/lib"
 export GST_PLUGIN_SYSTEM_PATH_1_0="\${APPDIR}/usr/lib/gstreamer-1.0"
 export GST_PLUGIN_PATH_1_0="\${APPDIR}/usr/lib/gstreamer-1.0"
 if [[ -x "\${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner" ]]; then

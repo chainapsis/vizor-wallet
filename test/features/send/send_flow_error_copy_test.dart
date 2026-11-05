@@ -1,10 +1,39 @@
 import 'package:characters/characters.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/core/zcash/transparent_ledger_errors.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 
 void main() {
   group('friendlyProposeSendError', () {
+    test('uses donation copy for an unknown donation proposal failure', () {
+      expect(
+        friendlyProposeSendError(
+          'proposal failed',
+          flowKind: SendFlowKind.donation,
+        ),
+        'Donation failed. Try again.',
+      );
+      expect(
+        friendlyProposeSendError('proposal failed'),
+        'Send failed. Try again.',
+      );
+    });
+
+    test('preserves actionable proposal errors in the donation flow', () {
+      for (final raw in [
+        'InsufficientFunds',
+        'Wallet must sync',
+        'grpc connect failed',
+        'proposal not found',
+      ]) {
+        expect(
+          friendlyProposeSendError(raw, flowKind: SendFlowKind.donation),
+          friendlyProposeSendError(raw),
+        );
+      }
+    });
+
     test("maps Rust's own no-tip wording onto the sync message", () {
       expect(
         friendlyProposeSendError(
@@ -23,6 +52,15 @@ void main() {
         ),
         transparentLedgerNeedsNewerBuildMessage,
       );
+    });
+
+    test('explains the hold right before a network upgrade', () {
+      const raw =
+          "Propose failed: Transactions can't be sent this close to the "
+          'network upgrade. Try again after it activates.';
+      expect(friendlyProposeSendError(raw), kNetworkUpgradeHoldMessage);
+      expect(friendlyBroadcastError(raw), kNetworkUpgradeHoldMessage);
+      expect(friendlyPaymentRequestCheckError(raw), kNetworkUpgradeHoldMessage);
     });
 
     test('reports incomplete private recovery, not insufficient funds', () {

@@ -741,11 +741,12 @@ trusted, since every commit comes from the configured origin.
   the preference read from storage raises a wallet to
   `PrivateRequired` and runs the source. Off mainnet the source has no origin,
   and every pass is `Unavailable` without a request.
-- **Endpoint.** `https://transparent-pir.valargroup.dev`. Debug builds honor
-  `VIZOR_TRANSPARENT_PIR_URL`; release builds ignore it, and Dart cannot set
-  it. Each companion binds the source `vizor/transparent-pir/v1`, the
-  account's UUID and the origin, so another origin derives other revision
-  sources.
+- **Endpoint.** `<base>/transparent/v1` below the selected wallet PIR
+  server; with no server selected there is no origin and no request. Debug
+  builds honor `VIZOR_TRANSPARENT_PIR_URL` only while nothing is selected;
+  release builds ignore it, and Dart cannot set it. Each companion binds the
+  source `vizor/transparent-pir/v1`, the account's UUID and the origin, so
+  another origin derives other revision sources.
 - **Companions.** One per account in the library's `CompanionDir` at
   `{db}.tpir`, which names it `{uuid}-{tag}.sqlite`, where the tag is 16 hex
   digits of `sha256(origin || 0 || SCHEMA)`. A companion holds the adapter's
@@ -804,7 +805,7 @@ trusted, since every commit comes from the configured origin.
   use only the service's six routes: the shard map, a shard's filter, init, a
   revision's manifest, setup segments, and posted queries.
 - **Logs.** One debug line per request, with the method, the route template
-  (for example `POST /v2/shards/{id}/revisions/{rev}/query/pages`), the status
+  (for example `POST /transparent/v1/shards/{id}/revisions/{rev}/query/pages`), the status
   and the body length. Pass lines carry the batch state, the outcome and the
   lag in blocks, and failures a variant name. No log carries an id, digest,
   address, script, txid, outpoint or body.
@@ -903,8 +904,9 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
 
 - **Source.** Chosen once per run from the policy the sync captured.
   `PrivateRequired` builds only the private source:
-  `https://transparent-pir.valargroup.dev/v2/txid/`, mainnet only, with the
-  transparent PIR origin's debug override (`VIZOR_TRANSPARENT_PIR_URL`). It
+  `<base>/transparent/v1/txid/` below the selected wallet PIR server, mainnet
+  only, with the transparent PIR origin's debug override
+  (`VIZOR_TRANSPARENT_PIR_URL`). It
   holds no lightwalletd client, so a failure can never become a public
   lookup. Any other capture builds only the gate source, which re-checks the
   durable policy generation before each `GetTransaction` and again, in the
@@ -937,7 +939,7 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   be due to fetch a newer one. So when nothing is due and the wallet reports
   work parked for want of a map change (`transparent_detail_parked`), the
   private source waits for the reported refresh time, then fetches the map alone (`refresh_map`: one
-  `GET /v2/txid/map`, no txid, validated as a lookup validates it) and the
+  `GET /transparent/v1/txid/map`, no txid, validated as a lookup validates it) and the
   run lists again under its hash. The check is due six hours after the later
   of the newest parked attempt and the last attempted map check. The process
   keeps that check time by origin across sync runs, including failed checks.

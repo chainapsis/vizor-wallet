@@ -88,6 +88,16 @@ class _IronwoodMigrationPrivateStatusContentState
       _StatusAction.none => null,
     };
 
+    if (status.phase == kIronwoodMigrationStoppedByUpgradePhase) {
+      return _MigrationUpgradeStoppedStatusContent(
+        status: status,
+        orchardBalanceZatoshi: ref
+            .watch(ironwoodMigrationFlowDataProvider)
+            ?.amountZatoshi,
+        onMoveRemaining: () => context.go('/migration/options'),
+      );
+    }
+
     if ((status.activeRunId != null ||
             status.phase == kIronwoodMigrationCompletePhase) &&
         {

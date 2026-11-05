@@ -11,6 +11,7 @@ import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/zcash/network_upgrade_hold.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../keystone/services/keystone_batch_signing.dart';
 import '../../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
@@ -449,6 +450,8 @@ class _MobileSwapKeystoneSignScreenState
     if (error is _MobileSwapKeystoneSignFailureException) {
       return error.message;
     }
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('does not support tex')) {
       return 'Keystone does not support TEX sends yet.';

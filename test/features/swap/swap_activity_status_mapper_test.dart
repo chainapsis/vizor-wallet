@@ -6,6 +6,127 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_status_page_content.dart';
 
 void main() {
+  for (final lookup in [
+    (
+      address: ' t1deposit ',
+      intentHash: 'intent',
+      localTx: 'local',
+      originTx: 'origin',
+      expected: 'https://explorer.near-intents.org/transactions/t1deposit',
+    ),
+    (
+      address: 't1deposit',
+      intentHash: null,
+      localTx: null,
+      originTx: null,
+      expected: 'https://explorer.near-intents.org/transactions/t1deposit',
+    ),
+    (
+      address: '  ',
+      intentHash: ' intent ',
+      localTx: 'local',
+      originTx: 'origin',
+      expected: 'https://explorer.near-intents.org/?search=intent',
+    ),
+    (
+      address: null,
+      intentHash: null,
+      localTx: ' local ',
+      originTx: 'origin',
+      expected: 'https://explorer.near-intents.org/?search=local',
+    ),
+    (
+      address: null,
+      intentHash: null,
+      localTx: '  ',
+      originTx: ' origin ',
+      expected: 'https://explorer.near-intents.org/?search=origin',
+    ),
+    (
+      address: ' ',
+      intentHash: ' ',
+      localTx: null,
+      originTx: null,
+      expected: null,
+    ),
+  ]) {
+    test('progress and detail lookups agree for ${lookup.expected}', () {
+      for (final pay in [false, true]) {
+        for (final status in [
+          SwapIntentStatus.awaitingDeposit,
+          SwapIntentStatus.processing,
+          SwapIntentStatus.incompleteDeposit,
+          SwapIntentStatus.complete,
+        ]) {
+          final presentation = swapActivityStatusPresentationForIntent(
+            _state(),
+            _intent(
+              status: status,
+              direction: SwapDirection.zecToExternal,
+              externalAsset: SwapAsset.usdc,
+              depositAddress: lookup.address,
+              nearIntentHash: lookup.intentHash,
+              depositTxHash: lookup.localTx,
+              originChainTxHash: lookup.originTx,
+              payMode: pay,
+            ),
+          );
+          expect(presentation.explorerUri?.toString(), lookup.expected);
+          if (pay && status != SwapIntentStatus.incompleteDeposit) {
+            expect(presentation.payStatus!.txIdUri, presentation.explorerUri);
+          } else {
+            final rows = presentation.details.where(
+              (row) => row.label == 'Tx ID',
+            );
+            if (lookup.expected == null) {
+              expect(rows, isEmpty);
+            } else {
+              expect(rows.single.linkUri, presentation.explorerUri);
+            }
+          }
+        }
+      }
+    });
+  }
+
+  test('labels the Pay amount by outcome', () {
+    expect(
+      payActivityStatusAmountLabel(PayActivityStatusPhase.inProgress),
+      "You're paying",
+    );
+    expect(
+      payActivityStatusAmountLabel(PayActivityStatusPhase.completed),
+      'You paid',
+    );
+    for (final phase in [
+      PayActivityStatusPhase.failed,
+      PayActivityStatusPhase.refunded,
+    ]) {
+      expect(payActivityStatusAmountLabel(phase), 'Amount', reason: phase.name);
+    }
+  });
+
+  test('labels swap headers by outcome', () {
+    for (final (status, pay, receive) in [
+      (SwapIntentStatus.processing, "You're paying", "You're receiving"),
+      (SwapIntentStatus.complete, 'You paid', 'You received'),
+      // Unsuccessful swaps must not imply delivery.
+      (SwapIntentStatus.failed, 'Deposit amount', 'Expected to receive'),
+      (SwapIntentStatus.refunded, 'Deposit amount', 'Expected to receive'),
+    ]) {
+      final presentation = swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: status,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+        ),
+      );
+      expect(presentation.payLabel, pay, reason: status.name);
+      expect(presentation.receiveLabel, receive, reason: status.name);
+    }
+  });
+
   test('maps in-progress status page data from the saved swap intent', () {
     final presentation = swapActivityStatusPresentationForIntent(
       _state(indicativeExternalPerZec: {SwapAsset.usdc: 70}),
@@ -133,6 +254,7 @@ void main() {
       'You paid',
       'Rate',
       'Fees',
+      'Tx ID',
       'ZEC tx (shielded)',
       'USDC delivery tx',
     ]);
@@ -556,10 +678,7 @@ void main() {
     }
   });
 
-  test('omits the tx id detail row on desktop', () {
-    // The "Tx ID" row is a mobile-only addition; desktop keeps the original
-    // detail set. Mobile-lane coverage of the row lives in
-    // mobile_swap_activity_tx_id_test.dart.
+  test('adds an explorer row while retaining the copyable source tx', () {
     final presentation = swapActivityStatusPresentationForIntent(
       _state(),
       _intent(
@@ -572,7 +691,16 @@ void main() {
       ),
     );
 
-    expect(presentation.details.where((row) => row.label == 'Tx ID'), isEmpty);
+    final txId = _detailRow(presentation.details, 'Tx ID');
+    expect(txId.linkUri, presentation.explorerUri);
+    expect(
+      txId.linkUri.toString(),
+      'https://explorer.near-intents.org/transactions/t1provider-deposit',
+    );
+    final source = _detailRow(presentation.details, 'ZEC deposit tx');
+    expect(source.copyable, isTrue);
+    expect(source.copyText, 'zec-origin-txid');
+    expect(source.linkUri, isNull);
   });
 
   test('adds address book labels to matching address detail rows', () {

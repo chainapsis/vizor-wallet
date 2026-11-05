@@ -8,6 +8,7 @@ import 'api/gift_card_tracking.dart';
 import 'api/keystone.dart';
 import 'api/ledger.dart';
 import 'api/network_privacy.dart';
+import 'api/pir_config.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
 import 'api/sync.dart';
@@ -26,6 +27,7 @@ import 'third_party/zcash_voting/share_policy.dart';
 import 'third_party/zcash_voting/wire.dart';
 import 'wallet/gift_card_tracking.dart';
 import 'wallet/keystone.dart';
+import 'wallet/ledger.dart';
 
 abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustLibApiImplPlatform({
@@ -230,10 +232,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiWalletErrorCode dco_decode_api_wallet_error_code(dynamic raw);
 
   @protected
+  ApiWalletPirConfig dco_decode_api_wallet_pir_config(dynamic raw);
+
+  @protected
+  ApiWalletPirConfigAttempt dco_decode_api_wallet_pir_config_attempt(
+    dynamic raw,
+  );
+
+  @protected
+  ApiWalletPirSelectionState dco_decode_api_wallet_pir_selection_state(
+    dynamic raw,
+  );
+
+  @protected
+  ApiWalletPirServer dco_decode_api_wallet_pir_server(dynamic raw);
+
+  @protected
+  ApiWalletPirStaticConfig dco_decode_api_wallet_pir_static_config(dynamic raw);
+
+  @protected
   AuthenticatedRound dco_decode_authenticated_round(dynamic raw);
 
   @protected
   BlockMetaInfo dco_decode_block_meta_info(dynamic raw);
+
+  @protected
+  BlockSpacingSchedule dco_decode_block_spacing_schedule(dynamic raw);
 
   @protected
   bool dco_decode_bool(dynamic raw);
@@ -317,12 +341,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ImmediateShareKey dco_decode_box_autoadd_immediate_share_key(dynamic raw);
 
   @protected
+  LedgerAppSupport dco_decode_box_autoadd_ledger_app_support(dynamic raw);
+
+  @protected
   MigrationOutboxBatch dco_decode_box_autoadd_migration_outbox_batch(
     dynamic raw,
   );
 
   @protected
   MigrationStatus dco_decode_box_autoadd_migration_status(dynamic raw);
+
+  @protected
+  NetworkUpgradeWindow dco_decode_box_autoadd_network_upgrade_window(
+    dynamic raw,
+  );
 
   @protected
   NextStepView dco_decode_box_autoadd_next_step_view(dynamic raw);
@@ -586,6 +618,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LedgerApduCommand dco_decode_ledger_apdu_command(dynamic raw);
 
   @protected
+  LedgerAppSupport dco_decode_ledger_app_support(dynamic raw);
+
+  @protected
   LedgerDeviceApp dco_decode_ledger_device_app(dynamic raw);
 
   @protected
@@ -654,6 +689,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   List<ApiSnapshotBundlePirResult>
   dco_decode_list_api_snapshot_bundle_pir_result(dynamic raw);
+
+  @protected
+  List<ApiWalletPirConfigAttempt> dco_decode_list_api_wallet_pir_config_attempt(
+    dynamic raw,
+  );
+
+  @protected
+  List<ApiWalletPirServer> dco_decode_list_api_wallet_pir_server(dynamic raw);
 
   @protected
   List<AuthenticatedRound> dco_decode_list_authenticated_round(dynamic raw);
@@ -921,6 +964,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NetworkPrivacyStatus dco_decode_network_privacy_status(dynamic raw);
 
   @protected
+  NetworkUpgradeWindow dco_decode_network_upgrade_window(dynamic raw);
+
+  @protected
   NextStepKind dco_decode_next_step_kind(dynamic raw);
 
   @protected
@@ -1006,6 +1052,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MigrationStatus? dco_decode_opt_box_autoadd_migration_status(dynamic raw);
+
+  @protected
+  NetworkUpgradeWindow? dco_decode_opt_box_autoadd_network_upgrade_window(
+    dynamic raw,
+  );
 
   @protected
   NextStepView? dco_decode_opt_box_autoadd_next_step_view(dynamic raw);
@@ -1390,6 +1441,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   WalletCreationResult dco_decode_wallet_creation_result(dynamic raw);
 
   @protected
+  WalletFeePolicy dco_decode_wallet_fee_policy(dynamic raw);
+
+  @protected
   WalletImportResult dco_decode_wallet_import_result(dynamic raw);
 
   @protected
@@ -1663,12 +1717,42 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiWalletPirConfig sse_decode_api_wallet_pir_config(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiWalletPirConfigAttempt sse_decode_api_wallet_pir_config_attempt(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiWalletPirSelectionState sse_decode_api_wallet_pir_selection_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiWalletPirServer sse_decode_api_wallet_pir_server(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiWalletPirStaticConfig sse_decode_api_wallet_pir_static_config(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   AuthenticatedRound sse_decode_authenticated_round(
     SseDeserializer deserializer,
   );
 
   @protected
   BlockMetaInfo sse_decode_block_meta_info(SseDeserializer deserializer);
+
+  @protected
+  BlockSpacingSchedule sse_decode_block_spacing_schedule(
+    SseDeserializer deserializer,
+  );
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
@@ -1768,12 +1852,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LedgerAppSupport sse_decode_box_autoadd_ledger_app_support(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MigrationOutboxBatch sse_decode_box_autoadd_migration_outbox_batch(
     SseDeserializer deserializer,
   );
 
   @protected
   MigrationStatus sse_decode_box_autoadd_migration_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NetworkUpgradeWindow sse_decode_box_autoadd_network_upgrade_window(
     SseDeserializer deserializer,
   );
 
@@ -2115,6 +2209,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LedgerAppSupport sse_decode_ledger_app_support(SseDeserializer deserializer);
+
+  @protected
   LedgerDeviceApp sse_decode_ledger_device_app(SseDeserializer deserializer);
 
   @protected
@@ -2203,6 +2300,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   List<ApiSnapshotBundlePirResult>
   sse_decode_list_api_snapshot_bundle_pir_result(SseDeserializer deserializer);
+
+  @protected
+  List<ApiWalletPirConfigAttempt> sse_decode_list_api_wallet_pir_config_attempt(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ApiWalletPirServer> sse_decode_list_api_wallet_pir_server(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<AuthenticatedRound> sse_decode_list_authenticated_round(
@@ -2542,6 +2649,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  NetworkUpgradeWindow sse_decode_network_upgrade_window(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   NextStepKind sse_decode_next_step_kind(SseDeserializer deserializer);
 
   @protected
@@ -2645,6 +2757,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MigrationStatus? sse_decode_opt_box_autoadd_migration_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NetworkUpgradeWindow? sse_decode_opt_box_autoadd_network_upgrade_window(
     SseDeserializer deserializer,
   );
 
@@ -3141,6 +3258,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  WalletFeePolicy sse_decode_wallet_fee_policy(SseDeserializer deserializer);
+
+  @protected
   WalletImportResult sse_decode_wallet_import_result(
     SseDeserializer deserializer,
   );
@@ -3487,6 +3607,36 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_wallet_pir_config(
+    ApiWalletPirConfig self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_wallet_pir_config_attempt(
+    ApiWalletPirConfigAttempt self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_wallet_pir_selection_state(
+    ApiWalletPirSelectionState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_wallet_pir_server(
+    ApiWalletPirServer self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_wallet_pir_static_config(
+    ApiWalletPirStaticConfig self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_authenticated_round(
     AuthenticatedRound self,
     SseSerializer serializer,
@@ -3494,6 +3644,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_block_meta_info(BlockMetaInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_block_spacing_schedule(
+    BlockSpacingSchedule self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
@@ -3604,6 +3760,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_ledger_app_support(
+    LedgerAppSupport self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_migration_outbox_batch(
     MigrationOutboxBatch self,
     SseSerializer serializer,
@@ -3612,6 +3774,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_migration_status(
     MigrationStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_network_upgrade_window(
+    NetworkUpgradeWindow self,
     SseSerializer serializer,
   );
 
@@ -4024,6 +4192,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_ledger_app_support(
+    LedgerAppSupport self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_ledger_device_app(
     LedgerDeviceApp self,
     SseSerializer serializer,
@@ -4131,6 +4305,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_api_snapshot_bundle_pir_result(
     List<ApiSnapshotBundlePirResult> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_wallet_pir_config_attempt(
+    List<ApiWalletPirConfigAttempt> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_wallet_pir_server(
+    List<ApiWalletPirServer> self,
     SseSerializer serializer,
   );
 
@@ -4552,6 +4738,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_network_upgrade_window(
+    NetworkUpgradeWindow self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_next_step_kind(NextStepKind self, SseSerializer serializer);
 
   @protected
@@ -4662,6 +4854,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_migration_status(
     MigrationStatus? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_network_upgrade_window(
+    NetworkUpgradeWindow? self,
     SseSerializer serializer,
   );
 
@@ -5247,6 +5445,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_wallet_creation_result(
     WalletCreationResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_wallet_fee_policy(
+    WalletFeePolicy self,
     SseSerializer serializer,
   );
 

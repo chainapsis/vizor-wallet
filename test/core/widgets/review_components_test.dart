@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/theme/primitives.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -91,6 +92,82 @@ void main() {
 
       expect(find.byType(AppButton), findsNothing);
       expect(find.text(r'$250.12'), findsOneWidget);
+    });
+
+    testWidgets('uses the form-factor label style', (tester) async {
+      await _pump(
+        tester,
+        const ReviewInfoRow(
+          label: 'Amount',
+          value: '123.12 ZEC',
+          leading: ReviewInfoIconCircle(iconName: AppIcons.wallet),
+          bottomLeftText: r'$250.12',
+        ),
+      );
+
+      const expected = kAppFormFactor == AppFormFactor.mobile
+          ? AppTypography.labelLarge
+          : AppTypography.labelSmall;
+      for (final text in ['Amount', r'$250.12']) {
+        final style = tester.widget<Text>(find.text(text)).style;
+        expect(style?.fontSize, expected.fontSize, reason: text);
+        expect(style?.height, expected.height, reason: text);
+      }
+    });
+  });
+
+  group('ReviewInfoFlow', () {
+    testWidgets('keeps each connector under the leading column', (
+      tester,
+    ) async {
+      // A centering parent is what pushed the mobile send arrow to the
+      // middle of the screen; the flow must not depend on its parent.
+      await _pump(
+        tester,
+        const Column(
+          children: [
+            ReviewInfoFlow(
+              rows: [
+                ReviewInfoRow(
+                  key: ValueKey('from'),
+                  label: 'Amount',
+                  value: '123.12 ZEC',
+                  leading: ReviewInfoIconCircle(iconName: AppIcons.wallet),
+                ),
+                ReviewInfoRow(
+                  key: ValueKey('to'),
+                  label: 'To',
+                  value: 'u195091 ... 190591',
+                  leading: ReviewInfoIconCircle(iconName: AppIcons.wallet),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      final connector = find.descendant(
+        of: find.byType(ReviewConnectorIcon),
+        matching: find.byType(AppIcon),
+      );
+      expect(connector, findsOneWidget);
+      final leading = find.descendant(
+        of: find.byKey(const ValueKey('from')),
+        matching: find.byType(ReviewInfoIconCircle),
+      );
+      expect(tester.getCenter(connector).dx, tester.getCenter(leading).dx);
+
+      const gap = kAppFormFactor == AppFormFactor.mobile ? AppSpacing.xs : 0.0;
+      expect(
+        tester.getTopLeft(connector).dy -
+            tester.getBottomLeft(find.byKey(const ValueKey('from'))).dy,
+        gap,
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('to'))).dy -
+            tester.getBottomLeft(connector).dy,
+        gap,
+      );
     });
   });
 

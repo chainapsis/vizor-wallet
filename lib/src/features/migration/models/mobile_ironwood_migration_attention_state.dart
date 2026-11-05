@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/zcash/block_spacing.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import 'ironwood_migration_phases.dart';
 import 'ironwood_migration_presentation.dart';
@@ -11,6 +12,9 @@ enum MobileIronwoodMigrationAttentionKind {
   continueMigration,
   proof,
   lateBroadcast,
+
+  /// The NU7 upgrade stopped the run; the remaining balance moves again.
+  upgradeStopped,
 }
 
 int mobileIronwoodSafelyObservedHeight({
@@ -47,8 +51,15 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
   required int currentHeight,
   required int broadcastHeight,
   required bool isKeystone,
+  required BlockSpacing blockSpacing,
 }) {
   if (status == null) return null;
+  if (status.phase == kIronwoodMigrationStoppedByUpgradePhase) {
+    return const MobileIronwoodMigrationAttention(
+      kind: MobileIronwoodMigrationAttentionKind.upgradeStopped,
+      count: 1,
+    );
+  }
   final needsInputCount = status.parts
       .where((part) => part.state == rust_sync.MigrationPartState.needsInput)
       .length;
@@ -96,7 +107,7 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
         item.status.toLowerCase() == 'scheduled' &&
         item.scheduledHeight > 0 &&
         broadcastHeight >=
-            item.scheduledHeight + kIronwoodMigrationLateGraceBlocks,
+            ironwoodMigrationLateHeight(item.scheduledHeight, blockSpacing),
   );
   return hasLateBroadcast
       ? const MobileIronwoodMigrationAttention(
@@ -105,6 +116,14 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
         )
       : null;
 }
+
+/// The run an attention sheet is keyed to. A stopped run has no active run
+/// id; one sheet per account is enough.
+String? mobileIronwoodMigrationAttentionRunId(
+  rust_sync.MigrationStatus? status,
+) => status?.phase == kIronwoodMigrationStoppedByUpgradePhase
+    ? kIronwoodMigrationStoppedByUpgradePhase
+    : status?.activeRunId;
 
 String mobileIronwoodMigrationAttentionFingerprint({
   required String accountUuid,
@@ -138,6 +157,8 @@ String mobileIronwoodMigrationAttentionFingerprint({
           .map((item) => '${item.txidHex}@${item.scheduledHeight}')
           .toList()
         ..sort(),
+    // The run id and phase already identify a stopped run.
+    MobileIronwoodMigrationAttentionKind.upgradeStopped => const [],
   };
   return '$accountUuid:$runId:${status.phase}:'
       '${attention.kind.name}:${attention.count}:$actionIdentity';
