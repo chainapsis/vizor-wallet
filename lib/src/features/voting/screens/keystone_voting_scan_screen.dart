@@ -9,6 +9,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
+import '../../../core/zcash/wallet_error_code.dart';
 import '../../../services/qr_scanner.dart';
 import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 
@@ -50,7 +51,7 @@ class _KeystoneVotingScanScreenState
 
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
-    final message = error.toString().contains('Unexpected UR type')
+    final message = isUnexpectedUrTypeError(error)
         ? context.l10n.votingKeystoneUnexpectedUr
         : context.l10n.commonKeepQrSteady;
     if (_error == message) return;

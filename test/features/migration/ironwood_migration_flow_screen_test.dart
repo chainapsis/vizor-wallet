@@ -1104,16 +1104,20 @@ void main() {
     () {
       final legacyMessage = ironwoodMigrationKeystoneScanErrorMessage(
         testL10n,
-        Exception(
-          'Unexpected UR type: got "zcash-sign-result", '
-          'expected "zcash-batch-sig-result"',
+        const rust_sync.ApiWalletError(
+          code: rust_sync.ApiWalletErrorCode.unexpectedUrType,
+          message:
+              'Unexpected UR type: got "zcash-sign-result", '
+              'expected "zcash-batch-sig-result"',
         ),
       );
       final wrongQrMessage = ironwoodMigrationKeystoneScanErrorMessage(
         testL10n,
-        Exception(
-          'Unexpected UR type: got "zcash-pczt", '
-          'expected "zcash-batch-sig-result"',
+        const rust_sync.ApiWalletError(
+          code: rust_sync.ApiWalletErrorCode.unexpectedUrType,
+          message:
+              'Unexpected UR type: got "zcash-pczt", '
+              'expected "zcash-batch-sig-result"',
         ),
       );
 

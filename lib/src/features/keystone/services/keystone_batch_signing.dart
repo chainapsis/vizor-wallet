@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../../../core/l10n/l10n.dart' show AppLocalizations;
+import '../../../core/zcash/wallet_error_code.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/wallet/keystone.dart' as rust_keystone_wallet;
@@ -17,18 +18,18 @@ String? keystoneBatchSigningFriendlyError(
   KeystoneBatchSubject subject = KeystoneBatchSubject.transaction,
 }) {
   final deposit = subject == KeystoneBatchSubject.deposit;
-  final lower = error.toString().toLowerCase();
-  if (lower.contains('keystone batch signing supports at most')) {
-    return deposit
-        ? l10n.keystoneBatchTooManyInputsDeposit
-        : l10n.keystoneBatchTooManyInputsTx;
+  switch (walletErrorCode(error)) {
+    case rust_sync.ApiWalletErrorCode.keystoneBatchSignatureLimit:
+      return deposit
+          ? l10n.keystoneBatchTooManyInputsDeposit
+          : l10n.keystoneBatchTooManyInputsTx;
+    case rust_sync.ApiWalletErrorCode.keystoneBatchUnsupportedInput:
+      return deposit
+          ? l10n.keystoneBatchCannotSignDeposit
+          : l10n.keystoneBatchCannotSignTx;
+    default:
+      return null;
   }
-  if (lower.contains('batch signing does not support')) {
-    return deposit
-        ? l10n.keystoneBatchCannotSignDeposit
-        : l10n.keystoneBatchCannotSignTx;
-  }
-  return null;
 }
 
 class KeystoneBatchPcztSource {

@@ -18,6 +18,7 @@ import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/zcash/wallet_error_code.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart';
@@ -363,7 +364,7 @@ class _MobileKeystonePcztSigningFlowState
 
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
-    final message = error.toString().contains('Unexpected UR type')
+    final message = isUnexpectedUrTypeError(error)
         ? widget.unexpectedUrMessage ??
               context.l10n.commonOpenTheSignedTransactionQROn
         : context.l10n.commonKeepQrSteady;

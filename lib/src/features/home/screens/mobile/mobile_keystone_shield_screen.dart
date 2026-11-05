@@ -16,6 +16,7 @@ import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/zcash/wallet_error_code.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/keystone.dart' as rust_keystone;
@@ -357,7 +358,7 @@ class _MobileKeystoneShieldScreenState
 
   void _handleDecodeError(Object error) {
     if (!mounted || _closed || _cancellationStarted || _decoding) return;
-    final message = error.toString().contains('Unexpected UR type')
+    final message = isUnexpectedUrTypeError(error)
         ? context.l10n.homeShieldScanWrongQr
         : context.l10n.commonKeepQrSteady;
     if (_scanHint == message) return;

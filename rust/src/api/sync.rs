@@ -87,6 +87,19 @@ pub enum ApiWalletErrorCode {
     /// The wallet still requires private recovery while Private queries is
     /// off: turning it off did not finish.
     OptOutUnfinished,
+    /// A scanned QR is not a UR. Skip the frame.
+    InvalidUr,
+    /// A scanned UR has a different type from the one expected: the device
+    /// is showing another QR.
+    UnexpectedUrType,
+    /// The multi-part UR decoder rejected a fragment and was reset; restart
+    /// the scan session.
+    UrSessionReset,
+    /// More spend signatures than one Keystone batch round can return.
+    KeystoneBatchSignatureLimit,
+    /// Transparent or Sapling inputs, which Keystone batch signing cannot
+    /// sign.
+    KeystoneBatchUnsupportedInput,
 }
 
 /// An error from a call whose failures the app acts on. Its Dart
@@ -113,6 +126,15 @@ impl From<WalletFailure> for ApiWalletError {
                 }
                 Some(FailureCode::RecoveryIncomplete) => ApiWalletErrorCode::RecoveryIncomplete,
                 Some(FailureCode::OptOutUnfinished) => ApiWalletErrorCode::OptOutUnfinished,
+                Some(FailureCode::InvalidUr) => ApiWalletErrorCode::InvalidUr,
+                Some(FailureCode::UnexpectedUrType) => ApiWalletErrorCode::UnexpectedUrType,
+                Some(FailureCode::UrSessionReset) => ApiWalletErrorCode::UrSessionReset,
+                Some(FailureCode::KeystoneBatchSignatureLimit) => {
+                    ApiWalletErrorCode::KeystoneBatchSignatureLimit
+                }
+                Some(FailureCode::KeystoneBatchUnsupportedInput) => {
+                    ApiWalletErrorCode::KeystoneBatchUnsupportedInput
+                }
             },
             message: failure.message,
         }
@@ -3617,7 +3639,9 @@ pub fn redact_pczt_for_signer(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
 /// Prepare one PCZT for Keystone's `zcash-sign-batch` request. This rejects
 /// input types that the signatures-only response cannot represent and signing
 /// sets above the device's 96-signature per-transaction limit.
-pub fn prepare_pczt_for_keystone_batch(pczt_bytes: Vec<u8>) -> Result<KeystoneBatchPczt, String> {
+pub fn prepare_pczt_for_keystone_batch(
+    pczt_bytes: Vec<u8>,
+) -> Result<KeystoneBatchPczt, ApiWalletError> {
     let prepared = wallet_sync::prepare_pczt_for_keystone_batch(&pczt_bytes)?;
     Ok(KeystoneBatchPczt {
         redacted_pczt: prepared.redacted_pczt,

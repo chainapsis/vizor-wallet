@@ -677,8 +677,9 @@ String _broadcastStatusMessage(
   if (result.status == 'partial_broadcast') {
     return l10n.sendBroadcastPartial;
   }
-  final rawMessage = result.message?.toLowerCase() ?? '';
-  if (rawMessage.contains('broadcast rejected')) {
+  // Rust sets this when the server answered with a rejection; the message
+  // text stays for logs.
+  if (result.broadcastFailureKind == 'rejected') {
     return l10n.sendBroadcastRejectedLocal;
   }
   return l10n.sendBroadcastLocalRetry;

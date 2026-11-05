@@ -206,6 +206,7 @@ void main() {
     rustApi.executeResult = _executeResult(
       status: 'created',
       message: 'broadcast rejected: mempool full',
+      broadcastFailureKind: 'rejected',
     );
 
     await _setDesktopViewport(tester);
@@ -1223,6 +1224,7 @@ void _mockUrlLauncher(WidgetTester tester, List<String> launchedUrls) {
 ExecuteProposalResult _executeResult({
   required String status,
   String? message,
+  String? broadcastFailureKind,
 }) {
   return ExecuteProposalResult(
     txids: _txid,
@@ -1230,6 +1232,7 @@ ExecuteProposalResult _executeResult({
     broadcastedCount: status == 'broadcasted' ? 1 : 0,
     totalCount: 1,
     message: message,
+    broadcastFailureKind: broadcastFailureKind,
   );
 }
 

@@ -957,18 +957,21 @@ pub fn redact_pczt_for_batch_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String
 }
 
 /// Enforce Keystone's per-round signature cap before displaying the request QR.
-fn checked_keystone_batch_signature_count(count: usize) -> Result<u32, String> {
+fn checked_keystone_batch_signature_count(count: usize) -> Result<u32, WalletFailure> {
     if count == 0 {
-        return Err("PCZT has no Orchard or Ironwood spends for Keystone to sign".to_string());
+        return Err("PCZT has no Orchard or Ironwood spends for Keystone to sign".into());
     }
     if count > crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES {
-        return Err(format!(
-            "Keystone batch signing supports at most {} spend signatures per transaction; \
-             this transaction requires {count}",
-            crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES,
+        return Err(WalletFailure::coded(
+            FailureCode::KeystoneBatchSignatureLimit,
+            format!(
+                "Keystone batch signing supports at most {} spend signatures per transaction; \
+                 this transaction requires {count}",
+                crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES,
+            ),
         ));
     }
-    u32::try_from(count).map_err(|_| "Keystone signature count exceeds u32".to_string())
+    u32::try_from(count).map_err(|_| "Keystone signature count exceeds u32".into())
 }
 
 /// Prepare one PCZT for Keystone's signatures-only batch protocol.
@@ -977,18 +980,22 @@ fn checked_keystone_batch_signature_count(count: usize) -> Result<u32, String> {
 /// authorization signatures and at most 96 signatures for one transaction.
 /// Reject unsupported inputs and oversized signing sets before the QR is
 /// displayed so callers cannot start a round the device cannot complete.
-pub fn prepare_pczt_for_keystone_batch(pczt_bytes: &[u8]) -> Result<KeystoneBatchPczt, String> {
+pub fn prepare_pczt_for_keystone_batch(
+    pczt_bytes: &[u8],
+) -> Result<KeystoneBatchPczt, WalletFailure> {
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| format!("Parse PCZT for Keystone batch signing: {e:?}"))?;
     if !pczt.transparent().inputs().is_empty() {
-        return Err(
-            "Keystone batch signing does not support transparent transaction inputs".to_string(),
-        );
+        return Err(WalletFailure::coded(
+            FailureCode::KeystoneBatchUnsupportedInput,
+            "Keystone batch signing does not support transparent transaction inputs",
+        ));
     }
     if !pczt.sapling().spends().is_empty() {
-        return Err(
-            "Keystone batch signing does not support Sapling transaction inputs".to_string(),
-        );
+        return Err(WalletFailure::coded(
+            FailureCode::KeystoneBatchUnsupportedInput,
+            "Keystone batch signing does not support Sapling transaction inputs",
+        ));
     }
 
     let expected_signature_count =
@@ -3289,8 +3296,11 @@ mod tests {
         assert_eq!(checked_keystone_batch_signature_count(limit), Ok(96));
         assert_eq!(
             checked_keystone_batch_signature_count(limit + 1).unwrap_err(),
-            "Keystone batch signing supports at most 96 spend signatures per transaction; \
-             this transaction requires 97"
+            WalletFailure::coded(
+                FailureCode::KeystoneBatchSignatureLimit,
+                "Keystone batch signing supports at most 96 spend signatures per transaction; \
+                 this transaction requires 97"
+            )
         );
     }
 
@@ -3775,7 +3785,13 @@ mod tests {
 
             let error = prepare_pczt_for_keystone_batch(&unsigned)
                 .expect_err("the compact response cannot carry transparent signatures");
-            assert!(error.contains("does not support transparent transaction inputs"));
+            assert_eq!(
+                error.code,
+                Some(crate::wallet::failure::FailureCode::KeystoneBatchUnsupportedInput)
+            );
+            assert!(error
+                .message
+                .contains("does not support transparent transaction inputs"));
         }
 
         #[test]

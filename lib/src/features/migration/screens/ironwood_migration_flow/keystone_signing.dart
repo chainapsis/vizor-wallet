@@ -2274,11 +2274,12 @@ String ironwoodMigrationKeystoneScanErrorMessage(
   Object error,
 ) {
   final message = error.toString();
-  if (message.contains('Unexpected UR type') &&
+  // The received UR type sits in the message; it is protocol data, not copy.
+  if (isUnexpectedUrTypeError(error) &&
       message.contains(_keystoneMigrationLegacySignResultUrType)) {
     return l10n.migrationKeystoneFirmwareUpdate;
   }
-  if (message.contains('Unexpected UR type')) {
+  if (isUnexpectedUrTypeError(error)) {
     return l10n.migrationKeystoneOpenSignedQr;
   }
   return l10n.commonKeepQrSteady;

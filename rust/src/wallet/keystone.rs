@@ -253,6 +253,8 @@ pub fn pczt_spend_nullifiers(pczt_bytes: &[u8]) -> Result<Vec<String>, String> {
 
 use std::sync::Mutex;
 
+use crate::wallet::failure::{FailureCode, WalletFailure};
+
 /// In-flight multi-part UR scan session. Holds both the decoder and the
 /// UR type it was initialized with so we can detect (and auto-reset on) a
 /// fresh scan of a different type.
@@ -300,18 +302,20 @@ pub fn reset_ur_session() {
 /// The session auto-resets when (a) a new scan starts, (b) the expected type
 /// changes from the in-flight one, or (c) the multi-part decoder completes.
 /// Callers never need to reset manually.
-pub fn decode_ur_part(part: &str, expected_ur_type: &str) -> Result<UrDecodeResult, String> {
+pub fn decode_ur_part(part: &str, expected_ur_type: &str) -> Result<UrDecodeResult, WalletFailure> {
     let mut session_guard = UR_SESSION.lock().map_err(|e| format!("Lock: {e}"))?;
 
     // ur crate requires lowercase scheme
     let part_lower = part.to_lowercase();
 
-    let part_type =
-        parse_ur_type(&part_lower).ok_or_else(|| "Invalid UR: missing type prefix".to_string())?;
+    let part_type = parse_ur_type(&part_lower).ok_or_else(|| {
+        WalletFailure::coded(FailureCode::InvalidUr, "Invalid UR: missing type prefix")
+    })?;
 
     if part_type != expected_ur_type {
-        return Err(format!(
-            "Unexpected UR type: got {part_type:?}, expected {expected_ur_type:?}"
+        return Err(WalletFailure::coded(
+            FailureCode::UnexpectedUrType,
+            format!("Unexpected UR type: got {part_type:?}, expected {expected_ur_type:?}"),
         ));
     }
 
@@ -373,7 +377,10 @@ pub fn decode_ur_part(part: &str, expected_ur_type: &str) -> Result<UrDecodeResu
     };
     if let Err(e) = receive_result {
         *session_guard = None;
-        return Err(format!("UR session reset: UR receive: {e}"));
+        return Err(WalletFailure::coded(
+            FailureCode::UrSessionReset,
+            format!("UR session reset: UR receive: {e}"),
+        ));
     }
 
     if session_guard.as_ref().unwrap().decoder.complete() {
@@ -385,11 +392,17 @@ pub fn decode_ur_part(part: &str, expected_ur_type: &str) -> Result<UrDecodeResu
             Ok(Some(cbor)) => cbor,
             Ok(None) => {
                 *session_guard = None;
-                return Err("UR session reset: Decoder complete but no message".to_string());
+                return Err(WalletFailure::coded(
+                    FailureCode::UrSessionReset,
+                    "UR session reset: Decoder complete but no message",
+                ));
             }
             Err(e) => {
                 *session_guard = None;
-                return Err(format!("UR session reset: UR message: {e}"));
+                return Err(WalletFailure::coded(
+                    FailureCode::UrSessionReset,
+                    format!("UR session reset: UR message: {e}"),
+                ));
             }
         };
         log::info!(

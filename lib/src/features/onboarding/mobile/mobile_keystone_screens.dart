@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/zcash/wallet_error_code.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_progress_scope.dart';
 
@@ -331,7 +332,7 @@ class _MobileKeystoneScanScreenState
 
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
-    final message = error.toString().contains('Unexpected UR type')
+    final message = isUnexpectedUrTypeError(error)
         ? context.l10n.keystoneScanOpenAccountQr
         : context.l10n.commonKeepQrSteady;
     if (_error == message) return;

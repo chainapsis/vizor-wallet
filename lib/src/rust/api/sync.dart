@@ -1833,6 +1833,24 @@ enum ApiWalletErrorCode {
   /// The wallet still requires private recovery while Private queries is
   /// off: turning it off did not finish.
   optOutUnfinished,
+
+  /// A scanned QR is not a UR. Skip the frame.
+  invalidUr,
+
+  /// A scanned UR has a different type from the one expected: the device
+  /// is showing another QR.
+  unexpectedUrType,
+
+  /// The multi-part UR decoder rejected a fragment and was reset; restart
+  /// the scan session.
+  urSessionReset,
+
+  /// More spend signatures than one Keystone batch round can return.
+  keystoneBatchSignatureLimit,
+
+  /// Transparent or Sapling inputs, which Keystone batch signing cannot
+  /// sign.
+  keystoneBatchUnsupportedInput,
 }
 
 class BlockMetaInfo {

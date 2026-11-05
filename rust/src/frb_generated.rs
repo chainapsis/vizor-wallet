@@ -1919,7 +1919,7 @@ fn wire__crate__api__keystone__decode_ur_part_impl(
             let api_expected_ur_type = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::sync::ApiWalletError>((move || {
                     let output_ok =
                         crate::api::keystone::decode_ur_part(api_part, api_expected_ur_type)?;
                     Ok(output_ok)
@@ -7378,7 +7378,7 @@ fn wire__crate__api__sync__prepare_pczt_for_keystone_batch_impl(
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::sync::ApiWalletError>((move || {
                     let output_ok =
                         crate::api::sync::prepare_pczt_for_keystone_batch(api_pczt_bytes)?;
                     Ok(output_ok)
@@ -11655,6 +11655,11 @@ impl SseDecode for crate::api::sync::ApiWalletErrorCode {
             3 => crate::api::sync::ApiWalletErrorCode::LedgerOperationTerminal,
             4 => crate::api::sync::ApiWalletErrorCode::RecoveryIncomplete,
             5 => crate::api::sync::ApiWalletErrorCode::OptOutUnfinished,
+            6 => crate::api::sync::ApiWalletErrorCode::InvalidUr,
+            7 => crate::api::sync::ApiWalletErrorCode::UnexpectedUrType,
+            8 => crate::api::sync::ApiWalletErrorCode::UrSessionReset,
+            9 => crate::api::sync::ApiWalletErrorCode::KeystoneBatchSignatureLimit,
+            10 => crate::api::sync::ApiWalletErrorCode::KeystoneBatchUnsupportedInput,
             _ => unreachable!("Invalid variant for ApiWalletErrorCode: {}", inner),
         };
     }
@@ -17530,6 +17535,11 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiWalletErrorCode {
             Self::LedgerOperationTerminal => 3.into_dart(),
             Self::RecoveryIncomplete => 4.into_dart(),
             Self::OptOutUnfinished => 5.into_dart(),
+            Self::InvalidUr => 6.into_dart(),
+            Self::UnexpectedUrType => 7.into_dart(),
+            Self::UrSessionReset => 8.into_dart(),
+            Self::KeystoneBatchSignatureLimit => 9.into_dart(),
+            Self::KeystoneBatchUnsupportedInput => 10.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -22140,6 +22150,11 @@ impl SseEncode for crate::api::sync::ApiWalletErrorCode {
                 crate::api::sync::ApiWalletErrorCode::LedgerOperationTerminal => 3,
                 crate::api::sync::ApiWalletErrorCode::RecoveryIncomplete => 4,
                 crate::api::sync::ApiWalletErrorCode::OptOutUnfinished => 5,
+                crate::api::sync::ApiWalletErrorCode::InvalidUr => 6,
+                crate::api::sync::ApiWalletErrorCode::UnexpectedUrType => 7,
+                crate::api::sync::ApiWalletErrorCode::UrSessionReset => 8,
+                crate::api::sync::ApiWalletErrorCode::KeystoneBatchSignatureLimit => 9,
+                crate::api::sync::ApiWalletErrorCode::KeystoneBatchUnsupportedInput => 10,
                 _ => {
                     unimplemented!("");
                 }
