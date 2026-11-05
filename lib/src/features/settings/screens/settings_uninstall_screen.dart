@@ -97,7 +97,7 @@ class _SettingsUninstallScreenState
   bool _blockIfVotingSubmissionInProgress() {
     final guards = ref.read(votingSubmissionGuardProvider);
     if (guards.isEmpty) return false;
-    showAppToast(context, guards.first.message);
+    showAppToast(context, guards.first.message.text(context.l10n));
     return true;
   }
 

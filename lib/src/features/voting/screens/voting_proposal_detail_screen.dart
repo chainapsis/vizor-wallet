@@ -28,6 +28,7 @@ import '../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
+import '../voting_message.dart';
 import '../voting_poll_ordering.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
@@ -297,7 +298,6 @@ class _VotingProposalDetailViewState
                 state.error == null &&
                 _shouldPrepareVotingPower(state));
         final votingEligibilityMessage = _votingEligibilityMessage(
-          context.l10n,
           state,
           preparing: votingPowerPreparing,
         );
@@ -537,18 +537,17 @@ bool _isVotingEligibilityPending(VotingSessionState state) {
   return state.eligibleWeightZatoshi == null && state.error == null;
 }
 
-String? _votingEligibilityMessage(
-  AppLocalizations l10n,
+VotingMessage? _votingEligibilityMessage(
   VotingSessionState state, {
   required bool preparing,
 }) {
   if (state.hasConfirmedVotingEligibility) {
-    return _privacyTrimNotice(l10n, state.privacyTrimDroppedValueZatoshi);
+    return _privacyTrimNotice(state.privacyTrimDroppedValueZatoshi);
   }
   final error = state.error;
-  if (error != null) return friendlyVotingErrorText(l10n, error.message);
+  if (error != null) return normalizedVotingMessage(error.message);
   if (preparing) return null;
-  return l10n.votingPowerUnavailableSentence;
+  return const VotingNotice(VotingNoticeKind.votingPowerUnavailable);
 }
 
 /// One quiet line for the voters whose voting power the privacy trim reduced.
@@ -557,11 +556,11 @@ String? _votingEligibilityMessage(
 /// number of delegation submissions they emit. That withheld value is real
 /// voting power, so it is stated rather than silently discarded. Most voters
 /// have nothing withheld and see nothing.
-String? _privacyTrimNotice(AppLocalizations l10n, BigInt? droppedValueZatoshi) {
+VotingMessage? _privacyTrimNotice(BigInt? droppedValueZatoshi) {
   if (droppedValueZatoshi == null || droppedValueZatoshi <= BigInt.zero) {
     return null;
   }
-  return l10n.votingPrivacyTrimNotice(formatVotingPower(droppedValueZatoshi));
+  return VotingPrivacyTrimNotice(droppedValueZatoshi);
 }
 
 /// Session-free presentation shared by the live route and deterministic previews.
@@ -610,8 +609,8 @@ class VotingActivePollContent extends StatefulWidget {
   /// [votingEligibilityConfirmed]: it also covers the window where voting
   /// power is still being calculated.
   final bool answersEditable;
-  final String? votingEligibilityMessage;
-  final String? votingEligibilityErrorMessage;
+  final VotingMessage? votingEligibilityMessage;
+  final VotingMessage? votingEligibilityErrorMessage;
   final VoidCallback onVotingEligibilityRetry;
   final List<VotingProposalView> proposals;
   final VotingDraftState draft;
@@ -710,13 +709,16 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
 
   Widget _buildPollSummary() {
     if (kAppFormFactor == AppFormFactor.mobile) {
+      final message = widget.votingEligibilityMessage;
+      final votingPowerUnavailable =
+          message is VotingNotice &&
+          message.kind == VotingNoticeKind.votingPowerUnavailable;
       final votingEligibilityMessage =
-          widget.votingEligibilityMessage ==
-                  context.l10n.votingPowerUnavailableSentence &&
+          votingPowerUnavailable &&
               widget.votingPowerZatoshi == null &&
               !widget.votingPowerPreparing
           ? null
-          : widget.votingEligibilityMessage;
+          : message?.text(context.l10n);
       return _MobilePollSummary(
         title: widget.title,
         snapshotHeight: widget.snapshotHeight,
@@ -739,7 +741,9 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
       endDate: widget.endDate,
       votingPowerZatoshi: widget.votingPowerZatoshi,
       votingPowerPreparing: widget.votingPowerPreparing,
-      votingEligibilityMessage: widget.votingEligibilityMessage,
+      votingEligibilityMessage: widget.votingEligibilityMessage?.text(
+        context.l10n,
+      ),
     );
   }
 
@@ -1033,7 +1037,7 @@ class _SkippedQuestionsDialog extends StatelessWidget {
 class VotingIneligibleDialog extends StatelessWidget {
   const VotingIneligibleDialog({super.key, required this.message});
 
-  final String message;
+  final VotingMessage message;
 
   @override
   Widget build(BuildContext context) {
@@ -1144,7 +1148,7 @@ class VotingIneligibleDialog extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                message,
+                message.text(context.l10n),
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -1166,19 +1170,16 @@ class VotingIneligibleDialog extends StatelessWidget {
 class _MobileVotingEligibilityMessage extends StatelessWidget {
   const _MobileVotingEligibilityMessage({required this.message});
 
-  final String message;
+  final VotingMessage message;
 
   @override
   Widget build(BuildContext context) {
-    final guidance = context.l10n.votingSwitchEligibleGuidance;
-    final text = message.trim();
-    final hasGuidance = text.endsWith(guidance);
-    var reason = hasGuidance
-        ? text.substring(0, text.length - guidance.length).trimRight()
-        : text;
-    if (hasGuidance && (reason.endsWith('.') || reason.endsWith('。'))) {
-      reason = reason.substring(0, reason.length - 1);
-    }
+    final l10n = context.l10n;
+    final message = this.message;
+    // An eligibility failure ends with the switch-account guidance, which the
+    // dialog sets apart; any other message is shown whole.
+    final failure = message is VotingEligibilityFailure ? message : null;
+    final reason = failure?.reasonText(l10n) ?? message.text(l10n).trim();
     final spans = <TextSpan>[];
     var offset = 0;
     for (final match in RegExp(r'\b\d+(?:\.\d+)? ZEC\b').allMatches(reason)) {
@@ -1192,10 +1193,10 @@ class _MobileVotingEligibilityMessage extends StatelessWidget {
       offset = match.end;
     }
     spans.add(TextSpan(text: reason.substring(offset)));
-    if (hasGuidance) {
+    if (failure != null) {
       spans.add(
         TextSpan(
-          text: '\n\n$guidance',
+          text: '\n\n${l10n.votingSwitchEligibleGuidance}',
           style: TextStyle(color: context.colors.text.accent),
         ),
       );

@@ -17946,6 +17946,120 @@ abstract class AppLocalizations {
   /// **'Ends {date}'**
   String votingEnds(String date);
 
+  /// Error shown when a vote submission to the voting chain was cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain submission was cancelled.'**
+  String get votingErrorChainCancelled;
+
+  /// Error shown when a vote submission to the voting chain ended without producing a usable transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain submission ended without a usable transaction.'**
+  String get votingErrorChainNoUsableTransaction;
+
+  /// Error shown when the wallet is still checking the outcome of an earlier vote submission to the voting chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain submission recovery is still pending.'**
+  String get votingErrorChainRecoveryPending;
+
+  /// Error shown when the voting chain rejected a submitted vote or delegation.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain submission was rejected.'**
+  String get votingErrorChainRejected;
+
+  /// Error shown when a vote submission may already be on the voting chain but its transaction hash is unknown; retrying could submit it twice.
+  ///
+  /// In en, this message translates to:
+  /// **'Submission may have reached the chain, but no transaction hash was returned. Do not retry it.'**
+  String get votingErrorChainSubmittedWithoutHash;
+
+  /// Error shown when delegating voting power failed; {details} lists the failed bundles and their error text.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegation bundle processing failed: {details}'**
+  String votingErrorDelegationFailed(String details);
+
+  /// Error shown when votes cannot be cast because the key created during delegation is missing.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting hotkey is missing. Delegate this round before casting votes.'**
+  String get votingErrorHotkeyMissing;
+
+  /// Error shown when the voting round closed before a helper server confirmed receiving the user's vote share.
+  ///
+  /// In en, this message translates to:
+  /// **'The voting round ended before a helper confirmed the immediate share. Check the voting status before retrying.'**
+  String get votingErrorImmediateShareExpired;
+
+  /// Error shown when Keystone vote signing is started for an account that is not a Keystone account.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone voting is only available for Keystone accounts.'**
+  String get votingErrorKeystoneAccountOnly;
+
+  /// Error shown when Keystone vote signing is started for an account that is not a hardware wallet account.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone voting is only available for hardware accounts.'**
+  String get votingErrorKeystoneHardwareOnly;
+
+  /// Error shown under the Keystone voting QR when a scanned signature is malformed.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone returned an invalid voting signature. Scan the result for the QR shown here.'**
+  String get votingErrorKeystoneInvalidSignature;
+
+  /// Error shown under the Keystone voting QR when the scanned result contains no signatures.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone returned no voting signatures. Scan the result again.'**
+  String get votingErrorKeystoneNoSignatures;
+
+  /// Error shown when a Keystone voting signature is scanned but no signing request is open.
+  ///
+  /// In en, this message translates to:
+  /// **'No Keystone signing request is waiting for a signature.'**
+  String get votingErrorKeystoneNoSigningRequest;
+
+  /// Error shown when the QR code for signing a vote on Keystone could not be built; {reason} is the underlying error text.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to prepare Keystone voting QR: {reason}'**
+  String votingErrorKeystoneQrPrepareFailed(String reason);
+
+  /// Error shown under the Keystone voting QR when the scanned result cannot be read as a response to it.
+  ///
+  /// In en, this message translates to:
+  /// **'This Keystone result does not match the voting QR shown here. Scan the matching result and try again.'**
+  String get votingErrorKeystoneResultMismatch;
+
+  /// Error shown under the Keystone voting QR when the scanned signature differs from one already saved.
+  ///
+  /// In en, this message translates to:
+  /// **'This Keystone result conflicts with a signature already saved for this voting request. Restart Keystone signing and scan the newly generated result.'**
+  String get votingErrorKeystoneSignatureConflict;
+
+  /// Error shown under the Keystone voting QR when the scanned signatures belong to a different request.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone returned signatures that do not match this voting request. Scan the result for the QR shown here.'**
+  String get votingErrorKeystoneSignatureMismatch;
+
+  /// Error shown under the Keystone voting QR when the scanned signatures could not be stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the Keystone signatures. Scan the same Keystone result again.'**
+  String get votingErrorKeystoneSignatureSaveFailed;
+
+  /// Error shown when the user skips the remaining Keystone voting bundles before signing any.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign at least one Keystone bundle before skipping the rest.'**
+  String get votingErrorKeystoneSkipNeedsSignature;
+
   /// Error shown when the user cancelled approving a vote on their Ledger.
   ///
   /// In en, this message translates to:
@@ -17958,11 +18072,29 @@ abstract class AppLocalizations {
   /// **'Unlock your Ledger. {instruction}'**
   String votingErrorLedgerLocked(String instruction);
 
+  /// Error shown when a Ledger voting signature arrives but no bundle is waiting for approval.
+  ///
+  /// In en, this message translates to:
+  /// **'No Ledger voting bundle is waiting for approval.'**
+  String get votingErrorLedgerNoPendingBundle;
+
   /// Error shown when the user rejected the vote signature on their Ledger.
   ///
   /// In en, this message translates to:
   /// **'The vote signature was rejected on your Ledger. Retry to sign again.'**
   String get votingErrorLedgerRejected;
+
+  /// Error shown when the Ledger signature differs from one already saved for the same voting bundle.
+  ///
+  /// In en, this message translates to:
+  /// **'This Ledger signature conflicts with the signature already saved for this voting bundle.'**
+  String get votingErrorLedgerSignatureConflict;
+
+  /// Error shown when the Ledger voting signature could not be stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the Ledger voting signature. Retry this bundle.'**
+  String get votingErrorLedgerSignatureSaveFailed;
 
   /// Error shown when the wrong app is open on the Ledger during voting; {instruction} is a sentence telling the user to open the Zcash app.
   ///
@@ -17976,17 +18108,105 @@ abstract class AppLocalizations {
   /// **'Voting requires at least one eligible shielded note bundle with {amount} at {snapshot}. Switch to an eligible account to vote.'**
   String votingErrorMinimumWeight(String amount, String snapshot);
 
+  /// Reason shown in the mobile not-eligible dialog above the separate switch-account guidance, without a final period; {amount} is a ZEC amount and {snapshot} names the snapshot block.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting requires at least one eligible shielded note bundle with {amount} at {snapshot}'**
+  String votingErrorMinimumWeightReason(String amount, String snapshot);
+
+  /// Error shown on the voting status screen when a vote submission starts while no account is active.
+  ///
+  /// In en, this message translates to:
+  /// **'No active account for voting session.'**
+  String get votingErrorNoActiveAccount;
+
   /// Error shown when the account had no shielded funds at the snapshot; {snapshot} is a phrase naming the snapshot block.
   ///
   /// In en, this message translates to:
   /// **'This account is not eligible for this voting round. It had no eligible shielded funds at {snapshot}. Switch to an eligible account to vote.'**
   String votingErrorNoSpendableNotes(String snapshot);
 
+  /// Reason shown in the mobile not-eligible dialog above the separate switch-account guidance, without a final period; {snapshot} is a phrase naming the snapshot block.
+  ///
+  /// In en, this message translates to:
+  /// **'This account is not eligible for this voting round. It had no eligible shielded funds at {snapshot}'**
+  String votingErrorNoSpendableNotesReason(String snapshot);
+
+  /// Error shown when the user submits a ballot without choosing an answer to any question.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose at least one vote before submitting.'**
+  String get votingErrorNoVoteChosen;
+
+  /// Error shown when the wallet could not choose a PIR server for the voting round.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to resolve PIR endpoint.'**
+  String get votingErrorPirEndpointResolveFailed;
+
+  /// Error shown when delegation needs a PIR server but none has been selected yet.
+  ///
+  /// In en, this message translates to:
+  /// **'PIR endpoint has not been resolved.'**
+  String get votingErrorPirEndpointUnresolved;
+
+  /// Error shown when a vote submission starts before the voting round's details have loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting round details are not available yet. Retry in a moment.'**
+  String get votingErrorRoundDetailsUnavailable;
+
+  /// Error shown when a vote submission starts but the voting round's end time is not known yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting round end time is unavailable. Retry in a moment.'**
+  String get votingErrorRoundEndTimeUnavailable;
+
   /// Generic error shown when a voting action failed without a more specific message.
   ///
   /// In en, this message translates to:
   /// **'Voting session action failed.'**
   String get votingErrorSessionFailed;
+
+  /// Error shown when one delegation bundle still needs the hardware wallet's signature; {bundle} is the bundle number and {signer} is a hardware wallet name such as Keystone or Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign delegation bundle {bundle} with {signer} before submitting.'**
+  String votingErrorSignBundleFirst(int bundle, String signer);
+
+  /// Error shown when delegation is submitted before the hardware wallet signed it; {signer} is a hardware wallet name such as Keystone or Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign delegation bundles with {signer} before submitting.'**
+  String votingErrorSignBundlesFirst(String signer);
+
+  /// Error shown when hardware vote signing is started for an account of a different hardware wallet; {signer} is a hardware wallet name such as Keystone or Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'{signer} voting is only available for matching hardware accounts.'**
+  String votingErrorSignerAccountOnly(String signer);
+
+  /// [security] Error shown when delegating voting power with a software account whose seed phrase cannot be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Software delegation requires this account mnemonic. Unlock this account or switch to one with mnemonic access.'**
+  String get votingErrorSoftwareMnemonicRequired;
+
+  /// Error shown when casting votes failed; {details} lists the failed bundles and their error text.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote casting failed: {details}'**
+  String votingErrorVoteCastingFailed(String details);
+
+  /// Error shown when the wallet did not sync up to the voting round's snapshot block in time; {duration} is an elapsed time, {scanned} and {snapshot} are block heights.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet sync did not reach this voting round snapshot within {duration}. Scanned block {scanned} of {snapshot}. Let wallet sync catch up and retry.'**
+  String votingErrorWalletSyncTimeout(
+    String duration,
+    String scanned,
+    String snapshot,
+  );
 
   /// Label of the link button that opens the forum discussion of a voting round or proposal.
   ///
@@ -18731,6 +18951,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Signing with Ledger'**
   String get votingStepSigningLedger;
+
+  /// [security] Toast shown when the user tries to remove an account or reset the wallet while a vote is still being submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote submission is still running. Wait for it to finish before removing an account or resetting the wallet.'**
+  String get votingSubmissionInProgress;
 
   /// Dialog button that opens the account switcher so the user can pick an eligible account.
   ///

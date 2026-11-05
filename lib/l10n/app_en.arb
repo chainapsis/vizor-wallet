@@ -13880,6 +13880,94 @@
       }
     }
   },
+  "votingErrorChainCancelled": "Chain submission was cancelled.",
+  "@votingErrorChainCancelled": {
+    "description": "Error shown when a vote submission to the voting chain was cancelled."
+  },
+  "votingErrorChainNoUsableTransaction": "Chain submission ended without a usable transaction.",
+  "@votingErrorChainNoUsableTransaction": {
+    "description": "Error shown when a vote submission to the voting chain ended without producing a usable transaction."
+  },
+  "votingErrorChainRecoveryPending": "Chain submission recovery is still pending.",
+  "@votingErrorChainRecoveryPending": {
+    "description": "Error shown when the wallet is still checking the outcome of an earlier vote submission to the voting chain."
+  },
+  "votingErrorChainRejected": "Chain submission was rejected.",
+  "@votingErrorChainRejected": {
+    "description": "Error shown when the voting chain rejected a submitted vote or delegation."
+  },
+  "votingErrorChainSubmittedWithoutHash": "Submission may have reached the chain, but no transaction hash was returned. Do not retry it.",
+  "@votingErrorChainSubmittedWithoutHash": {
+    "description": "Error shown when a vote submission may already be on the voting chain but its transaction hash is unknown; retrying could submit it twice."
+  },
+  "votingErrorDelegationFailed": "Delegation bundle processing failed: {details}",
+  "@votingErrorDelegationFailed": {
+    "description": "Error shown when delegating voting power failed; {details} lists the failed bundles and their error text.",
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "bundle 1 step: delegation rejected by chain"
+      }
+    }
+  },
+  "votingErrorHotkeyMissing": "Voting hotkey is missing. Delegate this round before casting votes.",
+  "@votingErrorHotkeyMissing": {
+    "description": "Error shown when votes cannot be cast because the key created during delegation is missing."
+  },
+  "votingErrorImmediateShareExpired": "The voting round ended before a helper confirmed the immediate share. Check the voting status before retrying.",
+  "@votingErrorImmediateShareExpired": {
+    "description": "Error shown when the voting round closed before a helper server confirmed receiving the user's vote share."
+  },
+  "votingErrorKeystoneAccountOnly": "Keystone voting is only available for Keystone accounts.",
+  "@votingErrorKeystoneAccountOnly": {
+    "description": "Error shown when Keystone vote signing is started for an account that is not a Keystone account."
+  },
+  "votingErrorKeystoneHardwareOnly": "Keystone voting is only available for hardware accounts.",
+  "@votingErrorKeystoneHardwareOnly": {
+    "description": "Error shown when Keystone vote signing is started for an account that is not a hardware wallet account."
+  },
+  "votingErrorKeystoneInvalidSignature": "Keystone returned an invalid voting signature. Scan the result for the QR shown here.",
+  "@votingErrorKeystoneInvalidSignature": {
+    "description": "Error shown under the Keystone voting QR when a scanned signature is malformed."
+  },
+  "votingErrorKeystoneNoSignatures": "Keystone returned no voting signatures. Scan the result again.",
+  "@votingErrorKeystoneNoSignatures": {
+    "description": "Error shown under the Keystone voting QR when the scanned result contains no signatures."
+  },
+  "votingErrorKeystoneNoSigningRequest": "No Keystone signing request is waiting for a signature.",
+  "@votingErrorKeystoneNoSigningRequest": {
+    "description": "Error shown when a Keystone voting signature is scanned but no signing request is open."
+  },
+  "votingErrorKeystoneQrPrepareFailed": "Failed to prepare Keystone voting QR: {reason}",
+  "@votingErrorKeystoneQrPrepareFailed": {
+    "description": "Error shown when the QR code for signing a vote on Keystone could not be built; {reason} is the underlying error text.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "No Keystone voting requests are ready to encode."
+      }
+    }
+  },
+  "votingErrorKeystoneResultMismatch": "This Keystone result does not match the voting QR shown here. Scan the matching result and try again.",
+  "@votingErrorKeystoneResultMismatch": {
+    "description": "Error shown under the Keystone voting QR when the scanned result cannot be read as a response to it."
+  },
+  "votingErrorKeystoneSignatureConflict": "This Keystone result conflicts with a signature already saved for this voting request. Restart Keystone signing and scan the newly generated result.",
+  "@votingErrorKeystoneSignatureConflict": {
+    "description": "Error shown under the Keystone voting QR when the scanned signature differs from one already saved."
+  },
+  "votingErrorKeystoneSignatureMismatch": "Keystone returned signatures that do not match this voting request. Scan the result for the QR shown here.",
+  "@votingErrorKeystoneSignatureMismatch": {
+    "description": "Error shown under the Keystone voting QR when the scanned signatures belong to a different request."
+  },
+  "votingErrorKeystoneSignatureSaveFailed": "Could not save the Keystone signatures. Scan the same Keystone result again.",
+  "@votingErrorKeystoneSignatureSaveFailed": {
+    "description": "Error shown under the Keystone voting QR when the scanned signatures could not be stored."
+  },
+  "votingErrorKeystoneSkipNeedsSignature": "Sign at least one Keystone bundle before skipping the rest.",
+  "@votingErrorKeystoneSkipNeedsSignature": {
+    "description": "Error shown when the user skips the remaining Keystone voting bundles before signing any."
+  },
   "votingErrorLedgerCancelled": "Ledger voting approval was cancelled.",
   "@votingErrorLedgerCancelled": {
     "description": "Error shown when the user cancelled approving a vote on their Ledger."
@@ -13893,9 +13981,21 @@
       }
     }
   },
+  "votingErrorLedgerNoPendingBundle": "No Ledger voting bundle is waiting for approval.",
+  "@votingErrorLedgerNoPendingBundle": {
+    "description": "Error shown when a Ledger voting signature arrives but no bundle is waiting for approval."
+  },
   "votingErrorLedgerRejected": "The vote signature was rejected on your Ledger. Retry to sign again.",
   "@votingErrorLedgerRejected": {
     "description": "Error shown when the user rejected the vote signature on their Ledger."
+  },
+  "votingErrorLedgerSignatureConflict": "This Ledger signature conflicts with the signature already saved for this voting bundle.",
+  "@votingErrorLedgerSignatureConflict": {
+    "description": "Error shown when the Ledger signature differs from one already saved for the same voting bundle."
+  },
+  "votingErrorLedgerSignatureSaveFailed": "Could not save the Ledger voting signature. Retry this bundle.",
+  "@votingErrorLedgerSignatureSaveFailed": {
+    "description": "Error shown when the Ledger voting signature could not be stored."
   },
   "votingErrorLedgerWrongApp": "{instruction} Then retry.",
   "@votingErrorLedgerWrongApp": {
@@ -13918,6 +14018,24 @@
       }
     }
   },
+  "votingErrorMinimumWeightReason": "Voting requires at least one eligible shielded note bundle with {amount} at {snapshot}",
+  "@votingErrorMinimumWeightReason": {
+    "description": "Reason shown in the mobile not-eligible dialog above the separate switch-account guidance, without a final period; {amount} is a ZEC amount and {snapshot} names the snapshot block.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "0.125 ZEC"
+      },
+      "snapshot": {
+        "type": "String",
+        "example": "snapshot block 3,459,350"
+      }
+    }
+  },
+  "votingErrorNoActiveAccount": "No active account for voting session.",
+  "@votingErrorNoActiveAccount": {
+    "description": "Error shown on the voting status screen when a vote submission starts while no account is active."
+  },
   "votingErrorNoSpendableNotes": "This account is not eligible for this voting round. It had no eligible shielded funds at {snapshot}. Switch to an eligible account to vote.",
   "@votingErrorNoSpendableNotes": {
     "description": "Error shown when the account had no shielded funds at the snapshot; {snapshot} is a phrase naming the snapshot block.",
@@ -13927,9 +14045,105 @@
       }
     }
   },
+  "votingErrorNoSpendableNotesReason": "This account is not eligible for this voting round. It had no eligible shielded funds at {snapshot}",
+  "@votingErrorNoSpendableNotesReason": {
+    "description": "Reason shown in the mobile not-eligible dialog above the separate switch-account guidance, without a final period; {snapshot} is a phrase naming the snapshot block.",
+    "placeholders": {
+      "snapshot": {
+        "type": "String",
+        "example": "snapshot block 3,459,350"
+      }
+    }
+  },
+  "votingErrorNoVoteChosen": "Choose at least one vote before submitting.",
+  "@votingErrorNoVoteChosen": {
+    "description": "Error shown when the user submits a ballot without choosing an answer to any question."
+  },
+  "votingErrorPirEndpointResolveFailed": "Failed to resolve PIR endpoint.",
+  "@votingErrorPirEndpointResolveFailed": {
+    "description": "Error shown when the wallet could not choose a PIR server for the voting round."
+  },
+  "votingErrorPirEndpointUnresolved": "PIR endpoint has not been resolved.",
+  "@votingErrorPirEndpointUnresolved": {
+    "description": "Error shown when delegation needs a PIR server but none has been selected yet."
+  },
+  "votingErrorRoundDetailsUnavailable": "Voting round details are not available yet. Retry in a moment.",
+  "@votingErrorRoundDetailsUnavailable": {
+    "description": "Error shown when a vote submission starts before the voting round's details have loaded."
+  },
+  "votingErrorRoundEndTimeUnavailable": "Voting round end time is unavailable. Retry in a moment.",
+  "@votingErrorRoundEndTimeUnavailable": {
+    "description": "Error shown when a vote submission starts but the voting round's end time is not known yet."
+  },
   "votingErrorSessionFailed": "Voting session action failed.",
   "@votingErrorSessionFailed": {
     "description": "Generic error shown when a voting action failed without a more specific message."
+  },
+  "votingErrorSignBundleFirst": "Sign delegation bundle {bundle} with {signer} before submitting.",
+  "@votingErrorSignBundleFirst": {
+    "description": "Error shown when one delegation bundle still needs the hardware wallet's signature; {bundle} is the bundle number and {signer} is a hardware wallet name such as Keystone or Ledger.",
+    "placeholders": {
+      "bundle": {
+        "type": "int",
+        "example": "2"
+      },
+      "signer": {
+        "type": "String",
+        "example": "Keystone"
+      }
+    }
+  },
+  "votingErrorSignBundlesFirst": "Sign delegation bundles with {signer} before submitting.",
+  "@votingErrorSignBundlesFirst": {
+    "description": "Error shown when delegation is submitted before the hardware wallet signed it; {signer} is a hardware wallet name such as Keystone or Ledger.",
+    "placeholders": {
+      "signer": {
+        "type": "String",
+        "example": "Keystone"
+      }
+    }
+  },
+  "votingErrorSignerAccountOnly": "{signer} voting is only available for matching hardware accounts.",
+  "@votingErrorSignerAccountOnly": {
+    "description": "Error shown when hardware vote signing is started for an account of a different hardware wallet; {signer} is a hardware wallet name such as Keystone or Ledger.",
+    "placeholders": {
+      "signer": {
+        "type": "String",
+        "example": "Ledger"
+      }
+    }
+  },
+  "votingErrorSoftwareMnemonicRequired": "Software delegation requires this account mnemonic. Unlock this account or switch to one with mnemonic access.",
+  "@votingErrorSoftwareMnemonicRequired": {
+    "description": "[security] Error shown when delegating voting power with a software account whose seed phrase cannot be read."
+  },
+  "votingErrorVoteCastingFailed": "Vote casting failed: {details}",
+  "@votingErrorVoteCastingFailed": {
+    "description": "Error shown when casting votes failed; {details} lists the failed bundles and their error text.",
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "bundle 1 proposal 2: nullifier already spent"
+      }
+    }
+  },
+  "votingErrorWalletSyncTimeout": "Wallet sync did not reach this voting round snapshot within {duration}. Scanned block {scanned} of {snapshot}. Let wallet sync catch up and retry.",
+  "@votingErrorWalletSyncTimeout": {
+    "description": "Error shown when the wallet did not sync up to the voting round's snapshot block in time; {duration} is an elapsed time, {scanned} and {snapshot} are block heights.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "120.00s"
+      },
+      "scanned": {
+        "type": "String",
+        "example": "3,459,100"
+      },
+      "snapshot": {
+        "type": "String",
+        "example": "3,459,350"
+      }
+    }
   },
   "votingForumDiscussion": "Forum discussion",
   "@votingForumDiscussion": {
@@ -14588,6 +14802,10 @@
   "votingStepSigningLedger": "Signing with Ledger",
   "@votingStepSigningLedger": {
     "description": "Step label of the voting progress list while signing on a Ledger."
+  },
+  "votingSubmissionInProgress": "Vote submission is still running. Wait for it to finish before removing an account or resetting the wallet.",
+  "@votingSubmissionInProgress": {
+    "description": "[security] Toast shown when the user tries to remove an account or reset the wallet while a vote is still being submitted."
   },
   "votingSwitchAccount": "Switch account",
   "@votingSwitchAccount": {

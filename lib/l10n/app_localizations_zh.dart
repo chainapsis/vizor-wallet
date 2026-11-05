@@ -9995,6 +9995,74 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get votingErrorChainCancelled => '链上提交已取消。';
+
+  @override
+  String get votingErrorChainNoUsableTransaction => '链上提交已结束，但没有生成可用的交易。';
+
+  @override
+  String get votingErrorChainRecoveryPending => '链上提交的恢复仍在进行中。';
+
+  @override
+  String get votingErrorChainRejected => '链上提交被拒绝。';
+
+  @override
+  String get votingErrorChainSubmittedWithoutHash => '提交可能已到达链上，但未返回交易哈希。请勿重试。';
+
+  @override
+  String votingErrorDelegationFailed(String details) {
+    return '委托票据包处理失败：$details';
+  }
+
+  @override
+  String get votingErrorHotkeyMissing => '缺少投票热密钥。请先完成本轮委托再投票。';
+
+  @override
+  String get votingErrorImmediateShareExpired =>
+      '在辅助服务器确认即时份额之前，投票轮次已结束。重试前请先查看投票状态。';
+
+  @override
+  String get votingErrorKeystoneAccountOnly => 'Keystone 投票仅适用于 Keystone 账户。';
+
+  @override
+  String get votingErrorKeystoneHardwareOnly => 'Keystone 投票仅适用于硬件钱包账户。';
+
+  @override
+  String get votingErrorKeystoneInvalidSignature =>
+      'Keystone 返回的投票签名无效。请扫描此处所示二维码对应的结果。';
+
+  @override
+  String get votingErrorKeystoneNoSignatures => 'Keystone 没有返回投票签名。请重新扫描结果。';
+
+  @override
+  String get votingErrorKeystoneNoSigningRequest => '没有等待签名的 Keystone 签名请求。';
+
+  @override
+  String votingErrorKeystoneQrPrepareFailed(String reason) {
+    return '无法准备 Keystone 投票二维码：$reason';
+  }
+
+  @override
+  String get votingErrorKeystoneResultMismatch =>
+      '此 Keystone 结果与此处显示的投票二维码不匹配。请扫描对应的结果后重试。';
+
+  @override
+  String get votingErrorKeystoneSignatureConflict =>
+      '此 Keystone 结果与已为此投票请求保存的签名冲突。请重新开始 Keystone 签名并扫描新生成的结果。';
+
+  @override
+  String get votingErrorKeystoneSignatureMismatch =>
+      'Keystone 返回的签名与此投票请求不匹配。请扫描此处所示二维码对应的结果。';
+
+  @override
+  String get votingErrorKeystoneSignatureSaveFailed =>
+      '无法保存 Keystone 签名。请重新扫描同一个 Keystone 结果。';
+
+  @override
+  String get votingErrorKeystoneSkipNeedsSignature =>
+      '请至少签名一个 Keystone 票据包，然后再跳过其余票据包。';
+
+  @override
   String get votingErrorLedgerCancelled => '已取消在 Ledger 上批准投票。';
 
   @override
@@ -10003,7 +10071,18 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get votingErrorLedgerNoPendingBundle => '没有等待批准的 Ledger 投票票据包。';
+
+  @override
   String get votingErrorLedgerRejected => '你已在 Ledger 上拒绝投票签名。请重试并再次签名。';
+
+  @override
+  String get votingErrorLedgerSignatureConflict =>
+      '此 Ledger 签名与已为此投票票据包保存的签名冲突。';
+
+  @override
+  String get votingErrorLedgerSignatureSaveFailed =>
+      '无法保存 Ledger 投票签名。请重试此票据包。';
 
   @override
   String votingErrorLedgerWrongApp(String instruction) {
@@ -10016,12 +10095,73 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String votingErrorMinimumWeightReason(String amount, String snapshot) {
+    return '投票至少需要在$snapshot时拥有一个包含 $amount 的符合条件的屏蔽票据包';
+  }
+
+  @override
+  String get votingErrorNoActiveAccount => '没有可用于投票会话的活跃账户。';
+
+  @override
   String votingErrorNoSpendableNotes(String snapshot) {
     return '此账户没有资格参与本轮投票。在$snapshot时没有符合条件的屏蔽资金。请切换到符合条件的账户后再投票。';
   }
 
   @override
+  String votingErrorNoSpendableNotesReason(String snapshot) {
+    return '此账户没有资格参与本轮投票。在$snapshot时没有符合条件的屏蔽资金';
+  }
+
+  @override
+  String get votingErrorNoVoteChosen => '请在提交前至少选择一项投票。';
+
+  @override
+  String get votingErrorPirEndpointResolveFailed => '无法确定 PIR 端点。';
+
+  @override
+  String get votingErrorPirEndpointUnresolved => '尚未确定 PIR 端点。';
+
+  @override
+  String get votingErrorRoundDetailsUnavailable => '投票轮次详情尚不可用。请稍后重试。';
+
+  @override
+  String get votingErrorRoundEndTimeUnavailable => '无法获取投票轮次的结束时间。请稍后重试。';
+
+  @override
   String get votingErrorSessionFailed => '投票操作失败。';
+
+  @override
+  String votingErrorSignBundleFirst(int bundle, String signer) {
+    return '提交前请使用 $signer 签名委托票据包 $bundle。';
+  }
+
+  @override
+  String votingErrorSignBundlesFirst(String signer) {
+    return '提交前请使用 $signer 签名委托票据包。';
+  }
+
+  @override
+  String votingErrorSignerAccountOnly(String signer) {
+    return '$signer 投票仅适用于对应的硬件钱包账户。';
+  }
+
+  @override
+  String get votingErrorSoftwareMnemonicRequired =>
+      '软件委托需要此账户的助记词。请解锁此账户，或切换到可以访问助记词的账户。';
+
+  @override
+  String votingErrorVoteCastingFailed(String details) {
+    return '投票失败：$details';
+  }
+
+  @override
+  String votingErrorWalletSyncTimeout(
+    String duration,
+    String scanned,
+    String snapshot,
+  ) {
+    return '钱包同步未能在 $duration 内到达本轮投票的快照。已扫描到区块 $scanned，快照区块为 $snapshot。请等待钱包同步追上后重试。';
+  }
 
   @override
   String get votingForumDiscussion => '论坛讨论';
@@ -10459,6 +10599,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get votingStepSigningLedger => '正在使用 Ledger 签名';
+
+  @override
+  String get votingSubmissionInProgress => '投票仍在提交中。请等待提交完成后再删除账户或重置钱包。';
 
   @override
   String get votingSwitchAccount => '切换账户';

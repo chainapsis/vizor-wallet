@@ -10831,6 +10831,82 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get votingErrorChainCancelled => 'Chain submission was cancelled.';
+
+  @override
+  String get votingErrorChainNoUsableTransaction =>
+      'Chain submission ended without a usable transaction.';
+
+  @override
+  String get votingErrorChainRecoveryPending =>
+      'Chain submission recovery is still pending.';
+
+  @override
+  String get votingErrorChainRejected => 'Chain submission was rejected.';
+
+  @override
+  String get votingErrorChainSubmittedWithoutHash =>
+      'Submission may have reached the chain, but no transaction hash was returned. Do not retry it.';
+
+  @override
+  String votingErrorDelegationFailed(String details) {
+    return 'Delegation bundle processing failed: $details';
+  }
+
+  @override
+  String get votingErrorHotkeyMissing =>
+      'Voting hotkey is missing. Delegate this round before casting votes.';
+
+  @override
+  String get votingErrorImmediateShareExpired =>
+      'The voting round ended before a helper confirmed the immediate share. Check the voting status before retrying.';
+
+  @override
+  String get votingErrorKeystoneAccountOnly =>
+      'Keystone voting is only available for Keystone accounts.';
+
+  @override
+  String get votingErrorKeystoneHardwareOnly =>
+      'Keystone voting is only available for hardware accounts.';
+
+  @override
+  String get votingErrorKeystoneInvalidSignature =>
+      'Keystone returned an invalid voting signature. Scan the result for the QR shown here.';
+
+  @override
+  String get votingErrorKeystoneNoSignatures =>
+      'Keystone returned no voting signatures. Scan the result again.';
+
+  @override
+  String get votingErrorKeystoneNoSigningRequest =>
+      'No Keystone signing request is waiting for a signature.';
+
+  @override
+  String votingErrorKeystoneQrPrepareFailed(String reason) {
+    return 'Failed to prepare Keystone voting QR: $reason';
+  }
+
+  @override
+  String get votingErrorKeystoneResultMismatch =>
+      'This Keystone result does not match the voting QR shown here. Scan the matching result and try again.';
+
+  @override
+  String get votingErrorKeystoneSignatureConflict =>
+      'This Keystone result conflicts with a signature already saved for this voting request. Restart Keystone signing and scan the newly generated result.';
+
+  @override
+  String get votingErrorKeystoneSignatureMismatch =>
+      'Keystone returned signatures that do not match this voting request. Scan the result for the QR shown here.';
+
+  @override
+  String get votingErrorKeystoneSignatureSaveFailed =>
+      'Could not save the Keystone signatures. Scan the same Keystone result again.';
+
+  @override
+  String get votingErrorKeystoneSkipNeedsSignature =>
+      'Sign at least one Keystone bundle before skipping the rest.';
+
+  @override
   String get votingErrorLedgerCancelled =>
       'Ledger voting approval was cancelled.';
 
@@ -10840,8 +10916,20 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get votingErrorLedgerNoPendingBundle =>
+      'No Ledger voting bundle is waiting for approval.';
+
+  @override
   String get votingErrorLedgerRejected =>
       'The vote signature was rejected on your Ledger. Retry to sign again.';
+
+  @override
+  String get votingErrorLedgerSignatureConflict =>
+      'This Ledger signature conflicts with the signature already saved for this voting bundle.';
+
+  @override
+  String get votingErrorLedgerSignatureSaveFailed =>
+      'Could not save the Ledger voting signature. Retry this bundle.';
 
   @override
   String votingErrorLedgerWrongApp(String instruction) {
@@ -10854,12 +10942,79 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String votingErrorMinimumWeightReason(String amount, String snapshot) {
+    return 'Voting requires at least one eligible shielded note bundle with $amount at $snapshot';
+  }
+
+  @override
+  String get votingErrorNoActiveAccount =>
+      'No active account for voting session.';
+
+  @override
   String votingErrorNoSpendableNotes(String snapshot) {
     return 'This account is not eligible for this voting round. It had no eligible shielded funds at $snapshot. Switch to an eligible account to vote.';
   }
 
   @override
+  String votingErrorNoSpendableNotesReason(String snapshot) {
+    return 'This account is not eligible for this voting round. It had no eligible shielded funds at $snapshot';
+  }
+
+  @override
+  String get votingErrorNoVoteChosen =>
+      'Choose at least one vote before submitting.';
+
+  @override
+  String get votingErrorPirEndpointResolveFailed =>
+      'Failed to resolve PIR endpoint.';
+
+  @override
+  String get votingErrorPirEndpointUnresolved =>
+      'PIR endpoint has not been resolved.';
+
+  @override
+  String get votingErrorRoundDetailsUnavailable =>
+      'Voting round details are not available yet. Retry in a moment.';
+
+  @override
+  String get votingErrorRoundEndTimeUnavailable =>
+      'Voting round end time is unavailable. Retry in a moment.';
+
+  @override
   String get votingErrorSessionFailed => 'Voting session action failed.';
+
+  @override
+  String votingErrorSignBundleFirst(int bundle, String signer) {
+    return 'Sign delegation bundle $bundle with $signer before submitting.';
+  }
+
+  @override
+  String votingErrorSignBundlesFirst(String signer) {
+    return 'Sign delegation bundles with $signer before submitting.';
+  }
+
+  @override
+  String votingErrorSignerAccountOnly(String signer) {
+    return '$signer voting is only available for matching hardware accounts.';
+  }
+
+  @override
+  String get votingErrorSoftwareMnemonicRequired =>
+      'Software delegation requires this account mnemonic. Unlock this account or switch to one with mnemonic access.';
+
+  @override
+  String votingErrorVoteCastingFailed(String details) {
+    return 'Vote casting failed: $details';
+  }
+
+  @override
+  String votingErrorWalletSyncTimeout(
+    String duration,
+    String scanned,
+    String snapshot,
+  ) {
+    return 'Wallet sync did not reach this voting round snapshot within $duration. Scanned block $scanned of $snapshot. Let wallet sync catch up and retry.';
+  }
 
   @override
   String get votingForumDiscussion => 'Forum discussion';
@@ -11316,6 +11471,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get votingStepSigningLedger => 'Signing with Ledger';
+
+  @override
+  String get votingSubmissionInProgress =>
+      'Vote submission is still running. Wait for it to finish before removing an account or resetting the wallet.';
 
   @override
   String get votingSwitchAccount => 'Switch account';

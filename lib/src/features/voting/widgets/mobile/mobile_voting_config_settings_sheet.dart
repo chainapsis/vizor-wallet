@@ -137,7 +137,7 @@ class _MobileVotingConfigSettingsSheetState
     if (_busy) return;
     final guards = ref.read(votingSubmissionGuardProvider);
     if (guards.isNotEmpty) {
-      setState(() => _error = guards.first.message);
+      setState(() => _error = guards.first.message.text(context.l10n));
       return;
     }
     setState(() {

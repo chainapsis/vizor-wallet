@@ -2,12 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../support/test_l10n.dart';
 import 'package:zcash_wallet/src/features/voting/voting_error_messages.dart';
 
-
 void main() {
   const app = 'Open the Zcash app on your Ledger.';
 
   test('Ledger vote failures are worded by kind without status codes', () {
-    const expected = {
+    final expected = {
       'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized':
           'The vote signature was rejected on your Ledger. Retry to sign again.',
       'ledger_status_5515: Ledger device is locked; unlock it and reopen the Zcash app':
@@ -15,7 +14,7 @@ void main() {
       'ledger_status_6d00: The running Ledger app does not support this command':
           '$app Then retry.',
       'ledger_cancelled: Ledger operation was cancelled. Retry when ready.':
-          kLedgerVotingCancelledMessage,
+          testL10n.votingErrorLedgerCancelled,
     };
     for (final MapEntry(key: error, value: message) in expected.entries) {
       expect(

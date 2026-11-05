@@ -23,6 +23,7 @@ import 'package:zcash_wallet/src/core/navigation/route_owned_redirect.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/voting/voting_message.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
@@ -3965,7 +3966,7 @@ void main() {
               key: staleKey,
               status: VotingSubmissionJobStatus.error,
               generation: 1,
-              errorMessage: 'stale key selected',
+              errorMessage: VotingLiteralMessage('stale key selected'),
             ),
           ),
         ),

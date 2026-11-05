@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/voting/voting_message.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_screens.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
@@ -396,25 +397,29 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('ineligible modal preserves the actual no-funds reason and block', (
-    tester,
-  ) async {
-    await _pumpMobileFixture(
-      tester,
-      (_) => const VotingIneligibleDialog(
-        message:
-            'This account is not eligible for this voting round. It had no eligible '
-            'shielded funds at snapshot block 123,456. Switch to an eligible account to vote.',
-      ),
-    );
-    final text = tester.widget<Text>(find.textContaining('It had no eligible'));
-    expect(
-      text.textSpan!.toPlainText(),
-      contains('snapshot block 123,456\n\nSwitch'),
-    );
-    expect(text.textSpan!.toPlainText(), isNot(contains('0.125')));
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'ineligible modal preserves the actual no-funds reason and block',
+    (tester) async {
+      await _pumpMobileFixture(
+        tester,
+        (_) => const VotingIneligibleDialog(
+          message: VotingEligibilityFailure(
+            VotingEligibilityFailureKind.noSpendableNotes,
+            snapshotHeight: 123456,
+          ),
+        ),
+      );
+      final text = tester.widget<Text>(
+        find.textContaining('It had no eligible'),
+      );
+      expect(
+        text.textSpan!.toPlainText(),
+        contains('snapshot block 123,456\n\nSwitch'),
+      );
+      expect(text.textSpan!.toPlainText(), isNot(contains('0.125')));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('short viewport and enlarged text keep modal actions reachable', (
     tester,
@@ -520,7 +525,9 @@ void main() {
             votingPowerPreparing: false,
             votingEligibilityConfirmed: false,
             answersEditable: false,
-            votingEligibilityMessage: 'Unable to check voting eligibility.',
+            votingEligibilityMessage: const VotingLiteralMessage(
+              'Unable to check voting eligibility.',
+            ),
             votingEligibilityErrorMessage: null,
             onVotingEligibilityRetry: () => retries++,
             proposals: const [
@@ -571,7 +578,9 @@ void main() {
             votingPowerPreparing: false,
             votingEligibilityConfirmed: false,
             answersEditable: false,
-            votingEligibilityMessage: 'Voting power unavailable.',
+            votingEligibilityMessage: const VotingNotice(
+              VotingNoticeKind.votingPowerUnavailable,
+            ),
             votingEligibilityErrorMessage: null,
             onVotingEligibilityRetry: () => retries++,
             proposals: const [

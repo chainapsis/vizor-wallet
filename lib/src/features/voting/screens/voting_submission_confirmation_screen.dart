@@ -20,6 +20,7 @@ import '../../../services/voting/voting_rust_exception.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
+import '../voting_message.dart';
 import '../voting_resume_plan.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
@@ -206,10 +207,9 @@ class _VotingSubmissionConfirmationViewState
       final storedEligibilityError = state.error;
       final storedEligibilityErrorMessage = storedEligibilityError == null
           ? null
-          : friendlyVotingErrorText(
-              context.l10n,
+          : normalizedVotingMessage(
               storedEligibilityError.message,
-            );
+            ).text(context.l10n);
       final loadErrorMessage = loadError == null
           ? null
           : friendlyVotingErrorMessage(context.l10n, loadError);
@@ -425,7 +425,9 @@ class _VotingSubmissionConfirmationViewState
         _votingPowerRefreshErrorMessage =
             refreshedEligibilityConfirmed || refreshedError == null
             ? null
-            : friendlyVotingErrorText(context.l10n, refreshedError.message);
+            : normalizedVotingMessage(
+                refreshedError.message,
+              ).text(context.l10n);
         _votingPowerRefreshErrorIsEligibility =
             !refreshedEligibilityConfirmed &&
             (refreshedError?.isEligibilityFailure ?? false);
