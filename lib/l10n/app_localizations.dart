@@ -2444,6 +2444,12 @@ abstract class AppLocalizations {
   /// **'On a Mac, you can use Continuity Camera to scan with your iPhone instead.'**
   String get commonOnAMacYouCanUse;
 
+  /// Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'on your Keystone,'**
+  String get commonOnYourKeystone;
+
   /// Button that opens the system settings page for the camera permission. Shared by: address, keystone, ledger.
   ///
   /// In en, this message translates to:
@@ -2923,6 +2929,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Syncing'**
   String get commonSyncing;
+
+  /// Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap'**
+  String get commonTap;
+
+  /// End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'then scan this QR code'**
+  String get commonThenScanThisQRCode;
 
   /// Hint under the mobile Keystone scanner when the scanned QR is not a valid signature. Shared by: home, keystone.
   ///
@@ -4147,6 +4165,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Update to the latest Keystone firmware at {link}'**
   String keystoneFirmwareUpdate(String link);
+
+  /// Text before the keyst.one/firmware link in the scanning help. Keep the trailing space; the link follows directly.
+  ///
+  /// In en, this message translates to:
+  /// **'Update to the latest Keystone firmware at '**
+  String get keystoneFirmwareUpdatePrefix;
 
   /// Primary button on the Keystone how-to-connect screen; continues to the QR scan step once the user has followed the instructions.
   ///
@@ -6805,11 +6829,23 @@ abstract class AppLocalizations {
   /// **'Crosses in one visible step — your {amount} and timing are {highlight}.'**
   String migrationImmediateTradeoffBody(String amount, String highlight);
 
+  /// [security] Highlighted second part of the privacy notice, continuing the previous message.
+  ///
+  /// In en, this message translates to:
+  /// **'easier to associate with your wallet.'**
+  String get migrationImmediateTradeoffEmphasis;
+
   /// [security] Emphasized phrase inserted into the privacy notice sentence as its highlight; it completes 'your amount and timing are …'.
   ///
   /// In en, this message translates to:
   /// **'easier to associate with your wallet'**
   String get migrationImmediateTradeoffHighlight;
+
+  /// [security] First part of the privacy notice; {amount} is the ZEC amount. The sentence continues in the next message, so it must end with a space.
+  ///
+  /// In en, this message translates to:
+  /// **'Crosses in one visible step — your {amount} and timing are '**
+  String migrationImmediateTradeoffLead(String amount);
 
   /// [security] Last line of the privacy notice for Ledger accounts; starts with a line break.
   ///
@@ -7548,6 +7584,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unavailable'**
   String get migrationMobileFastPlanUnavailable;
+
+  /// [security] Highlighted middle part of the sentence in the privacy warning card; it follows the lead part and ends the sentence.
+  ///
+  /// In en, this message translates to:
+  /// **'easier to associate with your wallet'**
+  String get migrationMobileFastPrivacyBodyHighlight;
 
   /// Last sentence of the privacy warning card suggesting the Private migration option.
   ///
@@ -8389,6 +8431,12 @@ abstract class AppLocalizations {
   /// **'{count} notes'**
   String migrationMobileStatusNotesCount(int count);
 
+  /// Bold first words of the heading row above the migration parts; followed by the note count such as 3 notes. Keep the trailing space.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration '**
+  String get migrationMobileStatusNotesLead;
+
   /// Heading row above the migration parts. {notes} is the muted note count such as '3 notes' and can be moved anywhere.
   ///
   /// In en, this message translates to:
@@ -8437,11 +8485,23 @@ abstract class AppLocalizations {
   /// **'Another Keystone approval will be needed after these confirmations.'**
   String get migrationMobileWaitKeystoneAgain;
 
+  /// Second fragment of the bottom text on the animated loop; keep the leading space.
+  ///
+  /// In en, this message translates to:
+  /// **' the batch of transactions'**
+  String get migrationMobileWaitLoopBatch;
+
   /// Caption in the middle of the animated loop that explains the sign-and-wait cycle; the line breaks are intentional and the dash is an en dash.
   ///
   /// In en, this message translates to:
   /// **'Repeat several times,\nwaiting could take 2–10\nhours'**
   String get migrationMobileWaitLoopCaption;
+
+  /// Second fragment of the top text on the animated loop; keep the leading space.
+  ///
+  /// In en, this message translates to:
+  /// **' for the window'**
+  String get migrationMobileWaitLoopForWindow;
 
   /// Highlighted verb inserted into the bottom text of the animated loop, which reads 'Sign the batch of transactions'.
   ///
@@ -9520,6 +9580,252 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'View Schedule'**
   String get migrationViewSchedule;
+
+  /// Title of the Android system fingerprint prompt shown by the OS when the user turns on fingerprint unlock for the app passcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable fingerprint unlock'**
+  String get nativeBiometricEnableTitle;
+
+  /// Button in the Android system fingerprint prompt that dismisses it so the user can type the 6-digit app passcode instead.
+  ///
+  /// In en, this message translates to:
+  /// **'Use passcode'**
+  String get nativeBiometricUsePasscode;
+
+  /// Body of the iOS notification posted by background work when the next Ironwood migration transfer can be prepared in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to prepare the next migration transfer.'**
+  String get nativeIronwoodContinueBody;
+
+  /// Title of the iOS notification posted by background work when the next Ironwood migration transfer can be prepared in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue your Ironwood migration'**
+  String get nativeIronwoodContinueTitle;
+
+  /// Body of the iOS notification posted by background work when the Ironwood migration stopped and needs the user in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to review and continue your migration.'**
+  String get nativeIronwoodNeedsAttentionBody;
+
+  /// Title of the iOS notification posted by background work when the Ironwood migration stopped and needs the user in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood migration needs attention'**
+  String get nativeIronwoodNeedsAttentionTitle;
+
+  /// Error the iOS and Android Ledger Bluetooth layer returns when the app sent the Ledger a malformed command; shown in the Ledger error message.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger APDU arguments are invalid.'**
+  String get nativeLedgerApduArgumentsInvalid;
+
+  /// Error the iOS and Android Ledger Bluetooth layer returns when the signing command list the app built is empty or malformed; shown in the Ledger error message.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger signing APDU list is empty or invalid.'**
+  String get nativeLedgerApduListInvalid;
+
+  /// Error the iOS Ledger Bluetooth layer returns when the app timed out waiting for the Ledger to finish opening its Zcash app.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not resume after opening the Zcash app. Try again.'**
+  String get nativeLedgerAppSwitchTimedOut;
+
+  /// Error the iOS Ledger Bluetooth layer returns when the phone has no Bluetooth Low Energy support, so it cannot reach a Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'This device does not support Bluetooth LE.'**
+  String get nativeLedgerBleUnsupported;
+
+  /// Error the Android Ledger Bluetooth layer returns when the phone has no Bluetooth Low Energy support, so it cannot reach a Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'This Android device does not support Bluetooth LE.'**
+  String get nativeLedgerBleUnsupportedAndroid;
+
+  /// Error the iOS Ledger Bluetooth layer returns when iOS reports an unknown Bluetooth state.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth is unavailable.'**
+  String get nativeLedgerBluetoothUnavailable;
+
+  /// Error the Android Ledger Bluetooth layer returns when a command to the Ledger failed for an unexpected reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not communicate with Ledger. Try again.'**
+  String get nativeLedgerCommunicationFailed;
+
+  /// Error the Android Ledger Bluetooth layer returns when searching for nearby Ledger devices failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not discover Ledger devices. Try again.'**
+  String get nativeLedgerDiscoveryFailed;
+
+  /// Error the iOS Ledger Bluetooth layer returns when the Ledger answered with data the app could not read.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger returned an invalid response.'**
+  String get nativeLedgerInvalidResponse;
+
+  /// Error the Android Ledger Bluetooth layer returns for an unexpected Ledger failure; {reason} is an untranslated technical code from the Ledger SDK.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger operation failed: {reason}'**
+  String nativeLedgerOperationFailed(String reason);
+
+  /// Error the Android Ledger Bluetooth layer returns when the app asked for Bluetooth permission while an earlier request is still on screen.
+  ///
+  /// In en, this message translates to:
+  /// **'A Ledger permission request is already active.'**
+  String get nativeLedgerPermissionRequestActive;
+
+  /// Error the iOS Ledger Bluetooth layer returns when the connected Ledger has no Zcash app installed.
+  ///
+  /// In en, this message translates to:
+  /// **'The Zcash app is not installed on this Ledger.'**
+  String get nativeLedgerZcashAppNotInstalled;
+
+  /// Body of the iOS notification shown by the OS when the migration of several accounts stopped; {count} is always 2 or more.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} accounts need attention. Open Vizor to continue.'**
+  String nativeMigrationAccountsNeedAttentionBody(String count);
+
+  /// Title of the iOS notification shown by the OS when the migration preparation of one account stopped and needs the user in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration needs attention'**
+  String get nativeMigrationNeedsAttentionTitle;
+
+  /// Body of the iOS notification posted by background work when a network upgrade stopped the migration before the whole balance moved.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to move the rest of your balance.'**
+  String get nativeMigrationStoppedByUpgradeBody;
+
+  /// Title of the iOS notification posted by background work when a network upgrade stopped the migration before the whole balance moved.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration stopped by network upgrade'**
+  String get nativeMigrationStoppedByUpgradeTitle;
+
+  /// Body of the iOS notification posted by background work after it broadcast every scheduled migration transfer.
+  ///
+  /// In en, this message translates to:
+  /// **'All scheduled transfers were submitted. Open Vizor to check the status.'**
+  String get nativeMigrationTransfersSentBody;
+
+  /// Title of the iOS notification posted by background work after it broadcast every scheduled migration transfer.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration transfers sent'**
+  String get nativeMigrationTransfersSentTitle;
+
+  /// Title of the iOS notification shown by the OS when the migration of several accounts stopped and needs the user in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration updates'**
+  String get nativeMigrationUpdatesTitle;
+
+  /// Body of the iOS notification shown by the OS when the migration preparation of one account stopped and needs the user in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to continue.'**
+  String get nativeOpenToContinue;
+
+  /// Subtitle of the iOS system background-task progress item when tracking stopped because the user added or removed an account; no trailing period.
+  ///
+  /// In en, this message translates to:
+  /// **'Your wallet accounts changed'**
+  String get nativePrepAccountsChanged;
+
+  /// Body of the iOS notification shown by the OS when the preparation transactions of several accounts confirmed; {count} is always 2 or more.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} accounts are ready for the next step. Open Vizor to continue.'**
+  String nativePrepAccountsReadyBody(String count);
+
+  /// Subtitle of the iOS system background-task progress item while it waits for migration preparation transactions to confirm; no trailing period.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking transaction confirmations'**
+  String get nativePrepCheckingConfirmations;
+
+  /// Title of the iOS system background-task progress item when every migration preparation transaction confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration preparation complete'**
+  String get nativePrepCompleteTitle;
+
+  /// Title of the iOS notification and system background-task item when the current wave of migration preparation transactions confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation transactions confirmed'**
+  String get nativePrepConfirmedTitle;
+
+  /// Subtitle of the iOS system background-task progress item when every migration preparation transaction confirmed; no trailing period.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to continue your migration'**
+  String get nativePrepOpenToContinueMigration;
+
+  /// Subtitle of the iOS system background-task progress item when iOS paused confirmation tracking; no trailing period.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to resume'**
+  String get nativePrepOpenToResume;
+
+  /// Subtitle of the iOS system background-task progress item when the current wave of migration preparation transactions confirmed; no trailing period.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to start the next step'**
+  String get nativePrepOpenToStartNextStep;
+
+  /// Body of the iOS notification shown by the OS when the migration preparation transactions of one account confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to start the next step.'**
+  String get nativePrepOpenToStartNextStepBody;
+
+  /// Progress line of the iOS system background-task item while migration preparation transactions confirm, used as title or subtitle; no trailing period.
+  ///
+  /// In en, this message translates to:
+  /// **'{completed} of {total} preparation transactions confirmed'**
+  String nativePrepProgress(String completed, String total);
+
+  /// Title of the iOS system background-task progress item when tracking stopped because the user added or removed an account.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation stopped'**
+  String get nativePrepStoppedTitle;
+
+  /// Title of the iOS system background-task progress item while it waits for migration preparation transactions to confirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing your migration'**
+  String get nativePrepTaskTitle;
+
+  /// Body of the iOS notification shown by the OS when iOS stopped confirmation tracking for migration preparation before it finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to resume migration preparation.'**
+  String get nativePrepTrackingPausedBody;
+
+  /// Title of the iOS notification and system background-task item when iOS stopped confirmation tracking for migration preparation before it finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation tracking paused'**
+  String get nativePrepTrackingPausedTitle;
+
+  /// Title of the iOS notification shown by the OS when the preparation transactions of several accounts confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration preparation updates'**
+  String get nativePrepUpdatesTitle;
 
   /// Sidebar and tab bar destination: transaction history. Shared by: activity, nav.
   ///
@@ -15457,6 +15763,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Screenshots are not reliable'**
   String get settingsSeedScreenshotBodyLead;
+
+  /// [security] Rest of the screenshot warning body; it directly follows the bold lead and so starts with a period.
+  ///
+  /// In en, this message translates to:
+  /// **'. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.'**
+  String get settingsSeedScreenshotBodyRest;
 
   /// [security] Heading of the warning sheet shown when a screenshot is taken while the secret passphrase is visible.
   ///

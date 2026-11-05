@@ -1381,6 +1381,9 @@ class AppLocalizationsKo extends AppLocalizations {
       'Mac⁠에⁠서⁠는 연⁠속⁠성 카⁠메⁠라⁠를 사⁠용⁠해 iPhone⁠으⁠로 대⁠신 스⁠캔⁠할 수 있⁠어⁠요.';
 
   @override
+  String get commonOnYourKeystone => 'on your Keystone,';
+
+  @override
   String get commonOpenSettings => '설⁠정 열⁠기';
 
   @override
@@ -1629,6 +1632,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonSyncing => '동⁠기⁠화 중';
+
+  @override
+  String get commonTap => 'Tap';
+
+  @override
+  String get commonThenScanThisQRCode => 'then scan this QR code';
 
   @override
   String get commonThisQRCodeCouldNotBe =>
@@ -2346,6 +2355,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String keystoneFirmwareUpdate(String link) {
     return '최⁠신 Keystone 펌⁠웨⁠어⁠로 업⁠데⁠이⁠트⁠하⁠세⁠요: $link';
   }
+
+  @override
+  String get keystoneFirmwareUpdatePrefix =>
+      'Update to the latest Keystone firmware at ';
 
   @override
   String get keystoneImReadyNow => '준⁠비⁠됐⁠어⁠요';
@@ -4000,8 +4013,17 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get migrationImmediateTradeoffEmphasis =>
+      'easier to associate with your wallet.';
+
+  @override
   String get migrationImmediateTradeoffHighlight =>
       '내 지⁠갑⁠과 더 쉽⁠게 연⁠결⁠될 수 있⁠어⁠요';
+
+  @override
+  String migrationImmediateTradeoffLead(String amount) {
+    return 'Crosses in one visible step — your $amount and timing are ';
+  }
 
   @override
   String get migrationImmediateTradeoffLedger =>
@@ -4480,6 +4502,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileFastPlanUnavailable => '사⁠용⁠할 수 없⁠음';
+
+  @override
+  String get migrationMobileFastPrivacyBodyHighlight =>
+      'easier to associate with your wallet';
 
   @override
   String get migrationMobileFastPrivacyConsiderPrivate =>
@@ -4991,6 +5017,9 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get migrationMobileStatusNotesLead => 'Migration ';
+
+  @override
   String migrationMobileStatusNotesTitle(String notes) {
     return '이⁠전 $notes';
   }
@@ -5022,8 +5051,14 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 확⁠인⁠이 끝⁠나⁠면 Keystone⁠에⁠서 한 번 더 승⁠인⁠해⁠야 해⁠요.';
 
   @override
+  String get migrationMobileWaitLoopBatch => ' the batch of transactions';
+
+  @override
   String get migrationMobileWaitLoopCaption =>
       '여⁠러 번 반⁠복⁠되⁠며\n기⁠다⁠리⁠는 데 2~10⁠시⁠간\n걸⁠릴 수 있⁠어⁠요';
+
+  @override
+  String get migrationMobileWaitLoopForWindow => ' for the window';
 
   @override
   String get migrationMobileWaitLoopSign => '서⁠명⁠하⁠기';
@@ -5698,6 +5733,156 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationViewSchedule => '일⁠정 보⁠기';
+
+  @override
+  String get nativeBiometricEnableTitle => '지⁠문 잠⁠금 해⁠제 켜⁠기';
+
+  @override
+  String get nativeBiometricUsePasscode => '암⁠호 사⁠용';
+
+  @override
+  String get nativeIronwoodContinueBody =>
+      '다⁠음 이⁠전 거⁠래⁠를 준⁠비⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get nativeIronwoodContinueTitle => 'Ironwood 이⁠전⁠을 계⁠속⁠하⁠세⁠요';
+
+  @override
+  String get nativeIronwoodNeedsAttentionBody =>
+      '이⁠전⁠을 확⁠인⁠하⁠고 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get nativeIronwoodNeedsAttentionTitle => 'Ironwood 이⁠전 확⁠인⁠이 필⁠요⁠해⁠요';
+
+  @override
+  String get nativeLedgerApduArgumentsInvalid =>
+      'Ledger APDU 인⁠수⁠가 올⁠바⁠르⁠지 않⁠아⁠요.';
+
+  @override
+  String get nativeLedgerApduListInvalid =>
+      'Ledger 서⁠명 APDU 목⁠록⁠이 비⁠어 있⁠거⁠나 올⁠바⁠르⁠지 않⁠아⁠요.';
+
+  @override
+  String get nativeLedgerAppSwitchTimedOut =>
+      'Zcash 앱⁠을 연 뒤 Vizor⁠가 이⁠어⁠서 진⁠행⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get nativeLedgerBleUnsupported =>
+      '이 기⁠기⁠는 Bluetooth LE⁠를 지⁠원⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get nativeLedgerBleUnsupportedAndroid =>
+      '이 Android 기⁠기⁠는 Bluetooth LE⁠를 지⁠원⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get nativeLedgerBluetoothUnavailable => 'Bluetooth⁠를 사⁠용⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get nativeLedgerCommunicationFailed =>
+      'Ledger⁠와 통⁠신⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get nativeLedgerDiscoveryFailed =>
+      'Ledger 기⁠기⁠를 찾⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get nativeLedgerInvalidResponse =>
+      'Ledger⁠가 올⁠바⁠르⁠지 않⁠은 응⁠답⁠을 보⁠냈⁠어⁠요.';
+
+  @override
+  String nativeLedgerOperationFailed(String reason) {
+    return 'Ledger 작⁠업⁠에 실⁠패⁠했⁠어⁠요: $reason';
+  }
+
+  @override
+  String get nativeLedgerPermissionRequestActive =>
+      'Ledger 권⁠한 요⁠청⁠이 이⁠미 진⁠행 중⁠이⁠에⁠요.';
+
+  @override
+  String get nativeLedgerZcashAppNotInstalled =>
+      '이 Ledger⁠에 Zcash 앱⁠이 설⁠치⁠되⁠어 있⁠지 않⁠아⁠요.';
+
+  @override
+  String nativeMigrationAccountsNeedAttentionBody(String count) {
+    return '계⁠정 $count⁠개⁠를 확⁠인⁠해⁠야 해⁠요. 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+  }
+
+  @override
+  String get nativeMigrationNeedsAttentionTitle => '이⁠전 확⁠인⁠이 필⁠요⁠해⁠요';
+
+  @override
+  String get nativeMigrationStoppedByUpgradeBody =>
+      '남⁠은 잔⁠액⁠을 옮⁠기⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get nativeMigrationStoppedByUpgradeTitle =>
+      '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 이⁠전⁠이 중⁠단⁠됐⁠어⁠요';
+
+  @override
+  String get nativeMigrationTransfersSentBody =>
+      '예⁠약⁠된 이⁠전 거⁠래⁠를 모⁠두 제⁠출⁠했⁠어⁠요. 상⁠태⁠를 확⁠인⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get nativeMigrationTransfersSentTitle => '이⁠전 거⁠래⁠를 보⁠냈⁠어⁠요';
+
+  @override
+  String get nativeMigrationUpdatesTitle => '이⁠전 업⁠데⁠이⁠트';
+
+  @override
+  String get nativeOpenToContinue => '계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get nativePrepAccountsChanged => '지⁠갑 계⁠정⁠이 변⁠경⁠됐⁠어⁠요';
+
+  @override
+  String nativePrepAccountsReadyBody(String count) {
+    return '계⁠정 $count⁠개⁠가 다⁠음 단⁠계⁠로 진⁠행⁠할 수 있⁠어⁠요. 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+  }
+
+  @override
+  String get nativePrepCheckingConfirmations => '거⁠래 확⁠인 수⁠를 확⁠인⁠하⁠고 있⁠어⁠요';
+
+  @override
+  String get nativePrepCompleteTitle => '이⁠전 준⁠비⁠가 완⁠료⁠됐⁠어⁠요';
+
+  @override
+  String get nativePrepConfirmedTitle => '준⁠비 거⁠래⁠가 확⁠인⁠됐⁠어⁠요';
+
+  @override
+  String get nativePrepOpenToContinueMigration =>
+      '이⁠전⁠을 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요';
+
+  @override
+  String get nativePrepOpenToResume => '다⁠시 시⁠작⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요';
+
+  @override
+  String get nativePrepOpenToStartNextStep =>
+      '다⁠음 단⁠계⁠를 시⁠작⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요';
+
+  @override
+  String get nativePrepOpenToStartNextStepBody =>
+      '다⁠음 단⁠계⁠를 시⁠작⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String nativePrepProgress(String completed, String total) {
+    return '준⁠비 거⁠래 $total⁠건 중 $completed⁠건 확⁠인⁠됨';
+  }
+
+  @override
+  String get nativePrepStoppedTitle => '준⁠비⁠가 중⁠단⁠됐⁠어⁠요';
+
+  @override
+  String get nativePrepTaskTitle => '이⁠전⁠을 준⁠비⁠하⁠고 있⁠어⁠요';
+
+  @override
+  String get nativePrepTrackingPausedBody =>
+      '이⁠전 준⁠비⁠를 다⁠시 시⁠작⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get nativePrepTrackingPausedTitle => '준⁠비 추⁠적⁠이 일⁠시 중⁠지⁠됐⁠어⁠요';
+
+  @override
+  String get nativePrepUpdatesTitle => '이⁠전 준⁠비 업⁠데⁠이⁠트';
 
   @override
   String get navActivity => '활⁠동';
@@ -9241,6 +9426,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsSeedScreenshotBodyLead => '스⁠크⁠린⁠샷⁠은 안⁠전⁠하⁠지 않⁠아⁠요';
+
+  @override
+  String get settingsSeedScreenshotBodyRest =>
+      '. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
 
   @override
   String get settingsSeedScreenshotTitle => '복⁠구 문⁠구⁠를 스⁠크⁠린⁠샷⁠으⁠로 남⁠기⁠지 마⁠세⁠요';

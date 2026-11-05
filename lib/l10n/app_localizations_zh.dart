@@ -1342,6 +1342,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonOnAMacYouCanUse => '在 Mac 上，你也可以使用连续互通相机，改用 iPhone 进行扫描。';
 
   @override
+  String get commonOnYourKeystone => 'on your Keystone,';
+
+  @override
   String get commonOpenSettings => '打开设置';
 
   @override
@@ -1587,6 +1590,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonSyncing => '正在同步';
+
+  @override
+  String get commonTap => 'Tap';
+
+  @override
+  String get commonThenScanThisQRCode => 'then scan this QR code';
 
   @override
   String get commonThisQRCodeCouldNotBe => '无法将此二维码解码为 Keystone 签名。';
@@ -2255,6 +2264,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String keystoneFirmwareUpdate(String link) {
     return '请更新到最新的 Keystone 固件：$link';
   }
+
+  @override
+  String get keystoneFirmwareUpdatePrefix =>
+      'Update to the latest Keystone firmware at ';
 
   @override
   String get keystoneImReadyNow => '我已准备好';
@@ -3783,7 +3796,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get migrationImmediateTradeoffEmphasis =>
+      'easier to associate with your wallet.';
+
+  @override
   String get migrationImmediateTradeoffHighlight => '更容易与你的钱包关联';
+
+  @override
+  String migrationImmediateTradeoffLead(String amount) {
+    return 'Crosses in one visible step — your $amount and timing are ';
+  }
 
   @override
   String get migrationImmediateTradeoffLedger => '\nLedger 账户无法使用私密迁移。';
@@ -4232,6 +4254,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationMobileFastPlanUnavailable => '不可用';
+
+  @override
+  String get migrationMobileFastPrivacyBodyHighlight =>
+      'easier to associate with your wallet';
 
   @override
   String get migrationMobileFastPrivacyConsiderPrivate => '建议选择私密迁移选项。';
@@ -4715,6 +4741,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get migrationMobileStatusNotesLead => 'Migration ';
+
+  @override
   String migrationMobileStatusNotesTitle(String notes) {
     return '迁移 $notes';
   }
@@ -4743,7 +4772,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileWaitKeystoneAgain => '这些确认完成后，还需要再次在 Keystone 上批准。';
 
   @override
+  String get migrationMobileWaitLoopBatch => ' the batch of transactions';
+
+  @override
   String get migrationMobileWaitLoopCaption => '需重复多次，\n等待可能需要 2–10\n小时';
+
+  @override
+  String get migrationMobileWaitLoopForWindow => ' for the window';
 
   @override
   String get migrationMobileWaitLoopSign => '签署';
@@ -5392,6 +5427,137 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationViewSchedule => '查看日程';
+
+  @override
+  String get nativeBiometricEnableTitle => '启用指纹解锁';
+
+  @override
+  String get nativeBiometricUsePasscode => '使用数字密码';
+
+  @override
+  String get nativeIronwoodContinueBody => '打开 Vizor 准备下一笔迁移转账。';
+
+  @override
+  String get nativeIronwoodContinueTitle => '继续你的 Ironwood 迁移';
+
+  @override
+  String get nativeIronwoodNeedsAttentionBody => '打开 Vizor 查看并继续你的迁移。';
+
+  @override
+  String get nativeIronwoodNeedsAttentionTitle => 'Ironwood 迁移需要处理';
+
+  @override
+  String get nativeLedgerApduArgumentsInvalid => 'Ledger APDU 参数无效。';
+
+  @override
+  String get nativeLedgerApduListInvalid => 'Ledger 签名 APDU 列表为空或无效。';
+
+  @override
+  String get nativeLedgerAppSwitchTimedOut => '打开 Zcash 应用后，Vizor 无法继续。请重试。';
+
+  @override
+  String get nativeLedgerBleUnsupported => '此设备不支持蓝牙 LE。';
+
+  @override
+  String get nativeLedgerBleUnsupportedAndroid => '此 Android 设备不支持蓝牙 LE。';
+
+  @override
+  String get nativeLedgerBluetoothUnavailable => '蓝牙不可用。';
+
+  @override
+  String get nativeLedgerCommunicationFailed => '无法与 Ledger 通信。请重试。';
+
+  @override
+  String get nativeLedgerDiscoveryFailed => '无法发现 Ledger 设备。请重试。';
+
+  @override
+  String get nativeLedgerInvalidResponse => 'Ledger 返回了无效的响应。';
+
+  @override
+  String nativeLedgerOperationFailed(String reason) {
+    return 'Ledger 操作失败：$reason';
+  }
+
+  @override
+  String get nativeLedgerPermissionRequestActive => '已有一个 Ledger 权限请求正在进行。';
+
+  @override
+  String get nativeLedgerZcashAppNotInstalled => '此 Ledger 上未安装 Zcash 应用。';
+
+  @override
+  String nativeMigrationAccountsNeedAttentionBody(String count) {
+    return '$count 个账户需要处理。打开 Vizor 以继续。';
+  }
+
+  @override
+  String get nativeMigrationNeedsAttentionTitle => '迁移需要处理';
+
+  @override
+  String get nativeMigrationStoppedByUpgradeBody => '打开 Vizor 转移剩余余额。';
+
+  @override
+  String get nativeMigrationStoppedByUpgradeTitle => '迁移因网络升级而停止';
+
+  @override
+  String get nativeMigrationTransfersSentBody => '所有计划的转账都已提交。打开 Vizor 查看状态。';
+
+  @override
+  String get nativeMigrationTransfersSentTitle => '迁移转账已发送';
+
+  @override
+  String get nativeMigrationUpdatesTitle => '迁移动态';
+
+  @override
+  String get nativeOpenToContinue => '打开 Vizor 以继续。';
+
+  @override
+  String get nativePrepAccountsChanged => '钱包账户已变更';
+
+  @override
+  String nativePrepAccountsReadyBody(String count) {
+    return '$count 个账户已可进行下一步。打开 Vizor 以继续。';
+  }
+
+  @override
+  String get nativePrepCheckingConfirmations => '正在检查交易确认数';
+
+  @override
+  String get nativePrepCompleteTitle => '迁移准备已完成';
+
+  @override
+  String get nativePrepConfirmedTitle => '准备交易已确认';
+
+  @override
+  String get nativePrepOpenToContinueMigration => '打开 Vizor 继续迁移';
+
+  @override
+  String get nativePrepOpenToResume => '打开 Vizor 以恢复';
+
+  @override
+  String get nativePrepOpenToStartNextStep => '打开 Vizor 开始下一步';
+
+  @override
+  String get nativePrepOpenToStartNextStepBody => '打开 Vizor 开始下一步。';
+
+  @override
+  String nativePrepProgress(String completed, String total) {
+    return '已确认 $completed/$total 笔准备交易';
+  }
+
+  @override
+  String get nativePrepStoppedTitle => '准备已停止';
+
+  @override
+  String get nativePrepTaskTitle => '正在准备迁移';
+
+  @override
+  String get nativePrepTrackingPausedBody => '打开 Vizor 以恢复迁移准备。';
+
+  @override
+  String get nativePrepTrackingPausedTitle => '准备跟踪已暂停';
+
+  @override
+  String get nativePrepUpdatesTitle => '迁移准备动态';
 
   @override
   String get navActivity => '活动';
@@ -8685,6 +8851,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsSeedScreenshotBodyLead => '截图并不可靠';
+
+  @override
+  String get settingsSeedScreenshotBodyRest =>
+      '. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
 
   @override
   String get settingsSeedScreenshotTitle => '请勿截取助记词的屏幕截图';

@@ -114,6 +114,24 @@ class MainActivity : FlutterFragmentActivity() {
             }
         }
 
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            NATIVE_STRINGS_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setLanguage" -> {
+                    val tag = call.argument<String>("tag")
+                    if (tag.isNullOrEmpty()) {
+                        result.error("bad_args", "Expected tag argument.", null)
+                    } else {
+                        NativeStrings.setLanguage(applicationContext, tag)
+                        result.success(null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         val biometricUnlockHandler = BiometricUnlockHandler(this)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -447,6 +465,7 @@ class MainActivity : FlutterFragmentActivity() {
     companion object {
         private const val CAMERA_PERMISSION_CHANNEL = "com.zcash.wallet/camera_permission"
         private const val HAPTICS_CHANNEL = "com.zcash.wallet/haptics"
+        private const val NATIVE_STRINGS_CHANNEL = "com.zcash.wallet/native_strings"
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"
         private const val SCREEN_AWAKE_CHANNEL = "com.zcash.wallet/screen_awake"
         private const val INCOMING_URI_CHANNEL = "com.zcash.wallet/payment_uri"

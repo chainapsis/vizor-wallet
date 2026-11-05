@@ -1401,6 +1401,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'On a Mac, you can use Continuity Camera to scan with your iPhone instead.';
 
   @override
+  String get commonOnYourKeystone => 'on your Keystone,';
+
+  @override
   String get commonOpenSettings => 'Open settings';
 
   @override
@@ -1651,6 +1654,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonSyncing => 'Syncing';
+
+  @override
+  String get commonTap => 'Tap';
+
+  @override
+  String get commonThenScanThisQRCode => 'then scan this QR code';
 
   @override
   String get commonThisQRCodeCouldNotBe =>
@@ -2386,6 +2395,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String keystoneFirmwareUpdate(String link) {
     return 'Update to the latest Keystone firmware at $link';
   }
+
+  @override
+  String get keystoneFirmwareUpdatePrefix =>
+      'Update to the latest Keystone firmware at ';
 
   @override
   String get keystoneImReadyNow => 'I\'m ready now';
@@ -4058,8 +4071,17 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get migrationImmediateTradeoffEmphasis =>
+      'easier to associate with your wallet.';
+
+  @override
   String get migrationImmediateTradeoffHighlight =>
       'easier to associate with your wallet';
+
+  @override
+  String migrationImmediateTradeoffLead(String amount) {
+    return 'Crosses in one visible step — your $amount and timing are ';
+  }
 
   @override
   String get migrationImmediateTradeoffLedger =>
@@ -4558,6 +4580,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationMobileFastPlanUnavailable => 'Unavailable';
+
+  @override
+  String get migrationMobileFastPrivacyBodyHighlight =>
+      'easier to associate with your wallet';
 
   @override
   String get migrationMobileFastPrivacyConsiderPrivate =>
@@ -5086,6 +5112,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get migrationMobileStatusNotesLead => 'Migration ';
+
+  @override
   String migrationMobileStatusNotesTitle(String notes) {
     return 'Migration $notes';
   }
@@ -5117,8 +5146,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Another Keystone approval will be needed after these confirmations.';
 
   @override
+  String get migrationMobileWaitLoopBatch => ' the batch of transactions';
+
+  @override
   String get migrationMobileWaitLoopCaption =>
       'Repeat several times,\nwaiting could take 2–10\nhours';
+
+  @override
+  String get migrationMobileWaitLoopForWindow => ' for the window';
 
   @override
   String get migrationMobileWaitLoopSign => 'Sign';
@@ -5810,6 +5845,158 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationViewSchedule => 'View Schedule';
+
+  @override
+  String get nativeBiometricEnableTitle => 'Enable fingerprint unlock';
+
+  @override
+  String get nativeBiometricUsePasscode => 'Use passcode';
+
+  @override
+  String get nativeIronwoodContinueBody =>
+      'Open Vizor to prepare the next migration transfer.';
+
+  @override
+  String get nativeIronwoodContinueTitle => 'Continue your Ironwood migration';
+
+  @override
+  String get nativeIronwoodNeedsAttentionBody =>
+      'Open Vizor to review and continue your migration.';
+
+  @override
+  String get nativeIronwoodNeedsAttentionTitle =>
+      'Ironwood migration needs attention';
+
+  @override
+  String get nativeLedgerApduArgumentsInvalid =>
+      'Ledger APDU arguments are invalid.';
+
+  @override
+  String get nativeLedgerApduListInvalid =>
+      'Ledger signing APDU list is empty or invalid.';
+
+  @override
+  String get nativeLedgerAppSwitchTimedOut =>
+      'Vizor could not resume after opening the Zcash app. Try again.';
+
+  @override
+  String get nativeLedgerBleUnsupported =>
+      'This device does not support Bluetooth LE.';
+
+  @override
+  String get nativeLedgerBleUnsupportedAndroid =>
+      'This Android device does not support Bluetooth LE.';
+
+  @override
+  String get nativeLedgerBluetoothUnavailable => 'Bluetooth is unavailable.';
+
+  @override
+  String get nativeLedgerCommunicationFailed =>
+      'Could not communicate with Ledger. Try again.';
+
+  @override
+  String get nativeLedgerDiscoveryFailed =>
+      'Could not discover Ledger devices. Try again.';
+
+  @override
+  String get nativeLedgerInvalidResponse =>
+      'Ledger returned an invalid response.';
+
+  @override
+  String nativeLedgerOperationFailed(String reason) {
+    return 'Ledger operation failed: $reason';
+  }
+
+  @override
+  String get nativeLedgerPermissionRequestActive =>
+      'A Ledger permission request is already active.';
+
+  @override
+  String get nativeLedgerZcashAppNotInstalled =>
+      'The Zcash app is not installed on this Ledger.';
+
+  @override
+  String nativeMigrationAccountsNeedAttentionBody(String count) {
+    return '$count accounts need attention. Open Vizor to continue.';
+  }
+
+  @override
+  String get nativeMigrationNeedsAttentionTitle => 'Migration needs attention';
+
+  @override
+  String get nativeMigrationStoppedByUpgradeBody =>
+      'Open Vizor to move the rest of your balance.';
+
+  @override
+  String get nativeMigrationStoppedByUpgradeTitle =>
+      'Migration stopped by network upgrade';
+
+  @override
+  String get nativeMigrationTransfersSentBody =>
+      'All scheduled transfers were submitted. Open Vizor to check the status.';
+
+  @override
+  String get nativeMigrationTransfersSentTitle => 'Migration transfers sent';
+
+  @override
+  String get nativeMigrationUpdatesTitle => 'Migration updates';
+
+  @override
+  String get nativeOpenToContinue => 'Open Vizor to continue.';
+
+  @override
+  String get nativePrepAccountsChanged => 'Your wallet accounts changed';
+
+  @override
+  String nativePrepAccountsReadyBody(String count) {
+    return '$count accounts are ready for the next step. Open Vizor to continue.';
+  }
+
+  @override
+  String get nativePrepCheckingConfirmations =>
+      'Checking transaction confirmations';
+
+  @override
+  String get nativePrepCompleteTitle => 'Migration preparation complete';
+
+  @override
+  String get nativePrepConfirmedTitle => 'Preparation transactions confirmed';
+
+  @override
+  String get nativePrepOpenToContinueMigration =>
+      'Open Vizor to continue your migration';
+
+  @override
+  String get nativePrepOpenToResume => 'Open Vizor to resume';
+
+  @override
+  String get nativePrepOpenToStartNextStep =>
+      'Open Vizor to start the next step';
+
+  @override
+  String get nativePrepOpenToStartNextStepBody =>
+      'Open Vizor to start the next step.';
+
+  @override
+  String nativePrepProgress(String completed, String total) {
+    return '$completed of $total preparation transactions confirmed';
+  }
+
+  @override
+  String get nativePrepStoppedTitle => 'Preparation stopped';
+
+  @override
+  String get nativePrepTaskTitle => 'Preparing your migration';
+
+  @override
+  String get nativePrepTrackingPausedBody =>
+      'Open Vizor to resume migration preparation.';
+
+  @override
+  String get nativePrepTrackingPausedTitle => 'Preparation tracking paused';
+
+  @override
+  String get nativePrepUpdatesTitle => 'Migration preparation updates';
 
   @override
   String get navActivity => 'Activity';
@@ -9419,6 +9606,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsSeedScreenshotBodyLead => 'Screenshots are not reliable';
+
+  @override
+  String get settingsSeedScreenshotBodyRest =>
+      '. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
 
   @override
   String get settingsSeedScreenshotTitle =>

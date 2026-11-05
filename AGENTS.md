@@ -222,6 +222,15 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
   invisible word joiners so Flutter breaks Korean lines between words, not
   inside them. Compare shipped Korean strings in tests with the joiners
   removed.
+- Copy that Swift or Kotlin draws (notifications, background-task captions,
+  system prompts, native error messages Dart shows) uses `native*` ARB keys.
+  `fvm dart run tool/l10n/native_strings.dart` regenerates
+  `ios/Runner/NativeStrings.swift` and `android/.../NativeStrings.kt`; never
+  edit them by hand. `NativeLanguageSync` in the app root sends the shown
+  language over `com.zcash.wallet/native_strings`, and native code stores it
+  for background work (English until it arrives). Do not add `.lproj`,
+  `values-<lang>` or `localeConfig` before a language ships; the release
+  steps are in `docs/i18n/adding-a-language.md`.
 - `LocaleTypography` (applied in every app root's `builder`) gives Korean and
   Chinese UI their own CJK font fallback. Without it the engine picks Han
   glyphs by the OS language. A `TextPainter` built from a token style misses

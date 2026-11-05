@@ -1824,6 +1824,10 @@
   "@commonOnAMacYouCanUse": {
     "description": "Scanning tip on QR scanners. 'Continuity Camera' is an Apple feature name. Shared by: keystone, send."
   },
+  "commonOnYourKeystone": "on your Keystone,",
+  "@commonOnYourKeystone": {
+    "description": "Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon. Shared by: keystone, migration."
+  },
   "commonOpenSettings": "Open settings",
   "@commonOpenSettings": {
     "description": "Button that opens the system settings page for the camera permission. Shared by: address, keystone, ledger."
@@ -2158,6 +2162,14 @@
   "commonSyncing": "Syncing",
   "@commonSyncing": {
     "description": "Value of the estimated completion row while the migration progress is syncing. Shared by: migration, settings."
+  },
+  "commonTap": "Tap",
+  "@commonTap": {
+    "description": "Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon. Shared by: keystone, migration."
+  },
+  "commonThenScanThisQRCode": "then scan this QR code",
+  "@commonThenScanThisQRCode": {
+    "description": "End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'. Shared by: keystone, migration."
   },
   "commonThisQRCodeCouldNotBe": "This QR code could not be decoded as a Keystone signature.",
   "@commonThisQRCodeCouldNotBe": {
@@ -3069,6 +3081,10 @@
         "type": "String"
       }
     }
+  },
+  "keystoneFirmwareUpdatePrefix": "Update to the latest Keystone firmware at ",
+  "@keystoneFirmwareUpdatePrefix": {
+    "description": "Text before the keyst.one/firmware link in the scanning help. Keep the trailing space; the link follows directly."
   },
   "keystoneImReadyNow": "I'm ready now",
   "@keystoneImReadyNow": {
@@ -5136,9 +5152,22 @@
       }
     }
   },
+  "migrationImmediateTradeoffEmphasis": "easier to associate with your wallet.",
+  "@migrationImmediateTradeoffEmphasis": {
+    "description": "[security] Highlighted second part of the privacy notice, continuing the previous message."
+  },
   "migrationImmediateTradeoffHighlight": "easier to associate with your wallet",
   "@migrationImmediateTradeoffHighlight": {
     "description": "[security] Emphasized phrase inserted into the privacy notice sentence as its highlight; it completes 'your amount and timing are …'."
+  },
+  "migrationImmediateTradeoffLead": "Crosses in one visible step — your {amount} and timing are ",
+  "@migrationImmediateTradeoffLead": {
+    "description": "[security] First part of the privacy notice; {amount} is the ZEC amount. The sentence continues in the next message, so it must end with a space.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
   },
   "migrationImmediateTradeoffLedger": "\nPrivate migration is not available for Ledger accounts.",
   "@migrationImmediateTradeoffLedger": {
@@ -5746,6 +5775,10 @@
   "migrationMobileFastPlanUnavailable": "Unavailable",
   "@migrationMobileFastPlanUnavailable": {
     "description": "Placeholder value of the amount and fee rows on the Immediate migration review when no plan could be made."
+  },
+  "migrationMobileFastPrivacyBodyHighlight": "easier to associate with your wallet",
+  "@migrationMobileFastPrivacyBodyHighlight": {
+    "description": "[security] Highlighted middle part of the sentence in the privacy warning card; it follows the lead part and ends the sentence."
   },
   "migrationMobileFastPrivacyConsiderPrivate": "Consider choosing a Private Migration option.",
   "@migrationMobileFastPrivacyConsiderPrivate": {
@@ -6412,6 +6445,10 @@
       }
     }
   },
+  "migrationMobileStatusNotesLead": "Migration ",
+  "@migrationMobileStatusNotesLead": {
+    "description": "Bold first words of the heading row above the migration parts; followed by the note count such as 3 notes. Keep the trailing space."
+  },
   "migrationMobileStatusNotesTitle": "Migration {notes}",
   "@migrationMobileStatusNotesTitle": {
     "description": "Heading row above the migration parts. {notes} is the muted note count such as '3 notes' and can be moved anywhere.",
@@ -6457,9 +6494,17 @@
   "@migrationMobileWaitKeystoneAgain": {
     "description": "Note under the note split card for Keystone accounts: another signing on the device is required afterwards."
   },
+  "migrationMobileWaitLoopBatch": " the batch of transactions",
+  "@migrationMobileWaitLoopBatch": {
+    "description": "Second fragment of the bottom text on the animated loop; keep the leading space."
+  },
   "migrationMobileWaitLoopCaption": "Repeat several times,\nwaiting could take 2–10\nhours",
   "@migrationMobileWaitLoopCaption": {
     "description": "Caption in the middle of the animated loop that explains the sign-and-wait cycle; the line breaks are intentional and the dash is an en dash."
+  },
+  "migrationMobileWaitLoopForWindow": " for the window",
+  "@migrationMobileWaitLoopForWindow": {
+    "description": "Second fragment of the top text on the animated loop; keep the leading space."
   },
   "migrationMobileWaitLoopSign": "Sign",
   "@migrationMobileWaitLoopSign": {
@@ -7428,6 +7473,198 @@
   "migrationViewSchedule": "View Schedule",
   "@migrationViewSchedule": {
     "description": "Button that opens the schedule of migration transfers."
+  },
+  "nativeBiometricEnableTitle": "Enable fingerprint unlock",
+  "@nativeBiometricEnableTitle": {
+    "description": "Title of the Android system fingerprint prompt shown by the OS when the user turns on fingerprint unlock for the app passcode."
+  },
+  "nativeBiometricUsePasscode": "Use passcode",
+  "@nativeBiometricUsePasscode": {
+    "description": "Button in the Android system fingerprint prompt that dismisses it so the user can type the 6-digit app passcode instead."
+  },
+  "nativeIronwoodContinueBody": "Open Vizor to prepare the next migration transfer.",
+  "@nativeIronwoodContinueBody": {
+    "description": "Body of the iOS notification posted by background work when the next Ironwood migration transfer can be prepared in the app."
+  },
+  "nativeIronwoodContinueTitle": "Continue your Ironwood migration",
+  "@nativeIronwoodContinueTitle": {
+    "description": "Title of the iOS notification posted by background work when the next Ironwood migration transfer can be prepared in the app."
+  },
+  "nativeIronwoodNeedsAttentionBody": "Open Vizor to review and continue your migration.",
+  "@nativeIronwoodNeedsAttentionBody": {
+    "description": "Body of the iOS notification posted by background work when the Ironwood migration stopped and needs the user in the app."
+  },
+  "nativeIronwoodNeedsAttentionTitle": "Ironwood migration needs attention",
+  "@nativeIronwoodNeedsAttentionTitle": {
+    "description": "Title of the iOS notification posted by background work when the Ironwood migration stopped and needs the user in the app."
+  },
+  "nativeLedgerApduArgumentsInvalid": "Ledger APDU arguments are invalid.",
+  "@nativeLedgerApduArgumentsInvalid": {
+    "description": "Error the iOS and Android Ledger Bluetooth layer returns when the app sent the Ledger a malformed command; shown in the Ledger error message."
+  },
+  "nativeLedgerApduListInvalid": "Ledger signing APDU list is empty or invalid.",
+  "@nativeLedgerApduListInvalid": {
+    "description": "Error the iOS and Android Ledger Bluetooth layer returns when the signing command list the app built is empty or malformed; shown in the Ledger error message."
+  },
+  "nativeLedgerAppSwitchTimedOut": "Vizor could not resume after opening the Zcash app. Try again.",
+  "@nativeLedgerAppSwitchTimedOut": {
+    "description": "Error the iOS Ledger Bluetooth layer returns when the app timed out waiting for the Ledger to finish opening its Zcash app."
+  },
+  "nativeLedgerBleUnsupported": "This device does not support Bluetooth LE.",
+  "@nativeLedgerBleUnsupported": {
+    "description": "Error the iOS Ledger Bluetooth layer returns when the phone has no Bluetooth Low Energy support, so it cannot reach a Ledger."
+  },
+  "nativeLedgerBleUnsupportedAndroid": "This Android device does not support Bluetooth LE.",
+  "@nativeLedgerBleUnsupportedAndroid": {
+    "description": "Error the Android Ledger Bluetooth layer returns when the phone has no Bluetooth Low Energy support, so it cannot reach a Ledger."
+  },
+  "nativeLedgerBluetoothUnavailable": "Bluetooth is unavailable.",
+  "@nativeLedgerBluetoothUnavailable": {
+    "description": "Error the iOS Ledger Bluetooth layer returns when iOS reports an unknown Bluetooth state."
+  },
+  "nativeLedgerCommunicationFailed": "Could not communicate with Ledger. Try again.",
+  "@nativeLedgerCommunicationFailed": {
+    "description": "Error the Android Ledger Bluetooth layer returns when a command to the Ledger failed for an unexpected reason."
+  },
+  "nativeLedgerDiscoveryFailed": "Could not discover Ledger devices. Try again.",
+  "@nativeLedgerDiscoveryFailed": {
+    "description": "Error the Android Ledger Bluetooth layer returns when searching for nearby Ledger devices failed."
+  },
+  "nativeLedgerInvalidResponse": "Ledger returned an invalid response.",
+  "@nativeLedgerInvalidResponse": {
+    "description": "Error the iOS Ledger Bluetooth layer returns when the Ledger answered with data the app could not read."
+  },
+  "nativeLedgerOperationFailed": "Ledger operation failed: {reason}",
+  "@nativeLedgerOperationFailed": {
+    "description": "Error the Android Ledger Bluetooth layer returns for an unexpected Ledger failure; {reason} is an untranslated technical code from the Ledger SDK.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "Unknown"
+      }
+    }
+  },
+  "nativeLedgerPermissionRequestActive": "A Ledger permission request is already active.",
+  "@nativeLedgerPermissionRequestActive": {
+    "description": "Error the Android Ledger Bluetooth layer returns when the app asked for Bluetooth permission while an earlier request is still on screen."
+  },
+  "nativeLedgerZcashAppNotInstalled": "The Zcash app is not installed on this Ledger.",
+  "@nativeLedgerZcashAppNotInstalled": {
+    "description": "Error the iOS Ledger Bluetooth layer returns when the connected Ledger has no Zcash app installed."
+  },
+  "nativeMigrationAccountsNeedAttentionBody": "{count} accounts need attention. Open Vizor to continue.",
+  "@nativeMigrationAccountsNeedAttentionBody": {
+    "description": "Body of the iOS notification shown by the OS when the migration of several accounts stopped; {count} is always 2 or more.",
+    "placeholders": {
+      "count": {
+        "type": "String",
+        "example": "2"
+      }
+    }
+  },
+  "nativeMigrationNeedsAttentionTitle": "Migration needs attention",
+  "@nativeMigrationNeedsAttentionTitle": {
+    "description": "Title of the iOS notification shown by the OS when the migration preparation of one account stopped and needs the user in the app."
+  },
+  "nativeMigrationStoppedByUpgradeBody": "Open Vizor to move the rest of your balance.",
+  "@nativeMigrationStoppedByUpgradeBody": {
+    "description": "Body of the iOS notification posted by background work when a network upgrade stopped the migration before the whole balance moved."
+  },
+  "nativeMigrationStoppedByUpgradeTitle": "Migration stopped by network upgrade",
+  "@nativeMigrationStoppedByUpgradeTitle": {
+    "description": "Title of the iOS notification posted by background work when a network upgrade stopped the migration before the whole balance moved."
+  },
+  "nativeMigrationTransfersSentBody": "All scheduled transfers were submitted. Open Vizor to check the status.",
+  "@nativeMigrationTransfersSentBody": {
+    "description": "Body of the iOS notification posted by background work after it broadcast every scheduled migration transfer."
+  },
+  "nativeMigrationTransfersSentTitle": "Migration transfers sent",
+  "@nativeMigrationTransfersSentTitle": {
+    "description": "Title of the iOS notification posted by background work after it broadcast every scheduled migration transfer."
+  },
+  "nativeMigrationUpdatesTitle": "Migration updates",
+  "@nativeMigrationUpdatesTitle": {
+    "description": "Title of the iOS notification shown by the OS when the migration of several accounts stopped and needs the user in the app."
+  },
+  "nativeOpenToContinue": "Open Vizor to continue.",
+  "@nativeOpenToContinue": {
+    "description": "Body of the iOS notification shown by the OS when the migration preparation of one account stopped and needs the user in the app."
+  },
+  "nativePrepAccountsChanged": "Your wallet accounts changed",
+  "@nativePrepAccountsChanged": {
+    "description": "Subtitle of the iOS system background-task progress item when tracking stopped because the user added or removed an account; no trailing period."
+  },
+  "nativePrepAccountsReadyBody": "{count} accounts are ready for the next step. Open Vizor to continue.",
+  "@nativePrepAccountsReadyBody": {
+    "description": "Body of the iOS notification shown by the OS when the preparation transactions of several accounts confirmed; {count} is always 2 or more.",
+    "placeholders": {
+      "count": {
+        "type": "String",
+        "example": "2"
+      }
+    }
+  },
+  "nativePrepCheckingConfirmations": "Checking transaction confirmations",
+  "@nativePrepCheckingConfirmations": {
+    "description": "Subtitle of the iOS system background-task progress item while it waits for migration preparation transactions to confirm; no trailing period."
+  },
+  "nativePrepCompleteTitle": "Migration preparation complete",
+  "@nativePrepCompleteTitle": {
+    "description": "Title of the iOS system background-task progress item when every migration preparation transaction confirmed."
+  },
+  "nativePrepConfirmedTitle": "Preparation transactions confirmed",
+  "@nativePrepConfirmedTitle": {
+    "description": "Title of the iOS notification and system background-task item when the current wave of migration preparation transactions confirmed."
+  },
+  "nativePrepOpenToContinueMigration": "Open Vizor to continue your migration",
+  "@nativePrepOpenToContinueMigration": {
+    "description": "Subtitle of the iOS system background-task progress item when every migration preparation transaction confirmed; no trailing period."
+  },
+  "nativePrepOpenToResume": "Open Vizor to resume",
+  "@nativePrepOpenToResume": {
+    "description": "Subtitle of the iOS system background-task progress item when iOS paused confirmation tracking; no trailing period."
+  },
+  "nativePrepOpenToStartNextStep": "Open Vizor to start the next step",
+  "@nativePrepOpenToStartNextStep": {
+    "description": "Subtitle of the iOS system background-task progress item when the current wave of migration preparation transactions confirmed; no trailing period."
+  },
+  "nativePrepOpenToStartNextStepBody": "Open Vizor to start the next step.",
+  "@nativePrepOpenToStartNextStepBody": {
+    "description": "Body of the iOS notification shown by the OS when the migration preparation transactions of one account confirmed."
+  },
+  "nativePrepProgress": "{completed} of {total} preparation transactions confirmed",
+  "@nativePrepProgress": {
+    "description": "Progress line of the iOS system background-task item while migration preparation transactions confirm, used as title or subtitle; no trailing period.",
+    "placeholders": {
+      "completed": {
+        "type": "String",
+        "example": "1"
+      },
+      "total": {
+        "type": "String",
+        "example": "3"
+      }
+    }
+  },
+  "nativePrepStoppedTitle": "Preparation stopped",
+  "@nativePrepStoppedTitle": {
+    "description": "Title of the iOS system background-task progress item when tracking stopped because the user added or removed an account."
+  },
+  "nativePrepTaskTitle": "Preparing your migration",
+  "@nativePrepTaskTitle": {
+    "description": "Title of the iOS system background-task progress item while it waits for migration preparation transactions to confirm."
+  },
+  "nativePrepTrackingPausedBody": "Open Vizor to resume migration preparation.",
+  "@nativePrepTrackingPausedBody": {
+    "description": "Body of the iOS notification shown by the OS when iOS stopped confirmation tracking for migration preparation before it finished."
+  },
+  "nativePrepTrackingPausedTitle": "Preparation tracking paused",
+  "@nativePrepTrackingPausedTitle": {
+    "description": "Title of the iOS notification and system background-task item when iOS stopped confirmation tracking for migration preparation before it finished."
+  },
+  "nativePrepUpdatesTitle": "Migration preparation updates",
+  "@nativePrepUpdatesTitle": {
+    "description": "Title of the iOS notification shown by the OS when the preparation transactions of several accounts confirmed."
   },
   "navActivity": "Activity",
   "@navActivity": {
@@ -11915,6 +12152,10 @@
   "settingsSeedScreenshotBodyLead": "Screenshots are not reliable",
   "@settingsSeedScreenshotBodyLead": {
     "description": "[security] Bold phrase inserted into the screenshot warning body, where it starts the first sentence."
+  },
+  "settingsSeedScreenshotBodyRest": ". Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.",
+  "@settingsSeedScreenshotBodyRest": {
+    "description": "[security] Rest of the screenshot warning body; it directly follows the bold lead and so starts with a period."
   },
   "settingsSeedScreenshotTitle": "Don’t take screenshots of your Secret Passphrase",
   "@settingsSeedScreenshotTitle": {
