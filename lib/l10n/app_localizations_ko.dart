@@ -234,9 +234,449 @@ class AppLocalizationsKo extends AppLocalizations {
   String get keyringUnreadableTitle => '보⁠안 저⁠장⁠소⁠를 읽⁠을 수 없⁠어⁠요';
 
   @override
+  String keystoneAccountsFound(int count) {
+    return '계⁠정 $count⁠개⁠를 찾⁠았⁠어⁠요';
+  }
+
+  @override
+  String get keystoneBackWelcome => '시⁠작 화⁠면';
+
+  @override
+  String get keystoneBirthdayDatePlaceholder => 'mm/dd/yyyy';
+
+  @override
+  String get keystoneBirthdayEstimateError => '지⁠갑 생⁠성 높⁠이⁠를 추⁠정⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get keystoneBirthdayEstimating => '추⁠정⁠하⁠는 중...';
+
+  @override
+  String get keystoneBirthdayHeightHint => '블⁠록 높⁠이';
+
+  @override
+  String get keystoneBirthdayInvalidHeight => '올⁠바⁠른 블⁠록 높⁠이⁠가 아⁠닌 것 같⁠아⁠요.';
+
+  @override
+  String get keystoneBirthdayMetadataError =>
+      '지⁠갑 생⁠성 높⁠이 정⁠보⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get keystoneBirthdayStopSyncing => '동⁠기⁠화⁠를 중⁠지⁠하⁠는 중...';
+
+  @override
+  String get keystoneBirthdaySubtitle => '알⁠려 주⁠시⁠면 지⁠갑⁠을 더 빨⁠리 가⁠져⁠올 수 있⁠어⁠요.';
+
+  @override
+  String get keystoneBirthdayTabBlockHeight => '블⁠록 높⁠이 입⁠력';
+
+  @override
+  String get keystoneBirthdayTabDate => '날⁠짜 입⁠력';
+
+  @override
+  String get keystoneBirthdayTitle => '지⁠갑⁠을 대⁠략 언⁠제 만⁠들⁠었⁠나⁠요?';
+
+  @override
+  String get keystoneBirthdayUnknown => '기⁠억⁠나⁠지 않⁠아⁠요';
+
+  @override
+  String get keystoneCameraDeniedBody =>
+      '다⁠시 요⁠청⁠하⁠거⁠나\n시⁠스⁠템 설⁠정⁠에⁠서 직⁠접 허⁠용⁠하⁠세⁠요.';
+
+  @override
+  String get keystoneCameraDeniedTitle => '카⁠메⁠라 접⁠근⁠을 거⁠부⁠했⁠어⁠요';
+
+  @override
+  String get keystoneCameraEnableBody =>
+      'Keystone⁠을 연⁠결⁠하⁠려⁠면 카⁠메⁠라⁠가 필⁠요⁠해⁠요.\n나⁠중⁠에 설⁠정⁠에⁠서 언⁠제⁠든 되⁠돌⁠릴 수 있⁠어⁠요.';
+
+  @override
+  String get keystoneCameraEnableTitle => '카⁠메⁠라 접⁠근 허⁠용';
+
+  @override
+  String get keystoneCameraRequestAgain => '다⁠시 요⁠청';
+
+  @override
+  String get keystoneCameraRestrictedBody =>
+      '스⁠크⁠린 타⁠임 또⁠는 기⁠기 관⁠리⁠가\n카⁠메⁠라⁠를 차⁠단⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get keystoneCameraRestrictedTitle => '카⁠메⁠라 접⁠근⁠이 제⁠한⁠되⁠어 있⁠어⁠요';
+
+  @override
+  String get keystoneCameraTryAgain => '다⁠시 시⁠도';
+
+  @override
+  String get keystoneCameraUnavailableBody =>
+      'Keystone 가⁠져⁠오⁠기⁠는 카⁠메⁠라 QR 스⁠캔⁠만 지⁠원⁠해⁠요.\n카⁠메⁠라⁠를 연⁠결⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get keystoneCameraUnavailableTitle => '카⁠메⁠라⁠를 사⁠용⁠할 수 없⁠어⁠요';
+
+  @override
+  String get keystoneConfirmSelection => '선⁠택 확⁠인';
+
+  @override
+  String get keystoneConnectTitle => 'Keystone 연⁠결';
+
+  @override
+  String get keystoneContinue => '계⁠속';
+
+  @override
+  String get keystoneFirmwareBody =>
+      'Keystone⁠이 최⁠신 Cypherpunk 펌⁠웨⁠어⁠인⁠지 확⁠인⁠해 주⁠세⁠요. ';
+
+  @override
+  String get keystoneFirmwareDownloadSemantics => 'Keystone 펌⁠웨⁠어 다⁠운⁠로⁠드';
+
+  @override
+  String get keystoneFirmwareLinkLabel => '링⁠크';
+
+  @override
+  String get keystoneFirmwareTitle => 'Keystone 펌⁠웨⁠어 확⁠인';
+
+  @override
+  String get keystoneImReadyNow => '준⁠비⁠됐⁠어⁠요';
+
+  @override
+  String get keystoneImporting => '가⁠져⁠오⁠는 중...';
+
+  @override
+  String get keystoneOnVizor => 'Vizor⁠에⁠서';
+
+  @override
+  String get keystoneOnYourKeystone => 'Keystone⁠에⁠서';
+
+  @override
+  String get keystonePrepareSubtitle => 'Keystone 지⁠갑⁠을 준⁠비⁠해 주⁠세⁠요';
+
+  @override
+  String get keystonePrepareToConnectTitle => '연⁠결 준⁠비';
+
+  @override
+  String get keystoneScanCameraRequired =>
+      'Keystone 가⁠져⁠오⁠기⁠는 카⁠메⁠라⁠로 QR⁠을 스⁠캔⁠하⁠는 방⁠식⁠만 지⁠원⁠해⁠요. 카⁠메⁠라⁠를 연⁠결⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get keystoneScanCaption => 'Keystone 계⁠정 QR⁠을 스⁠캔⁠하⁠세⁠요';
+
+  @override
+  String get keystoneScanDecodeFailed =>
+      '이 QR 코⁠드⁠를 Keystone Zcash 계⁠정⁠으⁠로 읽⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get keystoneScanKeepSteady =>
+      'QR 코⁠드⁠가 화⁠면⁠에 전⁠부 보⁠이⁠도⁠록 움⁠직⁠이⁠지 말⁠고 유⁠지⁠하⁠세⁠요.';
+
+  @override
+  String get keystoneScanNoAccounts =>
+      '이 Keystone QR⁠에⁠서 Zcash 계⁠정⁠을 찾⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get keystoneScanOpenAccountQr =>
+      'Keystone⁠에⁠서 Zcash 계⁠정 QR⁠을 열⁠고 다⁠시 스⁠캔⁠하⁠세⁠요.';
+
+  @override
+  String keystoneScanProgress(int progress) {
+    return '스⁠캔 중... $progress%';
+  }
+
+  @override
+  String get keystoneScanReadingAccounts => '계⁠정⁠을 읽⁠는 중...';
+
+  @override
+  String get keystoneScanTitle => 'QR 코⁠드 스⁠캔';
+
+  @override
+  String get keystoneSelectAccountTitle => '계⁠정 선⁠택';
+
+  @override
+  String get keystoneStepCustomiseWallet => '지⁠갑 꾸⁠미⁠기';
+
+  @override
+  String get keystoneStepHowToConnect => '연⁠결 방⁠법';
+
+  @override
+  String get keystoneStepOpenSoftwareWallet =>
+      '오⁠른⁠쪽 위 •••를 탭⁠한 다⁠음 Connect software wallet⁠을 선⁠택⁠하⁠세⁠요.';
+
+  @override
+  String get keystoneStepScanDynamicQr =>
+      'Keystone⁠에 표⁠시⁠된 동⁠적 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요.';
+
+  @override
+  String get keystoneStepSelectAccount => '계⁠정 선⁠택';
+
+  @override
+  String get keystoneStepSelectVizor => 'Vizor(또⁠는 ZODL)를 선⁠택⁠하⁠세⁠요';
+
+  @override
+  String get keystoneStepSetPassword => '비⁠밀⁠번⁠호 설⁠정';
+
+  @override
+  String get keystoneStepWalletBirthdayHeight => '지⁠갑 생⁠성 높⁠이';
+
+  @override
   String languageSystemOption(String language) {
     return '시⁠스⁠템 ($language)';
   }
+
+  @override
+  String get ledgerAccountIndexHint =>
+      '이 Ledger 계⁠정⁠에 다⁠른 인⁠덱⁠스⁠를 사⁠용⁠한 적⁠이 없⁠다⁠면 0⁠으⁠로 두⁠세⁠요.';
+
+  @override
+  String get ledgerAccountIndexLabel => '계⁠정 인⁠덱⁠스 (0–100)';
+
+  @override
+  String get ledgerAddAccountNote =>
+      'Vizor⁠에⁠서 잔⁠액⁠과 활⁠동⁠을 볼 수 있⁠어⁠요. 거⁠래⁠는 여⁠전⁠히 Ledger⁠에⁠서 승⁠인⁠해⁠야 해⁠요.';
+
+  @override
+  String get ledgerAddAccountTitle => 'Ledger 계⁠정 추⁠가';
+
+  @override
+  String get ledgerAdvancedOptions => '고⁠급 옵⁠션';
+
+  @override
+  String get ledgerBackAddAccount => '계⁠정 추⁠가';
+
+  @override
+  String get ledgerBalanceActivityNote =>
+      'Vizor⁠에⁠서 잔⁠액⁠과 활⁠동⁠을 확⁠인⁠하⁠세⁠요.\nLedger⁠에⁠서 거⁠래⁠를 승⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get ledgerBleDeclinedOpen =>
+      'Ledger⁠에⁠서 Zcash 앱 열⁠기⁠를 거⁠부⁠했⁠어⁠요. 준⁠비⁠되⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerBleDeclinedShare =>
+      'Ledger⁠에⁠서 공⁠유⁠를 거⁠부⁠했⁠어⁠요. 준⁠비⁠되⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerBleReadFailedTryAgain =>
+      'Vizor⁠에⁠서 이 Ledger 계⁠정⁠을 읽⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerBleReadFailedUsb =>
+      'Vizor⁠에⁠서 이 Ledger 계⁠정⁠을 읽⁠지 못⁠했⁠어⁠요. USB 케⁠이⁠블⁠로 Ledger⁠를 다⁠시 연⁠결⁠하⁠고 PIN⁠으⁠로 잠⁠금⁠을 해⁠제⁠한 다⁠음 Zcash 앱⁠을 열⁠어 주⁠세⁠요. 그⁠런 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerBluetoothConnection => '블⁠루⁠투⁠스 연⁠결';
+
+  @override
+  String get ledgerBluetoothPermissionRequired =>
+      'Ledger⁠를 찾⁠으⁠려⁠면 블⁠루⁠투⁠스 권⁠한⁠이 필⁠요⁠해⁠요. 설⁠정⁠에⁠서 허⁠용⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerCancelFailed => '취⁠소⁠를 마⁠치⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerCancellingRequest => '요⁠청⁠을 취⁠소⁠하⁠는 중';
+
+  @override
+  String get ledgerCancellingTheRequest => 'Ledger 요⁠청⁠을 취⁠소⁠하⁠는 중…';
+
+  @override
+  String get ledgerCheckingBluetoothAccess => '블⁠루⁠투⁠스 접⁠근 권⁠한⁠을 확⁠인⁠하⁠는 중…';
+
+  @override
+  String get ledgerChooseAnother => '다⁠른 Ledger 선⁠택';
+
+  @override
+  String get ledgerCleanupFailed => '정⁠리⁠를 마⁠치⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerConfirmOpeningZcash => 'Ledger⁠에⁠서 Zcash 열⁠기⁠를 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get ledgerConnect => 'Ledger 연⁠결';
+
+  @override
+  String get ledgerConnectSubtitle => 'Ledger 지⁠갑⁠을 준⁠비⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerConnectUsbCable => 'USB 케⁠이⁠블⁠로 연⁠결⁠하⁠세⁠요.';
+
+  @override
+  String ledgerConnectingTo(String device) {
+    return '$device⁠에 연⁠결⁠하⁠는 중';
+  }
+
+  @override
+  String get ledgerConnectionHelp => '연⁠결 도⁠움⁠말';
+
+  @override
+  String get ledgerCouldNotConnect => 'Ledger⁠를 연⁠결⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get ledgerDiscoveryErrorFallback => '다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerDiscoveryErrorTitle => 'Ledger⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get ledgerDiscoveryFailed =>
+      'Vizor⁠에⁠서 Ledger 기⁠기⁠를 찾⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerEnableBluetoothNearby =>
+      '블⁠루⁠투⁠스⁠를 켜⁠고 Ledger⁠를 가⁠까⁠이⁠에 두⁠세⁠요.';
+
+  @override
+  String get ledgerErrorAlreadyAdded => '이 Ledger 계⁠정⁠은 이⁠미 Vizor⁠에 있⁠어⁠요.';
+
+  @override
+  String get ledgerErrorCannotReadCheckConnection =>
+      'Vizor⁠에⁠서 이 Ledger 계⁠정⁠을 읽⁠지 못⁠했⁠어⁠요. 연⁠결⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String ledgerErrorCannotReadWithInstruction(String instruction) {
+    return 'Vizor⁠에⁠서 이 Ledger 계⁠정⁠을 읽⁠지 못⁠했⁠어⁠요. $instruction 그⁠런 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+  }
+
+  @override
+  String ledgerErrorConnectAndUnlock(String instruction) {
+    return 'Ledger⁠를 연⁠결⁠하⁠고 잠⁠금⁠을 해⁠제⁠해 주⁠세⁠요. $instruction';
+  }
+
+  @override
+  String ledgerErrorUnlock(String instruction) {
+    return 'Ledger⁠의 잠⁠금⁠을 해⁠제⁠해 주⁠세⁠요. $instruction';
+  }
+
+  @override
+  String get ledgerErrorViewingKeyDeclined =>
+      '[security] Ledger⁠에⁠서 뷰⁠잉 키 요⁠청⁠을 거⁠부⁠했⁠어⁠요. 준⁠비⁠되⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerErrorViewingKeyRejected =>
+      'Ledger⁠에⁠서 뷰⁠잉 키 요⁠청⁠을 거⁠부⁠했⁠어⁠요.';
+
+  @override
+  String get ledgerFind => 'Ledger 찾⁠기';
+
+  @override
+  String get ledgerFindMyLedger => '내 Ledger 찾⁠기';
+
+  @override
+  String ledgerKeepAppOpen(String appName) {
+    return '$appName 앱⁠을 열⁠어 둔 채⁠로 유⁠지⁠하⁠세⁠요.';
+  }
+
+  @override
+  String get ledgerKeepConnectedUntilCancelled =>
+      '현⁠재 요⁠청⁠이 취⁠소⁠될 때⁠까⁠지 Ledger⁠를 연⁠결⁠해 두⁠세⁠요.';
+
+  @override
+  String get ledgerKeepConnectedWhileChecking =>
+      'Vizor⁠가 앱⁠을 확⁠인⁠하⁠는 동⁠안 Ledger⁠를 연⁠결⁠해 두⁠세⁠요.';
+
+  @override
+  String get ledgerKeepNearbyUnlocked =>
+      'Ledger⁠를 가⁠까⁠이⁠에 두⁠고 잠⁠금⁠을 해⁠제⁠한 상⁠태⁠로 블⁠루⁠투⁠스⁠를 켜 두⁠세⁠요.';
+
+  @override
+  String get ledgerKeepZcashOpen => 'Zcash 앱⁠을 열⁠어 둔 채⁠로 유⁠지⁠하⁠세⁠요.';
+
+  @override
+  String get ledgerMacosBluetoothPrompt =>
+      'macOS⁠에⁠서 블⁠루⁠투⁠스 접⁠근 권⁠한⁠을 요⁠청⁠할 수 있⁠어⁠요. 요⁠청⁠이 나⁠타⁠나⁠면 Vizor⁠에 접⁠근⁠을 허⁠용⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerNoDevicesFound => 'Ledger 기⁠기⁠를 찾⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get ledgerNoDevicesFoundHint =>
+      'Ledger⁠의 잠⁠금⁠이 해⁠제⁠되⁠어 있⁠는⁠지 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerNoneFoundDesktop =>
+      'Ledger⁠를 찾⁠지 못⁠했⁠어⁠요. Ledger⁠의 잠⁠금⁠을 해⁠제⁠하⁠고 블⁠루⁠투⁠스⁠를 켠 다⁠음 가⁠까⁠이⁠에 두⁠세⁠요. 그⁠런 다⁠음 다⁠시 검⁠색⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerOnYourLedger => 'Ledger⁠에⁠서';
+
+  @override
+  String get ledgerOpenBluetoothSettingsManually =>
+      '블⁠루⁠투⁠스 설⁠정⁠을 직⁠접 열⁠어 기⁠존 페⁠어⁠링⁠을 삭⁠제⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerOpenZcashThenTryAgain => 'Zcash 앱⁠을 연 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerReturningToOptions => '연⁠결 옵⁠션⁠으⁠로 돌⁠아⁠가⁠는 중…';
+
+  @override
+  String get ledgerSearchAgain => '다⁠시 검⁠색';
+
+  @override
+  String get ledgerSearchTakesAWhile => '몇 초 정⁠도 걸⁠릴 수 있⁠어⁠요.';
+
+  @override
+  String get ledgerSearchingDevices => 'Ledger 기⁠기⁠를 검⁠색⁠하⁠는 중…';
+
+  @override
+  String get ledgerSearchingNearby => '주⁠변 Ledger⁠를 검⁠색⁠하⁠는 중…';
+
+  @override
+  String get ledgerSelectYourLedger => '사⁠용⁠할 Ledger⁠를 선⁠택⁠하⁠세⁠요.';
+
+  @override
+  String get ledgerSheetAddFailedTitle => 'Ledger 계⁠정⁠을 추⁠가⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get ledgerSheetCancelFailedTitle => 'Ledger 요⁠청⁠을 취⁠소⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get ledgerSheetDeclinedTitle => '요⁠청⁠이 거⁠부⁠됐⁠어⁠요';
+
+  @override
+  String get ledgerStepAddAccount => '계⁠정 추⁠가';
+
+  @override
+  String get ledgerStepApproveViewingKey => '뷰⁠잉 키 승⁠인';
+
+  @override
+  String get ledgerStepCustomiseWallet => '지⁠갑 꾸⁠미⁠기';
+
+  @override
+  String ledgerStepOpenApp(String appName) {
+    return '$appName 열⁠기';
+  }
+
+  @override
+  String get ledgerStepOpenZcash => 'Zcash 열⁠기';
+
+  @override
+  String get ledgerStepSetPassword => '비⁠밀⁠번⁠호 설⁠정';
+
+  @override
+  String get ledgerStepWalletBirthdayHeight => '지⁠갑 생⁠성 높⁠이';
+
+  @override
+  String get ledgerStoppingSearch => '검⁠색⁠을 중⁠지⁠하⁠는 중';
+
+  @override
+  String get ledgerSupportedDevices => '지⁠원 기⁠기';
+
+  @override
+  String get ledgerTransportBluetooth => '블⁠루⁠투⁠스';
+
+  @override
+  String get ledgerTransportUsb => 'USB';
+
+  @override
+  String get ledgerTryAgain => '다⁠시 시⁠도';
+
+  @override
+  String get ledgerUnlockBluetoothNearby =>
+      'Ledger⁠의 잠⁠금⁠을 해⁠제⁠하⁠고 블⁠루⁠투⁠스⁠를 켠 다⁠음 가⁠까⁠이⁠에 두⁠세⁠요.';
+
+  @override
+  String get ledgerUnlockWithPin => 'PIN⁠으⁠로 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
+
+  @override
+  String get ledgerVizorCheckingZcash => 'Vizor⁠가 Zcash 앱⁠을 확⁠인⁠하⁠고 있⁠어⁠요.';
 
   @override
   String get lockBodyPaused =>
@@ -383,4 +823,135 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get txFeeInfoTitle => '거⁠래 수⁠수⁠료';
+
+  @override
+  String walletLinkAccountsFound(int count) {
+    return '계⁠정 $count⁠개⁠를 찾⁠았⁠어⁠요';
+  }
+
+  @override
+  String walletLinkAccountsReadySubtitle(int ready, int imported) {
+    return '가⁠져⁠올 수 있⁠는 계⁠정 $ready⁠개, 이⁠미 가⁠져⁠온 계⁠정 $imported⁠개';
+  }
+
+  @override
+  String walletLinkAlreadyImported(int count) {
+    return '이⁠미 가⁠져⁠온 항⁠목 $count⁠개';
+  }
+
+  @override
+  String get walletLinkCameraRequired =>
+      '데⁠스⁠크⁠탑 연⁠결⁠을 스⁠캔⁠하⁠려⁠면 이 기⁠기⁠에 카⁠메⁠라⁠가 필⁠요⁠해⁠요.';
+
+  @override
+  String walletLinkContactsFound(int count) {
+    return '연⁠락⁠처 $count⁠개⁠를 찾⁠았⁠어⁠요';
+  }
+
+  @override
+  String walletLinkContactsReadySubtitle(int found, int imported) {
+    return '연⁠락⁠처 $found⁠개⁠를 찾⁠았⁠고, 이⁠미 가⁠져⁠온 연⁠락⁠처⁠는 $imported⁠개⁠예⁠요.';
+  }
+
+  @override
+  String get walletLinkContinue => '계⁠속';
+
+  @override
+  String get walletLinkDeselectAll => '모⁠두 선⁠택 해⁠제';
+
+  @override
+  String get walletLinkErrorExpiredBody =>
+      '컴⁠퓨⁠터⁠의 코⁠드⁠가 만⁠료⁠됐⁠어⁠요. 데⁠스⁠크⁠탑⁠에⁠서 새 코⁠드 생⁠성⁠을 선⁠택⁠하⁠고 다⁠시 스⁠캔⁠해 주⁠세⁠요.';
+
+  @override
+  String get walletLinkErrorExpiredTitle => '링⁠크⁠가 만⁠료⁠됐⁠어⁠요';
+
+  @override
+  String get walletLinkErrorFailedBody =>
+      '데⁠스⁠크⁠탑⁠에 코⁠드⁠가 계⁠속 표⁠시⁠되⁠어 있⁠는⁠지 확⁠인⁠한 뒤 다⁠시 스⁠캔⁠해 주⁠세⁠요.';
+
+  @override
+  String get walletLinkErrorFailedTitle => '이 링⁠크⁠를 열 수 없⁠어⁠요';
+
+  @override
+  String get walletLinkErrorInvalidBody =>
+      '스⁠캔⁠한 코⁠드⁠는 Vizor 데⁠스⁠크⁠탑 연⁠결 코⁠드⁠가 아⁠니⁠에⁠요. 컴⁠퓨⁠터⁠에⁠서 설⁠정 → Vizor 모⁠바⁠일 연⁠결⁠을 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get walletLinkErrorInvalidTitle => '잘⁠못⁠된 QR 코⁠드';
+
+  @override
+  String get walletLinkGoBack => '돌⁠아⁠가⁠기';
+
+  @override
+  String walletLinkImportContacts(int count) {
+    return '연⁠락⁠처 $count⁠개 가⁠져⁠오⁠기';
+  }
+
+  @override
+  String get walletLinkImportContactsTitle => '연⁠락⁠처 가⁠져⁠오⁠기';
+
+  @override
+  String get walletLinkImporting => '가⁠져⁠오⁠는 중...';
+
+  @override
+  String get walletLinkIntroNotice =>
+      '지⁠갑⁠과 연⁠락⁠처⁠를 휴⁠대⁠폰⁠으⁠로 복⁠사⁠해⁠요. 컴⁠퓨⁠터⁠에⁠서⁠는 아⁠무⁠것⁠도 바⁠뀌⁠지 않⁠으⁠며 둘 다 사⁠용⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get walletLinkIntroReady => '스⁠캔⁠할 준⁠비⁠가 됐⁠어⁠요';
+
+  @override
+  String get walletLinkIntroSubtitle => '데⁠스⁠크⁠탑 지⁠갑⁠을 이 휴⁠대⁠폰⁠으⁠로 복⁠사⁠하⁠세⁠요';
+
+  @override
+  String get walletLinkIntroTitle => '데⁠스⁠크⁠탑⁠과 연⁠결';
+
+  @override
+  String walletLinkLinkAccounts(int count) {
+    return '계⁠정 $count⁠개 연⁠결';
+  }
+
+  @override
+  String get walletLinkNothingNewSubtitle =>
+      '이 데⁠스⁠크⁠탑 연⁠결⁠에⁠서 새⁠로 가⁠져⁠올 항⁠목⁠이 없⁠어⁠요.';
+
+  @override
+  String get walletLinkNothingToImportBody =>
+      '이 데⁠스⁠크⁠탑 연⁠결⁠의 모⁠든 항⁠목⁠이 이⁠미 이 휴⁠대⁠폰⁠에 있⁠어⁠요.';
+
+  @override
+  String get walletLinkNothingToImportTitle => '가⁠져⁠올 항⁠목⁠이 없⁠어⁠요';
+
+  @override
+  String get walletLinkReadingLink => '링⁠크⁠를 읽⁠는 중...';
+
+  @override
+  String get walletLinkScanAgain => '다⁠시 스⁠캔';
+
+  @override
+  String get walletLinkScanCaption => 'Vizor 데⁠스⁠크⁠탑 QR⁠을 스⁠캔⁠하⁠세⁠요';
+
+  @override
+  String get walletLinkScanSubtitleDesktop => '데⁠스⁠크⁠탑⁠에 표⁠시⁠된 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
+
+  @override
+  String get walletLinkScanTitle => 'QR 코⁠드 스⁠캔';
+
+  @override
+  String get walletLinkSelectAccountTitle => '계⁠정 선⁠택';
+
+  @override
+  String get walletLinkSelectAll => '모⁠두 선⁠택';
+
+  @override
+  String get walletLinkStepOpenSettings => '설⁠정 → Vizor 모⁠바⁠일 연⁠결⁠로 이⁠동⁠하⁠세⁠요';
+
+  @override
+  String get walletLinkStepScanQr =>
+      '다⁠음 화⁠면⁠에⁠서 데⁠스⁠크⁠탑⁠에 표⁠시⁠된 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요.';
+
+  @override
+  String get walletLinkStepUnlockDesktop =>
+      'Vizor 데⁠스⁠크⁠탑 앱⁠을 열⁠고 잠⁠금⁠을 해⁠제⁠하⁠세⁠요';
 }

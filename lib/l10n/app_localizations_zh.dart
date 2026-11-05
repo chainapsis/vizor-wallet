@@ -229,9 +229,424 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keyringUnreadableTitle => '无法读取安全存储';
 
   @override
+  String keystoneAccountsFound(int count) {
+    return '找到 $count 个账户';
+  }
+
+  @override
+  String get keystoneBackWelcome => '欢迎页';
+
+  @override
+  String get keystoneBirthdayDatePlaceholder => 'mm/dd/yyyy';
+
+  @override
+  String get keystoneBirthdayEstimateError => '无法估算钱包创建高度。';
+
+  @override
+  String get keystoneBirthdayEstimating => '正在估算...';
+
+  @override
+  String get keystoneBirthdayHeightHint => '区块高度';
+
+  @override
+  String get keystoneBirthdayInvalidHeight => '这似乎不是有效的区块高度。';
+
+  @override
+  String get keystoneBirthdayMetadataError => '无法加载钱包创建高度信息。';
+
+  @override
+  String get keystoneBirthdayStopSyncing => '正在停止同步...';
+
+  @override
+  String get keystoneBirthdaySubtitle => '这有助于我们更快地导入你的钱包。';
+
+  @override
+  String get keystoneBirthdayTabBlockHeight => '输入区块高度';
+
+  @override
+  String get keystoneBirthdayTabDate => '输入日期';
+
+  @override
+  String get keystoneBirthdayTitle => '你大约是什么时候创建钱包的？';
+
+  @override
+  String get keystoneBirthdayUnknown => '我不记得了';
+
+  @override
+  String get keystoneCameraDeniedBody => '请重新请求，或在系统设置中\n手动开启。';
+
+  @override
+  String get keystoneCameraDeniedTitle => '你已拒绝相机权限';
+
+  @override
+  String get keystoneCameraEnableBody => '连接 Keystone 需要使用相机。\n你之后可随时在设置中更改。';
+
+  @override
+  String get keystoneCameraEnableTitle => '启用相机权限';
+
+  @override
+  String get keystoneCameraRequestAgain => '重新请求';
+
+  @override
+  String get keystoneCameraRestrictedBody => '屏幕使用时间或设备管理\n正在阻止使用相机。';
+
+  @override
+  String get keystoneCameraRestrictedTitle => '相机访问受限';
+
+  @override
+  String get keystoneCameraTryAgain => '重试';
+
+  @override
+  String get keystoneCameraUnavailableBody =>
+      'Keystone 导入仅支持摄像头扫描二维码。\n请连接摄像头后重试。';
+
+  @override
+  String get keystoneCameraUnavailableTitle => '相机不可用';
+
+  @override
+  String get keystoneConfirmSelection => '确认选择';
+
+  @override
+  String get keystoneConnectTitle => '连接 Keystone';
+
+  @override
+  String get keystoneContinue => '继续';
+
+  @override
+  String get keystoneFirmwareBody => '请确认你的 Keystone 已升级到最新的 Cypherpunk 固件。 ';
+
+  @override
+  String get keystoneFirmwareDownloadSemantics => '下载 Keystone 固件';
+
+  @override
+  String get keystoneFirmwareLinkLabel => '链接';
+
+  @override
+  String get keystoneFirmwareTitle => '检查 Keystone 固件';
+
+  @override
+  String get keystoneImReadyNow => '我已准备好';
+
+  @override
+  String get keystoneImporting => '正在导入...';
+
+  @override
+  String get keystoneOnVizor => '在 Vizor 中';
+
+  @override
+  String get keystoneOnYourKeystone => '在 Keystone 上';
+
+  @override
+  String get keystonePrepareSubtitle => '请准备好你的 Keystone 钱包';
+
+  @override
+  String get keystonePrepareToConnectTitle => '准备连接';
+
+  @override
+  String get keystoneScanCameraRequired =>
+      'Keystone 导入仅支持使用摄像头扫描二维码。请连接摄像头后重试。';
+
+  @override
+  String get keystoneScanCaption => '扫描 Keystone 账户二维码';
+
+  @override
+  String get keystoneScanDecodeFailed => '无法将此二维码解码为 Keystone Zcash 账户。';
+
+  @override
+  String get keystoneScanKeepSteady => '请保持二维码稳定并完整显示在画面中。';
+
+  @override
+  String get keystoneScanNoAccounts => '在此 Keystone 二维码中未找到 Zcash 账户。';
+
+  @override
+  String get keystoneScanOpenAccountQr => '请在 Keystone 上打开 Zcash 账户二维码，然后重新扫描。';
+
+  @override
+  String keystoneScanProgress(int progress) {
+    return '正在扫描... $progress%';
+  }
+
+  @override
+  String get keystoneScanReadingAccounts => '正在读取账户...';
+
+  @override
+  String get keystoneScanTitle => '扫描二维码';
+
+  @override
+  String get keystoneSelectAccountTitle => '选择账户';
+
+  @override
+  String get keystoneStepCustomiseWallet => '自定义钱包';
+
+  @override
+  String get keystoneStepHowToConnect => '连接方法';
+
+  @override
+  String get keystoneStepOpenSoftwareWallet =>
+      '点击右上角的 •••，然后选择 Connect software wallet。';
+
+  @override
+  String get keystoneStepScanDynamicQr => '扫描 Keystone 上显示的动态二维码。';
+
+  @override
+  String get keystoneStepSelectAccount => '选择账户';
+
+  @override
+  String get keystoneStepSelectVizor => '选择 Vizor（或 ZODL）';
+
+  @override
+  String get keystoneStepSetPassword => '设置密码';
+
+  @override
+  String get keystoneStepWalletBirthdayHeight => '钱包创建高度';
+
+  @override
   String languageSystemOption(String language) {
     return '系统（$language）';
   }
+
+  @override
+  String get ledgerAccountIndexHint => '除非此 Ledger 账户使用过其他索引，否则请保持为 0。';
+
+  @override
+  String get ledgerAccountIndexLabel => '账户索引（0–100）';
+
+  @override
+  String get ledgerAddAccountNote => '你可在 Vizor 中查看余额和活动。交易仍需在 Ledger 上批准。';
+
+  @override
+  String get ledgerAddAccountTitle => '添加 Ledger 账户';
+
+  @override
+  String get ledgerAdvancedOptions => '高级选项';
+
+  @override
+  String get ledgerBackAddAccount => '添加账户';
+
+  @override
+  String get ledgerBalanceActivityNote => '在 Vizor 中查看余额和活动。\n在 Ledger 上批准交易。';
+
+  @override
+  String get ledgerBleDeclinedOpen => '你在 Ledger 上拒绝了打开 Zcash。准备好后请重试。';
+
+  @override
+  String get ledgerBleDeclinedShare => '你在 Ledger 上拒绝了共享。准备好后请重试。';
+
+  @override
+  String get ledgerBleReadFailedTryAgain => 'Vizor 无法读取此 Ledger 账户。请重试。';
+
+  @override
+  String get ledgerBleReadFailedUsb =>
+      'Vizor 无法读取此 Ledger 账户。请用 USB 数据线重新连接 Ledger，使用 PIN 码解锁，并打开 Zcash 应用，然后重试。';
+
+  @override
+  String get ledgerBluetoothConnection => '蓝牙连接';
+
+  @override
+  String get ledgerBluetoothPermissionRequired =>
+      '查找 Ledger 需要蓝牙权限。请在设置中允许，然后重试。';
+
+  @override
+  String get ledgerCancelFailed => '无法完成取消。请重试。';
+
+  @override
+  String get ledgerCancellingRequest => '正在取消请求';
+
+  @override
+  String get ledgerCancellingTheRequest => '正在取消 Ledger 请求…';
+
+  @override
+  String get ledgerCheckingBluetoothAccess => '正在检查蓝牙权限…';
+
+  @override
+  String get ledgerChooseAnother => '选择其他 Ledger';
+
+  @override
+  String get ledgerCleanupFailed => '无法完成清理。请重试。';
+
+  @override
+  String get ledgerConfirmOpeningZcash => '请在 Ledger 上确认打开 Zcash。';
+
+  @override
+  String get ledgerConnect => '连接 Ledger';
+
+  @override
+  String get ledgerConnectSubtitle => '请准备好你的 Ledger 钱包。';
+
+  @override
+  String get ledgerConnectUsbCable => '使用 USB 数据线连接。';
+
+  @override
+  String ledgerConnectingTo(String device) {
+    return '正在连接 $device';
+  }
+
+  @override
+  String get ledgerConnectionHelp => '连接帮助';
+
+  @override
+  String get ledgerCouldNotConnect => '无法连接 Ledger';
+
+  @override
+  String get ledgerDiscoveryErrorFallback => '请重试。';
+
+  @override
+  String get ledgerDiscoveryErrorTitle => '无法连接到你的 Ledger';
+
+  @override
+  String get ledgerDiscoveryFailed => 'Vizor 未能找到 Ledger 设备。请重试。';
+
+  @override
+  String get ledgerEnableBluetoothNearby => '开启蓝牙，并将 Ledger 放在附近。';
+
+  @override
+  String get ledgerErrorAlreadyAdded => '此 Ledger 账户已在 Vizor 中。';
+
+  @override
+  String get ledgerErrorCannotReadCheckConnection =>
+      'Vizor 无法读取此 Ledger 账户。请检查连接后重试。';
+
+  @override
+  String ledgerErrorCannotReadWithInstruction(String instruction) {
+    return 'Vizor 无法读取此 Ledger 账户。$instruction然后请重试。';
+  }
+
+  @override
+  String ledgerErrorConnectAndUnlock(String instruction) {
+    return '请连接并解锁你的 Ledger。$instruction';
+  }
+
+  @override
+  String ledgerErrorUnlock(String instruction) {
+    return '请解锁你的 Ledger。$instruction';
+  }
+
+  @override
+  String get ledgerErrorViewingKeyDeclined =>
+      '[security] 你在 Ledger 上拒绝了查看密钥请求。准备好后请重试。';
+
+  @override
+  String get ledgerErrorViewingKeyRejected => '你在 Ledger 上拒绝了查看密钥请求。';
+
+  @override
+  String get ledgerFind => '查找 Ledger';
+
+  @override
+  String get ledgerFindMyLedger => '查找我的 Ledger';
+
+  @override
+  String ledgerKeepAppOpen(String appName) {
+    return '请保持 $appName 应用处于打开状态。';
+  }
+
+  @override
+  String get ledgerKeepConnectedUntilCancelled => '请保持 Ledger 连接，直到当前请求被取消。';
+
+  @override
+  String get ledgerKeepConnectedWhileChecking => 'Vizor 检查应用期间，请保持 Ledger 连接。';
+
+  @override
+  String get ledgerKeepNearbyUnlocked => '请将 Ledger 放在附近并保持解锁，同时开启蓝牙。';
+
+  @override
+  String get ledgerKeepZcashOpen => '请保持 Zcash 应用处于打开状态。';
+
+  @override
+  String get ledgerMacosBluetoothPrompt =>
+      'macOS 可能会请求蓝牙权限。如果出现提示，请允许 Vizor 访问。';
+
+  @override
+  String get ledgerNoDevicesFound => '未找到 Ledger 设备';
+
+  @override
+  String get ledgerNoDevicesFoundHint => '请确认 Ledger 已解锁，然后重试。';
+
+  @override
+  String get ledgerNoneFoundDesktop =>
+      '未找到 Ledger。请解锁 Ledger，开启蓝牙并将其放在附近，然后重新搜索。';
+
+  @override
+  String get ledgerOnYourLedger => '在 Ledger 上';
+
+  @override
+  String get ledgerOpenBluetoothSettingsManually => '请手动打开蓝牙设置以移除旧的配对。';
+
+  @override
+  String get ledgerOpenZcashThenTryAgain => '请打开 Zcash 应用，然后重试。';
+
+  @override
+  String get ledgerReturningToOptions => '正在返回连接选项…';
+
+  @override
+  String get ledgerSearchAgain => '重新搜索';
+
+  @override
+  String get ledgerSearchTakesAWhile => '这可能需要几秒钟。';
+
+  @override
+  String get ledgerSearchingDevices => '正在搜索 Ledger 设备…';
+
+  @override
+  String get ledgerSearchingNearby => '正在搜索附近的 Ledger…';
+
+  @override
+  String get ledgerSelectYourLedger => '请选择你的 Ledger。';
+
+  @override
+  String get ledgerSheetAddFailedTitle => '无法添加 Ledger 账户';
+
+  @override
+  String get ledgerSheetCancelFailedTitle => '无法取消 Ledger 请求';
+
+  @override
+  String get ledgerSheetDeclinedTitle => '请求已被拒绝';
+
+  @override
+  String get ledgerStepAddAccount => '添加账户';
+
+  @override
+  String get ledgerStepApproveViewingKey => '批准查看密钥';
+
+  @override
+  String get ledgerStepCustomiseWallet => '自定义钱包';
+
+  @override
+  String ledgerStepOpenApp(String appName) {
+    return '打开 $appName';
+  }
+
+  @override
+  String get ledgerStepOpenZcash => '打开 Zcash';
+
+  @override
+  String get ledgerStepSetPassword => '设置密码';
+
+  @override
+  String get ledgerStepWalletBirthdayHeight => '钱包创建高度';
+
+  @override
+  String get ledgerStoppingSearch => '正在停止搜索';
+
+  @override
+  String get ledgerSupportedDevices => '支持的设备';
+
+  @override
+  String get ledgerTransportBluetooth => '蓝牙';
+
+  @override
+  String get ledgerTransportUsb => 'USB';
+
+  @override
+  String get ledgerTryAgain => '重试';
+
+  @override
+  String get ledgerUnlockBluetoothNearby => '请解锁 Ledger，开启蓝牙，并将其放在附近。';
+
+  @override
+  String get ledgerUnlockWithPin => '使用 PIN 码解锁。';
+
+  @override
+  String get ledgerVizorCheckingZcash => 'Vizor 正在检查 Zcash 应用。';
 
   @override
   String get lockBodyPaused => '同步已暂停。解锁 Vizor 以继续。';
@@ -375,4 +790,127 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get txFeeInfoTitle => '交易手续费';
+
+  @override
+  String walletLinkAccountsFound(int count) {
+    return '找到 $count 个账户';
+  }
+
+  @override
+  String walletLinkAccountsReadySubtitle(int ready, int imported) {
+    return '$ready 个账户可导入，$imported 个已导入。';
+  }
+
+  @override
+  String walletLinkAlreadyImported(int count) {
+    return '已导入 $count 个';
+  }
+
+  @override
+  String get walletLinkCameraRequired => '扫描桌面端关联码需要此设备带有摄像头。';
+
+  @override
+  String walletLinkContactsFound(int count) {
+    return '找到 $count 个联系人';
+  }
+
+  @override
+  String walletLinkContactsReadySubtitle(int found, int imported) {
+    return '找到 $found 个联系人，$imported 个已导入。';
+  }
+
+  @override
+  String get walletLinkContinue => '继续';
+
+  @override
+  String get walletLinkDeselectAll => '取消全选';
+
+  @override
+  String get walletLinkErrorExpiredBody => '电脑上的二维码已超时。请在桌面端选择“生成新二维码”，然后重新扫描。';
+
+  @override
+  String get walletLinkErrorExpiredTitle => '链接已过期';
+
+  @override
+  String get walletLinkErrorFailedBody => '请确认桌面端上的二维码仍然显示，然后重新扫描。';
+
+  @override
+  String get walletLinkErrorFailedTitle => '无法打开此链接';
+
+  @override
+  String get walletLinkErrorInvalidBody =>
+      '你扫描的二维码不是 Vizor 桌面端关联码。请在电脑上打开 设置 → 关联 Vizor 手机端。';
+
+  @override
+  String get walletLinkErrorInvalidTitle => '二维码无效';
+
+  @override
+  String get walletLinkGoBack => '返回';
+
+  @override
+  String walletLinkImportContacts(int count) {
+    return '导入 $count 个联系人';
+  }
+
+  @override
+  String get walletLinkImportContactsTitle => '导入联系人';
+
+  @override
+  String get walletLinkImporting => '正在导入...';
+
+  @override
+  String get walletLinkIntroNotice => '这会将钱包和联系人复制到手机。电脑上的内容不会有任何变化，两者均可继续使用。';
+
+  @override
+  String get walletLinkIntroReady => '我已准备好扫描';
+
+  @override
+  String get walletLinkIntroSubtitle => '将桌面端钱包复制到这部手机';
+
+  @override
+  String get walletLinkIntroTitle => '与桌面端关联';
+
+  @override
+  String walletLinkLinkAccounts(int count) {
+    return '关联 $count 个账户';
+  }
+
+  @override
+  String get walletLinkNothingNewSubtitle => '此桌面端关联码中没有可导入的新内容。';
+
+  @override
+  String get walletLinkNothingToImportBody => '此桌面端关联码中的所有内容都已在这部手机上。';
+
+  @override
+  String get walletLinkNothingToImportTitle => '没有可导入的内容';
+
+  @override
+  String get walletLinkReadingLink => '正在读取链接...';
+
+  @override
+  String get walletLinkScanAgain => '重新扫描';
+
+  @override
+  String get walletLinkScanCaption => '扫描 Vizor 桌面端二维码';
+
+  @override
+  String get walletLinkScanSubtitleDesktop => '扫描桌面端上的二维码';
+
+  @override
+  String get walletLinkScanTitle => '扫描二维码';
+
+  @override
+  String get walletLinkSelectAccountTitle => '选择账户';
+
+  @override
+  String get walletLinkSelectAll => '全选';
+
+  @override
+  String get walletLinkStepOpenSettings => '前往 设置 → 关联 Vizor 手机端';
+
+  @override
+  String get walletLinkStepScanQr => '在下一个屏幕中扫描桌面端上的二维码。';
+
+  @override
+  String get walletLinkStepUnlockDesktop => '打开并解锁 Vizor 桌面应用';
 }

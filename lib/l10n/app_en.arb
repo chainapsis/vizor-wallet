@@ -322,6 +322,238 @@
   "@keyringUnreadableTitle": {
     "description": "Title of the Linux keyring screen when the stored keyring data is unreadable."
   },
+  "keystoneAccountsFound": "{count, plural, =1{1 account found} other{{count} accounts found}}",
+  "@keystoneAccountsFound": {
+    "description": "Count of accounts found on the scanned Keystone QR, shown above the account list.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "keystoneBackWelcome": "Welcome",
+  "@keystoneBackWelcome": {
+    "description": "Back-link text on the Keystone how-to-connect screen that returns to the welcome screen."
+  },
+  "keystoneBirthdayDatePlaceholder": "mm/dd/yyyy",
+  "@keystoneBirthdayDatePlaceholder": {
+    "description": "Placeholder of the date field before a date is picked; shows the month/day/year format."
+  },
+  "keystoneBirthdayEstimateError": "Could not estimate the wallet birthday height.",
+  "@keystoneBirthdayEstimateError": {
+    "description": "Inline error on the Keystone wallet birthday screen when the chosen date cannot be converted to a block height."
+  },
+  "keystoneBirthdayEstimating": "Estimating...",
+  "@keystoneBirthdayEstimating": {
+    "description": "Disabled primary button label while the block height for the chosen date is being estimated."
+  },
+  "keystoneBirthdayHeightHint": "Block height",
+  "@keystoneBirthdayHeightHint": {
+    "description": "Hint text of the block height input field."
+  },
+  "keystoneBirthdayInvalidHeight": "That doesn't look like a valid block height.",
+  "@keystoneBirthdayInvalidHeight": {
+    "description": "Inline error under the block height field when the typed number is not a usable block height."
+  },
+  "keystoneBirthdayMetadataError": "Could not load wallet birthday metadata.",
+  "@keystoneBirthdayMetadataError": {
+    "description": "Inline error on the Keystone wallet birthday screen when the data needed to convert dates to block heights cannot be loaded."
+  },
+  "keystoneBirthdayStopSyncing": "Stop syncing...",
+  "@keystoneBirthdayStopSyncing": {
+    "description": "Disabled primary button label while Vizor stops a running sync before importing the Keystone account."
+  },
+  "keystoneBirthdaySubtitle": "It helps us import your wallet faster.",
+  "@keystoneBirthdaySubtitle": {
+    "description": "Subtitle under the wallet birthday heading explaining why the date is asked."
+  },
+  "keystoneBirthdayTabBlockHeight": "Enter the block height",
+  "@keystoneBirthdayTabBlockHeight": {
+    "description": "Tab label to enter the wallet birthday block height directly."
+  },
+  "keystoneBirthdayTabDate": "Enter the date",
+  "@keystoneBirthdayTabDate": {
+    "description": "Tab label to enter the wallet creation date."
+  },
+  "keystoneBirthdayTitle": "Around when did you create your wallet?",
+  "@keystoneBirthdayTitle": {
+    "description": "Heading of the Keystone wallet birthday screen."
+  },
+  "keystoneBirthdayUnknown": "I can’t remember",
+  "@keystoneBirthdayUnknown": {
+    "description": "Ghost button on the wallet birthday screen for users who do not know when the wallet was created; opens a confirmation."
+  },
+  "keystoneCameraDeniedBody": "Request again, or enable manually\nin the System settings.",
+  "@keystoneCameraDeniedBody": {
+    "description": "Two-line description under the camera denied title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short."
+  },
+  "keystoneCameraDeniedTitle": "You've denied camera access",
+  "@keystoneCameraDeniedTitle": {
+    "description": "Title of the mobile Keystone scan card when the camera permission was denied."
+  },
+  "keystoneCameraEnableBody": "A camera is required to connect Keystone.\nYou can revert this in settings anytime later.",
+  "@keystoneCameraEnableBody": {
+    "description": "Two-line description under the enable camera access title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short."
+  },
+  "keystoneCameraEnableTitle": "Enable camera access",
+  "@keystoneCameraEnableTitle": {
+    "description": "Title of the mobile Keystone scan card while camera permission is being requested."
+  },
+  "keystoneCameraRequestAgain": "Request again",
+  "@keystoneCameraRequestAgain": {
+    "description": "Button on the mobile Keystone scan card that asks for camera permission again."
+  },
+  "keystoneCameraRestrictedBody": "Screen Time or device management\nis blocking the camera.",
+  "@keystoneCameraRestrictedBody": {
+    "description": "Two-line description under the camera restricted title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short."
+  },
+  "keystoneCameraRestrictedTitle": "Camera access is restricted",
+  "@keystoneCameraRestrictedTitle": {
+    "description": "Title of the mobile Keystone scan card when camera access is restricted by the system."
+  },
+  "keystoneCameraTryAgain": "Try again",
+  "@keystoneCameraTryAgain": {
+    "description": "Button on the mobile Keystone scan card that retries opening the camera."
+  },
+  "keystoneCameraUnavailableBody": "Keystone import uses camera QR scanning only.\nConnect a camera and try again.",
+  "@keystoneCameraUnavailableBody": {
+    "description": "Two-line description under the camera unavailable title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short."
+  },
+  "keystoneCameraUnavailableTitle": "Camera unavailable",
+  "@keystoneCameraUnavailableTitle": {
+    "description": "Title of the mobile Keystone scan card when no camera is available."
+  },
+  "keystoneConfirmSelection": "Confirm selection",
+  "@keystoneConfirmSelection": {
+    "description": "Button that confirms the chosen Keystone account and continues the import."
+  },
+  "keystoneConnectTitle": "Connect Keystone",
+  "@keystoneConnectTitle": {
+    "description": "Heading of the screen explaining how to connect a Keystone hardware wallet to Vizor."
+  },
+  "keystoneContinue": "Continue",
+  "@keystoneContinue": {
+    "description": "Primary button that continues to the next step of Keystone import."
+  },
+  "keystoneFirmwareBody": "Make sure your Keystone is on the latest Cypherpunk firmware. ",
+  "@keystoneFirmwareBody": {
+    "description": "Sentence ending in a trailing space, followed by an inline link button labelled 'link' that opens the firmware download page. Keep the trailing space."
+  },
+  "keystoneFirmwareDownloadSemantics": "Download Keystone firmware",
+  "@keystoneFirmwareDownloadSemantics": {
+    "description": "Screen-reader label of the inline firmware link button."
+  },
+  "keystoneFirmwareLinkLabel": "link",
+  "@keystoneFirmwareLinkLabel": {
+    "description": "Visible text of the small inline button that opens the Keystone firmware download page; appears right after the firmware sentence."
+  },
+  "keystoneFirmwareTitle": "Check Keystone firmware",
+  "@keystoneFirmwareTitle": {
+    "description": "Title of instruction step 1 on the Keystone how-to-connect screen. The step number is added by the app before this text."
+  },
+  "keystoneImReadyNow": "I'm ready now",
+  "@keystoneImReadyNow": {
+    "description": "Primary button on the Keystone how-to-connect screen; continues to the QR scan step once the user has followed the instructions."
+  },
+  "keystoneImporting": "Importing...",
+  "@keystoneImporting": {
+    "description": "Disabled primary button label while the Keystone account is being imported."
+  },
+  "keystoneOnVizor": "On Vizor",
+  "@keystoneOnVizor": {
+    "description": "Heading of the group of steps the user performs in the Vizor app."
+  },
+  "keystoneOnYourKeystone": "On your Keystone",
+  "@keystoneOnYourKeystone": {
+    "description": "Heading of the group of steps the user performs on the Keystone device itself."
+  },
+  "keystonePrepareSubtitle": "Prepare your Keystone wallet",
+  "@keystonePrepareSubtitle": {
+    "description": "Subtitle under the Keystone connect, scan and select-account headings, asking the user to get their Keystone device ready."
+  },
+  "keystonePrepareToConnectTitle": "Prepare to connect",
+  "@keystonePrepareToConnectTitle": {
+    "description": "Title of instruction step 2 on the Keystone how-to-connect screen. The step number is added by the app before this text."
+  },
+  "keystoneScanCameraRequired": "Keystone import uses camera QR scanning only. Connect a camera and try again.",
+  "@keystoneScanCameraRequired": {
+    "description": "Message shown instead of the scanner when no camera is available on this device."
+  },
+  "keystoneScanCaption": "Scan the Keystone account QR",
+  "@keystoneScanCaption": {
+    "description": "Caption under the camera view of the mobile Keystone QR scanner."
+  },
+  "keystoneScanDecodeFailed": "This QR code could not be decoded as a Keystone Zcash account.",
+  "@keystoneScanDecodeFailed": {
+    "description": "Error under the Keystone QR scanner when the scanned QR cannot be decoded as a Zcash account."
+  },
+  "keystoneScanKeepSteady": "Keep the QR code steady and fully visible.",
+  "@keystoneScanKeepSteady": {
+    "description": "Scanner hint shown while a QR code cannot be read yet."
+  },
+  "keystoneScanNoAccounts": "No Zcash accounts were found on this Keystone QR.",
+  "@keystoneScanNoAccounts": {
+    "description": "Error under the Keystone QR scanner when the scanned QR contains no Zcash accounts."
+  },
+  "keystoneScanOpenAccountQr": "Open the Zcash account QR on Keystone, then scan again.",
+  "@keystoneScanOpenAccountQr": {
+    "description": "Scanner hint shown when the user scanned a QR of the wrong kind; tells them to open the Zcash account QR on the device."
+  },
+  "keystoneScanProgress": "Scanning... {progress}%",
+  "@keystoneScanProgress": {
+    "description": "Caption on the mobile Keystone scanner while an animated QR code is partially read. {progress} is a whole percentage from 1 to 99.",
+    "placeholders": {
+      "progress": {
+        "type": "int",
+        "example": "42"
+      }
+    }
+  },
+  "keystoneScanReadingAccounts": "Reading accounts...",
+  "@keystoneScanReadingAccounts": {
+    "description": "Status text on the Keystone QR scanner while the scanned accounts are being decoded."
+  },
+  "keystoneScanTitle": "Scan QR Code",
+  "@keystoneScanTitle": {
+    "description": "Title of the Keystone QR scan screen and its sidebar step label; the user scans the account QR shown on the Keystone device."
+  },
+  "keystoneSelectAccountTitle": "Select account",
+  "@keystoneSelectAccountTitle": {
+    "description": "Heading of the screen where the user picks which Keystone account to import."
+  },
+  "keystoneStepCustomiseWallet": "Customise wallet",
+  "@keystoneStepCustomiseWallet": {
+    "description": "Sidebar step label for customising the imported Keystone wallet (name and avatar)."
+  },
+  "keystoneStepHowToConnect": "How to Connect",
+  "@keystoneStepHowToConnect": {
+    "description": "Sidebar step label and back-link text for the first Keystone onboarding step (how to connect the device). Title Case is intentional."
+  },
+  "keystoneStepOpenSoftwareWallet": "Tap ••• (top right), then Connect software wallet.",
+  "@keystoneStepOpenSoftwareWallet": {
+    "description": "Device step: quotes the menu button (three dots) and the menu item 'Connect software wallet' shown on the Keystone device. Keep 'Connect software wallet' in English inside the translation because that is the label on the device screen."
+  },
+  "keystoneStepScanDynamicQr": "Scan the dynamic QR code on your Keystone.",
+  "@keystoneStepScanDynamicQr": {
+    "description": "Step in the Vizor group: scan the animated QR code displayed on the Keystone device."
+  },
+  "keystoneStepSelectAccount": "Select Account",
+  "@keystoneStepSelectAccount": {
+    "description": "Sidebar step label and back-link text for choosing which Keystone account to import. Title Case is intentional."
+  },
+  "keystoneStepSelectVizor": "Select Vizor (or ZODL)",
+  "@keystoneStepSelectVizor": {
+    "description": "Device step: pick Vizor (or ZODL) from the software wallet list shown on the Keystone device. Vizor and ZODL are wallet names and stay in Latin script."
+  },
+  "keystoneStepSetPassword": "Set Password",
+  "@keystoneStepSetPassword": {
+    "description": "Sidebar step label for setting the wallet password during Keystone import. Title Case is intentional."
+  },
+  "keystoneStepWalletBirthdayHeight": "Wallet Birthday Height",
+  "@keystoneStepWalletBirthdayHeight": {
+    "description": "Sidebar step label and back-link text for the wallet birthday (block height) step during Keystone import. Title Case is intentional."
+  },
   "languageSystemOption": "System ({language})",
   "@languageSystemOption": {
     "description": "Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.",
@@ -332,6 +564,342 @@
         "description": "The resolved language, written in its own script."
       }
     }
+  },
+  "ledgerAccountIndexHint": "Keep 0 unless you used a different index for this Ledger account.",
+  "@ledgerAccountIndexHint": {
+    "description": "Helper text in the advanced options explaining the Ledger account index field."
+  },
+  "ledgerAccountIndexLabel": "Account index (0–100)",
+  "@ledgerAccountIndexLabel": {
+    "description": "Label of the account index input in the mobile advanced options. Keep the range 0–100."
+  },
+  "ledgerAddAccountNote": "View your balance and activity in Vizor. Transactions still need approval on Ledger.",
+  "@ledgerAddAccountNote": {
+    "description": "[security] Note under the Add account step explaining that the Ledger account can only be viewed in Vizor; spending still requires device approval."
+  },
+  "ledgerAddAccountTitle": "Add Ledger account",
+  "@ledgerAddAccountTitle": {
+    "description": "Title of the mobile sheet that finds a Ledger device and adds its account."
+  },
+  "ledgerAdvancedOptions": "Advanced options",
+  "@ledgerAdvancedOptions": {
+    "description": "Label of the collapsible advanced options section on the Connect Ledger screen."
+  },
+  "ledgerBackAddAccount": "Add account",
+  "@ledgerBackAddAccount": {
+    "description": "Back-link text on the desktop Connect Ledger screen that returns to the add-account screen."
+  },
+  "ledgerBalanceActivityNote": "See your balance and activity in Vizor.\nApprove transactions on Ledger.",
+  "@ledgerBalanceActivityNote": {
+    "description": "Two-line note under the Connect Ledger form explaining that Vizor shows balance and activity while transactions are approved on the device. Keep the line break."
+  },
+  "ledgerBleDeclinedOpen": "Opening Zcash was declined on Ledger. Try again when you’re ready.",
+  "@ledgerBleDeclinedOpen": {
+    "description": "Error in the desktop Bluetooth dialog when the user declined opening the Zcash app on the Ledger."
+  },
+  "ledgerBleDeclinedShare": "Sharing was declined on Ledger. Try again when you’re ready.",
+  "@ledgerBleDeclinedShare": {
+    "description": "[security] Error in the desktop Bluetooth dialog when the user declined sharing the viewing key on the Ledger."
+  },
+  "ledgerBleReadFailedTryAgain": "Vizor could not read this Ledger account. Try again.",
+  "@ledgerBleReadFailedTryAgain": {
+    "description": "Error in the desktop Bluetooth dialog when reading the Ledger account failed over Bluetooth."
+  },
+  "ledgerBleReadFailedUsb": "Vizor could not read this Ledger account. Reconnect Ledger with a USB cable, unlock it with your PIN, and open the Zcash app. Then try again.",
+  "@ledgerBleReadFailedUsb": {
+    "description": "[security] Error in the desktop dialog when reading the Ledger account over USB failed for an unknown reason; lists recovery steps."
+  },
+  "ledgerBluetoothConnection": "Bluetooth connection",
+  "@ledgerBluetoothConnection": {
+    "description": "Subtitle identifying that the picker is for a Bluetooth connection."
+  },
+  "ledgerBluetoothPermissionRequired": "Bluetooth permission is required to find your Ledger. Allow it in Settings, then try again.",
+  "@ledgerBluetoothPermissionRequired": {
+    "description": "Error in the mobile device sheet when the Bluetooth permission was not granted."
+  },
+  "ledgerCancelFailed": "Could not finish cancelling. Try again.",
+  "@ledgerCancelFailed": {
+    "description": "Error in the mobile Add Ledger account sheet when cancelling the Ledger request failed."
+  },
+  "ledgerCancellingRequest": "Cancelling request",
+  "@ledgerCancellingRequest": {
+    "description": "Title of the desktop dialog while a running Ledger request is being cancelled."
+  },
+  "ledgerCancellingTheRequest": "Cancelling the Ledger request…",
+  "@ledgerCancellingTheRequest": {
+    "description": "Status text in the mobile sheet while the Ledger request is being cancelled."
+  },
+  "ledgerCheckingBluetoothAccess": "Checking Bluetooth access…",
+  "@ledgerCheckingBluetoothAccess": {
+    "description": "Status text while Vizor checks the Bluetooth permission on desktop."
+  },
+  "ledgerChooseAnother": "Choose another Ledger",
+  "@ledgerChooseAnother": {
+    "description": "Back-link text in the desktop dialog that returns to the device picker."
+  },
+  "ledgerCleanupFailed": "Could not finish cleanup. Try again.",
+  "@ledgerCleanupFailed": {
+    "description": "Error in the desktop Bluetooth dialog when closing the Ledger session failed."
+  },
+  "ledgerConfirmOpeningZcash": "Confirm opening Zcash on Ledger.",
+  "@ledgerConfirmOpeningZcash": {
+    "description": "Message asking the user to confirm on the Ledger device that the Zcash app may open. 'Zcash' is the app name on the device."
+  },
+  "ledgerConnect": "Connect Ledger",
+  "@ledgerConnect": {
+    "description": "Heading, sidebar step, procedure step and button label for connecting a Ledger device; it is the name of the action, not a sentence."
+  },
+  "ledgerConnectSubtitle": "Prepare your Ledger wallet.",
+  "@ledgerConnectSubtitle": {
+    "description": "Subtitle under the Connect Ledger heading, asking the user to get their Ledger ready."
+  },
+  "ledgerConnectUsbCable": "Connect with a USB cable.",
+  "@ledgerConnectUsbCable": {
+    "description": "Step 2 of the Ledger preparation list for a USB connection (the number is added by the app)."
+  },
+  "ledgerConnectingTo": "Connecting to {device}",
+  "@ledgerConnectingTo": {
+    "description": "Label of a device row while connecting; {device} is the device name such as a Ledger model.",
+    "placeholders": {
+      "device": {
+        "type": "String",
+        "example": "Ledger Nano X"
+      }
+    }
+  },
+  "ledgerConnectionHelp": "Connection help",
+  "@ledgerConnectionHelp": {
+    "description": "Button in the mobile device sheet that opens help for connecting a Ledger."
+  },
+  "ledgerCouldNotConnect": "Could not connect Ledger",
+  "@ledgerCouldNotConnect": {
+    "description": "Title of the desktop dialog after connecting to the Ledger failed."
+  },
+  "ledgerDiscoveryErrorFallback": "Try again.",
+  "@ledgerDiscoveryErrorFallback": {
+    "description": "Message shown under the error title when no more specific error text is available."
+  },
+  "ledgerDiscoveryErrorTitle": "Could not connect to your Ledger",
+  "@ledgerDiscoveryErrorTitle": {
+    "description": "Title of the error block in the mobile device sheet after the Ledger search or connection failed."
+  },
+  "ledgerDiscoveryFailed": "Vizor could not find Ledger devices. Try again.",
+  "@ledgerDiscoveryFailed": {
+    "description": "Fallback error in the mobile device sheet when the Ledger search failed for an unknown reason."
+  },
+  "ledgerEnableBluetoothNearby": "Enable Bluetooth and keep Ledger nearby.",
+  "@ledgerEnableBluetoothNearby": {
+    "description": "Step 2 of the Ledger preparation list for a Bluetooth connection (the number is added by the app)."
+  },
+  "ledgerErrorAlreadyAdded": "This Ledger account is already in Vizor.",
+  "@ledgerErrorAlreadyAdded": {
+    "description": "Error when the Ledger account the user is adding already exists in the wallet."
+  },
+  "ledgerErrorCannotReadCheckConnection": "Vizor could not read this Ledger account. Check the connection and try again.",
+  "@ledgerErrorCannotReadCheckConnection": {
+    "description": "Generic error in the mobile Add Ledger account sheet when reading the account failed."
+  },
+  "ledgerErrorCannotReadWithInstruction": "Vizor could not read this Ledger account. {instruction} Then try again.",
+  "@ledgerErrorCannotReadWithInstruction": {
+    "description": "Generic error when reading the Ledger account failed. {instruction} is a full English sentence produced elsewhere, such as 'Open the Zcash app on your Ledger.'.",
+    "placeholders": {
+      "instruction": {
+        "type": "String",
+        "example": "Open the Zcash app on your Ledger."
+      }
+    }
+  },
+  "ledgerErrorConnectAndUnlock": "Connect and unlock your Ledger. {instruction}",
+  "@ledgerErrorConnectAndUnlock": {
+    "description": "Error when the Ledger connection was lost. {instruction} is a full English sentence produced elsewhere, such as 'Open the Zcash app on your Ledger.'.",
+    "placeholders": {
+      "instruction": {
+        "type": "String",
+        "example": "Open the Zcash app on your Ledger."
+      }
+    }
+  },
+  "ledgerErrorUnlock": "Unlock your Ledger. {instruction}",
+  "@ledgerErrorUnlock": {
+    "description": "Error when the Ledger is locked. {instruction} is a full English sentence produced elsewhere, such as 'Open the Zcash app on your Ledger.'.",
+    "placeholders": {
+      "instruction": {
+        "type": "String",
+        "example": "Open the Zcash app on your Ledger."
+      }
+    }
+  },
+  "ledgerErrorViewingKeyDeclined": "The viewing key request was declined on Ledger. Try again when you’re ready.",
+  "@ledgerErrorViewingKeyDeclined": {
+    "description": "[security] Error in the mobile Add Ledger account sheet after the user declined the viewing key request on the Ledger device."
+  },
+  "ledgerErrorViewingKeyRejected": "The viewing-key request was rejected on your Ledger.",
+  "@ledgerErrorViewingKeyRejected": {
+    "description": "[security] Error under the desktop Connect Ledger form after the user rejected the viewing key request on the Ledger device."
+  },
+  "ledgerFind": "Find Ledger",
+  "@ledgerFind": {
+    "description": "Title of the desktop Bluetooth device picker and label of the button that restarts the Bluetooth search."
+  },
+  "ledgerFindMyLedger": "Find my Ledger",
+  "@ledgerFindMyLedger": {
+    "description": "Button that goes back to the device search when the old Bluetooth pairing must be replaced."
+  },
+  "ledgerKeepAppOpen": "Keep {appName} open.",
+  "@ledgerKeepAppOpen": {
+    "description": "Note under the Open app step: do not close the named app on the Ledger. {appName} is the app name shown on the device, normally Zcash, and stays in Latin script.",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "Zcash"
+      }
+    }
+  },
+  "ledgerKeepConnectedUntilCancelled": "Keep Ledger connected until the current request is cancelled.",
+  "@ledgerKeepConnectedUntilCancelled": {
+    "description": "Status text while a Ledger request is being cancelled; the user must not unplug the device yet."
+  },
+  "ledgerKeepConnectedWhileChecking": "Keep Ledger connected while Vizor checks the app.",
+  "@ledgerKeepConnectedWhileChecking": {
+    "description": "Status text in the mobile sheet while Vizor checks whether the Zcash app is open on the Ledger."
+  },
+  "ledgerKeepNearbyUnlocked": "Keep your Ledger nearby and unlocked, with Bluetooth turned on.",
+  "@ledgerKeepNearbyUnlocked": {
+    "description": "Message under the first connection step in the desktop dialog."
+  },
+  "ledgerKeepZcashOpen": "Keep Zcash open.",
+  "@ledgerKeepZcashOpen": {
+    "description": "Note under the Open Zcash step: do not close the Zcash app on the Ledger."
+  },
+  "ledgerMacosBluetoothPrompt": "macOS may ask for Bluetooth access. If prompted, allow access for Vizor.",
+  "@ledgerMacosBluetoothPrompt": {
+    "description": "Hint shown while checking Bluetooth access on macOS."
+  },
+  "ledgerNoDevicesFound": "No Ledger devices found",
+  "@ledgerNoDevicesFound": {
+    "description": "Title of the status block when the search found no Ledger device."
+  },
+  "ledgerNoDevicesFoundHint": "Check that your Ledger is unlocked and try again.",
+  "@ledgerNoDevicesFoundHint": {
+    "description": "Message under the no devices found title."
+  },
+  "ledgerNoneFoundDesktop": "No Ledger found. Unlock Ledger, enable Bluetooth and keep it nearby. Then search again.",
+  "@ledgerNoneFoundDesktop": {
+    "description": "Message in the desktop device picker when the Bluetooth search found no Ledger."
+  },
+  "ledgerOnYourLedger": "On your Ledger",
+  "@ledgerOnYourLedger": {
+    "description": "Heading of the list of steps the user performs on the Ledger device."
+  },
+  "ledgerOpenBluetoothSettingsManually": "Open Bluetooth settings manually to remove the old pairing.",
+  "@ledgerOpenBluetoothSettingsManually": {
+    "description": "Error in the mobile connection help when the Bluetooth settings could not be opened automatically."
+  },
+  "ledgerOpenZcashThenTryAgain": "Open the Zcash app, then try again.",
+  "@ledgerOpenZcashThenTryAgain": {
+    "description": "Instruction inserted into a USB error message: the user must open the Zcash app on the Ledger and retry."
+  },
+  "ledgerReturningToOptions": "Returning to connection options…",
+  "@ledgerReturningToOptions": {
+    "description": "Status text while the desktop dialog returns to the connection options after stopping the search."
+  },
+  "ledgerSearchAgain": "Search again",
+  "@ledgerSearchAgain": {
+    "description": "Button that restarts the search for Ledger devices when none were found."
+  },
+  "ledgerSearchTakesAWhile": "This can take a few seconds.",
+  "@ledgerSearchTakesAWhile": {
+    "description": "Message under the searching title; the search may take a moment."
+  },
+  "ledgerSearchingDevices": "Searching for Ledger devices…",
+  "@ledgerSearchingDevices": {
+    "description": "Title of the status block while the mobile sheet searches for Ledger devices."
+  },
+  "ledgerSearchingNearby": "Searching for nearby Ledgers…",
+  "@ledgerSearchingNearby": {
+    "description": "Status text while the desktop dialog searches for Ledger devices over Bluetooth."
+  },
+  "ledgerSelectYourLedger": "Select your Ledger.",
+  "@ledgerSelectYourLedger": {
+    "description": "Instruction above the list of discovered Ledger devices."
+  },
+  "ledgerSheetAddFailedTitle": "Could not add Ledger account",
+  "@ledgerSheetAddFailedTitle": {
+    "description": "Title of the mobile Add Ledger account sheet after adding the account failed."
+  },
+  "ledgerSheetCancelFailedTitle": "Could not cancel Ledger request",
+  "@ledgerSheetCancelFailedTitle": {
+    "description": "Title of the mobile Add Ledger account sheet when cancelling the request failed."
+  },
+  "ledgerSheetDeclinedTitle": "Request declined",
+  "@ledgerSheetDeclinedTitle": {
+    "description": "Title of the mobile Add Ledger account sheet after the request was declined on the device."
+  },
+  "ledgerStepAddAccount": "Add account",
+  "@ledgerStepAddAccount": {
+    "description": "Procedure step label in the mobile sheet: the user approves adding the account on the Ledger."
+  },
+  "ledgerStepApproveViewingKey": "Approve viewing key",
+  "@ledgerStepApproveViewingKey": {
+    "description": "[security] Procedure step label: the user approves sharing the viewing key on the Ledger device."
+  },
+  "ledgerStepCustomiseWallet": "Customise wallet",
+  "@ledgerStepCustomiseWallet": {
+    "description": "Sidebar step label for customising the imported Ledger wallet (name and avatar)."
+  },
+  "ledgerStepOpenApp": "Open {appName}",
+  "@ledgerStepOpenApp": {
+    "description": "Procedure step label: the named app must be opened on the Ledger device. {appName} is the app name shown on the device, normally Zcash, and stays in Latin script.",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "Zcash"
+      }
+    }
+  },
+  "ledgerStepOpenZcash": "Open Zcash",
+  "@ledgerStepOpenZcash": {
+    "description": "Procedure step label: the Zcash app must be opened on the Ledger device. 'Zcash' is the name of the app on the device and stays in Latin script."
+  },
+  "ledgerStepSetPassword": "Set Password",
+  "@ledgerStepSetPassword": {
+    "description": "Sidebar step label for setting the wallet password during Ledger onboarding. Title Case is intentional."
+  },
+  "ledgerStepWalletBirthdayHeight": "Wallet Birthday Height",
+  "@ledgerStepWalletBirthdayHeight": {
+    "description": "Sidebar step label for the wallet birthday (block height) step during Ledger onboarding. Title Case is intentional."
+  },
+  "ledgerStoppingSearch": "Stopping search",
+  "@ledgerStoppingSearch": {
+    "description": "Title of the desktop dialog while the Bluetooth device search is being stopped."
+  },
+  "ledgerSupportedDevices": "Supported devices",
+  "@ledgerSupportedDevices": {
+    "description": "Small button on the Connect Ledger screen that shows a tooltip listing the supported Ledger models."
+  },
+  "ledgerTransportBluetooth": "Bluetooth",
+  "@ledgerTransportBluetooth": {
+    "description": "Name of the Bluetooth connection option for a Ledger device (choice button or connection summary)."
+  },
+  "ledgerTransportUsb": "USB",
+  "@ledgerTransportUsb": {
+    "description": "Name of the USB connection option for a Ledger device (choice button or connection summary)."
+  },
+  "ledgerTryAgain": "Try again",
+  "@ledgerTryAgain": {
+    "description": "Button that retries the failed Ledger connection or discovery."
+  },
+  "ledgerUnlockBluetoothNearby": "Unlock Ledger, turn on Bluetooth, and keep it nearby.",
+  "@ledgerUnlockBluetoothNearby": {
+    "description": "Instruction above the mobile device list while no device has been found yet."
+  },
+  "ledgerUnlockWithPin": "Unlock with your PIN.",
+  "@ledgerUnlockWithPin": {
+    "description": "[security] Step 1 of the Ledger preparation list (the number is added by the app); the user unlocks the Ledger with its PIN."
+  },
+  "ledgerVizorCheckingZcash": "Vizor is checking the Zcash app.",
+  "@ledgerVizorCheckingZcash": {
+    "description": "Status message while Vizor checks whether the Zcash app is open on the Ledger."
   },
   "lockBodyPaused": "Sync paused. Unlock Vizor to continue.",
   "@lockBodyPaused": {
@@ -527,5 +1095,199 @@
   "txFeeInfoTitle": "Tx fee",
   "@txFeeInfoTitle": {
     "description": "Title of the transaction fee info sheet."
+  },
+  "walletLinkAccountsFound": "{count, plural, =1{1 account} other{{count} accounts}} found",
+  "@walletLinkAccountsFound": {
+    "description": "Section title above the list of importable accounts.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "walletLinkAccountsReadySubtitle": "{ready, plural, =1{1 account} other{{ready} accounts}} ready to import, {imported} already imported.",
+  "@walletLinkAccountsReadySubtitle": {
+    "description": "Subtitle of the account selection screen with counts of accounts that can still be imported and accounts already on the phone.",
+    "placeholders": {
+      "ready": {
+        "type": "int",
+        "example": "2"
+      },
+      "imported": {
+        "type": "int",
+        "example": "1"
+      }
+    }
+  },
+  "walletLinkAlreadyImported": "{count} already imported",
+  "@walletLinkAlreadyImported": {
+    "description": "Section title above the list of accounts or contacts that are already on the phone.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "1"
+      }
+    }
+  },
+  "walletLinkCameraRequired": "Desktop link scanning needs a camera on this device.",
+  "@walletLinkCameraRequired": {
+    "description": "Message shown instead of the scanner when the device has no camera."
+  },
+  "walletLinkContactsFound": "{count, plural, =1{1 contact} other{{count} contacts}} found",
+  "@walletLinkContactsFound": {
+    "description": "Section title above the list of importable contacts.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "walletLinkContactsReadySubtitle": "{found, plural, =1{1 contact} other{{found} contacts}} found, {imported} already imported.",
+  "@walletLinkContactsReadySubtitle": {
+    "description": "Subtitle of the contact selection screen with counts of contacts found and contacts already on the phone.",
+    "placeholders": {
+      "found": {
+        "type": "int",
+        "example": "3"
+      },
+      "imported": {
+        "type": "int",
+        "example": "1"
+      }
+    }
+  },
+  "walletLinkContinue": "Continue",
+  "@walletLinkContinue": {
+    "description": "Button on the account selection screen when no account is selected but contacts can still be imported."
+  },
+  "walletLinkDeselectAll": "Deselect all",
+  "@walletLinkDeselectAll": {
+    "description": "Action in a list section header that clears the selection."
+  },
+  "walletLinkErrorExpiredBody": "The code on your computer timed out. On desktop, choose Generate new code and scan it again.",
+  "@walletLinkErrorExpiredBody": {
+    "description": "Body of the expired link error; 'Generate new code' is the name of a button in the desktop app."
+  },
+  "walletLinkErrorExpiredTitle": "Link expired",
+  "@walletLinkErrorExpiredTitle": {
+    "description": "Title of the scan error card when the desktop link code timed out."
+  },
+  "walletLinkErrorFailedBody": "Check that the desktop code is still visible, then scan it again.",
+  "@walletLinkErrorFailedBody": {
+    "description": "Body of the generic link error."
+  },
+  "walletLinkErrorFailedTitle": "Couldn't open this link",
+  "@walletLinkErrorFailedTitle": {
+    "description": "Title of the scan error card when the link could not be opened for another reason."
+  },
+  "walletLinkErrorInvalidBody": "The code you scanned isn't a Vizor desktop link. On your computer, open Settings → Link Vizor Mobile.",
+  "@walletLinkErrorInvalidBody": {
+    "description": "Body of the invalid QR error; 'Settings' and 'Link Vizor Mobile' are menu names in the desktop app."
+  },
+  "walletLinkErrorInvalidTitle": "Invalid QR code",
+  "@walletLinkErrorInvalidTitle": {
+    "description": "Title of the scan error card when the scanned QR is not a Vizor desktop link."
+  },
+  "walletLinkGoBack": "Go back",
+  "@walletLinkGoBack": {
+    "description": "Button on the account selection screen when there is nothing to import; leaves the flow."
+  },
+  "walletLinkImportContacts": "{count, plural, =1{Import 1 contact} other{Import {count} contacts}}",
+  "@walletLinkImportContacts": {
+    "description": "Button on the contact selection screen that imports the selected contacts.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "walletLinkImportContactsTitle": "Import contacts",
+  "@walletLinkImportContactsTitle": {
+    "description": "Heading of the mobile screen where the user chooses which desktop contacts to import."
+  },
+  "walletLinkImporting": "Importing...",
+  "@walletLinkImporting": {
+    "description": "Button label while the selected accounts or contacts are being imported."
+  },
+  "walletLinkIntroNotice": "This copies the wallet and contacts to the phone. Nothing on the computer changes, and you can use both.",
+  "@walletLinkIntroNotice": {
+    "description": "Reassurance card on the intro screen: linking copies the wallet and contacts and leaves the desktop unchanged."
+  },
+  "walletLinkIntroReady": "I'm ready to scan",
+  "@walletLinkIntroReady": {
+    "description": "Primary button on the intro screen that opens the QR scanner."
+  },
+  "walletLinkIntroSubtitle": "Copy your desktop wallet to this phone",
+  "@walletLinkIntroSubtitle": {
+    "description": "Subtitle under the Link with Desktop and Scan QR Code headings."
+  },
+  "walletLinkIntroTitle": "Link with Desktop",
+  "@walletLinkIntroTitle": {
+    "description": "Heading of the mobile screen that explains how to copy a wallet from the Vizor desktop app to this phone."
+  },
+  "walletLinkLinkAccounts": "{count, plural, =1{Link 1 account} other{Link {count} accounts}}",
+  "@walletLinkLinkAccounts": {
+    "description": "Button on the account selection screen that links the selected accounts to this phone.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "walletLinkNothingNewSubtitle": "There is nothing new to import from this desktop link.",
+  "@walletLinkNothingNewSubtitle": {
+    "description": "Subtitle of the account selection screen when everything in the link already exists on the phone."
+  },
+  "walletLinkNothingToImportBody": "Everything in this desktop link is already on this phone.",
+  "@walletLinkNothingToImportBody": {
+    "description": "Body of the nothing to import card."
+  },
+  "walletLinkNothingToImportTitle": "Nothing to import",
+  "@walletLinkNothingToImportTitle": {
+    "description": "Title of the card shown when everything in the desktop link is already on the phone."
+  },
+  "walletLinkReadingLink": "Reading link...",
+  "@walletLinkReadingLink": {
+    "description": "Caption under the camera view while the scanned link is being read."
+  },
+  "walletLinkScanAgain": "Scan again",
+  "@walletLinkScanAgain": {
+    "description": "Button on the scan error card that returns to the scanner."
+  },
+  "walletLinkScanCaption": "Scan the Vizor desktop QR",
+  "@walletLinkScanCaption": {
+    "description": "Caption under the camera view and title of the camera permission card while scanning the desktop link QR code."
+  },
+  "walletLinkScanSubtitleDesktop": "Scan the code on your desktop",
+  "@walletLinkScanSubtitleDesktop": {
+    "description": "Subtitle of the scan screen when the scan error card is shown."
+  },
+  "walletLinkScanTitle": "Scan QR Code",
+  "@walletLinkScanTitle": {
+    "description": "Heading of the mobile screen that scans the desktop link QR code."
+  },
+  "walletLinkSelectAccountTitle": "Select account",
+  "@walletLinkSelectAccountTitle": {
+    "description": "Heading of the mobile screen where the user chooses which desktop accounts to link."
+  },
+  "walletLinkSelectAll": "Select all",
+  "@walletLinkSelectAll": {
+    "description": "Action in a list section header that selects every importable item."
+  },
+  "walletLinkStepOpenSettings": "Go to Settings → Link Vizor Mobile",
+  "@walletLinkStepOpenSettings": {
+    "description": "Step 2 of the desktop link instructions; 'Settings' and 'Link Vizor Mobile' are menu names in the desktop app (the arrow separates the menu path)."
+  },
+  "walletLinkStepScanQr": "Scan the QR code on your desktop from the next screen.",
+  "@walletLinkStepScanQr": {
+    "description": "Step 3 of the desktop link instructions."
+  },
+  "walletLinkStepUnlockDesktop": "Open & unlock your Vizor desktop app",
+  "@walletLinkStepUnlockDesktop": {
+    "description": "Step 1 of the desktop link instructions (the number is added by the app)."
   }
 }
