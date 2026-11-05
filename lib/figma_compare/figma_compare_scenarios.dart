@@ -1,3 +1,4 @@
+import 'near_intents_service_notice_capture.dart';
 import 'activity_pagination_capture.dart';
 import 'mobile_shield_capture.dart';
 import 'mobile_passcode_capture.dart';
@@ -33,6 +34,7 @@ import '../widgetbook/keystone_use_cases.dart';
 import '../widgetbook/payment_link_claim_outcome_use_cases.dart';
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
+import '../widgetbook/mobile_donation_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/mobile_gift_onboarding_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
@@ -61,6 +63,7 @@ import 'ledger_recovery_capture.dart';
 import 'ledger_onboarding_guidance_capture.dart';
 import 'review_info_capture.dart';
 import 'swap_asset_icons_capture.dart';
+import 'swap_activity_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -102,6 +105,38 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'near-intents-service-current',
+    description: 'Current NEAR Intents maintenance modal with affected chains',
+    builder: buildCurrentServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'near-intents-service-all-chains',
+    description: 'Current NEAR Intents maintenance modal for all chains',
+    builder: buildAllChainsServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'near-intents-service-pay',
+    description: 'Current NEAR Intents service modal on Pay',
+    builder: buildPayServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-swap-processing',
+    description: 'Production Activity swap detail while processing',
+    builder: buildSwapActivityProcessingCapture,
+    mobile: true,
+    allowPointer: true,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-pay-processing',
+    description: 'Production Activity Pay detail while processing',
+    builder: buildPayActivityProcessingCapture,
+    mobile: true,
+    allowPointer: true,
+  ),
   FigmaCompareScenario(
     id: 'mobile-shield-ledger-connection-help',
     description: 'Ledger pairing recovery inside the mobile shielding scene',
@@ -1371,6 +1406,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-send-recipient-recents',
+    description: 'Mobile recipient step with recents and contacts',
+    builder: buildMobileSendRecipientRecentsUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-send-amount-contact',
     description: 'Mobile amount screen resolving a saved contact (4479:47503)',
     builder: buildMobileSendAmountContactUseCase,
@@ -1583,6 +1625,83 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'donation-zec-empty',
     description: 'Desktop donation composer with an empty ZEC amount',
     builder: buildDonationZecEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-empty',
+    description: 'Mobile donation empty amount',
+    builder: buildMobileDonationEmptyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-amount',
+    description: 'Mobile donation ZEC preset',
+    builder: buildMobileDonationAmountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-usd',
+    description: 'Mobile donation USD preset',
+    builder: buildMobileDonationUsdUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-insufficient',
+    description: 'Mobile donation insufficient funds',
+    builder: buildMobileDonationInsufficientUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-review',
+    description: 'Mobile donation review',
+    builder: buildMobileDonationReviewUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-sending',
+    description: 'Mobile donation broadcast in progress',
+    builder: buildMobileDonationSendingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-success',
+    description: 'Mobile donation thank you',
+    builder: buildMobileDonationSuccessUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-pending',
+    description: 'Mobile donation queued broadcast',
+    builder: buildMobileDonationPendingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-failure',
+    description: 'Mobile donation failed broadcast',
+    builder: buildMobileDonationFailureUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-review-large-text',
+    description: 'Mobile donation review with 200 percent text',
+    builder: buildMobileDonationReviewLargeTextUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-success-large-text',
+    description: 'Mobile donation thank you with 200 percent text',
+    builder: buildMobileDonationSuccessLargeTextUseCase,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'donation-zec-selected',
@@ -1873,6 +1992,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'pay-recipient-new-address',
     description: 'Pay recipient with a valid newly typed address',
     builder: buildPayRecipientNewAddressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-pay-amount',
+    description: 'Mobile Pay amount entry with a filled amount',
+    builder: buildMobilePayAmountUseCase,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-pay-recipient',

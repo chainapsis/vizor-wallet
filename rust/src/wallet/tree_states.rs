@@ -181,7 +181,6 @@ mod tests {
         assert!(last_checkpoint_height() >= 3_490_000);
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn mainnet_chain_state_serves_only_exact_checkpoints() {
         let state = mainnet_chain_state(WalletNetwork::Main, 1_000_000).unwrap();
@@ -201,14 +200,6 @@ mod tests {
         }
     }
 
-    #[cfg(ironwood_masquerade)]
-    #[test]
-    fn masquerade_builds_never_use_the_table() {
-        assert!(mainnet_chain_state(WalletNetwork::Main, 1_000_000).is_none());
-        assert_eq!(restore_birthday(WalletNetwork::Main, 1_234_567), 1_234_567);
-    }
-
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn restore_birthday_starts_right_after_a_grid_point() {
         let main = WalletNetwork::Main;
@@ -235,7 +226,6 @@ mod tests {
         assert!(mainnet_chain_state(main, 9_000_000).is_none());
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn restore_birthday_grid_widens_at_nu7() {
         let main = WalletNetwork::Main;
@@ -291,7 +281,6 @@ mod tests {
         assert_eq!(grid_point_at_or_below(3_569_999, None), 3_560_000);
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn every_rounded_birthday_has_a_local_start_state() {
         let main = WalletNetwork::Main;

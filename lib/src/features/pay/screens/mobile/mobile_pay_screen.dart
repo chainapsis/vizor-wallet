@@ -1,10 +1,13 @@
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../../swap/widgets/near_intents_service_notice_host.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
@@ -349,66 +352,76 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
         ref.read(swapStateProvider.notifier).cancelReviewQuote();
         return true;
       },
-      child: Scaffold(
-        backgroundColor: context.colors.background.window,
-        body: SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              if (_step == _MobilePayStep.amount)
-                const SizedBox(height: AppSpacing.s),
-              MobileTopNav.back(title: title, onBack: back),
-              Expanded(
-                child: MobileBottomSafeArea(
-                  bottomPadding: AppSpacing.md,
-                  child: switch (_step) {
-                    _MobilePayStep.amount => MobilePayAmountStep(
-                      state: swapState,
-                      controller: _amountController,
-                      focusNode: _amountFocusNode,
-                      zecAvailableZatoshi: migrationSpendable,
-                      onAmountChanged: swapNotifier.updateReceiveAmount,
-                      onFiatAmountChanged: swapNotifier.updateReceiveAmountFiat,
-                      onToggleFiatInputMode: () => swapNotifier
-                          .toggleFiatInputMode(SwapAmountInputSide.receive),
-                      onOpenAssetSelector: () =>
-                          _openModal(_PayModalSurface.assetSelector),
-                      slippageLabel: formatSwapSlippage(swapState.slippageBps),
-                      onOpenSlippage: () =>
-                          _openModal(_PayModalSurface.slippage),
-                      onContinue: () {
-                        _amountFocusNode.unfocus();
-                        setState(() => _step = _MobilePayStep.recipient);
-                      },
-                    ),
-                    _MobilePayStep.recipient => MobilePayRecipientStep(
-                      controller: _recipientController,
-                      typedAddress: swapState.destinationText,
-                      addressError: swapState.destinationAddressFormatError,
-                      quoteError:
-                          swapState.externalAssetSupportError ??
-                          swapState.quoteError,
-                      contacts: contacts,
-                      recents: recents,
-                      busy: swapState.quoteLoading,
-                      enabled:
-                          swapState.externalAssetIsAvailable &&
-                          !addressBookInitialLoading,
-                      selectedContactId: swapState.userExternalContactId,
-                      externalAsset: swapState.externalAsset,
-                      onAddressChanged: _handleAddressChanged,
-                      onOpenScanner: () =>
-                          _openModal(_PayModalSurface.addressScanner),
-                      onChooseRecipient: _chooseRecipient,
-                      onSelectRecipient: () =>
-                          unawaited(_reviewRecipient(effectiveSelection)),
-                      onAddToContacts: () =>
-                          _openModal(_PayModalSurface.addContact),
-                    ),
-                  },
+      child: NearIntentsServiceNoticeHost(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: swapState.externalAsset,
+        payMode: true,
+        enabled: _step == _MobilePayStep.amount,
+        blocked: _modalRouteOpen,
+        child: Scaffold(
+          backgroundColor: context.colors.background.window,
+          body: SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                if (_step == _MobilePayStep.amount)
+                  const SizedBox(height: AppSpacing.s),
+                MobileTopNav.back(title: title, onBack: back),
+                Expanded(
+                  child: MobileBottomSafeArea(
+                    bottomPadding: AppSpacing.md,
+                    child: switch (_step) {
+                      _MobilePayStep.amount => MobilePayAmountStep(
+                        state: swapState,
+                        controller: _amountController,
+                        focusNode: _amountFocusNode,
+                        zecAvailableZatoshi: migrationSpendable,
+                        onAmountChanged: swapNotifier.updateReceiveAmount,
+                        onFiatAmountChanged:
+                            swapNotifier.updateReceiveAmountFiat,
+                        onToggleFiatInputMode: () => swapNotifier
+                            .toggleFiatInputMode(SwapAmountInputSide.receive),
+                        onOpenAssetSelector: () =>
+                            _openModal(_PayModalSurface.assetSelector),
+                        slippageLabel: formatSwapSlippage(
+                          swapState.slippageBps,
+                        ),
+                        onOpenSlippage: () =>
+                            _openModal(_PayModalSurface.slippage),
+                        onContinue: () {
+                          _amountFocusNode.unfocus();
+                          setState(() => _step = _MobilePayStep.recipient);
+                        },
+                      ),
+                      _MobilePayStep.recipient => MobilePayRecipientStep(
+                        controller: _recipientController,
+                        typedAddress: swapState.destinationText,
+                        addressError: swapState.destinationAddressFormatError,
+                        quoteError:
+                            swapState.externalAssetSupportError ??
+                            swapState.quoteError,
+                        contacts: contacts,
+                        recents: recents,
+                        busy: swapState.quoteLoading,
+                        enabled:
+                            swapState.externalAssetIsAvailable &&
+                            !addressBookInitialLoading,
+                        selectedContactId: swapState.userExternalContactId,
+                        externalAsset: swapState.externalAsset,
+                        onAddressChanged: _handleAddressChanged,
+                        onOpenScanner: () =>
+                            _openModal(_PayModalSurface.addressScanner),
+                        onChooseRecipient: _chooseRecipient,
+                        onSelectRecipient: () =>
+                            unawaited(_reviewRecipient(effectiveSelection)),
+                        onAddToContacts: () =>
+                            _openModal(_PayModalSurface.addContact),
+                      ),
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

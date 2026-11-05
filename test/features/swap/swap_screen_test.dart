@@ -7,6 +7,9 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
+import 'package:zcash_wallet/src/features/swap/domain/near_intents_service_status.dart';
+import 'package:zcash_wallet/src/features/swap/providers/near_intents_service_status_provider.dart';
+import 'support/service_status_fixture.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
@@ -78,6 +81,70 @@ import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart'
 part 'support/swap_screen_test_fakes.dart';
 
 void main() {
+  testWidgets(
+    'service notice is dismissible and does not change desktop Swap eligibility',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(initialLocation: '/swap', routes: [_swapRoute()]),
+          serviceStatus: serviceStatusFixture(windows: 5),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Swaps may not work right now.'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('near_intents_service_notice_ok')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('near_intents_service_notice')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('swap_review_button')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
+    'service notice is advisory and only on the desktop Pay amount step',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+          serviceStatus: serviceStatusFixture(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Payments may not work right now.'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('near_intents_service_notice_ok')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_amount_input')),
+        '10',
+      );
+      await tester.pumpAndSettle();
+      final button = find.byKey(const ValueKey('pay_amount_continue_button'));
+      expect(tester.widget<AppButton>(button).onPressed, isNotNull);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('pay_recipient_search_field')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('near_intents_service_notice')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   test('swapIntentProvider uses the Vizor proxy and referral', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -1717,6 +1784,12 @@ void main() {
       expect(amountAssetIcon.showChainBadge, isTrue);
       expect(find.text('New address'), findsOneWidget);
       expect(find.text('0x529084...e4169ee7'), findsOneWidget);
+      expect(find.text('Payment progress'), findsOneWidget);
+      expect(find.text('View on NEAR Intents'), findsOneWidget);
+      expect(find.text('ZEC spent'), findsOneWidget);
+      expect(find.text('Tx ID'), findsNothing);
+      await tester.tap(find.text('Transaction details'));
+      await tester.pumpAndSettle();
       expect(find.text('In progress'), findsOneWidget);
       expect(find.text('Timestamp'), findsOneWidget);
       expect(find.text('Tx ID'), findsOneWidget);
@@ -1724,16 +1797,10 @@ void main() {
       expect(find.text('2.45125 ZEC'), findsOneWidget);
       expect(find.text('Tx fee'), findsOneWidget);
       expect(find.text('Not reported'), findsOneWidget);
-      expect(find.byKey(const ValueKey('swap_status_tabs')), findsNothing);
+      expect(find.byKey(const ValueKey('swap_status_tabs')), findsOneWidget);
       expect(find.byKey(const ValueKey('swap_review_info')), findsNothing);
       expect(find.byKey(const ValueKey('pay_status_summary')), findsNothing);
 
-      expect(
-        tester.getSize(
-          find.byKey(const ValueKey('pay_activity_status_content')),
-        ),
-        const Size(396, 549),
-      );
       expect(
         tester.getSize(find.byKey(const ValueKey('pay_status_review_info'))),
         const Size(396, 204),
@@ -1842,6 +1909,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.text('Transaction details'));
+      await tester.pumpAndSettle();
       expect(find.text('0.00015 ZEC'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox.shrink());
@@ -1874,6 +1943,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.text('Transaction details'));
+      await tester.pumpAndSettle();
       expect(find.text('0.00015 ZEC'), findsNothing);
       final txFeeRow = tester.widget<ReviewListRow>(
         find.byWidgetPredicate(
@@ -1931,6 +2002,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('Transaction details'));
+    await tester.pumpAndSettle();
     expect(find.text('0.00015 ZEC'), findsOneWidget);
     expect(requests, [
       (accountUuid: 'account-1', walletTxid: depositWalletOrder),
@@ -7095,7 +7168,15 @@ void main() {
     await _openSwapStatusDetails(tester);
 
     expect(swapProvider.submittedDeposits, isEmpty);
-    expect(find.text('0xstored-deposit'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is ReviewListRow &&
+            widget.label.startsWith('Deposit ') &&
+            widget.value == '0xstored-deposit',
+      ),
+      findsOneWidget,
+    );
     expect(sessionStore.savedIntents.single.depositAddress, '0xstored-deposit');
   });
 
@@ -10579,6 +10660,7 @@ Widget _routerHarness(
   LedgerOperationCanceller? ledgerCanceller,
   LedgerSignedOperationService? ledgerOperationService,
   NetworkUpgradeWindowState? upgradeWindow,
+  NearIntentsServiceStatus? serviceStatus,
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -10588,6 +10670,9 @@ Widget _routerHarness(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+      nearIntentsServiceStatusProvider.overrideWith(
+        () => FixtureServiceStatusNotifier(serviceStatus),
+      ),
       if (upgradeWindow != null)
         networkUpgradeWindowProvider.overrideWithValue(upgradeWindow),
       networkPrivacyProvider.overrideWith(

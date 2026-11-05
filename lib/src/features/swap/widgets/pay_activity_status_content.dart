@@ -11,10 +11,13 @@ import '../domain/swap_asset.dart';
 import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_address_formatting.dart';
 import 'swap_asset_icon.dart';
+import 'swap_status_page_content.dart';
+import 'swap_progress_explorer_footer.dart';
 
 /// Desktop Pay activity status for Figma nodes 6245:109737 / 6245:110194 and
 /// their dark variants. The Activity pane host already provides the toolbar
-/// reserve and 16px top inset, so this widget owns only the 396x549 content.
+/// reserve and 16px top inset. In-progress cards grow with their timeline;
+/// terminal cards retain the original 396x549 reference geometry.
 class PayActivityStatusContent extends StatelessWidget {
   const PayActivityStatusContent({
     required this.status,
@@ -25,6 +28,9 @@ class PayActivityStatusContent extends StatelessWidget {
     required this.onShowFullAddress,
     this.recipientContact,
     this.onOpenExplorer,
+    this.progressPresentation,
+    this.activeTab = SwapStatusTab.progress,
+    this.onTabChanged,
     super.key,
   });
 
@@ -36,6 +42,9 @@ class PayActivityStatusContent extends StatelessWidget {
   final AddressBookContact? recipientContact;
   final VoidCallback onShowFullAddress;
   final VoidCallback? onOpenExplorer;
+  final SwapActivityStatusPresentation? progressPresentation;
+  final SwapStatusTab activeTab;
+  final ValueChanged<SwapStatusTab>? onTabChanged;
 
   static const Size contentSize = Size(396, 549);
   static const double reviewInfoHeight = 204;
@@ -58,11 +67,14 @@ class PayActivityStatusContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final progress = progressPresentation;
+    final showTabs = progress?.showTabs ?? false;
     return SizedBox(
       key: const ValueKey('pay_activity_status_content'),
       width: contentSize.width,
-      height: contentSize.height + _extraDetailHeight,
+      height: showTabs ? null : contentSize.height + _extraDetailHeight,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
@@ -77,7 +89,39 @@ class PayActivityStatusContent extends StatelessWidget {
           const SizedBox(height: AppSpacing.base),
           _reviewInfo(context),
           const SizedBox(height: AppSpacing.base),
-          _detailCard(context),
+          if (showTabs && progress != null) ...[
+            SwapStatusTabs(
+              activeTab: activeTab,
+              progressLabel: 'Payment progress',
+              onChanged: onTabChanged,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            if (activeTab == SwapStatusTab.progress)
+              ReviewWrapCard(
+                key: const ValueKey('pay_status_progress_card'),
+                padding: progress.explorerUri == null
+                    ? kReviewWrapCardPadding
+                    : kReviewWrapCardPadding.copyWith(bottom: AppSpacing.sm),
+                children: [
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SwapAnimatedProgressRoute(
+                        steps: progress.steps,
+                        progressIndex: progress.progressIndex,
+                        badgeKind: progress.badgeKind,
+                      ),
+                      if (progress.explorerUri case final uri?)
+                        SwapProgressExplorerFooter(uri: uri),
+                    ],
+                  ),
+                ],
+              )
+            else
+              _detailCard(context),
+          ] else
+            _detailCard(context),
         ],
       ),
     );
@@ -93,9 +137,9 @@ class PayActivityStatusContent extends StatelessWidget {
       separator: '...',
     );
 
-    return SizedBox(
+    return ConstrainedBox(
       key: const ValueKey('pay_status_review_info'),
-      height: reviewInfoHeight,
+      constraints: const BoxConstraints(minHeight: reviewInfoHeight),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
         child: ReviewInfoFlow(

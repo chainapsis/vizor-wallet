@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
@@ -31,6 +32,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
+import 'recent_send_recipients.dart';
 import 'sapling_params.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
 
@@ -98,8 +100,8 @@ class SendReviewArgs {
   final SendFlowKind flowKind;
 
   /// This send answers a ZIP-321 payment request rather than being composed
-  /// from scratch. Only the review framing reads it — the proposal, the
-  /// broadcast and the receipt are identical either way.
+  /// from scratch. The review framing reads it, and a completed broadcast
+  /// skips Recents for it; the proposal and the receipt are identical.
   final bool isPaymentRequest;
 
   /// Sanitised requester label from the request, when it carried one.
@@ -562,7 +564,10 @@ String friendlyPaymentRequestCheckError(String raw) {
   return "Couldn't check this request — try again or edit the details";
 }
 
-String friendlyProposeSendError(String raw) {
+String friendlyProposeSendError(
+  String raw, {
+  SendFlowKind flowKind = SendFlowKind.send,
+}) {
   final upgradeHold = networkUpgradeHoldMessage(raw);
   if (upgradeHold != null) return upgradeHold;
   if (isTransparentLedgerNeedsNewerBuildError(raw)) {
@@ -599,7 +604,9 @@ String friendlyProposeSendError(String raw) {
       lower.contains('send flow mismatch')) {
     return 'Transaction expired before it could be sent. Try again.';
   }
-  return 'Send failed. Try again.';
+  return flowKind == SendFlowKind.donation
+      ? 'Donation failed. Try again.'
+      : 'Send failed. Try again.';
 }
 
 String friendlyBroadcastError(String raw) {
@@ -1139,6 +1146,31 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
               accountUuid: args.proposalAccountUuid,
               txids: txids.split(','),
             );
+        // Only mobile shows Recents; donations and payment requests (often
+        // one-time invoice addresses) are not suggested. Awaited so a reset
+        // cannot outrun the write.
+        if (kAppFormFactor == AppFormFactor.mobile &&
+            args.flowKind == SendFlowKind.send &&
+            !args.isPaymentRequest) {
+          final store = ref.read(sendRecentRecipientStoreProvider);
+          final revision = ref.read(
+            sendRecentRecipientsRevisionProvider.notifier,
+          );
+          try {
+            await store.record(
+              accountUuid: args.proposalAccountUuid,
+              recipient: SendRecentRecipient(
+                address: args.address,
+                isShielded: args.isShielded,
+              ),
+            );
+            revision.bump();
+          } catch (e) {
+            log(
+              'SendBroadcast: recording the recipient failed (non-critical): $e',
+            );
+          }
+        }
       }
       try {
         await ref.read(syncProvider.notifier).refreshAfterSend();
