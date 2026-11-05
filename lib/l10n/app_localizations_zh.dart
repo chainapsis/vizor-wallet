@@ -2838,14 +2838,26 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get ledgerReadinessAppNotVerified =>
+      'Vizor 无法验证 Ledger 上的 Zcash 应用。请重试。';
+
+  @override
   String get ledgerReadinessCouldNotPrepare =>
       'Vizor 无法准备 Ledger 上的 Zcash 应用。请重试。';
+
+  @override
+  String get ledgerReadinessOpenZcashApp => '请在 Ledger 上打开 Zcash 应用，然后重试。';
 
   @override
   String get ledgerReadinessOperationCancelled => 'Ledger 操作已取消。';
 
   @override
   String get ledgerReadinessReconnectUnlockTryAgain => '请重新连接并解锁 Ledger，然后重试。';
+
+  @override
+  String ledgerReadinessUpdateApp(String version) {
+    return '请将 Ledger 上的 Zcash 应用更新到 $version 或更高版本。';
+  }
 
   @override
   String get ledgerReadinessUsbPermission =>

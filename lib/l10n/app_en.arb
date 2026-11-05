@@ -3924,9 +3924,17 @@
       }
     }
   },
+  "ledgerReadinessAppNotVerified": "Vizor could not verify the Ledger Zcash app. Try again.",
+  "@ledgerReadinessAppNotVerified": {
+    "description": "Ledger error when the Zcash app version could not be read. 'Zcash' is the device app name."
+  },
   "ledgerReadinessCouldNotPrepare": "Vizor could not prepare the Ledger Zcash app. Try again.",
   "@ledgerReadinessCouldNotPrepare": {
     "description": "Fallback message when preparing the Zcash app on the Ledger failed."
+  },
+  "ledgerReadinessOpenZcashApp": "Open the Zcash app on your Ledger, then try again.",
+  "@ledgerReadinessOpenZcashApp": {
+    "description": "Ledger error when another app or the dashboard is open on the device. 'Zcash' is the device app name."
   },
   "ledgerReadinessOperationCancelled": "Ledger operation was cancelled.",
   "@ledgerReadinessOperationCancelled": {
@@ -3935,6 +3943,16 @@
   "ledgerReadinessReconnectUnlockTryAgain": "Reconnect and unlock your Ledger, then try again.",
   "@ledgerReadinessReconnectUnlockTryAgain": {
     "description": "Message asking the user to reconnect and unlock the Ledger."
+  },
+  "ledgerReadinessUpdateApp": "Update the Ledger Zcash app to version {version} or newer.",
+  "@ledgerReadinessUpdateApp": {
+    "description": "[security] Ledger error when the Zcash device app is too old. {version} is a version number such as 3.10.0.",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "3.10.0"
+      }
+    }
   },
   "ledgerReadinessUsbPermission": "Connect and unlock your Ledger over USB. If it is connected, install the Ledger udev rules on Linux, then unplug and reconnect it.",
   "@ledgerReadinessUsbPermission": {

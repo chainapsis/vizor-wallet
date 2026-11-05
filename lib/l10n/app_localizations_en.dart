@@ -3049,8 +3049,16 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get ledgerReadinessAppNotVerified =>
+      'Vizor could not verify the Ledger Zcash app. Try again.';
+
+  @override
   String get ledgerReadinessCouldNotPrepare =>
       'Vizor could not prepare the Ledger Zcash app. Try again.';
+
+  @override
+  String get ledgerReadinessOpenZcashApp =>
+      'Open the Zcash app on your Ledger, then try again.';
 
   @override
   String get ledgerReadinessOperationCancelled =>
@@ -3059,6 +3067,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get ledgerReadinessReconnectUnlockTryAgain =>
       'Reconnect and unlock your Ledger, then try again.';
+
+  @override
+  String ledgerReadinessUpdateApp(String version) {
+    return 'Update the Ledger Zcash app to version $version or newer.';
+  }
 
   @override
   String get ledgerReadinessUsbPermission =>

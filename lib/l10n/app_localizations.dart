@@ -5324,11 +5324,23 @@ abstract class AppLocalizations {
   /// **'Step {step} of {total}, complete'**
   String ledgerProcedureStepComplete(String step, String total);
 
+  /// Ledger error when the Zcash app version could not be read. 'Zcash' is the device app name.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not verify the Ledger Zcash app. Try again.'**
+  String get ledgerReadinessAppNotVerified;
+
   /// Fallback message when preparing the Zcash app on the Ledger failed.
   ///
   /// In en, this message translates to:
   /// **'Vizor could not prepare the Ledger Zcash app. Try again.'**
   String get ledgerReadinessCouldNotPrepare;
+
+  /// Ledger error when another app or the dashboard is open on the device. 'Zcash' is the device app name.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the Zcash app on your Ledger, then try again.'**
+  String get ledgerReadinessOpenZcashApp;
 
   /// Message when a Ledger operation was cancelled.
   ///
@@ -5341,6 +5353,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reconnect and unlock your Ledger, then try again.'**
   String get ledgerReadinessReconnectUnlockTryAgain;
+
+  /// [security] Ledger error when the Zcash device app is too old. {version} is a version number such as 3.10.0.
+  ///
+  /// In en, this message translates to:
+  /// **'Update the Ledger Zcash app to version {version} or newer.'**
+  String ledgerReadinessUpdateApp(String version);
 
   /// Message when Vizor has no USB permission to reach the Ledger.
   ///

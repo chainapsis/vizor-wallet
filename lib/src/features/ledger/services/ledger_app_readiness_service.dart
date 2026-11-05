@@ -78,16 +78,27 @@ class LedgerAppReadinessState {
   final String? version;
 }
 
+/// What a readiness check found, for display when there is no [cause].
+enum LedgerAppReadinessReason { appNotVerified, openZcashApp, updateRequired }
+
 class LedgerAppReadinessException implements Exception {
   const LedgerAppReadinessException(
     this.failure,
     this.message, {
     this.canReconnect = false,
     this.cause,
+    this.reason,
+    this.requiredVersion,
   });
 
   final LedgerAppReadinessFailure failure;
   final String message;
+
+  /// Set by the checks that throw without a [cause].
+  final LedgerAppReadinessReason? reason;
+
+  /// The minimum app version, when [reason] is `updateRequired`.
+  final String? requiredVersion;
   final bool canReconnect;
 
   /// The transport or device error this failure was classified from.
@@ -209,6 +220,7 @@ class LedgerAppReadinessService {
           throw const LedgerAppReadinessException(
             LedgerAppReadinessFailure.unavailable,
             'Vizor could not verify the Ledger Zcash app. Try again.', // l10n-ignore: exception text
+            reason: LedgerAppReadinessReason.appNotVerified,
           );
         }
         try {
@@ -218,6 +230,8 @@ class LedgerAppReadinessService {
             LedgerAppReadinessFailure.unsupportedVersion,
             'Update the Ledger Zcash app to version ' // l10n-ignore: exception text
             '$kMinimumLedgerZcashAppVersion or newer.',
+            reason: LedgerAppReadinessReason.updateRequired,
+            requiredVersion: kMinimumLedgerZcashAppVersion,
           );
         }
         return version;
@@ -226,6 +240,7 @@ class LedgerAppReadinessService {
         throw const LedgerAppReadinessException(
           LedgerAppReadinessFailure.unavailable,
           'Open the Zcash app on your Ledger, then try again.', // l10n-ignore: exception text
+          reason: LedgerAppReadinessReason.openZcashApp,
         );
       case LedgerDeviceAppStatus.locked:
         throw const LedgerAppReadinessException(

@@ -143,6 +143,16 @@ String _readinessMessage(
       _ => l10n.ledgerReadinessCouldNotPrepare,
     };
   }
+  switch (error.reason) {
+    case LedgerAppReadinessReason.appNotVerified:
+      return l10n.ledgerReadinessAppNotVerified;
+    case LedgerAppReadinessReason.openZcashApp:
+      return l10n.ledgerReadinessOpenZcashApp;
+    case LedgerAppReadinessReason.updateRequired:
+      return l10n.ledgerReadinessUpdateApp(error.requiredVersion ?? '');
+    case null:
+      break;
+  }
   return switch (error.failure) {
     LedgerAppReadinessFailure.locked => l10n.ledgerFailureMsgUnlock,
     LedgerAppReadinessFailure.disconnected =>

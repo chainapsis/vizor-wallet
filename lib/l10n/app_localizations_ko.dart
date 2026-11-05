@@ -3003,8 +3003,16 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get ledgerReadinessAppNotVerified =>
+      'Vizor⁠가 Ledger Zcash 앱⁠을 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
   String get ledgerReadinessCouldNotPrepare =>
       'Vizor⁠가 Ledger⁠의 Zcash 앱⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerReadinessOpenZcashApp =>
+      'Ledger⁠에⁠서 Zcash 앱⁠을 연 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerReadinessOperationCancelled => 'Ledger 작⁠업⁠이 취⁠소⁠됐⁠어⁠요.';
@@ -3012,6 +3020,11 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get ledgerReadinessReconnectUnlockTryAgain =>
       'Ledger⁠를 다⁠시 연⁠결⁠하⁠고 잠⁠금⁠을 해⁠제⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String ledgerReadinessUpdateApp(String version) {
+    return 'Ledger Zcash 앱⁠을 $version 버⁠전 이⁠상⁠으⁠로 업⁠데⁠이⁠트⁠해 주⁠세⁠요.';
+  }
 
   @override
   String get ledgerReadinessUsbPermission =>
