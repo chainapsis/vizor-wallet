@@ -158,6 +158,460 @@ class AppLocalizationsKo extends AppLocalizations {
   String get accountsViewViewingKey => '뷰⁠잉 키 보⁠기';
 
   @override
+  String get activityAddressShielded => '차⁠폐 주⁠소';
+
+  @override
+  String get activityAddressTransparent => '투⁠명 주⁠소';
+
+  @override
+  String get activityAddressUnified => '통⁠합 주⁠소';
+
+  @override
+  String get activityAddressZcash => 'Zcash 주⁠소';
+
+  @override
+  String get activityBalanceFromOrchard => 'Orchard 잔⁠액⁠에⁠서';
+
+  @override
+  String get activityBalanceFromTransparent => '투⁠명 잔⁠액⁠에⁠서';
+
+  @override
+  String get activityBalanceIronwood => 'Ironwood 잔⁠액';
+
+  @override
+  String get activityBalanceOrchard => 'Orchard 잔⁠액';
+
+  @override
+  String get activityBalanceShielded => '차⁠폐 잔⁠액';
+
+  @override
+  String get activityDetailsLoadFailed => '실⁠패⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요';
+
+  @override
+  String get activityDetailsLoadPublicly => '공⁠개⁠로 불⁠러⁠오⁠기';
+
+  @override
+  String get activityDetailsLoadPubliclyLabel => '전⁠체 상⁠세 정⁠보';
+
+  @override
+  String get activityDetailsLoading => '불⁠러⁠오⁠는 중…';
+
+  @override
+  String get activityDetailsNotCovered => '비⁠공⁠개 모⁠드⁠에⁠서⁠는 볼 수 없⁠어⁠요';
+
+  @override
+  String get activityDetailsOmittedLabel => '표⁠시⁠되⁠지 않⁠음';
+
+  @override
+  String get activityDetailsOutputsLabel => '거⁠래 출⁠력';
+
+  @override
+  String get activityDetailsOutputsUnattributed => '받⁠는 사⁠람 미⁠확⁠인';
+
+  @override
+  String get activityDetailsUnavailable =>
+      '상⁠세 정⁠보⁠를 불⁠러⁠올 수 없⁠어⁠요. 서⁠비⁠스⁠에 연⁠결⁠되⁠면 업⁠데⁠이⁠트⁠돼⁠요';
+
+  @override
+  String get activityDetailsUnknownRecipient => '알 수 없⁠는 받⁠는 사⁠람';
+
+  @override
+  String get activityFeedEmpty => '아⁠직 활⁠동⁠이 없⁠어⁠요';
+
+  @override
+  String get activityFeedLoading => '활⁠동⁠을 불⁠러⁠오⁠는 중';
+
+  @override
+  String get activityFeedRetry => '활⁠동 다⁠시 불⁠러⁠오⁠기';
+
+  @override
+  String activityGiftBatchBreakdown(
+    String cards,
+    String fees,
+    String feeLabel,
+    String fee,
+  ) {
+    return '카⁠드 $cards ZEC · 사⁠용 수⁠수⁠료 $fees ZEC · $feeLabel $fee';
+  }
+
+  @override
+  String get activityGiftCreated => '기⁠프⁠트 카⁠드⁠를 만⁠들⁠었⁠어⁠요';
+
+  @override
+  String activityGiftCreatedMany(int count) {
+    return '기⁠프⁠트 카⁠드 $count⁠장⁠을 만⁠들⁠었⁠어⁠요';
+  }
+
+  @override
+  String get activityGiftCreating => '카⁠드 생⁠성 중';
+
+  @override
+  String activityGiftCreatingMany(int count) {
+    return '카⁠드 $count⁠장 생⁠성 중';
+  }
+
+  @override
+  String get activityGiftCreationFailed => '기⁠프⁠트 카⁠드 생⁠성 실⁠패';
+
+  @override
+  String get activityGiftGroupFailed => '기⁠프⁠트 카⁠드 묶⁠음 실⁠패';
+
+  @override
+  String get activityGiftRedeemed => '기⁠프⁠트 카⁠드⁠를 사⁠용⁠했⁠어⁠요';
+
+  @override
+  String get activityGiftRedeeming => '카⁠드 사⁠용 중';
+
+  @override
+  String get activityGiftRedemptionFailed => '기⁠프⁠트 카⁠드 사⁠용 실⁠패';
+
+  @override
+  String get activityGiftStatusCreated => '생⁠성⁠됨';
+
+  @override
+  String get activityGiftStatusCreating => '생⁠성 중…';
+
+  @override
+  String get activityGiftStatusRedeemed => '사⁠용⁠됨';
+
+  @override
+  String get activityGiftStatusRedeeming => '사⁠용 중…';
+
+  @override
+  String get activityGiftTotalPlanned => '예⁠정 합⁠계';
+
+  @override
+  String get activityGiftTotalSpent => '총 사⁠용⁠액';
+
+  @override
+  String get activityGiftTotalSubmitted => '제⁠출⁠한 합⁠계';
+
+  @override
+  String get activityLoadFailedDesktop => '활⁠동⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get activityLoadFailedMobile =>
+      '활⁠동⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get activityOmissionLaterOutputs => '두 번⁠째 이⁠후⁠의 출⁠력';
+
+  @override
+  String activityOmissionMoreOutputs(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '출⁠력 $count⁠개 더',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get activityOmissionOtherSenders => '다⁠른 보⁠낸 주⁠소';
+
+  @override
+  String get activityOmissionOutputAddress => '출⁠력 주⁠소';
+
+  @override
+  String get activityOmissionSender => '보⁠낸 주⁠소';
+
+  @override
+  String get activityOmissionSharedFunding => '다⁠른 지⁠갑⁠의 입⁠력';
+
+  @override
+  String get activityOmissionShieldedFunding => '자⁠금 중 차⁠폐⁠된 부⁠분';
+
+  @override
+  String get activityPayFailed => '결⁠제 실⁠패';
+
+  @override
+  String get activityPayFromShielded => '차⁠폐⁠된 ZEC⁠에⁠서';
+
+  @override
+  String activityPayFromShieldedOnChain(String network) {
+    return '차⁠폐⁠된 ZEC⁠에⁠서 · $network';
+  }
+
+  @override
+  String get activityPayInProgress => '결⁠제 진⁠행 중';
+
+  @override
+  String get activityPayIncomplete => '결⁠제 미⁠완⁠료';
+
+  @override
+  String get activityPayPaid => '결⁠제 완⁠료';
+
+  @override
+  String get activityPayPaying => '결⁠제 중 ...';
+
+  @override
+  String get activityPayRefunded => '결⁠제 환⁠불⁠됨';
+
+  @override
+  String get activityPoolMixed => '혼⁠합';
+
+  @override
+  String get activityPublicLookupBody =>
+      'Vizor⁠가 이 거⁠래 하⁠나⁠를 서⁠버⁠에 요⁠청⁠해⁠서 비⁠공⁠개 조⁠회⁠에⁠서 빠⁠진 정⁠보⁠를 보⁠여 드⁠려⁠요.';
+
+  @override
+  String get activityPublicLookupTitle => '상⁠세 정⁠보⁠를 공⁠개⁠로 불⁠러⁠올⁠까⁠요?';
+
+  @override
+  String get activityPublicLookupWarning =>
+      '서⁠버⁠는 이 지⁠갑⁠이 이 거⁠래⁠에 관⁠심⁠이 있⁠다⁠는 사⁠실⁠을 알⁠게 되⁠고, Tor⁠를 쓰⁠지 않⁠으⁠면 IP 주⁠소⁠도 알⁠게 돼⁠요.';
+
+  @override
+  String get activityReceiptAmount => '금⁠액';
+
+  @override
+  String get activityReceiptAmountMigrated => '이⁠전⁠한 금⁠액';
+
+  @override
+  String get activityReceiptCardFee => '카⁠드 수⁠수⁠료';
+
+  @override
+  String get activityReceiptCards => '카⁠드';
+
+  @override
+  String get activityReceiptDetails => '상⁠세 정⁠보';
+
+  @override
+  String get activityReceiptDetailsIncomplete => '상⁠세 정⁠보⁠가 완⁠전⁠하⁠지 않⁠아⁠요';
+
+  @override
+  String get activityReceiptDetailsIncompleteHelp =>
+      '이 거⁠래⁠의 수⁠신⁠자, 메⁠모, 수⁠수⁠료 같⁠은 일⁠부 정⁠보⁠를 아⁠직 알 수 없⁠어⁠요. 표⁠시⁠된 금⁠액⁠이 바⁠뀔 수 있⁠어⁠요.';
+
+  @override
+  String get activityReceiptEstimatedNetworkFee => '예⁠상 네⁠트⁠워⁠크 수⁠수⁠료';
+
+  @override
+  String get activityReceiptFrom => '보⁠낸 곳';
+
+  @override
+  String get activityReceiptIncomplete => '불⁠완⁠전⁠해⁠요';
+
+  @override
+  String get activityReceiptLoadFailed => '거⁠래⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get activityReceiptLoading => '거⁠래⁠를 불⁠러⁠오⁠는 중…';
+
+  @override
+  String get activityReceiptMessage => '메⁠시⁠지';
+
+  @override
+  String get activityReceiptNetChange => '순⁠변⁠동';
+
+  @override
+  String get activityReceiptNetworkFee => '네⁠트⁠워⁠크 수⁠수⁠료';
+
+  @override
+  String get activityReceiptNoAccount => '활⁠성 계⁠정⁠이 없⁠어⁠요.';
+
+  @override
+  String get activityReceiptOutput => '출⁠력';
+
+  @override
+  String get activityReceiptRefreshFailed => '최⁠신 거⁠래 상⁠태⁠를 새⁠로 고⁠치⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get activityReceiptShowFullAddress => '전⁠체 주⁠소 보⁠기';
+
+  @override
+  String get activityReceiptStatus => '상⁠태';
+
+  @override
+  String get activityReceiptTimestamp => '시⁠간';
+
+  @override
+  String get activityReceiptTo => '받⁠는 곳';
+
+  @override
+  String get activityReceiptTxFee => '거⁠래 수⁠수⁠료';
+
+  @override
+  String get activityReceiptTxId => '거⁠래 ID';
+
+  @override
+  String get activityReceiptUnattributedFeeHelp =>
+      '이 거⁠래⁠의 총 수⁠수⁠료⁠예⁠요. 내 계⁠정⁠이 부⁠담⁠한 금⁠액⁠은 알 수 없⁠어⁠요.';
+
+  @override
+  String get activityReceiptUnknownFee => '알 수 없⁠음';
+
+  @override
+  String get activityRowCheckingStatus => '상⁠태⁠를 확⁠인⁠하⁠는 중';
+
+  @override
+  String activityRowToday(String time) {
+    return '오⁠늘 $time';
+  }
+
+  @override
+  String get activityRowWaitingForConnection => '연⁠결⁠을 기⁠다⁠리⁠는 중';
+
+  @override
+  String activityRowYesterday(String time) {
+    return '어⁠제 $time';
+  }
+
+  @override
+  String get activityScreenTitle => '활⁠동';
+
+  @override
+  String get activitySectionEarlier => '이⁠전';
+
+  @override
+  String get activitySectionThisWeek => '이⁠번 주';
+
+  @override
+  String get activitySenderShielded => '차⁠폐⁠된 보⁠낸 사⁠람';
+
+  @override
+  String get activitySenderUnknown => '알 수 없⁠는 보⁠낸 사⁠람';
+
+  @override
+  String get activityStatusCompleted => '완⁠료';
+
+  @override
+  String get activityStatusFailed => '실⁠패';
+
+  @override
+  String get activityStatusFailedFundsReturned => '실⁠패, 자⁠금⁠이 반⁠환⁠됐⁠어⁠요';
+
+  @override
+  String get activityStatusInProgress => '진⁠행 중';
+
+  @override
+  String get activityStatusIncompleteDeposit => '입⁠금⁠이 부⁠족⁠해⁠요';
+
+  @override
+  String get activityStatusRefunded => '환⁠불⁠됨';
+
+  @override
+  String activitySwapAssetOnChain(String symbol, String chain) {
+    return '$chain⁠의 $symbol';
+  }
+
+  @override
+  String activitySwapDepositedAsset(String symbol) {
+    return '$symbol 입⁠금⁠됨';
+  }
+
+  @override
+  String get activitySwapFailed => '스⁠왑 실⁠패';
+
+  @override
+  String get activitySwapJustNow => '방⁠금';
+
+  @override
+  String activitySwapMinutesAgo(int minutes) {
+    return '$minutes⁠분 전';
+  }
+
+  @override
+  String activitySwapReceivedAsset(String symbol) {
+    return '$symbol 받⁠음';
+  }
+
+  @override
+  String get activitySwapRefunded => '스⁠왑 환⁠불⁠됨';
+
+  @override
+  String get activitySwapReviewQuote => '견⁠적 검⁠토';
+
+  @override
+  String activitySwapStep(int current, int total) {
+    return '$current/$total 진⁠행 중';
+  }
+
+  @override
+  String get activitySwapSwapped => '스⁠왑 완⁠료';
+
+  @override
+  String get activitySwapSwapping => '스⁠왑 중...';
+
+  @override
+  String get activitySwapTimeout => '시⁠간 초⁠과';
+
+  @override
+  String get activitySwapTitle => '스⁠왑';
+
+  @override
+  String get activityTitleMigrated => 'Ironwood⁠로 이⁠전⁠됨';
+
+  @override
+  String get activityTitleMigrating => 'Ironwood⁠로 이⁠전⁠하⁠는 중...';
+
+  @override
+  String get activityTitleMigratingVerb => 'Ironwood⁠로 이⁠전⁠하⁠는 중';
+
+  @override
+  String get activityTitleMigrationFailed => '이⁠전 실⁠패';
+
+  @override
+  String get activityTitleReceiveFailed => '받⁠기 실⁠패';
+
+  @override
+  String get activityTitleReceiveInProgress => '받⁠는 중...';
+
+  @override
+  String get activityTitleReceived => '받⁠음';
+
+  @override
+  String get activityTitleReceivedSuccessfully => '받⁠았⁠어⁠요';
+
+  @override
+  String get activityTitleReceiving => '받⁠는 중...';
+
+  @override
+  String get activityTitleReceivingVerb => '받⁠는 중';
+
+  @override
+  String get activityTitleSendFailed => '보⁠내⁠기 실⁠패';
+
+  @override
+  String get activityTitleSending => '보⁠내⁠는 중...';
+
+  @override
+  String get activityTitleSendingVerb => '보⁠내⁠는 중';
+
+  @override
+  String get activityTitleSent => '보⁠냄';
+
+  @override
+  String get activityTitleSentSuccessfully => '보⁠냈⁠어⁠요';
+
+  @override
+  String get activityTitleShielded => '차⁠폐⁠됨';
+
+  @override
+  String get activityTitleShieldedSuccessfully => '차⁠폐⁠했⁠어⁠요';
+
+  @override
+  String get activityTitleShielding => '차⁠폐⁠하⁠는 중...';
+
+  @override
+  String get activityTitleShieldingFailed => '차⁠폐 실⁠패';
+
+  @override
+  String get activityTitleShieldingInProgress => '차⁠폐⁠하⁠는 중...';
+
+  @override
+  String get activityTitleShieldingVerb => '차⁠폐⁠하⁠는 중';
+
+  @override
+  String get activityTitleTransaction => '거⁠래';
+
+  @override
+  String get activityToastHashCopiedDesktop => '거⁠래 해⁠시⁠를 복⁠사⁠했⁠어⁠요';
+
+  @override
+  String get activityToastHashCopiedMobile => '거⁠래 해⁠시⁠를 복⁠사⁠했⁠어⁠요';
+
+  @override
   String get appBackAmount => '금⁠액';
 
   @override

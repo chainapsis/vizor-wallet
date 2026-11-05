@@ -823,7 +823,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
               labels: ref.watch(activityEtaLabelsProvider),
               giftCard: giftCard,
             ) ??
-            ref.watch(activityPendingFallbackLabelProvider),
+            ref.watch(activityPendingFallbackLabelProvider).text(context.l10n),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardBatchCount: giftCard?.batchCount,

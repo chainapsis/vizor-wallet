@@ -110,19 +110,19 @@ void main() {
       final evidence = container.read(pendingActivityEvidenceProvider.notifier);
       expect(
         container.read(activityPendingFallbackLabelProvider),
-        'Checking status',
+        ActivityPendingFallback.checkingStatus,
       );
       evidence.invalidateNetwork(connectionFailed: true);
       evidence.setForeground(false);
       evidence.setForeground(true);
       expect(
         container.read(activityPendingFallbackLabelProvider),
-        'Waiting for connection',
+        ActivityPendingFallback.waitingForConnection,
       );
       evidence.networkChecked(100);
       expect(
         container.read(activityPendingFallbackLabelProvider),
-        'Checking status',
+        ActivityPendingFallback.checkingStatus,
       );
       for (final message in [
         'database is locked',
@@ -133,7 +133,7 @@ void main() {
         sync.emit(SyncState(failure: classifySyncFailure(message)));
         expect(
           container.read(activityPendingFallbackLabelProvider),
-          'Checking status',
+          ActivityPendingFallback.checkingStatus,
         );
       }
       sync.emit(
@@ -141,7 +141,7 @@ void main() {
       );
       expect(
         container.read(activityPendingFallbackLabelProvider),
-        'Waiting for connection',
+        ActivityPendingFallback.waitingForConnection,
       );
     },
   );

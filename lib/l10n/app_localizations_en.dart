@@ -174,6 +174,463 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountsViewViewingKey => 'View viewing key';
 
   @override
+  String get activityAddressShielded => 'Shielded address';
+
+  @override
+  String get activityAddressTransparent => 'Transparent address';
+
+  @override
+  String get activityAddressUnified => 'Unified address';
+
+  @override
+  String get activityAddressZcash => 'Zcash address';
+
+  @override
+  String get activityBalanceFromOrchard => 'From Orchard balance';
+
+  @override
+  String get activityBalanceFromTransparent => 'From transparent balance';
+
+  @override
+  String get activityBalanceIronwood => 'Ironwood balance';
+
+  @override
+  String get activityBalanceOrchard => 'Orchard balance';
+
+  @override
+  String get activityBalanceShielded => 'Shielded balance';
+
+  @override
+  String get activityDetailsLoadFailed => 'Failed — try again';
+
+  @override
+  String get activityDetailsLoadPublicly => 'Load publicly';
+
+  @override
+  String get activityDetailsLoadPubliclyLabel => 'Full details';
+
+  @override
+  String get activityDetailsLoading => 'Loading…';
+
+  @override
+  String get activityDetailsNotCovered => 'Not available in private mode';
+
+  @override
+  String get activityDetailsOmittedLabel => 'Not shown';
+
+  @override
+  String get activityDetailsOutputsLabel => 'Transaction outputs';
+
+  @override
+  String get activityDetailsOutputsUnattributed => 'Recipient not confirmed';
+
+  @override
+  String get activityDetailsUnavailable =>
+      'Details unavailable — will update when the service is reachable';
+
+  @override
+  String get activityDetailsUnknownRecipient => 'Unknown recipient';
+
+  @override
+  String get activityFeedEmpty => 'No activity yet';
+
+  @override
+  String get activityFeedLoading => 'Loading activity';
+
+  @override
+  String get activityFeedRetry => 'Retry loading activity';
+
+  @override
+  String activityGiftBatchBreakdown(
+    String cards,
+    String fees,
+    String feeLabel,
+    String fee,
+  ) {
+    return 'Cards $cards ZEC · Redeem fees $fees ZEC · $feeLabel $fee';
+  }
+
+  @override
+  String get activityGiftCreated => 'Created a gift card';
+
+  @override
+  String activityGiftCreatedMany(int count) {
+    return 'Created $count gift cards';
+  }
+
+  @override
+  String get activityGiftCreating => 'Creating a card';
+
+  @override
+  String activityGiftCreatingMany(int count) {
+    return 'Creating $count cards';
+  }
+
+  @override
+  String get activityGiftCreationFailed => 'Gift card creation failed';
+
+  @override
+  String get activityGiftGroupFailed => 'Gift card group failed';
+
+  @override
+  String get activityGiftRedeemed => 'Redeemed a gift card';
+
+  @override
+  String get activityGiftRedeeming => 'Redeeming a card';
+
+  @override
+  String get activityGiftRedemptionFailed => 'Gift card redemption failed';
+
+  @override
+  String get activityGiftStatusCreated => 'Created';
+
+  @override
+  String get activityGiftStatusCreating => 'Creating…';
+
+  @override
+  String get activityGiftStatusRedeemed => 'Redeemed';
+
+  @override
+  String get activityGiftStatusRedeeming => 'Redeeming…';
+
+  @override
+  String get activityGiftTotalPlanned => 'Planned total';
+
+  @override
+  String get activityGiftTotalSpent => 'Total spent';
+
+  @override
+  String get activityGiftTotalSubmitted => 'Submitted total';
+
+  @override
+  String get activityLoadFailedDesktop => 'Activity could not be loaded.';
+
+  @override
+  String get activityLoadFailedMobile =>
+      'Couldn\'t load activity. Try again in a moment.';
+
+  @override
+  String get activityOmissionLaterOutputs => 'outputs after the second';
+
+  @override
+  String activityOmissionMoreOutputs(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count more outputs',
+      one: '1 more output',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get activityOmissionOtherSenders => 'other sending addresses';
+
+  @override
+  String get activityOmissionOutputAddress => 'an output address';
+
+  @override
+  String get activityOmissionSender => 'the sending address';
+
+  @override
+  String get activityOmissionSharedFunding => 'inputs from other wallets';
+
+  @override
+  String get activityOmissionShieldedFunding =>
+      'the shielded part of the funding';
+
+  @override
+  String get activityPayFailed => 'Payment failed';
+
+  @override
+  String get activityPayFromShielded => 'from shielded ZEC';
+
+  @override
+  String activityPayFromShieldedOnChain(String network) {
+    return 'from shielded ZEC · $network';
+  }
+
+  @override
+  String get activityPayInProgress => 'Payment in progress';
+
+  @override
+  String get activityPayIncomplete => 'Payment incomplete';
+
+  @override
+  String get activityPayPaid => 'Paid';
+
+  @override
+  String get activityPayPaying => 'Paying ...';
+
+  @override
+  String get activityPayRefunded => 'Payment refunded';
+
+  @override
+  String get activityPoolMixed => 'Mixed';
+
+  @override
+  String get activityPublicLookupBody =>
+      'Vizor will ask the server for this one transaction to show what private lookups leave out.';
+
+  @override
+  String get activityPublicLookupTitle => 'Load details publicly?';
+
+  @override
+  String get activityPublicLookupWarning =>
+      'The server learns that this wallet is interested in this transaction, and without Tor, your IP address.';
+
+  @override
+  String get activityReceiptAmount => 'Amount';
+
+  @override
+  String get activityReceiptAmountMigrated => 'Amount migrated';
+
+  @override
+  String get activityReceiptCardFee => 'Card fee';
+
+  @override
+  String get activityReceiptCards => 'Cards';
+
+  @override
+  String get activityReceiptDetails => 'Details';
+
+  @override
+  String get activityReceiptDetailsIncomplete => 'Details incomplete';
+
+  @override
+  String get activityReceiptDetailsIncompleteHelp =>
+      'Some details of this transaction, such as its recipients, memos, or fee, are not known yet. The amount shown may change.';
+
+  @override
+  String get activityReceiptEstimatedNetworkFee => 'Estimated network fee';
+
+  @override
+  String get activityReceiptFrom => 'From';
+
+  @override
+  String get activityReceiptIncomplete => 'Incomplete';
+
+  @override
+  String get activityReceiptLoadFailed => 'Transaction could not be loaded.';
+
+  @override
+  String get activityReceiptLoading => 'Loading transaction…';
+
+  @override
+  String get activityReceiptMessage => 'Message';
+
+  @override
+  String get activityReceiptNetChange => 'Net change';
+
+  @override
+  String get activityReceiptNetworkFee => 'Network fee';
+
+  @override
+  String get activityReceiptNoAccount => 'No active account.';
+
+  @override
+  String get activityReceiptOutput => 'Output';
+
+  @override
+  String get activityReceiptRefreshFailed =>
+      'Latest transaction status could not be refreshed.';
+
+  @override
+  String get activityReceiptShowFullAddress => 'Show full address';
+
+  @override
+  String get activityReceiptStatus => 'Status';
+
+  @override
+  String get activityReceiptTimestamp => 'Timestamp';
+
+  @override
+  String get activityReceiptTo => 'To';
+
+  @override
+  String get activityReceiptTxFee => 'Tx fee';
+
+  @override
+  String get activityReceiptTxId => 'Tx ID';
+
+  @override
+  String get activityReceiptUnattributedFeeHelp =>
+      'Total fee for this transaction. Your account\'s share of this fee is unknown.';
+
+  @override
+  String get activityReceiptUnknownFee => 'Unknown';
+
+  @override
+  String get activityRowCheckingStatus => 'Checking status';
+
+  @override
+  String activityRowToday(String time) {
+    return 'Today, $time';
+  }
+
+  @override
+  String get activityRowWaitingForConnection => 'Waiting for connection';
+
+  @override
+  String activityRowYesterday(String time) {
+    return 'Yesterday, $time';
+  }
+
+  @override
+  String get activityScreenTitle => 'Activity';
+
+  @override
+  String get activitySectionEarlier => 'Earlier';
+
+  @override
+  String get activitySectionThisWeek => 'This week';
+
+  @override
+  String get activitySenderShielded => 'Shielded sender';
+
+  @override
+  String get activitySenderUnknown => 'Unknown sender';
+
+  @override
+  String get activityStatusCompleted => 'Completed';
+
+  @override
+  String get activityStatusFailed => 'Failed';
+
+  @override
+  String get activityStatusFailedFundsReturned => 'Failed, funds returned';
+
+  @override
+  String get activityStatusInProgress => 'In progress';
+
+  @override
+  String get activityStatusIncompleteDeposit => 'Incomplete deposit';
+
+  @override
+  String get activityStatusRefunded => 'Refunded';
+
+  @override
+  String activitySwapAssetOnChain(String symbol, String chain) {
+    return '$symbol on $chain';
+  }
+
+  @override
+  String activitySwapDepositedAsset(String symbol) {
+    return 'Deposited $symbol';
+  }
+
+  @override
+  String get activitySwapFailed => 'Swap failed';
+
+  @override
+  String get activitySwapJustNow => 'just now';
+
+  @override
+  String activitySwapMinutesAgo(int minutes) {
+    return '${minutes}m ago';
+  }
+
+  @override
+  String activitySwapReceivedAsset(String symbol) {
+    return 'Received $symbol';
+  }
+
+  @override
+  String get activitySwapRefunded => 'Swap refunded';
+
+  @override
+  String get activitySwapReviewQuote => 'Review quote';
+
+  @override
+  String activitySwapStep(int current, int total) {
+    return '$current/$total In progress';
+  }
+
+  @override
+  String get activitySwapSwapped => 'Swapped';
+
+  @override
+  String get activitySwapSwapping => 'Swapping...';
+
+  @override
+  String get activitySwapTimeout => 'Timeout';
+
+  @override
+  String get activitySwapTitle => 'Swap';
+
+  @override
+  String get activityTitleMigrated => 'Migrated to Ironwood';
+
+  @override
+  String get activityTitleMigrating => 'Migrating to Ironwood...';
+
+  @override
+  String get activityTitleMigratingVerb => 'Migrating to Ironwood';
+
+  @override
+  String get activityTitleMigrationFailed => 'Migration failed';
+
+  @override
+  String get activityTitleReceiveFailed => 'Receive failed';
+
+  @override
+  String get activityTitleReceiveInProgress => 'Receive in progress...';
+
+  @override
+  String get activityTitleReceived => 'Received';
+
+  @override
+  String get activityTitleReceivedSuccessfully => 'Received successfully';
+
+  @override
+  String get activityTitleReceiving => 'Receiving...';
+
+  @override
+  String get activityTitleReceivingVerb => 'Receiving';
+
+  @override
+  String get activityTitleSendFailed => 'Send failed';
+
+  @override
+  String get activityTitleSending => 'Sending...';
+
+  @override
+  String get activityTitleSendingVerb => 'Sending';
+
+  @override
+  String get activityTitleSent => 'Sent';
+
+  @override
+  String get activityTitleSentSuccessfully => 'Sent successfully';
+
+  @override
+  String get activityTitleShielded => 'Shielded';
+
+  @override
+  String get activityTitleShieldedSuccessfully => 'Shielded successfully';
+
+  @override
+  String get activityTitleShielding => 'Shielding...';
+
+  @override
+  String get activityTitleShieldingFailed => 'Shielding failed';
+
+  @override
+  String get activityTitleShieldingInProgress => 'Shielding in progress...';
+
+  @override
+  String get activityTitleShieldingVerb => 'Shielding';
+
+  @override
+  String get activityTitleTransaction => 'Transaction';
+
+  @override
+  String get activityToastHashCopiedDesktop => 'Transaction hash copied';
+
+  @override
+  String get activityToastHashCopiedMobile => 'Transaction Hash Copied';
+
+  @override
   String get appBackAmount => 'Amount';
 
   @override

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
@@ -254,7 +255,7 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
       setState(() {
         _isLoading = false;
         _detailsPending = false;
-        _error = 'No active account.';
+        _error = context.l10n.activityReceiptNoAccount;
       });
       return;
     }
@@ -279,8 +280,8 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
       if (tx == null) {
         setState(() {
           _error = _transaction == null
-              ? 'Transaction could not be loaded.'
-              : 'Latest transaction status could not be refreshed.';
+              ? context.l10n.activityReceiptLoadFailed
+              : context.l10n.activityReceiptRefreshFailed;
           _isLoading = false;
           _detailsPending = false;
         });
@@ -314,8 +315,8 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
       log('TransactionReceipt: transaction load failed: $e\n$st');
       setState(() {
         _error = _transaction == null
-            ? 'Transaction could not be loaded.'
-            : 'Latest transaction status could not be refreshed.';
+            ? context.l10n.activityReceiptLoadFailed
+            : context.l10n.activityReceiptRefreshFailed;
         _isLoading = false;
         _detailsPending = false;
       });
@@ -507,7 +508,7 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
     var loaded = false;
     try {
       if (!await widget.publicLookupConfirmation(context) || !mounted) return;
-      setState(() => _publicLookupText = kLoadDetailsPubliclyLoadingText);
+      setState(() => _publicLookupText = context.l10n.activityDetailsLoading);
       final lookup = widget.transparentDetailsPublicLookup;
       if (lookup != null) {
         await lookup(tx);
@@ -522,7 +523,9 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
     } catch (e) {
       log('TransactionReceipt: public details lookup failed');
       if (mounted && _activeAccountUuid == accountUuid) {
-        setState(() => _publicLookupText = kLoadDetailsPubliclyFailedText);
+        setState(
+          () => _publicLookupText = context.l10n.activityDetailsLoadFailed,
+        );
       }
     } finally {
       _publicLookupRunning = false;

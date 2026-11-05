@@ -194,6 +194,650 @@
   "@accountsViewViewingKey": {
     "description": "[security] Account menu item that shows the account's viewing key."
   },
+  "activityAddressShielded": "Shielded address",
+  "@activityAddressShielded": {
+    "description": "Title of the sheet that shows a full shielded address."
+  },
+  "activityAddressTransparent": "Transparent address",
+  "@activityAddressTransparent": {
+    "description": "Title of the sheet that shows a full transparent address."
+  },
+  "activityAddressUnified": "Unified address",
+  "@activityAddressUnified": {
+    "description": "Title of the sheet that shows a full unified address."
+  },
+  "activityAddressZcash": "Zcash address",
+  "@activityAddressZcash": {
+    "description": "Title of the sheet that shows a full address of unrecognized type."
+  },
+  "activityBalanceFromOrchard": "From Orchard balance",
+  "@activityBalanceFromOrchard": {
+    "description": "Sub-line under the amount of an Ironwood migration receipt: the funds came from the Orchard balance."
+  },
+  "activityBalanceFromTransparent": "From transparent balance",
+  "@activityBalanceFromTransparent": {
+    "description": "Sub-line under the amount of a shielding receipt: the funds came from the transparent balance."
+  },
+  "activityBalanceIronwood": "Ironwood balance",
+  "@activityBalanceIronwood": {
+    "description": "Value of the To row of a migration receipt."
+  },
+  "activityBalanceOrchard": "Orchard balance",
+  "@activityBalanceOrchard": {
+    "description": "Value of the From row of a migration receipt."
+  },
+  "activityBalanceShielded": "Shielded balance",
+  "@activityBalanceShielded": {
+    "description": "Value of the To row of a shielding receipt."
+  },
+  "activityDetailsLoadFailed": "Failed — try again",
+  "@activityDetailsLoadFailed": {
+    "description": "Row value shown after a public load of the transaction details failed; the row stays tappable."
+  },
+  "activityDetailsLoadPublicly": "Load publicly",
+  "@activityDetailsLoadPublicly": {
+    "description": "Row value and dialog button that loads one transaction's full details from the server."
+  },
+  "activityDetailsLoadPubliclyLabel": "Full details",
+  "@activityDetailsLoadPubliclyLabel": {
+    "description": "Label of the row that offers to load one transaction's full details from the server."
+  },
+  "activityDetailsLoading": "Loading…",
+  "@activityDetailsLoading": {
+    "description": "Row value shown while a public load of the transaction details runs."
+  },
+  "activityDetailsNotCovered": "Not available in private mode",
+  "@activityDetailsNotCovered": {
+    "description": "Value of the Details row when Private queries cannot look up the transaction's outputs."
+  },
+  "activityDetailsOmittedLabel": "Not shown",
+  "@activityDetailsOmittedLabel": {
+    "description": "Label of the row that lists what the private details of a transaction leave out."
+  },
+  "activityDetailsOutputsLabel": "Transaction outputs",
+  "@activityDetailsOutputsLabel": {
+    "description": "Label of the list of a transaction's other transparent outputs when no recipient was recorded."
+  },
+  "activityDetailsOutputsUnattributed": "Recipient not confirmed",
+  "@activityDetailsOutputsUnattributed": {
+    "description": "Value telling that the listed outputs are the transaction's, not payments the account is known to have made."
+  },
+  "activityDetailsUnavailable": "Details unavailable — will update when the service is reachable",
+  "@activityDetailsUnavailable": {
+    "description": "Value of the Details row when transparent outputs could not be looked up yet; a later sync fills them in."
+  },
+  "activityDetailsUnknownRecipient": "Unknown recipient",
+  "@activityDetailsUnknownRecipient": {
+    "description": "Value of the To row of a send whose recipient the account did not record."
+  },
+  "activityFeedEmpty": "No activity yet",
+  "@activityFeedEmpty": {
+    "description": "Message shown when the activity list is empty."
+  },
+  "activityFeedLoading": "Loading activity",
+  "@activityFeedLoading": {
+    "description": "Screen-reader label of the activity list loading placeholder."
+  },
+  "activityFeedRetry": "Retry loading activity",
+  "@activityFeedRetry": {
+    "description": "Button that reloads the activity list after it failed."
+  },
+  "activityGiftBatchBreakdown": "Cards {cards} ZEC · Redeem fees {fees} ZEC · {feeLabel} {fee}",
+  "@activityGiftBatchBreakdown": {
+    "description": "Cost breakdown of a gift card batch: card value, reserved redeem fees, and the network fee.",
+    "placeholders": {
+      "cards": {
+        "type": "String",
+        "example": "1.5"
+      },
+      "fees": {
+        "type": "String",
+        "example": "0.0003"
+      },
+      "feeLabel": {
+        "type": "String",
+        "example": "Network fee"
+      },
+      "fee": {
+        "type": "String",
+        "example": "0.0001 ZEC"
+      }
+    }
+  },
+  "activityGiftCreated": "Created a gift card",
+  "@activityGiftCreated": {
+    "description": "Title of a completed gift card creation."
+  },
+  "activityGiftCreatedMany": "Created {count} gift cards",
+  "@activityGiftCreatedMany": {
+    "description": "Title of a completed batch of gift cards.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "activityGiftCreating": "Creating a card",
+  "@activityGiftCreating": {
+    "description": "Title of a pending gift card creation; the app appends an ellipsis."
+  },
+  "activityGiftCreatingMany": "Creating {count} cards",
+  "@activityGiftCreatingMany": {
+    "description": "Title of a pending batch of gift cards; the app appends an ellipsis.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "activityGiftCreationFailed": "Gift card creation failed",
+  "@activityGiftCreationFailed": {
+    "description": "Title of a gift card that could not be created."
+  },
+  "activityGiftGroupFailed": "Gift card group failed",
+  "@activityGiftGroupFailed": {
+    "description": "Title of a failed batch of gift cards."
+  },
+  "activityGiftRedeemed": "Redeemed a gift card",
+  "@activityGiftRedeemed": {
+    "description": "Title of a completed gift card redemption."
+  },
+  "activityGiftRedeeming": "Redeeming a card",
+  "@activityGiftRedeeming": {
+    "description": "Title of a pending gift card redemption; the app appends an ellipsis."
+  },
+  "activityGiftRedemptionFailed": "Gift card redemption failed",
+  "@activityGiftRedemptionFailed": {
+    "description": "Title of a gift card that could not be redeemed."
+  },
+  "activityGiftStatusCreated": "Created",
+  "@activityGiftStatusCreated": {
+    "description": "Status of a gift card receipt after the card was created."
+  },
+  "activityGiftStatusCreating": "Creating…",
+  "@activityGiftStatusCreating": {
+    "description": "Status of a gift card receipt while the card is being created."
+  },
+  "activityGiftStatusRedeemed": "Redeemed",
+  "@activityGiftStatusRedeemed": {
+    "description": "Status of a gift card receipt after the card was redeemed."
+  },
+  "activityGiftStatusRedeeming": "Redeeming…",
+  "@activityGiftStatusRedeeming": {
+    "description": "Status of a gift card receipt while the card is being redeemed."
+  },
+  "activityGiftTotalPlanned": "Planned total",
+  "@activityGiftTotalPlanned": {
+    "description": "Label of the total cost of a gift card batch that failed."
+  },
+  "activityGiftTotalSpent": "Total spent",
+  "@activityGiftTotalSpent": {
+    "description": "Label of the total cost of a completed gift card batch."
+  },
+  "activityGiftTotalSubmitted": "Submitted total",
+  "@activityGiftTotalSubmitted": {
+    "description": "Label of the total cost of a gift card batch that is pending."
+  },
+  "activityLoadFailedDesktop": "Activity could not be loaded.",
+  "@activityLoadFailedDesktop": {
+    "description": "Error shown on the desktop activity screen when loading failed."
+  },
+  "activityLoadFailedMobile": "Couldn't load activity. Try again in a moment.",
+  "@activityLoadFailedMobile": {
+    "description": "Error shown on the mobile activity screen when loading failed."
+  },
+  "activityOmissionLaterOutputs": "outputs after the second",
+  "@activityOmissionLaterOutputs": {
+    "description": "Item in the list of what private details leave out: outputs beyond the second."
+  },
+  "activityOmissionMoreOutputs": "{count, plural, =1{1 more output} other{{count} more outputs}}",
+  "@activityOmissionMoreOutputs": {
+    "description": "Item in the list of what private details leave out: how many outputs are not listed.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "activityOmissionOtherSenders": "other sending addresses",
+  "@activityOmissionOtherSenders": {
+    "description": "Item in the list of what private details leave out: further sender addresses."
+  },
+  "activityOmissionOutputAddress": "an output address",
+  "@activityOmissionOutputAddress": {
+    "description": "Item in the list of what private details leave out: an output address."
+  },
+  "activityOmissionSender": "the sending address",
+  "@activityOmissionSender": {
+    "description": "Item in the list of what private details leave out: the sender address."
+  },
+  "activityOmissionSharedFunding": "inputs from other wallets",
+  "@activityOmissionSharedFunding": {
+    "description": "Item in the list of what private details leave out: inputs owned by other wallets."
+  },
+  "activityOmissionShieldedFunding": "the shielded part of the funding",
+  "@activityOmissionShieldedFunding": {
+    "description": "Item in the list of what private details leave out: the shielded part of the funds."
+  },
+  "activityPayFailed": "Payment failed",
+  "@activityPayFailed": {
+    "description": "Title of a failed Pay activity row or detail screen."
+  },
+  "activityPayFromShielded": "from shielded ZEC",
+  "@activityPayFromShielded": {
+    "description": "Subtitle of a Pay activity row: the payment was made from shielded ZEC."
+  },
+  "activityPayFromShieldedOnChain": "from shielded ZEC · {network}",
+  "@activityPayFromShieldedOnChain": {
+    "description": "Subtitle of a Pay activity row: shielded ZEC paid out to a network.",
+    "placeholders": {
+      "network": {
+        "type": "String",
+        "example": "Ethereum"
+      }
+    }
+  },
+  "activityPayInProgress": "Payment in progress",
+  "@activityPayInProgress": {
+    "description": "Title of a pending Pay activity row."
+  },
+  "activityPayIncomplete": "Payment incomplete",
+  "@activityPayIncomplete": {
+    "description": "Title of the Pay detail screen when the deposit was incomplete."
+  },
+  "activityPayPaid": "Paid",
+  "@activityPayPaid": {
+    "description": "Title of a completed Pay activity row or detail screen."
+  },
+  "activityPayPaying": "Paying ...",
+  "@activityPayPaying": {
+    "description": "Title of the Pay detail screen while the payment is pending."
+  },
+  "activityPayRefunded": "Payment refunded",
+  "@activityPayRefunded": {
+    "description": "Title of a refunded Pay activity row or detail screen."
+  },
+  "activityPoolMixed": "Mixed",
+  "@activityPoolMixed": {
+    "description": "Badge on an activity row for a transaction that involves more than one pool."
+  },
+  "activityPublicLookupBody": "Vizor will ask the server for this one transaction to show what private lookups leave out.",
+  "@activityPublicLookupBody": {
+    "description": "Body of the dialog that confirms loading one transaction's details from the server."
+  },
+  "activityPublicLookupTitle": "Load details publicly?",
+  "@activityPublicLookupTitle": {
+    "description": "Title of the dialog that confirms loading one transaction's details from the server."
+  },
+  "activityPublicLookupWarning": "The server learns that this wallet is interested in this transaction, and without Tor, your IP address.",
+  "@activityPublicLookupWarning": {
+    "description": "[security] Warning in the dialog that confirms loading one transaction's details from the server: what the server learns."
+  },
+  "activityReceiptAmount": "Amount",
+  "@activityReceiptAmount": {
+    "description": "Label of a row on a transaction receipt: the transferred amount."
+  },
+  "activityReceiptAmountMigrated": "Amount migrated",
+  "@activityReceiptAmountMigrated": {
+    "description": "Label of a row on a transaction receipt: the amount moved to Ironwood."
+  },
+  "activityReceiptCardFee": "Card fee",
+  "@activityReceiptCardFee": {
+    "description": "Label of a row on a transaction receipt: the fee for creating a gift card."
+  },
+  "activityReceiptCards": "Cards",
+  "@activityReceiptCards": {
+    "description": "Label of a row on a transaction receipt: the number of gift cards in a batch."
+  },
+  "activityReceiptDetails": "Details",
+  "@activityReceiptDetails": {
+    "description": "Label of a row on a transaction receipt: a notice about transaction details."
+  },
+  "activityReceiptDetailsIncomplete": "Details incomplete",
+  "@activityReceiptDetailsIncomplete": {
+    "description": "Short notice, also a sheet title, that some details of an entry are not known yet."
+  },
+  "activityReceiptDetailsIncompleteHelp": "Some details of this transaction, such as its recipients, memos, or fee, are not known yet. The amount shown may change.",
+  "@activityReceiptDetailsIncompleteHelp": {
+    "description": "Explains why a receipt is marked as having incomplete details."
+  },
+  "activityReceiptEstimatedNetworkFee": "Estimated network fee",
+  "@activityReceiptEstimatedNetworkFee": {
+    "description": "Part of the gift card batch cost breakdown: the network fee while the batch is pending or failed."
+  },
+  "activityReceiptFrom": "From",
+  "@activityReceiptFrom": {
+    "description": "Label of a row on a transaction receipt: the sender or the source of funds."
+  },
+  "activityReceiptIncomplete": "Incomplete",
+  "@activityReceiptIncomplete": {
+    "description": "Value of the Details row on a receipt whose details are not all known yet."
+  },
+  "activityReceiptLoadFailed": "Transaction could not be loaded.",
+  "@activityReceiptLoadFailed": {
+    "description": "Message shown when a transaction receipt could not be loaded."
+  },
+  "activityReceiptLoading": "Loading transaction…",
+  "@activityReceiptLoading": {
+    "description": "Message shown while a transaction receipt is loading."
+  },
+  "activityReceiptMessage": "Message",
+  "@activityReceiptMessage": {
+    "description": "Label of a row on a transaction receipt: the memo attached to the transaction."
+  },
+  "activityReceiptNetChange": "Net change",
+  "@activityReceiptNetChange": {
+    "description": "Label of a row on a transaction receipt: the balance change of a transaction that is not shown as an external payment."
+  },
+  "activityReceiptNetworkFee": "Network fee",
+  "@activityReceiptNetworkFee": {
+    "description": "Label of a row on a transaction receipt: the total network fee of the transaction."
+  },
+  "activityReceiptNoAccount": "No active account.",
+  "@activityReceiptNoAccount": {
+    "description": "Error shown when a receipt is opened with no active account."
+  },
+  "activityReceiptOutput": "Output",
+  "@activityReceiptOutput": {
+    "description": "Label of a row on a transaction receipt: one transparent output of the transaction, followed by its address and amount."
+  },
+  "activityReceiptRefreshFailed": "Latest transaction status could not be refreshed.",
+  "@activityReceiptRefreshFailed": {
+    "description": "Message shown when the latest status of a transaction could not be refreshed."
+  },
+  "activityReceiptShowFullAddress": "Show full address",
+  "@activityReceiptShowFullAddress": {
+    "description": "Ghost button on a receipt row that opens the full address of the sender or recipient."
+  },
+  "activityReceiptStatus": "Status",
+  "@activityReceiptStatus": {
+    "description": "Label of a row on a transaction receipt: the transaction status."
+  },
+  "activityReceiptTimestamp": "Timestamp",
+  "@activityReceiptTimestamp": {
+    "description": "Label of a row on a transaction receipt: the date and time of the transaction."
+  },
+  "activityReceiptTo": "To",
+  "@activityReceiptTo": {
+    "description": "Label of a row on a transaction receipt: the recipient or the destination of funds."
+  },
+  "activityReceiptTxFee": "Tx fee",
+  "@activityReceiptTxFee": {
+    "description": "Label of a row on a transaction receipt: the fee paid for the transaction."
+  },
+  "activityReceiptTxId": "Tx ID",
+  "@activityReceiptTxId": {
+    "description": "Label of a row on a transaction receipt: the transaction ID, tapping it opens a block explorer."
+  },
+  "activityReceiptUnattributedFeeHelp": "Total fee for this transaction. Your account's share of this fee is unknown.",
+  "@activityReceiptUnattributedFeeHelp": {
+    "description": "Tooltip explaining a network fee when the account's share of it is not known."
+  },
+  "activityReceiptUnknownFee": "Unknown",
+  "@activityReceiptUnknownFee": {
+    "description": "Shown as the fee of a transaction whose fee the wallet has not recorded. An unknown fee is never zero."
+  },
+  "activityRowCheckingStatus": "Checking status",
+  "@activityRowCheckingStatus": {
+    "description": "Subtitle of a pending activity row while the app checks the transaction status."
+  },
+  "activityRowToday": "Today, {time}",
+  "@activityRowToday": {
+    "description": "Timestamp of an activity row from today on desktop.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "13:40"
+      }
+    }
+  },
+  "activityRowWaitingForConnection": "Waiting for connection",
+  "@activityRowWaitingForConnection": {
+    "description": "Subtitle of a pending activity row while the app has no connection."
+  },
+  "activityRowYesterday": "Yesterday, {time}",
+  "@activityRowYesterday": {
+    "description": "Timestamp of an activity row from yesterday on desktop.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "13:40"
+      }
+    }
+  },
+  "activityScreenTitle": "Activity",
+  "@activityScreenTitle": {
+    "description": "Title of the activity screen and its list."
+  },
+  "activitySectionEarlier": "Earlier",
+  "@activitySectionEarlier": {
+    "description": "Heading of the activity section for entries without a date."
+  },
+  "activitySectionThisWeek": "This week",
+  "@activitySectionThisWeek": {
+    "description": "Heading of the activity section for the current week."
+  },
+  "activitySenderShielded": "Shielded sender",
+  "@activitySenderShielded": {
+    "description": "Value of the From row when the sender is in a shielded pool, so no address is known."
+  },
+  "activitySenderUnknown": "Unknown sender",
+  "@activitySenderUnknown": {
+    "description": "Value of the From row when the sender cannot be determined."
+  },
+  "activityStatusCompleted": "Completed",
+  "@activityStatusCompleted": {
+    "description": "Status value of a transaction or swap that finished."
+  },
+  "activityStatusFailed": "Failed",
+  "@activityStatusFailed": {
+    "description": "Status value of a transaction or swap that failed."
+  },
+  "activityStatusFailedFundsReturned": "Failed, funds returned",
+  "@activityStatusFailedFundsReturned": {
+    "description": "Status value of a mobile receipt for a transaction that expired before mining; no funds were spent."
+  },
+  "activityStatusInProgress": "In progress",
+  "@activityStatusInProgress": {
+    "description": "Status value of a transaction or swap that has not finished."
+  },
+  "activityStatusIncompleteDeposit": "Incomplete deposit",
+  "@activityStatusIncompleteDeposit": {
+    "description": "Status value of a swap whose deposit was smaller than the quote requires."
+  },
+  "activityStatusRefunded": "Refunded",
+  "@activityStatusRefunded": {
+    "description": "Status value of a swap, or subtitle of a failed row, whose funds were returned."
+  },
+  "activitySwapAssetOnChain": "{symbol} on {chain}",
+  "@activitySwapAssetOnChain": {
+    "description": "Subtitle of a swap activity row: an asset and the chain it lives on.",
+    "placeholders": {
+      "symbol": {
+        "type": "String",
+        "example": "USDC"
+      },
+      "chain": {
+        "type": "String",
+        "example": "Ethereum"
+      }
+    }
+  },
+  "activitySwapDepositedAsset": "Deposited {symbol}",
+  "@activitySwapDepositedAsset": {
+    "description": "Title of the sub-row of a completed swap that shows the deposited asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String",
+        "example": "USDC"
+      }
+    }
+  },
+  "activitySwapFailed": "Swap failed",
+  "@activitySwapFailed": {
+    "description": "Title of a failed swap activity row."
+  },
+  "activitySwapJustNow": "just now",
+  "@activitySwapJustNow": {
+    "description": "Timestamp of a swap sub-row that settled less than a minute ago."
+  },
+  "activitySwapMinutesAgo": "{minutes}m ago",
+  "@activitySwapMinutesAgo": {
+    "description": "Timestamp of a swap sub-row that settled some minutes ago.",
+    "placeholders": {
+      "minutes": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
+  "activitySwapReceivedAsset": "Received {symbol}",
+  "@activitySwapReceivedAsset": {
+    "description": "Title of the sub-row of a completed swap that shows the received asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String",
+        "example": "ZEC"
+      }
+    }
+  },
+  "activitySwapRefunded": "Swap refunded",
+  "@activitySwapRefunded": {
+    "description": "Title of a refunded swap activity row."
+  },
+  "activitySwapReviewQuote": "Review quote",
+  "@activitySwapReviewQuote": {
+    "description": "Title of the mobile swap detail screen while the user has to review the quote."
+  },
+  "activitySwapStep": "{current}/{total} In progress",
+  "@activitySwapStep": {
+    "description": "Status of a swap activity row that shows which step of the swap it is on.",
+    "placeholders": {
+      "current": {
+        "type": "int",
+        "example": "2"
+      },
+      "total": {
+        "type": "int",
+        "example": "4"
+      }
+    }
+  },
+  "activitySwapSwapped": "Swapped",
+  "@activitySwapSwapped": {
+    "description": "Title of a completed swap activity row."
+  },
+  "activitySwapSwapping": "Swapping...",
+  "@activitySwapSwapping": {
+    "description": "Title of a pending swap activity row."
+  },
+  "activitySwapTimeout": "Timeout",
+  "@activitySwapTimeout": {
+    "description": "Subtitle of the amount of a swap that expired."
+  },
+  "activitySwapTitle": "Swap",
+  "@activitySwapTitle": {
+    "description": "Title of the mobile swap detail screen when the swap is not loaded."
+  },
+  "activityTitleMigrated": "Migrated to Ironwood",
+  "@activityTitleMigrated": {
+    "description": "Title of an activity row or receipt for funds moved from Orchard to Ironwood."
+  },
+  "activityTitleMigrating": "Migrating to Ironwood...",
+  "@activityTitleMigrating": {
+    "description": "Title of the mobile receipt of a pending Ironwood migration."
+  },
+  "activityTitleMigratingVerb": "Migrating to Ironwood",
+  "@activityTitleMigratingVerb": {
+    "description": "Title of a pending Ironwood migration activity row; the app appends an ellipsis."
+  },
+  "activityTitleMigrationFailed": "Migration failed",
+  "@activityTitleMigrationFailed": {
+    "description": "Title of an activity row or receipt for a failed move to Ironwood."
+  },
+  "activityTitleReceiveFailed": "Receive failed",
+  "@activityTitleReceiveFailed": {
+    "description": "Title of a receipt for an incoming transaction that failed."
+  },
+  "activityTitleReceiveInProgress": "Receive in progress...",
+  "@activityTitleReceiveInProgress": {
+    "description": "Title of the desktop receipt of an incoming transaction that is pending."
+  },
+  "activityTitleReceived": "Received",
+  "@activityTitleReceived": {
+    "description": "Title of an activity row or receipt for an incoming transaction."
+  },
+  "activityTitleReceivedSuccessfully": "Received successfully",
+  "@activityTitleReceivedSuccessfully": {
+    "description": "Title of the desktop receipt of an incoming transaction that completed."
+  },
+  "activityTitleReceiving": "Receiving...",
+  "@activityTitleReceiving": {
+    "description": "Title of the mobile receipt of an incoming transaction that is pending."
+  },
+  "activityTitleReceivingVerb": "Receiving",
+  "@activityTitleReceivingVerb": {
+    "description": "Title of a pending incoming activity row; the app appends an ellipsis."
+  },
+  "activityTitleSendFailed": "Send failed",
+  "@activityTitleSendFailed": {
+    "description": "Title of an activity row or receipt for an outgoing transaction that failed."
+  },
+  "activityTitleSending": "Sending...",
+  "@activityTitleSending": {
+    "description": "Title of the mobile receipt of an outgoing transaction that is pending."
+  },
+  "activityTitleSendingVerb": "Sending",
+  "@activityTitleSendingVerb": {
+    "description": "Title of a pending outgoing activity row; the app appends an ellipsis."
+  },
+  "activityTitleSent": "Sent",
+  "@activityTitleSent": {
+    "description": "Title of an activity row for an outgoing transaction."
+  },
+  "activityTitleSentSuccessfully": "Sent successfully",
+  "@activityTitleSentSuccessfully": {
+    "description": "Title of the mobile receipt of an outgoing transaction that completed."
+  },
+  "activityTitleShielded": "Shielded",
+  "@activityTitleShielded": {
+    "description": "Title of an activity row or receipt for funds moved into a shielded pool."
+  },
+  "activityTitleShieldedSuccessfully": "Shielded successfully",
+  "@activityTitleShieldedSuccessfully": {
+    "description": "Title of the desktop receipt of a shielding transaction that completed."
+  },
+  "activityTitleShielding": "Shielding...",
+  "@activityTitleShielding": {
+    "description": "Title of the mobile receipt of a pending shielding transaction."
+  },
+  "activityTitleShieldingFailed": "Shielding failed",
+  "@activityTitleShieldingFailed": {
+    "description": "Title of a receipt for a failed move into a shielded pool."
+  },
+  "activityTitleShieldingInProgress": "Shielding in progress...",
+  "@activityTitleShieldingInProgress": {
+    "description": "Title of the desktop receipt of a pending shielding transaction."
+  },
+  "activityTitleShieldingVerb": "Shielding",
+  "@activityTitleShieldingVerb": {
+    "description": "Title of a pending shielding activity row; the app appends an ellipsis."
+  },
+  "activityTitleTransaction": "Transaction",
+  "@activityTitleTransaction": {
+    "description": "Title of a receipt or activity row for a transaction of unknown kind."
+  },
+  "activityToastHashCopiedDesktop": "Transaction hash copied",
+  "@activityToastHashCopiedDesktop": {
+    "description": "Toast on the desktop receipt after the transaction hash was copied."
+  },
+  "activityToastHashCopiedMobile": "Transaction Hash Copied",
+  "@activityToastHashCopiedMobile": {
+    "description": "Toast on the mobile receipt after the transaction hash was copied."
+  },
   "appBackAmount": "Amount",
   "@appBackAmount": {
     "description": "Back-link name of the send amount step."

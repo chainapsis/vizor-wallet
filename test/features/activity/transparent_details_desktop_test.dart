@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../fakes/fake_enhance_pir_notifier.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import 'transparent_details_test_support.dart';
+import '../../support/test_l10n.dart';
 
 Future<List<String>> _pump(
   WidgetTester tester,
@@ -162,14 +163,14 @@ void main() {
     ]);
     final prioritized = await _pump(tester, details);
     expect(find.text('Sent successfully'), findsOneWidget);
-    expect(find.text(kUnknownRecipientText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnknownRecipient), findsOneWidget);
     expect(find.text('Show full address'), findsNothing);
     // The other party's output is listed as the transaction's; the change is
     // never listed.
     expect(transactionOutputShown, findsOneWidget);
     expect(find.byKey(const ValueKey('transaction_output_1')), findsNothing);
     expect(find.text('Your address'), findsNothing);
-    expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsNothing);
     expect(
       prioritized,
       isEmpty,
@@ -187,7 +188,7 @@ void main() {
     ) async {
       final details = ScriptedDetails([transparentDetail(state)]);
       final prioritized = await _pump(tester, details);
-      expect(find.text(kTransparentDetailsUnavailableText), findsOneWidget);
+      expect(find.text(testL10n.activityDetailsUnavailable), findsOneWidget);
       expect(prioritized, [
         transparentDetailsTxid,
       ], reason: 'asked once on open');
@@ -201,7 +202,7 @@ void main() {
       transparentDetail(rust_sync.TransparentDetailsState.gaveUp),
     ]);
     final prioritized = await _pump(tester, details);
-    expect(find.text(kTransparentDetailsUnavailableText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsOneWidget);
     expect(prioritized, isEmpty, reason: 'no sync asks for it again');
     final before = details.calls;
     await tester.pump(kTransparentDetailsPollInterval * 3);
@@ -216,8 +217,8 @@ void main() {
       transparentDetail(rust_sync.TransparentDetailsState.notCovered),
     ]);
     final prioritized = await _pump(tester, details);
-    expect(find.text(kTransparentDetailsNotCoveredText), findsOneWidget);
-    expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
+    expect(find.text(testL10n.activityDetailsNotCovered), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsNothing);
     expect(prioritized, isEmpty);
     final before = details.calls;
     await tester.pump(kTransparentDetailsPollInterval * 3);
@@ -239,16 +240,16 @@ void main() {
     final rowReads = <String>[];
     final prioritized = await _pump(tester, details, rowReads: rowReads);
     expect(details.calls, 1);
-    expect(find.text(kTransparentDetailsUnavailableText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsOneWidget);
     await tester.pump(kTransparentDetailsPollInterval);
     await tester.pump();
     expect(details.calls, 2);
-    expect(find.text(kTransparentDetailsUnavailableText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsOneWidget);
     await tester.pump(kTransparentDetailsPollInterval);
     await tester.pump();
     expect(details.calls, 3);
     expect(transactionOutputShown, findsOneWidget);
-    expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsNothing);
     await tester.pump(kTransparentDetailsPollInterval * 4);
     expect(details.calls, 3, reason: 'polling stopped');
     expect(prioritized, [transparentDetailsTxid]);

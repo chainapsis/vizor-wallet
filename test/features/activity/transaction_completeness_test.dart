@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import '../../support/test_l10n.dart';
 
 void main() {
   test('network fee is display-only and bound to the receipt identity', () {
@@ -101,7 +102,7 @@ void main() {
   });
 
   test('conservative receipts label balance movements as net changes', () {
-    expect(kNetChangeText, 'Net change');
+    expect(testL10n.activityReceiptNetChange, 'Net change');
   });
 
   test('a provisional role follows the transaction only to a single row', () {

@@ -987,7 +987,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               labels: ref.watch(activityEtaLabelsProvider),
               giftCard: giftCard,
             ) ??
-            ref.watch(activityPendingFallbackLabelProvider),
+            ref.watch(activityPendingFallbackLabelProvider).text(context.l10n),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,

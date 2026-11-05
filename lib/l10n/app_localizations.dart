@@ -364,6 +364,839 @@ abstract class AppLocalizations {
   /// **'View viewing key'**
   String get accountsViewViewingKey;
 
+  /// Title of the sheet that shows a full shielded address.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded address'**
+  String get activityAddressShielded;
+
+  /// Title of the sheet that shows a full transparent address.
+  ///
+  /// In en, this message translates to:
+  /// **'Transparent address'**
+  String get activityAddressTransparent;
+
+  /// Title of the sheet that shows a full unified address.
+  ///
+  /// In en, this message translates to:
+  /// **'Unified address'**
+  String get activityAddressUnified;
+
+  /// Title of the sheet that shows a full address of unrecognized type.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash address'**
+  String get activityAddressZcash;
+
+  /// Sub-line under the amount of an Ironwood migration receipt: the funds came from the Orchard balance.
+  ///
+  /// In en, this message translates to:
+  /// **'From Orchard balance'**
+  String get activityBalanceFromOrchard;
+
+  /// Sub-line under the amount of a shielding receipt: the funds came from the transparent balance.
+  ///
+  /// In en, this message translates to:
+  /// **'From transparent balance'**
+  String get activityBalanceFromTransparent;
+
+  /// Value of the To row of a migration receipt.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood balance'**
+  String get activityBalanceIronwood;
+
+  /// Value of the From row of a migration receipt.
+  ///
+  /// In en, this message translates to:
+  /// **'Orchard balance'**
+  String get activityBalanceOrchard;
+
+  /// Value of the To row of a shielding receipt.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded balance'**
+  String get activityBalanceShielded;
+
+  /// Row value shown after a public load of the transaction details failed; the row stays tappable.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed — try again'**
+  String get activityDetailsLoadFailed;
+
+  /// Row value and dialog button that loads one transaction's full details from the server.
+  ///
+  /// In en, this message translates to:
+  /// **'Load publicly'**
+  String get activityDetailsLoadPublicly;
+
+  /// Label of the row that offers to load one transaction's full details from the server.
+  ///
+  /// In en, this message translates to:
+  /// **'Full details'**
+  String get activityDetailsLoadPubliclyLabel;
+
+  /// Row value shown while a public load of the transaction details runs.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading…'**
+  String get activityDetailsLoading;
+
+  /// Value of the Details row when Private queries cannot look up the transaction's outputs.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available in private mode'**
+  String get activityDetailsNotCovered;
+
+  /// Label of the row that lists what the private details of a transaction leave out.
+  ///
+  /// In en, this message translates to:
+  /// **'Not shown'**
+  String get activityDetailsOmittedLabel;
+
+  /// Label of the list of a transaction's other transparent outputs when no recipient was recorded.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction outputs'**
+  String get activityDetailsOutputsLabel;
+
+  /// Value telling that the listed outputs are the transaction's, not payments the account is known to have made.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient not confirmed'**
+  String get activityDetailsOutputsUnattributed;
+
+  /// Value of the Details row when transparent outputs could not be looked up yet; a later sync fills them in.
+  ///
+  /// In en, this message translates to:
+  /// **'Details unavailable — will update when the service is reachable'**
+  String get activityDetailsUnavailable;
+
+  /// Value of the To row of a send whose recipient the account did not record.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown recipient'**
+  String get activityDetailsUnknownRecipient;
+
+  /// Message shown when the activity list is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'No activity yet'**
+  String get activityFeedEmpty;
+
+  /// Screen-reader label of the activity list loading placeholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading activity'**
+  String get activityFeedLoading;
+
+  /// Button that reloads the activity list after it failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry loading activity'**
+  String get activityFeedRetry;
+
+  /// Cost breakdown of a gift card batch: card value, reserved redeem fees, and the network fee.
+  ///
+  /// In en, this message translates to:
+  /// **'Cards {cards} ZEC · Redeem fees {fees} ZEC · {feeLabel} {fee}'**
+  String activityGiftBatchBreakdown(
+    String cards,
+    String fees,
+    String feeLabel,
+    String fee,
+  );
+
+  /// Title of a completed gift card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Created a gift card'**
+  String get activityGiftCreated;
+
+  /// Title of a completed batch of gift cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Created {count} gift cards'**
+  String activityGiftCreatedMany(int count);
+
+  /// Title of a pending gift card creation; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating a card'**
+  String get activityGiftCreating;
+
+  /// Title of a pending batch of gift cards; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating {count} cards'**
+  String activityGiftCreatingMany(int count);
+
+  /// Title of a gift card that could not be created.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card creation failed'**
+  String get activityGiftCreationFailed;
+
+  /// Title of a failed batch of gift cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card group failed'**
+  String get activityGiftGroupFailed;
+
+  /// Title of a completed gift card redemption.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeemed a gift card'**
+  String get activityGiftRedeemed;
+
+  /// Title of a pending gift card redemption; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeeming a card'**
+  String get activityGiftRedeeming;
+
+  /// Title of a gift card that could not be redeemed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card redemption failed'**
+  String get activityGiftRedemptionFailed;
+
+  /// Status of a gift card receipt after the card was created.
+  ///
+  /// In en, this message translates to:
+  /// **'Created'**
+  String get activityGiftStatusCreated;
+
+  /// Status of a gift card receipt while the card is being created.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating…'**
+  String get activityGiftStatusCreating;
+
+  /// Status of a gift card receipt after the card was redeemed.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeemed'**
+  String get activityGiftStatusRedeemed;
+
+  /// Status of a gift card receipt while the card is being redeemed.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeeming…'**
+  String get activityGiftStatusRedeeming;
+
+  /// Label of the total cost of a gift card batch that failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Planned total'**
+  String get activityGiftTotalPlanned;
+
+  /// Label of the total cost of a completed gift card batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Total spent'**
+  String get activityGiftTotalSpent;
+
+  /// Label of the total cost of a gift card batch that is pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitted total'**
+  String get activityGiftTotalSubmitted;
+
+  /// Error shown on the desktop activity screen when loading failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Activity could not be loaded.'**
+  String get activityLoadFailedDesktop;
+
+  /// Error shown on the mobile activity screen when loading failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load activity. Try again in a moment.'**
+  String get activityLoadFailedMobile;
+
+  /// Item in the list of what private details leave out: outputs beyond the second.
+  ///
+  /// In en, this message translates to:
+  /// **'outputs after the second'**
+  String get activityOmissionLaterOutputs;
+
+  /// Item in the list of what private details leave out: how many outputs are not listed.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 more output} other{{count} more outputs}}'**
+  String activityOmissionMoreOutputs(int count);
+
+  /// Item in the list of what private details leave out: further sender addresses.
+  ///
+  /// In en, this message translates to:
+  /// **'other sending addresses'**
+  String get activityOmissionOtherSenders;
+
+  /// Item in the list of what private details leave out: an output address.
+  ///
+  /// In en, this message translates to:
+  /// **'an output address'**
+  String get activityOmissionOutputAddress;
+
+  /// Item in the list of what private details leave out: the sender address.
+  ///
+  /// In en, this message translates to:
+  /// **'the sending address'**
+  String get activityOmissionSender;
+
+  /// Item in the list of what private details leave out: inputs owned by other wallets.
+  ///
+  /// In en, this message translates to:
+  /// **'inputs from other wallets'**
+  String get activityOmissionSharedFunding;
+
+  /// Item in the list of what private details leave out: the shielded part of the funds.
+  ///
+  /// In en, this message translates to:
+  /// **'the shielded part of the funding'**
+  String get activityOmissionShieldedFunding;
+
+  /// Title of a failed Pay activity row or detail screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment failed'**
+  String get activityPayFailed;
+
+  /// Subtitle of a Pay activity row: the payment was made from shielded ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'from shielded ZEC'**
+  String get activityPayFromShielded;
+
+  /// Subtitle of a Pay activity row: shielded ZEC paid out to a network.
+  ///
+  /// In en, this message translates to:
+  /// **'from shielded ZEC · {network}'**
+  String activityPayFromShieldedOnChain(String network);
+
+  /// Title of a pending Pay activity row.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment in progress'**
+  String get activityPayInProgress;
+
+  /// Title of the Pay detail screen when the deposit was incomplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment incomplete'**
+  String get activityPayIncomplete;
+
+  /// Title of a completed Pay activity row or detail screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Paid'**
+  String get activityPayPaid;
+
+  /// Title of the Pay detail screen while the payment is pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Paying ...'**
+  String get activityPayPaying;
+
+  /// Title of a refunded Pay activity row or detail screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment refunded'**
+  String get activityPayRefunded;
+
+  /// Badge on an activity row for a transaction that involves more than one pool.
+  ///
+  /// In en, this message translates to:
+  /// **'Mixed'**
+  String get activityPoolMixed;
+
+  /// Body of the dialog that confirms loading one transaction's details from the server.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor will ask the server for this one transaction to show what private lookups leave out.'**
+  String get activityPublicLookupBody;
+
+  /// Title of the dialog that confirms loading one transaction's details from the server.
+  ///
+  /// In en, this message translates to:
+  /// **'Load details publicly?'**
+  String get activityPublicLookupTitle;
+
+  /// [security] Warning in the dialog that confirms loading one transaction's details from the server: what the server learns.
+  ///
+  /// In en, this message translates to:
+  /// **'The server learns that this wallet is interested in this transaction, and without Tor, your IP address.'**
+  String get activityPublicLookupWarning;
+
+  /// Label of a row on a transaction receipt: the transferred amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount'**
+  String get activityReceiptAmount;
+
+  /// Label of a row on a transaction receipt: the amount moved to Ironwood.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount migrated'**
+  String get activityReceiptAmountMigrated;
+
+  /// Label of a row on a transaction receipt: the fee for creating a gift card.
+  ///
+  /// In en, this message translates to:
+  /// **'Card fee'**
+  String get activityReceiptCardFee;
+
+  /// Label of a row on a transaction receipt: the number of gift cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Cards'**
+  String get activityReceiptCards;
+
+  /// Label of a row on a transaction receipt: a notice about transaction details.
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get activityReceiptDetails;
+
+  /// Short notice, also a sheet title, that some details of an entry are not known yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Details incomplete'**
+  String get activityReceiptDetailsIncomplete;
+
+  /// Explains why a receipt is marked as having incomplete details.
+  ///
+  /// In en, this message translates to:
+  /// **'Some details of this transaction, such as its recipients, memos, or fee, are not known yet. The amount shown may change.'**
+  String get activityReceiptDetailsIncompleteHelp;
+
+  /// Part of the gift card batch cost breakdown: the network fee while the batch is pending or failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated network fee'**
+  String get activityReceiptEstimatedNetworkFee;
+
+  /// Label of a row on a transaction receipt: the sender or the source of funds.
+  ///
+  /// In en, this message translates to:
+  /// **'From'**
+  String get activityReceiptFrom;
+
+  /// Value of the Details row on a receipt whose details are not all known yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Incomplete'**
+  String get activityReceiptIncomplete;
+
+  /// Message shown when a transaction receipt could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction could not be loaded.'**
+  String get activityReceiptLoadFailed;
+
+  /// Message shown while a transaction receipt is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading transaction…'**
+  String get activityReceiptLoading;
+
+  /// Label of a row on a transaction receipt: the memo attached to the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get activityReceiptMessage;
+
+  /// Label of a row on a transaction receipt: the balance change of a transaction that is not shown as an external payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Net change'**
+  String get activityReceiptNetChange;
+
+  /// Label of a row on a transaction receipt: the total network fee of the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Network fee'**
+  String get activityReceiptNetworkFee;
+
+  /// Error shown when a receipt is opened with no active account.
+  ///
+  /// In en, this message translates to:
+  /// **'No active account.'**
+  String get activityReceiptNoAccount;
+
+  /// Label of a row on a transaction receipt: one transparent output of the transaction, followed by its address and amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Output'**
+  String get activityReceiptOutput;
+
+  /// Message shown when the latest status of a transaction could not be refreshed.
+  ///
+  /// In en, this message translates to:
+  /// **'Latest transaction status could not be refreshed.'**
+  String get activityReceiptRefreshFailed;
+
+  /// Ghost button on a receipt row that opens the full address of the sender or recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Show full address'**
+  String get activityReceiptShowFullAddress;
+
+  /// Label of a row on a transaction receipt: the transaction status.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get activityReceiptStatus;
+
+  /// Label of a row on a transaction receipt: the date and time of the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Timestamp'**
+  String get activityReceiptTimestamp;
+
+  /// Label of a row on a transaction receipt: the recipient or the destination of funds.
+  ///
+  /// In en, this message translates to:
+  /// **'To'**
+  String get activityReceiptTo;
+
+  /// Label of a row on a transaction receipt: the fee paid for the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Tx fee'**
+  String get activityReceiptTxFee;
+
+  /// Label of a row on a transaction receipt: the transaction ID, tapping it opens a block explorer.
+  ///
+  /// In en, this message translates to:
+  /// **'Tx ID'**
+  String get activityReceiptTxId;
+
+  /// Tooltip explaining a network fee when the account's share of it is not known.
+  ///
+  /// In en, this message translates to:
+  /// **'Total fee for this transaction. Your account\'s share of this fee is unknown.'**
+  String get activityReceiptUnattributedFeeHelp;
+
+  /// Shown as the fee of a transaction whose fee the wallet has not recorded. An unknown fee is never zero.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get activityReceiptUnknownFee;
+
+  /// Subtitle of a pending activity row while the app checks the transaction status.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking status'**
+  String get activityRowCheckingStatus;
+
+  /// Timestamp of an activity row from today on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Today, {time}'**
+  String activityRowToday(String time);
+
+  /// Subtitle of a pending activity row while the app has no connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for connection'**
+  String get activityRowWaitingForConnection;
+
+  /// Timestamp of an activity row from yesterday on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday, {time}'**
+  String activityRowYesterday(String time);
+
+  /// Title of the activity screen and its list.
+  ///
+  /// In en, this message translates to:
+  /// **'Activity'**
+  String get activityScreenTitle;
+
+  /// Heading of the activity section for entries without a date.
+  ///
+  /// In en, this message translates to:
+  /// **'Earlier'**
+  String get activitySectionEarlier;
+
+  /// Heading of the activity section for the current week.
+  ///
+  /// In en, this message translates to:
+  /// **'This week'**
+  String get activitySectionThisWeek;
+
+  /// Value of the From row when the sender is in a shielded pool, so no address is known.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded sender'**
+  String get activitySenderShielded;
+
+  /// Value of the From row when the sender cannot be determined.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown sender'**
+  String get activitySenderUnknown;
+
+  /// Status value of a transaction or swap that finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get activityStatusCompleted;
+
+  /// Status value of a transaction or swap that failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get activityStatusFailed;
+
+  /// Status value of a mobile receipt for a transaction that expired before mining; no funds were spent.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed, funds returned'**
+  String get activityStatusFailedFundsReturned;
+
+  /// Status value of a transaction or swap that has not finished.
+  ///
+  /// In en, this message translates to:
+  /// **'In progress'**
+  String get activityStatusInProgress;
+
+  /// Status value of a swap whose deposit was smaller than the quote requires.
+  ///
+  /// In en, this message translates to:
+  /// **'Incomplete deposit'**
+  String get activityStatusIncompleteDeposit;
+
+  /// Status value of a swap, or subtitle of a failed row, whose funds were returned.
+  ///
+  /// In en, this message translates to:
+  /// **'Refunded'**
+  String get activityStatusRefunded;
+
+  /// Subtitle of a swap activity row: an asset and the chain it lives on.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} on {chain}'**
+  String activitySwapAssetOnChain(String symbol, String chain);
+
+  /// Title of the sub-row of a completed swap that shows the deposited asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposited {symbol}'**
+  String activitySwapDepositedAsset(String symbol);
+
+  /// Title of a failed swap activity row.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap failed'**
+  String get activitySwapFailed;
+
+  /// Timestamp of a swap sub-row that settled less than a minute ago.
+  ///
+  /// In en, this message translates to:
+  /// **'just now'**
+  String get activitySwapJustNow;
+
+  /// Timestamp of a swap sub-row that settled some minutes ago.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes}m ago'**
+  String activitySwapMinutesAgo(int minutes);
+
+  /// Title of the sub-row of a completed swap that shows the received asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Received {symbol}'**
+  String activitySwapReceivedAsset(String symbol);
+
+  /// Title of a refunded swap activity row.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap refunded'**
+  String get activitySwapRefunded;
+
+  /// Title of the mobile swap detail screen while the user has to review the quote.
+  ///
+  /// In en, this message translates to:
+  /// **'Review quote'**
+  String get activitySwapReviewQuote;
+
+  /// Status of a swap activity row that shows which step of the swap it is on.
+  ///
+  /// In en, this message translates to:
+  /// **'{current}/{total} In progress'**
+  String activitySwapStep(int current, int total);
+
+  /// Title of a completed swap activity row.
+  ///
+  /// In en, this message translates to:
+  /// **'Swapped'**
+  String get activitySwapSwapped;
+
+  /// Title of a pending swap activity row.
+  ///
+  /// In en, this message translates to:
+  /// **'Swapping...'**
+  String get activitySwapSwapping;
+
+  /// Subtitle of the amount of a swap that expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Timeout'**
+  String get activitySwapTimeout;
+
+  /// Title of the mobile swap detail screen when the swap is not loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap'**
+  String get activitySwapTitle;
+
+  /// Title of an activity row or receipt for funds moved from Orchard to Ironwood.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrated to Ironwood'**
+  String get activityTitleMigrated;
+
+  /// Title of the mobile receipt of a pending Ironwood migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrating to Ironwood...'**
+  String get activityTitleMigrating;
+
+  /// Title of a pending Ironwood migration activity row; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrating to Ironwood'**
+  String get activityTitleMigratingVerb;
+
+  /// Title of an activity row or receipt for a failed move to Ironwood.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration failed'**
+  String get activityTitleMigrationFailed;
+
+  /// Title of a receipt for an incoming transaction that failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive failed'**
+  String get activityTitleReceiveFailed;
+
+  /// Title of the desktop receipt of an incoming transaction that is pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive in progress...'**
+  String get activityTitleReceiveInProgress;
+
+  /// Title of an activity row or receipt for an incoming transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Received'**
+  String get activityTitleReceived;
+
+  /// Title of the desktop receipt of an incoming transaction that completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Received successfully'**
+  String get activityTitleReceivedSuccessfully;
+
+  /// Title of the mobile receipt of an incoming transaction that is pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving...'**
+  String get activityTitleReceiving;
+
+  /// Title of a pending incoming activity row; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving'**
+  String get activityTitleReceivingVerb;
+
+  /// Title of an activity row or receipt for an outgoing transaction that failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Send failed'**
+  String get activityTitleSendFailed;
+
+  /// Title of the mobile receipt of an outgoing transaction that is pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending...'**
+  String get activityTitleSending;
+
+  /// Title of a pending outgoing activity row; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending'**
+  String get activityTitleSendingVerb;
+
+  /// Title of an activity row for an outgoing transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent'**
+  String get activityTitleSent;
+
+  /// Title of the mobile receipt of an outgoing transaction that completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent successfully'**
+  String get activityTitleSentSuccessfully;
+
+  /// Title of an activity row or receipt for funds moved into a shielded pool.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded'**
+  String get activityTitleShielded;
+
+  /// Title of the desktop receipt of a shielding transaction that completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded successfully'**
+  String get activityTitleShieldedSuccessfully;
+
+  /// Title of the mobile receipt of a pending shielding transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding...'**
+  String get activityTitleShielding;
+
+  /// Title of a receipt for a failed move into a shielded pool.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding failed'**
+  String get activityTitleShieldingFailed;
+
+  /// Title of the desktop receipt of a pending shielding transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding in progress...'**
+  String get activityTitleShieldingInProgress;
+
+  /// Title of a pending shielding activity row; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding'**
+  String get activityTitleShieldingVerb;
+
+  /// Title of a receipt or activity row for a transaction of unknown kind.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction'**
+  String get activityTitleTransaction;
+
+  /// Toast on the desktop receipt after the transaction hash was copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction hash copied'**
+  String get activityToastHashCopiedDesktop;
+
+  /// Toast on the mobile receipt after the transaction hash was copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction Hash Copied'**
+  String get activityToastHashCopiedMobile;
+
   /// Back-link name of the send amount step.
   ///
   /// In en, this message translates to:

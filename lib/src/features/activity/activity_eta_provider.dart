@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/l10n/l10n.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/block_spacing_provider.dart';
 import '../../providers/pending_activity_evidence_provider.dart';
@@ -13,8 +14,22 @@ import 'activity_history_pager.dart';
 import 'transaction_completeness.dart';
 import '../swap/models/swap_chain_txid.dart';
 
+/// What a pending row says when it has no estimate. The widget maps it to
+/// text so the label follows the app language.
+enum ActivityPendingFallback {
+  waitingForConnection,
+  checkingStatus;
+
+  String text(AppLocalizations l10n) => switch (this) {
+    waitingForConnection => l10n.activityRowWaitingForConnection,
+    checkingStatus => l10n.activityRowCheckingStatus,
+  };
+}
+
 /// Stale observations and local recovery do not imply a lost connection.
-final activityPendingFallbackLabelProvider = Provider<String>((ref) {
+final activityPendingFallbackLabelProvider = Provider<ActivityPendingFallback>((
+  ref,
+) {
   final connectionFailed = ref.watch(
     pendingActivityEvidenceProvider.select((s) => s.connectionFailed),
   );
@@ -22,8 +37,8 @@ final activityPendingFallbackLabelProvider = Provider<String>((ref) {
   return connectionFailed ||
           failure == SyncFailureKind.network ||
           failure == SyncFailureKind.torUnavailable
-      ? 'Waiting for connection'
-      : 'Checking status';
+      ? ActivityPendingFallback.waitingForConnection
+      : ActivityPendingFallback.checkingStatus;
 });
 
 /// Identity of the successful sync snapshot against which history was read.
@@ -38,7 +53,7 @@ String activityHistoryStatusSignature(
 ) => transactions
     .map(
       (tx) =>
-          '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:'
+          '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:' // l10n-ignore: signature
           '${tx.displayAmount}:${tx.fundingParentTxid}:'
           '${tx.fundingParentMinedHeight}:${tx.fundingParentExpired}:'
           '${transactionCompletenessSignature(tx)}',

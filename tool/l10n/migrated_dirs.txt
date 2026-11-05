@@ -7,8 +7,12 @@ lib/src/core/layout
 lib/src/core/privacy
 lib/src/core/widgets
 lib/src/features/accounts
+lib/src/features/activity
 lib/src/features/home
+lib/src/features/home/providers
+lib/src/features/home/screens
+lib/src/features/home/widgets
 lib/src/features/onboarding
-lib/src/features/settings
 lib/src/features/pay
+lib/src/features/settings
 lib/src/features/swap/models

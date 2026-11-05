@@ -12,7 +12,6 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
-import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/gift_card_activity_detail_view.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/received_receipt_view.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/shielded_receipt_view.dart';
@@ -34,6 +33,7 @@ import '../../fakes/fake_sync_notifier.dart';
 import '../../fixtures/private_shielding_activity.dart';
 import '../../fakes/fake_enhance_pir_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../support/test_l10n.dart';
 
 const _txidHex =
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -1083,7 +1083,7 @@ void main() {
         expect(find.text(expected[index]), findsOneWidget);
         expect(find.text('Tx fee'), findsOneWidget);
         expect(find.text('0.0002 ZEC'), findsNothing);
-        expect(find.text(kUnknownFeeText), findsOneWidget);
+        expect(find.text(testL10n.activityReceiptUnknownFee), findsOneWidget);
       }
     },
   );
@@ -1191,7 +1191,10 @@ void main() {
       expect(find.text('Tx fee'), findsOneWidget);
       expect(find.text('0.0001 ZEC'), findsOneWidget);
       expect(find.text('To'), findsOneWidget);
-      expect(find.text(kUnknownRecipientText), findsOneWidget);
+      expect(
+        find.text(testL10n.activityDetailsUnknownRecipient),
+        findsOneWidget,
+      );
       expect(find.text('Show full address'), findsNothing);
       expect(find.text('From'), findsNothing);
     },
@@ -1222,7 +1225,7 @@ void main() {
       );
       expect(find.text('Network fee'), findsOneWidget);
       expect(find.text('0.00015 ZEC'), findsOneWidget);
-      expect(find.text(kUnknownFeeText), findsNothing);
+      expect(find.text(testL10n.activityReceiptUnknownFee), findsNothing);
       expect(find.text('0.01 ZEC'), findsOneWidget);
       expect(tx.feeState, rust_sync.TransactionFeeState.unknown);
       expect(tx.fee, BigInt.zero);
@@ -1230,7 +1233,7 @@ void main() {
         tester
             .widget<SendStatusContentView>(find.byType(SendStatusContentView))
             .feeHelpText,
-        kUnattributedNetworkFeeHelpText,
+        testL10n.activityReceiptUnattributedFeeHelp,
       );
     },
   );
@@ -1256,7 +1259,7 @@ void main() {
 
       expect(find.byType(SendStatusContentView), findsNothing);
       expect(find.text('Tx fee'), findsOneWidget);
-      expect(find.text(kUnknownFeeText), findsOneWidget);
+      expect(find.text(testL10n.activityReceiptUnknownFee), findsOneWidget);
       expect(find.text('Details'), findsOneWidget);
       expect(find.text('Incomplete'), findsOneWidget);
     },
@@ -1286,7 +1289,7 @@ void main() {
     );
 
     expect(find.text('Transaction'), findsOneWidget);
-    expect(find.text(kNetChangeText), findsOneWidget);
+    expect(find.text(testL10n.activityReceiptNetChange), findsOneWidget);
     expect(find.text('0.00065 ZEC'), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
     expect(find.text('Tx fee'), findsNothing);
@@ -1319,7 +1322,7 @@ void main() {
 
       expect(find.text('Transaction'), findsOneWidget);
       expect(find.text('Network fee'), findsNothing);
-      expect(find.text(kNetChangeText), findsOneWidget);
+      expect(find.text(testL10n.activityReceiptNetChange), findsOneWidget);
       expect(find.text('0.0002 ZEC'), findsNWidgets(2));
       expect(find.text('Amount'), findsNothing);
       expect(find.text('Tx fee'), findsOneWidget);
@@ -1353,7 +1356,7 @@ void main() {
     expect(find.text('Transaction'), findsOneWidget);
     expect(find.text('Sent successfully'), findsNothing);
     expect(find.byType(SendStatusContentView), findsNothing);
-    expect(find.text(kNetChangeText), findsOneWidget);
+    expect(find.text(testL10n.activityReceiptNetChange), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
     // Nothing is subtracted, and the fee keeps its own line.
     expect(find.text('0.70 ZEC'), findsOneWidget);
@@ -1392,7 +1395,7 @@ void main() {
             privateQueriesEnabled ? findsOneWidget : findsNothing,
           );
           expect(
-            find.text(kUnknownFeeText),
+            find.text(testL10n.activityReceiptUnknownFee),
             privateQueriesEnabled && kind != 'received'
                 ? findsOneWidget
                 : findsNothing,
@@ -1427,7 +1430,7 @@ void main() {
       await tester.pump();
       expect(find.text('Incomplete'), enabled ? findsOneWidget : findsNothing);
       expect(
-        find.text(kUnknownFeeText),
+        find.text(testL10n.activityReceiptUnknownFee),
         enabled ? findsOneWidget : findsNothing,
       );
       expect(find.text('Tx fee'), enabled ? findsOneWidget : findsNothing);
@@ -1518,7 +1521,7 @@ void main() {
     );
 
     expect(find.text('Details'), findsNothing);
-    expect(find.text(kUnknownFeeText), findsNothing);
+    expect(find.text(testL10n.activityReceiptUnknownFee), findsNothing);
   });
 
   testWidgets('shows the loading/not-found fallback when no tx is available', (

@@ -83,7 +83,7 @@ String mobileSwapActivityTitle(
   SwapState state,
   SwapIntent? intent,
 ) {
-  if (intent == null) return 'Swap';
+  if (intent == null) return l10n.activitySwapTitle;
   final presentation = swapActivityStatusPresentationForIntent(
     l10n,
     state,
@@ -91,14 +91,19 @@ String mobileSwapActivityTitle(
   );
   if (presentation.paymentMode) {
     return switch (intent.status) {
-      SwapIntentStatus.complete => 'Paid',
-      SwapIntentStatus.incompleteDeposit => 'Payment incomplete',
-      SwapIntentStatus.refunded => 'Payment refunded',
-      SwapIntentStatus.failed || SwapIntentStatus.expired => 'Payment failed',
-      _ => 'Paying ...',
+      SwapIntentStatus.complete => l10n.activityPayPaid,
+      SwapIntentStatus.incompleteDeposit => l10n.activityPayIncomplete,
+      SwapIntentStatus.refunded => l10n.activityPayRefunded,
+      SwapIntentStatus.failed ||
+      SwapIntentStatus.expired => l10n.activityPayFailed,
+      _ => l10n.activityPayPaying,
     };
   }
-  if (intent.status == SwapIntentStatus.expired) return 'Swap failed';
-  if (swapActivityShowsExternalDepositPage(intent)) return 'Review quote';
+  if (intent.status == SwapIntentStatus.expired) {
+    return l10n.activitySwapFailed;
+  }
+  if (swapActivityShowsExternalDepositPage(intent)) {
+    return l10n.activitySwapReviewQuote;
+  }
   return presentation.title;
 }

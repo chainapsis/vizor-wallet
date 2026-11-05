@@ -25,7 +25,7 @@ class ShieldedReceiptView extends StatelessWidget {
     required this.txIdText,
     this.status = ShieldedReceiptStatus.completed,
     this.feeText,
-    this.feeLabel = 'Tx fee',
+    this.feeLabel,
     this.feeHelpText,
     this.memoText,
     this.memoExpanded = false,
@@ -41,7 +41,7 @@ class ShieldedReceiptView extends StatelessWidget {
   final String txIdText;
   final ShieldedReceiptStatus status;
   final String? feeText;
-  final String feeLabel;
+  final String? feeLabel;
   final String? feeHelpText;
   final String? memoText;
   final bool memoExpanded;
@@ -55,25 +55,26 @@ class ShieldedReceiptView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final l10n = context.l10n;
     final memo = memoText?.trim();
     final title = switch (status) {
-      ShieldedReceiptStatus.inProgress => 'Shielding in progress...',
-      ShieldedReceiptStatus.completed => 'Shielded successfully',
-      ShieldedReceiptStatus.failed => 'Shielding failed',
+      ShieldedReceiptStatus.inProgress => l10n.activityTitleShieldingInProgress,
+      ShieldedReceiptStatus.completed => l10n.activityTitleShieldedSuccessfully,
+      ShieldedReceiptStatus.failed => l10n.activityTitleShieldingFailed,
     };
     final (statusValue, statusIconName, statusColor) = switch (status) {
       ShieldedReceiptStatus.inProgress => (
-        'In progress',
+        l10n.activityStatusInProgress,
         AppIcons.loader,
         colors.text.secondary,
       ),
       ShieldedReceiptStatus.completed => (
-        'Completed',
+        l10n.activityStatusCompleted,
         AppIcons.checkCircle,
         colors.text.positiveStrong,
       ),
       ShieldedReceiptStatus.failed => (
-        'Failed',
+        l10n.activityStatusFailed,
         AppIcons.cancel,
         colors.text.destructive,
       ),
@@ -98,7 +99,7 @@ class ShieldedReceiptView extends StatelessWidget {
             connectorColor: colors.text.secondary,
             rows: [
               ReviewInfoRow(
-                label: 'Amount',
+                label: l10n.activityReceiptAmount,
                 value: amountText,
                 leading: ClipOval(
                   child: Image.asset(
@@ -109,17 +110,17 @@ class ShieldedReceiptView extends StatelessWidget {
                   ),
                 ),
                 bottomLeftIconName: AppIcons.transparentBalance,
-                bottomLeftText: 'From transparent balance',
+                bottomLeftText: l10n.activityBalanceFromTransparent,
               ),
               ReviewInfoRow(
-                label: 'To',
-                value: 'Shielded balance',
+                label: l10n.activityReceiptTo,
+                value: l10n.activityBalanceShielded,
                 leading: const ReviewInfoIconCircle(
                   iconName: AppIcons.shieldKeyholeOutline,
                 ),
                 bottomLeftIconName: AppIcons.shieldKeyhole,
                 bottomLeftIconColor: colors.text.brandCrimson,
-                bottomLeftText: 'Shielded',
+                bottomLeftText: l10n.poolShielded,
               ),
             ],
           ),
@@ -128,7 +129,7 @@ class ShieldedReceiptView extends StatelessWidget {
         ReviewWrapCard(
           children: [
             ReviewListRow(
-              label: 'Status',
+              label: l10n.activityReceiptStatus,
               value: statusValue,
               valueColor: statusColor,
               leadingIconName: statusIconName,
@@ -145,9 +146,12 @@ class ShieldedReceiptView extends StatelessWidget {
                     expanded: memoExpanded,
                     onToggle: onExpandMemo,
                   ),
-                ReviewListRow(label: 'Timestamp', value: timestampText),
                 ReviewListRow(
-                  label: 'Tx ID',
+                  label: l10n.activityReceiptTimestamp,
+                  value: timestampText,
+                ),
+                ReviewListRow(
+                  label: l10n.activityReceiptTxId,
                   value: txIdText,
                   trailingIconName: AppIcons.arrowTopRight,
                   onPressed: onTxIdPressed,
@@ -157,7 +161,7 @@ class ShieldedReceiptView extends StatelessWidget {
             if (feeText != null) ...[
               const ReviewWrapDivider(),
               ReviewListRow(
-                label: feeLabel,
+                label: feeLabel ?? l10n.activityReceiptTxFee,
                 value: feeText!,
                 trailingIconName: AppIcons.help,
                 trailingIconColor: colors.text.secondary,

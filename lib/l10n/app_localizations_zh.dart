@@ -151,6 +151,456 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountsViewViewingKey => '显示查看密钥';
 
   @override
+  String get activityAddressShielded => '屏蔽地址';
+
+  @override
+  String get activityAddressTransparent => '透明地址';
+
+  @override
+  String get activityAddressUnified => '统一地址';
+
+  @override
+  String get activityAddressZcash => 'Zcash 地址';
+
+  @override
+  String get activityBalanceFromOrchard => '来自 Orchard 余额';
+
+  @override
+  String get activityBalanceFromTransparent => '来自透明余额';
+
+  @override
+  String get activityBalanceIronwood => 'Ironwood 余额';
+
+  @override
+  String get activityBalanceOrchard => 'Orchard 余额';
+
+  @override
+  String get activityBalanceShielded => '屏蔽余额';
+
+  @override
+  String get activityDetailsLoadFailed => '失败，请重试';
+
+  @override
+  String get activityDetailsLoadPublicly => '公开加载';
+
+  @override
+  String get activityDetailsLoadPubliclyLabel => '完整详情';
+
+  @override
+  String get activityDetailsLoading => '加载中…';
+
+  @override
+  String get activityDetailsNotCovered => '隐私模式下不可用';
+
+  @override
+  String get activityDetailsOmittedLabel => '未显示';
+
+  @override
+  String get activityDetailsOutputsLabel => '交易输出';
+
+  @override
+  String get activityDetailsOutputsUnattributed => '收款方未确认';
+
+  @override
+  String get activityDetailsUnavailable => '详情暂不可用，服务恢复连接后将自动更新';
+
+  @override
+  String get activityDetailsUnknownRecipient => '未知收款方';
+
+  @override
+  String get activityFeedEmpty => '暂无活动';
+
+  @override
+  String get activityFeedLoading => '正在加载活动';
+
+  @override
+  String get activityFeedRetry => '重新加载活动';
+
+  @override
+  String activityGiftBatchBreakdown(
+    String cards,
+    String fees,
+    String feeLabel,
+    String fee,
+  ) {
+    return '卡片 $cards ZEC · 兑换手续费 $fees ZEC · $feeLabel $fee';
+  }
+
+  @override
+  String get activityGiftCreated => '已创建礼品卡';
+
+  @override
+  String activityGiftCreatedMany(int count) {
+    return '已创建 $count 张礼品卡';
+  }
+
+  @override
+  String get activityGiftCreating => '正在创建卡片';
+
+  @override
+  String activityGiftCreatingMany(int count) {
+    return '正在创建 $count 张卡片';
+  }
+
+  @override
+  String get activityGiftCreationFailed => '礼品卡创建失败';
+
+  @override
+  String get activityGiftGroupFailed => '礼品卡批量创建失败';
+
+  @override
+  String get activityGiftRedeemed => '已兑换礼品卡';
+
+  @override
+  String get activityGiftRedeeming => '正在兑换卡片';
+
+  @override
+  String get activityGiftRedemptionFailed => '礼品卡兑换失败';
+
+  @override
+  String get activityGiftStatusCreated => '已创建';
+
+  @override
+  String get activityGiftStatusCreating => '创建中…';
+
+  @override
+  String get activityGiftStatusRedeemed => '已兑换';
+
+  @override
+  String get activityGiftStatusRedeeming => '兑换中…';
+
+  @override
+  String get activityGiftTotalPlanned => '计划总额';
+
+  @override
+  String get activityGiftTotalSpent => '总支出';
+
+  @override
+  String get activityGiftTotalSubmitted => '已提交总额';
+
+  @override
+  String get activityLoadFailedDesktop => '无法加载活动。';
+
+  @override
+  String get activityLoadFailedMobile => '无法加载活动，请稍后重试。';
+
+  @override
+  String get activityOmissionLaterOutputs => '第二个之后的输出';
+
+  @override
+  String activityOmissionMoreOutputs(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '另有 $count 个输出',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get activityOmissionOtherSenders => '其他发送地址';
+
+  @override
+  String get activityOmissionOutputAddress => '输出地址';
+
+  @override
+  String get activityOmissionSender => '发送地址';
+
+  @override
+  String get activityOmissionSharedFunding => '来自其他钱包的输入';
+
+  @override
+  String get activityOmissionShieldedFunding => '资金中的屏蔽部分';
+
+  @override
+  String get activityPayFailed => '付款失败';
+
+  @override
+  String get activityPayFromShielded => '来自屏蔽 ZEC';
+
+  @override
+  String activityPayFromShieldedOnChain(String network) {
+    return '来自屏蔽 ZEC · $network';
+  }
+
+  @override
+  String get activityPayInProgress => '付款进行中';
+
+  @override
+  String get activityPayIncomplete => '付款不完整';
+
+  @override
+  String get activityPayPaid => '已支付';
+
+  @override
+  String get activityPayPaying => '支付中 ...';
+
+  @override
+  String get activityPayRefunded => '付款已退款';
+
+  @override
+  String get activityPoolMixed => '混合';
+
+  @override
+  String get activityPublicLookupBody => 'Vizor 会向服务器请求这一笔交易，以显示隐私查询未包含的信息。';
+
+  @override
+  String get activityPublicLookupTitle => '要公开加载详情吗？';
+
+  @override
+  String get activityPublicLookupWarning =>
+      '服务器会得知此钱包对这笔交易感兴趣，如果没有使用 Tor，还会得知你的 IP 地址。';
+
+  @override
+  String get activityReceiptAmount => '金额';
+
+  @override
+  String get activityReceiptAmountMigrated => '迁移金额';
+
+  @override
+  String get activityReceiptCardFee => '卡片手续费';
+
+  @override
+  String get activityReceiptCards => '卡片';
+
+  @override
+  String get activityReceiptDetails => '详情';
+
+  @override
+  String get activityReceiptDetailsIncomplete => '详情不完整';
+
+  @override
+  String get activityReceiptDetailsIncompleteHelp =>
+      '此交易的部分详情（如收款方、备注或手续费）尚不明确，显示的金额可能会变化。';
+
+  @override
+  String get activityReceiptEstimatedNetworkFee => '预估网络手续费';
+
+  @override
+  String get activityReceiptFrom => '来自';
+
+  @override
+  String get activityReceiptIncomplete => '不完整';
+
+  @override
+  String get activityReceiptLoadFailed => '无法加载交易。';
+
+  @override
+  String get activityReceiptLoading => '正在加载交易…';
+
+  @override
+  String get activityReceiptMessage => '留言';
+
+  @override
+  String get activityReceiptNetChange => '净变动';
+
+  @override
+  String get activityReceiptNetworkFee => '网络手续费';
+
+  @override
+  String get activityReceiptNoAccount => '没有活跃账户。';
+
+  @override
+  String get activityReceiptOutput => '输出';
+
+  @override
+  String get activityReceiptRefreshFailed => '无法刷新最新的交易状态。';
+
+  @override
+  String get activityReceiptShowFullAddress => '显示完整地址';
+
+  @override
+  String get activityReceiptStatus => '状态';
+
+  @override
+  String get activityReceiptTimestamp => '时间';
+
+  @override
+  String get activityReceiptTo => '收款方';
+
+  @override
+  String get activityReceiptTxFee => '交易手续费';
+
+  @override
+  String get activityReceiptTxId => '交易 ID';
+
+  @override
+  String get activityReceiptUnattributedFeeHelp => '此交易的总手续费。你的账户承担的部分未知。';
+
+  @override
+  String get activityReceiptUnknownFee => '未知';
+
+  @override
+  String get activityRowCheckingStatus => '正在检查状态';
+
+  @override
+  String activityRowToday(String time) {
+    return '今天 $time';
+  }
+
+  @override
+  String get activityRowWaitingForConnection => '等待连接';
+
+  @override
+  String activityRowYesterday(String time) {
+    return '昨天 $time';
+  }
+
+  @override
+  String get activityScreenTitle => '活动';
+
+  @override
+  String get activitySectionEarlier => '更早';
+
+  @override
+  String get activitySectionThisWeek => '本周';
+
+  @override
+  String get activitySenderShielded => '屏蔽发送方';
+
+  @override
+  String get activitySenderUnknown => '未知发送方';
+
+  @override
+  String get activityStatusCompleted => '已完成';
+
+  @override
+  String get activityStatusFailed => '失败';
+
+  @override
+  String get activityStatusFailedFundsReturned => '失败，资金已退回';
+
+  @override
+  String get activityStatusInProgress => '进行中';
+
+  @override
+  String get activityStatusIncompleteDeposit => '入账不足';
+
+  @override
+  String get activityStatusRefunded => '已退款';
+
+  @override
+  String activitySwapAssetOnChain(String symbol, String chain) {
+    return '$chain 上的 $symbol';
+  }
+
+  @override
+  String activitySwapDepositedAsset(String symbol) {
+    return '已存入 $symbol';
+  }
+
+  @override
+  String get activitySwapFailed => '兑换失败';
+
+  @override
+  String get activitySwapJustNow => '刚刚';
+
+  @override
+  String activitySwapMinutesAgo(int minutes) {
+    return '$minutes 分钟前';
+  }
+
+  @override
+  String activitySwapReceivedAsset(String symbol) {
+    return '已接收 $symbol';
+  }
+
+  @override
+  String get activitySwapRefunded => '兑换已退款';
+
+  @override
+  String get activitySwapReviewQuote => '查看报价';
+
+  @override
+  String activitySwapStep(int current, int total) {
+    return '$current/$total 进行中';
+  }
+
+  @override
+  String get activitySwapSwapped => '兑换完成';
+
+  @override
+  String get activitySwapSwapping => '兑换中...';
+
+  @override
+  String get activitySwapTimeout => '已超时';
+
+  @override
+  String get activitySwapTitle => '兑换';
+
+  @override
+  String get activityTitleMigrated => '已迁移到 Ironwood';
+
+  @override
+  String get activityTitleMigrating => '正在迁移到 Ironwood...';
+
+  @override
+  String get activityTitleMigratingVerb => '迁移到 Ironwood 中';
+
+  @override
+  String get activityTitleMigrationFailed => '迁移失败';
+
+  @override
+  String get activityTitleReceiveFailed => '接收失败';
+
+  @override
+  String get activityTitleReceiveInProgress => '接收中...';
+
+  @override
+  String get activityTitleReceived => '已接收';
+
+  @override
+  String get activityTitleReceivedSuccessfully => '接收成功';
+
+  @override
+  String get activityTitleReceiving => '接收中...';
+
+  @override
+  String get activityTitleReceivingVerb => '接收中';
+
+  @override
+  String get activityTitleSendFailed => '发送失败';
+
+  @override
+  String get activityTitleSending => '发送中...';
+
+  @override
+  String get activityTitleSendingVerb => '发送中';
+
+  @override
+  String get activityTitleSent => '已发送';
+
+  @override
+  String get activityTitleSentSuccessfully => '发送成功';
+
+  @override
+  String get activityTitleShielded => '已屏蔽';
+
+  @override
+  String get activityTitleShieldedSuccessfully => '屏蔽成功';
+
+  @override
+  String get activityTitleShielding => '屏蔽中...';
+
+  @override
+  String get activityTitleShieldingFailed => '屏蔽失败';
+
+  @override
+  String get activityTitleShieldingInProgress => '屏蔽中...';
+
+  @override
+  String get activityTitleShieldingVerb => '屏蔽中';
+
+  @override
+  String get activityTitleTransaction => '交易';
+
+  @override
+  String get activityToastHashCopiedDesktop => '交易哈希已复制';
+
+  @override
+  String get activityToastHashCopiedMobile => '交易哈希已复制';
+
+  @override
   String get appBackAmount => '金额';
 
   @override

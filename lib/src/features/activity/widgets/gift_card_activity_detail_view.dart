@@ -114,6 +114,7 @@ class GiftCardActivityDetailView extends StatelessWidget {
             children: [
               Text(
                 giftCardActivityTitle(
+                  context.l10n,
                   kind,
                   isInFlight: isInFlight,
                   isFailed: isFailed,
@@ -159,15 +160,16 @@ class GiftCardActivityDetailView extends StatelessWidget {
                   Column(
                     children: [
                       ReviewListRow(
-                        label: 'Status',
+                        label: context.l10n.activityReceiptStatus,
                         value: statusText,
                         valueColor: statusColor,
                         leadingIconName: statusIconName,
                       ),
                       if (batch != null)
                         ReviewListRow(
-                          label: 'Cards',
-                          value: '${batch.count} × $amountText ZEC',
+                          label: context.l10n.activityReceiptCards,
+                          value:
+                              '${batch.count} × $amountText ZEC', // l10n-ignore: amount format
                         ),
                       if (hasMessage)
                         ReviewMemoRows(
@@ -175,9 +177,12 @@ class GiftCardActivityDetailView extends StatelessWidget {
                           expanded: messageExpanded,
                           onToggle: onToggleMessage,
                         ),
-                      ReviewListRow(label: 'Timestamp', value: timestampText),
                       ReviewListRow(
-                        label: 'Tx ID',
+                        label: context.l10n.activityReceiptTimestamp,
+                        value: timestampText,
+                      ),
+                      ReviewListRow(
+                        label: context.l10n.activityReceiptTxId,
                         value: txIdText,
                         trailingIconName: AppIcons.arrowTopRight,
                         onPressed: onTxIdPressed,
@@ -189,8 +194,8 @@ class GiftCardActivityDetailView extends StatelessWidget {
                   if (batch == null && feeText != null)
                     ReviewListRow(
                       label: kind == GiftCardActivityKind.created
-                          ? 'Card fee'
-                          : 'Tx fee',
+                          ? context.l10n.activityReceiptCardFee
+                          : context.l10n.activityReceiptTxFee,
                       value: feeText!,
                       trailingIconName: AppIcons.help,
                       trailingIconColor: context.colors.text.secondary,

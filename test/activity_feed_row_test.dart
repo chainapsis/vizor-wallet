@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   testWidgets(
@@ -504,8 +505,8 @@ void main() {
 
   test('formatActivityTimestamp drops the clock time when dateOnly', () {
     final dt = DateTime(2026, 5, 14, 17, 45);
-    expect(formatActivityTimestamp(dt), 'May 14, 17:45');
-    expect(formatActivityTimestamp(dt, dateOnly: true), 'May 14');
+    expect(formatActivityTimestamp(testL10n, dt), 'May 14, 17:45');
+    expect(formatActivityTimestamp(testL10n, dt, dateOnly: true), 'May 14');
   });
 }
 
