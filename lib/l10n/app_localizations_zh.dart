@@ -1495,7 +1495,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String commonToAddressOnChain(String address, String chain) {
-    return '收款地址：$address（$chain）';
+    return '至：$address（$chain）';
   }
 
   @override
@@ -3399,7 +3399,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String migrationCompleteTitle(String amount) {
-    return '你的\n$amount ZEC\n已在 Ironwood 上！';
+    return '你的 $amount ZEC\n已在 Ironwood 上！';
   }
 
   @override

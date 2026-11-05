@@ -8,6 +8,7 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/l10n/locale_typography.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanViewfinderCorners;
 
@@ -804,7 +805,7 @@ class _ScannerContent extends StatelessWidget {
     required double maxWidth,
   }) {
     final painter = TextPainter(
-      text: TextSpan(text: text, style: style),
+      text: TextSpan(text: text, style: withLocaleFontFallback(context, style)),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
     )..layout(maxWidth: maxWidth);

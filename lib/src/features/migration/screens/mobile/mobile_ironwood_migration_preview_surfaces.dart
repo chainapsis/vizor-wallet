@@ -1676,7 +1676,10 @@ class _MigrationSkeletonValueRow extends StatelessWidget {
       builder: (context, constraints) {
         const minimumBarWidth = 48.0;
         final labelPainter = TextPainter(
-          text: TextSpan(text: label, style: labelStyle),
+          text: TextSpan(
+            text: label,
+            style: withLocaleFontFallback(context, labelStyle),
+          ),
           maxLines: 1,
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),

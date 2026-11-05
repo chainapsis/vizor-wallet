@@ -25,10 +25,22 @@ List<String>? fontFamilyFallbackFor(Locale locale) {
   };
 }
 
+/// [style] with the current language's font fallback. A `TextPainter` does
+/// not inherit [LocaleTypography], so one that measures translated text uses
+/// this to get the widths the rendered `Text` will have. A style that already
+/// names a fallback is returned unchanged.
+TextStyle withLocaleFontFallback(BuildContext context, TextStyle style) {
+  if (style.fontFamilyFallback != null) return style;
+  final locale = Localizations.maybeLocaleOf(context);
+  final fallback = locale == null ? null : fontFamilyFallbackFor(locale);
+  if (fallback == null) return style;
+  return style.copyWith(fontFamilyFallback: fallback);
+}
+
 /// Gives the theme text styles and the default text style the current
 /// language's font fallback, so `Text` widgets using `AppTypography` styles
-/// inherit it. A `TextPainter` built from a token style does not; merge with
-/// `DefaultTextStyle.of(context).style` where measurement must match.
+/// inherit it. A `TextPainter` built from a token style does not; measure
+/// with [withLocaleFontFallback].
 class LocaleTypography extends StatelessWidget {
   const LocaleTypography({required this.child, super.key});
 

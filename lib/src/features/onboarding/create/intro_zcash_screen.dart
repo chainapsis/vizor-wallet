@@ -189,8 +189,9 @@ class _ShieldedInfoCard extends StatelessWidget {
         ? 'assets/illustrations/desktop/home_balance_card_pattern_dark.webp'
         : 'assets/illustrations/desktop/home_balance_card_pattern_light.webp';
 
+    // A minimum, not a fixed height: longer translations grow the card.
     return Container(
-      height: _height,
+      constraints: const BoxConstraints(minHeight: _height),
       width: double.infinity,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -198,6 +199,7 @@ class _ShieldedInfoCard extends StatelessWidget {
         borderRadius: _radius,
       ),
       child: Stack(
+        alignment: Alignment.center,
         children: [
           Positioned(
             left: (_cardWidth - _patternWidth) / 2,
@@ -237,7 +239,6 @@ class _ShieldedInfoCard extends StatelessWidget {
                         color: colors.text.homeCard,
                       ),
                       textAlign: TextAlign.center,
-                      maxLines: 3,
                     ),
                   ),
                 ],

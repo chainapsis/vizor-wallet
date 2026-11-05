@@ -70,10 +70,14 @@ class PayActivityStatusContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final progress = progressPresentation;
     final showTabs = progress?.showTabs ?? false;
-    return SizedBox(
+    // Minimum height: mixed Latin and CJK lines run slightly taller.
+    return ConstrainedBox(
       key: const ValueKey('pay_activity_status_content'),
-      width: contentSize.width,
-      height: showTabs ? null : contentSize.height + _extraDetailHeight,
+      constraints: BoxConstraints(
+        minWidth: contentSize.width,
+        maxWidth: contentSize.width,
+        minHeight: showTabs ? 0 : contentSize.height + _extraDetailHeight,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

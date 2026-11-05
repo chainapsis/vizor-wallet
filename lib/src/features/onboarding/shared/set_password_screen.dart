@@ -537,9 +537,12 @@ class _SetPasswordOnPageContent extends StatelessWidget {
         children: [
           const _SetPasswordTitle(),
           const SizedBox(height: _SetPasswordContent._sectionGap),
-          SizedBox(
-            width: double.infinity,
-            height: _SetPasswordContent._mainHeight,
+          // Minimum height: CJK labels and messages run slightly taller.
+          ConstrainedBox(
+            constraints: const BoxConstraints(
+              minWidth: double.infinity,
+              minHeight: _SetPasswordContent._mainHeight,
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.sm,

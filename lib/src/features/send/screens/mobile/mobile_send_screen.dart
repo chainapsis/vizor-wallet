@@ -3378,9 +3378,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       onFeeInfo: () => unawaited(_showFeeInfo()),
                     )
                   else
-                    SizedBox(
+                    // Minimum height: CJK rows in the serif values run
+                    // slightly taller.
+                    ConstrainedBox(
                       key: const ValueKey('mobile_send_review_info'),
-                      height: _kMobileSendReviewInfoHeight,
+                      constraints: const BoxConstraints(
+                        minHeight: _kMobileSendReviewInfoHeight,
+                      ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           vertical: AppSpacing.md,

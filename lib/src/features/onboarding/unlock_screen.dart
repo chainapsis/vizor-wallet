@@ -240,15 +240,19 @@ class DesktopUnlockContent extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                context.l10n.onboardingUnlockWelcomeBack,
-                style: AppTypography.displayMedium.copyWith(
-                  color: colors.text.accent,
-                  height: 48 / 45,
+              // One line; a translation wider than the card scales down.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  context.l10n.onboardingUnlockWelcomeBack,
+                  style: AppTypography.displayMedium.copyWith(
+                    color: colors.text.accent,
+                    height: 48 / 45,
+                  ),
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
                 ),
-                maxLines: 1,
-                softWrap: false,
-                textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(

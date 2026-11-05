@@ -1537,7 +1537,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String commonToAddressOnChain(String address, String chain) {
-    return '받⁠는 주⁠소: $address ($chain)';
+    return '받⁠는 곳: $address ($chain)';
   }
 
   @override
@@ -1597,7 +1597,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonWaitingForWalletSync => '지⁠갑 동⁠기⁠화 대⁠기 중';
 
   @override
-  String get commonWelcomeBack => '다⁠시 오⁠신 것⁠을 환⁠영⁠해⁠요';
+  String get commonWelcomeBack => '어⁠서 오⁠세⁠요';
 
   @override
   String get commonWizard => '마⁠법⁠사';
@@ -3596,7 +3596,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationCompleteTitle(String amount) {
-    return '내\n$amount ZEC⁠가\nIronwood⁠에 있⁠어⁠요!';
+    return '$amount ZEC⁠가\nIronwood⁠에 있⁠어⁠요!';
   }
 
   @override
@@ -6165,7 +6165,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingUnlockOpening => '지⁠갑⁠을 여⁠는 중...';
 
   @override
-  String get onboardingUnlockWelcomeBack => '다⁠시 오⁠신 것⁠을 환⁠영⁠해⁠요';
+  String get onboardingUnlockWelcomeBack => '어⁠서 오⁠세⁠요';
 
   @override
   String get onboardingWelcome => '시⁠작 화⁠면';
@@ -9120,7 +9120,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsTorStatusDirect => '직⁠접 연⁠결';
 
   @override
-  String get settingsTorStatusNotSaved => '설⁠정⁠이 저⁠장⁠되⁠지 않⁠았⁠어⁠요';
+  String get settingsTorStatusNotSaved => '저⁠장 실⁠패';
 
   @override
   String get settingsTorStatusSwitchFailed => '전⁠환 실⁠패';
