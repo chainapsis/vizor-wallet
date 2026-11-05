@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -53,7 +54,7 @@ class _MobileLedgerAccessContentState
     session.scan();
   }
 
-  Widget _bluetooth({VoidCallback? retry, String retryLabel = 'Reconnect'}) =>
+  Widget _bluetooth({VoidCallback? retry, String? retryLabel}) =>
       MobileLedgerBluetoothContent(
         onRetry: retry ?? widget.onRetry,
         onClose: widget.onClose,
@@ -80,7 +81,7 @@ class _MobileLedgerAccessContentState
         if (c.accessRecovery) {
           return _bluetooth(
             retry: () => _search(c),
-            retryLabel: 'Find my Ledger',
+            retryLabel: context.l10n.ledgerFindMyLedger,
           );
         }
         if (_help && !c.invalidated) {
@@ -100,6 +101,7 @@ class _MobileLedgerAccessContentState
                 : null,
           );
         }
+        final l10n = context.l10n;
         final choosing =
             c.stage == LedgerPairingStage.scanning ||
             c.stage == LedgerPairingStage.devices;
@@ -109,44 +111,40 @@ class _MobileLedgerAccessContentState
         final title = switch (c.stage) {
           LedgerPairingStage.scanning || LedgerPairingStage.devices =>
             c.devices.isNotEmpty
-                ? 'Select your Ledger'
+                ? l10n.ledgerTitleSelectYourLedger
                 : c.stage == LedgerPairingStage.scanning
-                ? 'Finding your Ledger'
-                : 'No Ledger devices found',
+                ? l10n.ledgerTitleFindingLedger
+                : l10n.ledgerNoDevicesFound,
           LedgerPairingStage.verifying =>
             c.sameSavedDevice
-                ? 'Connecting to your Ledger'
-                : 'Check your Ledger',
-          LedgerPairingStage.saving => 'Saving your connection',
-          LedgerPairingStage.saved => 'Ledger saved',
-          LedgerPairingStage.ready => 'Your Ledger is connected',
-          LedgerPairingStage.mismatch => 'This Ledger doesn’t match',
+                ? l10n.ledgerTitleConnectingToLedger
+                : l10n.ledgerSigningTitleReviewing,
+          LedgerPairingStage.saving => l10n.ledgerTitleSavingConnection,
+          LedgerPairingStage.saved => l10n.ledgerTitleLedgerSaved,
+          LedgerPairingStage.ready => l10n.ledgerTitleLedgerConnected,
+          LedgerPairingStage.mismatch => l10n.ledgerTitleMismatch,
           LedgerPairingStage.failed =>
             c.pairingInvalid
-                ? 'Pair your Ledger again'
-                : c.requestFailure.title,
+                ? l10n.ledgerTitlePairAgain
+                : c.requestFailure.title(l10n),
         };
         final message = switch (c.stage) {
           LedgerPairingStage.scanning || LedgerPairingStage.devices =>
             c.devices.isEmpty
-                ? 'Keep your Ledger nearby and unlocked, with Bluetooth turned on.'
-                : 'Choose a device to continue.',
+                ? l10n.ledgerKeepNearbyUnlocked
+                : l10n.ledgerChooseDevice,
           LedgerPairingStage.verifying =>
             c.sameSavedDevice
-                ? 'Unlock your Ledger and open the Zcash app. Approve opening it if prompted.'
-                : 'Complete pairing if prompted, then open the Zcash app and approve sharing the viewing key.',
-          LedgerPairingStage.saving =>
-            'Your account matches. Saving the verified connection.',
-          LedgerPairingStage.saved =>
-            'This Ledger matches your account and is now saved. Find it again to continue.',
-          LedgerPairingStage.ready =>
-            'Continue when you’re ready to review the transaction on your Ledger.',
-          LedgerPairingStage.mismatch =>
-            'Choose the Ledger that holds this account. Your saved connection hasn’t changed.',
+                ? l10n.ledgerUnlockOpenZcashApprove
+                : l10n.ledgerCompletePairingOpenZcash,
+          LedgerPairingStage.saving => l10n.ledgerSavingVerified,
+          LedgerPairingStage.saved => l10n.ledgerSavedMatchesFindAgain,
+          LedgerPairingStage.ready => l10n.ledgerReadyReviewOnLedger,
+          LedgerPairingStage.mismatch => l10n.ledgerMismatchChooseHolder,
           LedgerPairingStage.failed =>
             c.pairingInvalid
-                ? 'Your Ledger no longer recognizes this Bluetooth pairing.'
-                : c.failureMessage,
+                ? l10n.ledgerPairingNoLongerRecognized
+                : c.failureMessage(l10n),
         };
         return MobileLedgerSheetContent(
           title: title,
@@ -158,14 +156,14 @@ class _MobileLedgerAccessContentState
                   children: [
                     MobileLedgerAction(
                       switch (c.stage) {
-                        LedgerPairingStage.ready => 'Continue signing',
-                        LedgerPairingStage.mismatch => 'Choose another Ledger',
-                        LedgerPairingStage.devices => 'Search again',
+                        LedgerPairingStage.ready => l10n.ledgerContinueSigning,
+                        LedgerPairingStage.mismatch => l10n.ledgerChooseAnother,
+                        LedgerPairingStage.devices => l10n.ledgerSearchAgain,
                         LedgerPairingStage.failed when !c.pairingInvalid =>
                           c.failureRetryable
-                              ? 'Try again'
-                              : 'Choose another Ledger',
-                        _ => 'Find my Ledger',
+                              ? l10n.commonTryAgain
+                              : l10n.ledgerChooseAnother,
+                        _ => l10n.ledgerFindMyLedger,
                       },
                       onPressed: c.invalidated
                           ? null
@@ -182,8 +180,8 @@ class _MobileLedgerAccessContentState
                         onPressed: c.invalidated ? null : () => _openHelp(c),
                         child: Text(
                           c.pairingInvalid
-                              ? 'Reset Bluetooth pairing'
-                              : 'Connection help',
+                              ? l10n.ledgerResetBluetoothPairing
+                              : l10n.ledgerConnectionHelp,
                         ),
                       ),
                   ],
@@ -228,7 +226,7 @@ class _MobileLedgerAccessContentState
                               )) ...[
                                 const SizedBox(height: AppSpacing.xxs),
                                 Text(
-                                  'Different from saved connection',
+                                  l10n.ledgerDifferentFromSaved,
                                   style: AppTypography.bodySmall.copyWith(
                                     color: context.colors.text.secondary,
                                   ),
@@ -253,18 +251,19 @@ class _MobileLedgerAccessContentState
             if (c.busy && !(choosing && c.devices.isNotEmpty))
               MobileLedgerStatus(
                 c.preparingHelp
-                    ? 'Opening connection help…'
+                    ? l10n.ledgerOpeningConnectionHelp
                     : switch (c.stage) {
                         LedgerPairingStage.scanning =>
                           c.devices.isEmpty
-                              ? 'Searching nearby…'
-                              : 'Still searching nearby…',
+                              ? l10n.ledgerStatusSearchingNearby
+                              : l10n.ledgerStatusStillSearching,
                         LedgerPairingStage.verifying =>
                           c.sameSavedDevice
-                              ? 'Connecting…'
-                              : 'Follow the prompts on your Ledger',
-                        LedgerPairingStage.saving => 'Saving connection…',
-                        _ => 'Opening Bluetooth settings…',
+                              ? l10n.ledgerStatusConnecting
+                              : l10n.ledgerStatusFollowPrompts,
+                        LedgerPairingStage.saving =>
+                          l10n.ledgerStatusSavingConnection,
+                        _ => l10n.ledgerStatusOpeningBluetoothSettings,
                       },
               ),
           ],

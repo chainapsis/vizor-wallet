@@ -1843,10 +1843,33 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get keystoneAllowCamera => '允许使用摄像头';
+
+  @override
+  String get keystoneBatchCannotSignDeposit => '此笔存款包含 Keystone 批量签名无法签署的输入。';
+
+  @override
+  String get keystoneBatchCannotSignTx => '此交易包含 Keystone 批量签名无法签署的输入。';
+
+  @override
+  String get keystoneBatchTooManyInputsDeposit =>
+      '此笔存款的输入过多，超出 Keystone 批量签名的上限。请尝试较小的金额。';
+
+  @override
+  String get keystoneBatchTooManyInputsTx =>
+      '此交易的输入过多，超出 Keystone 批量签名的上限。请尝试较小的金额。';
+
+  @override
   String get keystoneBirthdayInvalidHeight => '这似乎不是有效的区块高度。';
 
   @override
   String get keystoneBirthdaySubtitle => '这有助于我们更快地导入你的钱包。';
+
+  @override
+  String get keystoneCameraDefault => '默认';
+
+  @override
+  String get keystoneCameraDeniedTitle => '你已拒绝摄像头权限';
 
   @override
   String get keystoneCameraEnableBody => '连接 Keystone 需要使用相机。\n你之后可随时在设置中更改。';
@@ -1855,11 +1878,46 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneCameraEnableTitle => '启用相机权限';
 
   @override
+  String get keystoneCameraExternal => '外接';
+
+  @override
+  String get keystoneCameraFront => '前置';
+
+  @override
+  String get keystoneCameraGiftBody => '扫描礼品卡二维码需要使用摄像头。\n你之后可以随时在设置中更改。';
+
+  @override
+  String get keystoneCameraLabel => '摄像头';
+
+  @override
+  String keystoneCameraNameDefault(String name) {
+    return '$name（默认）';
+  }
+
+  @override
+  String get keystoneCameraNormal => '标准';
+
+  @override
+  String get keystoneCameraOffAllow => '摄像头权限已关闭。请在设置中允许，以扫描 Keystone 签名。';
+
+  @override
   String get keystoneCameraUnavailableBody =>
       'Keystone 导入仅支持摄像头扫描二维码。\n请连接摄像头后重试。';
 
   @override
+  String get keystoneCameraWide => '广角';
+
+  @override
+  String get keystoneCameraZoom => '变焦';
+
+  @override
   String get keystoneConfirmSelection => '确认选择';
+
+  @override
+  String get keystoneConfirmWithKeystone => '使用 Keystone 确认';
+
+  @override
+  String get keystoneDefaultCamera => '默认摄像头';
 
   @override
   String get keystoneFirmwareBody => '请确认你的 Keystone 已升级到最新的 Cypherpunk 固件。 ';
@@ -1871,10 +1929,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneFirmwareLinkLabel => '链接';
 
   @override
+  String get keystoneFirmwareOpenPage => '打开 Keystone 固件页面';
+
+  @override
   String get keystoneFirmwareTitle => '检查 Keystone 固件';
 
   @override
+  String get keystoneFirmwareUpdatePrefix => '请更新到最新的 Keystone 固件：';
+
+  @override
   String get keystoneImReadyNow => '我已准备好';
+
+  @override
+  String get keystoneLoadingCamera => '正在加载摄像头...';
+
+  @override
+  String get keystoneLoadingQrCode => '正在加载二维码 ...';
+
+  @override
+  String get keystoneNextStep => '下一步';
+
+  @override
+  String get keystoneNoCameraFound => '未找到摄像头';
+
+  @override
+  String get keystoneNoCameraOpened => '无法打开任何摄像头。请检查摄像头是否已连接，且未被其他应用占用。';
 
   @override
   String get keystoneOnVizor => '在 Vizor 中';
@@ -1883,10 +1962,28 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneOnYourKeystone => '在 Keystone 上';
 
   @override
+  String get keystoneOpenSettings => '打开设置';
+
+  @override
+  String get keystoneOpenSignedQr => '请在 Keystone 上打开已签名交易的二维码，然后重新扫描。';
+
+  @override
+  String get keystonePcztPrepareFailed => '无法准备 Keystone 签名。';
+
+  @override
   String get keystonePrepareSubtitle => '请准备好你的 Keystone 钱包';
 
   @override
   String get keystonePrepareToConnectTitle => '准备连接';
+
+  @override
+  String get keystonePreparingQr => '正在准备二维码';
+
+  @override
+  String get keystoneReadingQr => '正在读取二维码...';
+
+  @override
+  String get keystoneReadingSignature => '正在读取签名...';
 
   @override
   String get keystoneScanCameraRequired =>
@@ -1896,7 +1993,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneScanCaption => '扫描 Keystone 账户二维码';
 
   @override
+  String get keystoneScanCaptionConfirm => '请扫描 Keystone 上的二维码以确认';
+
+  @override
   String get keystoneScanDecodeFailed => '无法将此二维码解码为 Keystone Zcash 账户。';
+
+  @override
+  String get keystoneScanHelpClose => '关闭扫描帮助';
+
+  @override
+  String get keystoneScanIssuesTitle => '扫描有问题？';
 
   @override
   String get keystoneScanNoAccounts => '在此 Keystone 二维码中未找到 Zcash 账户。';
@@ -1910,10 +2016,34 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get keystoneScanPromptOnKeystone => '按钮（位于你的 Keystone），';
+
+  @override
+  String get keystoneScanPromptTap => '点按';
+
+  @override
+  String get keystoneScanPromptThenScan => '然后扫描此二维码';
+
+  @override
   String get keystoneScanReadingAccounts => '正在读取账户...';
 
   @override
+  String get keystoneScanWithKeystone => '使用 Keystone 扫描';
+
+  @override
+  String get keystoneSelectCamera => '选择摄像头';
+
+  @override
+  String get keystoneShowTransactionQr => '显示交易二维码';
+
+  @override
+  String get keystoneSignatureQrNotDecoded => '无法将此二维码解码为 Keystone 签名。';
+
+  @override
   String get keystoneStepHowToConnect => '连接方法';
+
+  @override
+  String get keystoneStepOneOfTwo => '第 1/2 步';
 
   @override
   String get keystoneStepOpenSoftwareWallet =>
@@ -1929,15 +2059,60 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneStepSelectVizor => '选择 Vizor（或 ZODL）';
 
   @override
+  String get keystoneStepTwoOfTwo => '第 2/2 步';
+
+  @override
+  String get keystoneSubmittingTransaction => '正在提交交易';
+
+  @override
+  String get keystoneTipContinuityCamera =>
+      '在 Mac 上，你也可以使用连续互通相机，改用 iPhone 进行扫描。';
+
+  @override
+  String get keystoneTipGiftFullScreen => '请在另一台设备上全屏打开礼品卡二维码。';
+
+  @override
+  String get keystoneTipGiftMoveFurther => '请将二维码移到离摄像头稍远几英寸的位置，以便对焦。';
+
+  @override
+  String get keystoneTipGlare => '请确保房间光线充足，且二维码没有反光。';
+
+  @override
+  String get keystoneTipMoveKeystoneFurther =>
+      '请将 Keystone 移到离摄像头稍远几英寸的位置，以便对焦。';
+
+  @override
+  String get keystoneTipTapFullScreen => '点按 Keystone 上的二维码即可全屏显示。这是最简单的解决办法。';
+
+  @override
+  String get keystoneTroubleScanning => '扫描遇到问题？';
+
+  @override
+  String get keystoneTryAgainWithKeystone => '使用 Keystone 重试';
+
+  @override
+  String get keystoneWindowsCameraBody =>
+      '请在 Windows 设置中开启“摄像头访问”和“允许桌面应用访问你的摄像头”。';
+
+  @override
+  String get keystoneWindowsCameraTitle => '请启用 Windows 摄像头权限';
+
+  @override
   String languageSystemOption(String language) {
     return '系统（$language）';
   }
+
+  @override
+  String get ledgerAccountIndexFieldLabel => 'Ledger 账户索引（0–100）';
 
   @override
   String get ledgerAccountIndexHint => '除非此 Ledger 账户使用过其他索引，否则请保持为 0。';
 
   @override
   String get ledgerAccountIndexLabel => '账户索引（0–100）';
+
+  @override
+  String get ledgerAccountIndexOutOfRange => '账户索引必须在 0 到 100 之间。';
 
   @override
   String get ledgerAddAccountNote => '你可在 Vizor 中查看余额和活动。交易仍需在 Ledger 上批准。';
@@ -1947,6 +2122,22 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get ledgerAdvancedOptions => '高级选项';
+
+  @override
+  String ledgerAppSemanticsLabel(String appName) {
+    return '$appName 应用';
+  }
+
+  @override
+  String get ledgerAppUpdateRequiredTitle => '需要更新 Ledger 应用';
+
+  @override
+  String get ledgerApproveShareViewingKey => '请批准与 Vizor 共享你的查看密钥。';
+
+  @override
+  String ledgerApproveShareViewingKeyForAccount(String number) {
+    return '请批准共享账户 #$number 的查看密钥。';
+  }
 
   @override
   String get ledgerBalanceActivityNote => '在 Vizor 中查看余额和活动。\n在 Ledger 上批准交易。';
@@ -1968,11 +2159,173 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerBluetoothConnection => '蓝牙连接';
 
   @override
+  String get ledgerBluetoothModelsList => 'Nano X、Flex、Stax 和 Nano Gen5';
+
+  @override
   String get ledgerBluetoothPermissionRequired =>
       '查找 Ledger 需要蓝牙权限。请在设置中允许，然后重试。';
 
   @override
+  String get ledgerBtAccessAllowed => '权限已允许。准备好后请重试。';
+
+  @override
+  String get ledgerBtAccessBluetoothRequestable =>
+      '请选择“允许权限”以连接 Ledger。如果没有弹出提示，请打开设置。';
+
+  @override
+  String get ledgerBtAccessBluetoothSettings => '请在设备设置中允许 Vizor 使用蓝牙。';
+
+  @override
+  String get ledgerBtAccessKindLocation => '定位';
+
+  @override
+  String get ledgerBtAccessLocationRequestable =>
+      '此 Android 版本需要定位权限才能查找 Ledger。请选择“允许权限”，如果没有弹出提示，请打开设置。';
+
+  @override
+  String get ledgerBtAccessLocationSettings =>
+      '此 Android 版本需要定位权限才能查找 Ledger。请在设置中允许 Vizor 访问定位。';
+
+  @override
+  String get ledgerBtAccessMacosSettings =>
+      '请打开“系统设置”>“隐私与安全性”>“蓝牙”，并允许 Vizor 访问。';
+
+  @override
+  String ledgerBtAccessRestricted(String kind) {
+    return '$kind权限受到设备设置或管理员限制。';
+  }
+
+  @override
+  String get ledgerBtAccessTurnOnBluetooth => '请开启蓝牙，然后再次检查权限。';
+
+  @override
+  String get ledgerBtAccessTurnOnLocation => '请开启定位服务，然后再次检查权限。';
+
+  @override
+  String get ledgerBtCouldNotCheckAccess => '无法检查权限。请手动打开设置，然后再次检查。';
+
+  @override
+  String get ledgerBtCouldNotOpenSettingsAllow =>
+      '无法打开设置。请手动打开设备设置并允许 Vizor 访问。';
+
+  @override
+  String get ledgerBtCouldNotOpenSettingsRestricted =>
+      '无法打开设置。请手动打开设备设置，查看 Vizor 的权限。';
+
+  @override
+  String get ledgerBtLabelAllowAccess => '允许访问';
+
+  @override
+  String get ledgerBtLabelCheckAgain => '重新检查';
+
+  @override
+  String get ledgerBtLabelChecking => '正在检查权限';
+
+  @override
+  String get ledgerBtLabelOpenSettings => '打开设置';
+
+  @override
+  String get ledgerBtLabelReconnect => '重新连接';
+
+  @override
+  String get ledgerBtMsgBluetoothNeeded => 'Vizor 需要蓝牙权限才能连接你的 Ledger。';
+
+  @override
+  String get ledgerBtMsgChecking => '正在检查 Vizor 能否连接你的 Ledger。';
+
+  @override
+  String get ledgerBtMsgLocationNeeded => '此 Android 版本需要定位权限才能查找 Ledger。';
+
+  @override
+  String get ledgerBtMsgReady => '请开启并解锁 Ledger 以继续。';
+
+  @override
+  String get ledgerBtRestrictedGeneric =>
+      '请在设置中查看 Vizor 的蓝牙权限。设备限制或管理员可能会阻止更改。';
+
+  @override
+  String get ledgerBtRestrictedLocation =>
+      '请在设置中查看 Vizor 的定位权限。设备限制或管理员可能会阻止更改。';
+
+  @override
+  String get ledgerBtRestrictedMacos =>
+      '请在“系统设置”中查看“隐私与安全性”>“蓝牙”。此限制可能需要由管理员更改。';
+
+  @override
+  String get ledgerBtRestrictedNearby =>
+      '请在设置中查看 Vizor 的“附近设备”权限。设备限制或管理员可能会阻止更改。';
+
+  @override
+  String get ledgerBtSheetAllowAddAccount => '请在手机设置中允许 Vizor 使用蓝牙以添加你的账户。';
+
+  @override
+  String get ledgerBtSheetAllowContinue => '请在手机设置中允许 Vizor 使用蓝牙以继续。';
+
+  @override
+  String get ledgerBtSheetAllowSigning => '请在手机设置中允许 Vizor 使用蓝牙以继续签名。';
+
+  @override
+  String get ledgerBtSheetReadyAddAccount => '蓝牙可用。请解锁 Ledger 以添加你的账户。';
+
+  @override
+  String get ledgerBtSheetReadyContinue => '蓝牙可用。请解锁 Ledger 以继续。';
+
+  @override
+  String get ledgerBtSheetReadySigning => '蓝牙可用。请解锁 Ledger 以继续签名。';
+
+  @override
+  String get ledgerBtSheetTurnOnAddAccount => '请开启手机蓝牙以添加你的账户。';
+
+  @override
+  String get ledgerBtSheetTurnOnContinue => '请开启手机蓝牙以继续。';
+
+  @override
+  String get ledgerBtSheetTurnOnSigning => '请开启手机蓝牙以继续签名。';
+
+  @override
+  String get ledgerBtTitleAllowBluetooth => '请允许使用蓝牙';
+
+  @override
+  String get ledgerBtTitleAllowBluetoothSettings => '请在设置中允许蓝牙';
+
+  @override
+  String get ledgerBtTitleAllowLocation => '请允许访问定位';
+
+  @override
+  String get ledgerBtTitleAllowLocationSettings => '请在设置中允许定位';
+
+  @override
+  String get ledgerBtTitleChecking => '正在检查蓝牙权限';
+
+  @override
+  String get ledgerBtTitleReady => '可以重新连接';
+
+  @override
+  String get ledgerBtTitleRestricted => '权限受到限制';
+
+  @override
+  String get ledgerBtTitleTurnOnBluetooth => '请开启蓝牙';
+
+  @override
+  String get ledgerBtTitleTurnOnLocation => '请开启定位服务';
+
+  @override
+  String get ledgerButtonCheckingAccount => '正在检查账户';
+
+  @override
+  String get ledgerButtonConnecting => '正在连接';
+
+  @override
+  String get ledgerButtonSaving => '正在保存';
+
+  @override
+  String get ledgerButtonSearching => '正在搜索';
+
+  @override
   String get ledgerCancelFailed => '无法完成取消。请重试。';
+
+  @override
+  String get ledgerCancelShielding => '取消屏蔽';
 
   @override
   String get ledgerCancellingRequest => '正在取消请求';
@@ -1981,19 +2334,62 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerCancellingTheRequest => '正在取消 Ledger 请求…';
 
   @override
+  String get ledgerCapabilityMainnetOnly => '目前仅支持在 Zcash 主网上使用 Ledger。';
+
+  @override
+  String get ledgerCapabilityUnsupportedPlatform =>
+      'Vizor 支持在 macOS、Windows、Linux、iOS 和 Android 上使用 Ledger。';
+
+  @override
+  String get ledgerChangedKeepOne => 'Ledger 已更换。请只连接一个 Ledger，然后重试。';
+
+  @override
   String get ledgerCheckingBluetoothAccess => '正在检查蓝牙权限…';
+
+  @override
+  String get ledgerCheckingUsb => '正在检查 USB 连接…';
 
   @override
   String get ledgerChooseAnother => '选择其他 Ledger';
 
   @override
+  String get ledgerChooseConnection => '选择连接方式';
+
+  @override
+  String get ledgerChooseDevice => '请选择一台设备以继续。';
+
+  @override
+  String get ledgerChooseLedgerForAccount => '请选择要用于此账户的 Ledger。';
+
+  @override
   String get ledgerCleanupFailed => '无法完成清理。请重试。';
+
+  @override
+  String get ledgerComeBackFindLedger =>
+      '请保持 Ledger 处于解锁状态，然后选择下方的“查找 Ledger”。';
+
+  @override
+  String get ledgerComeBackFindMyLedger =>
+      '请保持 Ledger 处于解锁状态，然后选择下方的“查找我的 Ledger”。';
+
+  @override
+  String get ledgerComeBackReconnect => '返回并重新连接';
+
+  @override
+  String get ledgerCompletePairingOpenZcash =>
+      '如有提示请完成配对，然后打开 Zcash 应用并批准共享查看密钥。';
 
   @override
   String get ledgerConfirmOpeningZcash => '请在 Ledger 上确认打开 Zcash。';
 
   @override
+  String get ledgerConnectForAccount => '请连接此账户的 Ledger。';
+
+  @override
   String get ledgerConnectSubtitle => '请准备好你的 Ledger 钱包。';
+
+  @override
+  String get ledgerConnectTitle => '连接 Ledger';
 
   @override
   String get ledgerConnectUsbCable => '使用 USB 数据线连接。';
@@ -2007,7 +2403,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerConnectionHelp => '连接帮助';
 
   @override
+  String get ledgerContinueSigning => '继续签名';
+
+  @override
   String get ledgerCouldNotConnect => '无法连接 Ledger';
+
+  @override
+  String get ledgerCouldNotStopSearchTryAgain => '无法停止搜索。请重试。';
+
+  @override
+  String get ledgerDifferentFromSaved => '与已保存的连接不同';
 
   @override
   String get ledgerDiscoveryErrorFallback => '请重试。';
@@ -2051,10 +2456,269 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerErrorViewingKeyRejected => '你在 Ledger 上拒绝了查看密钥请求。';
 
   @override
+  String ledgerFailureMsgAppUpdateRequired(String version) {
+    return '请在 Ledger Wallet 中将你的 Ledger 及其 Zcash 应用更新到 $version 或更高版本。';
+  }
+
+  @override
+  String get ledgerFailureMsgBusy => 'Ledger 正忙。请稍后重试。';
+
+  @override
+  String get ledgerFailureMsgCancelledTryAgain => '请求已取消。准备好后请重试。';
+
+  @override
+  String get ledgerFailureMsgCheckOpenZcash => '请检查 Ledger 并打开 Zcash 应用，然后重试。';
+
+  @override
+  String get ledgerFailureMsgDeclined => '已在 Ledger 上拒绝。准备好后请重试。';
+
+  @override
+  String get ledgerFailureMsgGiftCardRejected =>
+      'Ledger 无法接受此请求。请创建新的礼品卡。未发送任何内容。';
+
+  @override
+  String get ledgerFailureMsgGiftCardTooLarge => '对 Ledger 来说过大。请创建金额较小的礼品卡。';
+
+  @override
+  String get ledgerFailureMsgInstallZcash => '请使用 Ledger Wallet 安装 Zcash 应用。';
+
+  @override
+  String get ledgerFailureMsgMemoHashUnsupported =>
+      '请更新 Ledger 的 Zcash 应用以签署非英文备注';
+
+  @override
+  String get ledgerFailureMsgMigrationTooLarge =>
+      '此迁移步骤过大，Ledger 无法签名。Vizor 暂时无法拆分。';
+
+  @override
+  String get ledgerFailureMsgOpenZcash => '请在 Ledger 上打开 Zcash 应用。';
+
+  @override
+  String get ledgerFailureMsgOrchardChange =>
+      'Ledger 无法签署在 Orchard 中保留找零的交易。请先将你的 Orchard 余额迁移到 Ironwood。';
+
+  @override
+  String get ledgerFailureMsgPaymentTooLarge => '请发起新的付款。不要向此地址发送较小的金额。';
+
+  @override
+  String get ledgerFailureMsgReconnectUnlock => '请重新连接并解锁 Ledger。';
+
+  @override
+  String get ledgerFailureMsgRejectedNewRequest =>
+      'Ledger 无法接受此请求。请重新创建。未发送任何内容。';
+
+  @override
+  String get ledgerFailureMsgReopenZcash => '请关闭并重新打开 Zcash 应用。';
+
+  @override
+  String get ledgerFailureMsgSaplingRecipient =>
+      'Ledger 无法向 Sapling 地址发送。请创建新请求。';
+
+  @override
+  String get ledgerFailureMsgSetPin => '请在 Ledger 上设置 PIN，然后重试。';
+
+  @override
+  String get ledgerFailureMsgShieldTooLarge => '输入过多，Ledger 无法处理。请重试。未屏蔽任何资金。';
+
+  @override
+  String get ledgerFailureMsgSwapTooLarge => '请用较小的金额发起新的兑换。此次兑换已作废。';
+
+  @override
+  String get ledgerFailureMsgTooManyInputs => '输入过多，Ledger 无法处理。请尝试较小的金额。';
+
+  @override
+  String get ledgerFailureMsgUnexpected => 'Ledger 出现意外错误。请重新打开 Zcash 应用后重试。';
+
+  @override
+  String ledgerFailureMsgUnexpectedWithCode(String code) {
+    return 'Ledger 出现意外错误$code。请重新打开 Zcash 应用后重试。';
+  }
+
+  @override
+  String get ledgerFailureMsgUnlock => '请解锁 Ledger，然后重试。';
+
+  @override
+  String get ledgerFailureMsgUnsupportedTxType => 'Ledger 无法签署此类交易。请创建新请求。';
+
+  @override
+  String ledgerFailureMsgUpdateZcash(String version) {
+    return '请将 Zcash 应用更新到 $version 或更高版本。';
+  }
+
+  @override
+  String get ledgerFailureMsgViewingKeyRejected =>
+      'Ledger 无法接受此查看密钥请求。请检查账户编号。';
+
+  @override
+  String get ledgerFailureMsgVoteRejected => 'Ledger 无法接受此投票请求。你的投票未被签名。';
+
+  @override
+  String get ledgerFailureMsgVoteTooLarge => '此投票过大，Ledger 无法签名。';
+
+  @override
+  String get ledgerFailureMsgWrongLedger => '请连接保存此账户的 Ledger。';
+
+  @override
+  String get ledgerFailureTitleBusy => 'Ledger 正忙';
+
+  @override
+  String get ledgerFailureTitleCancelled => '请求已取消';
+
+  @override
+  String get ledgerFailureTitleError => 'Ledger 错误';
+
+  @override
+  String get ledgerFailureTitleFailed => '请求失败';
+
+  @override
+  String get ledgerFailureTitleLocked => 'Ledger 已锁定';
+
+  @override
+  String get ledgerFailureTitleNotReachable => '无法连接 Ledger';
+
+  @override
+  String get ledgerFailureTitleOpenZcash => '请打开 Zcash 应用';
+
+  @override
+  String get ledgerFailureTitlePinRequired => '需要 PIN';
+
+  @override
+  String get ledgerFailureTitleRejected => '请求未被接受';
+
+  @override
+  String get ledgerFailureTitleReopenZcash => '请重新打开 Zcash 应用';
+
+  @override
+  String get ledgerFailureTitleTooLarge => '请求过大';
+
+  @override
+  String get ledgerFailureTitleUpdateZcash => '请更新 Zcash 应用';
+
+  @override
+  String get ledgerFailureTitleWrongLedger => 'Ledger 不匹配';
+
+  @override
+  String get ledgerFailureTitleZcashMissing => '缺少 Zcash 应用';
+
+  @override
   String get ledgerFind => '查找 Ledger';
 
   @override
   String get ledgerFindMyLedger => '查找我的 Ledger';
+
+  @override
+  String get ledgerFollowPromptsOnLedger => '请按照 Ledger 上的提示操作。';
+
+  @override
+  String get ledgerHelpChecksCloseOtherApps =>
+      '请关闭其他钱包应用，并断开 Ledger 与其他手机或电脑的连接。';
+
+  @override
+  String get ledgerHelpChecksHomeScreen =>
+      '请让 Ledger 停留在主屏幕。Vizor 提示时再打开 Zcash 应用。';
+
+  @override
+  String get ledgerHelpChecksUnlockClose => '请解锁 Ledger，开启蓝牙，并将其放在手机附近。';
+
+  @override
+  String get ledgerHelpChooseModel => '请选择你的型号';
+
+  @override
+  String get ledgerHelpFindInPhoneBluetooth => '请在手机的蓝牙设置中找到你的 Ledger。';
+
+  @override
+  String get ledgerHelpForgetAndroid => '蓝牙设置 > Ledger 旁边的设置按钮 > 忽略或取消配对';
+
+  @override
+  String get ledgerHelpForgetIos => '设置 > 蓝牙 > Ledger 旁边的信息按钮 > 忽略此设备';
+
+  @override
+  String get ledgerHelpKeepUnlockedHome => '请保持 Ledger 解锁并开启蓝牙，让它停留在主屏幕。';
+
+  @override
+  String get ledgerHelpModelLabel => 'Ledger 型号';
+
+  @override
+  String get ledgerHelpNanoXConfirm => '请在 Ledger 上确认，并在设备上输入你的 PIN。';
+
+  @override
+  String get ledgerHelpNanoXControls => '请解锁 Ledger。按住两个按钮打开控制菜单，然后选择：';
+
+  @override
+  String get ledgerHelpNanoXMenuPath => 'Settings > Security > Reset pairings';
+
+  @override
+  String get ledgerHelpNanoXName => '在 Nano X 上同时按住两个按钮 2 秒，然后找到 Device Name。';
+
+  @override
+  String get ledgerHelpNextPhoneSettings => '下一步：手机设置';
+
+  @override
+  String get ledgerHelpNextSearchInVizor => '下一步：在 Vizor 中搜索';
+
+  @override
+  String get ledgerHelpNextSearchTitle => '查找你的 Ledger';
+
+  @override
+  String get ledgerHelpNotResetDevice =>
+      '请使用蓝牙配对选项，而不是 Reset device。你的钱包和账户不会受到影响。';
+
+  @override
+  String get ledgerHelpOpenBluetoothSettings => '打开蓝牙设置';
+
+  @override
+  String ledgerHelpOtherModelName(String model) {
+    return '在 $model 上查看 Settings > Name。';
+  }
+
+  @override
+  String get ledgerHelpRemovePairingOnLedger => '请先在 Ledger 上移除已保存的配对，再在手机上移除。';
+
+  @override
+  String get ledgerHelpRestartBothGuide =>
+      '如果仍未出现，请重启两台设备，并查看 Ledger 官方的蓝牙故障排除指南。';
+
+  @override
+  String get ledgerHelpSearchSelectOpenZcash =>
+      '请在 Vizor 中搜索并选择你的 Ledger。Vizor 提示时再打开 Zcash 应用。';
+
+  @override
+  String get ledgerHelpSelectModelHint => '选择型号后即可查看移除配对的说明。';
+
+  @override
+  String get ledgerHelpShortIdName =>
+      '如果你没有为 Ledger 命名，它可能显示为类似 01AB 的短 ID。否则请查找你设置的名称。';
+
+  @override
+  String get ledgerHelpSkipIfNotListed => '如果列表中没有 Ledger，请跳过此步骤并继续。';
+
+  @override
+  String ledgerHelpStepBackInVizor(String step) {
+    return '第 $step 步，共 3 步 · 返回 Vizor';
+  }
+
+  @override
+  String ledgerHelpStepOnLedger(String step) {
+    return '第 $step 步，共 3 步 · 在你的 Ledger 上';
+  }
+
+  @override
+  String ledgerHelpStepOnPhone(String step) {
+    return '第 $step 步，共 3 步 · 在你的手机上';
+  }
+
+  @override
+  String get ledgerHelpStillNotShowing => '仍未显示？';
+
+  @override
+  String get ledgerHelpTouchControls => '请解锁 Ledger。在主屏幕上点按设置图标，然后选择：';
+
+  @override
+  String get ledgerHelpTouchMenuPath => 'Bluetooth > Remove pairing';
+
+  @override
+  String get ledgerHelpTryRestart =>
+      '请尝试重启 Ledger。如果仍然找不到，在两台设备上移除已保存的蓝牙配对可能会有帮助。';
 
   @override
   String ledgerKeepAppOpen(String appName) {
@@ -2068,7 +2732,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerKeepConnectedWhileChecking => 'Vizor 检查应用期间，请保持 Ledger 连接。';
 
   @override
+  String get ledgerKeepItOpen => '请在 Ledger 上保持其打开。';
+
+  @override
   String get ledgerKeepNearbyUnlocked => '请将 Ledger 放在附近并保持解锁，同时开启蓝牙。';
+
+  @override
+  String get ledgerKeepNearbyUnlockedShort => '请将 Ledger 放在附近并保持解锁。';
 
   @override
   String get ledgerKeepZcashOpen => '请保持 Zcash 应用处于打开状态。';
@@ -2076,6 +2746,44 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get ledgerMacosBluetoothPrompt =>
       'macOS 可能会请求蓝牙权限。如果出现提示，请允许 Vizor 访问。';
+
+  @override
+  String get ledgerMismatchChooseHolder => '请选择保存此账户的 Ledger。已保存的连接未更改。';
+
+  @override
+  String get ledgerMismatchConnectHolder => '请连接保存此账户的 Ledger。已保存的连接未更改。';
+
+  @override
+  String get ledgerMobileAnotherRequestActive =>
+      '另一个 Ledger 请求仍在进行。请在 Ledger 上完成或拒绝该请求，然后重试。';
+
+  @override
+  String get ledgerMobileCheckBluetoothBelow => '请在下方检查蓝牙权限，然后重新尝试连接 Ledger。';
+
+  @override
+  String get ledgerMobileConnectionLost =>
+      '与 Ledger 的蓝牙连接已断开或无法建立。请开启并解锁 Ledger，将其放在附近，然后重试。';
+
+  @override
+  String get ledgerMobilePairingInvalid =>
+      '蓝牙配对已失效。请在设备的蓝牙设置中忽略此 Ledger，然后重新连接。';
+
+  @override
+  String get ledgerMobilePairingNotCompleted =>
+      '蓝牙配对未完成。请重新连接 Ledger 并批准配对请求，然后重试。';
+
+  @override
+  String get ledgerMobileRequestCancelled => 'Ledger 请求已取消。准备好后请重试。';
+
+  @override
+  String get ledgerMobileRequestRejected => '请求已在 Ledger 上被拒绝。准备好后请重试。';
+
+  @override
+  String get ledgerMobileTurnOnBluetooth => '请开启蓝牙，然后重试。';
+
+  @override
+  String get ledgerMobileTurnOnLocation =>
+      '在此 Android 版本上查找 Ledger 需要开启定位服务，请开启后重试。';
 
   @override
   String get ledgerNoDevicesFound => '未找到 Ledger 设备';
@@ -2091,13 +2799,95 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerOnYourLedger => '在 Ledger 上';
 
   @override
+  String ledgerOpenAppInstruction(String appName) {
+    return '请打开 $appName 应用';
+  }
+
+  @override
+  String ledgerOpenAppOnLedger(String appName) {
+    return '请在 Ledger 上打开 $appName 应用。';
+  }
+
+  @override
   String get ledgerOpenBluetoothSettingsManually => '请手动打开蓝牙设置以移除旧的配对。';
+
+  @override
+  String get ledgerOpenSettings => '打开设置';
 
   @override
   String get ledgerOpenZcashThenTryAgain => '请打开 Zcash 应用，然后重试。';
 
   @override
+  String get ledgerOpeningConnectionHelp => '正在打开连接帮助…';
+
+  @override
+  String get ledgerPairingNoLongerRecognized => '你的 Ledger 不再识别此蓝牙配对。';
+
+  @override
+  String get ledgerPairingNoLongerRecognizedRemove =>
+      '你的 Ledger 不再识别此蓝牙配对。请移除旧的配对，然后重新连接。';
+
+  @override
+  String ledgerProcedureStep(String step, String total) {
+    return '第 $step 步，共 $total 步';
+  }
+
+  @override
+  String ledgerProcedureStepComplete(String step, String total) {
+    return '第 $step 步，共 $total 步，已完成';
+  }
+
+  @override
+  String get ledgerReadinessCouldNotPrepare =>
+      'Vizor 无法准备 Ledger 上的 Zcash 应用。请重试。';
+
+  @override
+  String get ledgerReadinessOperationCancelled => 'Ledger 操作已取消。';
+
+  @override
+  String get ledgerReadinessReconnectUnlockTryAgain => '请重新连接并解锁 Ledger，然后重试。';
+
+  @override
+  String get ledgerReadinessUsbPermission =>
+      '请通过 USB 连接并解锁 Ledger。如果已连接，请在 Linux 上安装 Ledger udev 规则，然后拔下并重新连接。';
+
+  @override
+  String get ledgerReadyContinueSigning => '你的 Ledger 已就绪。准备好后请继续签名。';
+
+  @override
+  String get ledgerReadyReviewOnLedger => '准备好后请继续，在 Ledger 上查看交易。';
+
+  @override
+  String get ledgerReconnectTitle => '重新连接 Ledger';
+
+  @override
+  String get ledgerRemoveOldPairing => '移除旧的配对';
+
+  @override
+  String get ledgerRemovePairingIos =>
+      '请打开“设置”>“蓝牙”。如果列表中有你的 Ledger，请点按其信息按钮并忽略此设备。';
+
+  @override
+  String get ledgerRemovePairingMacos =>
+      '请打开“系统设置”>“蓝牙”。如果列表中有你的 Ledger，请移除其已保存的配对。';
+
+  @override
+  String get ledgerRemovePairingOther => '请打开蓝牙设置。如果列表中有你的 Ledger，请移除其已保存的配对。';
+
+  @override
+  String get ledgerResetBluetoothPairing => '重置蓝牙配对';
+
+  @override
   String get ledgerReturningToOptions => '正在返回连接选项…';
+
+  @override
+  String get ledgerSavedFindAgain => '此 Ledger 与你的账户匹配。请再次查找以继续。';
+
+  @override
+  String get ledgerSavedMatchesFindAgain => '此 Ledger 与你的账户匹配，现已保存。请再次查找以继续。';
+
+  @override
+  String get ledgerSavingVerified => '账户匹配。正在保存已验证的连接。';
 
   @override
   String get ledgerSearchAgain => '重新搜索';
@@ -2124,6 +2914,150 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerSheetDeclinedTitle => '请求已被拒绝';
 
   @override
+  String get ledgerSigningApproveNextSeparately => '下一笔交易需要单独批准。';
+
+  @override
+  String get ledgerSigningApproveOrReject => '请批准以进行签名，或拒绝以取消。';
+
+  @override
+  String get ledgerSigningApproveToSign => '请批准以进行签名。';
+
+  @override
+  String get ledgerSigningApproveToSignNext => '请批准以进行签名。\n\n下一笔交易需要单独批准。';
+
+  @override
+  String get ledgerSigningApprovedFinishing => '已在 Ledger 上批准。Vizor 正在完成交易。';
+
+  @override
+  String get ledgerSigningChangeConnection => '更改连接方式';
+
+  @override
+  String get ledgerSigningCheckAmountRecipient => '出现提示时，请在 Ledger 上核对金额和收款方。';
+
+  @override
+  String get ledgerSigningCheckingZcashReady => 'Vizor 正在检查 Zcash 应用是否已就绪。';
+
+  @override
+  String get ledgerSigningCloseSemantics => '关闭 Ledger';
+
+  @override
+  String get ledgerSigningConfirmRequestReconnect =>
+      '请在 Ledger 上确认该请求。Vizor 将自动重新连接。';
+
+  @override
+  String get ledgerSigningDeclined => '已在 Ledger 上拒绝签名。准备好后请重试。';
+
+  @override
+  String get ledgerSigningFinishingRequest => '正在完成 Ledger 请求。';
+
+  @override
+  String get ledgerSigningKeepLedgerConnected => '请保持 Ledger 已连接。';
+
+  @override
+  String get ledgerSigningKeepOpenWhileCancelling =>
+      '请在取消 Ledger 请求期间保持 Vizor 处于打开状态。';
+
+  @override
+  String get ledgerSigningKeepVizorOpen => '请保持 Vizor 处于打开状态。';
+
+  @override
+  String get ledgerSigningKeepVizorOpenShort => '请保持 Vizor 处于打开状态';
+
+  @override
+  String get ledgerSigningMsgPreparing => '请稍候，Vizor 正在准备你的交易。';
+
+  @override
+  String get ledgerSigningMsgReviewing => '出现提示时，请在 Ledger 上查看并批准。';
+
+  @override
+  String ledgerSigningMsgSending(String wait) {
+    return '$wait请保持 Ledger 已连接。';
+  }
+
+  @override
+  String get ledgerSigningSaving => '正在保存已签名的交易。';
+
+  @override
+  String get ledgerSigningStatusCheckingDevice => '正在检查设备';
+
+  @override
+  String get ledgerSigningStatusOpeningZcash => '正在打开 Zcash';
+
+  @override
+  String get ledgerSigningStatusPreparing => '正在准备签名';
+
+  @override
+  String get ledgerSigningStatusReview => '在设备上查看';
+
+  @override
+  String get ledgerSigningStatusWait => '请稍候';
+
+  @override
+  String get ledgerSigningStatusWaitingApproval => '正在等待你的批准';
+
+  @override
+  String get ledgerSigningStepFinish => '完成交易';
+
+  @override
+  String get ledgerSigningStepPrepare => '准备交易';
+
+  @override
+  String get ledgerSigningStepReview => '在 Ledger 上查看';
+
+  @override
+  String get ledgerSigningTitleChecking => '正在检查你的 Ledger';
+
+  @override
+  String get ledgerSigningTitleConfirmOnLedger => '请在 Ledger 上确认';
+
+  @override
+  String get ledgerSigningTitleConfirmOpening => '请确认打开 Zcash';
+
+  @override
+  String get ledgerSigningTitleFinishing => '正在完成交易';
+
+  @override
+  String get ledgerSigningTitlePreparing => '正在准备交易';
+
+  @override
+  String get ledgerSigningTitleReviewing => '请查看你的 Ledger';
+
+  @override
+  String get ledgerSigningTitleSending => '正在通过 Ledger 处理';
+
+  @override
+  String get ledgerSigningTitleSendingTx => '正在发送交易';
+
+  @override
+  String get ledgerSigningTitleSign => '签署交易';
+
+  @override
+  String ledgerSigningTransactionProgress(String current, String total) {
+    return '第 $current 笔交易，共 $total 笔';
+  }
+
+  @override
+  String get ledgerSigningWaitInstruction => 'Ledger 正在准备签名。几秒钟内可能看起来没有响应。';
+
+  @override
+  String get ledgerStatusConnecting => '正在连接…';
+
+  @override
+  String get ledgerStatusFollowPrompts => '请按照 Ledger 上的提示操作';
+
+  @override
+  String get ledgerStatusOpeningBluetoothSettings => '正在打开蓝牙设置…';
+
+  @override
+  String get ledgerStatusSavingConnection => '正在保存连接…';
+
+  @override
+  String get ledgerStatusSearchingNearby => '正在搜索附近的设备…';
+
+  @override
+  String get ledgerStatusStillSearching => '仍在搜索附近的设备…';
+
+  @override
   String get ledgerStepApproveViewingKey => '批准查看密钥';
 
   @override
@@ -2135,10 +3069,37 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerStepOpenZcash => '打开 Zcash';
 
   @override
+  String get ledgerStopSearchFailedHelp => '无法停止搜索。请尝试再次打开连接帮助。';
+
+  @override
   String get ledgerStoppingSearch => '正在停止搜索';
 
   @override
   String get ledgerSupportedDevices => '支持的设备';
+
+  @override
+  String get ledgerTitleConnectingToLedger => '正在连接你的 Ledger';
+
+  @override
+  String get ledgerTitleFindingLedger => '正在查找你的 Ledger';
+
+  @override
+  String get ledgerTitleLedgerConnected => '你的 Ledger 已连接';
+
+  @override
+  String get ledgerTitleLedgerSaved => 'Ledger 已保存';
+
+  @override
+  String get ledgerTitleMismatch => '此 Ledger 不匹配';
+
+  @override
+  String get ledgerTitlePairAgain => '请重新配对你的 Ledger';
+
+  @override
+  String get ledgerTitleSavingConnection => '正在保存你的连接';
+
+  @override
+  String get ledgerTitleSelectYourLedger => '请选择你的 Ledger';
 
   @override
   String get ledgerTransportBluetooth => '蓝牙';
@@ -2150,10 +3111,59 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerUnlockBluetoothNearby => '请解锁 Ledger，开启蓝牙，并将其放在附近。';
 
   @override
+  String get ledgerUnlockEnableBluetoothNearby => '请解锁 Ledger，开启蓝牙并将其放在附近。';
+
+  @override
+  String get ledgerUnlockOpenZcashApprove =>
+      '请解锁 Ledger 并打开 Zcash 应用。如有提示请批准打开。';
+
+  @override
   String get ledgerUnlockWithPin => '使用 PIN 码解锁。';
 
   @override
+  String get ledgerUsbApproveOpening => '请在 Ledger 上批准打开 Zcash 应用。';
+
+  @override
+  String get ledgerUsbCheckCableOpenApp => '请检查 USB 线缆，解锁 Ledger 并打开 Zcash 应用。';
+
+  @override
+  String get ledgerUsbConnectUnlockOpen => '请用 USB 线缆连接 Ledger，解锁后打开 Zcash 应用。';
+
+  @override
+  String get ledgerUsbConnection => 'USB 连接';
+
+  @override
+  String get ledgerUsbCouldNotOpen =>
+      'Vizor 找到了你的 Ledger，但无法打开。请关闭其他使用 Ledger 的钱包应用，重新连接后重试。';
+
+  @override
+  String get ledgerUsbCouldNotStart =>
+      'Vizor 无法启动对 Ledger 的 USB 访问。请重新连接设备后重试。';
+
+  @override
+  String ledgerUsbInterrupted(String instruction) {
+    return '与 Ledger 的 USB 连接已中断。请重新连接并解锁 Ledger。$instruction';
+  }
+
+  @override
+  String get ledgerUsbPermissionLinux =>
+      'Vizor 无法通过 USB 访问你的 Ledger。请安装适用于 Linux 的 Ledger udev 规则（github.com/LedgerHQ/udev-rules），然后重新连接 Ledger 并重试。';
+
+  @override
+  String get ledgerUsbPermissionOther =>
+      'Vizor 无法通过 USB 访问你的 Ledger。请检查 USB 设备权限，然后重新连接并重试。';
+
+  @override
+  String get ledgerVerifyingNewDevice => '如有提示请完成配对，然后批准共享你的查看密钥。';
+
+  @override
+  String get ledgerVerifyingSavedDevice => '请解锁 Ledger，如有提示请确认打开 Zcash。';
+
+  @override
   String get ledgerVizorCheckingZcash => 'Vizor 正在检查 Zcash 应用。';
+
+  @override
+  String get ledgerWaitingForApproval => '正在等待批准…';
 
   @override
   String get lockBodyPaused => '同步已暂停。解锁 Vizor 以继续。';

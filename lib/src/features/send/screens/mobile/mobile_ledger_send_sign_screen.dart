@@ -414,8 +414,9 @@ class _MobileLedgerSendSignScreenState
 
   void _setPreSignatureFailure(Object error) {
     final lower = error.toString().toLowerCase();
-    final guidance = ledgerFailureGuidance(error);
+    final guidance = ledgerFailureGuidance(context.l10n, error);
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
+      context.l10n,
       ref.read(rpcEndpointProvider).networkName,
     );
     late final LedgerSigningFailurePresentation presentation;
@@ -445,14 +446,14 @@ class _MobileLedgerSendSignScreenState
       presentation = LedgerSigningFailurePresentation(
         title: context.l10n.sendLedgerSigningUnavailableTitle,
         statusLabel: context.l10n.sendLedgerStatusUnsupportedTransaction,
-        message: kLedgerSaplingRecipientMessage,
+        message: context.l10n.ledgerFailureMsgSaplingRecipient,
         showDeviceAppPrompt: false,
       );
       action = null;
     } else if (guidance != null && !guidance.retryable) {
       // Retrying the same request fails the same way on the device.
       presentation = LedgerSigningFailurePresentation(
-        title: LedgerRequestFailure.fromError(error).title,
+        title: LedgerRequestFailure.fromError(error).title(context.l10n),
         statusLabel: context.l10n.sendLedgerStatusNewTransactionRequired,
         message: guidance.message,
         showDeviceAppPrompt: false,
@@ -477,7 +478,11 @@ class _MobileLedgerSendSignScreenState
         LedgerRequestFailure.declined =>
           context.l10n.sendLedgerRejectedOnDevice,
         LedgerRequestFailure.transportLost =>
-          ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
+          ledgerUsbErrorMessage(
+                context.l10n,
+                error,
+                appInstruction: appInstruction,
+              ) ??
               context.l10n.sendLedgerConnectAndUnlock(appInstruction),
         _ => context.l10n.sendLedgerSigningIncomplete,
       };

@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -200,7 +201,7 @@ void main() {
           find.text(
             LedgerRequestFailure.fromError(
               LedgerMobileException(failure, 'diagnostic'),
-            ).title,
+            ).title(testL10n),
           ),
           findsOneWidget,
         );

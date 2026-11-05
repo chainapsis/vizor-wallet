@@ -3518,6 +3518,36 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 account found} other{{count} accounts found}}'**
   String keystoneAccountsFound(int count);
 
+  /// Button that asks for camera permission again.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow camera'**
+  String get keystoneAllowCamera;
+
+  /// Error shown when a swap deposit has inputs Keystone batch signing does not support.
+  ///
+  /// In en, this message translates to:
+  /// **'This deposit uses inputs that Keystone batch signing cannot sign.'**
+  String get keystoneBatchCannotSignDeposit;
+
+  /// Error shown when a transaction has inputs Keystone batch signing does not support.
+  ///
+  /// In en, this message translates to:
+  /// **'This transaction uses inputs that Keystone batch signing cannot sign.'**
+  String get keystoneBatchCannotSignTx;
+
+  /// Error shown when a swap deposit needs more signatures than one Keystone batch can hold.
+  ///
+  /// In en, this message translates to:
+  /// **'This deposit uses too many inputs for Keystone batch signing. Try a smaller amount.'**
+  String get keystoneBatchTooManyInputsDeposit;
+
+  /// Error shown when a transaction needs more signatures than one Keystone batch can hold.
+  ///
+  /// In en, this message translates to:
+  /// **'This transaction uses too many inputs for Keystone batch signing. Try a smaller amount.'**
+  String get keystoneBatchTooManyInputsTx;
+
   /// Inline error under the block height field when the typed number is not a usable block height.
   ///
   /// In en, this message translates to:
@@ -3529,6 +3559,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'It helps us import your wallet faster.'**
   String get keystoneBirthdaySubtitle;
+
+  /// Detail tag in the camera picker for the default camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get keystoneCameraDefault;
+
+  /// Title when camera access was denied.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve denied the Camera access'**
+  String get keystoneCameraDeniedTitle;
 
   /// Two-line description under the enable camera access title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short.
   ///
@@ -3542,17 +3584,83 @@ abstract class AppLocalizations {
   /// **'Enable camera access'**
   String get keystoneCameraEnableTitle;
 
+  /// Detail tag in the camera picker for an external camera.
+  ///
+  /// In en, this message translates to:
+  /// **'External'**
+  String get keystoneCameraExternal;
+
+  /// Detail tag in the camera picker for a front camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Front'**
+  String get keystoneCameraFront;
+
+  /// Permission explanation on the gift card QR scanner; the two lines are separated by a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'A camera is required to scan the gift card QR code.\nYou can revert this in settings anytime later.'**
+  String get keystoneCameraGiftBody;
+
+  /// Label of the camera row on the Keystone scanner and the camera picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera'**
+  String get keystoneCameraLabel;
+
+  /// Camera name followed by a marker that it is the default camera. {name} is the camera's own name.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} (Default)'**
+  String keystoneCameraNameDefault(String name);
+
+  /// Detail tag in the camera picker for a normal lens.
+  ///
+  /// In en, this message translates to:
+  /// **'Normal'**
+  String get keystoneCameraNormal;
+
+  /// Shown on the mobile signature scanner when camera permission is denied.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera access is off. Allow it in Settings to scan Keystone signatures.'**
+  String get keystoneCameraOffAllow;
+
   /// Two-line description under the camera unavailable title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short.
   ///
   /// In en, this message translates to:
   /// **'Keystone import uses camera QR scanning only.\nConnect a camera and try again.'**
   String get keystoneCameraUnavailableBody;
 
+  /// Detail tag in the camera picker for a wide-angle lens.
+  ///
+  /// In en, this message translates to:
+  /// **'Wide'**
+  String get keystoneCameraWide;
+
+  /// Detail tag in the camera picker for a zoom lens.
+  ///
+  /// In en, this message translates to:
+  /// **'Zoom'**
+  String get keystoneCameraZoom;
+
   /// Button that confirms the chosen Keystone account and continues the import.
   ///
   /// In en, this message translates to:
   /// **'Confirm selection'**
   String get keystoneConfirmSelection;
+
+  /// [security] Subtitle of the second step: the user confirms on the Keystone and scans its signature QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm with Keystone'**
+  String get keystoneConfirmWithKeystone;
+
+  /// Fallback name for the default camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Default camera'**
+  String get keystoneDefaultCamera;
 
   /// Sentence ending in a trailing space, followed by an inline link button labelled 'link' that opens the firmware download page. Keep the trailing space.
   ///
@@ -3572,17 +3680,59 @@ abstract class AppLocalizations {
   /// **'link'**
   String get keystoneFirmwareLinkLabel;
 
+  /// Screen-reader label of the keyst.one/firmware link.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Keystone firmware page'**
+  String get keystoneFirmwareOpenPage;
+
   /// Title of instruction step 1 on the Keystone how-to-connect screen. The step number is added by the app before this text.
   ///
   /// In en, this message translates to:
   /// **'Check Keystone firmware'**
   String get keystoneFirmwareTitle;
 
+  /// Text before the keyst.one/firmware link in the scanning help. Keep the trailing space; the link follows directly.
+  ///
+  /// In en, this message translates to:
+  /// **'Update to the latest Keystone firmware at '**
+  String get keystoneFirmwareUpdatePrefix;
+
   /// Primary button on the Keystone how-to-connect screen; continues to the QR scan step once the user has followed the instructions.
   ///
   /// In en, this message translates to:
   /// **'I\'m ready now'**
   String get keystoneImReadyNow;
+
+  /// Label in the camera chip while cameras are listed.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading camera...'**
+  String get keystoneLoadingCamera;
+
+  /// Status while the transaction QR code is prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading QR code ...'**
+  String get keystoneLoadingQrCode;
+
+  /// Button that moves from the transaction QR code to the camera scan.
+  ///
+  /// In en, this message translates to:
+  /// **'Next step'**
+  String get keystoneNextStep;
+
+  /// Label in the camera chip when the device has no camera.
+  ///
+  /// In en, this message translates to:
+  /// **'No camera found'**
+  String get keystoneNoCameraFound;
+
+  /// Shown when no camera could be started.
+  ///
+  /// In en, this message translates to:
+  /// **'No camera could be opened. Check that a camera is connected and not in use by another app.'**
+  String get keystoneNoCameraOpened;
 
   /// Heading of the group of steps the user performs in the Vizor app.
   ///
@@ -3596,6 +3746,24 @@ abstract class AppLocalizations {
   /// **'On your Keystone'**
   String get keystoneOnYourKeystone;
 
+  /// Button on the Keystone camera scanner that opens the system settings for the camera permission.
+  ///
+  /// In en, this message translates to:
+  /// **'Open settings'**
+  String get keystoneOpenSettings;
+
+  /// Hint when the scanned QR code is not the signed transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the signed transaction QR on Keystone, then scan again.'**
+  String get keystoneOpenSignedQr;
+
+  /// Error shown when the Keystone signing request could not be created.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing could not be prepared.'**
+  String get keystonePcztPrepareFailed;
+
   /// Subtitle under the Keystone connect, scan and select-account headings, asking the user to get their Keystone device ready.
   ///
   /// In en, this message translates to:
@@ -3607,6 +3775,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Prepare to connect'**
   String get keystonePrepareToConnectTitle;
+
+  /// Screen-reader label of the loading spinner while the signing QR code is prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing QR'**
+  String get keystonePreparingQr;
+
+  /// Status while a scanned Keystone QR code is decoded.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading QR...'**
+  String get keystoneReadingQr;
+
+  /// Status while the signature QR code from the Keystone is decoded.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading signature...'**
+  String get keystoneReadingSignature;
 
   /// Message shown instead of the scanner when no camera is available on this device.
   ///
@@ -3620,11 +3806,29 @@ abstract class AppLocalizations {
   /// **'Scan the Keystone account QR'**
   String get keystoneScanCaption;
 
+  /// [security] Caption on the mobile signing scanner asking the user to scan the signed-transaction QR code on the Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code on your Keystone to confirm'**
+  String get keystoneScanCaptionConfirm;
+
   /// Error under the Keystone QR scanner when the scanned QR cannot be decoded as a Zcash account.
   ///
   /// In en, this message translates to:
   /// **'This QR code could not be decoded as a Keystone Zcash account.'**
   String get keystoneScanDecodeFailed;
+
+  /// Screen-reader label of the close button of the scanning help tooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Close scan help'**
+  String get keystoneScanHelpClose;
+
+  /// Title of the tooltip with Keystone scanning help.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanning issues?'**
+  String get keystoneScanIssuesTitle;
 
   /// Error under the Keystone QR scanner when the scanned QR contains no Zcash accounts.
   ///
@@ -3644,17 +3848,65 @@ abstract class AppLocalizations {
   /// **'Scanning... {progress}%'**
   String keystoneScanProgress(int progress);
 
+  /// Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon.
+  ///
+  /// In en, this message translates to:
+  /// **'on your Keystone,'**
+  String get keystoneScanPromptOnKeystone;
+
+  /// Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap'**
+  String get keystoneScanPromptTap;
+
+  /// End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'.
+  ///
+  /// In en, this message translates to:
+  /// **'then scan this QR code'**
+  String get keystoneScanPromptThenScan;
+
   /// Status text on the Keystone QR scanner while the scanned accounts are being decoded.
   ///
   /// In en, this message translates to:
   /// **'Reading accounts...'**
   String get keystoneScanReadingAccounts;
 
+  /// Subtitle of the first step: the Keystone scans the QR code shown by Vizor.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan with Keystone'**
+  String get keystoneScanWithKeystone;
+
+  /// Title of the camera picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Camera'**
+  String get keystoneSelectCamera;
+
+  /// Screen-reader label of the button that returns to the transaction QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Show transaction QR'**
+  String get keystoneShowTransactionQr;
+
+  /// Error when the scanned QR code is not a Keystone signature.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code could not be decoded as a Keystone signature.'**
+  String get keystoneSignatureQrNotDecoded;
+
   /// Sidebar step label and back-link text for the first Keystone onboarding step (how to connect the device). Title Case is intentional.
   ///
   /// In en, this message translates to:
   /// **'How to Connect'**
   String get keystoneStepHowToConnect;
+
+  /// Step indicator in the mobile Keystone signing flow (first of two steps).
+  ///
+  /// In en, this message translates to:
+  /// **'Step 1/2'**
+  String get keystoneStepOneOfTwo;
 
   /// Device step: quotes the menu button (three dots) and the menu item 'Connect software wallet' shown on the Keystone device. Keep 'Connect software wallet' in English inside the translation because that is the label on the device screen.
   ///
@@ -3680,11 +3932,89 @@ abstract class AppLocalizations {
   /// **'Select Vizor (or ZODL)'**
   String get keystoneStepSelectVizor;
 
+  /// Step indicator in the mobile Keystone signing flow (second of two steps).
+  ///
+  /// In en, this message translates to:
+  /// **'Step 2/2'**
+  String get keystoneStepTwoOfTwo;
+
+  /// Label next to a spinner while a signed transaction is submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting the transaction'**
+  String get keystoneSubmittingTransaction;
+
+  /// Scanning tip on QR scanners. 'Continuity Camera' is an Apple feature name.
+  ///
+  /// In en, this message translates to:
+  /// **'On a Mac, you can use Continuity Camera to scan with your iPhone instead.'**
+  String get keystoneTipContinuityCamera;
+
+  /// Scanning tip on the gift card QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the gift card QR code full screen on another device.'**
+  String get keystoneTipGiftFullScreen;
+
+  /// Scanning tip on the gift card QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Move the QR code a few inches further from the camera so it can focus.'**
+  String get keystoneTipGiftMoveFurther;
+
+  /// Scanning tip on QR scanners.
+  ///
+  /// In en, this message translates to:
+  /// **'Make sure the room is well-lit and the QR code isn\'t reflecting glare.'**
+  String get keystoneTipGlare;
+
+  /// Scanning tip on the Keystone QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Move your Keystone a few inches further from the camera so it can focus.'**
+  String get keystoneTipMoveKeystoneFurther;
+
+  /// Scanning tip on the Keystone QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap the QR code on your Keystone to show it full screen. This is the easiest fix.'**
+  String get keystoneTipTapFullScreen;
+
+  /// Title of the scanning tips popover.
+  ///
+  /// In en, this message translates to:
+  /// **'Trouble scanning?'**
+  String get keystoneTroubleScanning;
+
+  /// Subtitle of the signing flow after a failure.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again with Keystone'**
+  String get keystoneTryAgainWithKeystone;
+
+  /// Instruction on Windows. 'Camera access' and 'Let desktop apps access your camera' are Windows Settings labels; use the localized Windows names.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Camera access and Let desktop apps access your camera in Windows Settings.'**
+  String get keystoneWindowsCameraBody;
+
+  /// Title when camera access is denied on Windows.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Windows camera access'**
+  String get keystoneWindowsCameraTitle;
+
   /// Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.
   ///
   /// In en, this message translates to:
   /// **'System ({language})'**
   String languageSystemOption(String language);
+
+  /// Label of the account index field in Ledger onboarding.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger account index (0–100)'**
+  String get ledgerAccountIndexFieldLabel;
 
   /// Helper text in the advanced options explaining the Ledger account index field.
   ///
@@ -3697,6 +4027,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Account index (0–100)'**
   String get ledgerAccountIndexLabel;
+
+  /// Validation error under the Ledger account index field.
+  ///
+  /// In en, this message translates to:
+  /// **'Account index must be between 0 and 100.'**
+  String get ledgerAccountIndexOutOfRange;
 
   /// [security] Note under the Add account step explaining that the Ledger account can only be viewed in Vizor; spending still requires device approval.
   ///
@@ -3715,6 +4051,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Advanced options'**
   String get ledgerAdvancedOptions;
+
+  /// Screen-reader label of the app icon in the Ledger prompt. {appName} is the device app name, normally Zcash.
+  ///
+  /// In en, this message translates to:
+  /// **'{appName} app'**
+  String ledgerAppSemanticsLabel(String appName);
+
+  /// Title shown when the Zcash app on the Ledger must be updated before signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger app update required'**
+  String get ledgerAppUpdateRequiredTitle;
+
+  /// [security] Instruction to approve on the Ledger sharing the viewing key with Vizor.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve sharing your viewing key with Vizor.'**
+  String get ledgerApproveShareViewingKey;
+
+  /// [security] Instruction to approve on the Ledger sharing the viewing key. {number} is the account number shown on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve sharing the viewing key for Account #{number}.'**
+  String ledgerApproveShareViewingKeyForAccount(String number);
 
   /// Two-line note under the Connect Ledger form explaining that Vizor shows balance and activity while transactions are approved on the device. Keep the line break.
   ///
@@ -3752,17 +4112,317 @@ abstract class AppLocalizations {
   /// **'Bluetooth connection'**
   String get ledgerBluetoothConnection;
 
+  /// List of Ledger models that support Bluetooth. Product model names stay in Latin script.
+  ///
+  /// In en, this message translates to:
+  /// **'Nano X, Flex, Stax, and Nano Gen5'**
+  String get ledgerBluetoothModelsList;
+
   /// Error in the mobile device sheet when the Bluetooth permission was not granted.
   ///
   /// In en, this message translates to:
   /// **'Bluetooth permission is required to find your Ledger. Allow it in Settings, then try again.'**
   String get ledgerBluetoothPermissionRequired;
 
+  /// Shown in the Bluetooth access checker when permission is granted.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission is allowed. Try again when ready.'**
+  String get ledgerBtAccessAllowed;
+
+  /// Shown before the Bluetooth permission is requested. 'Allow permission' is a button label.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Allow permission to connect to your Ledger. If no prompt appears, open Settings.'**
+  String get ledgerBtAccessBluetoothRequestable;
+
+  /// Shown when Bluetooth access is denied on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow Bluetooth access for Vizor in your device settings.'**
+  String get ledgerBtAccessBluetoothSettings;
+
+  /// Permission name 'Location' inserted into the restricted-access sentence.
+  ///
+  /// In en, this message translates to:
+  /// **'Location'**
+  String get ledgerBtAccessKindLocation;
+
+  /// Shown on Android before the location permission is requested. 'Allow permission' is a button label.
+  ///
+  /// In en, this message translates to:
+  /// **'This Android version needs location permission to find your Ledger. Choose Allow permission, or open Settings if no prompt appears.'**
+  String get ledgerBtAccessLocationRequestable;
+
+  /// Shown on Android when location permission is denied and must be changed in Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'This Android version needs location permission to find your Ledger. Allow location access for Vizor in Settings.'**
+  String get ledgerBtAccessLocationSettings;
+
+  /// Shown on macOS when Bluetooth access is denied. 'System Settings', 'Privacy & Security' and 'Bluetooth' are macOS menu names; use the localized macOS names.
+  ///
+  /// In en, this message translates to:
+  /// **'Open System Settings > Privacy & Security > Bluetooth and allow access for Vizor.'**
+  String get ledgerBtAccessMacosSettings;
+
+  /// Shown in the access checker when the permission is restricted. {kind} is the permission name, Location or Bluetooth.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind} access is restricted by your device settings or administrator.'**
+  String ledgerBtAccessRestricted(String kind);
+
+  /// Shown in the Bluetooth access checker when Bluetooth is off.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Bluetooth, then check access again.'**
+  String get ledgerBtAccessTurnOnBluetooth;
+
+  /// Shown in the Bluetooth access checker when location services are off.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on location services, then check access again.'**
+  String get ledgerBtAccessTurnOnLocation;
+
+  /// Error when checking Bluetooth access failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not check access. Open Settings manually, then check again.'**
+  String get ledgerBtCouldNotCheckAccess;
+
+  /// Error when the system settings could not be opened.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open Settings. Open your device settings manually and allow access for Vizor.'**
+  String get ledgerBtCouldNotOpenSettingsAllow;
+
+  /// Error when the system settings could not be opened while Bluetooth access is restricted.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open Settings. Open your device settings manually to review access for Vizor.'**
+  String get ledgerBtCouldNotOpenSettingsRestricted;
+
+  /// Button label that asks the system to show the permission prompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow access'**
+  String get ledgerBtLabelAllowAccess;
+
+  /// Button label to re-check Bluetooth access.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get ledgerBtLabelCheckAgain;
+
+  /// Button label while access is being checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking access'**
+  String get ledgerBtLabelChecking;
+
+  /// Button label that opens the system settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open settings'**
+  String get ledgerBtLabelOpenSettings;
+
+  /// Button label to reconnect to the Ledger once access is granted.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect'**
+  String get ledgerBtLabelReconnect;
+
+  /// Message explaining why Bluetooth access is needed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor needs Bluetooth access to connect to your Ledger.'**
+  String get ledgerBtMsgBluetoothNeeded;
+
+  /// Message while Vizor checks if it can connect to the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking whether Vizor can connect to your Ledger.'**
+  String get ledgerBtMsgChecking;
+
+  /// Message explaining why Android asks for location access.
+  ///
+  /// In en, this message translates to:
+  /// **'This Android version needs location access to find your Ledger.'**
+  String get ledgerBtMsgLocationNeeded;
+
+  /// Message when Bluetooth access is fine; the user must turn on and unlock the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on your Ledger and unlock it to continue.'**
+  String get ledgerBtMsgReady;
+
+  /// Help when Bluetooth access is restricted.
+  ///
+  /// In en, this message translates to:
+  /// **'Check Vizor’s Bluetooth access in Settings. Device restrictions or your administrator may prevent changes.'**
+  String get ledgerBtRestrictedGeneric;
+
+  /// Help on Android when location access is restricted.
+  ///
+  /// In en, this message translates to:
+  /// **'Check location access for Vizor in Settings. Device restrictions or your administrator may prevent changes.'**
+  String get ledgerBtRestrictedLocation;
+
+  /// Help on macOS when Bluetooth access is restricted. Use the localized macOS menu names.
+  ///
+  /// In en, this message translates to:
+  /// **'Check Privacy & Security > Bluetooth in System Settings. This restriction may need to be changed by your administrator.'**
+  String get ledgerBtRestrictedMacos;
+
+  /// Help on Android when Nearby devices access is restricted.
+  ///
+  /// In en, this message translates to:
+  /// **'Check Nearby devices access for Vizor in Settings. Device restrictions or your administrator may prevent changes.'**
+  String get ledgerBtRestrictedNearby;
+
+  /// Message in the mobile Bluetooth sheet when permission is denied during account import.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow Bluetooth access for Vizor in your phone settings to add your account.'**
+  String get ledgerBtSheetAllowAddAccount;
+
+  /// Generic message in the mobile Bluetooth sheet when permission is denied.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow Bluetooth access for Vizor in your phone settings to continue.'**
+  String get ledgerBtSheetAllowContinue;
+
+  /// Message in the mobile Bluetooth sheet when permission is denied and signing was interrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow Bluetooth access for Vizor in your phone settings to continue signing.'**
+  String get ledgerBtSheetAllowSigning;
+
+  /// Message in the mobile Bluetooth sheet during account import.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth is available. Unlock your Ledger to add your account.'**
+  String get ledgerBtSheetReadyAddAccount;
+
+  /// Generic message in the mobile Bluetooth sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth is available. Unlock your Ledger to continue.'**
+  String get ledgerBtSheetReadyContinue;
+
+  /// Message in the mobile Bluetooth sheet when signing was interrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth is available. Unlock your Ledger to continue signing.'**
+  String get ledgerBtSheetReadySigning;
+
+  /// Message in the mobile Bluetooth sheet when Bluetooth is off during account import.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Bluetooth on your phone to add your account.'**
+  String get ledgerBtSheetTurnOnAddAccount;
+
+  /// Generic message in the mobile Bluetooth sheet when Bluetooth is off.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Bluetooth on your phone to continue.'**
+  String get ledgerBtSheetTurnOnContinue;
+
+  /// Message in the mobile Bluetooth sheet when Bluetooth is off and signing was interrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Bluetooth on your phone to continue signing.'**
+  String get ledgerBtSheetTurnOnSigning;
+
+  /// Title asking the user to allow Bluetooth access.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow Bluetooth access'**
+  String get ledgerBtTitleAllowBluetooth;
+
+  /// Title asking the user to allow Bluetooth in system Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow Bluetooth in Settings'**
+  String get ledgerBtTitleAllowBluetoothSettings;
+
+  /// Title asking the user to allow location access (Android).
+  ///
+  /// In en, this message translates to:
+  /// **'Allow location access'**
+  String get ledgerBtTitleAllowLocation;
+
+  /// Title asking the user to allow location in system Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow location in Settings'**
+  String get ledgerBtTitleAllowLocationSettings;
+
+  /// Title while Vizor checks Bluetooth permission for the Ledger connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking Bluetooth access'**
+  String get ledgerBtTitleChecking;
+
+  /// Title when Bluetooth access is fine and the user can reconnect the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to reconnect'**
+  String get ledgerBtTitleReady;
+
+  /// Title when Bluetooth or location access is restricted by the device or an administrator.
+  ///
+  /// In en, this message translates to:
+  /// **'Access is restricted'**
+  String get ledgerBtTitleRestricted;
+
+  /// Title asking the user to turn on Bluetooth.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Bluetooth'**
+  String get ledgerBtTitleTurnOnBluetooth;
+
+  /// Title asking the user to turn on location services (needed on Android to find Bluetooth devices).
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on location services'**
+  String get ledgerBtTitleTurnOnLocation;
+
+  /// Disabled button label while verifying the account.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking account'**
+  String get ledgerButtonCheckingAccount;
+
+  /// Disabled button label while connecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting'**
+  String get ledgerButtonConnecting;
+
+  /// Disabled button label while saving.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving'**
+  String get ledgerButtonSaving;
+
+  /// Disabled button label while searching.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching'**
+  String get ledgerButtonSearching;
+
   /// Error in the mobile Add Ledger account sheet when cancelling the Ledger request failed.
   ///
   /// In en, this message translates to:
   /// **'Could not finish cancelling. Try again.'**
   String get ledgerCancelFailed;
+
+  /// Close button label in the Ledger sheet shown during shielding.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel shielding'**
+  String get ledgerCancelShielding;
 
   /// Title of the desktop dialog while a running Ledger request is being cancelled.
   ///
@@ -3776,11 +4436,35 @@ abstract class AppLocalizations {
   /// **'Cancelling the Ledger request…'**
   String get ledgerCancellingTheRequest;
 
+  /// Shown when Ledger is not available on the selected network.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger is currently supported only for Zcash mainnet.'**
+  String get ledgerCapabilityMainnetOnly;
+
+  /// Shown when Ledger is not available on this operating system.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger is supported on Vizor for macOS, Windows, Linux, iOS, and Android.'**
+  String get ledgerCapabilityUnsupportedPlatform;
+
+  /// Message when a different Ledger or app was found than the one verified earlier.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger changed. Keep one Ledger connected and try again.'**
+  String get ledgerChangedKeepOne;
+
   /// Status text while Vizor checks the Bluetooth permission on desktop.
   ///
   /// In en, this message translates to:
   /// **'Checking Bluetooth access…'**
   String get ledgerCheckingBluetoothAccess;
+
+  /// Status while Vizor checks the USB connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking USB connection…'**
+  String get ledgerCheckingUsb;
 
   /// Back-link text in the desktop dialog that returns to the device picker.
   ///
@@ -3788,11 +4472,53 @@ abstract class AppLocalizations {
   /// **'Choose another Ledger'**
   String get ledgerChooseAnother;
 
+  /// Back button label in Ledger dialogs that returns to the connection choice.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose connection'**
+  String get ledgerChooseConnection;
+
+  /// Message above the list of found Ledger devices.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a device to continue.'**
+  String get ledgerChooseDevice;
+
+  /// Message above the list of found Ledger devices.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the Ledger you want to use for this account.'**
+  String get ledgerChooseLedgerForAccount;
+
   /// Error in the desktop Bluetooth dialog when closing the Ledger session failed.
   ///
   /// In en, this message translates to:
   /// **'Could not finish cleanup. Try again.'**
   String get ledgerCleanupFailed;
+
+  /// Body of recovery step 2 in the desktop dialog. 'Find Ledger' is the button label below.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep your Ledger unlocked, then select Find Ledger below.'**
+  String get ledgerComeBackFindLedger;
+
+  /// Body of recovery step 2. 'Find my Ledger' is the button label below.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep your Ledger unlocked, then select “Find my Ledger” below.'**
+  String get ledgerComeBackFindMyLedger;
+
+  /// Title of recovery step 2.
+  ///
+  /// In en, this message translates to:
+  /// **'Come back and reconnect'**
+  String get ledgerComeBackReconnect;
+
+  /// [security] Message while verifying a new Ledger: the user approves sharing the viewing key on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete pairing if prompted, then open the Zcash app and approve sharing the viewing key.'**
+  String get ledgerCompletePairingOpenZcash;
 
   /// Message asking the user to confirm on the Ledger device that the Zcash app may open. 'Zcash' is the app name on the device.
   ///
@@ -3800,11 +4526,23 @@ abstract class AppLocalizations {
   /// **'Confirm opening Zcash on Ledger.'**
   String get ledgerConfirmOpeningZcash;
 
+  /// Instruction to choose how to connect the Ledger for this account.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect the Ledger for this account.'**
+  String get ledgerConnectForAccount;
+
   /// Subtitle under the Connect Ledger heading, asking the user to get their Ledger ready.
   ///
   /// In en, this message translates to:
   /// **'Prepare your Ledger wallet.'**
   String get ledgerConnectSubtitle;
+
+  /// Title of the Ledger connection dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect Ledger'**
+  String get ledgerConnectTitle;
 
   /// Step 2 of the Ledger preparation list for a USB connection (the number is added by the app).
   ///
@@ -3824,11 +4562,29 @@ abstract class AppLocalizations {
   /// **'Connection help'**
   String get ledgerConnectionHelp;
 
+  /// Button label to continue signing after the Ledger is connected.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue signing'**
+  String get ledgerContinueSigning;
+
   /// Title of the desktop dialog after connecting to the Ledger failed.
   ///
   /// In en, this message translates to:
   /// **'Could not connect Ledger'**
   String get ledgerCouldNotConnect;
+
+  /// Error in the desktop Ledger recovery dialog when stopping the search failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not stop the search. Try again.'**
+  String get ledgerCouldNotStopSearchTryAgain;
+
+  /// Hint under a found Ledger that differs from the saved one.
+  ///
+  /// In en, this message translates to:
+  /// **'Different from saved connection'**
+  String get ledgerDifferentFromSaved;
 
   /// Message shown under the error title when no more specific error text is available.
   ///
@@ -3896,6 +4652,270 @@ abstract class AppLocalizations {
   /// **'The viewing-key request was rejected on your Ledger.'**
   String get ledgerErrorViewingKeyRejected;
 
+  /// Shown when the Ledger firmware and Zcash app are too old for this transaction. {version} is a version number such as 3.10.0. 'Ledger Wallet' is a product name.
+  ///
+  /// In en, this message translates to:
+  /// **'Update your Ledger and its Zcash app to {version} or newer in Ledger Wallet.'**
+  String ledgerFailureMsgAppUpdateRequired(String version);
+
+  /// Message when the Ledger is busy with another request.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger is busy. Try again in a moment.'**
+  String get ledgerFailureMsgBusy;
+
+  /// Message after a Ledger request was cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Request cancelled. Try again when ready.'**
+  String get ledgerFailureMsgCancelledTryAgain;
+
+  /// Generic message asking the user to check the Ledger and open the Zcash app.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your Ledger and open the Zcash app, then try again.'**
+  String get ledgerFailureMsgCheckOpenZcash;
+
+  /// Message under a Ledger failure card after the user declined the request on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Declined on your Ledger. Try again when ready.'**
+  String get ledgerFailureMsgDeclined;
+
+  /// Message when the Ledger could not accept a gift card request; nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger couldn’t accept this request. Create a new gift card. Nothing was sent.'**
+  String get ledgerFailureMsgGiftCardRejected;
+
+  /// Message when a gift card is too large for the Ledger to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Too large for your Ledger. Create a gift card with a smaller amount.'**
+  String get ledgerFailureMsgGiftCardTooLarge;
+
+  /// Message asking the user to install the Zcash app using the Ledger Wallet desktop app. 'Ledger Wallet' is a product name.
+  ///
+  /// In en, this message translates to:
+  /// **'Install the Zcash app with Ledger Wallet.'**
+  String get ledgerFailureMsgInstallZcash;
+
+  /// Shown when the Zcash app on the Ledger is too old to sign a memo with non-English characters.
+  ///
+  /// In en, this message translates to:
+  /// **'Update the Ledger Zcash app to sign non-English memos'**
+  String get ledgerFailureMsgMemoHashUnsupported;
+
+  /// Message when a migration step is too large for the Ledger to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'This migration step is too large for your Ledger to sign. Vizor can’t split it yet.'**
+  String get ledgerFailureMsgMigrationTooLarge;
+
+  /// Message asking the user to open the Zcash app on the Ledger. 'Zcash' is the app name shown on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the Zcash app on your Ledger.'**
+  String get ledgerFailureMsgOpenZcash;
+
+  /// Shown when a transaction would keep change in the Orchard pool, which the Ledger cannot sign. 'Orchard' and 'Ironwood' are Zcash pool names.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger can\'t sign a transaction that keeps change in Orchard. Migrate your Orchard balance to Ironwood first.'**
+  String get ledgerFailureMsgOrchardChange;
+
+  /// Message when a payment is too large for the Ledger to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a new payment. Don’t send a smaller amount to this address.'**
+  String get ledgerFailureMsgPaymentTooLarge;
+
+  /// Message asking the user to reconnect and unlock the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect and unlock your Ledger.'**
+  String get ledgerFailureMsgReconnectUnlock;
+
+  /// Message when the Ledger could not accept a request Vizor built; nothing was broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger couldn’t accept this request. Create a new one. Nothing was sent.'**
+  String get ledgerFailureMsgRejectedNewRequest;
+
+  /// Message asking the user to close and reopen the Zcash app on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Close and reopen the Zcash app.'**
+  String get ledgerFailureMsgReopenZcash;
+
+  /// Message when a Ledger cannot send to a Sapling address. 'Sapling' is a Zcash pool name.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger can’t send to a Sapling address. Create a new request.'**
+  String get ledgerFailureMsgSaplingRecipient;
+
+  /// [security] Message asking the user to set a PIN on the Ledger device.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up a PIN on your Ledger, then try again.'**
+  String get ledgerFailureMsgSetPin;
+
+  /// Message when shielding has too many inputs for the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many inputs for your Ledger. Try again. Nothing was shielded.'**
+  String get ledgerFailureMsgShieldTooLarge;
+
+  /// Message when a swap is too large for the Ledger to sign; the swap is discarded.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a new swap with a smaller amount. This one is discarded.'**
+  String get ledgerFailureMsgSwapTooLarge;
+
+  /// Message when a send has more inputs than the Ledger can sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many inputs for your Ledger. Try a smaller amount.'**
+  String get ledgerFailureMsgTooManyInputs;
+
+  /// Message for an unexpected Ledger device error.
+  ///
+  /// In en, this message translates to:
+  /// **'Unexpected Ledger error. Reopen the Zcash app and try again.'**
+  String get ledgerFailureMsgUnexpected;
+
+  /// Message for an unexpected Ledger device error. {code} is empty or a status code in parentheses with a leading space, such as ' (0x6e00)'.
+  ///
+  /// In en, this message translates to:
+  /// **'Unexpected Ledger error{code}. Reopen the Zcash app and try again.'**
+  String ledgerFailureMsgUnexpectedWithCode(String code);
+
+  /// Message asking the user to unlock the Ledger device.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock your Ledger, then try again.'**
+  String get ledgerFailureMsgUnlock;
+
+  /// Message when the Ledger cannot sign this kind of transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger can’t sign this transaction type. Create a new request.'**
+  String get ledgerFailureMsgUnsupportedTxType;
+
+  /// Message asking the user to update the Zcash app on the Ledger. {version} is a version number such as 3.9.3.
+  ///
+  /// In en, this message translates to:
+  /// **'Update the Zcash app to {version} or newer.'**
+  String ledgerFailureMsgUpdateZcash(String version);
+
+  /// [security] Message when the Ledger could not accept a viewing-key request.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger couldn’t accept this viewing-key request. Check the account number.'**
+  String get ledgerFailureMsgViewingKeyRejected;
+
+  /// Message when the Ledger could not accept a vote request.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger couldn’t accept this vote request. Your vote was not signed.'**
+  String get ledgerFailureMsgVoteRejected;
+
+  /// Message when a vote is too large for the Ledger to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'This vote is too large for your Ledger to sign.'**
+  String get ledgerFailureMsgVoteTooLarge;
+
+  /// [security] Message when the connected Ledger signed with a different key than this account's, asking for the right device.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect the Ledger that holds this account.'**
+  String get ledgerFailureMsgWrongLedger;
+
+  /// Title of a Ledger failure card when the device is busy with another request.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger is busy'**
+  String get ledgerFailureTitleBusy;
+
+  /// Title of a Ledger failure card when the request was cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Request cancelled'**
+  String get ledgerFailureTitleCancelled;
+
+  /// Title of a Ledger failure card for an unexpected device error.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger error'**
+  String get ledgerFailureTitleError;
+
+  /// Generic title of a Ledger failure card.
+  ///
+  /// In en, this message translates to:
+  /// **'Request failed'**
+  String get ledgerFailureTitleFailed;
+
+  /// Title of a Ledger failure card when the device is locked.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger locked'**
+  String get ledgerFailureTitleLocked;
+
+  /// Title of a Ledger failure card when the device cannot be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger not reachable'**
+  String get ledgerFailureTitleNotReachable;
+
+  /// Title of a Ledger failure card asking the user to open the Zcash app on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the Zcash app'**
+  String get ledgerFailureTitleOpenZcash;
+
+  /// Title of a Ledger failure card when no PIN is set on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'PIN required'**
+  String get ledgerFailureTitlePinRequired;
+
+  /// Title of a Ledger failure card when the Zcash app refused a request Vizor built.
+  ///
+  /// In en, this message translates to:
+  /// **'Request not accepted'**
+  String get ledgerFailureTitleRejected;
+
+  /// Title of a Ledger failure card when the Zcash app is in an unexpected state.
+  ///
+  /// In en, this message translates to:
+  /// **'Reopen the Zcash app'**
+  String get ledgerFailureTitleReopenZcash;
+
+  /// Title of a Ledger failure card when the request exceeds what the device can sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Request too large'**
+  String get ledgerFailureTitleTooLarge;
+
+  /// Title of a Ledger failure card when the Zcash app on the device is too old.
+  ///
+  /// In en, this message translates to:
+  /// **'Update the Zcash app'**
+  String get ledgerFailureTitleUpdateZcash;
+
+  /// Title of a Ledger failure card when the connected device does not hold the account.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong Ledger'**
+  String get ledgerFailureTitleWrongLedger;
+
+  /// Title of a Ledger failure card when the Zcash app is not installed on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash app missing'**
+  String get ledgerFailureTitleZcashMissing;
+
   /// Title of the desktop Bluetooth device picker and label of the button that restarts the Bluetooth search.
   ///
   /// In en, this message translates to:
@@ -3907,6 +4927,204 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Find my Ledger'**
   String get ledgerFindMyLedger;
+
+  /// Status while the user must act on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow the prompts on Ledger.'**
+  String get ledgerFollowPromptsOnLedger;
+
+  /// Third check in the Ledger connection help.
+  ///
+  /// In en, this message translates to:
+  /// **'Close other wallet apps and disconnect Ledger from other phones or computers.'**
+  String get ledgerHelpChecksCloseOtherApps;
+
+  /// Second check in the Ledger connection help.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave Ledger on its home screen. Open the Zcash app when Vizor asks.'**
+  String get ledgerHelpChecksHomeScreen;
+
+  /// First check in the Ledger connection help.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Ledger, turn on Bluetooth, and keep it close to your phone.'**
+  String get ledgerHelpChecksUnlockClose;
+
+  /// Placeholder of the Ledger model dropdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose your model'**
+  String get ledgerHelpChooseModel;
+
+  /// Intro of step 2 in the Ledger pairing reset help.
+  ///
+  /// In en, this message translates to:
+  /// **'Find your Ledger in your phone’s Bluetooth settings.'**
+  String get ledgerHelpFindInPhoneBluetooth;
+
+  /// Android menu path to forget the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth settings > the settings button next to your Ledger > Forget or Unpair'**
+  String get ledgerHelpForgetAndroid;
+
+  /// iOS menu path to forget the Ledger. Use the localized iOS names.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings > Bluetooth > the info button next to your Ledger > Forget This Device'**
+  String get ledgerHelpForgetIos;
+
+  /// First instruction of the last step in the Ledger help.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Ledger unlocked with Bluetooth on, and leave it on its home screen.'**
+  String get ledgerHelpKeepUnlockedHome;
+
+  /// Label above the Ledger model dropdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger model'**
+  String get ledgerHelpModelLabel;
+
+  /// [security] Instruction to confirm on the Ledger and enter the PIN on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm on Ledger and enter your PIN on the device.'**
+  String get ledgerHelpNanoXConfirm;
+
+  /// Instruction for Ledger Nano X; the menu path follows on the next line.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Ledger. Hold both buttons to open its controls, then choose:'**
+  String get ledgerHelpNanoXControls;
+
+  /// Menu path shown on the Ledger Nano X. Keep it in English, exactly as the device shows it.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings > Security > Reset pairings'**
+  String get ledgerHelpNanoXMenuPath;
+
+  /// Help text explaining how to find the Ledger Nano X name. 'Device Name' is the menu item shown on the device and stays in English.
+  ///
+  /// In en, this message translates to:
+  /// **'On your Nano X, hold both buttons for 2 seconds, then find Device Name.'**
+  String get ledgerHelpNanoXName;
+
+  /// Button label that moves to the phone step of the Ledger help.
+  ///
+  /// In en, this message translates to:
+  /// **'Next: phone settings'**
+  String get ledgerHelpNextPhoneSettings;
+
+  /// Button label that moves to the last step of the Ledger help.
+  ///
+  /// In en, this message translates to:
+  /// **'Next: search in Vizor'**
+  String get ledgerHelpNextSearchInVizor;
+
+  /// Title of the first and last step of the Ledger help.
+  ///
+  /// In en, this message translates to:
+  /// **'Find your Ledger'**
+  String get ledgerHelpNextSearchTitle;
+
+  /// [security] Warning not to choose Reset device on the Ledger. 'Reset device' is the menu item shown on the device and stays in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the Bluetooth pairing option, not Reset device. Your wallet and accounts stay unchanged.'**
+  String get ledgerHelpNotResetDevice;
+
+  /// Button label that opens the phone's Bluetooth settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Bluetooth settings'**
+  String get ledgerHelpOpenBluetoothSettings;
+
+  /// Help text explaining how to find the Ledger name. {model} is a product model such as Flex or Stax and stays in Latin script. 'Settings > Name' is the menu path shown on the device and stays in English.
+  ///
+  /// In en, this message translates to:
+  /// **'On your {model}, check Settings > Name.'**
+  String ledgerHelpOtherModelName(String model);
+
+  /// Intro of step 1 in the Ledger pairing reset help.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the saved pairing on Ledger, then remove it on your phone.'**
+  String get ledgerHelpRemovePairingOnLedger;
+
+  /// Last-resort advice in the Ledger help.
+  ///
+  /// In en, this message translates to:
+  /// **'If it still does not appear, restart both devices and check Ledger’s official Bluetooth troubleshooting guide.'**
+  String get ledgerHelpRestartBothGuide;
+
+  /// Second instruction of the last step in the Ledger help.
+  ///
+  /// In en, this message translates to:
+  /// **'Search in Vizor and select your Ledger. Open the Zcash app when Vizor asks.'**
+  String get ledgerHelpSearchSelectOpenZcash;
+
+  /// Hint shown until a Ledger model is selected.
+  ///
+  /// In en, this message translates to:
+  /// **'Select your model to see its pairing removal instructions.'**
+  String get ledgerHelpSelectModelHint;
+
+  /// Hint about how the Ledger appears in the phone's Bluetooth list.
+  ///
+  /// In en, this message translates to:
+  /// **'If you haven’t named your Ledger, it may appear as a short ID, such as 01AB. Otherwise, look for the name you set.'**
+  String get ledgerHelpShortIdName;
+
+  /// Hint to skip the step when the Ledger is not in the phone's Bluetooth list.
+  ///
+  /// In en, this message translates to:
+  /// **'If Ledger is not listed, skip this step and continue.'**
+  String get ledgerHelpSkipIfNotListed;
+
+  /// Step indicator in the Ledger connection help; this step is done back in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {step} of 3 · Back in Vizor'**
+  String ledgerHelpStepBackInVizor(String step);
+
+  /// Step indicator in the Ledger connection help; this step is done on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {step} of 3 · On your Ledger'**
+  String ledgerHelpStepOnLedger(String step);
+
+  /// Step indicator in the Ledger connection help; this step is done on the phone.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {step} of 3 · On your phone'**
+  String ledgerHelpStepOnPhone(String step);
+
+  /// Heading above extra troubleshooting advice.
+  ///
+  /// In en, this message translates to:
+  /// **'Still not showing?'**
+  String get ledgerHelpStillNotShowing;
+
+  /// Instruction for touchscreen Ledger models; the menu path follows on the next line.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Ledger. From its home screen, tap the settings icon, then choose:'**
+  String get ledgerHelpTouchControls;
+
+  /// Menu path shown on touchscreen Ledger models. Keep it in English, exactly as the device shows it.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth > Remove pairing'**
+  String get ledgerHelpTouchMenuPath;
+
+  /// Troubleshooting advice when the Ledger is not found.
+  ///
+  /// In en, this message translates to:
+  /// **'Try restarting Ledger. If it stays missing, removing the saved Bluetooth pairing on both devices may help.'**
+  String get ledgerHelpTryRestart;
 
   /// Note under the Open app step: do not close the named app on the Ledger. {appName} is the app name shown on the device, normally Zcash, and stays in Latin script.
   ///
@@ -3926,11 +5144,23 @@ abstract class AppLocalizations {
   /// **'Keep Ledger connected while Vizor checks the app.'**
   String get ledgerKeepConnectedWhileChecking;
 
+  /// Hint under the open-the-app instruction.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep it open on your Ledger.'**
+  String get ledgerKeepItOpen;
+
   /// Message under the first connection step in the desktop dialog.
   ///
   /// In en, this message translates to:
   /// **'Keep your Ledger nearby and unlocked, with Bluetooth turned on.'**
   String get ledgerKeepNearbyUnlocked;
+
+  /// Message while searching for the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep your Ledger nearby and unlocked.'**
+  String get ledgerKeepNearbyUnlockedShort;
 
   /// Note under the Open Zcash step: do not close the Zcash app on the Ledger.
   ///
@@ -3943,6 +5173,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'macOS may ask for Bluetooth access. If prompted, allow access for Vizor.'**
   String get ledgerMacosBluetoothPrompt;
+
+  /// [security] Message when the connected Ledger is not the one that holds this account.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the Ledger that holds this account. Your saved connection has not changed.'**
+  String get ledgerMismatchChooseHolder;
+
+  /// [security] Message when the connected Ledger is not the one that holds this account.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect the Ledger that holds this account. Your saved connection hasn’t changed.'**
+  String get ledgerMismatchConnectHolder;
+
+  /// Guidance when the device still shows a previous request.
+  ///
+  /// In en, this message translates to:
+  /// **'Another Ledger request is still active. Complete or reject it on your Ledger, then try again.'**
+  String get ledgerMobileAnotherRequestActive;
+
+  /// Guidance when Bluetooth permission was denied; a Bluetooth access checker is shown below.
+  ///
+  /// In en, this message translates to:
+  /// **'Check Bluetooth access below, then try connecting to your Ledger again.'**
+  String get ledgerMobileCheckBluetoothBelow;
+
+  /// Guidance when the Bluetooth connection failed or dropped.
+  ///
+  /// In en, this message translates to:
+  /// **'The Bluetooth connection to your Ledger was lost or could not be established. Turn on and unlock your Ledger, keep it nearby, then try again.'**
+  String get ledgerMobileConnectionLost;
+
+  /// Guidance when the stored Bluetooth pairing with the Ledger is stale and must be removed in system settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.'**
+  String get ledgerMobilePairingInvalid;
+
+  /// Guidance when the user did not complete the Bluetooth pairing prompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth pairing was not completed. Reconnect your Ledger and approve the pairing request, then try again.'**
+  String get ledgerMobilePairingNotCompleted;
+
+  /// Guidance when the Ledger request was cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'The Ledger request was cancelled. Try again when ready.'**
+  String get ledgerMobileRequestCancelled;
+
+  /// Guidance when the user rejected the request on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'The request was rejected on your Ledger. Try again when ready.'**
+  String get ledgerMobileRequestRejected;
+
+  /// Guidance when Bluetooth is turned off.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Bluetooth, then try again.'**
+  String get ledgerMobileTurnOnBluetooth;
+
+  /// Guidance on Android when location services are off, which this Android version needs to find Bluetooth devices.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on location services to find your Ledger on this Android version, then try again.'**
+  String get ledgerMobileTurnOnLocation;
 
   /// Title of the status block when the search found no Ledger device.
   ///
@@ -3968,11 +5264,29 @@ abstract class AppLocalizations {
   /// **'On your Ledger'**
   String get ledgerOnYourLedger;
 
+  /// Instruction to open an app on the Ledger. {appName} is the device app name, normally Zcash, and stays in Latin script.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the {appName} app'**
+  String ledgerOpenAppInstruction(String appName);
+
+  /// Instruction to open an app on the Ledger. {appName} is the device app name, normally Zcash.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the {appName} app on your Ledger.'**
+  String ledgerOpenAppOnLedger(String appName);
+
   /// Error in the mobile connection help when the Bluetooth settings could not be opened automatically.
   ///
   /// In en, this message translates to:
   /// **'Open Bluetooth settings manually to remove the old pairing.'**
   String get ledgerOpenBluetoothSettingsManually;
+
+  /// Button label that opens the system Bluetooth settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open settings'**
+  String get ledgerOpenSettings;
 
   /// Instruction inserted into a USB error message: the user must open the Zcash app on the Ledger and retry.
   ///
@@ -3980,11 +5294,131 @@ abstract class AppLocalizations {
   /// **'Open the Zcash app, then try again.'**
   String get ledgerOpenZcashThenTryAgain;
 
+  /// Status while the mobile Ledger connection help is prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening connection help…'**
+  String get ledgerOpeningConnectionHelp;
+
+  /// Message when the Ledger forgot the stored Bluetooth pairing.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger no longer recognizes this Bluetooth pairing.'**
+  String get ledgerPairingNoLongerRecognized;
+
+  /// Message when the Ledger forgot the stored Bluetooth pairing and the old pairing must be removed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger no longer recognizes this Bluetooth pairing. Remove the old pairing, then reconnect.'**
+  String get ledgerPairingNoLongerRecognizedRemove;
+
+  /// Screen-reader label of a step in the Ledger procedure list.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {step} of {total}'**
+  String ledgerProcedureStep(String step, String total);
+
+  /// Screen-reader label of a finished step in the Ledger procedure list.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {step} of {total}, complete'**
+  String ledgerProcedureStepComplete(String step, String total);
+
+  /// Fallback message when preparing the Zcash app on the Ledger failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not prepare the Ledger Zcash app. Try again.'**
+  String get ledgerReadinessCouldNotPrepare;
+
+  /// Message when a Ledger operation was cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger operation was cancelled.'**
+  String get ledgerReadinessOperationCancelled;
+
+  /// Message asking the user to reconnect and unlock the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect and unlock your Ledger, then try again.'**
+  String get ledgerReadinessReconnectUnlockTryAgain;
+
+  /// Message when Vizor has no USB permission to reach the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect and unlock your Ledger over USB. If it is connected, install the Ledger udev rules on Linux, then unplug and reconnect it.'**
+  String get ledgerReadinessUsbPermission;
+
+  /// Message when the Ledger is connected and signing can continue.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger is ready. Continue signing when you’re ready.'**
+  String get ledgerReadyContinueSigning;
+
+  /// [security] Message when the Ledger is connected; the user will review the transaction on the device next.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue when you’re ready to review the transaction on your Ledger.'**
+  String get ledgerReadyReviewOnLedger;
+
+  /// Title of the mobile Bluetooth sheet when access is fine and the user can reconnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect Ledger'**
+  String get ledgerReconnectTitle;
+
+  /// Title of recovery step 1.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the old pairing'**
+  String get ledgerRemoveOldPairing;
+
+  /// Recovery step on iOS. Use the localized iOS names for Settings and Bluetooth.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device.'**
+  String get ledgerRemovePairingIos;
+
+  /// Recovery step on macOS. Use the localized macOS names.
+  ///
+  /// In en, this message translates to:
+  /// **'Open System Settings > Bluetooth. If your Ledger is listed, remove its saved pairing.'**
+  String get ledgerRemovePairingMacos;
+
+  /// Recovery step on other platforms.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Bluetooth settings. If your Ledger is listed, remove its saved pairing.'**
+  String get ledgerRemovePairingOther;
+
+  /// Button and title in the mobile Ledger help that guides the user to remove the saved Bluetooth pairing.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset Bluetooth pairing'**
+  String get ledgerResetBluetoothPairing;
+
   /// Status text while the desktop dialog returns to the connection options after stopping the search.
   ///
   /// In en, this message translates to:
   /// **'Returning to connection options…'**
   String get ledgerReturningToOptions;
+
+  /// Message after the Ledger was verified; the user must search again to continue.
+  ///
+  /// In en, this message translates to:
+  /// **'This Ledger matches your account. Find it again to continue.'**
+  String get ledgerSavedFindAgain;
+
+  /// Message after the Ledger was verified and stored.
+  ///
+  /// In en, this message translates to:
+  /// **'This Ledger matches your account and is now saved. Find it again to continue.'**
+  String get ledgerSavedMatchesFindAgain;
+
+  /// Message while the verified Ledger connection is stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account matches. Saving the verified connection.'**
+  String get ledgerSavingVerified;
 
   /// Button that restarts the search for Ledger devices when none were found.
   ///
@@ -4034,6 +5468,282 @@ abstract class AppLocalizations {
   /// **'Request declined'**
   String get ledgerSheetDeclinedTitle;
 
+  /// Note under the review step when several transactions are signed in a row.
+  ///
+  /// In en, this message translates to:
+  /// **'You will approve the next transaction separately.'**
+  String get ledgerSigningApproveNextSeparately;
+
+  /// [security] Note under the review step on mobile asking the user to approve or reject on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve to sign, or reject to cancel.'**
+  String get ledgerSigningApproveOrReject;
+
+  /// [security] Note under the review step asking the user to approve signing on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve to sign.'**
+  String get ledgerSigningApproveToSign;
+
+  /// [security] Note under the review step when several transactions are signed in a row; the two paragraphs are separated by a blank line.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve to sign.\n\nYou will approve the next transaction separately.'**
+  String get ledgerSigningApproveToSignNext;
+
+  /// Step message after the user approved on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Approved on Ledger. Vizor is finishing the transaction.'**
+  String get ledgerSigningApprovedFinishing;
+
+  /// Back button label in the Ledger signing dialog that returns to the connection options.
+  ///
+  /// In en, this message translates to:
+  /// **'Change connection'**
+  String get ledgerSigningChangeConnection;
+
+  /// [security] Step message asking the user to verify the amount and recipient on the Ledger screen before approving.
+  ///
+  /// In en, this message translates to:
+  /// **'When prompted, check the amount and recipient on Ledger.'**
+  String get ledgerSigningCheckAmountRecipient;
+
+  /// Message while Vizor checks that the Zcash app on the Ledger is ready.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is checking whether the Zcash app is ready.'**
+  String get ledgerSigningCheckingZcashReady;
+
+  /// Screen-reader label of the close button on the mobile Ledger signing surface.
+  ///
+  /// In en, this message translates to:
+  /// **'Close Ledger'**
+  String get ledgerSigningCloseSemantics;
+
+  /// [security] Message asking the user to confirm on the Ledger; Vizor reconnects by itself afterwards.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm the request on your Ledger. Vizor will reconnect automatically.'**
+  String get ledgerSigningConfirmRequestReconnect;
+
+  /// [security] Step message in the Ledger signing dialog after the user declined signing on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing was declined on Ledger. Try again when you’re ready.'**
+  String get ledgerSigningDeclined;
+
+  /// Step message while the Ledger request is being finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing the Ledger request.'**
+  String get ledgerSigningFinishingRequest;
+
+  /// Reminder in the Ledger signing dialog to leave the device connected.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Ledger connected.'**
+  String get ledgerSigningKeepLedgerConnected;
+
+  /// Message while the Ledger request is being cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open while the Ledger request is cancelled.'**
+  String get ledgerSigningKeepOpenWhileCancelling;
+
+  /// Reminder not to close Vizor while a Ledger operation finishes.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open.'**
+  String get ledgerSigningKeepVizorOpen;
+
+  /// Status chip reminding the user not to close Vizor while the transaction finishes.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open'**
+  String get ledgerSigningKeepVizorOpenShort;
+
+  /// Body while Vizor prepares a transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait while Vizor prepares your transaction.'**
+  String get ledgerSigningMsgPreparing;
+
+  /// [security] Body asking the user to review and approve on the Ledger when prompted.
+  ///
+  /// In en, this message translates to:
+  /// **'Review and approve when prompted on your Ledger.'**
+  String get ledgerSigningMsgReviewing;
+
+  /// Body during Ledger signing. {wait} is the sentence 'Ledger is preparing to sign. It may seem unresponsive for a few seconds.' translated separately.
+  ///
+  /// In en, this message translates to:
+  /// **'{wait} Keep your Ledger connected.'**
+  String ledgerSigningMsgSending(String wait);
+
+  /// Step message in the Ledger signing dialog while the signed transaction is stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving the signed transaction.'**
+  String get ledgerSigningSaving;
+
+  /// Status chip while Vizor checks the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking device'**
+  String get ledgerSigningStatusCheckingDevice;
+
+  /// Status chip while the Zcash app opens on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening Zcash'**
+  String get ledgerSigningStatusOpeningZcash;
+
+  /// Short status chip while the Ledger prepares to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing to sign'**
+  String get ledgerSigningStatusPreparing;
+
+  /// [security] Short status chip asking the user to review on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Review on device'**
+  String get ledgerSigningStatusReview;
+
+  /// Short status chip while waiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait'**
+  String get ledgerSigningStatusWait;
+
+  /// [security] Mobile status chip while waiting for the user to approve on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for your approval'**
+  String get ledgerSigningStatusWaitingApproval;
+
+  /// Third step label of the Ledger signing procedure.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish transaction'**
+  String get ledgerSigningStepFinish;
+
+  /// First step label of the Ledger signing procedure.
+  ///
+  /// In en, this message translates to:
+  /// **'Prepare transaction'**
+  String get ledgerSigningStepPrepare;
+
+  /// [security] Second step label of the Ledger signing procedure: review and approve on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Review on Ledger'**
+  String get ledgerSigningStepReview;
+
+  /// Title while Vizor checks that the Zcash app is ready on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking your Ledger'**
+  String get ledgerSigningTitleChecking;
+
+  /// [security] Mobile title asking the user to confirm the transaction on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm on your Ledger'**
+  String get ledgerSigningTitleConfirmOnLedger;
+
+  /// Title asking the user to confirm on the Ledger that the Zcash app may open.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm opening Zcash'**
+  String get ledgerSigningTitleConfirmOpening;
+
+  /// Title while Vizor finishes a signed transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing transaction'**
+  String get ledgerSigningTitleFinishing;
+
+  /// Title while Vizor prepares a transaction for Ledger signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing transaction'**
+  String get ledgerSigningTitlePreparing;
+
+  /// [security] Title asking the user to review and approve the transaction on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your Ledger'**
+  String get ledgerSigningTitleReviewing;
+
+  /// Title while the Ledger processes the signing request.
+  ///
+  /// In en, this message translates to:
+  /// **'Processing with Ledger'**
+  String get ledgerSigningTitleSending;
+
+  /// Title of the Ledger dialog while the signed transaction is broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending transaction'**
+  String get ledgerSigningTitleSendingTx;
+
+  /// Title of the Ledger signing dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign transaction'**
+  String get ledgerSigningTitleSign;
+
+  /// Shows which transaction of a batch is being signed on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction {current} of {total}'**
+  String ledgerSigningTransactionProgress(String current, String total);
+
+  /// Explains that the Ledger may look frozen for a few seconds while preparing to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger is preparing to sign. It may seem unresponsive for a few seconds.'**
+  String get ledgerSigningWaitInstruction;
+
+  /// Status while connecting to the saved Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting…'**
+  String get ledgerStatusConnecting;
+
+  /// Status while the user must act on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow the prompts on your Ledger'**
+  String get ledgerStatusFollowPrompts;
+
+  /// Status while opening the system Bluetooth settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening Bluetooth settings…'**
+  String get ledgerStatusOpeningBluetoothSettings;
+
+  /// Status while the Ledger connection is stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving connection…'**
+  String get ledgerStatusSavingConnection;
+
+  /// Status while searching for Ledger devices.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching nearby…'**
+  String get ledgerStatusSearchingNearby;
+
+  /// Status while the search continues.
+  ///
+  /// In en, this message translates to:
+  /// **'Still searching nearby…'**
+  String get ledgerStatusStillSearching;
+
   /// [security] Procedure step label: the user approves sharing the viewing key on the Ledger device.
   ///
   /// In en, this message translates to:
@@ -4052,6 +5762,12 @@ abstract class AppLocalizations {
   /// **'Open Zcash'**
   String get ledgerStepOpenZcash;
 
+  /// Error shown in the mobile Ledger connection help when stopping the Bluetooth search failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not stop the search. Try opening connection help again.'**
+  String get ledgerStopSearchFailedHelp;
+
   /// Title of the desktop dialog while the Bluetooth device search is being stopped.
   ///
   /// In en, this message translates to:
@@ -4063,6 +5779,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Supported devices'**
   String get ledgerSupportedDevices;
+
+  /// Title while connecting to the saved Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting to your Ledger'**
+  String get ledgerTitleConnectingToLedger;
+
+  /// Title while Vizor searches for the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Finding your Ledger'**
+  String get ledgerTitleFindingLedger;
+
+  /// Title when the Ledger is connected.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger is connected'**
+  String get ledgerTitleLedgerConnected;
+
+  /// Title after the Ledger connection was stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger saved'**
+  String get ledgerTitleLedgerSaved;
+
+  /// [security] Title when the connected Ledger does not hold the account.
+  ///
+  /// In en, this message translates to:
+  /// **'This Ledger doesn’t match'**
+  String get ledgerTitleMismatch;
+
+  /// Title asking the user to pair the Ledger again.
+  ///
+  /// In en, this message translates to:
+  /// **'Pair your Ledger again'**
+  String get ledgerTitlePairAgain;
+
+  /// Title while the Ledger connection is stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving your connection'**
+  String get ledgerTitleSavingConnection;
+
+  /// Title above the list of found Ledger devices.
+  ///
+  /// In en, this message translates to:
+  /// **'Select your Ledger'**
+  String get ledgerTitleSelectYourLedger;
 
   /// Name of the Bluetooth connection option for a Ledger device (choice button or connection summary).
   ///
@@ -4082,17 +5846,101 @@ abstract class AppLocalizations {
   /// **'Unlock Ledger, turn on Bluetooth, and keep it nearby.'**
   String get ledgerUnlockBluetoothNearby;
 
+  /// Message while searching for Ledger devices over Bluetooth.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Ledger, enable Bluetooth and keep it nearby.'**
+  String get ledgerUnlockEnableBluetoothNearby;
+
+  /// [security] Message while verifying the saved Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock your Ledger and open the Zcash app. Approve opening it if prompted.'**
+  String get ledgerUnlockOpenZcashApprove;
+
   /// [security] Step 1 of the Ledger preparation list (the number is added by the app); the user unlocks the Ledger with its PIN.
   ///
   /// In en, this message translates to:
   /// **'Unlock with your PIN.'**
   String get ledgerUnlockWithPin;
 
+  /// [security] Message asking the user to approve opening the Zcash app on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve opening the Zcash app on your Ledger.'**
+  String get ledgerUsbApproveOpening;
+
+  /// Fallback message for a USB connection problem.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the USB cable, unlock your Ledger, and open the Zcash app.'**
+  String get ledgerUsbCheckCableOpenApp;
+
+  /// Instruction for connecting over USB.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect your Ledger with a USB cable, unlock it, and open the Zcash app.'**
+  String get ledgerUsbConnectUnlockOpen;
+
+  /// Identity chip showing the Ledger is connected over USB.
+  ///
+  /// In en, this message translates to:
+  /// **'USB connection'**
+  String get ledgerUsbConnection;
+
+  /// USB error when another app may be holding the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor found your Ledger but could not open it. Close other wallet apps that use the Ledger, reconnect it, then try again.'**
+  String get ledgerUsbCouldNotOpen;
+
+  /// USB error when the USB stack failed to start.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not start USB access for your Ledger. Reconnect the device, then try again.'**
+  String get ledgerUsbCouldNotStart;
+
+  /// USB error after the connection dropped. {instruction} is a full sentence produced elsewhere, such as 'Open the Zcash app on your Ledger.'.
+  ///
+  /// In en, this message translates to:
+  /// **'The USB connection to your Ledger was interrupted. Reconnect and unlock your Ledger. {instruction}'**
+  String ledgerUsbInterrupted(String instruction);
+
+  /// Linux USB permission error. Keep the URL github.com/LedgerHQ/udev-rules unchanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor cannot access your Ledger over USB. Install Ledger\'s udev rules for Linux (github.com/LedgerHQ/udev-rules), then reconnect your Ledger and try again.'**
+  String get ledgerUsbPermissionLinux;
+
+  /// USB permission error on macOS and Windows.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor cannot access your Ledger over USB. Check USB device permissions, then reconnect and try again.'**
+  String get ledgerUsbPermissionOther;
+
+  /// [security] Message while verifying a new Ledger: the user approves sharing the viewing key on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete pairing if prompted, then approve sharing your viewing key.'**
+  String get ledgerVerifyingNewDevice;
+
+  /// [security] Message while verifying the saved Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Ledger and confirm opening Zcash if prompted.'**
+  String get ledgerVerifyingSavedDevice;
+
   /// Status message while Vizor checks whether the Zcash app is open on the Ledger.
   ///
   /// In en, this message translates to:
   /// **'Vizor is checking the Zcash app.'**
   String get ledgerVizorCheckingZcash;
+
+  /// [security] Status while waiting for the user to approve on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for approval…'**
+  String get ledgerWaitingForApproval;
 
   /// [security] Body of the passcode entry screen after sync was interrupted.
   ///

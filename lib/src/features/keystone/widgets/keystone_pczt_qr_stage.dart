@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
@@ -46,7 +47,7 @@ class KeystonePcztQrStage extends StatelessWidget {
         ),
         KeystonePcztQrStagePhase.failed => Center(
           child: Text(
-            error ?? 'Keystone signing could not be prepared.',
+            error ?? context.l10n.keystonePcztPrepareFailed,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.destructive,
             ),
@@ -70,7 +71,7 @@ class _QrStageLoader extends StatelessWidget {
         AppIcons.loader,
         size: 24,
         color: context.colors.icon.regular,
-        semanticLabel: 'Preparing QR',
+        semanticLabel: context.l10n.keystonePreparingQr,
       ),
     );
   }

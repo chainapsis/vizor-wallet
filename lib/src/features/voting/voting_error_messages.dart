@@ -41,6 +41,7 @@ String ledgerVotingErrorMessage(
     ),
     _ =>
       ledgerFailureGuidance(
+            l10n,
             error,
             requestKind: LedgerRequestKind.voting,
           )?.message ??

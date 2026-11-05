@@ -2,12 +2,13 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
 class KeystoneTransactionProgressPanel extends StatelessWidget {
   const KeystoneTransactionProgressPanel({
-    this.label = 'Submitting the transaction',
+    this.label,
     this.showCameraRow = false,
     this.cameraLabel,
     super.key,
@@ -17,7 +18,7 @@ class KeystoneTransactionProgressPanel extends StatelessWidget {
   static const height = 316.0;
   static const radius = 20.0;
 
-  final String label;
+  final String? label;
   final bool showCameraRow;
   final String? cameraLabel;
 
@@ -38,14 +39,18 @@ class KeystoneTransactionProgressPanel extends StatelessWidget {
               child: SizedBox(
                 height: height,
                 child: Center(
-                  child: KeystoneTransactionProgressLabel(label: label),
+                  child: KeystoneTransactionProgressLabel(
+                    label: label ?? context.l10n.keystoneSubmittingTransaction,
+                  ),
                 ),
               ),
             ),
           ),
           if (showCameraRow) ...[
             const SizedBox(height: AppSpacing.s),
-            _CameraStatusRow(label: cameraLabel ?? 'Camera'),
+            _CameraStatusRow(
+              label: cameraLabel ?? context.l10n.keystoneCameraLabel,
+            ),
           ],
         ],
       ),
@@ -55,12 +60,12 @@ class KeystoneTransactionProgressPanel extends StatelessWidget {
 
 class KeystoneTransactionProgressOverlay extends StatelessWidget {
   const KeystoneTransactionProgressOverlay({
-    this.label = 'Submitting the transaction',
+    this.label,
     this.borderRadius = BorderRadius.zero,
     super.key,
   });
 
-  final String label;
+  final String? label;
   final BorderRadius borderRadius;
 
   @override
@@ -75,7 +80,7 @@ class KeystoneTransactionProgressOverlay extends StatelessWidget {
             padding: const EdgeInsets.only(top: AppSpacing.md),
             child: Center(
               child: KeystoneTransactionProgressLabel(
-                label: label,
+                label: label ?? context.l10n.keystoneSubmittingTransaction,
                 color: const Color(0xFFFFFFFF),
                 gap: AppSpacing.xxs,
               ),
@@ -142,7 +147,7 @@ class _CameraStatusRow extends StatelessWidget {
       child: Row(
         children: [
           Text(
-            'Camera',
+            context.l10n.keystoneCameraLabel,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.accent,
             ),

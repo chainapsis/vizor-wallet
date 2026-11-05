@@ -1,3 +1,6 @@
+import 'dart:ui' show Locale;
+
+import '../../core/l10n/l10n.dart';
 import '../../features/ledger/services/ledger_device_selection.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -914,10 +917,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _failJob(
           key: key,
           generation: generation,
+          // The job state keeps display text and has no widget context.
           message: ledgerVotingErrorMessage(
             votingProviderL10n,
             error,
             appInstruction: ledgerZcashAppOpenErrorInstruction(
+              lookupAppLocalizations(const Locale('en')),
               ref.read(rpcEndpointProvider).networkName,
             ),
           ),

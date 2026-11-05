@@ -126,7 +126,8 @@ final ledgerSignedOperationServiceProvider =
               .switchToFallbackFor(
                 error,
                 endpoint: attemptedEndpoint,
-                operation: 'ledger signed operation broadcast',
+                operation:
+                    'ledger signed operation broadcast', // l10n-ignore: log label
               );
           if (switched) {
             unawaited(

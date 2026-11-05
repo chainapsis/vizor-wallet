@@ -217,7 +217,10 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
   String _friendlyError(Object error) {
     final lower = '$error'.toLowerCase();
     final networkName = ref.read(rpcEndpointProvider).networkName;
-    final appInstruction = ledgerZcashAppOpenErrorInstruction(networkName);
+    final appInstruction = ledgerZcashAppOpenErrorInstruction(
+      context.l10n,
+      networkName,
+    );
     final failure = LedgerRequestFailure.fromError(error);
     if (failure == LedgerRequestFailure.declined) {
       return context.l10n.ledgerErrorViewingKeyRejected;
@@ -226,6 +229,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
       return context.l10n.ledgerErrorUnlock(appInstruction);
     }
     final guidance = ledgerFailureGuidance(
+      context.l10n,
       error,
       requestKind: LedgerRequestKind.viewingKey,
     );
@@ -374,7 +378,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
           child: Semantics(
             liveRegion: true,
             child: Text(
-              kLedgerOnboardingAccountIndexError,
+              context.l10n.ledgerAccountIndexOutOfRange,
               style: AppTypography.bodySmall.copyWith(
                 color: context.colors.text.destructive,
               ),
@@ -445,7 +449,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                 const SizedBox(height: AppSpacing.s),
                 AppTextField(
                   key: const ValueKey('ledger_account_index_field'),
-                  label: kLedgerOnboardingAccountIndexLabel,
+                  label: context.l10n.ledgerAccountIndexFieldLabel,
                   controller: _accountIndexController,
                   enabled: !_busy,
                   tone: _invalidAccountIndex

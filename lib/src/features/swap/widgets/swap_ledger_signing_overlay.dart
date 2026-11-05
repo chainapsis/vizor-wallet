@@ -666,6 +666,7 @@ class _SwapLedgerSigningOverlayState
   String _friendlyError(Object error) {
     _requestFailure = LedgerRequestFailure.fromError(error);
     _deviceGuidance = ledgerFailureGuidance(
+      context.l10n,
       error,
       requestKind: widget.intent.payMode
           ? LedgerRequestKind.payment
@@ -675,6 +676,7 @@ class _SwapLedgerSigningOverlayState
     if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
+      context.l10n,
       ref.read(rpcEndpointProvider).networkName,
     );
     if (_deviceGuidance != null) return _deviceGuidance!.message;
@@ -682,10 +684,14 @@ class _SwapLedgerSigningOverlayState
         LedgerRequestFailure.declined) {
       return context.l10n.swapLedgerDeclined;
     }
-    final usb = ledgerUsbErrorMessage(error, appInstruction: appInstruction);
+    final usb = ledgerUsbErrorMessage(
+      context.l10n,
+      error,
+      appInstruction: appInstruction,
+    );
     if (usb != null) return usb;
     if (lower.contains('sapling')) {
-      return kLedgerSaplingRecipientMessage;
+      return context.l10n.ledgerFailureMsgSaplingRecipient;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
       return context.l10n.swapLedgerBroadcastFailed;

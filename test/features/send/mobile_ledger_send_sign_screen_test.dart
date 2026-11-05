@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_selection.dart';
@@ -111,6 +112,7 @@ void main() {
           ),
         );
         final accessRecovery = ledgerFailureGuidance(
+          testL10n,
           original,
         )!.bluetoothRecovery;
         var attempts = 0;
@@ -126,10 +128,10 @@ void main() {
         );
         await tester.tap(find.text('Open signing'));
         await tester.pumpAndSettle();
-        if (ledgerFailureGuidance(original)!.pairingRecovery) {
+        if (ledgerFailureGuidance(testL10n, original)!.pairingRecovery) {
           expect(
             find.text(
-              ledgerFailureGuidance(original)!.pairingInvalid
+              ledgerFailureGuidance(testL10n, original)!.pairingInvalid
                   ? 'Pair your Ledger again'
                   : 'Couldn’t connect to your Ledger',
             ),
@@ -143,7 +145,7 @@ void main() {
           find.text(
             accessRecovery
                 ? 'Reconnect Ledger'
-                : ledgerFailureGuidance(original)!.message,
+                : ledgerFailureGuidance(testL10n, original)!.message,
           ),
           findsOneWidget,
         );
@@ -161,7 +163,7 @@ void main() {
           find.text(
             accessRecovery
                 ? 'Reconnect Ledger'
-                : ledgerFailureGuidance(original)!.message,
+                : ledgerFailureGuidance(testL10n, original)!.message,
           ),
           findsNothing,
         );
@@ -992,7 +994,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Request not accepted'), findsOneWidget);
-      expect(find.text(kLedgerHostRequestRejectedMessage), findsOneWidget);
+      expect(
+        find.text(testL10n.ledgerFailureMsgRejectedNewRequest),
+        findsOneWidget,
+      );
       expect(find.textContaining('rejected on your Ledger'), findsNothing);
       expect(
         find.byKey(const ValueKey('ledger_device_app_prompt_mainnet')),

@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart' show AppLocalizations;
 import 'ledger_mobile_ble_service.dart';
 
 enum LedgerBluetoothPermission { granted, requestable, settings, restricted }
@@ -31,28 +32,30 @@ class LedgerBluetoothAccessStatus {
   final bool? bluetoothEnabled;
   final bool? locationEnabled;
   bool get granted => permission == LedgerBluetoothPermission.granted;
-  String get message {
-    final kind = locationPermission ? 'Location' : 'Bluetooth';
+  String message(AppLocalizations l10n) {
+    final kind = locationPermission
+        ? l10n.ledgerBtAccessKindLocation
+        : l10n.ledgerTransportBluetooth;
     if (granted && bluetoothEnabled == false) {
-      return 'Turn on Bluetooth, then check access again.';
+      return l10n.ledgerBtAccessTurnOnBluetooth;
     }
     if (granted && locationEnabled == false) {
-      return 'Turn on location services, then check access again.';
+      return l10n.ledgerBtAccessTurnOnLocation;
     }
-    if (granted) return 'Permission is allowed. Try again when ready.';
+    if (granted) return l10n.ledgerBtAccessAllowed;
     if (permission == LedgerBluetoothPermission.restricted) {
-      return '$kind access is restricted by your device settings or administrator.';
+      return l10n.ledgerBtAccessRestricted(kind);
     }
     if (permission == LedgerBluetoothPermission.requestable) {
       return locationPermission
-          ? 'This Android version needs location permission to find your Ledger. Choose Allow permission, or open Settings if no prompt appears.'
-          : 'Choose Allow permission to connect to your Ledger. If no prompt appears, open Settings.';
+          ? l10n.ledgerBtAccessLocationRequestable
+          : l10n.ledgerBtAccessBluetoothRequestable;
     }
     return locationPermission
-        ? 'This Android version needs location permission to find your Ledger. Allow location access for Vizor in Settings.'
+        ? l10n.ledgerBtAccessLocationSettings
         : macOS
-        ? 'Open System Settings > Privacy & Security > Bluetooth and allow access for Vizor.'
-        : 'Allow Bluetooth access for Vizor in your device settings.';
+        ? l10n.ledgerBtAccessMacosSettings
+        : l10n.ledgerBtAccessBluetoothSettings;
   }
 }
 
@@ -71,19 +74,19 @@ Future<void> requireLedgerBluetoothAccess(
   if (!status.granted) {
     throw LedgerMobileException(
       LedgerMobileFailure.permissionDenied,
-      status.message,
+      'Bluetooth access is not granted.', // l10n-ignore: exception text
     );
   }
   if (status.bluetoothEnabled == false) {
     throw LedgerMobileException(
       LedgerMobileFailure.bluetoothOff,
-      status.message,
+      'Bluetooth is turned off.', // l10n-ignore: exception text
     );
   }
   if (status.locationEnabled == false) {
     throw LedgerMobileException(
       LedgerMobileFailure.locationDisabled,
-      status.message,
+      'Location services are turned off.', // l10n-ignore: exception text
     );
   }
 }

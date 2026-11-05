@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import '../../support/test_l10n.dart';
 import 'dart:io';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -62,7 +63,7 @@ void main() {
         ),
       );
       final accessRecovery =
-          ledgerFailureGuidance(error)?.bluetoothRecovery == true;
+          ledgerFailureGuidance(testL10n, error)?.bluetoothRecovery == true;
       final operations = _StatefulOperationService();
       await _pumpOverlay(
         tester,
@@ -77,7 +78,7 @@ void main() {
         tester,
         () => find
             .text(
-              ledgerFailureGuidance(error)?.pairingInvalid == true
+              ledgerFailureGuidance(testL10n, error)?.pairingInvalid == true
                   ? 'Find Ledger'
                   : accessRecovery
                   ? 'Find Ledger'
@@ -88,13 +89,13 @@ void main() {
       );
       expect(
         find.text(
-          ledgerFailureGuidance(error)?.pairingInvalid == true
+          ledgerFailureGuidance(testL10n, error)?.pairingInvalid == true
               ? 'Pair your Ledger again'
-              : ledgerFailureGuidance(error)?.pairingRecovery == true
+              : ledgerFailureGuidance(testL10n, error)?.pairingRecovery == true
               ? 'Request failed'
               : accessRecovery
               ? 'Ready to reconnect'
-              : ledgerFailureGuidance(error)?.message ??
+              : ledgerFailureGuidance(testL10n, error)?.message ??
                     'Ledger signing could not be completed.',
         ),
         findsOneWidget,
@@ -403,8 +404,10 @@ void main() {
       );
       await _pumpUntil(
         tester,
-        () =>
-            find.text(kLedgerHostRequestRejectedMessage).evaluate().isNotEmpty,
+        () => find
+            .text(testL10n.ledgerFailureMsgRejectedNewRequest)
+            .evaluate()
+            .isNotEmpty,
       );
 
       expect(find.text('Ledger signing failed'), findsOneWidget);

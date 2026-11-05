@@ -1,23 +1,32 @@
 import 'dart:typed_data';
 
+import '../../../core/l10n/l10n.dart' show AppLocalizations;
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/wallet/keystone.dart' as rust_keystone_wallet;
 
 const _keystoneQrFragmentLength = 140;
 
+/// What a friendly batch-signing error is about.
+enum KeystoneBatchSubject { transaction, deposit }
+
 /// Maps shared Keystone batch preparation failures to actionable UI copy.
 String? keystoneBatchSigningFriendlyError(
+  AppLocalizations l10n,
   Object error, {
-  String subject = 'transaction',
+  KeystoneBatchSubject subject = KeystoneBatchSubject.transaction,
 }) {
+  final deposit = subject == KeystoneBatchSubject.deposit;
   final lower = error.toString().toLowerCase();
   if (lower.contains('keystone batch signing supports at most')) {
-    return 'This $subject uses too many inputs for Keystone batch signing. '
-        'Try a smaller amount.';
+    return deposit
+        ? l10n.keystoneBatchTooManyInputsDeposit
+        : l10n.keystoneBatchTooManyInputsTx;
   }
   if (lower.contains('batch signing does not support')) {
-    return 'This $subject uses inputs that Keystone batch signing cannot sign.';
+    return deposit
+        ? l10n.keystoneBatchCannotSignDeposit
+        : l10n.keystoneBatchCannotSignTx;
   }
   return null;
 }

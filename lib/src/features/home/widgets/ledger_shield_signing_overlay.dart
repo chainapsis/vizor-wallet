@@ -636,6 +636,7 @@ class _LedgerShieldSigningOverlayState
   String _friendlyError(Object error) {
     _requestFailure = LedgerRequestFailure.fromError(error);
     final guidance = ledgerFailureGuidance(
+      context.l10n,
       error,
       requestKind: LedgerRequestKind.shield,
     );
@@ -653,12 +654,17 @@ class _LedgerShieldSigningOverlayState
     if (guidance != null) return guidance.message;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
+      context.l10n,
       ref.read(rpcEndpointProvider).networkName,
     );
     if (failure == LedgerRequestFailure.declined) {
       return context.l10n.homeLedgerRejected;
     }
-    final usb = ledgerUsbErrorMessage(error, appInstruction: appInstruction);
+    final usb = ledgerUsbErrorMessage(
+      context.l10n,
+      error,
+      appInstruction: appInstruction,
+    );
     if (usb != null) return usb;
     if (lower.contains('sync')) {
       return context.l10n.homeShieldErrorSyncFirst;

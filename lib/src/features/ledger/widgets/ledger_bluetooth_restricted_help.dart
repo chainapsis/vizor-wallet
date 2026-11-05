@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../ledger_capability.dart';
@@ -16,14 +17,15 @@ class LedgerBluetoothRestrictedHelp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (!model.restricted) return const SizedBox.shrink();
+    final l10n = context.l10n;
     final platform = ref.watch(ledgerTargetPlatformProvider);
     final guidance = model.access?.macOS == true
-        ? 'Check Privacy & Security > Bluetooth in System Settings. This restriction may need to be changed by your administrator.'
+        ? l10n.ledgerBtRestrictedMacos
         : model.access?.locationPermission == true
-        ? 'Check location access for Vizor in Settings. Device restrictions or your administrator may prevent changes.'
+        ? l10n.ledgerBtRestrictedLocation
         : platform == TargetPlatform.android
-        ? 'Check Nearby devices access for Vizor in Settings. Device restrictions or your administrator may prevent changes.'
-        : 'Check Vizor’s Bluetooth access in Settings. Device restrictions or your administrator may prevent changes.';
+        ? l10n.ledgerBtRestrictedNearby
+        : l10n.ledgerBtRestrictedGeneric;
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.sm),
       child: Column(
@@ -44,7 +46,7 @@ class LedgerBluetoothRestrictedHelp extends ConsumerWidget {
               constrainContent: true,
               growWithContent: true,
               onPressed: model.onOpenSettings,
-              child: const Text('Open settings'),
+              child: Text(l10n.ledgerBtLabelOpenSettings),
             ),
           ),
         ],

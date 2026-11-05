@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show Scrollbar;
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -79,6 +80,7 @@ class _MobileLedgerSheetContentState extends State<MobileLedgerSheetContent> {
   }
 
   Widget _inlineContent(BuildContext context, LedgerInlinePresentation inline) {
+    final closeLabel = inline.closeLabel ?? context.l10n.ledgerCancelShielding;
     final motion = ShieldHardwarePresentation.maybeOf(context);
     final heading = Text(
       widget.title,
@@ -107,7 +109,7 @@ class _MobileLedgerSheetContentState extends State<MobileLedgerSheetContent> {
       children: [
         if (widget.action != null) widget.action!,
         if (widget.onClose != null)
-          MobileLedgerAction(inline.closeLabel, onPressed: widget.onClose),
+          MobileLedgerAction(closeLabel, onPressed: widget.onClose),
       ],
     );
     if (motion == null) return Column(children: [body, actions]);
@@ -141,7 +143,7 @@ class _MobileLedgerSheetContentState extends State<MobileLedgerSheetContent> {
             key: ValueKey((
               widget.action != null,
               widget.onClose != null,
-              inline.closeLabel,
+              closeLabel,
             )),
             width: double.infinity,
             child: actions,
@@ -200,7 +202,7 @@ class _MobileLedgerSheetContentState extends State<MobileLedgerSheetContent> {
     variant: AppButtonVariant.ghost,
     onPressed: widget.onBack,
     child: Semantics(
-      label: 'Back',
+      label: context.l10n.commonBack,
       button: true,
       child: const ExcludeSemantics(
         child: AppIcon(AppIcons.chevronBackward, size: 20),
@@ -321,10 +323,10 @@ class MobileLedgerAction extends StatelessWidget {
 class LedgerInlinePresentation extends InheritedWidget {
   const LedgerInlinePresentation({
     required super.child,
-    this.closeLabel = 'Cancel shielding',
+    this.closeLabel,
     super.key,
   });
-  final String closeLabel;
+  final String? closeLabel;
   @override
   bool updateShouldNotify(LedgerInlinePresentation oldWidget) =>
       closeLabel != oldWidget.closeLabel;

@@ -2579,6 +2579,26 @@
       }
     }
   },
+  "keystoneAllowCamera": "Allow camera",
+  "@keystoneAllowCamera": {
+    "description": "Button that asks for camera permission again."
+  },
+  "keystoneBatchCannotSignDeposit": "This deposit uses inputs that Keystone batch signing cannot sign.",
+  "@keystoneBatchCannotSignDeposit": {
+    "description": "Error shown when a swap deposit has inputs Keystone batch signing does not support."
+  },
+  "keystoneBatchCannotSignTx": "This transaction uses inputs that Keystone batch signing cannot sign.",
+  "@keystoneBatchCannotSignTx": {
+    "description": "Error shown when a transaction has inputs Keystone batch signing does not support."
+  },
+  "keystoneBatchTooManyInputsDeposit": "This deposit uses too many inputs for Keystone batch signing. Try a smaller amount.",
+  "@keystoneBatchTooManyInputsDeposit": {
+    "description": "Error shown when a swap deposit needs more signatures than one Keystone batch can hold."
+  },
+  "keystoneBatchTooManyInputsTx": "This transaction uses too many inputs for Keystone batch signing. Try a smaller amount.",
+  "@keystoneBatchTooManyInputsTx": {
+    "description": "Error shown when a transaction needs more signatures than one Keystone batch can hold."
+  },
   "keystoneBirthdayInvalidHeight": "That doesn't look like a valid block height.",
   "@keystoneBirthdayInvalidHeight": {
     "description": "Inline error under the block height field when the typed number is not a usable block height."
@@ -2586,6 +2606,14 @@
   "keystoneBirthdaySubtitle": "It helps us import your wallet faster.",
   "@keystoneBirthdaySubtitle": {
     "description": "Subtitle under the wallet birthday heading explaining why the date is asked."
+  },
+  "keystoneCameraDefault": "Default",
+  "@keystoneCameraDefault": {
+    "description": "Detail tag in the camera picker for the default camera."
+  },
+  "keystoneCameraDeniedTitle": "You've denied the Camera access",
+  "@keystoneCameraDeniedTitle": {
+    "description": "Title when camera access was denied."
   },
   "keystoneCameraEnableBody": "A camera is required to connect Keystone.\nYou can revert this in settings anytime later.",
   "@keystoneCameraEnableBody": {
@@ -2595,13 +2623,63 @@
   "@keystoneCameraEnableTitle": {
     "description": "Title of the mobile Keystone scan card while camera permission is being requested."
   },
+  "keystoneCameraExternal": "External",
+  "@keystoneCameraExternal": {
+    "description": "Detail tag in the camera picker for an external camera."
+  },
+  "keystoneCameraFront": "Front",
+  "@keystoneCameraFront": {
+    "description": "Detail tag in the camera picker for a front camera."
+  },
+  "keystoneCameraGiftBody": "A camera is required to scan the gift card QR code.\nYou can revert this in settings anytime later.",
+  "@keystoneCameraGiftBody": {
+    "description": "Permission explanation on the gift card QR scanner; the two lines are separated by a line break."
+  },
+  "keystoneCameraLabel": "Camera",
+  "@keystoneCameraLabel": {
+    "description": "Label of the camera row on the Keystone scanner and the camera picker."
+  },
+  "keystoneCameraNameDefault": "{name} (Default)",
+  "@keystoneCameraNameDefault": {
+    "description": "Camera name followed by a marker that it is the default camera. {name} is the camera's own name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "keystoneCameraNormal": "Normal",
+  "@keystoneCameraNormal": {
+    "description": "Detail tag in the camera picker for a normal lens."
+  },
+  "keystoneCameraOffAllow": "Camera access is off. Allow it in Settings to scan Keystone signatures.",
+  "@keystoneCameraOffAllow": {
+    "description": "Shown on the mobile signature scanner when camera permission is denied."
+  },
   "keystoneCameraUnavailableBody": "Keystone import uses camera QR scanning only.\nConnect a camera and try again.",
   "@keystoneCameraUnavailableBody": {
     "description": "Two-line description under the camera unavailable title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short."
   },
+  "keystoneCameraWide": "Wide",
+  "@keystoneCameraWide": {
+    "description": "Detail tag in the camera picker for a wide-angle lens."
+  },
+  "keystoneCameraZoom": "Zoom",
+  "@keystoneCameraZoom": {
+    "description": "Detail tag in the camera picker for a zoom lens."
+  },
   "keystoneConfirmSelection": "Confirm selection",
   "@keystoneConfirmSelection": {
     "description": "Button that confirms the chosen Keystone account and continues the import."
+  },
+  "keystoneConfirmWithKeystone": "Confirm with Keystone",
+  "@keystoneConfirmWithKeystone": {
+    "description": "[security] Subtitle of the second step: the user confirms on the Keystone and scans its signature QR code."
+  },
+  "keystoneDefaultCamera": "Default camera",
+  "@keystoneDefaultCamera": {
+    "description": "Fallback name for the default camera."
   },
   "keystoneFirmwareBody": "Make sure your Keystone is on the latest Cypherpunk firmware. ",
   "@keystoneFirmwareBody": {
@@ -2615,13 +2693,41 @@
   "@keystoneFirmwareLinkLabel": {
     "description": "Visible text of the small inline button that opens the Keystone firmware download page; appears right after the firmware sentence."
   },
+  "keystoneFirmwareOpenPage": "Open Keystone firmware page",
+  "@keystoneFirmwareOpenPage": {
+    "description": "Screen-reader label of the keyst.one/firmware link."
+  },
   "keystoneFirmwareTitle": "Check Keystone firmware",
   "@keystoneFirmwareTitle": {
     "description": "Title of instruction step 1 on the Keystone how-to-connect screen. The step number is added by the app before this text."
   },
+  "keystoneFirmwareUpdatePrefix": "Update to the latest Keystone firmware at ",
+  "@keystoneFirmwareUpdatePrefix": {
+    "description": "Text before the keyst.one/firmware link in the scanning help. Keep the trailing space; the link follows directly."
+  },
   "keystoneImReadyNow": "I'm ready now",
   "@keystoneImReadyNow": {
     "description": "Primary button on the Keystone how-to-connect screen; continues to the QR scan step once the user has followed the instructions."
+  },
+  "keystoneLoadingCamera": "Loading camera...",
+  "@keystoneLoadingCamera": {
+    "description": "Label in the camera chip while cameras are listed."
+  },
+  "keystoneLoadingQrCode": "Loading QR code ...",
+  "@keystoneLoadingQrCode": {
+    "description": "Status while the transaction QR code is prepared."
+  },
+  "keystoneNextStep": "Next step",
+  "@keystoneNextStep": {
+    "description": "Button that moves from the transaction QR code to the camera scan."
+  },
+  "keystoneNoCameraFound": "No camera found",
+  "@keystoneNoCameraFound": {
+    "description": "Label in the camera chip when the device has no camera."
+  },
+  "keystoneNoCameraOpened": "No camera could be opened. Check that a camera is connected and not in use by another app.",
+  "@keystoneNoCameraOpened": {
+    "description": "Shown when no camera could be started."
   },
   "keystoneOnVizor": "On Vizor",
   "@keystoneOnVizor": {
@@ -2631,6 +2737,18 @@
   "@keystoneOnYourKeystone": {
     "description": "Heading of the group of steps the user performs on the Keystone device itself."
   },
+  "keystoneOpenSettings": "Open settings",
+  "@keystoneOpenSettings": {
+    "description": "Button on the Keystone camera scanner that opens the system settings for the camera permission."
+  },
+  "keystoneOpenSignedQr": "Open the signed transaction QR on Keystone, then scan again.",
+  "@keystoneOpenSignedQr": {
+    "description": "Hint when the scanned QR code is not the signed transaction."
+  },
+  "keystonePcztPrepareFailed": "Keystone signing could not be prepared.",
+  "@keystonePcztPrepareFailed": {
+    "description": "Error shown when the Keystone signing request could not be created."
+  },
   "keystonePrepareSubtitle": "Prepare your Keystone wallet",
   "@keystonePrepareSubtitle": {
     "description": "Subtitle under the Keystone connect, scan and select-account headings, asking the user to get their Keystone device ready."
@@ -2638,6 +2756,18 @@
   "keystonePrepareToConnectTitle": "Prepare to connect",
   "@keystonePrepareToConnectTitle": {
     "description": "Title of instruction step 2 on the Keystone how-to-connect screen. The step number is added by the app before this text."
+  },
+  "keystonePreparingQr": "Preparing QR",
+  "@keystonePreparingQr": {
+    "description": "Screen-reader label of the loading spinner while the signing QR code is prepared."
+  },
+  "keystoneReadingQr": "Reading QR...",
+  "@keystoneReadingQr": {
+    "description": "Status while a scanned Keystone QR code is decoded."
+  },
+  "keystoneReadingSignature": "Reading signature...",
+  "@keystoneReadingSignature": {
+    "description": "Status while the signature QR code from the Keystone is decoded."
   },
   "keystoneScanCameraRequired": "Keystone import uses camera QR scanning only. Connect a camera and try again.",
   "@keystoneScanCameraRequired": {
@@ -2647,9 +2777,21 @@
   "@keystoneScanCaption": {
     "description": "Caption under the camera view of the mobile Keystone QR scanner."
   },
+  "keystoneScanCaptionConfirm": "Scan the QR code on your Keystone to confirm",
+  "@keystoneScanCaptionConfirm": {
+    "description": "[security] Caption on the mobile signing scanner asking the user to scan the signed-transaction QR code on the Keystone."
+  },
   "keystoneScanDecodeFailed": "This QR code could not be decoded as a Keystone Zcash account.",
   "@keystoneScanDecodeFailed": {
     "description": "Error under the Keystone QR scanner when the scanned QR cannot be decoded as a Zcash account."
+  },
+  "keystoneScanHelpClose": "Close scan help",
+  "@keystoneScanHelpClose": {
+    "description": "Screen-reader label of the close button of the scanning help tooltip."
+  },
+  "keystoneScanIssuesTitle": "Scanning issues?",
+  "@keystoneScanIssuesTitle": {
+    "description": "Title of the tooltip with Keystone scanning help."
   },
   "keystoneScanNoAccounts": "No Zcash accounts were found on this Keystone QR.",
   "@keystoneScanNoAccounts": {
@@ -2669,13 +2811,45 @@
       }
     }
   },
+  "keystoneScanPromptOnKeystone": "on your Keystone,",
+  "@keystoneScanPromptOnKeystone": {
+    "description": "Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon."
+  },
+  "keystoneScanPromptTap": "Tap",
+  "@keystoneScanPromptTap": {
+    "description": "Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon."
+  },
+  "keystoneScanPromptThenScan": "then scan this QR code",
+  "@keystoneScanPromptThenScan": {
+    "description": "End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'."
+  },
   "keystoneScanReadingAccounts": "Reading accounts...",
   "@keystoneScanReadingAccounts": {
     "description": "Status text on the Keystone QR scanner while the scanned accounts are being decoded."
   },
+  "keystoneScanWithKeystone": "Scan with Keystone",
+  "@keystoneScanWithKeystone": {
+    "description": "Subtitle of the first step: the Keystone scans the QR code shown by Vizor."
+  },
+  "keystoneSelectCamera": "Select Camera",
+  "@keystoneSelectCamera": {
+    "description": "Title of the camera picker."
+  },
+  "keystoneShowTransactionQr": "Show transaction QR",
+  "@keystoneShowTransactionQr": {
+    "description": "Screen-reader label of the button that returns to the transaction QR code."
+  },
+  "keystoneSignatureQrNotDecoded": "This QR code could not be decoded as a Keystone signature.",
+  "@keystoneSignatureQrNotDecoded": {
+    "description": "Error when the scanned QR code is not a Keystone signature."
+  },
   "keystoneStepHowToConnect": "How to Connect",
   "@keystoneStepHowToConnect": {
     "description": "Sidebar step label and back-link text for the first Keystone onboarding step (how to connect the device). Title Case is intentional."
+  },
+  "keystoneStepOneOfTwo": "Step 1/2",
+  "@keystoneStepOneOfTwo": {
+    "description": "Step indicator in the mobile Keystone signing flow (first of two steps)."
   },
   "keystoneStepOpenSoftwareWallet": "Tap ••• (top right), then Connect software wallet.",
   "@keystoneStepOpenSoftwareWallet": {
@@ -2693,6 +2867,54 @@
   "@keystoneStepSelectVizor": {
     "description": "Device step: pick Vizor (or ZODL) from the software wallet list shown on the Keystone device. Vizor and ZODL are wallet names and stay in Latin script."
   },
+  "keystoneStepTwoOfTwo": "Step 2/2",
+  "@keystoneStepTwoOfTwo": {
+    "description": "Step indicator in the mobile Keystone signing flow (second of two steps)."
+  },
+  "keystoneSubmittingTransaction": "Submitting the transaction",
+  "@keystoneSubmittingTransaction": {
+    "description": "Label next to a spinner while a signed transaction is submitted."
+  },
+  "keystoneTipContinuityCamera": "On a Mac, you can use Continuity Camera to scan with your iPhone instead.",
+  "@keystoneTipContinuityCamera": {
+    "description": "Scanning tip on QR scanners. 'Continuity Camera' is an Apple feature name."
+  },
+  "keystoneTipGiftFullScreen": "Open the gift card QR code full screen on another device.",
+  "@keystoneTipGiftFullScreen": {
+    "description": "Scanning tip on the gift card QR scanner."
+  },
+  "keystoneTipGiftMoveFurther": "Move the QR code a few inches further from the camera so it can focus.",
+  "@keystoneTipGiftMoveFurther": {
+    "description": "Scanning tip on the gift card QR scanner."
+  },
+  "keystoneTipGlare": "Make sure the room is well-lit and the QR code isn't reflecting glare.",
+  "@keystoneTipGlare": {
+    "description": "Scanning tip on QR scanners."
+  },
+  "keystoneTipMoveKeystoneFurther": "Move your Keystone a few inches further from the camera so it can focus.",
+  "@keystoneTipMoveKeystoneFurther": {
+    "description": "Scanning tip on the Keystone QR scanner."
+  },
+  "keystoneTipTapFullScreen": "Tap the QR code on your Keystone to show it full screen. This is the easiest fix.",
+  "@keystoneTipTapFullScreen": {
+    "description": "Scanning tip on the Keystone QR scanner."
+  },
+  "keystoneTroubleScanning": "Trouble scanning?",
+  "@keystoneTroubleScanning": {
+    "description": "Title of the scanning tips popover."
+  },
+  "keystoneTryAgainWithKeystone": "Try again with Keystone",
+  "@keystoneTryAgainWithKeystone": {
+    "description": "Subtitle of the signing flow after a failure."
+  },
+  "keystoneWindowsCameraBody": "Turn on Camera access and Let desktop apps access your camera in Windows Settings.",
+  "@keystoneWindowsCameraBody": {
+    "description": "Instruction on Windows. 'Camera access' and 'Let desktop apps access your camera' are Windows Settings labels; use the localized Windows names."
+  },
+  "keystoneWindowsCameraTitle": "Enable Windows camera access",
+  "@keystoneWindowsCameraTitle": {
+    "description": "Title when camera access is denied on Windows."
+  },
   "languageSystemOption": "System ({language})",
   "@languageSystemOption": {
     "description": "Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.",
@@ -2704,6 +2926,10 @@
       }
     }
   },
+  "ledgerAccountIndexFieldLabel": "Ledger account index (0–100)",
+  "@ledgerAccountIndexFieldLabel": {
+    "description": "Label of the account index field in Ledger onboarding."
+  },
   "ledgerAccountIndexHint": "Keep 0 unless you used a different index for this Ledger account.",
   "@ledgerAccountIndexHint": {
     "description": "Helper text in the advanced options explaining the Ledger account index field."
@@ -2711,6 +2937,10 @@
   "ledgerAccountIndexLabel": "Account index (0–100)",
   "@ledgerAccountIndexLabel": {
     "description": "Label of the account index input in the mobile advanced options. Keep the range 0–100."
+  },
+  "ledgerAccountIndexOutOfRange": "Account index must be between 0 and 100.",
+  "@ledgerAccountIndexOutOfRange": {
+    "description": "Validation error under the Ledger account index field."
   },
   "ledgerAddAccountNote": "View your balance and activity in Vizor. Transactions still need approval on Ledger.",
   "@ledgerAddAccountNote": {
@@ -2723,6 +2953,34 @@
   "ledgerAdvancedOptions": "Advanced options",
   "@ledgerAdvancedOptions": {
     "description": "Label of the collapsible advanced options section on the Connect Ledger screen."
+  },
+  "ledgerAppSemanticsLabel": "{appName} app",
+  "@ledgerAppSemanticsLabel": {
+    "description": "Screen-reader label of the app icon in the Ledger prompt. {appName} is the device app name, normally Zcash.",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerAppUpdateRequiredTitle": "Ledger app update required",
+  "@ledgerAppUpdateRequiredTitle": {
+    "description": "Title shown when the Zcash app on the Ledger must be updated before signing."
+  },
+  "ledgerApproveShareViewingKey": "Approve sharing your viewing key with Vizor.",
+  "@ledgerApproveShareViewingKey": {
+    "description": "[security] Instruction to approve on the Ledger sharing the viewing key with Vizor."
+  },
+  "ledgerApproveShareViewingKeyForAccount": "Approve sharing the viewing key for Account #{number}.",
+  "@ledgerApproveShareViewingKeyForAccount": {
+    "description": "[security] Instruction to approve on the Ledger sharing the viewing key. {number} is the account number shown on the device.",
+    "placeholders": {
+      "number": {
+        "type": "String",
+        "example": "x"
+      }
+    }
   },
   "ledgerBalanceActivityNote": "See your balance and activity in Vizor.\nApprove transactions on Ledger.",
   "@ledgerBalanceActivityNote": {
@@ -2748,13 +3006,219 @@
   "@ledgerBluetoothConnection": {
     "description": "Subtitle identifying that the picker is for a Bluetooth connection."
   },
+  "ledgerBluetoothModelsList": "Nano X, Flex, Stax, and Nano Gen5",
+  "@ledgerBluetoothModelsList": {
+    "description": "List of Ledger models that support Bluetooth. Product model names stay in Latin script."
+  },
   "ledgerBluetoothPermissionRequired": "Bluetooth permission is required to find your Ledger. Allow it in Settings, then try again.",
   "@ledgerBluetoothPermissionRequired": {
     "description": "Error in the mobile device sheet when the Bluetooth permission was not granted."
   },
+  "ledgerBtAccessAllowed": "Permission is allowed. Try again when ready.",
+  "@ledgerBtAccessAllowed": {
+    "description": "Shown in the Bluetooth access checker when permission is granted."
+  },
+  "ledgerBtAccessBluetoothRequestable": "Choose Allow permission to connect to your Ledger. If no prompt appears, open Settings.",
+  "@ledgerBtAccessBluetoothRequestable": {
+    "description": "Shown before the Bluetooth permission is requested. 'Allow permission' is a button label."
+  },
+  "ledgerBtAccessBluetoothSettings": "Allow Bluetooth access for Vizor in your device settings.",
+  "@ledgerBtAccessBluetoothSettings": {
+    "description": "Shown when Bluetooth access is denied on mobile."
+  },
+  "ledgerBtAccessKindLocation": "Location",
+  "@ledgerBtAccessKindLocation": {
+    "description": "Permission name 'Location' inserted into the restricted-access sentence."
+  },
+  "ledgerBtAccessLocationRequestable": "This Android version needs location permission to find your Ledger. Choose Allow permission, or open Settings if no prompt appears.",
+  "@ledgerBtAccessLocationRequestable": {
+    "description": "Shown on Android before the location permission is requested. 'Allow permission' is a button label."
+  },
+  "ledgerBtAccessLocationSettings": "This Android version needs location permission to find your Ledger. Allow location access for Vizor in Settings.",
+  "@ledgerBtAccessLocationSettings": {
+    "description": "Shown on Android when location permission is denied and must be changed in Settings."
+  },
+  "ledgerBtAccessMacosSettings": "Open System Settings > Privacy & Security > Bluetooth and allow access for Vizor.",
+  "@ledgerBtAccessMacosSettings": {
+    "description": "Shown on macOS when Bluetooth access is denied. 'System Settings', 'Privacy & Security' and 'Bluetooth' are macOS menu names; use the localized macOS names."
+  },
+  "ledgerBtAccessRestricted": "{kind} access is restricted by your device settings or administrator.",
+  "@ledgerBtAccessRestricted": {
+    "description": "Shown in the access checker when the permission is restricted. {kind} is the permission name, Location or Bluetooth.",
+    "placeholders": {
+      "kind": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerBtAccessTurnOnBluetooth": "Turn on Bluetooth, then check access again.",
+  "@ledgerBtAccessTurnOnBluetooth": {
+    "description": "Shown in the Bluetooth access checker when Bluetooth is off."
+  },
+  "ledgerBtAccessTurnOnLocation": "Turn on location services, then check access again.",
+  "@ledgerBtAccessTurnOnLocation": {
+    "description": "Shown in the Bluetooth access checker when location services are off."
+  },
+  "ledgerBtCouldNotCheckAccess": "Could not check access. Open Settings manually, then check again.",
+  "@ledgerBtCouldNotCheckAccess": {
+    "description": "Error when checking Bluetooth access failed."
+  },
+  "ledgerBtCouldNotOpenSettingsAllow": "Could not open Settings. Open your device settings manually and allow access for Vizor.",
+  "@ledgerBtCouldNotOpenSettingsAllow": {
+    "description": "Error when the system settings could not be opened."
+  },
+  "ledgerBtCouldNotOpenSettingsRestricted": "Could not open Settings. Open your device settings manually to review access for Vizor.",
+  "@ledgerBtCouldNotOpenSettingsRestricted": {
+    "description": "Error when the system settings could not be opened while Bluetooth access is restricted."
+  },
+  "ledgerBtLabelAllowAccess": "Allow access",
+  "@ledgerBtLabelAllowAccess": {
+    "description": "Button label that asks the system to show the permission prompt."
+  },
+  "ledgerBtLabelCheckAgain": "Check again",
+  "@ledgerBtLabelCheckAgain": {
+    "description": "Button label to re-check Bluetooth access."
+  },
+  "ledgerBtLabelChecking": "Checking access",
+  "@ledgerBtLabelChecking": {
+    "description": "Button label while access is being checked."
+  },
+  "ledgerBtLabelOpenSettings": "Open settings",
+  "@ledgerBtLabelOpenSettings": {
+    "description": "Button label that opens the system settings."
+  },
+  "ledgerBtLabelReconnect": "Reconnect",
+  "@ledgerBtLabelReconnect": {
+    "description": "Button label to reconnect to the Ledger once access is granted."
+  },
+  "ledgerBtMsgBluetoothNeeded": "Vizor needs Bluetooth access to connect to your Ledger.",
+  "@ledgerBtMsgBluetoothNeeded": {
+    "description": "Message explaining why Bluetooth access is needed."
+  },
+  "ledgerBtMsgChecking": "Checking whether Vizor can connect to your Ledger.",
+  "@ledgerBtMsgChecking": {
+    "description": "Message while Vizor checks if it can connect to the Ledger."
+  },
+  "ledgerBtMsgLocationNeeded": "This Android version needs location access to find your Ledger.",
+  "@ledgerBtMsgLocationNeeded": {
+    "description": "Message explaining why Android asks for location access."
+  },
+  "ledgerBtMsgReady": "Turn on your Ledger and unlock it to continue.",
+  "@ledgerBtMsgReady": {
+    "description": "Message when Bluetooth access is fine; the user must turn on and unlock the Ledger."
+  },
+  "ledgerBtRestrictedGeneric": "Check Vizor’s Bluetooth access in Settings. Device restrictions or your administrator may prevent changes.",
+  "@ledgerBtRestrictedGeneric": {
+    "description": "Help when Bluetooth access is restricted."
+  },
+  "ledgerBtRestrictedLocation": "Check location access for Vizor in Settings. Device restrictions or your administrator may prevent changes.",
+  "@ledgerBtRestrictedLocation": {
+    "description": "Help on Android when location access is restricted."
+  },
+  "ledgerBtRestrictedMacos": "Check Privacy & Security > Bluetooth in System Settings. This restriction may need to be changed by your administrator.",
+  "@ledgerBtRestrictedMacos": {
+    "description": "Help on macOS when Bluetooth access is restricted. Use the localized macOS menu names."
+  },
+  "ledgerBtRestrictedNearby": "Check Nearby devices access for Vizor in Settings. Device restrictions or your administrator may prevent changes.",
+  "@ledgerBtRestrictedNearby": {
+    "description": "Help on Android when Nearby devices access is restricted."
+  },
+  "ledgerBtSheetAllowAddAccount": "Allow Bluetooth access for Vizor in your phone settings to add your account.",
+  "@ledgerBtSheetAllowAddAccount": {
+    "description": "Message in the mobile Bluetooth sheet when permission is denied during account import."
+  },
+  "ledgerBtSheetAllowContinue": "Allow Bluetooth access for Vizor in your phone settings to continue.",
+  "@ledgerBtSheetAllowContinue": {
+    "description": "Generic message in the mobile Bluetooth sheet when permission is denied."
+  },
+  "ledgerBtSheetAllowSigning": "Allow Bluetooth access for Vizor in your phone settings to continue signing.",
+  "@ledgerBtSheetAllowSigning": {
+    "description": "Message in the mobile Bluetooth sheet when permission is denied and signing was interrupted."
+  },
+  "ledgerBtSheetReadyAddAccount": "Bluetooth is available. Unlock your Ledger to add your account.",
+  "@ledgerBtSheetReadyAddAccount": {
+    "description": "Message in the mobile Bluetooth sheet during account import."
+  },
+  "ledgerBtSheetReadyContinue": "Bluetooth is available. Unlock your Ledger to continue.",
+  "@ledgerBtSheetReadyContinue": {
+    "description": "Generic message in the mobile Bluetooth sheet."
+  },
+  "ledgerBtSheetReadySigning": "Bluetooth is available. Unlock your Ledger to continue signing.",
+  "@ledgerBtSheetReadySigning": {
+    "description": "Message in the mobile Bluetooth sheet when signing was interrupted."
+  },
+  "ledgerBtSheetTurnOnAddAccount": "Turn on Bluetooth on your phone to add your account.",
+  "@ledgerBtSheetTurnOnAddAccount": {
+    "description": "Message in the mobile Bluetooth sheet when Bluetooth is off during account import."
+  },
+  "ledgerBtSheetTurnOnContinue": "Turn on Bluetooth on your phone to continue.",
+  "@ledgerBtSheetTurnOnContinue": {
+    "description": "Generic message in the mobile Bluetooth sheet when Bluetooth is off."
+  },
+  "ledgerBtSheetTurnOnSigning": "Turn on Bluetooth on your phone to continue signing.",
+  "@ledgerBtSheetTurnOnSigning": {
+    "description": "Message in the mobile Bluetooth sheet when Bluetooth is off and signing was interrupted."
+  },
+  "ledgerBtTitleAllowBluetooth": "Allow Bluetooth access",
+  "@ledgerBtTitleAllowBluetooth": {
+    "description": "Title asking the user to allow Bluetooth access."
+  },
+  "ledgerBtTitleAllowBluetoothSettings": "Allow Bluetooth in Settings",
+  "@ledgerBtTitleAllowBluetoothSettings": {
+    "description": "Title asking the user to allow Bluetooth in system Settings."
+  },
+  "ledgerBtTitleAllowLocation": "Allow location access",
+  "@ledgerBtTitleAllowLocation": {
+    "description": "Title asking the user to allow location access (Android)."
+  },
+  "ledgerBtTitleAllowLocationSettings": "Allow location in Settings",
+  "@ledgerBtTitleAllowLocationSettings": {
+    "description": "Title asking the user to allow location in system Settings."
+  },
+  "ledgerBtTitleChecking": "Checking Bluetooth access",
+  "@ledgerBtTitleChecking": {
+    "description": "Title while Vizor checks Bluetooth permission for the Ledger connection."
+  },
+  "ledgerBtTitleReady": "Ready to reconnect",
+  "@ledgerBtTitleReady": {
+    "description": "Title when Bluetooth access is fine and the user can reconnect the Ledger."
+  },
+  "ledgerBtTitleRestricted": "Access is restricted",
+  "@ledgerBtTitleRestricted": {
+    "description": "Title when Bluetooth or location access is restricted by the device or an administrator."
+  },
+  "ledgerBtTitleTurnOnBluetooth": "Turn on Bluetooth",
+  "@ledgerBtTitleTurnOnBluetooth": {
+    "description": "Title asking the user to turn on Bluetooth."
+  },
+  "ledgerBtTitleTurnOnLocation": "Turn on location services",
+  "@ledgerBtTitleTurnOnLocation": {
+    "description": "Title asking the user to turn on location services (needed on Android to find Bluetooth devices)."
+  },
+  "ledgerButtonCheckingAccount": "Checking account",
+  "@ledgerButtonCheckingAccount": {
+    "description": "Disabled button label while verifying the account."
+  },
+  "ledgerButtonConnecting": "Connecting",
+  "@ledgerButtonConnecting": {
+    "description": "Disabled button label while connecting."
+  },
+  "ledgerButtonSaving": "Saving",
+  "@ledgerButtonSaving": {
+    "description": "Disabled button label while saving."
+  },
+  "ledgerButtonSearching": "Searching",
+  "@ledgerButtonSearching": {
+    "description": "Disabled button label while searching."
+  },
   "ledgerCancelFailed": "Could not finish cancelling. Try again.",
   "@ledgerCancelFailed": {
     "description": "Error in the mobile Add Ledger account sheet when cancelling the Ledger request failed."
+  },
+  "ledgerCancelShielding": "Cancel shielding",
+  "@ledgerCancelShielding": {
+    "description": "Close button label in the Ledger sheet shown during shielding."
   },
   "ledgerCancellingRequest": "Cancelling request",
   "@ledgerCancellingRequest": {
@@ -2764,25 +3228,77 @@
   "@ledgerCancellingTheRequest": {
     "description": "Status text in the mobile sheet while the Ledger request is being cancelled."
   },
+  "ledgerCapabilityMainnetOnly": "Ledger is currently supported only for Zcash mainnet.",
+  "@ledgerCapabilityMainnetOnly": {
+    "description": "Shown when Ledger is not available on the selected network."
+  },
+  "ledgerCapabilityUnsupportedPlatform": "Ledger is supported on Vizor for macOS, Windows, Linux, iOS, and Android.",
+  "@ledgerCapabilityUnsupportedPlatform": {
+    "description": "Shown when Ledger is not available on this operating system."
+  },
+  "ledgerChangedKeepOne": "Your Ledger changed. Keep one Ledger connected and try again.",
+  "@ledgerChangedKeepOne": {
+    "description": "Message when a different Ledger or app was found than the one verified earlier."
+  },
   "ledgerCheckingBluetoothAccess": "Checking Bluetooth access…",
   "@ledgerCheckingBluetoothAccess": {
     "description": "Status text while Vizor checks the Bluetooth permission on desktop."
+  },
+  "ledgerCheckingUsb": "Checking USB connection…",
+  "@ledgerCheckingUsb": {
+    "description": "Status while Vizor checks the USB connection."
   },
   "ledgerChooseAnother": "Choose another Ledger",
   "@ledgerChooseAnother": {
     "description": "Back-link text in the desktop dialog that returns to the device picker."
   },
+  "ledgerChooseConnection": "Choose connection",
+  "@ledgerChooseConnection": {
+    "description": "Back button label in Ledger dialogs that returns to the connection choice."
+  },
+  "ledgerChooseDevice": "Choose a device to continue.",
+  "@ledgerChooseDevice": {
+    "description": "Message above the list of found Ledger devices."
+  },
+  "ledgerChooseLedgerForAccount": "Choose the Ledger you want to use for this account.",
+  "@ledgerChooseLedgerForAccount": {
+    "description": "Message above the list of found Ledger devices."
+  },
   "ledgerCleanupFailed": "Could not finish cleanup. Try again.",
   "@ledgerCleanupFailed": {
     "description": "Error in the desktop Bluetooth dialog when closing the Ledger session failed."
+  },
+  "ledgerComeBackFindLedger": "Keep your Ledger unlocked, then select Find Ledger below.",
+  "@ledgerComeBackFindLedger": {
+    "description": "Body of recovery step 2 in the desktop dialog. 'Find Ledger' is the button label below."
+  },
+  "ledgerComeBackFindMyLedger": "Keep your Ledger unlocked, then select “Find my Ledger” below.",
+  "@ledgerComeBackFindMyLedger": {
+    "description": "Body of recovery step 2. 'Find my Ledger' is the button label below."
+  },
+  "ledgerComeBackReconnect": "Come back and reconnect",
+  "@ledgerComeBackReconnect": {
+    "description": "Title of recovery step 2."
+  },
+  "ledgerCompletePairingOpenZcash": "Complete pairing if prompted, then open the Zcash app and approve sharing the viewing key.",
+  "@ledgerCompletePairingOpenZcash": {
+    "description": "[security] Message while verifying a new Ledger: the user approves sharing the viewing key on the device."
   },
   "ledgerConfirmOpeningZcash": "Confirm opening Zcash on Ledger.",
   "@ledgerConfirmOpeningZcash": {
     "description": "Message asking the user to confirm on the Ledger device that the Zcash app may open. 'Zcash' is the app name on the device."
   },
+  "ledgerConnectForAccount": "Connect the Ledger for this account.",
+  "@ledgerConnectForAccount": {
+    "description": "Instruction to choose how to connect the Ledger for this account."
+  },
   "ledgerConnectSubtitle": "Prepare your Ledger wallet.",
   "@ledgerConnectSubtitle": {
     "description": "Subtitle under the Connect Ledger heading, asking the user to get their Ledger ready."
+  },
+  "ledgerConnectTitle": "Connect Ledger",
+  "@ledgerConnectTitle": {
+    "description": "Title of the Ledger connection dialog."
   },
   "ledgerConnectUsbCable": "Connect with a USB cable.",
   "@ledgerConnectUsbCable": {
@@ -2802,9 +3318,21 @@
   "@ledgerConnectionHelp": {
     "description": "Button in the mobile device sheet that opens help for connecting a Ledger."
   },
+  "ledgerContinueSigning": "Continue signing",
+  "@ledgerContinueSigning": {
+    "description": "Button label to continue signing after the Ledger is connected."
+  },
   "ledgerCouldNotConnect": "Could not connect Ledger",
   "@ledgerCouldNotConnect": {
     "description": "Title of the desktop dialog after connecting to the Ledger failed."
+  },
+  "ledgerCouldNotStopSearchTryAgain": "Could not stop the search. Try again.",
+  "@ledgerCouldNotStopSearchTryAgain": {
+    "description": "Error in the desktop Ledger recovery dialog when stopping the search failed."
+  },
+  "ledgerDifferentFromSaved": "Different from saved connection",
+  "@ledgerDifferentFromSaved": {
+    "description": "Hint under a found Ledger that differs from the saved one."
   },
   "ledgerDiscoveryErrorFallback": "Try again.",
   "@ledgerDiscoveryErrorFallback": {
@@ -2868,6 +3396,200 @@
   "@ledgerErrorViewingKeyRejected": {
     "description": "[security] Error under the desktop Connect Ledger form after the user rejected the viewing key request on the Ledger device."
   },
+  "ledgerFailureMsgAppUpdateRequired": "Update your Ledger and its Zcash app to {version} or newer in Ledger Wallet.",
+  "@ledgerFailureMsgAppUpdateRequired": {
+    "description": "Shown when the Ledger firmware and Zcash app are too old for this transaction. {version} is a version number such as 3.10.0. 'Ledger Wallet' is a product name.",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerFailureMsgBusy": "Your Ledger is busy. Try again in a moment.",
+  "@ledgerFailureMsgBusy": {
+    "description": "Message when the Ledger is busy with another request."
+  },
+  "ledgerFailureMsgCancelledTryAgain": "Request cancelled. Try again when ready.",
+  "@ledgerFailureMsgCancelledTryAgain": {
+    "description": "Message after a Ledger request was cancelled."
+  },
+  "ledgerFailureMsgCheckOpenZcash": "Check your Ledger and open the Zcash app, then try again.",
+  "@ledgerFailureMsgCheckOpenZcash": {
+    "description": "Generic message asking the user to check the Ledger and open the Zcash app."
+  },
+  "ledgerFailureMsgDeclined": "Declined on your Ledger. Try again when ready.",
+  "@ledgerFailureMsgDeclined": {
+    "description": "Message under a Ledger failure card after the user declined the request on the device."
+  },
+  "ledgerFailureMsgGiftCardRejected": "Your Ledger couldn’t accept this request. Create a new gift card. Nothing was sent.",
+  "@ledgerFailureMsgGiftCardRejected": {
+    "description": "Message when the Ledger could not accept a gift card request; nothing was sent."
+  },
+  "ledgerFailureMsgGiftCardTooLarge": "Too large for your Ledger. Create a gift card with a smaller amount.",
+  "@ledgerFailureMsgGiftCardTooLarge": {
+    "description": "Message when a gift card is too large for the Ledger to sign."
+  },
+  "ledgerFailureMsgInstallZcash": "Install the Zcash app with Ledger Wallet.",
+  "@ledgerFailureMsgInstallZcash": {
+    "description": "Message asking the user to install the Zcash app using the Ledger Wallet desktop app. 'Ledger Wallet' is a product name."
+  },
+  "ledgerFailureMsgMemoHashUnsupported": "Update the Ledger Zcash app to sign non-English memos",
+  "@ledgerFailureMsgMemoHashUnsupported": {
+    "description": "Shown when the Zcash app on the Ledger is too old to sign a memo with non-English characters."
+  },
+  "ledgerFailureMsgMigrationTooLarge": "This migration step is too large for your Ledger to sign. Vizor can’t split it yet.",
+  "@ledgerFailureMsgMigrationTooLarge": {
+    "description": "Message when a migration step is too large for the Ledger to sign."
+  },
+  "ledgerFailureMsgOpenZcash": "Open the Zcash app on your Ledger.",
+  "@ledgerFailureMsgOpenZcash": {
+    "description": "Message asking the user to open the Zcash app on the Ledger. 'Zcash' is the app name shown on the device."
+  },
+  "ledgerFailureMsgOrchardChange": "Ledger can't sign a transaction that keeps change in Orchard. Migrate your Orchard balance to Ironwood first.",
+  "@ledgerFailureMsgOrchardChange": {
+    "description": "Shown when a transaction would keep change in the Orchard pool, which the Ledger cannot sign. 'Orchard' and 'Ironwood' are Zcash pool names."
+  },
+  "ledgerFailureMsgPaymentTooLarge": "Start a new payment. Don’t send a smaller amount to this address.",
+  "@ledgerFailureMsgPaymentTooLarge": {
+    "description": "Message when a payment is too large for the Ledger to sign."
+  },
+  "ledgerFailureMsgReconnectUnlock": "Reconnect and unlock your Ledger.",
+  "@ledgerFailureMsgReconnectUnlock": {
+    "description": "Message asking the user to reconnect and unlock the Ledger."
+  },
+  "ledgerFailureMsgRejectedNewRequest": "Your Ledger couldn’t accept this request. Create a new one. Nothing was sent.",
+  "@ledgerFailureMsgRejectedNewRequest": {
+    "description": "Message when the Ledger could not accept a request Vizor built; nothing was broadcast."
+  },
+  "ledgerFailureMsgReopenZcash": "Close and reopen the Zcash app.",
+  "@ledgerFailureMsgReopenZcash": {
+    "description": "Message asking the user to close and reopen the Zcash app on the Ledger."
+  },
+  "ledgerFailureMsgSaplingRecipient": "Your Ledger can’t send to a Sapling address. Create a new request.",
+  "@ledgerFailureMsgSaplingRecipient": {
+    "description": "Message when a Ledger cannot send to a Sapling address. 'Sapling' is a Zcash pool name."
+  },
+  "ledgerFailureMsgSetPin": "Set up a PIN on your Ledger, then try again.",
+  "@ledgerFailureMsgSetPin": {
+    "description": "[security] Message asking the user to set a PIN on the Ledger device."
+  },
+  "ledgerFailureMsgShieldTooLarge": "Too many inputs for your Ledger. Try again. Nothing was shielded.",
+  "@ledgerFailureMsgShieldTooLarge": {
+    "description": "Message when shielding has too many inputs for the Ledger."
+  },
+  "ledgerFailureMsgSwapTooLarge": "Start a new swap with a smaller amount. This one is discarded.",
+  "@ledgerFailureMsgSwapTooLarge": {
+    "description": "Message when a swap is too large for the Ledger to sign; the swap is discarded."
+  },
+  "ledgerFailureMsgTooManyInputs": "Too many inputs for your Ledger. Try a smaller amount.",
+  "@ledgerFailureMsgTooManyInputs": {
+    "description": "Message when a send has more inputs than the Ledger can sign."
+  },
+  "ledgerFailureMsgUnexpected": "Unexpected Ledger error. Reopen the Zcash app and try again.",
+  "@ledgerFailureMsgUnexpected": {
+    "description": "Message for an unexpected Ledger device error."
+  },
+  "ledgerFailureMsgUnexpectedWithCode": "Unexpected Ledger error{code}. Reopen the Zcash app and try again.",
+  "@ledgerFailureMsgUnexpectedWithCode": {
+    "description": "Message for an unexpected Ledger device error. {code} is empty or a status code in parentheses with a leading space, such as ' (0x6e00)'.",
+    "placeholders": {
+      "code": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerFailureMsgUnlock": "Unlock your Ledger, then try again.",
+  "@ledgerFailureMsgUnlock": {
+    "description": "Message asking the user to unlock the Ledger device."
+  },
+  "ledgerFailureMsgUnsupportedTxType": "Your Ledger can’t sign this transaction type. Create a new request.",
+  "@ledgerFailureMsgUnsupportedTxType": {
+    "description": "Message when the Ledger cannot sign this kind of transaction."
+  },
+  "ledgerFailureMsgUpdateZcash": "Update the Zcash app to {version} or newer.",
+  "@ledgerFailureMsgUpdateZcash": {
+    "description": "Message asking the user to update the Zcash app on the Ledger. {version} is a version number such as 3.9.3.",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerFailureMsgViewingKeyRejected": "Your Ledger couldn’t accept this viewing-key request. Check the account number.",
+  "@ledgerFailureMsgViewingKeyRejected": {
+    "description": "[security] Message when the Ledger could not accept a viewing-key request."
+  },
+  "ledgerFailureMsgVoteRejected": "Your Ledger couldn’t accept this vote request. Your vote was not signed.",
+  "@ledgerFailureMsgVoteRejected": {
+    "description": "Message when the Ledger could not accept a vote request."
+  },
+  "ledgerFailureMsgVoteTooLarge": "This vote is too large for your Ledger to sign.",
+  "@ledgerFailureMsgVoteTooLarge": {
+    "description": "Message when a vote is too large for the Ledger to sign."
+  },
+  "ledgerFailureMsgWrongLedger": "Connect the Ledger that holds this account.",
+  "@ledgerFailureMsgWrongLedger": {
+    "description": "[security] Message when the connected Ledger signed with a different key than this account's, asking for the right device."
+  },
+  "ledgerFailureTitleBusy": "Ledger is busy",
+  "@ledgerFailureTitleBusy": {
+    "description": "Title of a Ledger failure card when the device is busy with another request."
+  },
+  "ledgerFailureTitleCancelled": "Request cancelled",
+  "@ledgerFailureTitleCancelled": {
+    "description": "Title of a Ledger failure card when the request was cancelled."
+  },
+  "ledgerFailureTitleError": "Ledger error",
+  "@ledgerFailureTitleError": {
+    "description": "Title of a Ledger failure card for an unexpected device error."
+  },
+  "ledgerFailureTitleFailed": "Request failed",
+  "@ledgerFailureTitleFailed": {
+    "description": "Generic title of a Ledger failure card."
+  },
+  "ledgerFailureTitleLocked": "Ledger locked",
+  "@ledgerFailureTitleLocked": {
+    "description": "Title of a Ledger failure card when the device is locked."
+  },
+  "ledgerFailureTitleNotReachable": "Ledger not reachable",
+  "@ledgerFailureTitleNotReachable": {
+    "description": "Title of a Ledger failure card when the device cannot be reached."
+  },
+  "ledgerFailureTitleOpenZcash": "Open the Zcash app",
+  "@ledgerFailureTitleOpenZcash": {
+    "description": "Title of a Ledger failure card asking the user to open the Zcash app on the device."
+  },
+  "ledgerFailureTitlePinRequired": "PIN required",
+  "@ledgerFailureTitlePinRequired": {
+    "description": "Title of a Ledger failure card when no PIN is set on the device."
+  },
+  "ledgerFailureTitleRejected": "Request not accepted",
+  "@ledgerFailureTitleRejected": {
+    "description": "Title of a Ledger failure card when the Zcash app refused a request Vizor built."
+  },
+  "ledgerFailureTitleReopenZcash": "Reopen the Zcash app",
+  "@ledgerFailureTitleReopenZcash": {
+    "description": "Title of a Ledger failure card when the Zcash app is in an unexpected state."
+  },
+  "ledgerFailureTitleTooLarge": "Request too large",
+  "@ledgerFailureTitleTooLarge": {
+    "description": "Title of a Ledger failure card when the request exceeds what the device can sign."
+  },
+  "ledgerFailureTitleUpdateZcash": "Update the Zcash app",
+  "@ledgerFailureTitleUpdateZcash": {
+    "description": "Title of a Ledger failure card when the Zcash app on the device is too old."
+  },
+  "ledgerFailureTitleWrongLedger": "Wrong Ledger",
+  "@ledgerFailureTitleWrongLedger": {
+    "description": "Title of a Ledger failure card when the connected device does not hold the account."
+  },
+  "ledgerFailureTitleZcashMissing": "Zcash app missing",
+  "@ledgerFailureTitleZcashMissing": {
+    "description": "Title of a Ledger failure card when the Zcash app is not installed on the device."
+  },
   "ledgerFind": "Find Ledger",
   "@ledgerFind": {
     "description": "Title of the desktop Bluetooth device picker and label of the button that restarts the Bluetooth search."
@@ -2875,6 +3597,162 @@
   "ledgerFindMyLedger": "Find my Ledger",
   "@ledgerFindMyLedger": {
     "description": "Button that goes back to the device search when the old Bluetooth pairing must be replaced."
+  },
+  "ledgerFollowPromptsOnLedger": "Follow the prompts on Ledger.",
+  "@ledgerFollowPromptsOnLedger": {
+    "description": "Status while the user must act on the Ledger."
+  },
+  "ledgerHelpChecksCloseOtherApps": "Close other wallet apps and disconnect Ledger from other phones or computers.",
+  "@ledgerHelpChecksCloseOtherApps": {
+    "description": "Third check in the Ledger connection help."
+  },
+  "ledgerHelpChecksHomeScreen": "Leave Ledger on its home screen. Open the Zcash app when Vizor asks.",
+  "@ledgerHelpChecksHomeScreen": {
+    "description": "Second check in the Ledger connection help."
+  },
+  "ledgerHelpChecksUnlockClose": "Unlock Ledger, turn on Bluetooth, and keep it close to your phone.",
+  "@ledgerHelpChecksUnlockClose": {
+    "description": "First check in the Ledger connection help."
+  },
+  "ledgerHelpChooseModel": "Choose your model",
+  "@ledgerHelpChooseModel": {
+    "description": "Placeholder of the Ledger model dropdown."
+  },
+  "ledgerHelpFindInPhoneBluetooth": "Find your Ledger in your phone’s Bluetooth settings.",
+  "@ledgerHelpFindInPhoneBluetooth": {
+    "description": "Intro of step 2 in the Ledger pairing reset help."
+  },
+  "ledgerHelpForgetAndroid": "Bluetooth settings > the settings button next to your Ledger > Forget or Unpair",
+  "@ledgerHelpForgetAndroid": {
+    "description": "Android menu path to forget the Ledger."
+  },
+  "ledgerHelpForgetIos": "Settings > Bluetooth > the info button next to your Ledger > Forget This Device",
+  "@ledgerHelpForgetIos": {
+    "description": "iOS menu path to forget the Ledger. Use the localized iOS names."
+  },
+  "ledgerHelpKeepUnlockedHome": "Keep Ledger unlocked with Bluetooth on, and leave it on its home screen.",
+  "@ledgerHelpKeepUnlockedHome": {
+    "description": "First instruction of the last step in the Ledger help."
+  },
+  "ledgerHelpModelLabel": "Ledger model",
+  "@ledgerHelpModelLabel": {
+    "description": "Label above the Ledger model dropdown."
+  },
+  "ledgerHelpNanoXConfirm": "Confirm on Ledger and enter your PIN on the device.",
+  "@ledgerHelpNanoXConfirm": {
+    "description": "[security] Instruction to confirm on the Ledger and enter the PIN on the device."
+  },
+  "ledgerHelpNanoXControls": "Unlock Ledger. Hold both buttons to open its controls, then choose:",
+  "@ledgerHelpNanoXControls": {
+    "description": "Instruction for Ledger Nano X; the menu path follows on the next line."
+  },
+  "ledgerHelpNanoXMenuPath": "Settings > Security > Reset pairings",
+  "@ledgerHelpNanoXMenuPath": {
+    "description": "Menu path shown on the Ledger Nano X. Keep it in English, exactly as the device shows it."
+  },
+  "ledgerHelpNanoXName": "On your Nano X, hold both buttons for 2 seconds, then find Device Name.",
+  "@ledgerHelpNanoXName": {
+    "description": "Help text explaining how to find the Ledger Nano X name. 'Device Name' is the menu item shown on the device and stays in English."
+  },
+  "ledgerHelpNextPhoneSettings": "Next: phone settings",
+  "@ledgerHelpNextPhoneSettings": {
+    "description": "Button label that moves to the phone step of the Ledger help."
+  },
+  "ledgerHelpNextSearchInVizor": "Next: search in Vizor",
+  "@ledgerHelpNextSearchInVizor": {
+    "description": "Button label that moves to the last step of the Ledger help."
+  },
+  "ledgerHelpNextSearchTitle": "Find your Ledger",
+  "@ledgerHelpNextSearchTitle": {
+    "description": "Title of the first and last step of the Ledger help."
+  },
+  "ledgerHelpNotResetDevice": "Use the Bluetooth pairing option, not Reset device. Your wallet and accounts stay unchanged.",
+  "@ledgerHelpNotResetDevice": {
+    "description": "[security] Warning not to choose Reset device on the Ledger. 'Reset device' is the menu item shown on the device and stays in English."
+  },
+  "ledgerHelpOpenBluetoothSettings": "Open Bluetooth settings",
+  "@ledgerHelpOpenBluetoothSettings": {
+    "description": "Button label that opens the phone's Bluetooth settings."
+  },
+  "ledgerHelpOtherModelName": "On your {model}, check Settings > Name.",
+  "@ledgerHelpOtherModelName": {
+    "description": "Help text explaining how to find the Ledger name. {model} is a product model such as Flex or Stax and stays in Latin script. 'Settings > Name' is the menu path shown on the device and stays in English.",
+    "placeholders": {
+      "model": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerHelpRemovePairingOnLedger": "Remove the saved pairing on Ledger, then remove it on your phone.",
+  "@ledgerHelpRemovePairingOnLedger": {
+    "description": "Intro of step 1 in the Ledger pairing reset help."
+  },
+  "ledgerHelpRestartBothGuide": "If it still does not appear, restart both devices and check Ledger’s official Bluetooth troubleshooting guide.",
+  "@ledgerHelpRestartBothGuide": {
+    "description": "Last-resort advice in the Ledger help."
+  },
+  "ledgerHelpSearchSelectOpenZcash": "Search in Vizor and select your Ledger. Open the Zcash app when Vizor asks.",
+  "@ledgerHelpSearchSelectOpenZcash": {
+    "description": "Second instruction of the last step in the Ledger help."
+  },
+  "ledgerHelpSelectModelHint": "Select your model to see its pairing removal instructions.",
+  "@ledgerHelpSelectModelHint": {
+    "description": "Hint shown until a Ledger model is selected."
+  },
+  "ledgerHelpShortIdName": "If you haven’t named your Ledger, it may appear as a short ID, such as 01AB. Otherwise, look for the name you set.",
+  "@ledgerHelpShortIdName": {
+    "description": "Hint about how the Ledger appears in the phone's Bluetooth list."
+  },
+  "ledgerHelpSkipIfNotListed": "If Ledger is not listed, skip this step and continue.",
+  "@ledgerHelpSkipIfNotListed": {
+    "description": "Hint to skip the step when the Ledger is not in the phone's Bluetooth list."
+  },
+  "ledgerHelpStepBackInVizor": "Step {step} of 3 · Back in Vizor",
+  "@ledgerHelpStepBackInVizor": {
+    "description": "Step indicator in the Ledger connection help; this step is done back in the app.",
+    "placeholders": {
+      "step": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerHelpStepOnLedger": "Step {step} of 3 · On your Ledger",
+  "@ledgerHelpStepOnLedger": {
+    "description": "Step indicator in the Ledger connection help; this step is done on the device.",
+    "placeholders": {
+      "step": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerHelpStepOnPhone": "Step {step} of 3 · On your phone",
+  "@ledgerHelpStepOnPhone": {
+    "description": "Step indicator in the Ledger connection help; this step is done on the phone.",
+    "placeholders": {
+      "step": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerHelpStillNotShowing": "Still not showing?",
+  "@ledgerHelpStillNotShowing": {
+    "description": "Heading above extra troubleshooting advice."
+  },
+  "ledgerHelpTouchControls": "Unlock Ledger. From its home screen, tap the settings icon, then choose:",
+  "@ledgerHelpTouchControls": {
+    "description": "Instruction for touchscreen Ledger models; the menu path follows on the next line."
+  },
+  "ledgerHelpTouchMenuPath": "Bluetooth > Remove pairing",
+  "@ledgerHelpTouchMenuPath": {
+    "description": "Menu path shown on touchscreen Ledger models. Keep it in English, exactly as the device shows it."
+  },
+  "ledgerHelpTryRestart": "Try restarting Ledger. If it stays missing, removing the saved Bluetooth pairing on both devices may help.",
+  "@ledgerHelpTryRestart": {
+    "description": "Troubleshooting advice when the Ledger is not found."
   },
   "ledgerKeepAppOpen": "Keep {appName} open.",
   "@ledgerKeepAppOpen": {
@@ -2894,9 +3772,17 @@
   "@ledgerKeepConnectedWhileChecking": {
     "description": "Status text in the mobile sheet while Vizor checks whether the Zcash app is open on the Ledger."
   },
+  "ledgerKeepItOpen": "Keep it open on your Ledger.",
+  "@ledgerKeepItOpen": {
+    "description": "Hint under the open-the-app instruction."
+  },
   "ledgerKeepNearbyUnlocked": "Keep your Ledger nearby and unlocked, with Bluetooth turned on.",
   "@ledgerKeepNearbyUnlocked": {
     "description": "Message under the first connection step in the desktop dialog."
+  },
+  "ledgerKeepNearbyUnlockedShort": "Keep your Ledger nearby and unlocked.",
+  "@ledgerKeepNearbyUnlockedShort": {
+    "description": "Message while searching for the Ledger."
   },
   "ledgerKeepZcashOpen": "Keep Zcash open.",
   "@ledgerKeepZcashOpen": {
@@ -2905,6 +3791,50 @@
   "ledgerMacosBluetoothPrompt": "macOS may ask for Bluetooth access. If prompted, allow access for Vizor.",
   "@ledgerMacosBluetoothPrompt": {
     "description": "Hint shown while checking Bluetooth access on macOS."
+  },
+  "ledgerMismatchChooseHolder": "Choose the Ledger that holds this account. Your saved connection has not changed.",
+  "@ledgerMismatchChooseHolder": {
+    "description": "[security] Message when the connected Ledger is not the one that holds this account."
+  },
+  "ledgerMismatchConnectHolder": "Connect the Ledger that holds this account. Your saved connection hasn’t changed.",
+  "@ledgerMismatchConnectHolder": {
+    "description": "[security] Message when the connected Ledger is not the one that holds this account."
+  },
+  "ledgerMobileAnotherRequestActive": "Another Ledger request is still active. Complete or reject it on your Ledger, then try again.",
+  "@ledgerMobileAnotherRequestActive": {
+    "description": "Guidance when the device still shows a previous request."
+  },
+  "ledgerMobileCheckBluetoothBelow": "Check Bluetooth access below, then try connecting to your Ledger again.",
+  "@ledgerMobileCheckBluetoothBelow": {
+    "description": "Guidance when Bluetooth permission was denied; a Bluetooth access checker is shown below."
+  },
+  "ledgerMobileConnectionLost": "The Bluetooth connection to your Ledger was lost or could not be established. Turn on and unlock your Ledger, keep it nearby, then try again.",
+  "@ledgerMobileConnectionLost": {
+    "description": "Guidance when the Bluetooth connection failed or dropped."
+  },
+  "ledgerMobilePairingInvalid": "Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.",
+  "@ledgerMobilePairingInvalid": {
+    "description": "Guidance when the stored Bluetooth pairing with the Ledger is stale and must be removed in system settings."
+  },
+  "ledgerMobilePairingNotCompleted": "Bluetooth pairing was not completed. Reconnect your Ledger and approve the pairing request, then try again.",
+  "@ledgerMobilePairingNotCompleted": {
+    "description": "Guidance when the user did not complete the Bluetooth pairing prompt."
+  },
+  "ledgerMobileRequestCancelled": "The Ledger request was cancelled. Try again when ready.",
+  "@ledgerMobileRequestCancelled": {
+    "description": "Guidance when the Ledger request was cancelled."
+  },
+  "ledgerMobileRequestRejected": "The request was rejected on your Ledger. Try again when ready.",
+  "@ledgerMobileRequestRejected": {
+    "description": "Guidance when the user rejected the request on the device."
+  },
+  "ledgerMobileTurnOnBluetooth": "Turn on Bluetooth, then try again.",
+  "@ledgerMobileTurnOnBluetooth": {
+    "description": "Guidance when Bluetooth is turned off."
+  },
+  "ledgerMobileTurnOnLocation": "Turn on location services to find your Ledger on this Android version, then try again.",
+  "@ledgerMobileTurnOnLocation": {
+    "description": "Guidance on Android when location services are off, which this Android version needs to find Bluetooth devices."
   },
   "ledgerNoDevicesFound": "No Ledger devices found",
   "@ledgerNoDevicesFound": {
@@ -2922,17 +3852,141 @@
   "@ledgerOnYourLedger": {
     "description": "Heading of the list of steps the user performs on the Ledger device."
   },
+  "ledgerOpenAppInstruction": "Open the {appName} app",
+  "@ledgerOpenAppInstruction": {
+    "description": "Instruction to open an app on the Ledger. {appName} is the device app name, normally Zcash, and stays in Latin script.",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerOpenAppOnLedger": "Open the {appName} app on your Ledger.",
+  "@ledgerOpenAppOnLedger": {
+    "description": "Instruction to open an app on the Ledger. {appName} is the device app name, normally Zcash.",
+    "placeholders": {
+      "appName": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
   "ledgerOpenBluetoothSettingsManually": "Open Bluetooth settings manually to remove the old pairing.",
   "@ledgerOpenBluetoothSettingsManually": {
     "description": "Error in the mobile connection help when the Bluetooth settings could not be opened automatically."
+  },
+  "ledgerOpenSettings": "Open settings",
+  "@ledgerOpenSettings": {
+    "description": "Button label that opens the system Bluetooth settings."
   },
   "ledgerOpenZcashThenTryAgain": "Open the Zcash app, then try again.",
   "@ledgerOpenZcashThenTryAgain": {
     "description": "Instruction inserted into a USB error message: the user must open the Zcash app on the Ledger and retry."
   },
+  "ledgerOpeningConnectionHelp": "Opening connection help…",
+  "@ledgerOpeningConnectionHelp": {
+    "description": "Status while the mobile Ledger connection help is prepared."
+  },
+  "ledgerPairingNoLongerRecognized": "Your Ledger no longer recognizes this Bluetooth pairing.",
+  "@ledgerPairingNoLongerRecognized": {
+    "description": "Message when the Ledger forgot the stored Bluetooth pairing."
+  },
+  "ledgerPairingNoLongerRecognizedRemove": "Your Ledger no longer recognizes this Bluetooth pairing. Remove the old pairing, then reconnect.",
+  "@ledgerPairingNoLongerRecognizedRemove": {
+    "description": "Message when the Ledger forgot the stored Bluetooth pairing and the old pairing must be removed."
+  },
+  "ledgerProcedureStep": "Step {step} of {total}",
+  "@ledgerProcedureStep": {
+    "description": "Screen-reader label of a step in the Ledger procedure list.",
+    "placeholders": {
+      "step": {
+        "type": "String",
+        "example": "x"
+      },
+      "total": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerProcedureStepComplete": "Step {step} of {total}, complete",
+  "@ledgerProcedureStepComplete": {
+    "description": "Screen-reader label of a finished step in the Ledger procedure list.",
+    "placeholders": {
+      "step": {
+        "type": "String",
+        "example": "x"
+      },
+      "total": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerReadinessCouldNotPrepare": "Vizor could not prepare the Ledger Zcash app. Try again.",
+  "@ledgerReadinessCouldNotPrepare": {
+    "description": "Fallback message when preparing the Zcash app on the Ledger failed."
+  },
+  "ledgerReadinessOperationCancelled": "Ledger operation was cancelled.",
+  "@ledgerReadinessOperationCancelled": {
+    "description": "Message when a Ledger operation was cancelled."
+  },
+  "ledgerReadinessReconnectUnlockTryAgain": "Reconnect and unlock your Ledger, then try again.",
+  "@ledgerReadinessReconnectUnlockTryAgain": {
+    "description": "Message asking the user to reconnect and unlock the Ledger."
+  },
+  "ledgerReadinessUsbPermission": "Connect and unlock your Ledger over USB. If it is connected, install the Ledger udev rules on Linux, then unplug and reconnect it.",
+  "@ledgerReadinessUsbPermission": {
+    "description": "Message when Vizor has no USB permission to reach the Ledger."
+  },
+  "ledgerReadyContinueSigning": "Your Ledger is ready. Continue signing when you’re ready.",
+  "@ledgerReadyContinueSigning": {
+    "description": "Message when the Ledger is connected and signing can continue."
+  },
+  "ledgerReadyReviewOnLedger": "Continue when you’re ready to review the transaction on your Ledger.",
+  "@ledgerReadyReviewOnLedger": {
+    "description": "[security] Message when the Ledger is connected; the user will review the transaction on the device next."
+  },
+  "ledgerReconnectTitle": "Reconnect Ledger",
+  "@ledgerReconnectTitle": {
+    "description": "Title of the mobile Bluetooth sheet when access is fine and the user can reconnect."
+  },
+  "ledgerRemoveOldPairing": "Remove the old pairing",
+  "@ledgerRemoveOldPairing": {
+    "description": "Title of recovery step 1."
+  },
+  "ledgerRemovePairingIos": "Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device.",
+  "@ledgerRemovePairingIos": {
+    "description": "Recovery step on iOS. Use the localized iOS names for Settings and Bluetooth."
+  },
+  "ledgerRemovePairingMacos": "Open System Settings > Bluetooth. If your Ledger is listed, remove its saved pairing.",
+  "@ledgerRemovePairingMacos": {
+    "description": "Recovery step on macOS. Use the localized macOS names."
+  },
+  "ledgerRemovePairingOther": "Open Bluetooth settings. If your Ledger is listed, remove its saved pairing.",
+  "@ledgerRemovePairingOther": {
+    "description": "Recovery step on other platforms."
+  },
+  "ledgerResetBluetoothPairing": "Reset Bluetooth pairing",
+  "@ledgerResetBluetoothPairing": {
+    "description": "Button and title in the mobile Ledger help that guides the user to remove the saved Bluetooth pairing."
+  },
   "ledgerReturningToOptions": "Returning to connection options…",
   "@ledgerReturningToOptions": {
     "description": "Status text while the desktop dialog returns to the connection options after stopping the search."
+  },
+  "ledgerSavedFindAgain": "This Ledger matches your account. Find it again to continue.",
+  "@ledgerSavedFindAgain": {
+    "description": "Message after the Ledger was verified; the user must search again to continue."
+  },
+  "ledgerSavedMatchesFindAgain": "This Ledger matches your account and is now saved. Find it again to continue.",
+  "@ledgerSavedMatchesFindAgain": {
+    "description": "Message after the Ledger was verified and stored."
+  },
+  "ledgerSavingVerified": "Your account matches. Saving the verified connection.",
+  "@ledgerSavingVerified": {
+    "description": "Message while the verified Ledger connection is stored."
   },
   "ledgerSearchAgain": "Search again",
   "@ledgerSearchAgain": {
@@ -2966,6 +4020,206 @@
   "@ledgerSheetDeclinedTitle": {
     "description": "Title of the mobile Add Ledger account sheet after the request was declined on the device."
   },
+  "ledgerSigningApproveNextSeparately": "You will approve the next transaction separately.",
+  "@ledgerSigningApproveNextSeparately": {
+    "description": "Note under the review step when several transactions are signed in a row."
+  },
+  "ledgerSigningApproveOrReject": "Approve to sign, or reject to cancel.",
+  "@ledgerSigningApproveOrReject": {
+    "description": "[security] Note under the review step on mobile asking the user to approve or reject on the Ledger."
+  },
+  "ledgerSigningApproveToSign": "Approve to sign.",
+  "@ledgerSigningApproveToSign": {
+    "description": "[security] Note under the review step asking the user to approve signing on the Ledger."
+  },
+  "ledgerSigningApproveToSignNext": "Approve to sign.\n\nYou will approve the next transaction separately.",
+  "@ledgerSigningApproveToSignNext": {
+    "description": "[security] Note under the review step when several transactions are signed in a row; the two paragraphs are separated by a blank line."
+  },
+  "ledgerSigningApprovedFinishing": "Approved on Ledger. Vizor is finishing the transaction.",
+  "@ledgerSigningApprovedFinishing": {
+    "description": "Step message after the user approved on the Ledger."
+  },
+  "ledgerSigningChangeConnection": "Change connection",
+  "@ledgerSigningChangeConnection": {
+    "description": "Back button label in the Ledger signing dialog that returns to the connection options."
+  },
+  "ledgerSigningCheckAmountRecipient": "When prompted, check the amount and recipient on Ledger.",
+  "@ledgerSigningCheckAmountRecipient": {
+    "description": "[security] Step message asking the user to verify the amount and recipient on the Ledger screen before approving."
+  },
+  "ledgerSigningCheckingZcashReady": "Vizor is checking whether the Zcash app is ready.",
+  "@ledgerSigningCheckingZcashReady": {
+    "description": "Message while Vizor checks that the Zcash app on the Ledger is ready."
+  },
+  "ledgerSigningCloseSemantics": "Close Ledger",
+  "@ledgerSigningCloseSemantics": {
+    "description": "Screen-reader label of the close button on the mobile Ledger signing surface."
+  },
+  "ledgerSigningConfirmRequestReconnect": "Confirm the request on your Ledger. Vizor will reconnect automatically.",
+  "@ledgerSigningConfirmRequestReconnect": {
+    "description": "[security] Message asking the user to confirm on the Ledger; Vizor reconnects by itself afterwards."
+  },
+  "ledgerSigningDeclined": "Signing was declined on Ledger. Try again when you’re ready.",
+  "@ledgerSigningDeclined": {
+    "description": "[security] Step message in the Ledger signing dialog after the user declined signing on the device."
+  },
+  "ledgerSigningFinishingRequest": "Finishing the Ledger request.",
+  "@ledgerSigningFinishingRequest": {
+    "description": "Step message while the Ledger request is being finished."
+  },
+  "ledgerSigningKeepLedgerConnected": "Keep Ledger connected.",
+  "@ledgerSigningKeepLedgerConnected": {
+    "description": "Reminder in the Ledger signing dialog to leave the device connected."
+  },
+  "ledgerSigningKeepOpenWhileCancelling": "Keep Vizor open while the Ledger request is cancelled.",
+  "@ledgerSigningKeepOpenWhileCancelling": {
+    "description": "Message while the Ledger request is being cancelled."
+  },
+  "ledgerSigningKeepVizorOpen": "Keep Vizor open.",
+  "@ledgerSigningKeepVizorOpen": {
+    "description": "Reminder not to close Vizor while a Ledger operation finishes."
+  },
+  "ledgerSigningKeepVizorOpenShort": "Keep Vizor open",
+  "@ledgerSigningKeepVizorOpenShort": {
+    "description": "Status chip reminding the user not to close Vizor while the transaction finishes."
+  },
+  "ledgerSigningMsgPreparing": "Please wait while Vizor prepares your transaction.",
+  "@ledgerSigningMsgPreparing": {
+    "description": "Body while Vizor prepares a transaction."
+  },
+  "ledgerSigningMsgReviewing": "Review and approve when prompted on your Ledger.",
+  "@ledgerSigningMsgReviewing": {
+    "description": "[security] Body asking the user to review and approve on the Ledger when prompted."
+  },
+  "ledgerSigningMsgSending": "{wait} Keep your Ledger connected.",
+  "@ledgerSigningMsgSending": {
+    "description": "Body during Ledger signing. {wait} is the sentence 'Ledger is preparing to sign. It may seem unresponsive for a few seconds.' translated separately.",
+    "placeholders": {
+      "wait": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerSigningSaving": "Saving the signed transaction.",
+  "@ledgerSigningSaving": {
+    "description": "Step message in the Ledger signing dialog while the signed transaction is stored."
+  },
+  "ledgerSigningStatusCheckingDevice": "Checking device",
+  "@ledgerSigningStatusCheckingDevice": {
+    "description": "Status chip while Vizor checks the device."
+  },
+  "ledgerSigningStatusOpeningZcash": "Opening Zcash",
+  "@ledgerSigningStatusOpeningZcash": {
+    "description": "Status chip while the Zcash app opens on the Ledger."
+  },
+  "ledgerSigningStatusPreparing": "Preparing to sign",
+  "@ledgerSigningStatusPreparing": {
+    "description": "Short status chip while the Ledger prepares to sign."
+  },
+  "ledgerSigningStatusReview": "Review on device",
+  "@ledgerSigningStatusReview": {
+    "description": "[security] Short status chip asking the user to review on the Ledger."
+  },
+  "ledgerSigningStatusWait": "Please wait",
+  "@ledgerSigningStatusWait": {
+    "description": "Short status chip while waiting."
+  },
+  "ledgerSigningStatusWaitingApproval": "Waiting for your approval",
+  "@ledgerSigningStatusWaitingApproval": {
+    "description": "[security] Mobile status chip while waiting for the user to approve on the Ledger."
+  },
+  "ledgerSigningStepFinish": "Finish transaction",
+  "@ledgerSigningStepFinish": {
+    "description": "Third step label of the Ledger signing procedure."
+  },
+  "ledgerSigningStepPrepare": "Prepare transaction",
+  "@ledgerSigningStepPrepare": {
+    "description": "First step label of the Ledger signing procedure."
+  },
+  "ledgerSigningStepReview": "Review on Ledger",
+  "@ledgerSigningStepReview": {
+    "description": "[security] Second step label of the Ledger signing procedure: review and approve on the device."
+  },
+  "ledgerSigningTitleChecking": "Checking your Ledger",
+  "@ledgerSigningTitleChecking": {
+    "description": "Title while Vizor checks that the Zcash app is ready on the Ledger."
+  },
+  "ledgerSigningTitleConfirmOnLedger": "Confirm on your Ledger",
+  "@ledgerSigningTitleConfirmOnLedger": {
+    "description": "[security] Mobile title asking the user to confirm the transaction on the Ledger."
+  },
+  "ledgerSigningTitleConfirmOpening": "Confirm opening Zcash",
+  "@ledgerSigningTitleConfirmOpening": {
+    "description": "Title asking the user to confirm on the Ledger that the Zcash app may open."
+  },
+  "ledgerSigningTitleFinishing": "Finishing transaction",
+  "@ledgerSigningTitleFinishing": {
+    "description": "Title while Vizor finishes a signed transaction."
+  },
+  "ledgerSigningTitlePreparing": "Preparing transaction",
+  "@ledgerSigningTitlePreparing": {
+    "description": "Title while Vizor prepares a transaction for Ledger signing."
+  },
+  "ledgerSigningTitleReviewing": "Check your Ledger",
+  "@ledgerSigningTitleReviewing": {
+    "description": "[security] Title asking the user to review and approve the transaction on the Ledger."
+  },
+  "ledgerSigningTitleSending": "Processing with Ledger",
+  "@ledgerSigningTitleSending": {
+    "description": "Title while the Ledger processes the signing request."
+  },
+  "ledgerSigningTitleSendingTx": "Sending transaction",
+  "@ledgerSigningTitleSendingTx": {
+    "description": "Title of the Ledger dialog while the signed transaction is broadcast."
+  },
+  "ledgerSigningTitleSign": "Sign transaction",
+  "@ledgerSigningTitleSign": {
+    "description": "Title of the Ledger signing dialog."
+  },
+  "ledgerSigningTransactionProgress": "Transaction {current} of {total}",
+  "@ledgerSigningTransactionProgress": {
+    "description": "Shows which transaction of a batch is being signed on the Ledger.",
+    "placeholders": {
+      "current": {
+        "type": "String",
+        "example": "x"
+      },
+      "total": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerSigningWaitInstruction": "Ledger is preparing to sign. It may seem unresponsive for a few seconds.",
+  "@ledgerSigningWaitInstruction": {
+    "description": "Explains that the Ledger may look frozen for a few seconds while preparing to sign."
+  },
+  "ledgerStatusConnecting": "Connecting…",
+  "@ledgerStatusConnecting": {
+    "description": "Status while connecting to the saved Ledger."
+  },
+  "ledgerStatusFollowPrompts": "Follow the prompts on your Ledger",
+  "@ledgerStatusFollowPrompts": {
+    "description": "Status while the user must act on the Ledger."
+  },
+  "ledgerStatusOpeningBluetoothSettings": "Opening Bluetooth settings…",
+  "@ledgerStatusOpeningBluetoothSettings": {
+    "description": "Status while opening the system Bluetooth settings."
+  },
+  "ledgerStatusSavingConnection": "Saving connection…",
+  "@ledgerStatusSavingConnection": {
+    "description": "Status while the Ledger connection is stored."
+  },
+  "ledgerStatusSearchingNearby": "Searching nearby…",
+  "@ledgerStatusSearchingNearby": {
+    "description": "Status while searching for Ledger devices."
+  },
+  "ledgerStatusStillSearching": "Still searching nearby…",
+  "@ledgerStatusStillSearching": {
+    "description": "Status while the search continues."
+  },
   "ledgerStepApproveViewingKey": "Approve viewing key",
   "@ledgerStepApproveViewingKey": {
     "description": "[security] Procedure step label: the user approves sharing the viewing key on the Ledger device."
@@ -2984,6 +4238,10 @@
   "@ledgerStepOpenZcash": {
     "description": "Procedure step label: the Zcash app must be opened on the Ledger device. 'Zcash' is the name of the app on the device and stays in Latin script."
   },
+  "ledgerStopSearchFailedHelp": "Could not stop the search. Try opening connection help again.",
+  "@ledgerStopSearchFailedHelp": {
+    "description": "Error shown in the mobile Ledger connection help when stopping the Bluetooth search failed."
+  },
   "ledgerStoppingSearch": "Stopping search",
   "@ledgerStoppingSearch": {
     "description": "Title of the desktop dialog while the Bluetooth device search is being stopped."
@@ -2991,6 +4249,38 @@
   "ledgerSupportedDevices": "Supported devices",
   "@ledgerSupportedDevices": {
     "description": "Small button on the Connect Ledger screen that shows a tooltip listing the supported Ledger models."
+  },
+  "ledgerTitleConnectingToLedger": "Connecting to your Ledger",
+  "@ledgerTitleConnectingToLedger": {
+    "description": "Title while connecting to the saved Ledger."
+  },
+  "ledgerTitleFindingLedger": "Finding your Ledger",
+  "@ledgerTitleFindingLedger": {
+    "description": "Title while Vizor searches for the Ledger."
+  },
+  "ledgerTitleLedgerConnected": "Your Ledger is connected",
+  "@ledgerTitleLedgerConnected": {
+    "description": "Title when the Ledger is connected."
+  },
+  "ledgerTitleLedgerSaved": "Ledger saved",
+  "@ledgerTitleLedgerSaved": {
+    "description": "Title after the Ledger connection was stored."
+  },
+  "ledgerTitleMismatch": "This Ledger doesn’t match",
+  "@ledgerTitleMismatch": {
+    "description": "[security] Title when the connected Ledger does not hold the account."
+  },
+  "ledgerTitlePairAgain": "Pair your Ledger again",
+  "@ledgerTitlePairAgain": {
+    "description": "Title asking the user to pair the Ledger again."
+  },
+  "ledgerTitleSavingConnection": "Saving your connection",
+  "@ledgerTitleSavingConnection": {
+    "description": "Title while the Ledger connection is stored."
+  },
+  "ledgerTitleSelectYourLedger": "Select your Ledger",
+  "@ledgerTitleSelectYourLedger": {
+    "description": "Title above the list of found Ledger devices."
   },
   "ledgerTransportBluetooth": "Bluetooth",
   "@ledgerTransportBluetooth": {
@@ -3004,13 +4294,75 @@
   "@ledgerUnlockBluetoothNearby": {
     "description": "Instruction above the mobile device list while no device has been found yet."
   },
+  "ledgerUnlockEnableBluetoothNearby": "Unlock Ledger, enable Bluetooth and keep it nearby.",
+  "@ledgerUnlockEnableBluetoothNearby": {
+    "description": "Message while searching for Ledger devices over Bluetooth."
+  },
+  "ledgerUnlockOpenZcashApprove": "Unlock your Ledger and open the Zcash app. Approve opening it if prompted.",
+  "@ledgerUnlockOpenZcashApprove": {
+    "description": "[security] Message while verifying the saved Ledger."
+  },
   "ledgerUnlockWithPin": "Unlock with your PIN.",
   "@ledgerUnlockWithPin": {
     "description": "[security] Step 1 of the Ledger preparation list (the number is added by the app); the user unlocks the Ledger with its PIN."
   },
+  "ledgerUsbApproveOpening": "Approve opening the Zcash app on your Ledger.",
+  "@ledgerUsbApproveOpening": {
+    "description": "[security] Message asking the user to approve opening the Zcash app on the Ledger."
+  },
+  "ledgerUsbCheckCableOpenApp": "Check the USB cable, unlock your Ledger, and open the Zcash app.",
+  "@ledgerUsbCheckCableOpenApp": {
+    "description": "Fallback message for a USB connection problem."
+  },
+  "ledgerUsbConnectUnlockOpen": "Connect your Ledger with a USB cable, unlock it, and open the Zcash app.",
+  "@ledgerUsbConnectUnlockOpen": {
+    "description": "Instruction for connecting over USB."
+  },
+  "ledgerUsbConnection": "USB connection",
+  "@ledgerUsbConnection": {
+    "description": "Identity chip showing the Ledger is connected over USB."
+  },
+  "ledgerUsbCouldNotOpen": "Vizor found your Ledger but could not open it. Close other wallet apps that use the Ledger, reconnect it, then try again.",
+  "@ledgerUsbCouldNotOpen": {
+    "description": "USB error when another app may be holding the Ledger."
+  },
+  "ledgerUsbCouldNotStart": "Vizor could not start USB access for your Ledger. Reconnect the device, then try again.",
+  "@ledgerUsbCouldNotStart": {
+    "description": "USB error when the USB stack failed to start."
+  },
+  "ledgerUsbInterrupted": "The USB connection to your Ledger was interrupted. Reconnect and unlock your Ledger. {instruction}",
+  "@ledgerUsbInterrupted": {
+    "description": "USB error after the connection dropped. {instruction} is a full sentence produced elsewhere, such as 'Open the Zcash app on your Ledger.'.",
+    "placeholders": {
+      "instruction": {
+        "type": "String",
+        "example": "x"
+      }
+    }
+  },
+  "ledgerUsbPermissionLinux": "Vizor cannot access your Ledger over USB. Install Ledger's udev rules for Linux (github.com/LedgerHQ/udev-rules), then reconnect your Ledger and try again.",
+  "@ledgerUsbPermissionLinux": {
+    "description": "Linux USB permission error. Keep the URL github.com/LedgerHQ/udev-rules unchanged."
+  },
+  "ledgerUsbPermissionOther": "Vizor cannot access your Ledger over USB. Check USB device permissions, then reconnect and try again.",
+  "@ledgerUsbPermissionOther": {
+    "description": "USB permission error on macOS and Windows."
+  },
+  "ledgerVerifyingNewDevice": "Complete pairing if prompted, then approve sharing your viewing key.",
+  "@ledgerVerifyingNewDevice": {
+    "description": "[security] Message while verifying a new Ledger: the user approves sharing the viewing key on the device."
+  },
+  "ledgerVerifyingSavedDevice": "Unlock Ledger and confirm opening Zcash if prompted.",
+  "@ledgerVerifyingSavedDevice": {
+    "description": "[security] Message while verifying the saved Ledger."
+  },
   "ledgerVizorCheckingZcash": "Vizor is checking the Zcash app.",
   "@ledgerVizorCheckingZcash": {
     "description": "Status message while Vizor checks whether the Zcash app is open on the Ledger."
+  },
+  "ledgerWaitingForApproval": "Waiting for approval…",
+  "@ledgerWaitingForApproval": {
+    "description": "[security] Status while waiting for the user to approve on the Ledger."
   },
   "lockBodyPaused": "Sync paused. Unlock Vizor to continue.",
   "@lockBodyPaused": {

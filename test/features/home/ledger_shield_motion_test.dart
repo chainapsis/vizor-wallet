@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -34,9 +35,9 @@ ParticleField _field(WidgetTester tester) => tester
 Widget _content(LedgerSigningStage stage, VoidCallback close) =>
     LedgerInlinePresentation(
       child: MobileLedgerSigningContent(
-        title: stage.title,
-        message: stage.message,
-        status: stage.status,
+        title: stage.title(testL10n),
+        message: stage.message(testL10n),
+        status: stage.status(testL10n),
         active: true,
         failed: false,
         stage: stage,

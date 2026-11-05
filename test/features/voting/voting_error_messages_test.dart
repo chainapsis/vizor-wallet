@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import '../../support/test_l10n.dart';
 import 'package:zcash_wallet/src/features/voting/voting_error_messages.dart';
 
-import '../../support/test_l10n.dart';
 
 void main() {
   const app = 'Open the Zcash app on your Ledger.';

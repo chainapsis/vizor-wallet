@@ -403,8 +403,9 @@ class _SwapKeystoneSigningOverlayState
       return context.l10n.swapKeystoneNoTex;
     }
     final batchError = keystoneBatchSigningFriendlyError(
+      context.l10n,
       error,
-      subject: 'deposit',
+      subject: KeystoneBatchSubject.deposit,
     );
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {

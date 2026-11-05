@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart' show AppLocalizations;
+
 /// Coarse user-facing stages, independent of device connection/readiness state.
 enum LedgerSigningStage { preparing, sending, reviewing, finishing }
 
@@ -72,29 +74,23 @@ final ledgerSigningProgressProvider =
     );
 
 extension LedgerSigningStageCopy on LedgerSigningStage {
-  String get title => switch (this) {
-    LedgerSigningStage.preparing => 'Preparing transaction',
-    LedgerSigningStage.sending => 'Processing with Ledger',
-    LedgerSigningStage.reviewing => 'Check your Ledger',
-    LedgerSigningStage.finishing => 'Finishing transaction',
+  String title(AppLocalizations l10n) => switch (this) {
+    LedgerSigningStage.preparing => l10n.ledgerSigningTitlePreparing,
+    LedgerSigningStage.sending => l10n.ledgerSigningTitleSending,
+    LedgerSigningStage.reviewing => l10n.ledgerSigningTitleReviewing,
+    LedgerSigningStage.finishing => l10n.ledgerSigningTitleFinishing,
   };
-  String get message => switch (this) {
-    LedgerSigningStage.preparing =>
-      'Please wait while Vizor prepares your transaction.',
-    LedgerSigningStage.sending =>
-      '$kLedgerSigningWaitInstruction Keep your Ledger connected.',
-    LedgerSigningStage.reviewing =>
-      'Review and approve when prompted on your Ledger.',
-    LedgerSigningStage.finishing => 'Keep Vizor open.',
+  String message(AppLocalizations l10n) => switch (this) {
+    LedgerSigningStage.preparing => l10n.ledgerSigningMsgPreparing,
+    LedgerSigningStage.sending => l10n.ledgerSigningMsgSending(
+      l10n.ledgerSigningWaitInstruction,
+    ),
+    LedgerSigningStage.reviewing => l10n.ledgerSigningMsgReviewing,
+    LedgerSigningStage.finishing => l10n.ledgerSigningKeepVizorOpen,
   };
-  String get status => switch (this) {
-    LedgerSigningStage.sending => 'Preparing to sign',
-    LedgerSigningStage.reviewing => 'Review on device',
-    _ => 'Please wait',
+  String status(AppLocalizations l10n) => switch (this) {
+    LedgerSigningStage.sending => l10n.ledgerSigningStatusPreparing,
+    LedgerSigningStage.reviewing => l10n.ledgerSigningStatusReview,
+    _ => l10n.ledgerSigningStatusWait,
   };
 }
-
-/// Shared by mobile and desktop so preparation explains the device's expected
-/// apparent inactivity.
-const kLedgerSigningWaitInstruction =
-    'Ledger is preparing to sign. It may seem unresponsive for a few seconds.';

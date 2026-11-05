@@ -1,11 +1,11 @@
 import '../../ledger/services/ledger_device_selection.dart';
+import '../../../core/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../ledger/services/ledger_failure_guidance.dart';
-import '../../../core/l10n/l10n.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/ledger_error_codes.dart';
@@ -139,6 +139,7 @@ class _LedgerImmediateMigrationSigningOverlayState
   String _friendlyError(AppLocalizations l10n, Object error) {
     _requestFailure = LedgerRequestFailure.fromError(error);
     _deviceGuidance = ledgerFailureGuidance(
+      context.l10n,
       error,
       requestKind: LedgerRequestKind.migration,
     );

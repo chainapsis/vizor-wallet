@@ -339,7 +339,7 @@ class _MobileKeystoneSignScreenState
         lower.contains('send flow mismatch')) {
       return context.l10n.commonSigningExpired;
     }
-    final batchError = keystoneBatchSigningFriendlyError(error);
+    final batchError = keystoneBatchSigningFriendlyError(context.l10n, error);
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
       return context.l10n.commonProvingParamsFailed;

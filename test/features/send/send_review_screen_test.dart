@@ -2,6 +2,7 @@
 // flow (wallet DB path + Sapling params status).
 // ignore_for_file: depend_on_referenced_packages
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -1220,6 +1221,7 @@ void main() {
           ),
         );
         final accessRecovery = ledgerFailureGuidance(
+          testL10n,
           original,
         )!.bluetoothRecovery;
         var attempts = 0;
@@ -1246,7 +1248,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('Confirm with Ledger'));
         await _flushRealAsync(tester);
-        if (ledgerFailureGuidance(original)!.pairingRecovery) {
+        if (ledgerFailureGuidance(testL10n, original)!.pairingRecovery) {
           final pairingInvalid = failure == LedgerMobileFailure.pairingInvalid;
           expect(
             find.text(
@@ -1263,7 +1265,7 @@ void main() {
             find.text(
               accessRecovery
                   ? 'Ready to reconnect'
-                  : ledgerFailureGuidance(original)!.message,
+                  : ledgerFailureGuidance(testL10n, original)!.message,
             ),
             findsOneWidget,
           );
@@ -1430,7 +1432,10 @@ void main() {
       await _flushRealAsync(tester);
 
       expect(find.text('Request not accepted'), findsOneWidget);
-      expect(find.text(kLedgerHostRequestRejectedMessage), findsOneWidget);
+      expect(
+        find.text(testL10n.ledgerFailureMsgRejectedNewRequest),
+        findsOneWidget,
+      );
       expect(find.textContaining('rejected on your Ledger'), findsNothing);
       expect(
         find.byKey(const ValueKey('ledger_device_app_prompt_mainnet')),

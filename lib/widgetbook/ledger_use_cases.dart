@@ -1,3 +1,4 @@
+import '../src/core/l10n/l10n.dart';
 import '../src/providers/sync_provider.dart';
 import 'send_use_cases.dart';
 import '../src/features/ledger/services/ledger_signing_progress.dart';
@@ -602,6 +603,9 @@ Widget _buildDevicePicker(LedgerMobileBleService service, {required Key key}) {
   );
 }
 
+// Preview helpers without a BuildContext use the English strings.
+final _previewL10n = lookupAppLocalizations(const Locale('en'));
+
 LedgerSigningFailurePresentation _failurePresentation(
   LedgerSigningPlaygroundFailure mode,
 ) {
@@ -623,8 +627,10 @@ LedgerSigningFailurePresentation _failurePresentation(
         actionLabel: 'Try again',
       ),
     LedgerSigningPlaygroundFailure.memoHashUpdate =>
-      ledgerMemoHashUpdateFailure,
-    LedgerSigningPlaygroundFailure.appUpdate => ledgerAppUpdateFailure,
+      ledgerMemoHashUpdateFailure(_previewL10n),
+    LedgerSigningPlaygroundFailure.appUpdate => ledgerAppUpdateFailure(
+      _previewL10n,
+    ),
     LedgerSigningPlaygroundFailure.reconnect =>
       const LedgerSigningFailurePresentation(
         title: 'Ledger needs attention',

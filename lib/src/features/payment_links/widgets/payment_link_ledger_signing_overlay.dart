@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -203,6 +204,7 @@ class _PaymentLinkLedgerSigningOverlayState
               ? LedgerRequestFailure.fromError(error)
               : null;
           _deviceGuidance = ledgerFailureGuidance(
+            context.l10n,
             error,
             requestKind: LedgerRequestKind.giftCard,
           );

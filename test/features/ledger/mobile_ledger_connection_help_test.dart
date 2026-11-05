@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -513,9 +514,9 @@ void main() {
         );
         await _frames(tester);
         await _press(tester, 'Next: phone settings');
-        await tester.ensureVisible(find.text(model.nameHelp));
+        await tester.ensureVisible(find.text(model.nameHelp(testL10n)));
         await _frames(tester);
-        expect(find.text(model.nameHelp), findsOneWidget);
+        expect(find.text(model.nameHelp(testL10n)), findsOneWidget);
         await _press(tester, 'Next: search in Vizor');
         expect(find.text('Search again'), findsOneWidget);
         expect(tester.takeException(), isNull);

@@ -313,7 +313,7 @@ class _LedgerOperationRecoveryHostState
                 .map((transaction) => transaction.txidHex)
                 .toList()
               ..sort();
-        return '${sync.accountUuid}|'
+        return '${sync.accountUuid}|' // l10n-ignore: state key
             '${sync.lastSyncCompletedAt?.microsecondsSinceEpoch}|'
             '${txids.join(',')}';
       }),

@@ -254,6 +254,7 @@ class _LedgerDesktopConnectModalState
   void _fail(int generation, Object error) {
     if (!_current(generation)) return;
     final guidance = ledgerFailureGuidance(
+      context.l10n,
       error,
       requestKind: LedgerRequestKind.viewingKey,
     );
@@ -279,6 +280,7 @@ class _LedgerDesktopConnectModalState
                     : _bluetooth
                     ? context.l10n.ledgerBleReadFailedTryAgain
                     : ledgerUsbErrorMessage(
+                            context.l10n,
                             error,
                             appInstruction:
                                 context.l10n.ledgerOpenZcashThenTryAgain,
@@ -521,6 +523,7 @@ class _LedgerDesktopConnectModalState
                   message: _declinedStep == 2
                       ? _error
                       : ledgerViewingKeyApprovalMessage(
+                          context.l10n,
                           widget.accountIndex,
                           readiness.version,
                         ),

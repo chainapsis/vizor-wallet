@@ -1954,12 +1954,37 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get keystoneAllowCamera => 'Allow camera';
+
+  @override
+  String get keystoneBatchCannotSignDeposit =>
+      'This deposit uses inputs that Keystone batch signing cannot sign.';
+
+  @override
+  String get keystoneBatchCannotSignTx =>
+      'This transaction uses inputs that Keystone batch signing cannot sign.';
+
+  @override
+  String get keystoneBatchTooManyInputsDeposit =>
+      'This deposit uses too many inputs for Keystone batch signing. Try a smaller amount.';
+
+  @override
+  String get keystoneBatchTooManyInputsTx =>
+      'This transaction uses too many inputs for Keystone batch signing. Try a smaller amount.';
+
+  @override
   String get keystoneBirthdayInvalidHeight =>
       'That doesn\'t look like a valid block height.';
 
   @override
   String get keystoneBirthdaySubtitle =>
       'It helps us import your wallet faster.';
+
+  @override
+  String get keystoneCameraDefault => 'Default';
+
+  @override
+  String get keystoneCameraDeniedTitle => 'You\'ve denied the Camera access';
 
   @override
   String get keystoneCameraEnableBody =>
@@ -1969,11 +1994,48 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneCameraEnableTitle => 'Enable camera access';
 
   @override
+  String get keystoneCameraExternal => 'External';
+
+  @override
+  String get keystoneCameraFront => 'Front';
+
+  @override
+  String get keystoneCameraGiftBody =>
+      'A camera is required to scan the gift card QR code.\nYou can revert this in settings anytime later.';
+
+  @override
+  String get keystoneCameraLabel => 'Camera';
+
+  @override
+  String keystoneCameraNameDefault(String name) {
+    return '$name (Default)';
+  }
+
+  @override
+  String get keystoneCameraNormal => 'Normal';
+
+  @override
+  String get keystoneCameraOffAllow =>
+      'Camera access is off. Allow it in Settings to scan Keystone signatures.';
+
+  @override
   String get keystoneCameraUnavailableBody =>
       'Keystone import uses camera QR scanning only.\nConnect a camera and try again.';
 
   @override
+  String get keystoneCameraWide => 'Wide';
+
+  @override
+  String get keystoneCameraZoom => 'Zoom';
+
+  @override
   String get keystoneConfirmSelection => 'Confirm selection';
+
+  @override
+  String get keystoneConfirmWithKeystone => 'Confirm with Keystone';
+
+  @override
+  String get keystoneDefaultCamera => 'Default camera';
 
   @override
   String get keystoneFirmwareBody =>
@@ -1986,10 +2048,33 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneFirmwareLinkLabel => 'link';
 
   @override
+  String get keystoneFirmwareOpenPage => 'Open Keystone firmware page';
+
+  @override
   String get keystoneFirmwareTitle => 'Check Keystone firmware';
 
   @override
+  String get keystoneFirmwareUpdatePrefix =>
+      'Update to the latest Keystone firmware at ';
+
+  @override
   String get keystoneImReadyNow => 'I\'m ready now';
+
+  @override
+  String get keystoneLoadingCamera => 'Loading camera...';
+
+  @override
+  String get keystoneLoadingQrCode => 'Loading QR code ...';
+
+  @override
+  String get keystoneNextStep => 'Next step';
+
+  @override
+  String get keystoneNoCameraFound => 'No camera found';
+
+  @override
+  String get keystoneNoCameraOpened =>
+      'No camera could be opened. Check that a camera is connected and not in use by another app.';
 
   @override
   String get keystoneOnVizor => 'On Vizor';
@@ -1998,10 +2083,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneOnYourKeystone => 'On your Keystone';
 
   @override
+  String get keystoneOpenSettings => 'Open settings';
+
+  @override
+  String get keystoneOpenSignedQr =>
+      'Open the signed transaction QR on Keystone, then scan again.';
+
+  @override
+  String get keystonePcztPrepareFailed =>
+      'Keystone signing could not be prepared.';
+
+  @override
   String get keystonePrepareSubtitle => 'Prepare your Keystone wallet';
 
   @override
   String get keystonePrepareToConnectTitle => 'Prepare to connect';
+
+  @override
+  String get keystonePreparingQr => 'Preparing QR';
+
+  @override
+  String get keystoneReadingQr => 'Reading QR...';
+
+  @override
+  String get keystoneReadingSignature => 'Reading signature...';
 
   @override
   String get keystoneScanCameraRequired =>
@@ -2011,8 +2116,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneScanCaption => 'Scan the Keystone account QR';
 
   @override
+  String get keystoneScanCaptionConfirm =>
+      'Scan the QR code on your Keystone to confirm';
+
+  @override
   String get keystoneScanDecodeFailed =>
       'This QR code could not be decoded as a Keystone Zcash account.';
+
+  @override
+  String get keystoneScanHelpClose => 'Close scan help';
+
+  @override
+  String get keystoneScanIssuesTitle => 'Scanning issues?';
 
   @override
   String get keystoneScanNoAccounts =>
@@ -2028,10 +2143,35 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get keystoneScanPromptOnKeystone => 'on your Keystone,';
+
+  @override
+  String get keystoneScanPromptTap => 'Tap';
+
+  @override
+  String get keystoneScanPromptThenScan => 'then scan this QR code';
+
+  @override
   String get keystoneScanReadingAccounts => 'Reading accounts...';
 
   @override
+  String get keystoneScanWithKeystone => 'Scan with Keystone';
+
+  @override
+  String get keystoneSelectCamera => 'Select Camera';
+
+  @override
+  String get keystoneShowTransactionQr => 'Show transaction QR';
+
+  @override
+  String get keystoneSignatureQrNotDecoded =>
+      'This QR code could not be decoded as a Keystone signature.';
+
+  @override
   String get keystoneStepHowToConnect => 'How to Connect';
+
+  @override
+  String get keystoneStepOneOfTwo => 'Step 1/2';
 
   @override
   String get keystoneStepOpenSoftwareWallet =>
@@ -2048,9 +2188,55 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneStepSelectVizor => 'Select Vizor (or ZODL)';
 
   @override
+  String get keystoneStepTwoOfTwo => 'Step 2/2';
+
+  @override
+  String get keystoneSubmittingTransaction => 'Submitting the transaction';
+
+  @override
+  String get keystoneTipContinuityCamera =>
+      'On a Mac, you can use Continuity Camera to scan with your iPhone instead.';
+
+  @override
+  String get keystoneTipGiftFullScreen =>
+      'Open the gift card QR code full screen on another device.';
+
+  @override
+  String get keystoneTipGiftMoveFurther =>
+      'Move the QR code a few inches further from the camera so it can focus.';
+
+  @override
+  String get keystoneTipGlare =>
+      'Make sure the room is well-lit and the QR code isn\'t reflecting glare.';
+
+  @override
+  String get keystoneTipMoveKeystoneFurther =>
+      'Move your Keystone a few inches further from the camera so it can focus.';
+
+  @override
+  String get keystoneTipTapFullScreen =>
+      'Tap the QR code on your Keystone to show it full screen. This is the easiest fix.';
+
+  @override
+  String get keystoneTroubleScanning => 'Trouble scanning?';
+
+  @override
+  String get keystoneTryAgainWithKeystone => 'Try again with Keystone';
+
+  @override
+  String get keystoneWindowsCameraBody =>
+      'Turn on Camera access and Let desktop apps access your camera in Windows Settings.';
+
+  @override
+  String get keystoneWindowsCameraTitle => 'Enable Windows camera access';
+
+  @override
   String languageSystemOption(String language) {
     return 'System ($language)';
   }
+
+  @override
+  String get ledgerAccountIndexFieldLabel => 'Ledger account index (0–100)';
 
   @override
   String get ledgerAccountIndexHint =>
@@ -2058,6 +2244,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ledgerAccountIndexLabel => 'Account index (0–100)';
+
+  @override
+  String get ledgerAccountIndexOutOfRange =>
+      'Account index must be between 0 and 100.';
 
   @override
   String get ledgerAddAccountNote =>
@@ -2068,6 +2258,23 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ledgerAdvancedOptions => 'Advanced options';
+
+  @override
+  String ledgerAppSemanticsLabel(String appName) {
+    return '$appName app';
+  }
+
+  @override
+  String get ledgerAppUpdateRequiredTitle => 'Ledger app update required';
+
+  @override
+  String get ledgerApproveShareViewingKey =>
+      'Approve sharing your viewing key with Vizor.';
+
+  @override
+  String ledgerApproveShareViewingKeyForAccount(String number) {
+    return 'Approve sharing the viewing key for Account #$number.';
+  }
 
   @override
   String get ledgerBalanceActivityNote =>
@@ -2093,11 +2300,192 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ledgerBluetoothConnection => 'Bluetooth connection';
 
   @override
+  String get ledgerBluetoothModelsList => 'Nano X, Flex, Stax, and Nano Gen5';
+
+  @override
   String get ledgerBluetoothPermissionRequired =>
       'Bluetooth permission is required to find your Ledger. Allow it in Settings, then try again.';
 
   @override
+  String get ledgerBtAccessAllowed =>
+      'Permission is allowed. Try again when ready.';
+
+  @override
+  String get ledgerBtAccessBluetoothRequestable =>
+      'Choose Allow permission to connect to your Ledger. If no prompt appears, open Settings.';
+
+  @override
+  String get ledgerBtAccessBluetoothSettings =>
+      'Allow Bluetooth access for Vizor in your device settings.';
+
+  @override
+  String get ledgerBtAccessKindLocation => 'Location';
+
+  @override
+  String get ledgerBtAccessLocationRequestable =>
+      'This Android version needs location permission to find your Ledger. Choose Allow permission, or open Settings if no prompt appears.';
+
+  @override
+  String get ledgerBtAccessLocationSettings =>
+      'This Android version needs location permission to find your Ledger. Allow location access for Vizor in Settings.';
+
+  @override
+  String get ledgerBtAccessMacosSettings =>
+      'Open System Settings > Privacy & Security > Bluetooth and allow access for Vizor.';
+
+  @override
+  String ledgerBtAccessRestricted(String kind) {
+    return '$kind access is restricted by your device settings or administrator.';
+  }
+
+  @override
+  String get ledgerBtAccessTurnOnBluetooth =>
+      'Turn on Bluetooth, then check access again.';
+
+  @override
+  String get ledgerBtAccessTurnOnLocation =>
+      'Turn on location services, then check access again.';
+
+  @override
+  String get ledgerBtCouldNotCheckAccess =>
+      'Could not check access. Open Settings manually, then check again.';
+
+  @override
+  String get ledgerBtCouldNotOpenSettingsAllow =>
+      'Could not open Settings. Open your device settings manually and allow access for Vizor.';
+
+  @override
+  String get ledgerBtCouldNotOpenSettingsRestricted =>
+      'Could not open Settings. Open your device settings manually to review access for Vizor.';
+
+  @override
+  String get ledgerBtLabelAllowAccess => 'Allow access';
+
+  @override
+  String get ledgerBtLabelCheckAgain => 'Check again';
+
+  @override
+  String get ledgerBtLabelChecking => 'Checking access';
+
+  @override
+  String get ledgerBtLabelOpenSettings => 'Open settings';
+
+  @override
+  String get ledgerBtLabelReconnect => 'Reconnect';
+
+  @override
+  String get ledgerBtMsgBluetoothNeeded =>
+      'Vizor needs Bluetooth access to connect to your Ledger.';
+
+  @override
+  String get ledgerBtMsgChecking =>
+      'Checking whether Vizor can connect to your Ledger.';
+
+  @override
+  String get ledgerBtMsgLocationNeeded =>
+      'This Android version needs location access to find your Ledger.';
+
+  @override
+  String get ledgerBtMsgReady =>
+      'Turn on your Ledger and unlock it to continue.';
+
+  @override
+  String get ledgerBtRestrictedGeneric =>
+      'Check Vizor’s Bluetooth access in Settings. Device restrictions or your administrator may prevent changes.';
+
+  @override
+  String get ledgerBtRestrictedLocation =>
+      'Check location access for Vizor in Settings. Device restrictions or your administrator may prevent changes.';
+
+  @override
+  String get ledgerBtRestrictedMacos =>
+      'Check Privacy & Security > Bluetooth in System Settings. This restriction may need to be changed by your administrator.';
+
+  @override
+  String get ledgerBtRestrictedNearby =>
+      'Check Nearby devices access for Vizor in Settings. Device restrictions or your administrator may prevent changes.';
+
+  @override
+  String get ledgerBtSheetAllowAddAccount =>
+      'Allow Bluetooth access for Vizor in your phone settings to add your account.';
+
+  @override
+  String get ledgerBtSheetAllowContinue =>
+      'Allow Bluetooth access for Vizor in your phone settings to continue.';
+
+  @override
+  String get ledgerBtSheetAllowSigning =>
+      'Allow Bluetooth access for Vizor in your phone settings to continue signing.';
+
+  @override
+  String get ledgerBtSheetReadyAddAccount =>
+      'Bluetooth is available. Unlock your Ledger to add your account.';
+
+  @override
+  String get ledgerBtSheetReadyContinue =>
+      'Bluetooth is available. Unlock your Ledger to continue.';
+
+  @override
+  String get ledgerBtSheetReadySigning =>
+      'Bluetooth is available. Unlock your Ledger to continue signing.';
+
+  @override
+  String get ledgerBtSheetTurnOnAddAccount =>
+      'Turn on Bluetooth on your phone to add your account.';
+
+  @override
+  String get ledgerBtSheetTurnOnContinue =>
+      'Turn on Bluetooth on your phone to continue.';
+
+  @override
+  String get ledgerBtSheetTurnOnSigning =>
+      'Turn on Bluetooth on your phone to continue signing.';
+
+  @override
+  String get ledgerBtTitleAllowBluetooth => 'Allow Bluetooth access';
+
+  @override
+  String get ledgerBtTitleAllowBluetoothSettings =>
+      'Allow Bluetooth in Settings';
+
+  @override
+  String get ledgerBtTitleAllowLocation => 'Allow location access';
+
+  @override
+  String get ledgerBtTitleAllowLocationSettings => 'Allow location in Settings';
+
+  @override
+  String get ledgerBtTitleChecking => 'Checking Bluetooth access';
+
+  @override
+  String get ledgerBtTitleReady => 'Ready to reconnect';
+
+  @override
+  String get ledgerBtTitleRestricted => 'Access is restricted';
+
+  @override
+  String get ledgerBtTitleTurnOnBluetooth => 'Turn on Bluetooth';
+
+  @override
+  String get ledgerBtTitleTurnOnLocation => 'Turn on location services';
+
+  @override
+  String get ledgerButtonCheckingAccount => 'Checking account';
+
+  @override
+  String get ledgerButtonConnecting => 'Connecting';
+
+  @override
+  String get ledgerButtonSaving => 'Saving';
+
+  @override
+  String get ledgerButtonSearching => 'Searching';
+
+  @override
   String get ledgerCancelFailed => 'Could not finish cancelling. Try again.';
+
+  @override
+  String get ledgerCancelShielding => 'Cancel shielding';
 
   @override
   String get ledgerCancellingRequest => 'Cancelling request';
@@ -2106,19 +2494,65 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ledgerCancellingTheRequest => 'Cancelling the Ledger request…';
 
   @override
+  String get ledgerCapabilityMainnetOnly =>
+      'Ledger is currently supported only for Zcash mainnet.';
+
+  @override
+  String get ledgerCapabilityUnsupportedPlatform =>
+      'Ledger is supported on Vizor for macOS, Windows, Linux, iOS, and Android.';
+
+  @override
+  String get ledgerChangedKeepOne =>
+      'Your Ledger changed. Keep one Ledger connected and try again.';
+
+  @override
   String get ledgerCheckingBluetoothAccess => 'Checking Bluetooth access…';
+
+  @override
+  String get ledgerCheckingUsb => 'Checking USB connection…';
 
   @override
   String get ledgerChooseAnother => 'Choose another Ledger';
 
   @override
+  String get ledgerChooseConnection => 'Choose connection';
+
+  @override
+  String get ledgerChooseDevice => 'Choose a device to continue.';
+
+  @override
+  String get ledgerChooseLedgerForAccount =>
+      'Choose the Ledger you want to use for this account.';
+
+  @override
   String get ledgerCleanupFailed => 'Could not finish cleanup. Try again.';
+
+  @override
+  String get ledgerComeBackFindLedger =>
+      'Keep your Ledger unlocked, then select Find Ledger below.';
+
+  @override
+  String get ledgerComeBackFindMyLedger =>
+      'Keep your Ledger unlocked, then select “Find my Ledger” below.';
+
+  @override
+  String get ledgerComeBackReconnect => 'Come back and reconnect';
+
+  @override
+  String get ledgerCompletePairingOpenZcash =>
+      'Complete pairing if prompted, then open the Zcash app and approve sharing the viewing key.';
 
   @override
   String get ledgerConfirmOpeningZcash => 'Confirm opening Zcash on Ledger.';
 
   @override
+  String get ledgerConnectForAccount => 'Connect the Ledger for this account.';
+
+  @override
   String get ledgerConnectSubtitle => 'Prepare your Ledger wallet.';
+
+  @override
+  String get ledgerConnectTitle => 'Connect Ledger';
 
   @override
   String get ledgerConnectUsbCable => 'Connect with a USB cable.';
@@ -2132,7 +2566,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ledgerConnectionHelp => 'Connection help';
 
   @override
+  String get ledgerContinueSigning => 'Continue signing';
+
+  @override
   String get ledgerCouldNotConnect => 'Could not connect Ledger';
+
+  @override
+  String get ledgerCouldNotStopSearchTryAgain =>
+      'Could not stop the search. Try again.';
+
+  @override
+  String get ledgerDifferentFromSaved => 'Different from saved connection';
 
   @override
   String get ledgerDiscoveryErrorFallback => 'Try again.';
@@ -2180,10 +2624,298 @@ class AppLocalizationsEn extends AppLocalizations {
       'The viewing-key request was rejected on your Ledger.';
 
   @override
+  String ledgerFailureMsgAppUpdateRequired(String version) {
+    return 'Update your Ledger and its Zcash app to $version or newer in Ledger Wallet.';
+  }
+
+  @override
+  String get ledgerFailureMsgBusy =>
+      'Your Ledger is busy. Try again in a moment.';
+
+  @override
+  String get ledgerFailureMsgCancelledTryAgain =>
+      'Request cancelled. Try again when ready.';
+
+  @override
+  String get ledgerFailureMsgCheckOpenZcash =>
+      'Check your Ledger and open the Zcash app, then try again.';
+
+  @override
+  String get ledgerFailureMsgDeclined =>
+      'Declined on your Ledger. Try again when ready.';
+
+  @override
+  String get ledgerFailureMsgGiftCardRejected =>
+      'Your Ledger couldn’t accept this request. Create a new gift card. Nothing was sent.';
+
+  @override
+  String get ledgerFailureMsgGiftCardTooLarge =>
+      'Too large for your Ledger. Create a gift card with a smaller amount.';
+
+  @override
+  String get ledgerFailureMsgInstallZcash =>
+      'Install the Zcash app with Ledger Wallet.';
+
+  @override
+  String get ledgerFailureMsgMemoHashUnsupported =>
+      'Update the Ledger Zcash app to sign non-English memos';
+
+  @override
+  String get ledgerFailureMsgMigrationTooLarge =>
+      'This migration step is too large for your Ledger to sign. Vizor can’t split it yet.';
+
+  @override
+  String get ledgerFailureMsgOpenZcash => 'Open the Zcash app on your Ledger.';
+
+  @override
+  String get ledgerFailureMsgOrchardChange =>
+      'Ledger can\'t sign a transaction that keeps change in Orchard. Migrate your Orchard balance to Ironwood first.';
+
+  @override
+  String get ledgerFailureMsgPaymentTooLarge =>
+      'Start a new payment. Don’t send a smaller amount to this address.';
+
+  @override
+  String get ledgerFailureMsgReconnectUnlock =>
+      'Reconnect and unlock your Ledger.';
+
+  @override
+  String get ledgerFailureMsgRejectedNewRequest =>
+      'Your Ledger couldn’t accept this request. Create a new one. Nothing was sent.';
+
+  @override
+  String get ledgerFailureMsgReopenZcash => 'Close and reopen the Zcash app.';
+
+  @override
+  String get ledgerFailureMsgSaplingRecipient =>
+      'Your Ledger can’t send to a Sapling address. Create a new request.';
+
+  @override
+  String get ledgerFailureMsgSetPin =>
+      'Set up a PIN on your Ledger, then try again.';
+
+  @override
+  String get ledgerFailureMsgShieldTooLarge =>
+      'Too many inputs for your Ledger. Try again. Nothing was shielded.';
+
+  @override
+  String get ledgerFailureMsgSwapTooLarge =>
+      'Start a new swap with a smaller amount. This one is discarded.';
+
+  @override
+  String get ledgerFailureMsgTooManyInputs =>
+      'Too many inputs for your Ledger. Try a smaller amount.';
+
+  @override
+  String get ledgerFailureMsgUnexpected =>
+      'Unexpected Ledger error. Reopen the Zcash app and try again.';
+
+  @override
+  String ledgerFailureMsgUnexpectedWithCode(String code) {
+    return 'Unexpected Ledger error$code. Reopen the Zcash app and try again.';
+  }
+
+  @override
+  String get ledgerFailureMsgUnlock => 'Unlock your Ledger, then try again.';
+
+  @override
+  String get ledgerFailureMsgUnsupportedTxType =>
+      'Your Ledger can’t sign this transaction type. Create a new request.';
+
+  @override
+  String ledgerFailureMsgUpdateZcash(String version) {
+    return 'Update the Zcash app to $version or newer.';
+  }
+
+  @override
+  String get ledgerFailureMsgViewingKeyRejected =>
+      'Your Ledger couldn’t accept this viewing-key request. Check the account number.';
+
+  @override
+  String get ledgerFailureMsgVoteRejected =>
+      'Your Ledger couldn’t accept this vote request. Your vote was not signed.';
+
+  @override
+  String get ledgerFailureMsgVoteTooLarge =>
+      'This vote is too large for your Ledger to sign.';
+
+  @override
+  String get ledgerFailureMsgWrongLedger =>
+      'Connect the Ledger that holds this account.';
+
+  @override
+  String get ledgerFailureTitleBusy => 'Ledger is busy';
+
+  @override
+  String get ledgerFailureTitleCancelled => 'Request cancelled';
+
+  @override
+  String get ledgerFailureTitleError => 'Ledger error';
+
+  @override
+  String get ledgerFailureTitleFailed => 'Request failed';
+
+  @override
+  String get ledgerFailureTitleLocked => 'Ledger locked';
+
+  @override
+  String get ledgerFailureTitleNotReachable => 'Ledger not reachable';
+
+  @override
+  String get ledgerFailureTitleOpenZcash => 'Open the Zcash app';
+
+  @override
+  String get ledgerFailureTitlePinRequired => 'PIN required';
+
+  @override
+  String get ledgerFailureTitleRejected => 'Request not accepted';
+
+  @override
+  String get ledgerFailureTitleReopenZcash => 'Reopen the Zcash app';
+
+  @override
+  String get ledgerFailureTitleTooLarge => 'Request too large';
+
+  @override
+  String get ledgerFailureTitleUpdateZcash => 'Update the Zcash app';
+
+  @override
+  String get ledgerFailureTitleWrongLedger => 'Wrong Ledger';
+
+  @override
+  String get ledgerFailureTitleZcashMissing => 'Zcash app missing';
+
+  @override
   String get ledgerFind => 'Find Ledger';
 
   @override
   String get ledgerFindMyLedger => 'Find my Ledger';
+
+  @override
+  String get ledgerFollowPromptsOnLedger => 'Follow the prompts on Ledger.';
+
+  @override
+  String get ledgerHelpChecksCloseOtherApps =>
+      'Close other wallet apps and disconnect Ledger from other phones or computers.';
+
+  @override
+  String get ledgerHelpChecksHomeScreen =>
+      'Leave Ledger on its home screen. Open the Zcash app when Vizor asks.';
+
+  @override
+  String get ledgerHelpChecksUnlockClose =>
+      'Unlock Ledger, turn on Bluetooth, and keep it close to your phone.';
+
+  @override
+  String get ledgerHelpChooseModel => 'Choose your model';
+
+  @override
+  String get ledgerHelpFindInPhoneBluetooth =>
+      'Find your Ledger in your phone’s Bluetooth settings.';
+
+  @override
+  String get ledgerHelpForgetAndroid =>
+      'Bluetooth settings > the settings button next to your Ledger > Forget or Unpair';
+
+  @override
+  String get ledgerHelpForgetIos =>
+      'Settings > Bluetooth > the info button next to your Ledger > Forget This Device';
+
+  @override
+  String get ledgerHelpKeepUnlockedHome =>
+      'Keep Ledger unlocked with Bluetooth on, and leave it on its home screen.';
+
+  @override
+  String get ledgerHelpModelLabel => 'Ledger model';
+
+  @override
+  String get ledgerHelpNanoXConfirm =>
+      'Confirm on Ledger and enter your PIN on the device.';
+
+  @override
+  String get ledgerHelpNanoXControls =>
+      'Unlock Ledger. Hold both buttons to open its controls, then choose:';
+
+  @override
+  String get ledgerHelpNanoXMenuPath => 'Settings > Security > Reset pairings';
+
+  @override
+  String get ledgerHelpNanoXName =>
+      'On your Nano X, hold both buttons for 2 seconds, then find Device Name.';
+
+  @override
+  String get ledgerHelpNextPhoneSettings => 'Next: phone settings';
+
+  @override
+  String get ledgerHelpNextSearchInVizor => 'Next: search in Vizor';
+
+  @override
+  String get ledgerHelpNextSearchTitle => 'Find your Ledger';
+
+  @override
+  String get ledgerHelpNotResetDevice =>
+      'Use the Bluetooth pairing option, not Reset device. Your wallet and accounts stay unchanged.';
+
+  @override
+  String get ledgerHelpOpenBluetoothSettings => 'Open Bluetooth settings';
+
+  @override
+  String ledgerHelpOtherModelName(String model) {
+    return 'On your $model, check Settings > Name.';
+  }
+
+  @override
+  String get ledgerHelpRemovePairingOnLedger =>
+      'Remove the saved pairing on Ledger, then remove it on your phone.';
+
+  @override
+  String get ledgerHelpRestartBothGuide =>
+      'If it still does not appear, restart both devices and check Ledger’s official Bluetooth troubleshooting guide.';
+
+  @override
+  String get ledgerHelpSearchSelectOpenZcash =>
+      'Search in Vizor and select your Ledger. Open the Zcash app when Vizor asks.';
+
+  @override
+  String get ledgerHelpSelectModelHint =>
+      'Select your model to see its pairing removal instructions.';
+
+  @override
+  String get ledgerHelpShortIdName =>
+      'If you haven’t named your Ledger, it may appear as a short ID, such as 01AB. Otherwise, look for the name you set.';
+
+  @override
+  String get ledgerHelpSkipIfNotListed =>
+      'If Ledger is not listed, skip this step and continue.';
+
+  @override
+  String ledgerHelpStepBackInVizor(String step) {
+    return 'Step $step of 3 · Back in Vizor';
+  }
+
+  @override
+  String ledgerHelpStepOnLedger(String step) {
+    return 'Step $step of 3 · On your Ledger';
+  }
+
+  @override
+  String ledgerHelpStepOnPhone(String step) {
+    return 'Step $step of 3 · On your phone';
+  }
+
+  @override
+  String get ledgerHelpStillNotShowing => 'Still not showing?';
+
+  @override
+  String get ledgerHelpTouchControls =>
+      'Unlock Ledger. From its home screen, tap the settings icon, then choose:';
+
+  @override
+  String get ledgerHelpTouchMenuPath => 'Bluetooth > Remove pairing';
+
+  @override
+  String get ledgerHelpTryRestart =>
+      'Try restarting Ledger. If it stays missing, removing the saved Bluetooth pairing on both devices may help.';
 
   @override
   String ledgerKeepAppOpen(String appName) {
@@ -2199,8 +2931,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'Keep Ledger connected while Vizor checks the app.';
 
   @override
+  String get ledgerKeepItOpen => 'Keep it open on your Ledger.';
+
+  @override
   String get ledgerKeepNearbyUnlocked =>
       'Keep your Ledger nearby and unlocked, with Bluetooth turned on.';
+
+  @override
+  String get ledgerKeepNearbyUnlockedShort =>
+      'Keep your Ledger nearby and unlocked.';
 
   @override
   String get ledgerKeepZcashOpen => 'Keep Zcash open.';
@@ -2208,6 +2947,50 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get ledgerMacosBluetoothPrompt =>
       'macOS may ask for Bluetooth access. If prompted, allow access for Vizor.';
+
+  @override
+  String get ledgerMismatchChooseHolder =>
+      'Choose the Ledger that holds this account. Your saved connection has not changed.';
+
+  @override
+  String get ledgerMismatchConnectHolder =>
+      'Connect the Ledger that holds this account. Your saved connection hasn’t changed.';
+
+  @override
+  String get ledgerMobileAnotherRequestActive =>
+      'Another Ledger request is still active. Complete or reject it on your Ledger, then try again.';
+
+  @override
+  String get ledgerMobileCheckBluetoothBelow =>
+      'Check Bluetooth access below, then try connecting to your Ledger again.';
+
+  @override
+  String get ledgerMobileConnectionLost =>
+      'The Bluetooth connection to your Ledger was lost or could not be established. Turn on and unlock your Ledger, keep it nearby, then try again.';
+
+  @override
+  String get ledgerMobilePairingInvalid =>
+      'Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.';
+
+  @override
+  String get ledgerMobilePairingNotCompleted =>
+      'Bluetooth pairing was not completed. Reconnect your Ledger and approve the pairing request, then try again.';
+
+  @override
+  String get ledgerMobileRequestCancelled =>
+      'The Ledger request was cancelled. Try again when ready.';
+
+  @override
+  String get ledgerMobileRequestRejected =>
+      'The request was rejected on your Ledger. Try again when ready.';
+
+  @override
+  String get ledgerMobileTurnOnBluetooth =>
+      'Turn on Bluetooth, then try again.';
+
+  @override
+  String get ledgerMobileTurnOnLocation =>
+      'Turn on location services to find your Ledger on this Android version, then try again.';
 
   @override
   String get ledgerNoDevicesFound => 'No Ledger devices found';
@@ -2224,15 +3007,106 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ledgerOnYourLedger => 'On your Ledger';
 
   @override
+  String ledgerOpenAppInstruction(String appName) {
+    return 'Open the $appName app';
+  }
+
+  @override
+  String ledgerOpenAppOnLedger(String appName) {
+    return 'Open the $appName app on your Ledger.';
+  }
+
+  @override
   String get ledgerOpenBluetoothSettingsManually =>
       'Open Bluetooth settings manually to remove the old pairing.';
+
+  @override
+  String get ledgerOpenSettings => 'Open settings';
 
   @override
   String get ledgerOpenZcashThenTryAgain =>
       'Open the Zcash app, then try again.';
 
   @override
+  String get ledgerOpeningConnectionHelp => 'Opening connection help…';
+
+  @override
+  String get ledgerPairingNoLongerRecognized =>
+      'Your Ledger no longer recognizes this Bluetooth pairing.';
+
+  @override
+  String get ledgerPairingNoLongerRecognizedRemove =>
+      'Your Ledger no longer recognizes this Bluetooth pairing. Remove the old pairing, then reconnect.';
+
+  @override
+  String ledgerProcedureStep(String step, String total) {
+    return 'Step $step of $total';
+  }
+
+  @override
+  String ledgerProcedureStepComplete(String step, String total) {
+    return 'Step $step of $total, complete';
+  }
+
+  @override
+  String get ledgerReadinessCouldNotPrepare =>
+      'Vizor could not prepare the Ledger Zcash app. Try again.';
+
+  @override
+  String get ledgerReadinessOperationCancelled =>
+      'Ledger operation was cancelled.';
+
+  @override
+  String get ledgerReadinessReconnectUnlockTryAgain =>
+      'Reconnect and unlock your Ledger, then try again.';
+
+  @override
+  String get ledgerReadinessUsbPermission =>
+      'Connect and unlock your Ledger over USB. If it is connected, install the Ledger udev rules on Linux, then unplug and reconnect it.';
+
+  @override
+  String get ledgerReadyContinueSigning =>
+      'Your Ledger is ready. Continue signing when you’re ready.';
+
+  @override
+  String get ledgerReadyReviewOnLedger =>
+      'Continue when you’re ready to review the transaction on your Ledger.';
+
+  @override
+  String get ledgerReconnectTitle => 'Reconnect Ledger';
+
+  @override
+  String get ledgerRemoveOldPairing => 'Remove the old pairing';
+
+  @override
+  String get ledgerRemovePairingIos =>
+      'Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device.';
+
+  @override
+  String get ledgerRemovePairingMacos =>
+      'Open System Settings > Bluetooth. If your Ledger is listed, remove its saved pairing.';
+
+  @override
+  String get ledgerRemovePairingOther =>
+      'Open Bluetooth settings. If your Ledger is listed, remove its saved pairing.';
+
+  @override
+  String get ledgerResetBluetoothPairing => 'Reset Bluetooth pairing';
+
+  @override
   String get ledgerReturningToOptions => 'Returning to connection options…';
+
+  @override
+  String get ledgerSavedFindAgain =>
+      'This Ledger matches your account. Find it again to continue.';
+
+  @override
+  String get ledgerSavedMatchesFindAgain =>
+      'This Ledger matches your account and is now saved. Find it again to continue.';
+
+  @override
+  String get ledgerSavingVerified =>
+      'Your account matches. Saving the verified connection.';
 
   @override
   String get ledgerSearchAgain => 'Search again';
@@ -2259,6 +3133,161 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ledgerSheetDeclinedTitle => 'Request declined';
 
   @override
+  String get ledgerSigningApproveNextSeparately =>
+      'You will approve the next transaction separately.';
+
+  @override
+  String get ledgerSigningApproveOrReject =>
+      'Approve to sign, or reject to cancel.';
+
+  @override
+  String get ledgerSigningApproveToSign => 'Approve to sign.';
+
+  @override
+  String get ledgerSigningApproveToSignNext =>
+      'Approve to sign.\n\nYou will approve the next transaction separately.';
+
+  @override
+  String get ledgerSigningApprovedFinishing =>
+      'Approved on Ledger. Vizor is finishing the transaction.';
+
+  @override
+  String get ledgerSigningChangeConnection => 'Change connection';
+
+  @override
+  String get ledgerSigningCheckAmountRecipient =>
+      'When prompted, check the amount and recipient on Ledger.';
+
+  @override
+  String get ledgerSigningCheckingZcashReady =>
+      'Vizor is checking whether the Zcash app is ready.';
+
+  @override
+  String get ledgerSigningCloseSemantics => 'Close Ledger';
+
+  @override
+  String get ledgerSigningConfirmRequestReconnect =>
+      'Confirm the request on your Ledger. Vizor will reconnect automatically.';
+
+  @override
+  String get ledgerSigningDeclined =>
+      'Signing was declined on Ledger. Try again when you’re ready.';
+
+  @override
+  String get ledgerSigningFinishingRequest => 'Finishing the Ledger request.';
+
+  @override
+  String get ledgerSigningKeepLedgerConnected => 'Keep Ledger connected.';
+
+  @override
+  String get ledgerSigningKeepOpenWhileCancelling =>
+      'Keep Vizor open while the Ledger request is cancelled.';
+
+  @override
+  String get ledgerSigningKeepVizorOpen => 'Keep Vizor open.';
+
+  @override
+  String get ledgerSigningKeepVizorOpenShort => 'Keep Vizor open';
+
+  @override
+  String get ledgerSigningMsgPreparing =>
+      'Please wait while Vizor prepares your transaction.';
+
+  @override
+  String get ledgerSigningMsgReviewing =>
+      'Review and approve when prompted on your Ledger.';
+
+  @override
+  String ledgerSigningMsgSending(String wait) {
+    return '$wait Keep your Ledger connected.';
+  }
+
+  @override
+  String get ledgerSigningSaving => 'Saving the signed transaction.';
+
+  @override
+  String get ledgerSigningStatusCheckingDevice => 'Checking device';
+
+  @override
+  String get ledgerSigningStatusOpeningZcash => 'Opening Zcash';
+
+  @override
+  String get ledgerSigningStatusPreparing => 'Preparing to sign';
+
+  @override
+  String get ledgerSigningStatusReview => 'Review on device';
+
+  @override
+  String get ledgerSigningStatusWait => 'Please wait';
+
+  @override
+  String get ledgerSigningStatusWaitingApproval => 'Waiting for your approval';
+
+  @override
+  String get ledgerSigningStepFinish => 'Finish transaction';
+
+  @override
+  String get ledgerSigningStepPrepare => 'Prepare transaction';
+
+  @override
+  String get ledgerSigningStepReview => 'Review on Ledger';
+
+  @override
+  String get ledgerSigningTitleChecking => 'Checking your Ledger';
+
+  @override
+  String get ledgerSigningTitleConfirmOnLedger => 'Confirm on your Ledger';
+
+  @override
+  String get ledgerSigningTitleConfirmOpening => 'Confirm opening Zcash';
+
+  @override
+  String get ledgerSigningTitleFinishing => 'Finishing transaction';
+
+  @override
+  String get ledgerSigningTitlePreparing => 'Preparing transaction';
+
+  @override
+  String get ledgerSigningTitleReviewing => 'Check your Ledger';
+
+  @override
+  String get ledgerSigningTitleSending => 'Processing with Ledger';
+
+  @override
+  String get ledgerSigningTitleSendingTx => 'Sending transaction';
+
+  @override
+  String get ledgerSigningTitleSign => 'Sign transaction';
+
+  @override
+  String ledgerSigningTransactionProgress(String current, String total) {
+    return 'Transaction $current of $total';
+  }
+
+  @override
+  String get ledgerSigningWaitInstruction =>
+      'Ledger is preparing to sign. It may seem unresponsive for a few seconds.';
+
+  @override
+  String get ledgerStatusConnecting => 'Connecting…';
+
+  @override
+  String get ledgerStatusFollowPrompts => 'Follow the prompts on your Ledger';
+
+  @override
+  String get ledgerStatusOpeningBluetoothSettings =>
+      'Opening Bluetooth settings…';
+
+  @override
+  String get ledgerStatusSavingConnection => 'Saving connection…';
+
+  @override
+  String get ledgerStatusSearchingNearby => 'Searching nearby…';
+
+  @override
+  String get ledgerStatusStillSearching => 'Still searching nearby…';
+
+  @override
   String get ledgerStepApproveViewingKey => 'Approve viewing key';
 
   @override
@@ -2270,10 +3299,38 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ledgerStepOpenZcash => 'Open Zcash';
 
   @override
+  String get ledgerStopSearchFailedHelp =>
+      'Could not stop the search. Try opening connection help again.';
+
+  @override
   String get ledgerStoppingSearch => 'Stopping search';
 
   @override
   String get ledgerSupportedDevices => 'Supported devices';
+
+  @override
+  String get ledgerTitleConnectingToLedger => 'Connecting to your Ledger';
+
+  @override
+  String get ledgerTitleFindingLedger => 'Finding your Ledger';
+
+  @override
+  String get ledgerTitleLedgerConnected => 'Your Ledger is connected';
+
+  @override
+  String get ledgerTitleLedgerSaved => 'Ledger saved';
+
+  @override
+  String get ledgerTitleMismatch => 'This Ledger doesn’t match';
+
+  @override
+  String get ledgerTitlePairAgain => 'Pair your Ledger again';
+
+  @override
+  String get ledgerTitleSavingConnection => 'Saving your connection';
+
+  @override
+  String get ledgerTitleSelectYourLedger => 'Select your Ledger';
 
   @override
   String get ledgerTransportBluetooth => 'Bluetooth';
@@ -2286,10 +3343,65 @@ class AppLocalizationsEn extends AppLocalizations {
       'Unlock Ledger, turn on Bluetooth, and keep it nearby.';
 
   @override
+  String get ledgerUnlockEnableBluetoothNearby =>
+      'Unlock Ledger, enable Bluetooth and keep it nearby.';
+
+  @override
+  String get ledgerUnlockOpenZcashApprove =>
+      'Unlock your Ledger and open the Zcash app. Approve opening it if prompted.';
+
+  @override
   String get ledgerUnlockWithPin => 'Unlock with your PIN.';
 
   @override
+  String get ledgerUsbApproveOpening =>
+      'Approve opening the Zcash app on your Ledger.';
+
+  @override
+  String get ledgerUsbCheckCableOpenApp =>
+      'Check the USB cable, unlock your Ledger, and open the Zcash app.';
+
+  @override
+  String get ledgerUsbConnectUnlockOpen =>
+      'Connect your Ledger with a USB cable, unlock it, and open the Zcash app.';
+
+  @override
+  String get ledgerUsbConnection => 'USB connection';
+
+  @override
+  String get ledgerUsbCouldNotOpen =>
+      'Vizor found your Ledger but could not open it. Close other wallet apps that use the Ledger, reconnect it, then try again.';
+
+  @override
+  String get ledgerUsbCouldNotStart =>
+      'Vizor could not start USB access for your Ledger. Reconnect the device, then try again.';
+
+  @override
+  String ledgerUsbInterrupted(String instruction) {
+    return 'The USB connection to your Ledger was interrupted. Reconnect and unlock your Ledger. $instruction';
+  }
+
+  @override
+  String get ledgerUsbPermissionLinux =>
+      'Vizor cannot access your Ledger over USB. Install Ledger\'s udev rules for Linux (github.com/LedgerHQ/udev-rules), then reconnect your Ledger and try again.';
+
+  @override
+  String get ledgerUsbPermissionOther =>
+      'Vizor cannot access your Ledger over USB. Check USB device permissions, then reconnect and try again.';
+
+  @override
+  String get ledgerVerifyingNewDevice =>
+      'Complete pairing if prompted, then approve sharing your viewing key.';
+
+  @override
+  String get ledgerVerifyingSavedDevice =>
+      'Unlock Ledger and confirm opening Zcash if prompted.';
+
+  @override
   String get ledgerVizorCheckingZcash => 'Vizor is checking the Zcash app.';
+
+  @override
+  String get ledgerWaitingForApproval => 'Waiting for approval…';
 
   @override
   String get lockBodyPaused => 'Sync paused. Unlock Vizor to continue.';

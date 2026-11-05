@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../../support/test_l10n.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/keystone/services/keystone_batch_signing.dart';
 import 'package:zcash_wallet/src/rust/api/keystone.dart';
@@ -65,6 +66,7 @@ void main() {
   test('maps the transaction signature limit to actionable copy', () {
     expect(
       keystoneBatchSigningFriendlyError(
+        testL10n,
         StateError(
           'Keystone batch signing supports at most 96 spend signatures per '
           'transaction; this transaction requires 97',
@@ -78,15 +80,19 @@ void main() {
   test('uses the caller subject for batch preparation errors', () {
     expect(
       keystoneBatchSigningFriendlyError(
+        testL10n,
         StateError(
           'Keystone batch signing does not support transparent transaction '
           'inputs',
         ),
-        subject: 'deposit',
+        subject: KeystoneBatchSubject.deposit,
       ),
       'This deposit uses inputs that Keystone batch signing cannot sign.',
     );
-    expect(keystoneBatchSigningFriendlyError(StateError('unrelated')), isNull);
+    expect(
+      keystoneBatchSigningFriendlyError(testL10n, StateError('unrelated')),
+      isNull,
+    );
   });
 }
 

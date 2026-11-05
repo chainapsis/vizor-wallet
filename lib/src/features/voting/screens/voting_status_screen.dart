@@ -1273,11 +1273,11 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
         switch (stage) {
           LedgerSigningStage.preparing => context.l10n.votingLedgerPreparing,
           LedgerSigningStage.finishing => context.l10n.votingLedgerFinishing,
-          _ => stage.title,
+          _ => stage.title(context.l10n),
         },
         stage == LedgerSigningStage.preparing
             ? context.l10n.votingLedgerPleaseWait
-            : stage.message,
+            : stage.message(context.l10n),
       ),
     };
     if (kAppFormFactor == AppFormFactor.mobile) {
@@ -1306,7 +1306,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
           ],
           if (!failed)
             MobileLedgerStatus(
-              stage.status,
+              stage.status(context.l10n),
               active:
                   stage != LedgerSigningStage.reviewing &&
                   readiness.phase != LedgerAppReadinessPhase.confirmOpening,
