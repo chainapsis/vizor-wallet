@@ -830,8 +830,8 @@ OnboardingBackTarget _desktopOnboardingEntryBackTarget(
       ref.read(appBootstrapProvider).hasWallet;
   return OnboardingBackTarget.route(
     label: hasWallet
-        ? context.l10n.appBackAddAccount
-        : context.l10n.appBackWelcome,
+        ? context.l10n.commonAddAccount
+        : context.l10n.onboardingWelcome,
     routePath: hasWallet ? '/add-account' : '/welcome',
   );
 }
@@ -1077,7 +1077,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           initialPersona: args.persona,
           continueToSecurity: needsPassword,
           ledgerBackTarget: OnboardingBackTarget.route(
-            label: context.l10n.appBackWalletBirthdayHeight,
+            label: context.l10n.onboardingStepWalletBirthdayHeight,
             routePath: preserveDesktopImportEntry(
               state.uri,
               '/onboarding/ledger/birthday',
@@ -2930,7 +2930,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
       WindowsUpdateStatus.applying => l10n.appUpdateApplyingMessage,
       WindowsUpdateStatus.failed =>
         state.message.trim().isEmpty
-            ? l10n.appUpdateFailedMessage
+            ? l10n.updateFailedMessage
             : state.message.trim(),
       _ => '',
     };
@@ -2949,7 +2949,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
         onPressed: onDownload,
       ),
       WindowsUpdateStatus.ready => _WindowsUpdatePromptAction(
-        label: l10n.appUpdateRestart,
+        label: l10n.updateRestart,
         onPressed: onRestart,
       ),
       WindowsUpdateStatus.downloading => _WindowsUpdatePromptAction(
@@ -2959,7 +2959,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
         label: l10n.appUpdateRestarting,
       ),
       WindowsUpdateStatus.failed => _WindowsUpdatePromptAction(
-        label: l10n.appUpdateTryAgain,
+        label: l10n.commonTryAgain,
         onPressed: onRetry,
       ),
       _ => _WindowsUpdatePromptAction(label: l10n.commonUpdate),

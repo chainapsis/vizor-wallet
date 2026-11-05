@@ -325,7 +325,7 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
               child: Text(
                 account == null
                     ? context.l10n.settingsBackToAccounts
-                    : context.l10n.settingsTryAgain,
+                    : context.l10n.commonTryAgain,
               ),
             ),
           ),

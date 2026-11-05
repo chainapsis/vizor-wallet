@@ -254,7 +254,7 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                           const SizedBox(width: AppSpacing.xs),
                         ],
                         Semantics(
-                          label: context.l10n.onboardingNetworkSettings,
+                          label: context.l10n.networkSettingsTitle,
                           button: true,
                           child: GestureDetector(
                             key: const ValueKey(

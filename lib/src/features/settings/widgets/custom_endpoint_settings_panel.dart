@@ -217,7 +217,7 @@ class _CustomEndpointSettingsPanelState
                 child: Text(
                   _isSubmitting
                       ? context.l10n.settingsEndpointUpdating
-                      : context.l10n.settingsEndpointUpdate,
+                      : context.l10n.endpointUpdate,
                 ),
               ),
             ],
@@ -243,7 +243,7 @@ class _PanelHeader extends StatelessWidget {
         children: [
           Center(
             child: Text(
-              context.l10n.settingsEndpointNetworkSettings,
+              context.l10n.networkSettingsTitle,
               style: AppTypography.headlineMedium.copyWith(
                 color: colors.text.accent,
               ),
@@ -332,7 +332,7 @@ class CustomEndpointForm extends StatelessWidget {
           SizedBox(
             height: 86,
             child: AppTextField(
-              label: context.l10n.settingsEndpointCustom,
+              label: context.l10n.endpointCustom,
               hintText: '<hostname>:<port>', // l10n-ignore: address format hint
               controller: controller,
               autofocus: true,

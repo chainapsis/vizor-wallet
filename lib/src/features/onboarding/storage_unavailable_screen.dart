@@ -223,7 +223,7 @@ class _StorageUnavailableContent extends ConsumerWidget {
             child: Text(
               isRetrying
                   ? context.l10n.onboardingRetrying
-                  : context.l10n.onboardingRetry,
+                  : context.l10n.commonRetry,
             ),
           ),
           if (isDesktopLayoutPlatform) ...[
@@ -235,7 +235,7 @@ class _StorageUnavailableContent extends ConsumerWidget {
               variant: AppButtonVariant.ghost,
               size: AppButtonSize.medium,
               minWidth: 96,
-              child: Text(context.l10n.onboardingQuit),
+              child: Text(context.l10n.commonQuit),
             ),
           ],
         ],
@@ -248,10 +248,10 @@ class _StorageUnavailableContent extends ConsumerWidget {
       return l10n.onboardingStorageDbMigrationTitle;
     }
     if (failureKind == AppBootstrapFailureKind.startupFailure) {
-      return l10n.onboardingStorageStartupFailureTitle;
+      return l10n.appOpenFailedTitle;
     }
     return _isLinux
-        ? l10n.onboardingStorageKeyringLockedTitle
+        ? l10n.keyringUnlockTitle
         : l10n.onboardingStorageSecureStorageLockedTitle;
   }
 

@@ -9,16 +9,13 @@ class AppLocalizationsKo extends AppLocalizations {
   AppLocalizationsKo([String locale = 'ko']) : super(locale);
 
   @override
+  String get accountNameLabel => '계⁠정 이⁠름';
+
+  @override
   String get accountsActionsLabel => '계⁠정 작⁠업';
 
   @override
-  String get accountsAdd => '계⁠정 추⁠가';
-
-  @override
   String get accountsAddressLoadFailed => '계⁠정 주⁠소⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요';
-
-  @override
-  String get accountsChangeProfilePicture => '프⁠로⁠필 사⁠진 변⁠경';
 
   @override
   String get accountsClearName => '계⁠정 이⁠름 지⁠우⁠기';
@@ -34,9 +31,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get accountsEditNameHint => '1-20⁠자';
-
-  @override
-  String get accountsEditNameLabel => '계⁠정 이⁠름';
 
   @override
   String get accountsManage => '계⁠정 관⁠리';
@@ -106,18 +100,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 계⁠정⁠을 삭⁠제⁠할⁠까⁠요? 이 작⁠업⁠은 되⁠돌⁠릴 수 없⁠어⁠요.\n계⁠정⁠을 다⁠시 가⁠져⁠와⁠야 해⁠요.';
 
   @override
-  String get accountsRemovePasswordCheckFailed =>
-      '비⁠밀⁠번⁠호⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
-
-  @override
   String get accountsRemovePasswordHint => '비⁠밀⁠번⁠호⁠를 입⁠력⁠하⁠세⁠요';
-
-  @override
-  String get accountsRemovePasswordIncorrect =>
-      '비⁠밀⁠번⁠호⁠가 맞⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
-
-  @override
-  String get accountsRemovePasswordLabel => '비⁠밀⁠번⁠호';
 
   @override
   String get accountsRemoveStoppingSync => '동⁠기⁠화⁠를 중⁠지⁠하⁠는 중...';
@@ -148,9 +131,6 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 계⁠정⁠을 삭⁠제⁠하⁠면 Vizor 앱⁠이 완⁠전⁠히 초⁠기⁠화⁠돼⁠요. 모⁠든 계⁠정⁠이 삭⁠제⁠되⁠고 계⁠정⁠을 다⁠시 가⁠져⁠와⁠야 해⁠요.\n공⁠유⁠하⁠지 않⁠은 기⁠프⁠트 카⁠드 링⁠크⁠도 영⁠구⁠적⁠으⁠로 사⁠라⁠져⁠요.\n이 작⁠업⁠은 되⁠돌⁠릴 수 없⁠어⁠요.';
 
   @override
-  String get accountsResetVizor => 'Vizor 초⁠기⁠화';
-
-  @override
   String get accountsResetting => '초⁠기⁠화⁠하⁠는 중...';
 
   @override
@@ -158,9 +138,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get accountsSaveFailed => '계⁠정 변⁠경 사⁠항⁠을 저⁠장⁠하⁠지 못⁠했⁠어⁠요';
-
-  @override
-  String get accountsSelectProfilePicture => '프⁠로⁠필 사⁠진 선⁠택';
 
   @override
   String get accountsSendFailed => '보⁠내⁠기⁠를 시⁠작⁠하⁠지 못⁠했⁠어⁠요';
@@ -181,19 +158,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get accountsViewViewingKey => '뷰⁠잉 키 보⁠기';
 
   @override
-  String get appBackAddAccount => '계⁠정 추⁠가';
-
-  @override
   String get appBackHardwareWallets => '하⁠드⁠웨⁠어 지⁠갑';
 
   @override
   String get appBackImportMethods => '가⁠져⁠오⁠기 방⁠법';
-
-  @override
-  String get appBackWalletBirthdayHeight => '지⁠갑 생⁠일 높⁠이';
-
-  @override
-  String get appBackWelcome => '시⁠작 화⁠면';
 
   @override
   String get appExitBackHint => '한 번 더 뒤⁠로 가⁠면 종⁠료⁠돼⁠요';
@@ -216,6 +184,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get appLinuxUpdateViewRelease => '릴⁠리⁠스 보⁠기';
+
+  @override
+  String get appOpenFailedTitle => 'Vizor⁠를 열 수 없⁠어⁠요';
 
   @override
   String get appPrivacyPolicyTitle => '개⁠인⁠정⁠보 처⁠리⁠방⁠침';
@@ -256,10 +227,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get appUpdateDownloadingTitle => '업⁠데⁠이⁠트 다⁠운⁠로⁠드 중';
 
   @override
-  String get appUpdateFailedMessage =>
-      '업⁠데⁠이⁠트⁠를 완⁠료⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
-
-  @override
   String get appUpdateFailedTitle => '업⁠데⁠이⁠트 실⁠패';
 
   @override
@@ -272,16 +239,18 @@ class AppLocalizationsKo extends AppLocalizations {
   String get appUpdateReadyTitle => '업⁠데⁠이⁠트 준⁠비 완⁠료';
 
   @override
-  String get appUpdateRestart => '다⁠시 시⁠작';
-
-  @override
   String get appUpdateRestarting => '다⁠시 시⁠작 중';
 
   @override
   String get appUpdateRestartingTitle => 'Vizor 다⁠시 시⁠작 중';
 
   @override
-  String get appUpdateTryAgain => '다⁠시 시⁠도';
+  String get bip39PassphraseTitle => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈';
+
+  @override
+  String bip39PassphraseValue(String passphrase) {
+    return 'BIP39 패⁠스⁠프⁠레⁠이⁠즈: $passphrase';
+  }
 
   @override
   String carouselPageSemantics(
@@ -297,6 +266,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String carouselShowPage(String name, int page, int count) {
     return '$name $count⁠개 중 $page⁠번⁠째 보⁠기';
   }
+
+  @override
+  String get commonAddAccount => '계⁠정 추⁠가';
 
   @override
   String get commonAddressCopied => '주⁠소⁠를 복⁠사⁠했⁠어⁠요';
@@ -317,13 +289,28 @@ class AppLocalizationsKo extends AppLocalizations {
       '취⁠소⁠를 마⁠치⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
+  String get commonCannotBeUndone => '되⁠돌⁠릴 수 없⁠어⁠요.';
+
+  @override
+  String get commonChecking => '확⁠인 중...';
+
+  @override
   String get commonClearText => '텍⁠스⁠트 지⁠우⁠기';
 
   @override
   String get commonClose => '닫⁠기';
 
   @override
+  String get commonCoinholderVoting => '코⁠인 보⁠유⁠자 투⁠표';
+
+  @override
+  String get commonContinue => '계⁠속';
+
+  @override
   String get commonCopied => '복⁠사⁠했⁠어⁠요';
+
+  @override
+  String get commonCopy => '복⁠사';
 
   @override
   String get commonCopyAddress => '주⁠소 복⁠사';
@@ -335,7 +322,19 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonFeatureInProgress => '아⁠직 준⁠비 중⁠인 기⁠능⁠이⁠에⁠요.';
 
   @override
+  String get commonGoBack => '돌⁠아⁠가⁠기';
+
+  @override
+  String get commonImporting => '가⁠져⁠오⁠는 중...';
+
+  @override
   String get commonInformation => '안⁠내';
+
+  @override
+  String get commonKeepQrSteady => 'QR 코⁠드⁠가 흔⁠들⁠리⁠지 않⁠고 전⁠부 보⁠이⁠게 해 주⁠세⁠요.';
+
+  @override
+  String get commonKeepScreenAwake => '화⁠면 켜 두⁠기';
 
   @override
   String get commonNotAvailableYet => '아⁠직 사⁠용⁠할 수 없⁠어⁠요';
@@ -344,13 +343,51 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonOk => '확⁠인';
 
   @override
+  String get commonQuit => '종⁠료';
+
+  @override
+  String get commonResetVizor => 'Vizor 초⁠기⁠화';
+
+  @override
+  String get commonRetry => '다⁠시 시⁠도';
+
+  @override
+  String get commonScanQrCode => 'QR 코⁠드 스⁠캔';
+
+  @override
+  String get commonSelectAccount => '계⁠정 선⁠택';
+
+  @override
   String get commonSensitiveContentHidden => '민⁠감⁠한 내⁠용⁠을 가⁠렸⁠어⁠요';
+
+  @override
+  String get commonTryAgain => '다⁠시 시⁠도';
+
+  @override
+  String get commonUnlockVizor => 'Vizor 잠⁠금 해⁠제';
 
   @override
   String get commonUpdate => '변⁠경';
 
   @override
   String get commonUpdating => '변⁠경 중...';
+
+  @override
+  String get commonWelcomeBack => '다⁠시 오⁠신 것⁠을 환⁠영⁠해⁠요';
+
+  @override
+  String endpointCurrent(String endpoint) {
+    return '현⁠재: $endpoint';
+  }
+
+  @override
+  String get endpointCustom => '사⁠용⁠자 지⁠정 엔⁠드⁠포⁠인⁠트';
+
+  @override
+  String get endpointUpdate => '엔⁠드⁠포⁠인⁠트 업⁠데⁠이⁠트';
+
+  @override
+  String get endpointUpdated => '엔⁠드⁠포⁠인⁠트⁠를 업⁠데⁠이⁠트⁠했⁠어⁠요';
 
   @override
   String get homeActivityEmpty => '아⁠직 활⁠동⁠이 없⁠어⁠요...';
@@ -404,9 +441,6 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get homeKeepAwakeBody =>
       '화⁠면⁠이 꺼⁠지⁠면 휴⁠대⁠폰⁠이 동⁠기⁠화⁠를 멈⁠춰⁠요. 화⁠면⁠을 켜 두⁠면 동⁠기⁠화⁠가 더 빨⁠리 끝⁠나⁠요.';
-
-  @override
-  String get homeKeepAwakeEnable => '화⁠면 켜 두⁠기';
 
   @override
   String get homeKeepAwakeLater => '나⁠중⁠에';
@@ -697,9 +731,6 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 QR 코⁠드⁠를 Keystone 서⁠명⁠으⁠로 읽⁠을 수 없⁠어⁠요.';
 
   @override
-  String get homeShieldScanHold => 'QR 코⁠드⁠가 흔⁠들⁠리⁠지 않⁠고 전⁠부 보⁠이⁠게 해 주⁠세⁠요.';
-
-  @override
   String get homeShieldScanTitle => 'Keystone 서⁠명 스⁠캔⁠하⁠기';
 
   @override
@@ -734,9 +765,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get homeShieldToggleFlashlight => '손⁠전⁠등 켜⁠기/끄⁠기';
 
   @override
-  String get homeShieldTryAgain => '다⁠시 시⁠도';
-
-  @override
   String get homeShieldedBalance => '차⁠폐 잔⁠액';
 
   @override
@@ -757,17 +785,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get homeVotingSubtitle => '네⁠트⁠워⁠크⁠의 방⁠향⁠을 함⁠께 정⁠해⁠요';
 
   @override
-  String get homeVotingTitle => '코⁠인 보⁠유⁠자 투⁠표';
-
-  @override
   String get keyringLockedBody =>
       'Vizor⁠가 시⁠스⁠템 키⁠링⁠에 접⁠근⁠할 수 없⁠어⁠요. 키⁠링 잠⁠금⁠을 해⁠제⁠한 뒤 다⁠시 시⁠도⁠를 선⁠택⁠하⁠세⁠요. 시⁠스⁠템⁠에⁠서 키⁠링 비⁠밀⁠번⁠호⁠를 물⁠어⁠볼 수 있⁠어⁠요.';
 
   @override
   String get keyringNoResponse => '키⁠링⁠이 응⁠답⁠하⁠지 않⁠았⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
-
-  @override
-  String get keyringOpenFailedTitle => 'Vizor⁠를 열 수 없⁠어⁠요';
 
   @override
   String get keyringOpeningTitle => 'Vizor 여⁠는 중';
@@ -777,13 +799,7 @@ class AppLocalizationsKo extends AppLocalizations {
       'Vizor⁠를 계⁠속 사⁠용⁠하⁠려⁠면 시⁠스⁠템 키⁠링 안⁠내⁠를 완⁠료⁠하⁠세⁠요.';
 
   @override
-  String get keyringQuit => '종⁠료';
-
-  @override
   String get keyringRestartHint => 'Vizor⁠를 종⁠료⁠하⁠고 다⁠시 시⁠작⁠해 주⁠세⁠요.';
-
-  @override
-  String get keyringRetry => '다⁠시 시⁠도';
 
   @override
   String get keyringSaveUnconfirmedBody =>
@@ -803,7 +819,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get keyringUnavailableTitle => '보⁠안 저⁠장⁠소⁠를 사⁠용⁠할 수 없⁠어⁠요';
 
   @override
-  String get keyringUnlockTitle => '키⁠링 잠⁠금 해⁠제';
+  String get keyringUnlockTitle => '키⁠링 잠⁠금⁠을 해⁠제⁠해 주⁠세⁠요';
 
   @override
   String get keyringUnreadableBody =>
@@ -818,44 +834,10 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get keystoneBackWelcome => '시⁠작 화⁠면';
-
-  @override
-  String get keystoneBirthdayDatePlaceholder => 'mm/dd/yyyy';
-
-  @override
-  String get keystoneBirthdayEstimateError => '지⁠갑 생⁠성 높⁠이⁠를 추⁠정⁠하⁠지 못⁠했⁠어⁠요.';
-
-  @override
-  String get keystoneBirthdayEstimating => '추⁠정⁠하⁠는 중...';
-
-  @override
-  String get keystoneBirthdayHeightHint => '블⁠록 높⁠이';
-
-  @override
   String get keystoneBirthdayInvalidHeight => '올⁠바⁠른 블⁠록 높⁠이⁠가 아⁠닌 것 같⁠아⁠요.';
 
   @override
-  String get keystoneBirthdayMetadataError =>
-      '지⁠갑 생⁠성 높⁠이 정⁠보⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
-
-  @override
-  String get keystoneBirthdayStopSyncing => '동⁠기⁠화⁠를 중⁠지⁠하⁠는 중...';
-
-  @override
   String get keystoneBirthdaySubtitle => '알⁠려 주⁠시⁠면 지⁠갑⁠을 더 빨⁠리 가⁠져⁠올 수 있⁠어⁠요.';
-
-  @override
-  String get keystoneBirthdayTabBlockHeight => '블⁠록 높⁠이 입⁠력';
-
-  @override
-  String get keystoneBirthdayTabDate => '날⁠짜 입⁠력';
-
-  @override
-  String get keystoneBirthdayTitle => '지⁠갑⁠을 대⁠략 언⁠제 만⁠들⁠었⁠나⁠요?';
-
-  @override
-  String get keystoneBirthdayUnknown => '기⁠억⁠나⁠지 않⁠아⁠요';
 
   @override
   String get keystoneCameraDeniedBody =>
@@ -882,9 +864,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get keystoneCameraRestrictedTitle => '카⁠메⁠라 접⁠근⁠이 제⁠한⁠되⁠어 있⁠어⁠요';
 
   @override
-  String get keystoneCameraTryAgain => '다⁠시 시⁠도';
-
-  @override
   String get keystoneCameraUnavailableBody =>
       'Keystone 가⁠져⁠오⁠기⁠는 카⁠메⁠라 QR 스⁠캔⁠만 지⁠원⁠해⁠요.\n카⁠메⁠라⁠를 연⁠결⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
@@ -893,12 +872,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get keystoneConfirmSelection => '선⁠택 확⁠인';
-
-  @override
-  String get keystoneConnectTitle => 'Keystone 연⁠결';
-
-  @override
-  String get keystoneContinue => '계⁠속';
 
   @override
   String get keystoneFirmwareBody =>
@@ -915,9 +888,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get keystoneImReadyNow => '준⁠비⁠됐⁠어⁠요';
-
-  @override
-  String get keystoneImporting => '가⁠져⁠오⁠는 중...';
 
   @override
   String get keystoneOnVizor => 'Vizor⁠에⁠서';
@@ -943,10 +913,6 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 QR 코⁠드⁠를 Keystone Zcash 계⁠정⁠으⁠로 읽⁠지 못⁠했⁠어⁠요.';
 
   @override
-  String get keystoneScanKeepSteady =>
-      'QR 코⁠드⁠가 화⁠면⁠에 전⁠부 보⁠이⁠도⁠록 움⁠직⁠이⁠지 말⁠고 유⁠지⁠하⁠세⁠요.';
-
-  @override
   String get keystoneScanNoAccounts =>
       '이 Keystone QR⁠에⁠서 Zcash 계⁠정⁠을 찾⁠지 못⁠했⁠어⁠요.';
 
@@ -961,15 +927,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get keystoneScanReadingAccounts => '계⁠정⁠을 읽⁠는 중...';
-
-  @override
-  String get keystoneScanTitle => 'QR 코⁠드 스⁠캔';
-
-  @override
-  String get keystoneSelectAccountTitle => '계⁠정 선⁠택';
-
-  @override
-  String get keystoneStepCustomiseWallet => '지⁠갑 꾸⁠미⁠기';
 
   @override
   String get keystoneStepHowToConnect => '연⁠결 방⁠법';
@@ -987,12 +944,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get keystoneStepSelectVizor => 'Vizor(또⁠는 ZODL)를 선⁠택⁠하⁠세⁠요';
-
-  @override
-  String get keystoneStepSetPassword => '비⁠밀⁠번⁠호 설⁠정';
-
-  @override
-  String get keystoneStepWalletBirthdayHeight => '지⁠갑 생⁠성 높⁠이';
 
   @override
   String languageSystemOption(String language) {
@@ -1015,9 +966,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerAdvancedOptions => '고⁠급 옵⁠션';
-
-  @override
-  String get ledgerBackAddAccount => '계⁠정 추⁠가';
 
   @override
   String get ledgerBalanceActivityNote =>
@@ -1066,9 +1014,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerConfirmOpeningZcash => 'Ledger⁠에⁠서 Zcash 열⁠기⁠를 확⁠인⁠하⁠세⁠요.';
-
-  @override
-  String get ledgerConnect => 'Ledger 연⁠결';
 
   @override
   String get ledgerConnectSubtitle => 'Ledger 지⁠갑⁠을 준⁠비⁠해 주⁠세⁠요.';
@@ -1210,13 +1155,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get ledgerSheetDeclinedTitle => '요⁠청⁠이 거⁠부⁠됐⁠어⁠요';
 
   @override
-  String get ledgerStepAddAccount => '계⁠정 추⁠가';
-
-  @override
   String get ledgerStepApproveViewingKey => '뷰⁠잉 키 승⁠인';
-
-  @override
-  String get ledgerStepCustomiseWallet => '지⁠갑 꾸⁠미⁠기';
 
   @override
   String ledgerStepOpenApp(String appName) {
@@ -1225,12 +1164,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerStepOpenZcash => 'Zcash 열⁠기';
-
-  @override
-  String get ledgerStepSetPassword => '비⁠밀⁠번⁠호 설⁠정';
-
-  @override
-  String get ledgerStepWalletBirthdayHeight => '지⁠갑 생⁠성 높⁠이';
 
   @override
   String get ledgerStoppingSearch => '검⁠색⁠을 중⁠지⁠하⁠는 중';
@@ -1243,9 +1176,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerTransportUsb => 'USB';
-
-  @override
-  String get ledgerTryAgain => '다⁠시 시⁠도';
 
   @override
   String get ledgerUnlockBluetoothNearby =>
@@ -1272,15 +1202,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get lockConfirmPasscodeSemantics => '암⁠호⁠를 확⁠인⁠하⁠여 Vizor 잠⁠금 해⁠제';
 
   @override
-  String get lockNavSynced => '동⁠기⁠화⁠됨';
-
-  @override
   String lockNavSyncing(int percent) {
     return '$percent% 동⁠기⁠화 중...';
   }
-
-  @override
-  String get lockPasscodeIncorrect => '암⁠호⁠가 올⁠바⁠르⁠지 않⁠아⁠요';
 
   @override
   String get lockSyncCompleteTitle => '동⁠기⁠화 완⁠료';
@@ -1308,12 +1232,6 @@ class AppLocalizationsKo extends AppLocalizations {
       '계⁠속⁠하⁠려⁠면 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
 
   @override
-  String get lockUnlockVizor => 'Vizor 잠⁠금 해⁠제';
-
-  @override
-  String get lockWelcomeBack => '다⁠시 오⁠신 것⁠을 환⁠영⁠해⁠요';
-
-  @override
   String get navActivity => '활⁠동';
 
   @override
@@ -1335,16 +1253,17 @@ class AppLocalizationsKo extends AppLocalizations {
   String get navVote => '투⁠표';
 
   @override
-  String get onboardingAccountName => '계⁠정 이⁠름';
+  String get networkSettingsTitle => '네⁠트⁠워⁠크 설⁠정';
 
   @override
   String get onboardingAdd => '추⁠가';
 
   @override
-  String get onboardingAddBip39PassphraseOptional => 'BIP39 암⁠호 문⁠구 추⁠가(선⁠택)';
+  String get onboardingAddBip39PassphraseOptional =>
+      'BIP39 패⁠스⁠프⁠레⁠이⁠즈 추⁠가(선⁠택)';
 
   @override
-  String get onboardingAddBip39PassphraseSemantics => 'BIP39 암⁠호 문⁠구 추⁠가';
+  String get onboardingAddBip39PassphraseSemantics => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈 추⁠가';
 
   @override
   String get onboardingAddressShieldedBodyMobile =>
@@ -1386,9 +1305,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingAddressTypesTitle => 'Zcash 주⁠소 유⁠형';
 
   @override
-  String get onboardingAddressTypesTitleMobile => 'Zcash 주⁠소 유⁠형';
-
-  @override
   String onboardingBiometricEnableFailed(String method) {
     return '$method⁠을(를) 켜⁠지 못⁠했⁠어⁠요. 설⁠정⁠에⁠서 다⁠시 시⁠도⁠할 수 있⁠어⁠요.';
   }
@@ -1408,28 +1324,20 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get onboardingBip39PassphraseClear => 'BIP39 암⁠호 문⁠구 지⁠우⁠기';
+  String get onboardingBip39PassphraseClear => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈 지⁠우⁠기';
 
   @override
   String get onboardingBip39PassphraseExplanation =>
-      '선⁠택 사⁠항⁠인 암⁠호 문⁠구(“25⁠번⁠째 단⁠어”)를 추⁠가⁠하⁠면 같⁠은 복⁠구 문⁠구⁠로 별⁠도⁠의 지⁠갑⁠을 만⁠들⁠거⁠나 가⁠져⁠올 수 있⁠어⁠요.';
+      '선⁠택 사⁠항⁠인 패⁠스⁠프⁠레⁠이⁠즈(“25⁠번⁠째 단⁠어”)를 추⁠가⁠하⁠면 같⁠은 복⁠구 문⁠구⁠로 별⁠도⁠의 지⁠갑⁠을 만⁠들⁠거⁠나 가⁠져⁠올 수 있⁠어⁠요.';
 
   @override
-  String get onboardingBip39PassphraseFieldLabel => 'BIP39 암⁠호 문⁠구';
+  String get onboardingBip39PassphraseFieldLabel => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈';
 
   @override
   String get onboardingBip39PassphraseHint => '1–100⁠자';
 
   @override
-  String onboardingBip39PassphrasePreview(String passphrase) {
-    return 'BIP39 암⁠호 문⁠구: $passphrase';
-  }
-
-  @override
-  String get onboardingBip39PassphraseTitle => 'BIP39 암⁠호 문⁠구';
-
-  @override
-  String get onboardingBip39PassphraseTitleOptional => 'BIP39 암⁠호 문⁠구(선⁠택)';
+  String get onboardingBip39PassphraseTitleOptional => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈(선⁠택)';
 
   @override
   String get onboardingBirthdayCantRemember => '기⁠억⁠나⁠지 않⁠아⁠요';
@@ -1468,7 +1376,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingBirthdayMetadataFailed =>
-      '지⁠갑 생⁠성 시⁠점 정⁠보⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
+      '지⁠갑 생⁠성 높⁠이 정⁠보⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
 
   @override
   String get onboardingBirthdayMobileEstimateFailed =>
@@ -1503,115 +1411,16 @@ class AppLocalizationsKo extends AppLocalizations {
       '대⁠략⁠적⁠이⁠어⁠도 괜⁠찮⁠아⁠요.\n그 시⁠점⁠부⁠터 동⁠기⁠화⁠를 시⁠작⁠해⁠요.';
 
   @override
-  String get onboardingBirthdayTitle => '지⁠갑⁠을 대⁠략 언⁠제 만⁠드⁠셨⁠나⁠요?';
+  String get onboardingBirthdayTitle => '지⁠갑⁠을 대⁠략 언⁠제 만⁠들⁠었⁠나⁠요?';
 
   @override
   String get onboardingBlockHeight => '블⁠록 높⁠이';
-
-  @override
-  String get onboardingCalendarMonthApril => '사⁠월';
-
-  @override
-  String get onboardingCalendarMonthAugust => '팔⁠월';
-
-  @override
-  String get onboardingCalendarMonthDecember => '십⁠이⁠월';
-
-  @override
-  String get onboardingCalendarMonthFebruary => '이⁠월';
-
-  @override
-  String get onboardingCalendarMonthJanuary => '일⁠월';
-
-  @override
-  String get onboardingCalendarMonthJuly => '칠⁠월';
-
-  @override
-  String get onboardingCalendarMonthJune => '유⁠월';
-
-  @override
-  String get onboardingCalendarMonthMarch => '삼⁠월';
-
-  @override
-  String get onboardingCalendarMonthMay => '오⁠월';
-
-  @override
-  String get onboardingCalendarMonthNovember => '십⁠일⁠월';
-
-  @override
-  String get onboardingCalendarMonthOctober => '시⁠월';
-
-  @override
-  String get onboardingCalendarMonthSeptember => '구⁠월';
-
-  @override
-  String get onboardingCalendarMonthShortApr => '사⁠월';
-
-  @override
-  String get onboardingCalendarMonthShortAug => '팔⁠월';
-
-  @override
-  String get onboardingCalendarMonthShortDec => '십⁠이⁠월';
-
-  @override
-  String get onboardingCalendarMonthShortFeb => '이⁠월';
-
-  @override
-  String get onboardingCalendarMonthShortJan => '일⁠월';
-
-  @override
-  String get onboardingCalendarMonthShortJul => '칠⁠월';
-
-  @override
-  String get onboardingCalendarMonthShortJun => '유⁠월';
-
-  @override
-  String get onboardingCalendarMonthShortMar => '삼⁠월';
-
-  @override
-  String get onboardingCalendarMonthShortMay => '오⁠월';
-
-  @override
-  String get onboardingCalendarMonthShortNov => '십⁠일⁠월';
-
-  @override
-  String get onboardingCalendarMonthShortOct => '시⁠월';
-
-  @override
-  String get onboardingCalendarMonthShortSep => '구⁠월';
-
-  @override
-  String get onboardingCalendarWeekdayFri => '금';
-
-  @override
-  String get onboardingCalendarWeekdayMon => '월';
-
-  @override
-  String get onboardingCalendarWeekdaySat => '토';
-
-  @override
-  String get onboardingCalendarWeekdaySun => '일';
-
-  @override
-  String get onboardingCalendarWeekdayThu => '목';
-
-  @override
-  String get onboardingCalendarWeekdayTue => '화';
-
-  @override
-  String get onboardingCalendarWeekdayWed => '수';
-
-  @override
-  String get onboardingChangeProfilePicture => '프⁠로⁠필 사⁠진 변⁠경';
 
   @override
   String get onboardingCheckingAccounts => '계⁠정 확⁠인⁠하⁠는 중...';
 
   @override
   String get onboardingClear => '지⁠우⁠기';
-
-  @override
-  String get onboardingConfirmPassword => '비⁠밀⁠번⁠호 확⁠인';
 
   @override
   String get onboardingConnectHardwareSubtitleDesktop =>
@@ -1634,19 +1443,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingConnectLedger => 'Ledger 연⁠결';
 
   @override
-  String get onboardingContinue => '계⁠속';
-
-  @override
   String get onboardingContinueAnywayDesktop => '그⁠래⁠도 계⁠속';
 
   @override
   String get onboardingContinueAnywayMobile => '그⁠래⁠도 계⁠속';
-
-  @override
-  String get onboardingCopy => '복⁠사';
-
-  @override
-  String get onboardingCopySecretPassphrase => '복⁠구 문⁠구 복⁠사';
 
   @override
   String get onboardingCreatingWallet => '지⁠갑 만⁠드⁠는 중...';
@@ -1668,7 +1468,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingEdit => '수⁠정';
 
   @override
-  String get onboardingEditBip39Passphrase => 'BIP39 암⁠호 문⁠구 수⁠정';
+  String get onboardingEditBip39Passphrase => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈 수⁠정';
 
   @override
   String get onboardingEnterPassword => '비⁠밀⁠번⁠호 입⁠력';
@@ -1715,9 +1515,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingGoBackDesktop => '돌⁠아⁠가⁠기';
-
-  @override
-  String get onboardingGoBackMobile => '돌⁠아⁠가⁠기';
 
   @override
   String get onboardingHardwareKeystoneOnly => 'Keystone 지⁠갑';
@@ -1803,9 +1600,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingImportWalletTitleMobile => '지⁠갑 가⁠져⁠오⁠기';
 
   @override
-  String get onboardingImporting => '가⁠져⁠오⁠는 중...';
-
-  @override
   String get onboardingIntroCard =>
       'Bitcoin⁠이⁠나 Ethereum⁠과 달⁠리 차⁠폐⁠된 Zcash 거⁠래⁠는 보⁠낸 사⁠람, 받⁠는 사⁠람, 금⁠액⁠을 숨⁠겨⁠요. 신⁠뢰⁠가 아⁠니⁠라 암⁠호⁠학⁠으⁠로 검⁠증⁠돼⁠요.';
 
@@ -1885,29 +1679,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingNetworkCheckingEndpoint => '엔⁠드⁠포⁠인⁠트 확⁠인⁠하⁠는 중…';
 
   @override
-  String onboardingNetworkCurrentEndpoint(String endpoint) {
-    return '현⁠재: $endpoint';
-  }
-
-  @override
-  String get onboardingNetworkCustomEndpoint => '사⁠용⁠자 지⁠정 엔⁠드⁠포⁠인⁠트';
-
-  @override
   String get onboardingNetworkEndpointHelper =>
       '이 지⁠갑⁠의 네⁠트⁠워⁠크⁠용 lightwalletd 서⁠버⁠를 사⁠용⁠하⁠세⁠요.';
 
   @override
-  String get onboardingNetworkEndpointUpdated => '엔⁠드⁠포⁠인⁠트⁠를 업⁠데⁠이⁠트⁠했⁠어⁠요';
-
-  @override
   String get onboardingNetworkSaveFailed =>
       '엔⁠드⁠포⁠인⁠트⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
-
-  @override
-  String get onboardingNetworkSettings => '네⁠트⁠워⁠크 설⁠정';
-
-  @override
-  String get onboardingNetworkUpdateEndpoint => '엔⁠드⁠포⁠인⁠트 업⁠데⁠이⁠트';
 
   @override
   String get onboardingNetworkVerifyFailed =>
@@ -1920,9 +1697,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingNotNow => '나⁠중⁠에';
 
   @override
-  String get onboardingPasscodeConfirmTitle => '암⁠호 확⁠인';
-
-  @override
   String get onboardingPasscodeCreateTitle => '암⁠호 만⁠들⁠기';
 
   @override
@@ -1931,29 +1705,10 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get onboardingPasscodeIncorrect => '암⁠호⁠가 맞⁠지 않⁠아⁠요';
-
-  @override
   String get onboardingPasscodeReEnter => '암⁠호⁠를 다⁠시 입⁠력⁠해 주⁠세⁠요.';
 
   @override
   String get onboardingPasscodeSettingUp => '지⁠갑⁠을 설⁠정⁠하⁠는 중...';
-
-  @override
-  String get onboardingPasscodeSixDigits => '6⁠자⁠리 숫⁠자';
-
-  @override
-  String get onboardingPasscodesDidNotMatch =>
-      '암⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
-
-  @override
-  String get onboardingPassword => '비⁠밀⁠번⁠호';
-
-  @override
-  String get onboardingPasswordsDoNotMatch => '비⁠밀⁠번⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요.';
-
-  @override
-  String get onboardingQuit => '종⁠료';
 
   @override
   String get onboardingRandomiseAccountPersona =>
@@ -1967,17 +1722,8 @@ class AppLocalizationsKo extends AppLocalizations {
       '앱⁠을 초⁠기⁠화⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
-  String get onboardingResetCannotBeUndone => '되⁠돌⁠릴 수 없⁠어⁠요.';
-
-  @override
-  String get onboardingResetVizor => 'Vizor 초⁠기⁠화';
-
-  @override
   String get onboardingResumeSetupFailed =>
       '설⁠정⁠을 이⁠어⁠가⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
-
-  @override
-  String get onboardingRetry => '다⁠시 시⁠도';
 
   @override
   String get onboardingRetrySetup => '설⁠정 다⁠시 시⁠도';
@@ -2005,9 +1751,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingSavingWallet => '지⁠갑 저⁠장⁠하⁠는 중...';
 
   @override
-  String get onboardingSecretPassphrase => '복⁠구 문⁠구';
-
-  @override
   String get onboardingSecretPassphraseAboutToSee => '곧 복⁠구 문⁠구⁠가 표⁠시⁠돼⁠요.';
 
   @override
@@ -2032,12 +1775,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingSeedWordHint => '단⁠어';
-
-  @override
-  String get onboardingSelectProfilePicture => '프⁠로⁠필 사⁠진 선⁠택';
-
-  @override
-  String get onboardingSetPassword => '비⁠밀⁠번⁠호 설⁠정';
 
   @override
   String get onboardingSetPasswordAndFinish => '비⁠밀⁠번⁠호 설⁠정⁠하⁠고 완⁠료';
@@ -2069,10 +1806,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingStepIntroToZcash => 'Zcash 소⁠개';
 
   @override
+  String get onboardingStepSetPassword => '비⁠밀⁠번⁠호 설⁠정';
+
+  @override
   String get onboardingStepWalletBirthdayHeight => '지⁠갑 생⁠성 높⁠이';
 
   @override
-  String get onboardingStopSyncing => '동⁠기⁠화 중⁠지⁠하⁠는 중...';
+  String get onboardingStopSyncing => '동⁠기⁠화⁠를 중⁠지⁠하⁠는 중...';
 
   @override
   String get onboardingStorageDbMigrationBody =>
@@ -2085,9 +1825,6 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get onboardingStorageKeyringLockedBody =>
       '지⁠갑⁠을 열⁠려⁠면 Vizor⁠가 시⁠스⁠템 키⁠링⁠에 접⁠근⁠할 수 있⁠어⁠야 해⁠요. 키⁠링⁠을 잠⁠금 해⁠제⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
-
-  @override
-  String get onboardingStorageKeyringLockedTitle => '키⁠링⁠을 잠⁠금 해⁠제⁠해 주⁠세⁠요';
 
   @override
   String get onboardingStorageRetrySecureStorageFailed =>
@@ -2108,9 +1845,6 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get onboardingStorageStartupFailureBody =>
       'Vizor⁠가 로⁠컬 시⁠작 상⁠태⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 Vizor⁠를 종⁠료⁠한 뒤 다⁠시 실⁠행⁠해 주⁠세⁠요.';
-
-  @override
-  String get onboardingStorageStartupFailureTitle => 'Vizor⁠를 열 수 없⁠어⁠요';
 
   @override
   String get onboardingTellMeHowZcashWorks => 'Zcash 작⁠동 방⁠식 알⁠아⁠보⁠기';
@@ -2136,9 +1870,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingThingsToKnow => '알⁠아 두⁠세⁠요';
 
   @override
-  String get onboardingTryAgain => '다⁠시 시⁠도';
-
-  @override
   String get onboardingUnknownHeightBody =>
       '지⁠갑 생⁠성 높⁠이 없⁠이 계⁠속⁠하⁠면 Vizor⁠가 지⁠원⁠하⁠는 가⁠장 오⁠래⁠된 차⁠폐 높⁠이⁠부⁠터 스⁠캔⁠해⁠요. 안⁠전⁠하⁠지⁠만 첫 동⁠기⁠화⁠에 아⁠주 오⁠랜 시⁠간⁠이 걸⁠릴 수 있⁠어⁠요.';
 
@@ -2150,9 +1881,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingUnlockBiometricReason => '지⁠갑 잠⁠금 해⁠제';
-
-  @override
-  String get onboardingUnlockButton => 'Vizor 잠⁠금 해⁠제';
 
   @override
   String get onboardingUnlockDescription =>
@@ -2176,9 +1904,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingUnlockWelcomeBack => '다⁠시 오⁠신 걸 환⁠영⁠해⁠요';
 
   @override
-  String get onboardingUnlockWelcomeBackMobile => '다⁠시 오⁠신 걸 환⁠영⁠해⁠요';
-
-  @override
   String get onboardingWelcome => '시⁠작 화⁠면';
 
   @override
@@ -2191,10 +1916,44 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingWelcomeImportWallet => '지⁠갑 가⁠져⁠오⁠기';
 
   @override
+  String get passcodeConfirmTitle => '암⁠호 확⁠인';
+
+  @override
+  String get passcodeIncorrect => '암⁠호⁠가 맞⁠지 않⁠아⁠요';
+
+  @override
+  String get passcodeSixDigits => '6⁠자⁠리 숫⁠자';
+
+  @override
+  String get passcodesDidNotMatch => '암⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get passwordCheckFailed =>
+      '비⁠밀⁠번⁠호⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get passwordConfirmLabel => '비⁠밀⁠번⁠호 확⁠인';
+
+  @override
+  String get passwordIncorrect => '비⁠밀⁠번⁠호⁠가 맞⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get passwordLabel => '비⁠밀⁠번⁠호';
+
+  @override
+  String get passwordsDoNotMatch => '비⁠밀⁠번⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요.';
+
+  @override
   String get poolShielded => '차⁠폐⁠됨';
 
   @override
   String get poolTransparent => '투⁠명';
+
+  @override
+  String get profilePictureChange => '프⁠로⁠필 사⁠진 변⁠경';
+
+  @override
+  String get profilePictureSelect => '프⁠로⁠필 사⁠진 선⁠택';
 
   @override
   String get profilePictureUpdateFailed => '프⁠로⁠필 사⁠진⁠을 바⁠꾸⁠지 못⁠했⁠어⁠요.';
@@ -2203,15 +1962,18 @@ class AppLocalizationsKo extends AppLocalizations {
   String get receiptMessageLabel => '메⁠시⁠지';
 
   @override
+  String get secretPassphraseCopy => '복⁠구 문⁠구 복⁠사';
+
+  @override
+  String get secretPassphraseTitle => '복⁠구 문⁠구';
+
+  @override
   String get settingsAccountChangedPasscode =>
       '선⁠택⁠한 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 암⁠호⁠를 다⁠시 입⁠력⁠해 주⁠세⁠요.';
 
   @override
   String get settingsAccountChangedPassword =>
       '선⁠택⁠한 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 비⁠밀⁠번⁠호⁠를 다⁠시 입⁠력⁠해 주⁠세⁠요.';
-
-  @override
-  String get settingsAccountSaveFailed => '계⁠정 변⁠경 사⁠항⁠을 저⁠장⁠하⁠지 못⁠했⁠어⁠요';
 
   @override
   String get settingsAccountUnavailable => '선⁠택⁠한 계⁠정⁠을 더 이⁠상 사⁠용⁠할 수 없⁠어⁠요.';
@@ -2256,14 +2018,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsBip39PassphraseCopy => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈 복⁠사';
 
   @override
-  String get settingsBip39PassphraseTitle => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈';
-
-  @override
-  String settingsBip39PassphraseValue(String passphrase) {
-    return 'BIP39 패⁠스⁠프⁠레⁠이⁠즈: $passphrase';
-  }
-
-  @override
   String get settingsBirthdayBlockHeight => '생⁠성 블⁠록 높⁠이';
 
   @override
@@ -2276,25 +2030,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsBirthdayHeightCopied => '생⁠성 블⁠록 높⁠이⁠를 복⁠사⁠했⁠어⁠요';
 
   @override
-  String get settingsChangePasscodeIncorrect => '암⁠호⁠가 맞⁠지 않⁠아⁠요';
-
-  @override
   String get settingsConfirmAccessSubtitle => '본⁠인 확⁠인⁠이 필⁠요⁠해⁠요';
 
   @override
   String get settingsConfirmAccessTitle => '접⁠근 확⁠인';
-
-  @override
-  String get settingsConfirmPasscodeTitle => '암⁠호 확⁠인';
-
-  @override
-  String get settingsConfirmPasswordLabel => '비⁠밀⁠번⁠호 확⁠인';
-
-  @override
-  String get settingsContinue => '계⁠속';
-
-  @override
-  String get settingsCopy => '복⁠사';
 
   @override
   String settingsCopyLabel(String label) {
@@ -2319,15 +2058,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '엔⁠드⁠포⁠인⁠트⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요. 호⁠스⁠트⁠와 포⁠트⁠를 확⁠인⁠해 주⁠세⁠요.';
 
   @override
-  String settingsEndpointCurrent(String endpoint) {
-    return '현⁠재: $endpoint';
-  }
-
-  @override
   String get settingsEndpointCurrentPrefix => '현⁠재: ';
-
-  @override
-  String get settingsEndpointCustom => '사⁠용⁠자 지⁠정 엔⁠드⁠포⁠인⁠트';
 
   @override
   String get settingsEndpointCustomise => '엔⁠드⁠포⁠인⁠트 직⁠접 설⁠정';
@@ -2339,19 +2070,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsEndpointDefaultMarker => '(기⁠본⁠값)';
 
   @override
-  String get settingsEndpointNetworkSettings => '네⁠트⁠워⁠크 설⁠정';
-
-  @override
   String get settingsEndpointSelectFromList => '목⁠록⁠에⁠서 선⁠택';
 
   @override
   String get settingsEndpointTitle => '엔⁠드⁠포⁠인⁠트';
-
-  @override
-  String get settingsEndpointUpdate => '엔⁠드⁠포⁠인⁠트 업⁠데⁠이⁠트';
-
-  @override
-  String get settingsEndpointUpdatedToast => '엔⁠드⁠포⁠인⁠트⁠를 업⁠데⁠이⁠트⁠했⁠어⁠요';
 
   @override
   String get settingsEndpointUpdating => '엔⁠드⁠포⁠인⁠트 업⁠데⁠이⁠트 중...';
@@ -2410,15 +2132,8 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsIncorrectPasscode => '암⁠호⁠가 맞⁠지 않⁠아⁠요';
 
   @override
-  String get settingsIncorrectPassword =>
-      '비⁠밀⁠번⁠호⁠가 맞⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
-
-  @override
   String get settingsKeepAwakeDescription =>
       '휴⁠대⁠폰⁠이 잠⁠자⁠기 모⁠드⁠로 전⁠환⁠되⁠지 않⁠아 동⁠기⁠화⁠가 더 빨⁠리 끝⁠나⁠요. 앱⁠은 1⁠분⁠간 사⁠용⁠하⁠지 않⁠으⁠면 그⁠대⁠로 잠⁠겨⁠요.';
-
-  @override
-  String get settingsKeepAwakeLabel => '화⁠면 켜⁠짐 유⁠지';
 
   @override
   String get settingsKeepAwakeUpdateFailed =>
@@ -2441,9 +2156,6 @@ class AppLocalizationsKo extends AppLocalizations {
       '암⁠호⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
-  String get settingsPasscodeLengthHint => '6⁠자⁠리 숫⁠자';
-
-  @override
   String get settingsPasscodeMustDiffer => '새 암⁠호⁠는 기⁠존 암⁠호⁠와 달⁠라⁠야 해⁠요.';
 
   @override
@@ -2462,18 +2174,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '암⁠호⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
-  String get settingsPasscodesMismatch =>
-      '암⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
-
-  @override
-  String get settingsPasswordCheckFailed =>
-      '비⁠밀⁠번⁠호⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
-
-  @override
   String get settingsPasswordHint => '비⁠밀⁠번⁠호 입⁠력...';
-
-  @override
-  String get settingsPasswordLabel => '비⁠밀⁠번⁠호';
 
   @override
   String get settingsPasswordMinimumHint =>
@@ -2486,9 +2187,6 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get settingsPasswordUpdateFailed =>
       '비⁠밀⁠번⁠호⁠를 변⁠경⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
-
-  @override
-  String get settingsPasswordsMismatch => '비⁠밀⁠번⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요.';
 
   @override
   String get settingsPfpKnight => '기⁠사';
@@ -2548,9 +2246,6 @@ class AppLocalizationsKo extends AppLocalizations {
       '아⁠직 제⁠공⁠되⁠는 서⁠버⁠가 없⁠어⁠요. 사⁠용⁠자 지⁠정 서⁠버⁠를 입⁠력⁠할 수 있⁠어⁠요.';
 
   @override
-  String get settingsPirPingChecking => '확⁠인 중...';
-
-  @override
   String get settingsPirServerChangeFailed =>
       '서⁠버⁠를 변⁠경⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
@@ -2595,9 +2290,6 @@ class AppLocalizationsKo extends AppLocalizations {
       'Vizor⁠가 투⁠명 내⁠역⁠을 공⁠개 방⁠식⁠으⁠로 다⁠시 구⁠성⁠하⁠며, 서⁠버⁠가 모⁠든 주⁠소⁠를 알⁠게 돼⁠요.';
 
   @override
-  String get settingsPrivateQueriesTurnOffConfirm => '끄⁠기';
-
-  @override
   String get settingsPrivateQueriesTurnOffDisclosure =>
       '서⁠버⁠가 모⁠든 계⁠정⁠의 투⁠명 주⁠소 전⁠부⁠와 비⁠공⁠개 복⁠구⁠로 찾⁠은 거⁠래 ID⁠를 받⁠아⁠요. 서⁠버⁠는 이⁠를 서⁠로 연⁠결⁠할 수 있⁠고, Tor⁠를 쓰⁠지 않⁠으⁠면 IP 주⁠소⁠와⁠도 연⁠결⁠할 수 있⁠어⁠요.';
 
@@ -2611,9 +2303,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsRowAboutVizor => 'Vizor 정⁠보';
 
   @override
-  String get settingsRowAccountName => '계⁠정 이⁠름';
-
-  @override
   String get settingsRowAccountNameMobile => '계⁠정 이⁠름';
 
   @override
@@ -2624,9 +2313,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsRowChangePassword => '비⁠밀⁠번⁠호 변⁠경';
-
-  @override
-  String get settingsRowCoinholderVoting => '코⁠인 보⁠유⁠자 투⁠표';
 
   @override
   String get settingsRowLinkMobile => 'Vizor 모⁠바⁠일 연⁠결';
@@ -2651,9 +2337,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsRowViewingKeyMobile => '뷰⁠잉 키';
-
-  @override
-  String get settingsSecretPassphraseTitle => '복⁠구 문⁠구';
 
   @override
   String get settingsSectionAccount => '계⁠정';
@@ -2682,9 +2365,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsSeedCopiedToast => '복⁠구 문⁠구⁠를 복⁠사⁠했⁠어⁠요';
-
-  @override
-  String get settingsSeedCopyLabel => '복⁠구 문⁠구 복⁠사';
 
   @override
   String get settingsSeedHeadingSubtitle =>
@@ -2870,18 +2550,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsTorUse => 'Tor 사⁠용';
 
   @override
-  String get settingsTryAgain => '다⁠시 시⁠도';
+  String get settingsTurnOffConfirm => '끄⁠기';
 
   @override
   String settingsUninstallActiveSwaps(int count) {
     return '이 지⁠갑⁠에 진⁠행 중⁠인 스⁠왑⁠이 $count⁠개 있⁠어⁠요. 삭⁠제⁠하⁠기 전⁠에 모⁠두 끝⁠날 때⁠까⁠지 기⁠다⁠려 주⁠세⁠요.';
   }
-
-  @override
-  String get settingsUninstallCannotUndo => '되⁠돌⁠릴 수 없⁠어⁠요.';
-
-  @override
-  String get settingsUninstallChecking => '확⁠인 중...';
 
   @override
   String get settingsUninstallClaimCheckFailed =>
@@ -2970,9 +2644,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsUpdatePasswordTitle => '비⁠밀⁠번⁠호 변⁠경';
 
   @override
-  String get settingsUpdateRestart => '재⁠시⁠작';
-
-  @override
   String get settingsUpdateRestartButton => '재⁠시⁠작⁠하⁠여 업⁠데⁠이⁠트';
 
   @override
@@ -2990,10 +2661,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String settingsUpdateStatusDownloading(String percent) {
     return '$percent% 다⁠운⁠로⁠드 중⁠이⁠에⁠요.';
   }
-
-  @override
-  String get settingsUpdateStatusFailed =>
-      '업⁠데⁠이⁠트⁠를 완⁠료⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get settingsUpdateStatusIdle => '업⁠데⁠이⁠트⁠를 확⁠인⁠할 준⁠비⁠가 되⁠었⁠어⁠요.';
@@ -3157,9 +2824,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sidebarHideBalance => '잔⁠액 숨⁠기⁠기';
 
   @override
-  String get sidebarImporting => '가⁠져⁠오⁠는 중...';
-
-  @override
   String get sidebarManageAccounts => '관⁠리';
 
   @override
@@ -3196,6 +2860,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get txFeeInfoTitle => '거⁠래 수⁠수⁠료';
 
   @override
+  String get updateFailedMessage =>
+      '업⁠데⁠이⁠트⁠를 완⁠료⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get updateRestart => '다⁠시 시⁠작';
+
+  @override
   String walletLinkAccountsFound(int count) {
     return '계⁠정 $count⁠개⁠를 찾⁠았⁠어⁠요';
   }
@@ -3225,9 +2896,6 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get walletLinkContinue => '계⁠속';
-
-  @override
   String get walletLinkDeselectAll => '모⁠두 선⁠택 해⁠제';
 
   @override
@@ -3252,18 +2920,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get walletLinkErrorInvalidTitle => '잘⁠못⁠된 QR 코⁠드';
 
   @override
-  String get walletLinkGoBack => '돌⁠아⁠가⁠기';
-
-  @override
   String walletLinkImportContacts(int count) {
     return '연⁠락⁠처 $count⁠개 가⁠져⁠오⁠기';
   }
-
-  @override
-  String get walletLinkImportContactsTitle => '연⁠락⁠처 가⁠져⁠오⁠기';
-
-  @override
-  String get walletLinkImporting => '가⁠져⁠오⁠는 중...';
 
   @override
   String get walletLinkIntroNotice =>
@@ -3305,12 +2964,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get walletLinkScanSubtitleDesktop => '데⁠스⁠크⁠탑⁠에 표⁠시⁠된 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
-
-  @override
-  String get walletLinkScanTitle => 'QR 코⁠드 스⁠캔';
-
-  @override
-  String get walletLinkSelectAccountTitle => '계⁠정 선⁠택';
 
   @override
   String get walletLinkSelectAll => '모⁠두 선⁠택';

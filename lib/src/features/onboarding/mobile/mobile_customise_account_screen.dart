@@ -348,8 +348,8 @@ class _MobileCustomiseAccountScreenState
         child: Text(switch (_submitPhase) {
           _SubmitPhase.idle =>
             widget.setupCommitted
-                ? context.l10n.onboardingTryAgain
-                : context.l10n.onboardingContinue,
+                ? context.l10n.commonTryAgain
+                : context.l10n.commonContinue,
           _SubmitPhase.stoppingSync => context.l10n.onboardingStopSyncing,
           _SubmitPhase.creatingWallet =>
             widget.setupCommitted
@@ -476,7 +476,7 @@ class _AccountProfileCard extends StatelessWidget {
                               end: _randomiseTapSize,
                             ),
                             child: Text(
-                              context.l10n.onboardingAccountName,
+                              context.l10n.accountNameLabel,
                               style: AppTypography.labelLarge.copyWith(
                                 color: cardTextColor.withValues(alpha: 0.5),
                                 fontWeight: FontWeight.w400,
@@ -570,7 +570,7 @@ class _EditableProfilePicture extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: context.l10n.onboardingChangeProfilePicture,
+      label: context.l10n.profilePictureChange,
       child: GestureDetector(
         key: const ValueKey('mobile_customise_account_avatar_button'),
         behavior: HitTestBehavior.opaque,

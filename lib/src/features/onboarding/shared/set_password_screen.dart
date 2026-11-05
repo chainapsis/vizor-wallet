@@ -103,7 +103,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   String? get _confirmMessage {
     final value = _confirmController.text;
     if (value.isEmpty || _passwordPolicyError != null || _matches) return null;
-    return context.l10n.onboardingPasswordsDoNotMatch;
+    return context.l10n.passwordsDoNotMatch;
   }
 
   Future<void> _submit() async {
@@ -433,7 +433,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         SetPasswordFlow.importWallet =>
           ImportOnboardingStep.walletBirthdayHeight.label(l10n),
         SetPasswordFlow.importKeystone =>
-          KeystoneOnboardingStep.walletBirthdayHeight.label,
+          KeystoneOnboardingStep.walletBirthdayHeight.label(l10n),
         SetPasswordFlow.importWalletLink => l10n.onboardingStepImportContacts,
       };
 }
@@ -557,7 +557,7 @@ class _SetPasswordOnPageContent extends StatelessWidget {
                         child: AppPasswordInput(
                           child: PasswordTextField(
                             key: const ValueKey('set_password_password_field'),
-                            label: context.l10n.onboardingPassword,
+                            label: context.l10n.passwordLabel,
                             labelStyle: fieldLabelStyle,
                             hintText:
                                 context.l10n.onboardingSetPasswordPlaceholder,
@@ -584,9 +584,9 @@ class _SetPasswordOnPageContent extends StatelessWidget {
                         child: AppPasswordInput(
                           child: PasswordTextField(
                             key: const ValueKey('set_password_confirm_field'),
-                            label: context.l10n.onboardingConfirmPassword,
+                            label: context.l10n.passwordConfirmLabel,
                             labelStyle: fieldLabelStyle,
-                            hintText: context.l10n.onboardingConfirmPassword,
+                            hintText: context.l10n.passwordConfirmLabel,
                             controller: confirmController,
                             messageText: confirmMessage,
                             tone: confirmMessage == null
@@ -624,7 +624,7 @@ class _SetPasswordTitle extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            context.l10n.onboardingSetPassword,
+            context.l10n.onboardingStepSetPassword,
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),

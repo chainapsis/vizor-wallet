@@ -359,7 +359,7 @@ class _MobileKeystoneShieldScreenState
     if (!mounted || _closed || _cancellationStarted || _decoding) return;
     final message = error.toString().contains('Unexpected UR type')
         ? context.l10n.homeShieldScanWrongQr
-        : context.l10n.homeShieldScanHold;
+        : context.l10n.commonKeepQrSteady;
     if (_scanHint == message) return;
     setState(() => _scanHint = message);
   }
@@ -697,7 +697,7 @@ class _MobileKeystoneShieldScreenState
                       constrainContent: true,
                       growWithContent: true,
                       onPressed: _retryBroadcast,
-                      child: Text(context.l10n.homeShieldTryAgain),
+                      child: Text(context.l10n.commonTryAgain),
                     ),
                   ),
                 ],

@@ -574,7 +574,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       AppSidebarItem(
                         key: const ValueKey('sidebar_home_button'),
                         label: isImporting
-                            ? context.l10n.sidebarImporting
+                            ? context.l10n.commonImporting
                             : context.l10n.navHome,
                         iconName: isImporting ? AppIcons.loader : AppIcons.home,
                         iconAnimated: !isImporting,

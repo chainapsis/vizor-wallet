@@ -200,8 +200,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                       _WelcomeIconButton(
                         key: const ValueKey('welcome_endpoint_settings_button'),
                         icon: AppIcons.cog,
-                        tooltip: context.l10n.onboardingNetworkSettings,
-                        semanticLabel: context.l10n.onboardingNetworkSettings,
+                        tooltip: context.l10n.networkSettingsTitle,
+                        semanticLabel: context.l10n.networkSettingsTitle,
                         onTap: _openEndpointSettings,
                       ),
                     ],

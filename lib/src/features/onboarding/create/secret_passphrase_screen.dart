@@ -297,7 +297,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            context.l10n.onboardingSecretPassphrase,
+            context.l10n.secretPassphraseTitle,
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
@@ -340,7 +340,7 @@ class _BottomActions extends StatelessWidget {
       trailing: const AppIcon(AppIcons.chevronForward),
       child: Text(
         revealed
-            ? context.l10n.onboardingContinue
+            ? context.l10n.commonContinue
             : context.l10n.onboardingSecretPassphraseReveal,
       ),
     );
@@ -503,7 +503,7 @@ class _SeedGrid extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                context.l10n.onboardingSecretPassphrase,
+                context.l10n.secretPassphraseTitle,
                 style: AppTypography.bodyLarge.copyWith(
                   color: textColor,
                   fontWeight: FontWeight.w600,
@@ -585,9 +585,7 @@ class _CopyButton extends StatelessWidget {
       variant: AppButtonVariant.primary,
       size: AppButtonSize.small,
       trailing: AppIcon(copied ? AppIcons.check : AppIcons.copy),
-      child: Text(
-        copied ? context.l10n.commonCopied : context.l10n.onboardingCopy,
-      ),
+      child: Text(copied ? context.l10n.commonCopied : context.l10n.commonCopy),
     );
   }
 }

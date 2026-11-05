@@ -435,7 +435,7 @@ class _KeystoneShieldSigningOverlayState
                   ? null
                   : context.l10n.homeShieldAfterScan,
               primaryLabel: canRetry
-                  ? context.l10n.homeShieldTryAgain
+                  ? context.l10n.commonTryAgain
                   : isFailed || isBroadcastWarning || isBroadcasting
                   ? null
                   : context.l10n.homeShieldGetSignature,

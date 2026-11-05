@@ -266,7 +266,7 @@ class _SettingsSeedPhraseScreenState
       if (!isValid) {
         if (!mounted) return;
         setState(() {
-          _passwordError = context.l10n.settingsIncorrectPassword;
+          _passwordError = context.l10n.passwordIncorrect;
           _isSubmitting = false;
         });
         return;
@@ -588,7 +588,7 @@ class _SettingsSeedPhraseScreenState
                 : () => setState(
                     () => _stage = _SettingsSeedPhraseStage.password,
                   ),
-            child: Text(context.l10n.settingsContinue),
+            child: Text(context.l10n.commonContinue),
           ),
           if (isPending) ...[
             const SizedBox(height: AppSpacing.xs),
@@ -847,7 +847,7 @@ class _SeedPhraseHeading extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          context.l10n.settingsSecretPassphraseTitle,
+          context.l10n.secretPassphraseTitle,
           textAlign: TextAlign.center,
           style: AppTypography.headlineLarge.copyWith(
             color: colors.text.accent,
@@ -936,7 +936,7 @@ class _SeedWordsCard extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xxs),
                 Expanded(
                   child: Text(
-                    context.l10n.settingsSecretPassphraseTitle,
+                    context.l10n.secretPassphraseTitle,
                     style: AppTypography.bodyLarge.copyWith(
                       color: cardTextColor,
                       fontWeight: FontWeight.w600,
@@ -958,7 +958,7 @@ class _SeedWordsCard extends StatelessWidget {
                   child: Text(
                     phraseCopied
                         ? context.l10n.commonCopied
-                        : context.l10n.settingsCopy,
+                        : context.l10n.commonCopy,
                   ),
                 ),
               ],
@@ -1138,7 +1138,7 @@ class _Bip39PassphraseFooter extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                context.l10n.settingsBip39PassphraseValue(passphrase),
+                context.l10n.bip39PassphraseValue(passphrase),
                 key: const ValueKey('settings_bip39_passphrase_value'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -1166,9 +1166,7 @@ class _Bip39PassphraseFooter extends StatelessWidget {
                   horizontal: AppSpacing.xxs,
                 ),
                 child: Text(
-                  copied
-                      ? context.l10n.commonCopied
-                      : context.l10n.settingsCopy,
+                  copied ? context.l10n.commonCopied : context.l10n.commonCopy,
                 ),
               ),
             ),

@@ -61,13 +61,14 @@ class LedgerOnboardingShell extends ConsumerWidget {
           for (final step in steps)
             OnboardingSidebarStepData(
               label: switch (step) {
-                LedgerOnboardingStep.connect => context.l10n.ledgerConnect,
+                LedgerOnboardingStep.connect =>
+                  context.l10n.onboardingConnectLedger,
                 LedgerOnboardingStep.birthday =>
-                  context.l10n.ledgerStepWalletBirthdayHeight,
+                  context.l10n.onboardingStepWalletBirthdayHeight,
                 LedgerOnboardingStep.setPassword =>
-                  context.l10n.ledgerStepSetPassword,
+                  context.l10n.onboardingStepSetPassword,
                 LedgerOnboardingStep.customiseAccount =>
-                  context.l10n.ledgerStepCustomiseWallet,
+                  context.l10n.onboardingStepCustomiseWallet,
               },
               iconName: switch (step) {
                 LedgerOnboardingStep.connect => AppIcons.ledger,
@@ -473,7 +474,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     backTarget:
         widget.backTarget ??
         OnboardingBackTarget.route(
-          label: context.l10n.ledgerBackAddAccount,
+          label: context.l10n.commonAddAccount,
           routePath: '/add-account',
         ),
     overlay: _connectionOverlay(),
@@ -490,7 +491,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        context.l10n.ledgerConnect,
+                        context.l10n.onboardingConnectLedger,
                         style: AppTypography.displayLarge.copyWith(
                           fontFamily: 'Young Serif',
                           fontWeight: FontWeight.w400,
@@ -597,7 +598,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                 variant: AppButtonVariant.primary,
                 growWithContent: true,
                 minWidth: 196,
-                child: Text(context.l10n.ledgerConnect),
+                child: Text(context.l10n.onboardingConnectLedger),
               ),
             ),
           ],

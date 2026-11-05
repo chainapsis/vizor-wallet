@@ -187,7 +187,7 @@ class _MobileSecretPassphraseScreenState
           context,
         ).at(OnboardingFlow.create, OnboardingStage.secretPassphrase).value,
         onBack: () => Navigator.of(context).maybePop(),
-        title: context.l10n.onboardingSecretPassphrase,
+        title: context.l10n.secretPassphraseTitle,
         subtitle: context.l10n.onboardingSecretPassphraseSubtitleMobile,
         bottomArea: Column(
           mainAxisSize: MainAxisSize.min,
@@ -210,7 +210,7 @@ class _MobileSecretPassphraseScreenState
               trailing: const AppIcon(AppIcons.chevronForward),
               child: Text(
                 _revealed
-                    ? context.l10n.onboardingContinue
+                    ? context.l10n.commonContinue
                     : context.l10n.onboardingSecretPassphraseRevealMobile,
               ),
             ),

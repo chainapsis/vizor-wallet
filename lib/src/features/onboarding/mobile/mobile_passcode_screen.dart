@@ -113,7 +113,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
             _firstPasscode = null;
             _phase = _PasscodePhase.create;
             _error = OnboardingSubmitError.localized(
-              (l10n) => l10n.onboardingPasscodesDidNotMatch,
+              (l10n) => l10n.passcodesDidNotMatch,
             );
           });
         }
@@ -288,7 +288,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         ? context.l10n.onboardingPasscodeSettingUp
         : isConfirm
         ? context.l10n.onboardingPasscodeReEnter
-        : context.l10n.onboardingPasscodeSixDigits;
+        : context.l10n.passcodeSixDigits;
 
     // A custom body rather than MobileOnboardingStepScaffold: the keypad is
     // pinned at the bottom and the dots + error are centred in the gap
@@ -330,7 +330,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
               Expanded(
                 child: AdaptivePasscodeLayout(
                   title: isConfirm
-                      ? context.l10n.onboardingPasscodeConfirmTitle
+                      ? context.l10n.passcodeConfirmTitle
                       : context.l10n.onboardingPasscodeCreateTitle,
                   subtitle: subtitle,
                   prompt: PasscodePromptField(
@@ -366,9 +366,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                               children: [
                                 Text(
                                   isConfirm
-                                      ? context
-                                            .l10n
-                                            .onboardingPasscodeConfirmTitle
+                                      ? context.l10n.passcodeConfirmTitle
                                       : context
                                             .l10n
                                             .onboardingPasscodeCreateTitle,

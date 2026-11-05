@@ -274,7 +274,7 @@ class DesktopUnlockContent extends StatelessWidget {
               child: AppPasswordInput(
                 child: PasswordTextField(
                   key: const ValueKey('unlock_password_field'),
-                  label: context.l10n.onboardingPassword,
+                  label: context.l10n.passwordLabel,
                   hintText: context.l10n.onboardingEnterPassword,
                   showLabel: false,
                   // Figma Field Type=Secondary on the auth card.
@@ -302,7 +302,7 @@ class DesktopUnlockContent extends StatelessWidget {
                   onPressed: canSubmit ? onSubmit : null,
                   variant: AppButtonVariant.primary,
                   minWidth: _buttonWidth,
-                  child: Text(context.l10n.onboardingUnlockButton),
+                  child: Text(context.l10n.commonUnlockVizor),
                 ),
                 if (showForgotPassword) ...[
                   const SizedBox(height: AppSpacing.s),

@@ -69,7 +69,7 @@ class _SettingsChangePasswordScreenState
   String? get _confirmMessage {
     final value = _confirmController.text;
     if (value.isEmpty || _passwordMessage != null || _matches) return null;
-    return context.l10n.settingsPasswordsMismatch;
+    return context.l10n.passwordsDoNotMatch;
   }
 
   @override
@@ -131,7 +131,7 @@ class _SettingsChangePasswordScreenState
       if (!mounted) return;
       if (!isValid) {
         setState(() {
-          _currentPasswordError = context.l10n.settingsIncorrectPassword;
+          _currentPasswordError = context.l10n.passwordIncorrect;
           _isSubmitting = false;
         });
         return;
@@ -149,7 +149,7 @@ class _SettingsChangePasswordScreenState
       );
       if (!mounted) return;
       setState(() {
-        _currentPasswordError = context.l10n.settingsPasswordCheckFailed;
+        _currentPasswordError = context.l10n.passwordCheckFailed;
         _isSubmitting = false;
       });
     }
@@ -190,7 +190,7 @@ class _SettingsChangePasswordScreenState
           _passwordController.clear();
           _confirmController.clear();
           _stage = _ChangePasswordStage.currentPassword;
-          _currentPasswordError = context.l10n.settingsIncorrectPassword;
+          _currentPasswordError = context.l10n.passwordIncorrect;
           _isSubmitting = false;
         });
         return;
@@ -354,7 +354,7 @@ class _NewPasswordView extends StatelessWidget {
                   reserveMessageSpace: _fieldReservedMessageHeight,
                   child: AppPasswordInput(
                     child: PasswordTextField(
-                      label: context.l10n.settingsPasswordLabel,
+                      label: context.l10n.passwordLabel,
                       controller: passwordController,
                       messageText: passwordMessage,
                       tone: passwordMessage == null
@@ -375,7 +375,7 @@ class _NewPasswordView extends StatelessWidget {
                   reserveMessageSpace: _fieldReservedMessageHeight,
                   child: AppPasswordInput(
                     child: PasswordTextField(
-                      label: context.l10n.settingsConfirmPasswordLabel,
+                      label: context.l10n.passwordConfirmLabel,
                       controller: confirmController,
                       messageText: confirmMessage,
                       tone: confirmMessage == null

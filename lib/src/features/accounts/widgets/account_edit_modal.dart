@@ -150,7 +150,7 @@ class _AccountEditModalState extends State<AccountEditModal> {
                 ? _fieldHeight
                 : _fieldWithMessageHeight,
             child: AppTextField(
-              label: context.l10n.accountsEditNameLabel,
+              label: context.l10n.accountNameLabel,
               hintText: context.l10n.accountsEditNameHint,
               controller: _controller,
               autofocus: true,
@@ -195,7 +195,7 @@ class _EditableAccountAvatar extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: onPressed != null,
-      label: context.l10n.accountsChangeProfilePicture,
+      label: context.l10n.profilePictureChange,
       child: MouseRegion(
         cursor: onPressed == null
             ? SystemMouseCursors.basic

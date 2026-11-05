@@ -151,7 +151,7 @@ class _ForgotPasscodeLastWarningContentState
   Widget build(BuildContext context) {
     final colors = context.colors;
     final resetLabel = _armed
-        ? context.l10n.onboardingResetVizor
+        ? context.l10n.commonResetVizor
         : context.l10n.onboardingLostPasswordResetCountdown(_remainingSeconds);
     return MobileModalScaffold(
       title: context.l10n.onboardingForgotPasscodeAreYouSure,

@@ -85,7 +85,7 @@ class _MobileChangePasscodeScreenState
             _entry = '';
             _newPasscode = null;
             _phase = _Phase.create;
-            _error = context.l10n.settingsPasscodesMismatch;
+            _error = context.l10n.passcodesDidNotMatch;
           });
         }
     }
@@ -103,7 +103,7 @@ class _MobileChangePasscodeScreenState
         setState(() {
           _submitting = false;
           _entry = '';
-          _error = context.l10n.settingsChangePasscodeIncorrect;
+          _error = context.l10n.passcodeIncorrect;
         });
         return;
       }
@@ -168,7 +168,7 @@ class _MobileChangePasscodeScreenState
           // — restart from scratch rather than trusting stale state.
           setState(() {
             _submitting = false;
-            _restartFlow(context.l10n.settingsChangePasscodeIncorrect);
+            _restartFlow(context.l10n.passcodeIncorrect);
           });
           return;
         }
@@ -222,11 +222,11 @@ class _MobileChangePasscodeScreenState
       ),
       _Phase.create => (
         context.l10n.settingsSetNewPasscodeTitle,
-        context.l10n.settingsPasscodeLengthHint,
+        context.l10n.passcodeSixDigits,
       ),
       _Phase.confirm => (
-        context.l10n.settingsConfirmPasscodeTitle,
-        context.l10n.settingsPasscodeLengthHint,
+        context.l10n.passcodeConfirmTitle,
+        context.l10n.passcodeSixDigits,
       ),
     };
 

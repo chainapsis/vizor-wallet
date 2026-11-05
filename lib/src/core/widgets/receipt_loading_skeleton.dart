@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../l10n/l10n.dart';
 import '../layout/app_form_factor.dart';
 import '../theme/app_theme.dart';
 import 'review_info_row.dart';
@@ -60,7 +61,7 @@ class ReceiptMemoSkeleton extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.all(AppSpacing.xxs),
           child: Text(
-            'Message',
+            context.l10n.receiptMessageLabel,
             style:
                 (kAppFormFactor == AppFormFactor.mobile
                         ? AppTypography.labelMedium

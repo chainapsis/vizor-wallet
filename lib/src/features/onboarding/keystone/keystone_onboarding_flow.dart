@@ -23,19 +23,16 @@ enum KeystoneOnboardingStep {
 extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
   // Sidebar step labels keep their original Title Case — see the
   // sentence-case exception in AGENTS.md (UI Copy Conventions).
-  String localizedLabel(AppLocalizations l10n) => switch (this) {
+  String label(AppLocalizations l10n) => switch (this) {
     KeystoneOnboardingStep.howToConnect => l10n.keystoneStepHowToConnect,
-    KeystoneOnboardingStep.scanQrCode => l10n.keystoneScanTitle,
+    KeystoneOnboardingStep.scanQrCode => l10n.commonScanQrCode,
     KeystoneOnboardingStep.selectAccount => l10n.keystoneStepSelectAccount,
     KeystoneOnboardingStep.walletBirthdayHeight =>
-      l10n.keystoneStepWalletBirthdayHeight,
-    KeystoneOnboardingStep.setPassword => l10n.keystoneStepSetPassword,
-    KeystoneOnboardingStep.customiseAccount => l10n.keystoneStepCustomiseWallet,
+      l10n.onboardingStepWalletBirthdayHeight,
+    KeystoneOnboardingStep.setPassword => l10n.onboardingStepSetPassword,
+    KeystoneOnboardingStep.customiseAccount =>
+      l10n.onboardingStepCustomiseWallet,
   };
-
-  // English label for call sites that have no BuildContext (set_password_screen).
-  String get label =>
-      localizedLabel(lookupAppLocalizations(const Locale('en')));
 
   String get iconName => switch (this) {
     KeystoneOnboardingStep.howToConnect => AppIcons.book,
@@ -260,7 +257,7 @@ class _Sidebar extends StatelessWidget {
       steps: [
         for (final step in _steps)
           OnboardingSidebarStepData(
-            label: step.localizedLabel(context.l10n),
+            label: step.label(context.l10n),
             iconName: step.iconName,
             active: step == activeStep,
           ),

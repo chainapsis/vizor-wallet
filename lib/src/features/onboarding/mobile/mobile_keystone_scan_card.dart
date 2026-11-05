@@ -109,7 +109,7 @@ class MobileKeystoneScanPermissionCard extends StatelessWidget {
   String _retryLabel(AppLocalizations l10n) =>
       status == AddressQrCameraStatus.denied
       ? l10n.keystoneCameraRequestAgain
-      : l10n.keystoneCameraTryAgain;
+      : l10n.commonTryAgain;
 
   @override
   Widget build(BuildContext context) {

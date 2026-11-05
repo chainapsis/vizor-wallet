@@ -330,7 +330,7 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
                           MobileLedgerAction(
                             _state == _DiscoveryState.empty
                                 ? context.l10n.ledgerSearchAgain
-                                : context.l10n.ledgerTryAgain,
+                                : context.l10n.commonTryAgain,
                             key: const ValueKey(
                               'mobile_ledger_discovery_retry',
                             ),

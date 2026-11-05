@@ -51,7 +51,7 @@ class SeedCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  context.l10n.onboardingSecretPassphrase,
+                  context.l10n.secretPassphraseTitle,
                   style: AppTypography.headlineSmall.copyWith(
                     color: colors.text.homeCard,
                   ),
@@ -60,7 +60,7 @@ class SeedCard extends StatelessWidget {
               if (onCopy != null)
                 Semantics(
                   button: true,
-                  label: context.l10n.onboardingCopySecretPassphrase,
+                  label: context.l10n.secretPassphraseCopy,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: onCopy,
@@ -70,7 +70,7 @@ class SeedCard extends StatelessWidget {
                         Text(
                           copied
                               ? context.l10n.commonCopied
-                              : context.l10n.onboardingCopy,
+                              : context.l10n.commonCopy,
                           style: AppTypography.labelMedium.copyWith(
                             color: colors.text.homeCard,
                           ),

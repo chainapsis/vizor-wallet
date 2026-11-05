@@ -20,10 +20,10 @@ extension ImportOnboardingStepX on ImportOnboardingStep {
   // Sidebar step labels keep their original Title Case — see the
   // sentence-case exception in AGENTS.md (UI Copy Conventions).
   String label(AppLocalizations l10n) => switch (this) {
-    ImportOnboardingStep.secretPassphrase => l10n.onboardingSecretPassphrase,
+    ImportOnboardingStep.secretPassphrase => l10n.secretPassphraseTitle,
     ImportOnboardingStep.walletBirthdayHeight =>
       l10n.onboardingStepWalletBirthdayHeight,
-    ImportOnboardingStep.setPassword => l10n.onboardingSetPassword,
+    ImportOnboardingStep.setPassword => l10n.onboardingStepSetPassword,
     ImportOnboardingStep.customiseAccount => l10n.onboardingStepCustomiseWallet,
   };
 

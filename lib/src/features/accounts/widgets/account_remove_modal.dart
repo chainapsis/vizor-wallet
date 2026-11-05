@@ -135,7 +135,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _passwordError = context.l10n.accountsRemovePasswordCheckFailed;
+        _passwordError = context.l10n.passwordCheckFailed;
         _isSubmitting = false;
         _submitPhase = null;
       });
@@ -145,7 +145,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     if (!mounted) return;
     if (!isPasswordValid) {
       setState(() {
-        _passwordError = context.l10n.accountsRemovePasswordIncorrect;
+        _passwordError = context.l10n.passwordIncorrect;
         _isSubmitting = false;
         _submitPhase = null;
       });
@@ -246,7 +246,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
             height: _fieldHeight,
             child: AppPasswordInput(
               child: PasswordTextField(
-                label: context.l10n.accountsRemovePasswordLabel,
+                label: context.l10n.passwordLabel,
                 hintText: context.l10n.accountsRemovePasswordHint,
                 leadingSlotWidth: 32,
                 trailingSlotWidth: 40,
@@ -306,7 +306,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
   String get _submitButtonLabel {
     if (!_isSubmitting) {
       return widget.isLastAccount
-          ? context.l10n.accountsResetVizor
+          ? context.l10n.commonResetVizor
           : context.l10n.accountsRemoveConfirm;
     }
 

@@ -219,7 +219,7 @@ class _SettingsViewingKeyScreenState
       if (!isValid) {
         if (!mounted) return;
         setState(() {
-          _passwordError = context.l10n.settingsIncorrectPassword;
+          _passwordError = context.l10n.passwordIncorrect;
           _isSubmitting = false;
         });
         return;

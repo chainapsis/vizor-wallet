@@ -496,11 +496,11 @@ class _ImportWalletBirthdayScreenState
       _ImportWalletSubmitPhase.discoveringAccounts =>
         l10n.onboardingCheckingAccounts,
       _ImportWalletSubmitPhase.stoppingSync => l10n.onboardingStopSyncing,
-      _ImportWalletSubmitPhase.importing => l10n.onboardingImporting,
+      _ImportWalletSubmitPhase.importing => l10n.commonImporting,
       _ImportWalletSubmitPhase.idle =>
         activeTab == ImportBirthdayTab.date && _isEstimating
             ? l10n.onboardingEstimating
-            : l10n.onboardingContinue,
+            : l10n.commonContinue,
     };
 
     return _buildPresentation(

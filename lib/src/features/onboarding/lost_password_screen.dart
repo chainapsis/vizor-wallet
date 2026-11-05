@@ -246,8 +246,8 @@ class _LostPasswordContent extends StatelessWidget {
     final l10n = context.l10n;
     final buttonLabel = remainingSeconds > 0
         ? l10n.onboardingLostPasswordResetCountdown(remainingSeconds)
-        : l10n.onboardingResetVizor;
-    final statusText = error ?? warning ?? l10n.onboardingResetCannotBeUndone;
+        : l10n.commonResetVizor;
+    final statusText = error ?? warning ?? l10n.commonCannotBeUndone;
     final resetAction = l10n.onboardingLostPasswordResetAction;
     final importAction = l10n.onboardingLostPasswordImportAction;
 

@@ -23,7 +23,7 @@ class KeystoneHowToConnectScreen extends ConsumerWidget {
       backTarget:
           backTarget ??
           OnboardingBackTarget.route(
-            label: context.l10n.keystoneBackWelcome,
+            label: context.l10n.onboardingWelcome,
             routePath: '/welcome',
           ),
       bodyPadding: EdgeInsets.zero,
@@ -126,7 +126,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            context.l10n.keystoneConnectTitle,
+            context.l10n.onboardingConnectKeystone,
             style: AppTypography.displayLarge.copyWith(
               fontFamily: 'Young Serif',
               fontWeight: FontWeight.w400,

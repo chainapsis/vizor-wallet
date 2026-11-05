@@ -347,7 +347,7 @@ class _CurrentEndpointSubtitle extends StatelessWidget {
       current.normalizedLightwalletdUrl,
     );
     final text = [
-      context.l10n.settingsEndpointCurrent(current.hostPort),
+      context.l10n.endpointCurrent(current.hostPort),
       if (latency != null) latency.label,
       if (preset?.isDefault ?? false)
         context.l10n.settingsEndpointDefaultMarker,
@@ -389,7 +389,7 @@ class _EndpointTabs extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.xs),
             _EndpointTabButton(
-              label: context.l10n.settingsEndpointCustom,
+              label: context.l10n.endpointCustom,
               icon: AppIcons.edit,
               selected: activeTab == _EndpointTab.custom,
               onTap: () => onSelect(_EndpointTab.custom),
@@ -758,7 +758,7 @@ class _FloatingUpdateBar extends StatelessWidget {
             child: Text(
               isSubmitting
                   ? context.l10n.commonUpdating
-                  : context.l10n.settingsEndpointUpdate,
+                  : context.l10n.endpointUpdate,
             ),
           ),
       ],
@@ -893,7 +893,7 @@ class _CustomEndpointHeroCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    context.l10n.settingsEndpointCustom,
+                    context.l10n.endpointCustom,
                     style: AppTypography.headlineLarge.copyWith(
                       color: colors.text.homeCard,
                     ),
@@ -938,7 +938,7 @@ class _CustomEndpointField extends StatelessWidget {
     return SizedBox(
       height: _height,
       child: AppTextField(
-        label: context.l10n.settingsEndpointCustom,
+        label: context.l10n.endpointCustom,
         showLabel: false,
         hintText: '<hostname>:<port>', // l10n-ignore: address format hint
         hintStyle: AppTypography.labelMedium.copyWith(

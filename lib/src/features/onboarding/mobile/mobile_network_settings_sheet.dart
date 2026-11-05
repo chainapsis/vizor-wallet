@@ -38,10 +38,7 @@ Future<void> showMobileWelcomeNetworkSettings(
       canDismiss: dismissal,
       builder: (_) => MobileNetworkSettingsSheet(
         dismissal: dismissal,
-        onUpdated: () => showAppToast(
-          context,
-          context.l10n.onboardingNetworkEndpointUpdated,
-        ),
+        onUpdated: () => showAppToast(context, context.l10n.endpointUpdated),
       ),
     );
   } finally {
@@ -302,7 +299,7 @@ class MobileNetworkSettingsContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileModalScaffold(
-      title: context.l10n.onboardingNetworkSettings,
+      title: context.l10n.networkSettingsTitle,
       onClose: onClose,
       constrainBody: true,
       child: Column(
@@ -324,7 +321,7 @@ class MobileNetworkSettingsContent extends StatelessWidget {
                     child: Divider(height: 1, color: colors.border.regular),
                   ),
                   Text(
-                    context.l10n.onboardingNetworkCustomEndpoint,
+                    context.l10n.endpointCustom,
                     style: AppTypography.bodyLarge.copyWith(
                       fontWeight: FontWeight.w600,
                       color: colors.text.accent,
@@ -332,9 +329,7 @@ class MobileNetworkSettingsContent extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    context.l10n.onboardingNetworkCurrentEndpoint(
-                      current.hostPort,
-                    ),
+                    context.l10n.endpointCurrent(current.hostPort),
                     style: AppTypography.bodySmall.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -387,7 +382,7 @@ class MobileNetworkSettingsContent extends StatelessWidget {
             child: Text(
               submitting
                   ? context.l10n.onboardingNetworkCheckingEndpoint
-                  : context.l10n.onboardingNetworkUpdateEndpoint,
+                  : context.l10n.endpointUpdate,
             ),
           ),
         ],

@@ -739,7 +739,7 @@ class _LedgerShieldSigningOverlayState
                   !_pausedEarly &&
                   (_deviceGuidance?.showDeviceAppPrompt ?? false),
               showConnectionPicker: !upgradeHold,
-              actionLabel: _canRetry ? context.l10n.homeShieldTryAgain : null,
+              actionLabel: _canRetry ? context.l10n.commonTryAgain : null,
             )
           : null,
       onCancel: canLeave ? () => unawaited(_cancelToHome()) : null,

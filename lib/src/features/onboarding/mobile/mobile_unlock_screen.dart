@@ -318,7 +318,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         if (fromBiometric) _biometricFallback = true;
         _entry = '';
         _error = OnboardingSubmitError.localized(
-          (l10n) => l10n.onboardingPasscodeIncorrect,
+          (l10n) => l10n.passcodeIncorrect,
         );
       });
     }
@@ -477,7 +477,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
           ? const MobileBiometricSignInView()
           : SafeArea(
               child: AdaptivePasscodeLayout(
-                title: context.l10n.onboardingUnlockWelcomeBackMobile,
+                title: context.l10n.commonWelcomeBack,
                 subtitle: _submitting
                     ? context.l10n.onboardingUnlockOpening
                     : context.l10n.onboardingUnlockEnterPasscode,
@@ -528,9 +528,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Text(
-                                          context
-                                              .l10n
-                                              .onboardingUnlockWelcomeBackMobile,
+                                          context.l10n.commonWelcomeBack,
                                           textAlign: TextAlign.center,
                                           style: AppTypography.displayLarge
                                               .copyWith(

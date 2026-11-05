@@ -64,7 +64,7 @@ class MobileTorControl extends ConsumerWidget {
         ? () => unawaited(request(toggleAction.requestedTorEnabled))
         : null;
     final retryLabel = (state.targetTorEnabled ?? state.torEnabled)
-        ? context.l10n.settingsTryAgain
+        ? context.l10n.commonTryAgain
         : context.l10n.settingsTorTryDirect;
     final onRetry = !enabled || state.isBusy
         ? null

@@ -153,7 +153,7 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
               Center(
                 child: Semantics(
                   button: true,
-                  label: context.l10n.accountsChangeProfilePicture,
+                  label: context.l10n.profilePictureChange,
                   excludeSemantics: true,
                   child: GestureDetector(
                     key: const ValueKey('mobile_account_edit_avatar'),
@@ -185,7 +185,7 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                context.l10n.accountsEditNameLabel,
+                context.l10n.accountNameLabel,
                 style: AppTypography.labelLarge.copyWith(
                   fontWeight: FontWeight.w400,
                   color: colors.text.secondary,
@@ -302,7 +302,7 @@ class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    context.l10n.accountsSelectProfilePicture,
+                    context.l10n.profilePictureSelect,
                     style: AppTypography.bodyLarge.copyWith(
                       fontWeight: FontWeight.w600,
                       color: colors.text.accent,

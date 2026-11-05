@@ -664,8 +664,8 @@ class _ImportSecretPassphraseScreenState
                         minWidth: _buttonWidth,
                         child: Text(
                           _isSubmitting
-                              ? context.l10n.onboardingImporting
-                              : context.l10n.onboardingContinue,
+                              ? context.l10n.commonImporting
+                              : context.l10n.commonContinue,
                         ),
                       ),
                     ),
@@ -867,7 +867,7 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
                           const SizedBox(width: AppSpacing.xxs),
                           Expanded(
                             child: Text(
-                              context.l10n.onboardingSecretPassphrase,
+                              context.l10n.secretPassphraseTitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: AppTypography.headlineSmall.copyWith(
@@ -955,9 +955,7 @@ class _SavedBip39PassphraseFooter extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        context.l10n.onboardingBip39PassphrasePreview(
-                          passphrase,
-                        ),
+                        context.l10n.bip39PassphraseValue(passphrase),
                         key: const ValueKey('bip39_passphrase_preview'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1037,7 +1035,7 @@ class _Bip39PassphraseModal extends StatelessWidget {
         children: [
           Text(
             isEditing
-                ? context.l10n.onboardingBip39PassphraseTitle
+                ? context.l10n.bip39PassphraseTitle
                 : context.l10n.onboardingBip39PassphraseTitleOptional,
             style: AppTypography.headlineSmall.copyWith(
               color: context.colors.text.accent,

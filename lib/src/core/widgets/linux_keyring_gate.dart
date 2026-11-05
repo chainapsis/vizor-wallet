@@ -172,7 +172,7 @@ class _LinuxKeyringStartupHostState extends State<LinuxKeyringStartupHost> {
                   const SizedBox(height: AppSpacing.md),
                   Text(
                     _failed
-                        ? context.l10n.keyringOpenFailedTitle
+                        ? context.l10n.appOpenFailedTitle
                         : context.l10n.keyringOpeningTitle,
                     style: AppTypography.headlineLarge.copyWith(
                       color: context.colors.text.accent,
@@ -192,7 +192,7 @@ class _LinuxKeyringStartupHostState extends State<LinuxKeyringStartupHost> {
                     AppButton(
                       onPressed: () => unawaited(SystemNavigator.pop()),
                       variant: AppButtonVariant.ghost,
-                      child: Text(context.l10n.keyringQuit),
+                      child: Text(context.l10n.commonQuit),
                     ),
                   ],
                 ],
@@ -343,7 +343,7 @@ class _LinuxKeyringNoticeState extends State<_LinuxKeyringNotice> {
                                 ),
                           autofocus: true,
                           minWidth: 172,
-                          child: Text(l10n.keyringRetry),
+                          child: Text(l10n.commonRetry),
                         ),
                       if (canCancel) ...[
                         const SizedBox(height: AppSpacing.xs),
@@ -366,7 +366,7 @@ class _LinuxKeyringNoticeState extends State<_LinuxKeyringNotice> {
                         AppButton(
                           onPressed: () => unawaited(SystemNavigator.pop()),
                           variant: AppButtonVariant.ghost,
-                          child: Text(l10n.keyringQuit),
+                          child: Text(l10n.commonQuit),
                         ),
                       ],
                     ],

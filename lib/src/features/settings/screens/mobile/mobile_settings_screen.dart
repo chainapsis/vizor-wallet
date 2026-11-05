@@ -108,7 +108,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                         'mobile_settings_coinholder_voting_row',
                       ),
                       leading: _RowIcon(AppIcons.vote),
-                      label: context.l10n.settingsRowCoinholderVoting,
+                      label: context.l10n.commonCoinholderVoting,
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
@@ -138,7 +138,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                     MobileListRow(
                       key: const ValueKey('mobile_settings_seed_row'),
                       leading: _RowIcon(AppIcons.key),
-                      label: context.l10n.settingsSecretPassphraseTitle,
+                      label: context.l10n.secretPassphraseTitle,
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
@@ -388,7 +388,7 @@ class MobileSettingsScreen extends ConsumerWidget {
     if (!saved && context.mounted) {
       showAppToast(
         context,
-        context.l10n.settingsAccountSaveFailed,
+        context.l10n.accountsSaveFailed,
         iconName: AppIcons.cross,
       );
     }
@@ -416,7 +416,7 @@ class MobileSettingsScreen extends ConsumerWidget {
     if (!saved && context.mounted) {
       showAppToast(
         context,
-        context.l10n.settingsAccountSaveFailed,
+        context.l10n.accountsSaveFailed,
         iconName: AppIcons.cross,
       );
     }
@@ -598,7 +598,7 @@ class _DisableBiometricSheet extends StatelessWidget {
             expand: true,
             onPressed: () => Navigator.of(context).pop(true),
             child: Text(
-              context.l10n.settingsPrivateQueriesTurnOffConfirm,
+              context.l10n.settingsTurnOffConfirm,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.button.destructive.label,
               ),
@@ -732,7 +732,7 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
           Semantics(
             button: true,
             toggled: enabled,
-            label: context.l10n.settingsKeepAwakeLabel,
+            label: context.l10n.commonKeepScreenAwake,
             excludeSemantics: true,
             child: GestureDetector(
               key: const ValueKey('mobile_settings_sync_keep_awake_row'),
@@ -753,7 +753,7 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
                       const SizedBox(width: AppSpacing.s),
                       Expanded(
                         child: Text(
-                          context.l10n.settingsKeepAwakeLabel,
+                          context.l10n.commonKeepScreenAwake,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.accent,

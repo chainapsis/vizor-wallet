@@ -285,7 +285,7 @@ class _MobileLedgerConnectScreenState
           : MobileLedgerAction(
               pairingRecovery
                   ? context.l10n.ledgerFindMyLedger
-                  : context.l10n.ledgerTryAgain,
+                  : context.l10n.commonTryAgain,
               onPressed: _cancelFailed
                   ? () => unawaited(
                       _leaveSession(returnToPicker: _returnToPickerAfterCancel),
@@ -303,7 +303,7 @@ class _MobileLedgerConnectScreenState
           currentStep: current,
           steps: [
             LedgerStep(
-              context.l10n.ledgerConnect,
+              context.l10n.onboardingConnectLedger,
               busy: current == 0 && pending,
             ),
             LedgerStep(
@@ -325,7 +325,7 @@ class _MobileLedgerConnectScreenState
               requiresDeviceAction: opening && pending && !_closing,
             ),
             LedgerStep(
-              context.l10n.ledgerStepAddAccount,
+              context.l10n.commonAddAccount,
               message: current == 2
                   ? _closing
                         ? context.l10n.ledgerCancellingTheRequest
@@ -392,7 +392,7 @@ class _MobileLedgerConnectScreenState
           progress: MobileOnboardingProgressScope.of(
             context,
           ).at(OnboardingFlow.ledger, OnboardingStage.deviceConnect).value,
-          title: context.l10n.ledgerConnect,
+          title: context.l10n.onboardingConnectLedger,
           subtitle: context.l10n.ledgerConnectSubtitle,
           onBack: () => context.pop(),
           bottomArea: AppButton(
@@ -402,7 +402,7 @@ class _MobileLedgerConnectScreenState
             constrainContent: true,
             onPressed: _sessionOpen ? null : _startSession,
             trailing: const AppIcon(AppIcons.chevronForward),
-            child: Text(context.l10n.ledgerConnect),
+            child: Text(context.l10n.onboardingConnectLedger),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -66,8 +66,8 @@ extension OnboardingStepX on OnboardingStep {
     OnboardingStep.intro => l10n.onboardingStepIntroToZcash,
     OnboardingStep.addressTypes => l10n.onboardingStepAddressTypes,
     OnboardingStep.thingsToKnow => l10n.onboardingThingsToKnow,
-    OnboardingStep.secretPassphrase => l10n.onboardingSecretPassphrase,
-    OnboardingStep.setPassword => l10n.onboardingSetPassword,
+    OnboardingStep.secretPassphrase => l10n.secretPassphraseTitle,
+    OnboardingStep.setPassword => l10n.onboardingStepSetPassword,
     OnboardingStep.customiseAccount => l10n.onboardingStepCustomiseWallet,
   };
 

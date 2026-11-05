@@ -469,7 +469,7 @@ class _LedgerDesktopConnectModalState
                   : _resumingStep ?? 1);
     return LedgerModalContent(
       title: procedure
-          ? context.l10n.ledgerConnect
+          ? context.l10n.onboardingConnectLedger
           : context.l10n.ledgerCouldNotConnect,
       identity:
           '${_device == null ? 'Ledger' /* l10n-ignore: product name */ : ledgerDeviceLabel(_device!)} · ${_bluetooth ? context.l10n.ledgerTransportBluetooth : context.l10n.ledgerTransportUsb}',
@@ -479,7 +479,7 @@ class _LedgerDesktopConnectModalState
           ? _footer(
               label: !_cleanupFailed && !_retryable
                   ? context.l10n.commonBack
-                  : context.l10n.ledgerTryAgain,
+                  : context.l10n.commonTryAgain,
               action: _cleanupFailed
                   ? () => unawaited(_finish(reselect: _reselectAfterCleanup))
                   : !_retryable
@@ -495,7 +495,7 @@ class _LedgerDesktopConnectModalState
               currentStep: current,
               steps: [
                 LedgerStep(
-                  context.l10n.ledgerConnect,
+                  context.l10n.onboardingConnectLedger,
                   message: current == 0
                       ? context.l10n.ledgerKeepNearbyUnlocked
                       : null,

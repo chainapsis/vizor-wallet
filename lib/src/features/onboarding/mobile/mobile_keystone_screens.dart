@@ -45,7 +45,7 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
         context,
       ).at(OnboardingFlow.keystone, OnboardingStage.deviceIntro).value,
       onBack: () => Navigator.of(context).maybePop(),
-      title: context.l10n.keystoneConnectTitle,
+      title: context.l10n.onboardingConnectKeystone,
       subtitle: context.l10n.keystonePrepareSubtitle,
       bottomArea: AppButton(
         key: const ValueKey('mobile_keystone_intro_continue'),
@@ -53,7 +53,7 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
         onPressed: () =>
             context.pushOnboarding(KeystoneOnboardingStep.scanQrCode.routePath),
         trailing: const AppIcon(AppIcons.chevronForward),
-        child: Text(context.l10n.keystoneContinue),
+        child: Text(context.l10n.commonContinue),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -333,7 +333,7 @@ class _MobileKeystoneScanScreenState
     if (!mounted || _decoding) return;
     final message = error.toString().contains('Unexpected UR type')
         ? context.l10n.keystoneScanOpenAccountQr
-        : context.l10n.keystoneScanKeepSteady;
+        : context.l10n.commonKeepQrSteady;
     if (_error == message) return;
     setState(() => _error = message);
   }
@@ -357,7 +357,7 @@ class _MobileKeystoneScanScreenState
       controller: widget.scannerController,
       cameraHeight: cameraHeight,
       caption: context.l10n.keystoneScanCaption,
-      permissionTitle: context.l10n.keystoneScanTitle,
+      permissionTitle: context.l10n.commonScanQrCode,
       error: _scanCaptionOverride,
       unavailableDescription: context.l10n.keystoneScanCameraRequired,
       onClose: () => Navigator.of(context).maybePop(),
@@ -394,7 +394,7 @@ class _MobileKeystoneScanScreenState
             context,
           ).at(OnboardingFlow.keystone, OnboardingStage.deviceScan).value,
           onBack: () => Navigator.of(context).maybePop(),
-          title: context.l10n.keystoneScanTitle,
+          title: context.l10n.commonScanQrCode,
           subtitle: context.l10n.keystonePrepareSubtitle,
           scrollable: false,
           child: const SizedBox.shrink(),
@@ -448,7 +448,7 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
         context,
       ).at(OnboardingFlow.keystone, OnboardingStage.accountSelection).value,
       onBack: () => Navigator.of(context).maybePop(),
-      title: context.l10n.keystoneSelectAccountTitle,
+      title: context.l10n.commonSelectAccount,
       subtitle: context.l10n.keystonePrepareSubtitle,
       bottomArea: AppButton(
         key: const ValueKey('mobile_keystone_select_continue'),
@@ -458,7 +458,7 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
             : () => context.pushOnboarding(
                 KeystoneOnboardingStep.walletBirthdayHeight.routePath,
               ),
-        child: Text(context.l10n.keystoneSelectAccountTitle),
+        child: Text(context.l10n.commonSelectAccount),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

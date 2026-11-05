@@ -180,7 +180,7 @@ class MobileWalletLinkScanScreen extends ConsumerWidget {
           context,
         ).at(OnboardingFlow.walletLink, OnboardingStage.linkScan).value,
         onBack: () => Navigator.of(context).maybePop(),
-        title: context.l10n.walletLinkScanTitle,
+        title: context.l10n.commonScanQrCode,
         subtitle: context.l10n.walletLinkIntroSubtitle,
         scrollable: false,
         child: LayoutBuilder(
@@ -216,7 +216,7 @@ class MobileWalletLinkScanScreen extends ConsumerWidget {
             context,
           ).at(OnboardingFlow.walletLink, OnboardingStage.linkScan).value,
           onBack: () => Navigator.of(context).maybePop(),
-          title: context.l10n.walletLinkScanTitle,
+          title: context.l10n.commonScanQrCode,
           subtitle: context.l10n.walletLinkScanSubtitleDesktop,
           scrollable: false,
           child: const SizedBox.shrink(),
@@ -456,7 +456,7 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
       progress: MobileOnboardingProgressScope.of(
         context,
       ).at(OnboardingFlow.walletLink, OnboardingStage.accountSelection).value,
-      title: context.l10n.walletLinkSelectAccountTitle,
+      title: context.l10n.commonSelectAccount,
       subtitle: hasNothingToImport
           ? TextSpan(text: context.l10n.walletLinkNothingNewSubtitle)
           : TextSpan(
@@ -466,11 +466,11 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
               ),
             ),
       buttonLabel: hasNothingToImport
-          ? context.l10n.walletLinkGoBack
+          ? context.l10n.commonGoBack
           : state.selectedAccountCount == 0
-          ? context.l10n.walletLinkContinue
+          ? context.l10n.commonContinue
           : context.l10n.walletLinkLinkAccounts(state.selectedAccountCount),
-      buttonLoadingLabel: context.l10n.walletLinkImporting,
+      buttonLoadingLabel: context.l10n.commonImporting,
       buttonEnabled:
           hasNothingToImport ||
           state.selectedAccountCount > 0 ||
@@ -603,7 +603,7 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
       progress: MobileOnboardingProgressScope.of(
         context,
       ).at(OnboardingFlow.walletLink, OnboardingStage.contactSelection).value,
-      title: context.l10n.walletLinkImportContactsTitle,
+      title: context.l10n.onboardingStepImportContacts,
       subtitle: TextSpan(
         text: context.l10n.walletLinkContactsReadySubtitle(
           state.contacts.length,
@@ -613,7 +613,7 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
       buttonLabel: context.l10n.walletLinkImportContacts(
         state.selectedContactCount,
       ),
-      buttonLoadingLabel: context.l10n.walletLinkImporting,
+      buttonLoadingLabel: context.l10n.commonImporting,
       buttonEnabled:
           state.selectedAccountCount > 0 || state.selectedContactCount > 0,
       buttonLoading: submitting,

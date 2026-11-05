@@ -493,7 +493,7 @@ class _MobileSeedPhraseScreenState
                   child: MobileTopNav.back(
                     title: _stage == _SeedStage.confirmAccess
                         ? ''
-                        : context.l10n.settingsSecretPassphraseTitle,
+                        : context.l10n.secretPassphraseTitle,
                     onBack: () {
                       if (ref
                           .read(externalActionGuardProvider)
@@ -568,7 +568,7 @@ class _MobileSeedPhraseScreenState
                 growWithContent: true,
                 constrainContent: true,
                 child: Text(
-                  context.l10n.settingsContinue,
+                  context.l10n.commonContinue,
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -797,7 +797,7 @@ class _MobileSeedPhraseScreenState
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          context.l10n.settingsSecretPassphraseTitle,
+                          context.l10n.secretPassphraseTitle,
                           style: AppTypography.bodyMediumStrong.copyWith(
                             fontWeight: FontWeight.w600,
                             color: colors.text.accent,
@@ -822,7 +822,7 @@ class _MobileSeedPhraseScreenState
                     right: AppSpacing.s,
                     child: _CopyChip(
                       key: const ValueKey('mobile_seed_copy'),
-                      label: context.l10n.settingsCopy,
+                      label: context.l10n.commonCopy,
                       onTap: _copyMnemonic,
                     ),
                   ),
@@ -965,7 +965,7 @@ class _CopyChip extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       button: true,
-      label: context.l10n.settingsSeedCopyLabel,
+      label: context.l10n.secretPassphraseCopy,
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -1065,7 +1065,7 @@ class _MobileBip39PassphraseRow extends StatelessWidget {
     final colors = context.colors;
     final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.5;
     final label = Text(
-      context.l10n.settingsBip39PassphraseTitle,
+      context.l10n.bip39PassphraseTitle,
       style: AppTypography.labelMedium.copyWith(color: colors.text.accent),
     );
     final valueAndCopy = Row(

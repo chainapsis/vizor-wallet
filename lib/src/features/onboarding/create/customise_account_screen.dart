@@ -336,7 +336,7 @@ class _CustomiseAccountScreenState
     final args = widget.args!;
     if (args.configuresPassword) {
       return OnboardingBackTarget.route(
-        label: context.l10n.onboardingSetPassword,
+        label: context.l10n.onboardingStepSetPassword,
         routePath: switch (args.flow) {
           SetPasswordFlow.importLedger => throw StateError(
             'Desktop Ledger uses its dedicated setup routes.',
@@ -368,7 +368,7 @@ class _CustomiseAccountScreenState
         SetPasswordFlow.importWallet =>
           ImportOnboardingStep.walletBirthdayHeight.label(context.l10n),
         SetPasswordFlow.importKeystone =>
-          KeystoneOnboardingStep.walletBirthdayHeight.label,
+          KeystoneOnboardingStep.walletBirthdayHeight.label(context.l10n),
         SetPasswordFlow.importWalletLink => throw StateError(
           'Wallet Link does not use account customisation.',
         ),
@@ -387,7 +387,7 @@ class _CustomiseAccountScreenState
             borderRadius: const BorderRadius.all(Radius.circular(20)),
             onDismiss: _closeProfilePicturePicker,
             child: AppProfilePicturePickerModal(
-              title: context.l10n.onboardingSelectProfilePicture,
+              title: context.l10n.profilePictureSelect,
               currentProfilePictureId: _persona.profilePictureId,
               optionKeyPrefix: 'customise_account_pfp_option_',
               cancelKey: const ValueKey('customise_account_pfp_cancel'),
@@ -543,7 +543,7 @@ class _CustomiseAccountContent extends StatelessWidget {
                   requiresSetupRecovery
                       ? context.l10n.onboardingRetrySetup
                       : continueToSecurity
-                      ? context.l10n.onboardingContinue
+                      ? context.l10n.commonContinue
                       : context.l10n.onboardingFinishSetup,
                 _FinishPhase.stoppingSync => context.l10n.onboardingStopSyncing,
                 _FinishPhase.creatingWallet =>
@@ -646,7 +646,7 @@ class _AccountProfileCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        context.l10n.onboardingAccountName,
+                        context.l10n.accountNameLabel,
                         style: AppTypography.labelLarge.copyWith(
                           color: cardTextColor.withValues(alpha: 0.5),
                           fontWeight: FontWeight.w400,
@@ -735,7 +735,7 @@ class _EditableProfilePicture extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: context.l10n.onboardingChangeProfilePicture,
+      label: context.l10n.profilePictureChange,
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
         child: GestureDetector(

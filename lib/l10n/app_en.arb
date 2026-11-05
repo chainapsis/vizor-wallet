@@ -1,20 +1,16 @@
 {
   "@@locale": "en",
+  "accountNameLabel": "Account name",
+  "@accountNameLabel": {
+    "description": "Label of the account name field or row."
+  },
   "accountsActionsLabel": "Account actions",
   "@accountsActionsLabel": {
     "description": "Screen-reader label of the button that opens an account's action menu on desktop."
   },
-  "accountsAdd": "Add account",
-  "@accountsAdd": {
-    "description": "Button and screen-reader label that starts adding or creating another account."
-  },
   "accountsAddressLoadFailed": "Couldn't load the account address",
   "@accountsAddressLoadFailed": {
     "description": "Toast on the mobile Accounts screen when an account's address could not be loaded for sending."
-  },
-  "accountsChangeProfilePicture": "Change profile picture",
-  "@accountsChangeProfilePicture": {
-    "description": "Screen-reader label of the avatar button in the edit-account dialog and sheet that opens the profile picture picker."
   },
   "accountsClearName": "Clear account name",
   "@accountsClearName": {
@@ -35,10 +31,6 @@
   "accountsEditNameHint": "1-20 characters",
   "@accountsEditNameHint": {
     "description": "Placeholder of the account name field: the name must be 1 to 20 characters long."
-  },
-  "accountsEditNameLabel": "Account name",
-  "@accountsEditNameLabel": {
-    "description": "Label of the account name field in the edit-account dialog and sheet."
   },
   "accountsManage": "Manage accounts",
   "@accountsManage": {
@@ -130,21 +122,9 @@
   "@accountsRemoveModalBody": {
     "description": "[security] Body of the desktop remove-account confirmation dialog. Two lines; removal is irreversible."
   },
-  "accountsRemovePasswordCheckFailed": "Couldn't check your password. Please try again.",
-  "@accountsRemovePasswordCheckFailed": {
-    "description": "[security] Error under the password field of the desktop remove-account dialog when the password check itself failed."
-  },
   "accountsRemovePasswordHint": "Enter your password",
   "@accountsRemovePasswordHint": {
     "description": "[security] Placeholder of the wallet password field in the desktop remove-account dialog."
-  },
-  "accountsRemovePasswordIncorrect": "Incorrect password. Please try again.",
-  "@accountsRemovePasswordIncorrect": {
-    "description": "[security] Error under the password field of the desktop remove-account dialog when the password is wrong."
-  },
-  "accountsRemovePasswordLabel": "Password",
-  "@accountsRemovePasswordLabel": {
-    "description": "[security] Label of the wallet password field in the desktop remove-account dialog."
   },
   "accountsRemoveStoppingSync": "Stopping sync...",
   "@accountsRemoveStoppingSync": {
@@ -178,10 +158,6 @@
   "@accountsResetModalBody": {
     "description": "[security] Body of the desktop dialog for removing the last account, which resets the whole app. Three lines; the last says the deletion is irreversible."
   },
-  "accountsResetVizor": "Reset Vizor",
-  "@accountsResetVizor": {
-    "description": "[security] Destructive button that deletes every account and all local wallet data."
-  },
   "accountsResetting": "Resetting...",
   "@accountsResetting": {
     "description": "[security] Label of the confirm button in the desktop remove-account dialog while the wallet is reset."
@@ -192,11 +168,7 @@
   },
   "accountsSaveFailed": "Couldn't save the account changes",
   "@accountsSaveFailed": {
-    "description": "Toast on the mobile Accounts screen when saving name or picture edits failed."
-  },
-  "accountsSelectProfilePicture": "Select profile picture",
-  "@accountsSelectProfilePicture": {
-    "description": "Title of the profile picture picker."
+    "description": "Error when saving account name or picture changes failed."
   },
   "accountsSendFailed": "Send couldn't be started",
   "@accountsSendFailed": {
@@ -222,10 +194,6 @@
   "@accountsViewViewingKey": {
     "description": "[security] Account menu item that shows the account's viewing key."
   },
-  "appBackAddAccount": "Add account",
-  "@appBackAddAccount": {
-    "description": "Back-link label shown during desktop onboarding that returns to the Add account screen."
-  },
   "appBackHardwareWallets": "Hardware wallets",
   "@appBackHardwareWallets": {
     "description": "Back-link label shown during desktop import that returns to the hardware wallet list."
@@ -233,14 +201,6 @@
   "appBackImportMethods": "Import methods",
   "@appBackImportMethods": {
     "description": "Back-link label shown during desktop import that returns to the list of import methods."
-  },
-  "appBackWalletBirthdayHeight": "Wallet Birthday Height",
-  "@appBackWalletBirthdayHeight": {
-    "description": "Back-link label on the Ledger account customisation screen that returns to the wallet birthday height step."
-  },
-  "appBackWelcome": "Welcome",
-  "@appBackWelcome": {
-    "description": "Back-link label shown during desktop onboarding that returns to the Welcome screen."
   },
   "appExitBackHint": "Go back again to exit",
   "@appExitBackHint": {
@@ -275,6 +235,10 @@
   "appLinuxUpdateViewRelease": "View release",
   "@appLinuxUpdateViewRelease": {
     "description": "Snackbar action on Linux that opens the release page."
+  },
+  "appOpenFailedTitle": "Unable to open Vizor",
+  "@appOpenFailedTitle": {
+    "description": "Title when Vizor cannot start because storage is unavailable."
   },
   "appPrivacyPolicyTitle": "Privacy Policy",
   "@appPrivacyPolicyTitle": {
@@ -330,10 +294,6 @@
   "@appUpdateDownloadingTitle": {
     "description": "Title of the in-app update prompt while the update downloads."
   },
-  "appUpdateFailedMessage": "Couldn't complete the update. Try again.",
-  "@appUpdateFailedMessage": {
-    "description": "Message of the in-app update prompt when the update failed and no detail is available."
-  },
   "appUpdateFailedTitle": "Update failed",
   "@appUpdateFailedTitle": {
     "description": "Title of the in-app update prompt when the update failed."
@@ -350,10 +310,6 @@
   "@appUpdateReadyTitle": {
     "description": "Title of the in-app update prompt once the update is downloaded and ready to install."
   },
-  "appUpdateRestart": "Restart",
-  "@appUpdateRestart": {
-    "description": "Button on the in-app update prompt that restarts the app to apply the update."
-  },
   "appUpdateRestarting": "Restarting",
   "@appUpdateRestarting": {
     "description": "Disabled button label on the in-app update prompt while the app restarts."
@@ -362,9 +318,18 @@
   "@appUpdateRestartingTitle": {
     "description": "Title of the in-app update prompt while the app restarts to apply the update."
   },
-  "appUpdateTryAgain": "Try again",
-  "@appUpdateTryAgain": {
-    "description": "Button on the in-app update prompt that retries a failed update."
+  "bip39PassphraseTitle": "BIP39 Passphrase",
+  "@bip39PassphraseTitle": {
+    "description": "[security] Name of the optional BIP39 passphrase (25th word), not the seed phrase."
+  },
+  "bip39PassphraseValue": "BIP39 Passphrase: {passphrase}",
+  "@bip39PassphraseValue": {
+    "description": "[security] Shows the optional BIP39 passphrase value.",
+    "placeholders": {
+      "passphrase": {
+        "type": "String"
+      }
+    }
   },
   "carouselPageSemantics": "{name} {page} of {count}. {message}",
   "@carouselPageSemantics": {
@@ -406,6 +371,10 @@
       }
     }
   },
+  "commonAddAccount": "Add account",
+  "@commonAddAccount": {
+    "description": "Button, screen name and step label for adding another account."
+  },
   "commonAddressCopied": "Address copied",
   "@commonAddressCopied": {
     "description": "Toast after an address is copied to the clipboard."
@@ -432,6 +401,14 @@
   "@commonCancellationFailed": {
     "description": "Toast when leaving a flow could not cancel its pending work."
   },
+  "commonCannotBeUndone": "This cannot be undone.",
+  "@commonCannotBeUndone": {
+    "description": "[security] Warning that a destructive action is permanent."
+  },
+  "commonChecking": "Checking...",
+  "@commonChecking": {
+    "description": "Status while Vizor checks something."
+  },
   "commonClearText": "Clear text",
   "@commonClearText": {
     "description": "Screen-reader label of the clear button in a text field."
@@ -440,9 +417,21 @@
   "@commonClose": {
     "description": "Button or screen-reader label that closes a sheet or modal."
   },
+  "commonCoinholderVoting": "Coinholder voting",
+  "@commonCoinholderVoting": {
+    "description": "Name of the coinholder voting feature."
+  },
+  "commonContinue": "Continue",
+  "@commonContinue": {
+    "description": "Button that moves to the next step."
+  },
   "commonCopied": "Copied",
   "@commonCopied": {
     "description": "Toast after a value is copied to the clipboard."
+  },
+  "commonCopy": "Copy",
+  "@commonCopy": {
+    "description": "Button that copies a value to the clipboard."
   },
   "commonCopyAddress": "Copy address",
   "@commonCopyAddress": {
@@ -456,9 +445,25 @@
   "@commonFeatureInProgress": {
     "description": "Body of the sheet for a feature that is not available on this platform yet."
   },
+  "commonGoBack": "Go back",
+  "@commonGoBack": {
+    "description": "Button that returns to the previous screen."
+  },
+  "commonImporting": "Importing...",
+  "@commonImporting": {
+    "description": "Status or button label while an account is being imported."
+  },
   "commonInformation": "Information",
   "@commonInformation": {
     "description": "Default screen-reader name of a carousel of information cards."
+  },
+  "commonKeepQrSteady": "Keep the QR code steady and fully visible.",
+  "@commonKeepQrSteady": {
+    "description": "Hint while scanning a QR code from a device screen."
+  },
+  "commonKeepScreenAwake": "Keep screen awake",
+  "@commonKeepScreenAwake": {
+    "description": "Setting and button that keep the screen on while Vizor syncs."
   },
   "commonNotAvailableYet": "Not available yet",
   "@commonNotAvailableYet": {
@@ -468,9 +473,37 @@
   "@commonOk": {
     "description": "Button that acknowledges a message and closes it."
   },
+  "commonQuit": "Quit",
+  "@commonQuit": {
+    "description": "Button that quits Vizor."
+  },
+  "commonResetVizor": "Reset Vizor",
+  "@commonResetVizor": {
+    "description": "[security] Button that erases every account and wallet data on this device."
+  },
+  "commonRetry": "Retry",
+  "@commonRetry": {
+    "description": "Button that retries a failed step."
+  },
+  "commonScanQrCode": "Scan QR Code",
+  "@commonScanQrCode": {
+    "description": "Title of a QR code scanning screen."
+  },
+  "commonSelectAccount": "Select account",
+  "@commonSelectAccount": {
+    "description": "Title of a screen that picks one account to import."
+  },
   "commonSensitiveContentHidden": "Sensitive content hidden",
   "@commonSensitiveContentHidden": {
     "description": "Screen-reader label of the lock icon covering secret content while the app is in the background."
+  },
+  "commonTryAgain": "Try again",
+  "@commonTryAgain": {
+    "description": "Button that repeats an action that failed."
+  },
+  "commonUnlockVizor": "Unlock Vizor",
+  "@commonUnlockVizor": {
+    "description": "[security] Button and system biometric prompt reason for unlocking the wallet."
   },
   "commonUpdate": "Update",
   "@commonUpdate": {
@@ -479,6 +512,31 @@
   "commonUpdating": "Updating...",
   "@commonUpdating": {
     "description": "The Update button label while the change is being saved."
+  },
+  "commonWelcomeBack": "Welcome Back",
+  "@commonWelcomeBack": {
+    "description": "Title of the unlock screen."
+  },
+  "endpointCurrent": "Current: {endpoint}",
+  "@endpointCurrent": {
+    "description": "Shows the lightwalletd endpoint in use.",
+    "placeholders": {
+      "endpoint": {
+        "type": "String"
+      }
+    }
+  },
+  "endpointCustom": "Custom endpoint",
+  "@endpointCustom": {
+    "description": "Option to enter a custom lightwalletd endpoint."
+  },
+  "endpointUpdate": "Update endpoint",
+  "@endpointUpdate": {
+    "description": "Button that saves a new lightwalletd endpoint."
+  },
+  "endpointUpdated": "Endpoint updated",
+  "@endpointUpdated": {
+    "description": "Toast after the lightwalletd endpoint changed."
   },
   "homeActivityEmpty": "No activity, yet...",
   "@homeActivityEmpty": {
@@ -549,10 +607,6 @@
   "homeKeepAwakeBody": "Your phone pauses syncing when screen is off. This allows sync to finish faster.",
   "@homeKeepAwakeBody": {
     "description": "Body of the keep-awake sheet explaining why the screen should stay on during sync."
-  },
-  "homeKeepAwakeEnable": "Keep screen awake",
-  "@homeKeepAwakeEnable": {
-    "description": "Button in the keep-awake sheet that turns on the keep-screen-awake option."
   },
   "homeKeepAwakeLater": "Maybe later",
   "@homeKeepAwakeLater": {
@@ -920,10 +974,6 @@
   "@homeShieldScanDecodeFailed": {
     "description": "Hint under the mobile Keystone scanner when the scanned QR is not a valid signature."
   },
-  "homeShieldScanHold": "Keep the QR code steady and fully visible.",
-  "@homeShieldScanHold": {
-    "description": "Hint under the mobile Keystone scanner when a frame could not be read."
-  },
   "homeShieldScanTitle": "Scan your Keystone signature",
   "@homeShieldScanTitle": {
     "description": "Title of the mobile Keystone shield screen while the camera scans the signature QR."
@@ -970,10 +1020,6 @@
   "@homeShieldToggleFlashlight": {
     "description": "Screen-reader label of the flashlight button on the mobile Keystone scanner."
   },
-  "homeShieldTryAgain": "Try again",
-  "@homeShieldTryAgain": {
-    "description": "Button on the shield screens that retries the failed step."
-  },
   "homeShieldedBalance": "Shielded balance",
   "@homeShieldedBalance": {
     "description": "Label on the Home balance card for the shielded balance. See the glossary entry for shielded."
@@ -1004,10 +1050,6 @@
   "@homeVotingSubtitle": {
     "description": "Subtitle of the Home coinholder voting card."
   },
-  "homeVotingTitle": "Coinholder voting",
-  "@homeVotingTitle": {
-    "description": "Title of the Home card that opens coinholder voting."
-  },
   "keyringLockedBody": "Vizor cannot access your system keyring. Unlock the keyring, then choose Retry. A system prompt may ask for your keyring password.",
   "@keyringLockedBody": {
     "description": "[security] Body of the Linux keyring screen when the system keyring is locked; mentions the keyring password prompt."
@@ -1015,10 +1057,6 @@
   "keyringNoResponse": "The keyring did not respond. Try again.",
   "@keyringNoResponse": {
     "description": "Message on the Linux keyring screen when a retry or cancel request failed."
-  },
-  "keyringOpenFailedTitle": "Unable to open Vizor",
-  "@keyringOpenFailedTitle": {
-    "description": "Title of the startup screen on Linux when the app failed to start."
   },
   "keyringOpeningTitle": "Opening Vizor",
   "@keyringOpeningTitle": {
@@ -1028,17 +1066,9 @@
   "@keyringPromptBody": {
     "description": "Body of the Linux keyring screen while waiting for the user to answer a system keyring prompt."
   },
-  "keyringQuit": "Quit",
-  "@keyringQuit": {
-    "description": "Button on the Linux startup and keyring screens that quits the app."
-  },
   "keyringRestartHint": "Quit and restart Vizor to try again.",
   "@keyringRestartHint": {
     "description": "Body of the startup failure screen on Linux."
-  },
-  "keyringRetry": "Retry",
-  "@keyringRetry": {
-    "description": "Button on the Linux keyring screen that retries accessing the system keyring."
   },
   "keyringSaveUnconfirmedBody": "Vizor could not confirm whether your changes were saved. Quit and restart Vizor before continuing.",
   "@keyringSaveUnconfirmedBody": {
@@ -1062,7 +1092,7 @@
   },
   "keyringUnlockTitle": "Unlock your keyring",
   "@keyringUnlockTitle": {
-    "description": "[security] Title of the Linux keyring screen asking the user to unlock the system keyring."
+    "description": "Title asking the user to unlock the system keyring (Linux)."
   },
   "keyringUnreadableBody": "Vizor could not read the data in your system keyring. Retry after restoring access, or quit Vizor.",
   "@keyringUnreadableBody": {
@@ -1082,57 +1112,13 @@
       }
     }
   },
-  "keystoneBackWelcome": "Welcome",
-  "@keystoneBackWelcome": {
-    "description": "Back-link text on the Keystone how-to-connect screen that returns to the welcome screen."
-  },
-  "keystoneBirthdayDatePlaceholder": "mm/dd/yyyy",
-  "@keystoneBirthdayDatePlaceholder": {
-    "description": "Placeholder of the date field before a date is picked; shows the month/day/year format."
-  },
-  "keystoneBirthdayEstimateError": "Could not estimate the wallet birthday height.",
-  "@keystoneBirthdayEstimateError": {
-    "description": "Inline error on the Keystone wallet birthday screen when the chosen date cannot be converted to a block height."
-  },
-  "keystoneBirthdayEstimating": "Estimating...",
-  "@keystoneBirthdayEstimating": {
-    "description": "Disabled primary button label while the block height for the chosen date is being estimated."
-  },
-  "keystoneBirthdayHeightHint": "Block height",
-  "@keystoneBirthdayHeightHint": {
-    "description": "Hint text of the block height input field."
-  },
   "keystoneBirthdayInvalidHeight": "That doesn't look like a valid block height.",
   "@keystoneBirthdayInvalidHeight": {
     "description": "Inline error under the block height field when the typed number is not a usable block height."
   },
-  "keystoneBirthdayMetadataError": "Could not load wallet birthday metadata.",
-  "@keystoneBirthdayMetadataError": {
-    "description": "Inline error on the Keystone wallet birthday screen when the data needed to convert dates to block heights cannot be loaded."
-  },
-  "keystoneBirthdayStopSyncing": "Stop syncing...",
-  "@keystoneBirthdayStopSyncing": {
-    "description": "Disabled primary button label while Vizor stops a running sync before importing the Keystone account."
-  },
   "keystoneBirthdaySubtitle": "It helps us import your wallet faster.",
   "@keystoneBirthdaySubtitle": {
     "description": "Subtitle under the wallet birthday heading explaining why the date is asked."
-  },
-  "keystoneBirthdayTabBlockHeight": "Enter the block height",
-  "@keystoneBirthdayTabBlockHeight": {
-    "description": "Tab label to enter the wallet birthday block height directly."
-  },
-  "keystoneBirthdayTabDate": "Enter the date",
-  "@keystoneBirthdayTabDate": {
-    "description": "Tab label to enter the wallet creation date."
-  },
-  "keystoneBirthdayTitle": "Around when did you create your wallet?",
-  "@keystoneBirthdayTitle": {
-    "description": "Heading of the Keystone wallet birthday screen."
-  },
-  "keystoneBirthdayUnknown": "I can’t remember",
-  "@keystoneBirthdayUnknown": {
-    "description": "Ghost button on the wallet birthday screen for users who do not know when the wallet was created; opens a confirmation."
   },
   "keystoneCameraDeniedBody": "Request again, or enable manually\nin the System settings.",
   "@keystoneCameraDeniedBody": {
@@ -1162,10 +1148,6 @@
   "@keystoneCameraRestrictedTitle": {
     "description": "Title of the mobile Keystone scan card when camera access is restricted by the system."
   },
-  "keystoneCameraTryAgain": "Try again",
-  "@keystoneCameraTryAgain": {
-    "description": "Button on the mobile Keystone scan card that retries opening the camera."
-  },
   "keystoneCameraUnavailableBody": "Keystone import uses camera QR scanning only.\nConnect a camera and try again.",
   "@keystoneCameraUnavailableBody": {
     "description": "Two-line description under the camera unavailable title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short."
@@ -1177,14 +1159,6 @@
   "keystoneConfirmSelection": "Confirm selection",
   "@keystoneConfirmSelection": {
     "description": "Button that confirms the chosen Keystone account and continues the import."
-  },
-  "keystoneConnectTitle": "Connect Keystone",
-  "@keystoneConnectTitle": {
-    "description": "Heading of the screen explaining how to connect a Keystone hardware wallet to Vizor."
-  },
-  "keystoneContinue": "Continue",
-  "@keystoneContinue": {
-    "description": "Primary button that continues to the next step of Keystone import."
   },
   "keystoneFirmwareBody": "Make sure your Keystone is on the latest Cypherpunk firmware. ",
   "@keystoneFirmwareBody": {
@@ -1205,10 +1179,6 @@
   "keystoneImReadyNow": "I'm ready now",
   "@keystoneImReadyNow": {
     "description": "Primary button on the Keystone how-to-connect screen; continues to the QR scan step once the user has followed the instructions."
-  },
-  "keystoneImporting": "Importing...",
-  "@keystoneImporting": {
-    "description": "Disabled primary button label while the Keystone account is being imported."
   },
   "keystoneOnVizor": "On Vizor",
   "@keystoneOnVizor": {
@@ -1238,10 +1208,6 @@
   "@keystoneScanDecodeFailed": {
     "description": "Error under the Keystone QR scanner when the scanned QR cannot be decoded as a Zcash account."
   },
-  "keystoneScanKeepSteady": "Keep the QR code steady and fully visible.",
-  "@keystoneScanKeepSteady": {
-    "description": "Scanner hint shown while a QR code cannot be read yet."
-  },
   "keystoneScanNoAccounts": "No Zcash accounts were found on this Keystone QR.",
   "@keystoneScanNoAccounts": {
     "description": "Error under the Keystone QR scanner when the scanned QR contains no Zcash accounts."
@@ -1264,18 +1230,6 @@
   "@keystoneScanReadingAccounts": {
     "description": "Status text on the Keystone QR scanner while the scanned accounts are being decoded."
   },
-  "keystoneScanTitle": "Scan QR Code",
-  "@keystoneScanTitle": {
-    "description": "Title of the Keystone QR scan screen and its sidebar step label; the user scans the account QR shown on the Keystone device."
-  },
-  "keystoneSelectAccountTitle": "Select account",
-  "@keystoneSelectAccountTitle": {
-    "description": "Heading of the screen where the user picks which Keystone account to import."
-  },
-  "keystoneStepCustomiseWallet": "Customise wallet",
-  "@keystoneStepCustomiseWallet": {
-    "description": "Sidebar step label for customising the imported Keystone wallet (name and avatar)."
-  },
   "keystoneStepHowToConnect": "How to Connect",
   "@keystoneStepHowToConnect": {
     "description": "Sidebar step label and back-link text for the first Keystone onboarding step (how to connect the device). Title Case is intentional."
@@ -1295,14 +1249,6 @@
   "keystoneStepSelectVizor": "Select Vizor (or ZODL)",
   "@keystoneStepSelectVizor": {
     "description": "Device step: pick Vizor (or ZODL) from the software wallet list shown on the Keystone device. Vizor and ZODL are wallet names and stay in Latin script."
-  },
-  "keystoneStepSetPassword": "Set Password",
-  "@keystoneStepSetPassword": {
-    "description": "Sidebar step label for setting the wallet password during Keystone import. Title Case is intentional."
-  },
-  "keystoneStepWalletBirthdayHeight": "Wallet Birthday Height",
-  "@keystoneStepWalletBirthdayHeight": {
-    "description": "Sidebar step label and back-link text for the wallet birthday (block height) step during Keystone import. Title Case is intentional."
   },
   "languageSystemOption": "System ({language})",
   "@languageSystemOption": {
@@ -1334,10 +1280,6 @@
   "ledgerAdvancedOptions": "Advanced options",
   "@ledgerAdvancedOptions": {
     "description": "Label of the collapsible advanced options section on the Connect Ledger screen."
-  },
-  "ledgerBackAddAccount": "Add account",
-  "@ledgerBackAddAccount": {
-    "description": "Back-link text on the desktop Connect Ledger screen that returns to the add-account screen."
   },
   "ledgerBalanceActivityNote": "See your balance and activity in Vizor.\nApprove transactions on Ledger.",
   "@ledgerBalanceActivityNote": {
@@ -1394,10 +1336,6 @@
   "ledgerConfirmOpeningZcash": "Confirm opening Zcash on Ledger.",
   "@ledgerConfirmOpeningZcash": {
     "description": "Message asking the user to confirm on the Ledger device that the Zcash app may open. 'Zcash' is the app name on the device."
-  },
-  "ledgerConnect": "Connect Ledger",
-  "@ledgerConnect": {
-    "description": "Heading, sidebar step, procedure step and button label for connecting a Ledger device; it is the name of the action, not a sentence."
   },
   "ledgerConnectSubtitle": "Prepare your Ledger wallet.",
   "@ledgerConnectSubtitle": {
@@ -1585,17 +1523,9 @@
   "@ledgerSheetDeclinedTitle": {
     "description": "Title of the mobile Add Ledger account sheet after the request was declined on the device."
   },
-  "ledgerStepAddAccount": "Add account",
-  "@ledgerStepAddAccount": {
-    "description": "Procedure step label in the mobile sheet: the user approves adding the account on the Ledger."
-  },
   "ledgerStepApproveViewingKey": "Approve viewing key",
   "@ledgerStepApproveViewingKey": {
     "description": "[security] Procedure step label: the user approves sharing the viewing key on the Ledger device."
-  },
-  "ledgerStepCustomiseWallet": "Customise wallet",
-  "@ledgerStepCustomiseWallet": {
-    "description": "Sidebar step label for customising the imported Ledger wallet (name and avatar)."
   },
   "ledgerStepOpenApp": "Open {appName}",
   "@ledgerStepOpenApp": {
@@ -1610,14 +1540,6 @@
   "ledgerStepOpenZcash": "Open Zcash",
   "@ledgerStepOpenZcash": {
     "description": "Procedure step label: the Zcash app must be opened on the Ledger device. 'Zcash' is the name of the app on the device and stays in Latin script."
-  },
-  "ledgerStepSetPassword": "Set Password",
-  "@ledgerStepSetPassword": {
-    "description": "Sidebar step label for setting the wallet password during Ledger onboarding. Title Case is intentional."
-  },
-  "ledgerStepWalletBirthdayHeight": "Wallet Birthday Height",
-  "@ledgerStepWalletBirthdayHeight": {
-    "description": "Sidebar step label for the wallet birthday (block height) step during Ledger onboarding. Title Case is intentional."
   },
   "ledgerStoppingSearch": "Stopping search",
   "@ledgerStoppingSearch": {
@@ -1634,10 +1556,6 @@
   "ledgerTransportUsb": "USB",
   "@ledgerTransportUsb": {
     "description": "Name of the USB connection option for a Ledger device (choice button or connection summary)."
-  },
-  "ledgerTryAgain": "Try again",
-  "@ledgerTryAgain": {
-    "description": "Button that retries the failed Ledger connection or discovery."
   },
   "ledgerUnlockBluetoothNearby": "Unlock Ledger, turn on Bluetooth, and keep it nearby.",
   "@ledgerUnlockBluetoothNearby": {
@@ -1667,10 +1585,6 @@
   "@lockConfirmPasscodeSemantics": {
     "description": "[security] Screen-reader label of the passcode entry screen that unlocks the wallet."
   },
-  "lockNavSynced": "Synced",
-  "@lockNavSynced": {
-    "description": "Top bar title of the passcode entry screen when sync has finished."
-  },
   "lockNavSyncing": "{percent}% Syncing...",
   "@lockNavSyncing": {
     "description": "Top bar title of the passcode entry screen while sync runs, with the percentage complete.",
@@ -1679,10 +1593,6 @@
         "type": "int"
       }
     }
-  },
-  "lockPasscodeIncorrect": "Incorrect Passcode",
-  "@lockPasscodeIncorrect": {
-    "description": "[security] Error under the passcode dots when the entered unlock passcode is wrong."
   },
   "lockSyncCompleteTitle": "Sync Complete",
   "@lockSyncCompleteTitle": {
@@ -1716,14 +1626,6 @@
   "@lockUnlockToContinuePausedBody": {
     "description": "[security] Body on the sync lock screen after an interrupted sync asking the user to unlock the wallet."
   },
-  "lockUnlockVizor": "Unlock Vizor",
-  "@lockUnlockVizor": {
-    "description": "[security] Button label on the sync lock screen, and the reason text of the system biometric prompt, that unlocks the wallet."
-  },
-  "lockWelcomeBack": "Welcome Back",
-  "@lockWelcomeBack": {
-    "description": "[security] Heading of the passcode entry screen shown to unlock the wallet."
-  },
   "navActivity": "Activity",
   "@navActivity": {
     "description": "Sidebar and tab bar destination: transaction history."
@@ -1752,9 +1654,9 @@
   "@navVote": {
     "description": "Sidebar destination: coinholder voting."
   },
-  "onboardingAccountName": "Account name",
-  "@onboardingAccountName": {
-    "description": "Label above the account name on the customise-account card."
+  "networkSettingsTitle": "Network settings",
+  "@networkSettingsTitle": {
+    "description": "Title of the network settings (endpoint) screen or sheet."
   },
   "onboardingAdd": "Add",
   "@onboardingAdd": {
@@ -1814,11 +1716,7 @@
   },
   "onboardingAddressTypesTitle": "Zcash Address Types",
   "@onboardingAddressTypesTitle": {
-    "description": "Heading of the desktop step that explains Zcash address types."
-  },
-  "onboardingAddressTypesTitleMobile": "Zcash Address Types",
-  "@onboardingAddressTypesTitleMobile": {
-    "description": "Heading of the mobile step that explains Zcash address types."
+    "description": "Title of the screen explaining shielded and transparent addresses."
   },
   "onboardingBiometricEnableFailed": "Couldn't enable {method}. You can try again in settings.",
   "@onboardingBiometricEnableFailed": {
@@ -1867,30 +1765,17 @@
   "@onboardingBip39PassphraseHint": {
     "description": "Placeholder of the BIP39 passphrase field describing the allowed length."
   },
-  "onboardingBip39PassphrasePreview": "BIP39 Passphrase: {passphrase}",
-  "@onboardingBip39PassphrasePreview": {
-    "description": "[security] Bar under the secret passphrase showing the BIP39 passphrase the user entered; {passphrase} is the secret value.",
-    "placeholders": {
-      "passphrase": {
-        "type": "String"
-      }
-    }
-  },
-  "onboardingBip39PassphraseTitle": "BIP39 Passphrase",
-  "@onboardingBip39PassphraseTitle": {
-    "description": "[security] Title of the BIP39 passphrase dialog when editing an existing passphrase."
-  },
   "onboardingBip39PassphraseTitleOptional": "BIP39 Passphrase (Optional)",
   "@onboardingBip39PassphraseTitleOptional": {
     "description": "[security] Title of the BIP39 passphrase dialog when adding a passphrase."
   },
   "onboardingBirthdayCantRemember": "I can’t remember",
   "@onboardingBirthdayCantRemember": {
-    "description": "Ghost button on the desktop wallet birthday step for users who do not know when the wallet was created."
+    "description": "Button when the user does not know when the wallet was created."
   },
   "onboardingBirthdayDateHint": "mm/dd/yyyy",
   "@onboardingBirthdayDateHint": {
-    "description": "Placeholder of the birthday date field; shows the expected month/day/year order."
+    "description": "Placeholder of the date field (month/day/year order)."
   },
   "onboardingBirthdayDontRemember": "I don’t remember",
   "@onboardingBirthdayDontRemember": {
@@ -1898,11 +1783,11 @@
   },
   "onboardingBirthdayEnterBlockHeight": "Enter the block height",
   "@onboardingBirthdayEnterBlockHeight": {
-    "description": "Tab label on the wallet birthday step for entering a block height instead of a date."
+    "description": "Tab for entering the wallet birthday as a block height."
   },
   "onboardingBirthdayEnterDate": "Enter the date",
   "@onboardingBirthdayEnterDate": {
-    "description": "Tab label on the wallet birthday step for entering a calendar date."
+    "description": "Tab for entering the wallet birthday as a date."
   },
   "onboardingBirthdayEnterMonth": "Enter the month",
   "@onboardingBirthdayEnterMonth": {
@@ -1910,7 +1795,7 @@
   },
   "onboardingBirthdayEstimateFailed": "Could not estimate the wallet birthday height.",
   "@onboardingBirthdayEstimateFailed": {
-    "description": "Inline error on the desktop birthday step when the chosen date could not be converted into a block height."
+    "description": "Error when the birthday height could not be estimated."
   },
   "onboardingBirthdayHeightAtLeast": "At least {height}.",
   "@onboardingBirthdayHeightAtLeast": {
@@ -1939,7 +1824,7 @@
   },
   "onboardingBirthdayMetadataFailed": "Could not load wallet birthday metadata.",
   "@onboardingBirthdayMetadataFailed": {
-    "description": "Inline error on the desktop birthday step when the chain data needed to estimate dates could not be loaded."
+    "description": "Error when the data for the birthday step could not load."
   },
   "onboardingBirthdayMobileEstimateFailed": "Couldn't estimate a height for that date. Enter a block height instead.",
   "@onboardingBirthdayMobileEstimateFailed": {
@@ -1983,139 +1868,11 @@
   },
   "onboardingBirthdayTitle": "Around when did you create your wallet?",
   "@onboardingBirthdayTitle": {
-    "description": "Heading of the wallet birthday step on desktop and mobile; asks roughly when the imported wallet was created."
+    "description": "Title of the wallet birthday step."
   },
   "onboardingBlockHeight": "Block height",
   "@onboardingBlockHeight": {
-    "description": "Placeholder of the field where the user types a block height."
-  },
-  "onboardingCalendarMonthApril": "April",
-  "@onboardingCalendarMonthApril": {
-    "description": "Full month name (April) shown in the birthday calendar title, followed by the year."
-  },
-  "onboardingCalendarMonthAugust": "August",
-  "@onboardingCalendarMonthAugust": {
-    "description": "Full month name (August) shown in the birthday calendar title, followed by the year."
-  },
-  "onboardingCalendarMonthDecember": "December",
-  "@onboardingCalendarMonthDecember": {
-    "description": "Full month name (December) shown in the birthday calendar title, followed by the year."
-  },
-  "onboardingCalendarMonthFebruary": "February",
-  "@onboardingCalendarMonthFebruary": {
-    "description": "Full month name (February) shown in the birthday calendar title, followed by the year."
-  },
-  "onboardingCalendarMonthJanuary": "January",
-  "@onboardingCalendarMonthJanuary": {
-    "description": "Full month name (January) shown in the birthday calendar title, followed by the year."
-  },
-  "onboardingCalendarMonthJuly": "July",
-  "@onboardingCalendarMonthJuly": {
-    "description": "Full month name (July) shown in the birthday calendar title, followed by the year."
-  },
-  "onboardingCalendarMonthJune": "June",
-  "@onboardingCalendarMonthJune": {
-    "description": "Full month name (June) shown in the birthday calendar title, followed by the year."
-  },
-  "onboardingCalendarMonthMarch": "March",
-  "@onboardingCalendarMonthMarch": {
-    "description": "Full month name (March) shown in the birthday calendar title, followed by the year."
-  },
-  "onboardingCalendarMonthMay": "May",
-  "@onboardingCalendarMonthMay": {
-    "description": "Full month name (May) shown in the birthday calendar title, followed by the year."
-  },
-  "onboardingCalendarMonthNovember": "November",
-  "@onboardingCalendarMonthNovember": {
-    "description": "Full month name (November) shown in the birthday calendar title, followed by the year."
-  },
-  "onboardingCalendarMonthOctober": "October",
-  "@onboardingCalendarMonthOctober": {
-    "description": "Full month name (October) shown in the birthday calendar title, followed by the year."
-  },
-  "onboardingCalendarMonthSeptember": "September",
-  "@onboardingCalendarMonthSeptember": {
-    "description": "Full month name (September) shown in the birthday calendar title, followed by the year."
-  },
-  "onboardingCalendarMonthShortApr": "Apr",
-  "@onboardingCalendarMonthShortApr": {
-    "description": "Abbreviated month name (April) on the birthday calendar month grid. Must fit a small cell."
-  },
-  "onboardingCalendarMonthShortAug": "Aug",
-  "@onboardingCalendarMonthShortAug": {
-    "description": "Abbreviated month name (August) on the birthday calendar month grid. Must fit a small cell."
-  },
-  "onboardingCalendarMonthShortDec": "Dec",
-  "@onboardingCalendarMonthShortDec": {
-    "description": "Abbreviated month name (December) on the birthday calendar month grid. Must fit a small cell."
-  },
-  "onboardingCalendarMonthShortFeb": "Feb",
-  "@onboardingCalendarMonthShortFeb": {
-    "description": "Abbreviated month name (February) on the birthday calendar month grid. Must fit a small cell."
-  },
-  "onboardingCalendarMonthShortJan": "Jan",
-  "@onboardingCalendarMonthShortJan": {
-    "description": "Abbreviated month name (January) on the birthday calendar month grid. Must fit a small cell."
-  },
-  "onboardingCalendarMonthShortJul": "Jul",
-  "@onboardingCalendarMonthShortJul": {
-    "description": "Abbreviated month name (July) on the birthday calendar month grid. Must fit a small cell."
-  },
-  "onboardingCalendarMonthShortJun": "Jun",
-  "@onboardingCalendarMonthShortJun": {
-    "description": "Abbreviated month name (June) on the birthday calendar month grid. Must fit a small cell."
-  },
-  "onboardingCalendarMonthShortMar": "Mar",
-  "@onboardingCalendarMonthShortMar": {
-    "description": "Abbreviated month name (March) on the birthday calendar month grid. Must fit a small cell."
-  },
-  "onboardingCalendarMonthShortMay": "May",
-  "@onboardingCalendarMonthShortMay": {
-    "description": "Abbreviated month name (May) on the birthday calendar month grid. Must fit a small cell."
-  },
-  "onboardingCalendarMonthShortNov": "Nov",
-  "@onboardingCalendarMonthShortNov": {
-    "description": "Abbreviated month name (November) on the birthday calendar month grid. Must fit a small cell."
-  },
-  "onboardingCalendarMonthShortOct": "Oct",
-  "@onboardingCalendarMonthShortOct": {
-    "description": "Abbreviated month name (October) on the birthday calendar month grid. Must fit a small cell."
-  },
-  "onboardingCalendarMonthShortSep": "Sep",
-  "@onboardingCalendarMonthShortSep": {
-    "description": "Abbreviated month name (September) on the birthday calendar month grid. Must fit a small cell."
-  },
-  "onboardingCalendarWeekdayFri": "Fri",
-  "@onboardingCalendarWeekdayFri": {
-    "description": "Column header of the birthday calendar: abbreviated weekday (Fri). Keep it very short, it must fit a 40 px cell."
-  },
-  "onboardingCalendarWeekdayMon": "Mon",
-  "@onboardingCalendarWeekdayMon": {
-    "description": "Column header of the birthday calendar: abbreviated weekday (Mon). Keep it very short, it must fit a 40 px cell."
-  },
-  "onboardingCalendarWeekdaySat": "Sat",
-  "@onboardingCalendarWeekdaySat": {
-    "description": "Column header of the birthday calendar: abbreviated weekday (Sat). Keep it very short, it must fit a 40 px cell."
-  },
-  "onboardingCalendarWeekdaySun": "Sun",
-  "@onboardingCalendarWeekdaySun": {
-    "description": "Column header of the birthday calendar: abbreviated weekday (Sun). Keep it very short, it must fit a 40 px cell."
-  },
-  "onboardingCalendarWeekdayThu": "Thu",
-  "@onboardingCalendarWeekdayThu": {
-    "description": "Column header of the birthday calendar: abbreviated weekday (Thu). Keep it very short, it must fit a 40 px cell."
-  },
-  "onboardingCalendarWeekdayTue": "Tue",
-  "@onboardingCalendarWeekdayTue": {
-    "description": "Column header of the birthday calendar: abbreviated weekday (Tue). Keep it very short, it must fit a 40 px cell."
-  },
-  "onboardingCalendarWeekdayWed": "Wed",
-  "@onboardingCalendarWeekdayWed": {
-    "description": "Column header of the birthday calendar: abbreviated weekday (Wed). Keep it very short, it must fit a 40 px cell."
-  },
-  "onboardingChangeProfilePicture": "Change profile picture",
-  "@onboardingChangeProfilePicture": {
-    "description": "Accessibility label of the button that opens the profile picture picker."
+    "description": "Placeholder of the block height field."
   },
   "onboardingCheckingAccounts": "Checking accounts...",
   "@onboardingCheckingAccounts": {
@@ -2124,10 +1881,6 @@
   "onboardingClear": "Clear",
   "@onboardingClear": {
     "description": "Button that clears the secret passphrase words entered so far."
-  },
-  "onboardingConfirmPassword": "Confirm password",
-  "@onboardingConfirmPassword": {
-    "description": "[security] Label and placeholder of the field where the user retypes the new wallet password."
   },
   "onboardingConnectHardwareSubtitleDesktop": "Select your hardware wallet.",
   "@onboardingConnectHardwareSubtitleDesktop": {
@@ -2147,15 +1900,11 @@
   },
   "onboardingConnectKeystone": "Connect Keystone",
   "@onboardingConnectKeystone": {
-    "description": "Title of the Keystone option on the hardware wallet picker."
+    "description": "Import method and screen title for connecting a Keystone device."
   },
   "onboardingConnectLedger": "Connect Ledger",
   "@onboardingConnectLedger": {
-    "description": "Title of the Ledger option on the hardware wallet picker, and back label that returns to the Ledger connection step."
-  },
-  "onboardingContinue": "Continue",
-  "@onboardingContinue": {
-    "description": "Primary button that moves to the next step of an onboarding flow."
+    "description": "Import method and screen title for connecting a Ledger device."
   },
   "onboardingContinueAnywayDesktop": "Continue Anyway",
   "@onboardingContinueAnywayDesktop": {
@@ -2164,14 +1913,6 @@
   "onboardingContinueAnywayMobile": "Continue anyway",
   "@onboardingContinueAnywayMobile": {
     "description": "Confirm button of the mobile unknown-birthday sheet."
-  },
-  "onboardingCopy": "Copy",
-  "@onboardingCopy": {
-    "description": "Button that copies the text shown next to it to the clipboard."
-  },
-  "onboardingCopySecretPassphrase": "Copy secret passphrase",
-  "@onboardingCopySecretPassphrase": {
-    "description": "[security] Accessibility label of the button on the secret passphrase card that copies the phrase to the clipboard."
   },
   "onboardingCreatingWallet": "Creating wallet...",
   "@onboardingCreatingWallet": {
@@ -2207,7 +1948,7 @@
   },
   "onboardingEstimating": "Estimating...",
   "@onboardingEstimating": {
-    "description": "Disabled primary button label while the block height for the chosen date is being estimated."
+    "description": "Button label while the birthday height is estimated from a date."
   },
   "onboardingFinishSetup": "Finish setup",
   "@onboardingFinishSetup": {
@@ -2256,10 +1997,6 @@
   "onboardingGoBackDesktop": "Go Back",
   "@onboardingGoBackDesktop": {
     "description": "Cancel button of the desktop unknown-birthday dialog that returns to the birthday step."
-  },
-  "onboardingGoBackMobile": "Go back",
-  "@onboardingGoBackMobile": {
-    "description": "Cancel button of the mobile unknown-birthday sheet that returns to the birthday step."
   },
   "onboardingHardwareKeystoneOnly": "Keystone wallet",
   "@onboardingHardwareKeystoneOnly": {
@@ -2364,10 +2101,6 @@
   "onboardingImportWalletTitleMobile": "Import Wallet",
   "@onboardingImportWalletTitleMobile": {
     "description": "Heading of the mobile step where the user imports a secret passphrase."
-  },
-  "onboardingImporting": "Importing...",
-  "@onboardingImporting": {
-    "description": "Disabled primary button label while the wallet is being imported."
   },
   "onboardingIntroCard": "Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount — verified by cryptography, not trust.",
   "@onboardingIntroCard": {
@@ -2475,38 +2208,13 @@
   "@onboardingNetworkCheckingEndpoint": {
     "description": "Disabled button label while the custom endpoint is being verified."
   },
-  "onboardingNetworkCurrentEndpoint": "Current: {endpoint}",
-  "@onboardingNetworkCurrentEndpoint": {
-    "description": "Line under the custom endpoint heading showing the host and port currently in use; {endpoint} is that host:port.",
-    "placeholders": {
-      "endpoint": {
-        "type": "String"
-      }
-    }
-  },
-  "onboardingNetworkCustomEndpoint": "Custom endpoint",
-  "@onboardingNetworkCustomEndpoint": {
-    "description": "Section heading on the network settings sheet for the custom lightwalletd server address."
-  },
   "onboardingNetworkEndpointHelper": "Use a lightwalletd server for this wallet’s network.",
   "@onboardingNetworkEndpointHelper": {
     "description": "Helper text under the custom endpoint field; the server must be a lightwalletd server for the wallet's Zcash network."
   },
-  "onboardingNetworkEndpointUpdated": "Endpoint updated",
-  "@onboardingNetworkEndpointUpdated": {
-    "description": "Toast after the custom lightwalletd endpoint was saved on the mobile network settings sheet."
-  },
   "onboardingNetworkSaveFailed": "Couldn't save the endpoint. Try again.",
   "@onboardingNetworkSaveFailed": {
     "description": "Error on the network settings sheet when saving the custom endpoint failed."
-  },
-  "onboardingNetworkSettings": "Network settings",
-  "@onboardingNetworkSettings": {
-    "description": "Tooltip, accessibility label and sheet title for the button that opens the lightwalletd endpoint settings on the welcome screen."
-  },
-  "onboardingNetworkUpdateEndpoint": "Update endpoint",
-  "@onboardingNetworkUpdateEndpoint": {
-    "description": "Button on the network settings sheet that saves the custom endpoint."
   },
   "onboardingNetworkVerifyFailed": "Couldn't verify that endpoint. Check the address and try again.",
   "@onboardingNetworkVerifyFailed": {
@@ -2519,10 +2227,6 @@
   "onboardingNotNow": "Not now",
   "@onboardingNotNow": {
     "description": "Ghost button that skips an optional step for now."
-  },
-  "onboardingPasscodeConfirmTitle": "Confirm Passcode",
-  "@onboardingPasscodeConfirmTitle": {
-    "description": "[security] Heading of the step where the user re-enters the new passcode."
   },
   "onboardingPasscodeCreateTitle": "Create Passcode",
   "@onboardingPasscodeCreateTitle": {
@@ -2537,10 +2241,6 @@
       }
     }
   },
-  "onboardingPasscodeIncorrect": "Incorrect Passcode",
-  "@onboardingPasscodeIncorrect": {
-    "description": "[security] Error under the passcode dots on the mobile unlock screen when the entered passcode is wrong."
-  },
   "onboardingPasscodeReEnter": "Re-enter your passcode.",
   "@onboardingPasscodeReEnter": {
     "description": "[security] Subtitle of the confirm-passcode step."
@@ -2548,26 +2248,6 @@
   "onboardingPasscodeSettingUp": "Setting up your wallet...",
   "@onboardingPasscodeSettingUp": {
     "description": "Subtitle of the create-passcode step while the wallet is being set up."
-  },
-  "onboardingPasscodeSixDigits": "6 digits length",
-  "@onboardingPasscodeSixDigits": {
-    "description": "[security] Subtitle of the create-passcode step stating that the passcode has 6 digits."
-  },
-  "onboardingPasscodesDidNotMatch": "Passcodes didn't match. Try again.",
-  "@onboardingPasscodesDidNotMatch": {
-    "description": "[security] Error under the passcode dots when the re-entered passcode differs from the first one."
-  },
-  "onboardingPassword": "Password",
-  "@onboardingPassword": {
-    "description": "Label of a wallet password field on the unlock and password setup screens."
-  },
-  "onboardingPasswordsDoNotMatch": "Passwords do not match.",
-  "@onboardingPasswordsDoNotMatch": {
-    "description": "[security] Error under the confirm-password field when it differs from the password."
-  },
-  "onboardingQuit": "Quit",
-  "@onboardingQuit": {
-    "description": "Desktop button on the startup failure screen that closes the app."
   },
   "onboardingRandomiseAccountPersona": "Randomise account name and profile picture",
   "@onboardingRandomiseAccountPersona": {
@@ -2581,21 +2261,9 @@
   "@onboardingResetAppFailed": {
     "description": "[security] Error on the mobile unlock screen when resetting the app after a forgotten passcode failed."
   },
-  "onboardingResetCannotBeUndone": "This cannot be undone.",
-  "@onboardingResetCannotBeUndone": {
-    "description": "[security] Warning line above the reset button on the lost-password screen; the reset deletes every account."
-  },
-  "onboardingResetVizor": "Reset Vizor",
-  "@onboardingResetVizor": {
-    "description": "[security] Destructive button that wipes all accounts from the app after the user lost their password or passcode."
-  },
   "onboardingResumeSetupFailed": "Couldn't resume setup. Please try again.",
   "@onboardingResumeSetupFailed": {
     "description": "Error shown on the final onboarding step when recovering an interrupted setup failed."
-  },
-  "onboardingRetry": "Retry",
-  "@onboardingRetry": {
-    "description": "Button on the startup failure screen that tries to open the wallet again."
   },
   "onboardingRetrySetup": "Retry setup",
   "@onboardingRetrySetup": {
@@ -2629,10 +2297,6 @@
   "@onboardingSavingWallet": {
     "description": "Disabled primary button label while the already-created wallet is being saved after a retry."
   },
-  "onboardingSecretPassphrase": "Secret Passphrase",
-  "@onboardingSecretPassphrase": {
-    "description": "[security] Title, sidebar step label and card heading for the secret recovery phrase (seed phrase) of the wallet."
-  },
   "onboardingSecretPassphraseAboutToSee": "You are about to see your Secret Passphrase.",
   "@onboardingSecretPassphraseAboutToSee": {
     "description": "[security] Heading of the cover shown before the secret passphrase is revealed on desktop."
@@ -2665,14 +2329,6 @@
   "@onboardingSeedWordHint": {
     "description": "[security] Placeholder inside an empty secret passphrase word box."
   },
-  "onboardingSelectProfilePicture": "Select profile picture",
-  "@onboardingSelectProfilePicture": {
-    "description": "Title of the dialog where the user picks a profile picture for the new account."
-  },
-  "onboardingSetPassword": "Set Password",
-  "@onboardingSetPassword": {
-    "description": "Sidebar step label and heading of the step where the user chooses the wallet password on desktop."
-  },
   "onboardingSetPasswordAndFinish": "Set password & finish",
   "@onboardingSetPasswordAndFinish": {
     "description": "Primary button on the desktop set-password step that saves the password and completes setup."
@@ -2699,23 +2355,27 @@
   },
   "onboardingStepCustomiseWallet": "Customise wallet",
   "@onboardingStepCustomiseWallet": {
-    "description": "Sidebar step label for naming the account and choosing its profile picture."
+    "description": "Onboarding step for naming the wallet and picking a picture."
   },
   "onboardingStepImportContacts": "Import contacts",
   "@onboardingStepImportContacts": {
-    "description": "Back-button label that returns to the contacts import step of wallet linking on desktop."
+    "description": "Step and screen title for importing contacts from a linked wallet."
   },
   "onboardingStepIntroToZcash": "Intro to Zcash",
   "@onboardingStepIntroToZcash": {
     "description": "Sidebar step label for the introduction to Zcash during wallet creation."
   },
+  "onboardingStepSetPassword": "Set Password",
+  "@onboardingStepSetPassword": {
+    "description": "[security] Onboarding step for setting the wallet password."
+  },
   "onboardingStepWalletBirthdayHeight": "Wallet Birthday Height",
   "@onboardingStepWalletBirthdayHeight": {
-    "description": "Sidebar step label for the step where the user enters the block height at which the wallet was created."
+    "description": "Onboarding step and back-link name for choosing the wallet birthday height."
   },
   "onboardingStopSyncing": "Stop syncing...",
   "@onboardingStopSyncing": {
-    "description": "Disabled primary button label while the app stops the running sync before it finishes wallet setup."
+    "description": "Button label while sync is stopped before import."
   },
   "onboardingStorageDbMigrationBody": "Vizor needs to update the local wallet database before opening this version. Try again, or quit and restart Vizor.",
   "@onboardingStorageDbMigrationBody": {
@@ -2728,10 +2388,6 @@
   "onboardingStorageKeyringLockedBody": "Vizor needs access to the system keyring before it can open your wallet. Unlock the keyring, then try again.",
   "@onboardingStorageKeyringLockedBody": {
     "description": "Body of the Linux startup screen when the system keyring is locked."
-  },
-  "onboardingStorageKeyringLockedTitle": "Unlock your keyring",
-  "@onboardingStorageKeyringLockedTitle": {
-    "description": "Title of the startup screen on Linux when the system keyring is locked."
   },
   "onboardingStorageRetrySecureStorageFailed": "Secure storage is still unavailable.",
   "@onboardingStorageRetrySecureStorageFailed": {
@@ -2752,10 +2408,6 @@
   "onboardingStorageStartupFailureBody": "Vizor could not load the local startup state. Try again, or quit and restart Vizor.",
   "@onboardingStorageStartupFailureBody": {
     "description": "Body of the startup failure screen when the app's local startup state could not be loaded."
-  },
-  "onboardingStorageStartupFailureTitle": "Unable to open Vizor",
-  "@onboardingStorageStartupFailureTitle": {
-    "description": "Title of the startup failure screen when the app's local startup state could not be loaded."
   },
   "onboardingTellMeHowZcashWorks": "Tell me how Zcash works",
   "@onboardingTellMeHowZcashWorks": {
@@ -2785,10 +2437,6 @@
   "@onboardingThingsToKnow": {
     "description": "Sidebar step label and heading of the step that lists a few facts to know before using the wallet."
   },
-  "onboardingTryAgain": "Try again",
-  "@onboardingTryAgain": {
-    "description": "Primary button on the customise-account step that retries saving the wallet after a failure."
-  },
   "onboardingUnknownHeightBody": "If you continue without a wallet birthday, Vizor will scan from the earliest supported shielded height. This is safe, but the first sync can take a very long time.",
   "@onboardingUnknownHeightBody": {
     "description": "Explains that skipping the wallet birthday makes Vizor scan from the earliest supported shielded block, which is safe but slow."
@@ -2804,10 +2452,6 @@
   "onboardingUnlockBiometricReason": "Unlock your wallet",
   "@onboardingUnlockBiometricReason": {
     "description": "Reason line shown in the system biometric prompt when the wallet is unlocked with Face ID, Touch ID or fingerprint."
-  },
-  "onboardingUnlockButton": "Unlock Vizor",
-  "@onboardingUnlockButton": {
-    "description": "Button on the desktop unlock screen that submits the password and opens the wallet."
   },
   "onboardingUnlockDescription": "Enter your password to open Vizor.",
   "@onboardingUnlockDescription": {
@@ -2833,13 +2477,9 @@
   "@onboardingUnlockWelcomeBack": {
     "description": "Heading of the desktop unlock screen."
   },
-  "onboardingUnlockWelcomeBackMobile": "Welcome Back",
-  "@onboardingUnlockWelcomeBackMobile": {
-    "description": "Heading of the mobile unlock screen."
-  },
   "onboardingWelcome": "Welcome",
   "@onboardingWelcome": {
-    "description": "Back-button label that returns to the welcome screen."
+    "description": "Name of the Welcome screen, used in back links."
   },
   "onboardingWelcomeActivateGiftCard": "Activate gift card",
   "@onboardingWelcomeActivateGiftCard": {
@@ -2853,6 +2493,42 @@
   "@onboardingWelcomeImportWallet": {
     "description": "Button on the welcome screen that starts importing an existing wallet."
   },
+  "passcodeConfirmTitle": "Confirm Passcode",
+  "@passcodeConfirmTitle": {
+    "description": "[security] Title of the step that repeats a new 6-digit passcode."
+  },
+  "passcodeIncorrect": "Incorrect Passcode",
+  "@passcodeIncorrect": {
+    "description": "[security] Error when the entered 6-digit passcode is wrong."
+  },
+  "passcodeSixDigits": "6 digits length",
+  "@passcodeSixDigits": {
+    "description": "[security] Hint that a passcode has 6 digits."
+  },
+  "passcodesDidNotMatch": "Passcodes didn't match. Try again.",
+  "@passcodesDidNotMatch": {
+    "description": "[security] Error when the two new passcode entries differ."
+  },
+  "passwordCheckFailed": "Couldn't check your password. Please try again.",
+  "@passwordCheckFailed": {
+    "description": "[security] Error when the wallet password could not be checked."
+  },
+  "passwordConfirmLabel": "Confirm password",
+  "@passwordConfirmLabel": {
+    "description": "[security] Label of the field that repeats a new wallet password."
+  },
+  "passwordIncorrect": "Incorrect password. Please try again.",
+  "@passwordIncorrect": {
+    "description": "[security] Error when the entered wallet password is wrong."
+  },
+  "passwordLabel": "Password",
+  "@passwordLabel": {
+    "description": "[security] Label of a wallet password field."
+  },
+  "passwordsDoNotMatch": "Passwords do not match.",
+  "@passwordsDoNotMatch": {
+    "description": "[security] Error when the two new password entries differ."
+  },
   "poolShielded": "Shielded",
   "@poolShielded": {
     "description": "Badge naming a shielded pool or address. See the glossary entry for shielded."
@@ -2860,6 +2536,14 @@
   "poolTransparent": "Transparent",
   "@poolTransparent": {
     "description": "Badge naming a transparent pool or address."
+  },
+  "profilePictureChange": "Change profile picture",
+  "@profilePictureChange": {
+    "description": "Button or label that opens the profile picture picker."
+  },
+  "profilePictureSelect": "Select profile picture",
+  "@profilePictureSelect": {
+    "description": "Title of the profile picture picker."
   },
   "profilePictureUpdateFailed": "Couldn't update profile picture.",
   "@profilePictureUpdateFailed": {
@@ -2869,6 +2553,14 @@
   "@receiptMessageLabel": {
     "description": "Label of the memo row while a receipt is loading."
   },
+  "secretPassphraseCopy": "Copy secret passphrase",
+  "@secretPassphraseCopy": {
+    "description": "[security] Button that copies the seed phrase to the clipboard."
+  },
+  "secretPassphraseTitle": "Secret Passphrase",
+  "@secretPassphraseTitle": {
+    "description": "[security] Name of the seed phrase screen or step."
+  },
   "settingsAccountChangedPasscode": "Selected account changed. Enter your passcode again.",
   "@settingsAccountChangedPasscode": {
     "description": "[security] Error shown when the selected account changed while a passcode-protected secret screen was open."
@@ -2876,10 +2568,6 @@
   "settingsAccountChangedPassword": "Selected account changed. Enter your password again.",
   "@settingsAccountChangedPassword": {
     "description": "[security] Error shown when the selected account changed while a password-protected secret screen was open."
-  },
-  "settingsAccountSaveFailed": "Couldn't save the account changes",
-  "@settingsAccountSaveFailed": {
-    "description": "Toast shown when saving the account name or profile picture failed."
   },
   "settingsAccountUnavailable": "The selected account is no longer available.",
   "@settingsAccountUnavailable": {
@@ -2951,19 +2639,6 @@
   "@settingsBip39PassphraseCopy": {
     "description": "[security] Accessibility label of the button that copies the BIP39 passphrase."
   },
-  "settingsBip39PassphraseTitle": "BIP39 Passphrase",
-  "@settingsBip39PassphraseTitle": {
-    "description": "[security] Label of the row showing the optional BIP39 passphrase on mobile."
-  },
-  "settingsBip39PassphraseValue": "BIP39 Passphrase: {passphrase}",
-  "@settingsBip39PassphraseValue": {
-    "description": "[security] Row showing the optional BIP39 passphrase (an extra secret word added to the recovery phrase); the placeholder is the secret itself.",
-    "placeholders": {
-      "passphrase": {
-        "type": "String"
-      }
-    }
-  },
   "settingsBirthdayBlockHeight": "Birthday block height",
   "@settingsBirthdayBlockHeight": {
     "description": "Label of the row showing the block height the wallet was created at (wallet birthday)."
@@ -2980,10 +2655,6 @@
   "@settingsBirthdayHeightCopied": {
     "description": "Toast after the wallet birthday block height was copied."
   },
-  "settingsChangePasscodeIncorrect": "Incorrect Passcode",
-  "@settingsChangePasscodeIncorrect": {
-    "description": "[security] Error shown on the change-passcode keypad when the current passcode is wrong."
-  },
   "settingsConfirmAccessSubtitle": "Confirm your access",
   "@settingsConfirmAccessSubtitle": {
     "description": "Subtitle under the passcode keypad title asking the user to prove it is them."
@@ -2991,22 +2662,6 @@
   "settingsConfirmAccessTitle": "Confirm access",
   "@settingsConfirmAccessTitle": {
     "description": "Title of the card that asks the user to enter their wallet password before a sensitive Settings screen opens."
-  },
-  "settingsConfirmPasscodeTitle": "Confirm Passcode",
-  "@settingsConfirmPasscodeTitle": {
-    "description": "Title of the keypad step where the user re-enters the new passcode."
-  },
-  "settingsConfirmPasswordLabel": "Confirm password",
-  "@settingsConfirmPasswordLabel": {
-    "description": "Accessibility label of the button that submits the password, and label of the repeat-password field when changing the password."
-  },
-  "settingsContinue": "Continue",
-  "@settingsContinue": {
-    "description": "Button that continues to the password prompt before the secret passphrase is shown."
-  },
-  "settingsCopy": "Copy",
-  "@settingsCopy": {
-    "description": "Short button label that copies the adjacent value to the clipboard."
   },
   "settingsCopyLabel": "Copy {label}",
   "@settingsCopyLabel": {
@@ -3043,22 +2698,9 @@
   "@settingsEndpointConnectFailed": {
     "description": "Error shown when the custom endpoint could not be reached."
   },
-  "settingsEndpointCurrent": "Current: {endpoint}",
-  "@settingsEndpointCurrent": {
-    "description": "Shows the host and port of the endpoint in use, optionally followed by latency and a default marker.",
-    "placeholders": {
-      "endpoint": {
-        "type": "String"
-      }
-    }
-  },
   "settingsEndpointCurrentPrefix": "Current: ",
   "@settingsEndpointCurrentPrefix": {
     "description": "Prefix (with trailing space) before the highlighted host and port of the endpoint in use."
-  },
-  "settingsEndpointCustom": "Custom endpoint",
-  "@settingsEndpointCustom": {
-    "description": "Tab label, heading and accessibility label for entering your own server address."
   },
   "settingsEndpointCustomise": "Customise endpoint",
   "@settingsEndpointCustomise": {
@@ -3072,10 +2714,6 @@
   "@settingsEndpointDefaultMarker": {
     "description": "Marker appended to the current endpoint when it is the built-in default."
   },
-  "settingsEndpointNetworkSettings": "Network settings",
-  "@settingsEndpointNetworkSettings": {
-    "description": "Heading of the network settings dialog."
-  },
   "settingsEndpointSelectFromList": "Select from the list",
   "@settingsEndpointSelectFromList": {
     "description": "Tab label for choosing an endpoint from a list of known servers."
@@ -3083,14 +2721,6 @@
   "settingsEndpointTitle": "Endpoint",
   "@settingsEndpointTitle": {
     "description": "Title of the lightwalletd server (endpoint) setting, used as the Settings row label and screen heading."
-  },
-  "settingsEndpointUpdate": "Update endpoint",
-  "@settingsEndpointUpdate": {
-    "description": "Button that saves the selected endpoint."
-  },
-  "settingsEndpointUpdatedToast": "Endpoint updated",
-  "@settingsEndpointUpdatedToast": {
-    "description": "Toast shown after the endpoint was saved."
   },
   "settingsEndpointUpdating": "Updating endpoint...",
   "@settingsEndpointUpdating": {
@@ -3166,17 +2796,9 @@
   "@settingsIncorrectPasscode": {
     "description": "[security] Error shown on the passcode keypad when the entered passcode is wrong."
   },
-  "settingsIncorrectPassword": "Incorrect password. Please try again.",
-  "@settingsIncorrectPassword": {
-    "description": "[security] Error shown under the password field when the entered wallet password is wrong."
-  },
   "settingsKeepAwakeDescription": "Prevents your phone from sleeping so sync can finish faster. The app still locks after 1 minute of inactivity.",
   "@settingsKeepAwakeDescription": {
     "description": "Explains the keep-screen-awake setting during sync and that the app still locks after one minute of inactivity."
-  },
-  "settingsKeepAwakeLabel": "Keep screen awake",
-  "@settingsKeepAwakeLabel": {
-    "description": "Label and accessibility label of the toggle that keeps the screen on while syncing."
   },
   "settingsKeepAwakeUpdateFailed": "Couldn't update screen awake setting.",
   "@settingsKeepAwakeUpdateFailed": {
@@ -3202,10 +2824,6 @@
   "@settingsPasscodeCheckFailed": {
     "description": "[security] Error shown when verifying the current passcode failed unexpectedly."
   },
-  "settingsPasscodeLengthHint": "6 digits length",
-  "@settingsPasscodeLengthHint": {
-    "description": "Subtitle under the keypad title telling the user the passcode has six digits."
-  },
   "settingsPasscodeMustDiffer": "Your new passcode must be different.",
   "@settingsPasscodeMustDiffer": {
     "description": "[security] Error when the new passcode equals the current one."
@@ -3226,21 +2844,9 @@
   "@settingsPasscodeVerifyFailed": {
     "description": "Error shown when the passcode check itself failed unexpectedly."
   },
-  "settingsPasscodesMismatch": "Passcodes didn't match. Try again.",
-  "@settingsPasscodesMismatch": {
-    "description": "[security] Error when the confirmation passcode differs from the new passcode."
-  },
-  "settingsPasswordCheckFailed": "Couldn't check your password. Please try again.",
-  "@settingsPasswordCheckFailed": {
-    "description": "[security] Error shown when verifying the current password failed unexpectedly."
-  },
   "settingsPasswordHint": "Your password...",
   "@settingsPasswordHint": {
     "description": "Placeholder inside the wallet password field on the access confirmation card."
-  },
-  "settingsPasswordLabel": "Password",
-  "@settingsPasswordLabel": {
-    "description": "Accessibility label of the wallet password text field in Settings."
   },
   "settingsPasswordMinimumHint": "Minimum 8 characters. Add numbers and symbols, or make it longer, for stronger security.",
   "@settingsPasswordMinimumHint": {
@@ -3253,10 +2859,6 @@
   "settingsPasswordUpdateFailed": "Couldn't update your password. Please try again.",
   "@settingsPasswordUpdateFailed": {
     "description": "[security] Error shown when changing the wallet password failed."
-  },
-  "settingsPasswordsMismatch": "Passwords do not match.",
-  "@settingsPasswordsMismatch": {
-    "description": "[security] Error under the repeat-password field when the two new passwords differ."
   },
   "settingsPfpKnight": "Knight",
   "@settingsPfpKnight": {
@@ -3326,10 +2928,6 @@
   "@settingsPirNoServers": {
     "description": "Status shown when the server list is empty."
   },
-  "settingsPirPingChecking": "Checking...",
-  "@settingsPirPingChecking": {
-    "description": "Latency placeholder in a server row while its response time is being measured."
-  },
   "settingsPirServerChangeFailed": "Couldn't change server. Try again.",
   "@settingsPirServerChangeFailed": {
     "description": "Error shown when switching the private query server failed."
@@ -3382,10 +2980,6 @@
   "@settingsPrivateQueriesTurnOffBody": {
     "description": "[security] Explains that turning off private queries makes the wallet rebuild its transparent history through public lookups, exposing addresses to the server."
   },
-  "settingsPrivateQueriesTurnOffConfirm": "Turn off",
-  "@settingsPrivateQueriesTurnOffConfirm": {
-    "description": "Destructive button that confirms turning off a setting such as private queries or a biometric unlock."
-  },
   "settingsPrivateQueriesTurnOffDisclosure": "The server receives every transparent address of every account and the IDs of transactions private recovery found. It can link them to each other and, without Tor, to your IP address.",
   "@settingsPrivateQueriesTurnOffDisclosure": {
     "description": "[security] Warning listing what the server learns once private queries are off: addresses, transaction IDs, and linkage to the IP address when Tor is not used."
@@ -3402,10 +2996,6 @@
   "@settingsRowAboutVizor": {
     "description": "Settings row that opens the About screen."
   },
-  "settingsRowAccountName": "Account name",
-  "@settingsRowAccountName": {
-    "description": "Settings row that opens the account rename dialog."
-  },
   "settingsRowAccountNameMobile": "Account Name",
   "@settingsRowAccountNameMobile": {
     "description": "Mobile Settings row that opens the account rename sheet (title case)."
@@ -3421,10 +3011,6 @@
   "settingsRowChangePassword": "Change password",
   "@settingsRowChangePassword": {
     "description": "[security] Settings row that opens the change wallet password screen."
-  },
-  "settingsRowCoinholderVoting": "Coinholder voting",
-  "@settingsRowCoinholderVoting": {
-    "description": "Mobile Settings row that opens coinholder governance voting."
   },
   "settingsRowLinkMobile": "Link Vizor mobile",
   "@settingsRowLinkMobile": {
@@ -3457,10 +3043,6 @@
   "settingsRowViewingKeyMobile": "Viewing Key",
   "@settingsRowViewingKeyMobile": {
     "description": "[security] Mobile Settings row that opens the viewing key screen (title case)."
-  },
-  "settingsSecretPassphraseTitle": "Secret Passphrase",
-  "@settingsSecretPassphraseTitle": {
-    "description": "[security] Title of the screen and card that show the wallet's secret recovery phrase."
   },
   "settingsSectionAccount": "Account",
   "@settingsSectionAccount": {
@@ -3497,10 +3079,6 @@
   "settingsSeedCopiedToast": "Secret passphrase copied",
   "@settingsSeedCopiedToast": {
     "description": "[security] Toast after the secret passphrase was copied to the clipboard."
-  },
-  "settingsSeedCopyLabel": "Copy secret passphrase",
-  "@settingsSeedCopyLabel": {
-    "description": "[security] Accessibility label of the button that copies the secret passphrase."
   },
   "settingsSeedHeadingSubtitle": "This is the master key to your wallet.\nDon’t share it with anyone.",
   "@settingsSeedHeadingSubtitle": {
@@ -3714,9 +3292,9 @@
   "@settingsTorUse": {
     "description": "Label of the toggle that routes Vizor's network requests through Tor."
   },
-  "settingsTryAgain": "Try again",
-  "@settingsTryAgain": {
-    "description": "Button that retries a failed action in Settings."
+  "settingsTurnOffConfirm": "Turn off",
+  "@settingsTurnOffConfirm": {
+    "description": "Destructive button that confirms turning off a setting such as private queries or a biometric unlock."
   },
   "settingsUninstallActiveSwaps": "This wallet has {count, plural, =1{1 active swap} other{{count} active swaps}}. Wait for them to complete before uninstalling.",
   "@settingsUninstallActiveSwaps": {
@@ -3726,14 +3304,6 @@
         "type": "int"
       }
     }
-  },
-  "settingsUninstallCannotUndo": "This cannot be undone.",
-  "@settingsUninstallCannotUndo": {
-    "description": "[security] Short warning under the uninstall subtitle: deletion is irreversible."
-  },
-  "settingsUninstallChecking": "Checking...",
-  "@settingsUninstallChecking": {
-    "description": "Label of the uninstall button while swaps and gift card claims are being checked."
   },
   "settingsUninstallClaimCheckFailed": "Couldn't check for incoming gift cards. Try again before uninstalling.",
   "@settingsUninstallClaimCheckFailed": {
@@ -3844,10 +3414,6 @@
   "@settingsUpdatePasswordTitle": {
     "description": "[security] Heading and button label for setting a new wallet password."
   },
-  "settingsUpdateRestart": "Restart",
-  "@settingsUpdateRestart": {
-    "description": "Short value on the Updates row when an update is downloaded and needs a restart."
-  },
   "settingsUpdateRestartButton": "Restart to update",
   "@settingsUpdateRestartButton": {
     "description": "Button in the Updates dialog that restarts the app to install the downloaded update."
@@ -3877,10 +3443,6 @@
         "type": "String"
       }
     }
-  },
-  "settingsUpdateStatusFailed": "Couldn't complete the update. Try again.",
-  "@settingsUpdateStatusFailed": {
-    "description": "Status line in the Updates dialog when the update failed without a specific message."
   },
   "settingsUpdateStatusIdle": "Ready to check for updates.",
   "@settingsUpdateStatusIdle": {
@@ -4080,10 +3642,6 @@
   "@sidebarHideBalance": {
     "description": "Screen-reader label of the sidebar button that hides amounts."
   },
-  "sidebarImporting": "Importing...",
-  "@sidebarImporting": {
-    "description": "Sidebar Home item label while an imported account scans."
-  },
   "sidebarManageAccounts": "Manage",
   "@sidebarManageAccounts": {
     "description": "Button in the sidebar account menu that opens account management."
@@ -4133,6 +3691,14 @@
   "txFeeInfoTitle": "Tx fee",
   "@txFeeInfoTitle": {
     "description": "Title of the transaction fee info sheet."
+  },
+  "updateFailedMessage": "Couldn't complete the update. Try again.",
+  "@updateFailedMessage": {
+    "description": "Message when installing a Vizor update failed."
+  },
+  "updateRestart": "Restart",
+  "@updateRestart": {
+    "description": "Button that restarts Vizor to apply a downloaded update."
   },
   "walletLinkAccountsFound": "{count, plural, =1{1 account} other{{count} accounts}} found",
   "@walletLinkAccountsFound": {
@@ -4196,10 +3762,6 @@
       }
     }
   },
-  "walletLinkContinue": "Continue",
-  "@walletLinkContinue": {
-    "description": "Button on the account selection screen when no account is selected but contacts can still be imported."
-  },
   "walletLinkDeselectAll": "Deselect all",
   "@walletLinkDeselectAll": {
     "description": "Action in a list section header that clears the selection."
@@ -4228,10 +3790,6 @@
   "@walletLinkErrorInvalidTitle": {
     "description": "Title of the scan error card when the scanned QR is not a Vizor desktop link."
   },
-  "walletLinkGoBack": "Go back",
-  "@walletLinkGoBack": {
-    "description": "Button on the account selection screen when there is nothing to import; leaves the flow."
-  },
   "walletLinkImportContacts": "{count, plural, =1{Import 1 contact} other{Import {count} contacts}}",
   "@walletLinkImportContacts": {
     "description": "Button on the contact selection screen that imports the selected contacts.",
@@ -4241,14 +3799,6 @@
         "example": "2"
       }
     }
-  },
-  "walletLinkImportContactsTitle": "Import contacts",
-  "@walletLinkImportContactsTitle": {
-    "description": "Heading of the mobile screen where the user chooses which desktop contacts to import."
-  },
-  "walletLinkImporting": "Importing...",
-  "@walletLinkImporting": {
-    "description": "Button label while the selected accounts or contacts are being imported."
   },
   "walletLinkIntroNotice": "This copies the wallet and contacts to the phone. Nothing on the computer changes, and you can use both.",
   "@walletLinkIntroNotice": {
@@ -4303,14 +3853,6 @@
   "walletLinkScanSubtitleDesktop": "Scan the code on your desktop",
   "@walletLinkScanSubtitleDesktop": {
     "description": "Subtitle of the scan screen when the scan error card is shown."
-  },
-  "walletLinkScanTitle": "Scan QR Code",
-  "@walletLinkScanTitle": {
-    "description": "Heading of the mobile screen that scans the desktop link QR code."
-  },
-  "walletLinkSelectAccountTitle": "Select account",
-  "@walletLinkSelectAccountTitle": {
-    "description": "Heading of the mobile screen where the user chooses which desktop accounts to link."
   },
   "walletLinkSelectAll": "Select all",
   "@walletLinkSelectAll": {

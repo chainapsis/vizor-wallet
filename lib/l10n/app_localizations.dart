@@ -100,29 +100,23 @@ abstract class AppLocalizations {
     Locale('zh'),
   ];
 
+  /// Label of the account name field or row.
+  ///
+  /// In en, this message translates to:
+  /// **'Account name'**
+  String get accountNameLabel;
+
   /// Screen-reader label of the button that opens an account's action menu on desktop.
   ///
   /// In en, this message translates to:
   /// **'Account actions'**
   String get accountsActionsLabel;
 
-  /// Button and screen-reader label that starts adding or creating another account.
-  ///
-  /// In en, this message translates to:
-  /// **'Add account'**
-  String get accountsAdd;
-
   /// Toast on the mobile Accounts screen when an account's address could not be loaded for sending.
   ///
   /// In en, this message translates to:
   /// **'Couldn\'t load the account address'**
   String get accountsAddressLoadFailed;
-
-  /// Screen-reader label of the avatar button in the edit-account dialog and sheet that opens the profile picture picker.
-  ///
-  /// In en, this message translates to:
-  /// **'Change profile picture'**
-  String get accountsChangeProfilePicture;
 
   /// Screen-reader label of the clear button in the mobile account name field.
   ///
@@ -153,12 +147,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'1-20 characters'**
   String get accountsEditNameHint;
-
-  /// Label of the account name field in the edit-account dialog and sheet.
-  ///
-  /// In en, this message translates to:
-  /// **'Account name'**
-  String get accountsEditNameLabel;
 
   /// Button in the mobile account switcher sheet that opens the Accounts screen.
   ///
@@ -268,29 +256,11 @@ abstract class AppLocalizations {
   /// **'Are you sure you want to remove this account? This action can\'t be reverted.\nYou will have to re-import your account.'**
   String get accountsRemoveModalBody;
 
-  /// [security] Error under the password field of the desktop remove-account dialog when the password check itself failed.
-  ///
-  /// In en, this message translates to:
-  /// **'Couldn\'t check your password. Please try again.'**
-  String get accountsRemovePasswordCheckFailed;
-
   /// [security] Placeholder of the wallet password field in the desktop remove-account dialog.
   ///
   /// In en, this message translates to:
   /// **'Enter your password'**
   String get accountsRemovePasswordHint;
-
-  /// [security] Error under the password field of the desktop remove-account dialog when the password is wrong.
-  ///
-  /// In en, this message translates to:
-  /// **'Incorrect password. Please try again.'**
-  String get accountsRemovePasswordIncorrect;
-
-  /// [security] Label of the wallet password field in the desktop remove-account dialog.
-  ///
-  /// In en, this message translates to:
-  /// **'Password'**
-  String get accountsRemovePasswordLabel;
 
   /// Label of the confirm button in the desktop remove-account dialog while sync is stopped.
   ///
@@ -340,12 +310,6 @@ abstract class AppLocalizations {
   /// **'Removing this account will completely reset the Vizor app. This means deleting all accounts and requiring you to import accounts again.\nUnshared gift card links will also be permanently lost.\nThis cannot be undone.'**
   String get accountsResetModalBody;
 
-  /// [security] Destructive button that deletes every account and all local wallet data.
-  ///
-  /// In en, this message translates to:
-  /// **'Reset Vizor'**
-  String get accountsResetVizor;
-
   /// [security] Label of the confirm button in the desktop remove-account dialog while the wallet is reset.
   ///
   /// In en, this message translates to:
@@ -358,17 +322,11 @@ abstract class AppLocalizations {
   /// **'Save edits'**
   String get accountsSaveEdits;
 
-  /// Toast on the mobile Accounts screen when saving name or picture edits failed.
+  /// Error when saving account name or picture changes failed.
   ///
   /// In en, this message translates to:
   /// **'Couldn\'t save the account changes'**
   String get accountsSaveFailed;
-
-  /// Title of the profile picture picker.
-  ///
-  /// In en, this message translates to:
-  /// **'Select profile picture'**
-  String get accountsSelectProfilePicture;
 
   /// Toast on the Accounts screen when sending to an account's address could not be started.
   ///
@@ -406,12 +364,6 @@ abstract class AppLocalizations {
   /// **'View viewing key'**
   String get accountsViewViewingKey;
 
-  /// Back-link label shown during desktop onboarding that returns to the Add account screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Add account'**
-  String get appBackAddAccount;
-
   /// Back-link label shown during desktop import that returns to the hardware wallet list.
   ///
   /// In en, this message translates to:
@@ -423,18 +375,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Import methods'**
   String get appBackImportMethods;
-
-  /// Back-link label on the Ledger account customisation screen that returns to the wallet birthday height step.
-  ///
-  /// In en, this message translates to:
-  /// **'Wallet Birthday Height'**
-  String get appBackWalletBirthdayHeight;
-
-  /// Back-link label shown during desktop onboarding that returns to the Welcome screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Welcome'**
-  String get appBackWelcome;
 
   /// Hint shown on Android after the first Back press at the root, telling the user to press Back again to exit the app.
   ///
@@ -471,6 +411,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'View release'**
   String get appLinuxUpdateViewRelease;
+
+  /// Title when Vizor cannot start because storage is unavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to open Vizor'**
+  String get appOpenFailedTitle;
 
   /// Title of the Privacy Policy legal screen on mobile.
   ///
@@ -538,12 +484,6 @@ abstract class AppLocalizations {
   /// **'Downloading update'**
   String get appUpdateDownloadingTitle;
 
-  /// Message of the in-app update prompt when the update failed and no detail is available.
-  ///
-  /// In en, this message translates to:
-  /// **'Couldn\'t complete the update. Try again.'**
-  String get appUpdateFailedMessage;
-
   /// Title of the in-app update prompt when the update failed.
   ///
   /// In en, this message translates to:
@@ -568,12 +508,6 @@ abstract class AppLocalizations {
   /// **'Update ready'**
   String get appUpdateReadyTitle;
 
-  /// Button on the in-app update prompt that restarts the app to apply the update.
-  ///
-  /// In en, this message translates to:
-  /// **'Restart'**
-  String get appUpdateRestart;
-
   /// Disabled button label on the in-app update prompt while the app restarts.
   ///
   /// In en, this message translates to:
@@ -586,11 +520,17 @@ abstract class AppLocalizations {
   /// **'Restarting Vizor'**
   String get appUpdateRestartingTitle;
 
-  /// Button on the in-app update prompt that retries a failed update.
+  /// [security] Name of the optional BIP39 passphrase (25th word), not the seed phrase.
   ///
   /// In en, this message translates to:
-  /// **'Try again'**
-  String get appUpdateTryAgain;
+  /// **'BIP39 Passphrase'**
+  String get bip39PassphraseTitle;
+
+  /// [security] Shows the optional BIP39 passphrase value.
+  ///
+  /// In en, this message translates to:
+  /// **'BIP39 Passphrase: {passphrase}'**
+  String bip39PassphraseValue(String passphrase);
 
   /// Screen-reader label of a carousel card. {name} is the carousel name, e.g. Information.
   ///
@@ -608,6 +548,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Show {name} {page} of {count}'**
   String carouselShowPage(String name, int page, int count);
+
+  /// Button, screen name and step label for adding another account.
+  ///
+  /// In en, this message translates to:
+  /// **'Add account'**
+  String get commonAddAccount;
 
   /// Toast after an address is copied to the clipboard.
   ///
@@ -639,6 +585,18 @@ abstract class AppLocalizations {
   /// **'Could not finish cancellation. Try again.'**
   String get commonCancellationFailed;
 
+  /// [security] Warning that a destructive action is permanent.
+  ///
+  /// In en, this message translates to:
+  /// **'This cannot be undone.'**
+  String get commonCannotBeUndone;
+
+  /// Status while Vizor checks something.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking...'**
+  String get commonChecking;
+
   /// Screen-reader label of the clear button in a text field.
   ///
   /// In en, this message translates to:
@@ -651,11 +609,29 @@ abstract class AppLocalizations {
   /// **'Close'**
   String get commonClose;
 
+  /// Name of the coinholder voting feature.
+  ///
+  /// In en, this message translates to:
+  /// **'Coinholder voting'**
+  String get commonCoinholderVoting;
+
+  /// Button that moves to the next step.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get commonContinue;
+
   /// Toast after a value is copied to the clipboard.
   ///
   /// In en, this message translates to:
   /// **'Copied'**
   String get commonCopied;
+
+  /// Button that copies a value to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get commonCopy;
 
   /// Button that copies an address to the clipboard.
   ///
@@ -675,11 +651,35 @@ abstract class AppLocalizations {
   /// **'This feature is still in progress.'**
   String get commonFeatureInProgress;
 
+  /// Button that returns to the previous screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Go back'**
+  String get commonGoBack;
+
+  /// Status or button label while an account is being imported.
+  ///
+  /// In en, this message translates to:
+  /// **'Importing...'**
+  String get commonImporting;
+
   /// Default screen-reader name of a carousel of information cards.
   ///
   /// In en, this message translates to:
   /// **'Information'**
   String get commonInformation;
+
+  /// Hint while scanning a QR code from a device screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the QR code steady and fully visible.'**
+  String get commonKeepQrSteady;
+
+  /// Setting and button that keep the screen on while Vizor syncs.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep screen awake'**
+  String get commonKeepScreenAwake;
 
   /// Title of the sheet for a feature that is not available on this platform yet.
   ///
@@ -693,11 +693,53 @@ abstract class AppLocalizations {
   /// **'OK'**
   String get commonOk;
 
+  /// Button that quits Vizor.
+  ///
+  /// In en, this message translates to:
+  /// **'Quit'**
+  String get commonQuit;
+
+  /// [security] Button that erases every account and wallet data on this device.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset Vizor'**
+  String get commonResetVizor;
+
+  /// Button that retries a failed step.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get commonRetry;
+
+  /// Title of a QR code scanning screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan QR Code'**
+  String get commonScanQrCode;
+
+  /// Title of a screen that picks one account to import.
+  ///
+  /// In en, this message translates to:
+  /// **'Select account'**
+  String get commonSelectAccount;
+
   /// Screen-reader label of the lock icon covering secret content while the app is in the background.
   ///
   /// In en, this message translates to:
   /// **'Sensitive content hidden'**
   String get commonSensitiveContentHidden;
+
+  /// Button that repeats an action that failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get commonTryAgain;
+
+  /// [security] Button and system biometric prompt reason for unlocking the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Vizor'**
+  String get commonUnlockVizor;
 
   /// Button that applies a setting chosen in a picker modal or sheet (theme, language).
   ///
@@ -710,6 +752,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Updating...'**
   String get commonUpdating;
+
+  /// Title of the unlock screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome Back'**
+  String get commonWelcomeBack;
+
+  /// Shows the lightwalletd endpoint in use.
+  ///
+  /// In en, this message translates to:
+  /// **'Current: {endpoint}'**
+  String endpointCurrent(String endpoint);
+
+  /// Option to enter a custom lightwalletd endpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom endpoint'**
+  String get endpointCustom;
+
+  /// Button that saves a new lightwalletd endpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'Update endpoint'**
+  String get endpointUpdate;
+
+  /// Toast after the lightwalletd endpoint changed.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoint updated'**
+  String get endpointUpdated;
 
   /// Empty-state title on Home when the wallet has no transactions.
   ///
@@ -806,12 +878,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your phone pauses syncing when screen is off. This allows sync to finish faster.'**
   String get homeKeepAwakeBody;
-
-  /// Button in the keep-awake sheet that turns on the keep-screen-awake option.
-  ///
-  /// In en, this message translates to:
-  /// **'Keep screen awake'**
-  String get homeKeepAwakeEnable;
 
   /// Ghost button in the keep-awake sheet that dismisses it without turning the option on.
   ///
@@ -1317,12 +1383,6 @@ abstract class AppLocalizations {
   /// **'This QR code could not be decoded as a Keystone signature.'**
   String get homeShieldScanDecodeFailed;
 
-  /// Hint under the mobile Keystone scanner when a frame could not be read.
-  ///
-  /// In en, this message translates to:
-  /// **'Keep the QR code steady and fully visible.'**
-  String get homeShieldScanHold;
-
   /// Title of the mobile Keystone shield screen while the camera scans the signature QR.
   ///
   /// In en, this message translates to:
@@ -1383,12 +1443,6 @@ abstract class AppLocalizations {
   /// **'Toggle flashlight'**
   String get homeShieldToggleFlashlight;
 
-  /// Button on the shield screens that retries the failed step.
-  ///
-  /// In en, this message translates to:
-  /// **'Try again'**
-  String get homeShieldTryAgain;
-
   /// Label on the Home balance card for the shielded balance. See the glossary entry for shielded.
   ///
   /// In en, this message translates to:
@@ -1425,12 +1479,6 @@ abstract class AppLocalizations {
   /// **'Help to shape the network'**
   String get homeVotingSubtitle;
 
-  /// Title of the Home card that opens coinholder voting.
-  ///
-  /// In en, this message translates to:
-  /// **'Coinholder voting'**
-  String get homeVotingTitle;
-
   /// [security] Body of the Linux keyring screen when the system keyring is locked; mentions the keyring password prompt.
   ///
   /// In en, this message translates to:
@@ -1442,12 +1490,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The keyring did not respond. Try again.'**
   String get keyringNoResponse;
-
-  /// Title of the startup screen on Linux when the app failed to start.
-  ///
-  /// In en, this message translates to:
-  /// **'Unable to open Vizor'**
-  String get keyringOpenFailedTitle;
 
   /// Title of the startup screen on Linux while the app loads.
   ///
@@ -1461,23 +1503,11 @@ abstract class AppLocalizations {
   /// **'Complete any system keyring prompt to continue in Vizor.'**
   String get keyringPromptBody;
 
-  /// Button on the Linux startup and keyring screens that quits the app.
-  ///
-  /// In en, this message translates to:
-  /// **'Quit'**
-  String get keyringQuit;
-
   /// Body of the startup failure screen on Linux.
   ///
   /// In en, this message translates to:
   /// **'Quit and restart Vizor to try again.'**
   String get keyringRestartHint;
-
-  /// Button on the Linux keyring screen that retries accessing the system keyring.
-  ///
-  /// In en, this message translates to:
-  /// **'Retry'**
-  String get keyringRetry;
 
   /// Body of the Linux keyring screen when it is unknown whether a save succeeded.
   ///
@@ -1509,7 +1539,7 @@ abstract class AppLocalizations {
   /// **'Secure storage is unavailable'**
   String get keyringUnavailableTitle;
 
-  /// [security] Title of the Linux keyring screen asking the user to unlock the system keyring.
+  /// Title asking the user to unlock the system keyring (Linux).
   ///
   /// In en, this message translates to:
   /// **'Unlock your keyring'**
@@ -1533,83 +1563,17 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 account found} other{{count} accounts found}}'**
   String keystoneAccountsFound(int count);
 
-  /// Back-link text on the Keystone how-to-connect screen that returns to the welcome screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Welcome'**
-  String get keystoneBackWelcome;
-
-  /// Placeholder of the date field before a date is picked; shows the month/day/year format.
-  ///
-  /// In en, this message translates to:
-  /// **'mm/dd/yyyy'**
-  String get keystoneBirthdayDatePlaceholder;
-
-  /// Inline error on the Keystone wallet birthday screen when the chosen date cannot be converted to a block height.
-  ///
-  /// In en, this message translates to:
-  /// **'Could not estimate the wallet birthday height.'**
-  String get keystoneBirthdayEstimateError;
-
-  /// Disabled primary button label while the block height for the chosen date is being estimated.
-  ///
-  /// In en, this message translates to:
-  /// **'Estimating...'**
-  String get keystoneBirthdayEstimating;
-
-  /// Hint text of the block height input field.
-  ///
-  /// In en, this message translates to:
-  /// **'Block height'**
-  String get keystoneBirthdayHeightHint;
-
   /// Inline error under the block height field when the typed number is not a usable block height.
   ///
   /// In en, this message translates to:
   /// **'That doesn\'t look like a valid block height.'**
   String get keystoneBirthdayInvalidHeight;
 
-  /// Inline error on the Keystone wallet birthday screen when the data needed to convert dates to block heights cannot be loaded.
-  ///
-  /// In en, this message translates to:
-  /// **'Could not load wallet birthday metadata.'**
-  String get keystoneBirthdayMetadataError;
-
-  /// Disabled primary button label while Vizor stops a running sync before importing the Keystone account.
-  ///
-  /// In en, this message translates to:
-  /// **'Stop syncing...'**
-  String get keystoneBirthdayStopSyncing;
-
   /// Subtitle under the wallet birthday heading explaining why the date is asked.
   ///
   /// In en, this message translates to:
   /// **'It helps us import your wallet faster.'**
   String get keystoneBirthdaySubtitle;
-
-  /// Tab label to enter the wallet birthday block height directly.
-  ///
-  /// In en, this message translates to:
-  /// **'Enter the block height'**
-  String get keystoneBirthdayTabBlockHeight;
-
-  /// Tab label to enter the wallet creation date.
-  ///
-  /// In en, this message translates to:
-  /// **'Enter the date'**
-  String get keystoneBirthdayTabDate;
-
-  /// Heading of the Keystone wallet birthday screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Around when did you create your wallet?'**
-  String get keystoneBirthdayTitle;
-
-  /// Ghost button on the wallet birthday screen for users who do not know when the wallet was created; opens a confirmation.
-  ///
-  /// In en, this message translates to:
-  /// **'I can’t remember'**
-  String get keystoneBirthdayUnknown;
 
   /// Two-line description under the camera denied title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short.
   ///
@@ -1653,12 +1617,6 @@ abstract class AppLocalizations {
   /// **'Camera access is restricted'**
   String get keystoneCameraRestrictedTitle;
 
-  /// Button on the mobile Keystone scan card that retries opening the camera.
-  ///
-  /// In en, this message translates to:
-  /// **'Try again'**
-  String get keystoneCameraTryAgain;
-
   /// Two-line description under the camera unavailable title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short.
   ///
   /// In en, this message translates to:
@@ -1676,18 +1634,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Confirm selection'**
   String get keystoneConfirmSelection;
-
-  /// Heading of the screen explaining how to connect a Keystone hardware wallet to Vizor.
-  ///
-  /// In en, this message translates to:
-  /// **'Connect Keystone'**
-  String get keystoneConnectTitle;
-
-  /// Primary button that continues to the next step of Keystone import.
-  ///
-  /// In en, this message translates to:
-  /// **'Continue'**
-  String get keystoneContinue;
 
   /// Sentence ending in a trailing space, followed by an inline link button labelled 'link' that opens the firmware download page. Keep the trailing space.
   ///
@@ -1718,12 +1664,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'I\'m ready now'**
   String get keystoneImReadyNow;
-
-  /// Disabled primary button label while the Keystone account is being imported.
-  ///
-  /// In en, this message translates to:
-  /// **'Importing...'**
-  String get keystoneImporting;
 
   /// Heading of the group of steps the user performs in the Vizor app.
   ///
@@ -1767,12 +1707,6 @@ abstract class AppLocalizations {
   /// **'This QR code could not be decoded as a Keystone Zcash account.'**
   String get keystoneScanDecodeFailed;
 
-  /// Scanner hint shown while a QR code cannot be read yet.
-  ///
-  /// In en, this message translates to:
-  /// **'Keep the QR code steady and fully visible.'**
-  String get keystoneScanKeepSteady;
-
   /// Error under the Keystone QR scanner when the scanned QR contains no Zcash accounts.
   ///
   /// In en, this message translates to:
@@ -1796,24 +1730,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reading accounts...'**
   String get keystoneScanReadingAccounts;
-
-  /// Title of the Keystone QR scan screen and its sidebar step label; the user scans the account QR shown on the Keystone device.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan QR Code'**
-  String get keystoneScanTitle;
-
-  /// Heading of the screen where the user picks which Keystone account to import.
-  ///
-  /// In en, this message translates to:
-  /// **'Select account'**
-  String get keystoneSelectAccountTitle;
-
-  /// Sidebar step label for customising the imported Keystone wallet (name and avatar).
-  ///
-  /// In en, this message translates to:
-  /// **'Customise wallet'**
-  String get keystoneStepCustomiseWallet;
 
   /// Sidebar step label and back-link text for the first Keystone onboarding step (how to connect the device). Title Case is intentional.
   ///
@@ -1844,18 +1760,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Select Vizor (or ZODL)'**
   String get keystoneStepSelectVizor;
-
-  /// Sidebar step label for setting the wallet password during Keystone import. Title Case is intentional.
-  ///
-  /// In en, this message translates to:
-  /// **'Set Password'**
-  String get keystoneStepSetPassword;
-
-  /// Sidebar step label and back-link text for the wallet birthday (block height) step during Keystone import. Title Case is intentional.
-  ///
-  /// In en, this message translates to:
-  /// **'Wallet Birthday Height'**
-  String get keystoneStepWalletBirthdayHeight;
 
   /// Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.
   ///
@@ -1892,12 +1796,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Advanced options'**
   String get ledgerAdvancedOptions;
-
-  /// Back-link text on the desktop Connect Ledger screen that returns to the add-account screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Add account'**
-  String get ledgerBackAddAccount;
 
   /// Two-line note under the Connect Ledger form explaining that Vizor shows balance and activity while transactions are approved on the device. Keep the line break.
   ///
@@ -1982,12 +1880,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Confirm opening Zcash on Ledger.'**
   String get ledgerConfirmOpeningZcash;
-
-  /// Heading, sidebar step, procedure step and button label for connecting a Ledger device; it is the name of the action, not a sentence.
-  ///
-  /// In en, this message translates to:
-  /// **'Connect Ledger'**
-  String get ledgerConnect;
 
   /// Subtitle under the Connect Ledger heading, asking the user to get their Ledger ready.
   ///
@@ -2223,23 +2115,11 @@ abstract class AppLocalizations {
   /// **'Request declined'**
   String get ledgerSheetDeclinedTitle;
 
-  /// Procedure step label in the mobile sheet: the user approves adding the account on the Ledger.
-  ///
-  /// In en, this message translates to:
-  /// **'Add account'**
-  String get ledgerStepAddAccount;
-
   /// [security] Procedure step label: the user approves sharing the viewing key on the Ledger device.
   ///
   /// In en, this message translates to:
   /// **'Approve viewing key'**
   String get ledgerStepApproveViewingKey;
-
-  /// Sidebar step label for customising the imported Ledger wallet (name and avatar).
-  ///
-  /// In en, this message translates to:
-  /// **'Customise wallet'**
-  String get ledgerStepCustomiseWallet;
 
   /// Procedure step label: the named app must be opened on the Ledger device. {appName} is the app name shown on the device, normally Zcash, and stays in Latin script.
   ///
@@ -2252,18 +2132,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open Zcash'**
   String get ledgerStepOpenZcash;
-
-  /// Sidebar step label for setting the wallet password during Ledger onboarding. Title Case is intentional.
-  ///
-  /// In en, this message translates to:
-  /// **'Set Password'**
-  String get ledgerStepSetPassword;
-
-  /// Sidebar step label for the wallet birthday (block height) step during Ledger onboarding. Title Case is intentional.
-  ///
-  /// In en, this message translates to:
-  /// **'Wallet Birthday Height'**
-  String get ledgerStepWalletBirthdayHeight;
 
   /// Title of the desktop dialog while the Bluetooth device search is being stopped.
   ///
@@ -2288,12 +2156,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'USB'**
   String get ledgerTransportUsb;
-
-  /// Button that retries the failed Ledger connection or discovery.
-  ///
-  /// In en, this message translates to:
-  /// **'Try again'**
-  String get ledgerTryAgain;
 
   /// Instruction above the mobile device list while no device has been found yet.
   ///
@@ -2337,23 +2199,11 @@ abstract class AppLocalizations {
   /// **'Confirm passcode to unlock Vizor'**
   String get lockConfirmPasscodeSemantics;
 
-  /// Top bar title of the passcode entry screen when sync has finished.
-  ///
-  /// In en, this message translates to:
-  /// **'Synced'**
-  String get lockNavSynced;
-
   /// Top bar title of the passcode entry screen while sync runs, with the percentage complete.
   ///
   /// In en, this message translates to:
   /// **'{percent}% Syncing...'**
   String lockNavSyncing(int percent);
-
-  /// [security] Error under the passcode dots when the entered unlock passcode is wrong.
-  ///
-  /// In en, this message translates to:
-  /// **'Incorrect Passcode'**
-  String get lockPasscodeIncorrect;
 
   /// Title on the sync lock screen when sync has finished.
   ///
@@ -2403,18 +2253,6 @@ abstract class AppLocalizations {
   /// **'Unlock Vizor to continue.'**
   String get lockUnlockToContinuePausedBody;
 
-  /// [security] Button label on the sync lock screen, and the reason text of the system biometric prompt, that unlocks the wallet.
-  ///
-  /// In en, this message translates to:
-  /// **'Unlock Vizor'**
-  String get lockUnlockVizor;
-
-  /// [security] Heading of the passcode entry screen shown to unlock the wallet.
-  ///
-  /// In en, this message translates to:
-  /// **'Welcome Back'**
-  String get lockWelcomeBack;
-
   /// Sidebar and tab bar destination: transaction history.
   ///
   /// In en, this message translates to:
@@ -2457,11 +2295,11 @@ abstract class AppLocalizations {
   /// **'Vote'**
   String get navVote;
 
-  /// Label above the account name on the customise-account card.
+  /// Title of the network settings (endpoint) screen or sheet.
   ///
   /// In en, this message translates to:
-  /// **'Account name'**
-  String get onboardingAccountName;
+  /// **'Network settings'**
+  String get networkSettingsTitle;
 
   /// Dialog button that adds the entered value.
   ///
@@ -2538,17 +2376,11 @@ abstract class AppLocalizations {
   /// **'Zcash has two addresses types.\nOne for Privacy, one for Transparency.'**
   String get onboardingAddressTypesSubtitleMobile;
 
-  /// Heading of the desktop step that explains Zcash address types.
+  /// Title of the screen explaining shielded and transparent addresses.
   ///
   /// In en, this message translates to:
   /// **'Zcash Address Types'**
   String get onboardingAddressTypesTitle;
-
-  /// Heading of the mobile step that explains Zcash address types.
-  ///
-  /// In en, this message translates to:
-  /// **'Zcash Address Types'**
-  String get onboardingAddressTypesTitleMobile;
 
   /// Toast when enabling biometric unlock failed; {method} is the biometric name such as Face ID.
   ///
@@ -2598,31 +2430,19 @@ abstract class AppLocalizations {
   /// **'1–100 characters'**
   String get onboardingBip39PassphraseHint;
 
-  /// [security] Bar under the secret passphrase showing the BIP39 passphrase the user entered; {passphrase} is the secret value.
-  ///
-  /// In en, this message translates to:
-  /// **'BIP39 Passphrase: {passphrase}'**
-  String onboardingBip39PassphrasePreview(String passphrase);
-
-  /// [security] Title of the BIP39 passphrase dialog when editing an existing passphrase.
-  ///
-  /// In en, this message translates to:
-  /// **'BIP39 Passphrase'**
-  String get onboardingBip39PassphraseTitle;
-
   /// [security] Title of the BIP39 passphrase dialog when adding a passphrase.
   ///
   /// In en, this message translates to:
   /// **'BIP39 Passphrase (Optional)'**
   String get onboardingBip39PassphraseTitleOptional;
 
-  /// Ghost button on the desktop wallet birthday step for users who do not know when the wallet was created.
+  /// Button when the user does not know when the wallet was created.
   ///
   /// In en, this message translates to:
   /// **'I can’t remember'**
   String get onboardingBirthdayCantRemember;
 
-  /// Placeholder of the birthday date field; shows the expected month/day/year order.
+  /// Placeholder of the date field (month/day/year order).
   ///
   /// In en, this message translates to:
   /// **'mm/dd/yyyy'**
@@ -2634,13 +2454,13 @@ abstract class AppLocalizations {
   /// **'I don’t remember'**
   String get onboardingBirthdayDontRemember;
 
-  /// Tab label on the wallet birthday step for entering a block height instead of a date.
+  /// Tab for entering the wallet birthday as a block height.
   ///
   /// In en, this message translates to:
   /// **'Enter the block height'**
   String get onboardingBirthdayEnterBlockHeight;
 
-  /// Tab label on the wallet birthday step for entering a calendar date.
+  /// Tab for entering the wallet birthday as a date.
   ///
   /// In en, this message translates to:
   /// **'Enter the date'**
@@ -2652,7 +2472,7 @@ abstract class AppLocalizations {
   /// **'Enter the month'**
   String get onboardingBirthdayEnterMonth;
 
-  /// Inline error on the desktop birthday step when the chosen date could not be converted into a block height.
+  /// Error when the birthday height could not be estimated.
   ///
   /// In en, this message translates to:
   /// **'Could not estimate the wallet birthday height.'**
@@ -2676,7 +2496,7 @@ abstract class AppLocalizations {
   /// **'Doesn\'t seem like a legit block height'**
   String get onboardingBirthdayInvalidHeight;
 
-  /// Inline error on the desktop birthday step when the chain data needed to estimate dates could not be loaded.
+  /// Error when the data for the birthday step could not load.
   ///
   /// In en, this message translates to:
   /// **'Could not load wallet birthday metadata.'**
@@ -2742,209 +2562,17 @@ abstract class AppLocalizations {
   /// **'An estimate is enough — sync starts\nfrom there.'**
   String get onboardingBirthdaySubtitleMobile;
 
-  /// Heading of the wallet birthday step on desktop and mobile; asks roughly when the imported wallet was created.
+  /// Title of the wallet birthday step.
   ///
   /// In en, this message translates to:
   /// **'Around when did you create your wallet?'**
   String get onboardingBirthdayTitle;
 
-  /// Placeholder of the field where the user types a block height.
+  /// Placeholder of the block height field.
   ///
   /// In en, this message translates to:
   /// **'Block height'**
   String get onboardingBlockHeight;
-
-  /// Full month name (April) shown in the birthday calendar title, followed by the year.
-  ///
-  /// In en, this message translates to:
-  /// **'April'**
-  String get onboardingCalendarMonthApril;
-
-  /// Full month name (August) shown in the birthday calendar title, followed by the year.
-  ///
-  /// In en, this message translates to:
-  /// **'August'**
-  String get onboardingCalendarMonthAugust;
-
-  /// Full month name (December) shown in the birthday calendar title, followed by the year.
-  ///
-  /// In en, this message translates to:
-  /// **'December'**
-  String get onboardingCalendarMonthDecember;
-
-  /// Full month name (February) shown in the birthday calendar title, followed by the year.
-  ///
-  /// In en, this message translates to:
-  /// **'February'**
-  String get onboardingCalendarMonthFebruary;
-
-  /// Full month name (January) shown in the birthday calendar title, followed by the year.
-  ///
-  /// In en, this message translates to:
-  /// **'January'**
-  String get onboardingCalendarMonthJanuary;
-
-  /// Full month name (July) shown in the birthday calendar title, followed by the year.
-  ///
-  /// In en, this message translates to:
-  /// **'July'**
-  String get onboardingCalendarMonthJuly;
-
-  /// Full month name (June) shown in the birthday calendar title, followed by the year.
-  ///
-  /// In en, this message translates to:
-  /// **'June'**
-  String get onboardingCalendarMonthJune;
-
-  /// Full month name (March) shown in the birthday calendar title, followed by the year.
-  ///
-  /// In en, this message translates to:
-  /// **'March'**
-  String get onboardingCalendarMonthMarch;
-
-  /// Full month name (May) shown in the birthday calendar title, followed by the year.
-  ///
-  /// In en, this message translates to:
-  /// **'May'**
-  String get onboardingCalendarMonthMay;
-
-  /// Full month name (November) shown in the birthday calendar title, followed by the year.
-  ///
-  /// In en, this message translates to:
-  /// **'November'**
-  String get onboardingCalendarMonthNovember;
-
-  /// Full month name (October) shown in the birthday calendar title, followed by the year.
-  ///
-  /// In en, this message translates to:
-  /// **'October'**
-  String get onboardingCalendarMonthOctober;
-
-  /// Full month name (September) shown in the birthday calendar title, followed by the year.
-  ///
-  /// In en, this message translates to:
-  /// **'September'**
-  String get onboardingCalendarMonthSeptember;
-
-  /// Abbreviated month name (April) on the birthday calendar month grid. Must fit a small cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Apr'**
-  String get onboardingCalendarMonthShortApr;
-
-  /// Abbreviated month name (August) on the birthday calendar month grid. Must fit a small cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Aug'**
-  String get onboardingCalendarMonthShortAug;
-
-  /// Abbreviated month name (December) on the birthday calendar month grid. Must fit a small cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Dec'**
-  String get onboardingCalendarMonthShortDec;
-
-  /// Abbreviated month name (February) on the birthday calendar month grid. Must fit a small cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Feb'**
-  String get onboardingCalendarMonthShortFeb;
-
-  /// Abbreviated month name (January) on the birthday calendar month grid. Must fit a small cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Jan'**
-  String get onboardingCalendarMonthShortJan;
-
-  /// Abbreviated month name (July) on the birthday calendar month grid. Must fit a small cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Jul'**
-  String get onboardingCalendarMonthShortJul;
-
-  /// Abbreviated month name (June) on the birthday calendar month grid. Must fit a small cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Jun'**
-  String get onboardingCalendarMonthShortJun;
-
-  /// Abbreviated month name (March) on the birthday calendar month grid. Must fit a small cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Mar'**
-  String get onboardingCalendarMonthShortMar;
-
-  /// Abbreviated month name (May) on the birthday calendar month grid. Must fit a small cell.
-  ///
-  /// In en, this message translates to:
-  /// **'May'**
-  String get onboardingCalendarMonthShortMay;
-
-  /// Abbreviated month name (November) on the birthday calendar month grid. Must fit a small cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Nov'**
-  String get onboardingCalendarMonthShortNov;
-
-  /// Abbreviated month name (October) on the birthday calendar month grid. Must fit a small cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Oct'**
-  String get onboardingCalendarMonthShortOct;
-
-  /// Abbreviated month name (September) on the birthday calendar month grid. Must fit a small cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Sep'**
-  String get onboardingCalendarMonthShortSep;
-
-  /// Column header of the birthday calendar: abbreviated weekday (Fri). Keep it very short, it must fit a 40 px cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Fri'**
-  String get onboardingCalendarWeekdayFri;
-
-  /// Column header of the birthday calendar: abbreviated weekday (Mon). Keep it very short, it must fit a 40 px cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Mon'**
-  String get onboardingCalendarWeekdayMon;
-
-  /// Column header of the birthday calendar: abbreviated weekday (Sat). Keep it very short, it must fit a 40 px cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Sat'**
-  String get onboardingCalendarWeekdaySat;
-
-  /// Column header of the birthday calendar: abbreviated weekday (Sun). Keep it very short, it must fit a 40 px cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Sun'**
-  String get onboardingCalendarWeekdaySun;
-
-  /// Column header of the birthday calendar: abbreviated weekday (Thu). Keep it very short, it must fit a 40 px cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Thu'**
-  String get onboardingCalendarWeekdayThu;
-
-  /// Column header of the birthday calendar: abbreviated weekday (Tue). Keep it very short, it must fit a 40 px cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Tue'**
-  String get onboardingCalendarWeekdayTue;
-
-  /// Column header of the birthday calendar: abbreviated weekday (Wed). Keep it very short, it must fit a 40 px cell.
-  ///
-  /// In en, this message translates to:
-  /// **'Wed'**
-  String get onboardingCalendarWeekdayWed;
-
-  /// Accessibility label of the button that opens the profile picture picker.
-  ///
-  /// In en, this message translates to:
-  /// **'Change profile picture'**
-  String get onboardingChangeProfilePicture;
 
   /// Disabled primary button label while the import looks for additional accounts of the same secret passphrase.
   ///
@@ -2957,12 +2585,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Clear'**
   String get onboardingClear;
-
-  /// [security] Label and placeholder of the field where the user retypes the new wallet password.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirm password'**
-  String get onboardingConfirmPassword;
 
   /// Subtitle of the desktop hardware wallet picker.
   ///
@@ -2988,23 +2610,17 @@ abstract class AppLocalizations {
   /// **'Connect hardware wallet'**
   String get onboardingConnectHardwareWallet;
 
-  /// Title of the Keystone option on the hardware wallet picker.
+  /// Import method and screen title for connecting a Keystone device.
   ///
   /// In en, this message translates to:
   /// **'Connect Keystone'**
   String get onboardingConnectKeystone;
 
-  /// Title of the Ledger option on the hardware wallet picker, and back label that returns to the Ledger connection step.
+  /// Import method and screen title for connecting a Ledger device.
   ///
   /// In en, this message translates to:
   /// **'Connect Ledger'**
   String get onboardingConnectLedger;
-
-  /// Primary button that moves to the next step of an onboarding flow.
-  ///
-  /// In en, this message translates to:
-  /// **'Continue'**
-  String get onboardingContinue;
 
   /// Confirm button of the desktop unknown-birthday dialog.
   ///
@@ -3017,18 +2633,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Continue anyway'**
   String get onboardingContinueAnywayMobile;
-
-  /// Button that copies the text shown next to it to the clipboard.
-  ///
-  /// In en, this message translates to:
-  /// **'Copy'**
-  String get onboardingCopy;
-
-  /// [security] Accessibility label of the button on the secret passphrase card that copies the phrase to the clipboard.
-  ///
-  /// In en, this message translates to:
-  /// **'Copy secret passphrase'**
-  String get onboardingCopySecretPassphrase;
 
   /// Disabled primary button label while the new wallet is being created.
   ///
@@ -3078,7 +2682,7 @@ abstract class AppLocalizations {
   /// **'Enter password'**
   String get onboardingEnterPassword;
 
-  /// Disabled primary button label while the block height for the chosen date is being estimated.
+  /// Button label while the birthday height is estimated from a date.
   ///
   /// In en, this message translates to:
   /// **'Estimating...'**
@@ -3155,12 +2759,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Go Back'**
   String get onboardingGoBackDesktop;
-
-  /// Cancel button of the mobile unknown-birthday sheet that returns to the birthday step.
-  ///
-  /// In en, this message translates to:
-  /// **'Go back'**
-  String get onboardingGoBackMobile;
 
   /// Description of the hardware wallet option when only Keystone is available.
   ///
@@ -3318,12 +2916,6 @@ abstract class AppLocalizations {
   /// **'Import Wallet'**
   String get onboardingImportWalletTitleMobile;
 
-  /// Disabled primary button label while the wallet is being imported.
-  ///
-  /// In en, this message translates to:
-  /// **'Importing...'**
-  String get onboardingImporting;
-
   /// Explains what shielded transactions hide, in the Zcash intro card on desktop and mobile.
   ///
   /// In en, this message translates to:
@@ -3456,47 +3048,17 @@ abstract class AppLocalizations {
   /// **'Checking endpoint…'**
   String get onboardingNetworkCheckingEndpoint;
 
-  /// Line under the custom endpoint heading showing the host and port currently in use; {endpoint} is that host:port.
-  ///
-  /// In en, this message translates to:
-  /// **'Current: {endpoint}'**
-  String onboardingNetworkCurrentEndpoint(String endpoint);
-
-  /// Section heading on the network settings sheet for the custom lightwalletd server address.
-  ///
-  /// In en, this message translates to:
-  /// **'Custom endpoint'**
-  String get onboardingNetworkCustomEndpoint;
-
   /// Helper text under the custom endpoint field; the server must be a lightwalletd server for the wallet's Zcash network.
   ///
   /// In en, this message translates to:
   /// **'Use a lightwalletd server for this wallet’s network.'**
   String get onboardingNetworkEndpointHelper;
 
-  /// Toast after the custom lightwalletd endpoint was saved on the mobile network settings sheet.
-  ///
-  /// In en, this message translates to:
-  /// **'Endpoint updated'**
-  String get onboardingNetworkEndpointUpdated;
-
   /// Error on the network settings sheet when saving the custom endpoint failed.
   ///
   /// In en, this message translates to:
   /// **'Couldn\'t save the endpoint. Try again.'**
   String get onboardingNetworkSaveFailed;
-
-  /// Tooltip, accessibility label and sheet title for the button that opens the lightwalletd endpoint settings on the welcome screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Network settings'**
-  String get onboardingNetworkSettings;
-
-  /// Button on the network settings sheet that saves the custom endpoint.
-  ///
-  /// In en, this message translates to:
-  /// **'Update endpoint'**
-  String get onboardingNetworkUpdateEndpoint;
 
   /// Error on the network settings sheet when the custom endpoint did not respond as a valid lightwalletd server.
   ///
@@ -3516,12 +3078,6 @@ abstract class AppLocalizations {
   /// **'Not now'**
   String get onboardingNotNow;
 
-  /// [security] Heading of the step where the user re-enters the new passcode.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirm Passcode'**
-  String get onboardingPasscodeConfirmTitle;
-
   /// [security] Heading of the step where the user chooses the 6-digit passcode of the wallet on mobile.
   ///
   /// In en, this message translates to:
@@ -3534,12 +3090,6 @@ abstract class AppLocalizations {
   /// **'Digit {digit}'**
   String onboardingPasscodeDigitSemantics(int digit);
 
-  /// [security] Error under the passcode dots on the mobile unlock screen when the entered passcode is wrong.
-  ///
-  /// In en, this message translates to:
-  /// **'Incorrect Passcode'**
-  String get onboardingPasscodeIncorrect;
-
   /// [security] Subtitle of the confirm-passcode step.
   ///
   /// In en, this message translates to:
@@ -3551,36 +3101,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Setting up your wallet...'**
   String get onboardingPasscodeSettingUp;
-
-  /// [security] Subtitle of the create-passcode step stating that the passcode has 6 digits.
-  ///
-  /// In en, this message translates to:
-  /// **'6 digits length'**
-  String get onboardingPasscodeSixDigits;
-
-  /// [security] Error under the passcode dots when the re-entered passcode differs from the first one.
-  ///
-  /// In en, this message translates to:
-  /// **'Passcodes didn\'t match. Try again.'**
-  String get onboardingPasscodesDidNotMatch;
-
-  /// Label of a wallet password field on the unlock and password setup screens.
-  ///
-  /// In en, this message translates to:
-  /// **'Password'**
-  String get onboardingPassword;
-
-  /// [security] Error under the confirm-password field when it differs from the password.
-  ///
-  /// In en, this message translates to:
-  /// **'Passwords do not match.'**
-  String get onboardingPasswordsDoNotMatch;
-
-  /// Desktop button on the startup failure screen that closes the app.
-  ///
-  /// In en, this message translates to:
-  /// **'Quit'**
-  String get onboardingQuit;
 
   /// Tooltip and accessibility label of the dice button that picks a random account name and profile picture during account setup.
   ///
@@ -3600,29 +3120,11 @@ abstract class AppLocalizations {
   /// **'Couldn\'t reset the app. Please try again.'**
   String get onboardingResetAppFailed;
 
-  /// [security] Warning line above the reset button on the lost-password screen; the reset deletes every account.
-  ///
-  /// In en, this message translates to:
-  /// **'This cannot be undone.'**
-  String get onboardingResetCannotBeUndone;
-
-  /// [security] Destructive button that wipes all accounts from the app after the user lost their password or passcode.
-  ///
-  /// In en, this message translates to:
-  /// **'Reset Vizor'**
-  String get onboardingResetVizor;
-
   /// Error shown on the final onboarding step when recovering an interrupted setup failed.
   ///
   /// In en, this message translates to:
   /// **'Couldn\'t resume setup. Please try again.'**
   String get onboardingResumeSetupFailed;
-
-  /// Button on the startup failure screen that tries to open the wallet again.
-  ///
-  /// In en, this message translates to:
-  /// **'Retry'**
-  String get onboardingRetry;
 
   /// Primary button on the final onboarding step that resumes an interrupted setup.
   ///
@@ -3672,12 +3174,6 @@ abstract class AppLocalizations {
   /// **'Saving wallet...'**
   String get onboardingSavingWallet;
 
-  /// [security] Title, sidebar step label and card heading for the secret recovery phrase (seed phrase) of the wallet.
-  ///
-  /// In en, this message translates to:
-  /// **'Secret Passphrase'**
-  String get onboardingSecretPassphrase;
-
   /// [security] Heading of the cover shown before the secret passphrase is revealed on desktop.
   ///
   /// In en, this message translates to:
@@ -3726,18 +3222,6 @@ abstract class AppLocalizations {
   /// **'Seed word'**
   String get onboardingSeedWordHint;
 
-  /// Title of the dialog where the user picks a profile picture for the new account.
-  ///
-  /// In en, this message translates to:
-  /// **'Select profile picture'**
-  String get onboardingSelectProfilePicture;
-
-  /// Sidebar step label and heading of the step where the user chooses the wallet password on desktop.
-  ///
-  /// In en, this message translates to:
-  /// **'Set Password'**
-  String get onboardingSetPassword;
-
   /// Primary button on the desktop set-password step that saves the password and completes setup.
   ///
   /// In en, this message translates to:
@@ -3774,13 +3258,13 @@ abstract class AppLocalizations {
   /// **'Address types'**
   String get onboardingStepAddressTypes;
 
-  /// Sidebar step label for naming the account and choosing its profile picture.
+  /// Onboarding step for naming the wallet and picking a picture.
   ///
   /// In en, this message translates to:
   /// **'Customise wallet'**
   String get onboardingStepCustomiseWallet;
 
-  /// Back-button label that returns to the contacts import step of wallet linking on desktop.
+  /// Step and screen title for importing contacts from a linked wallet.
   ///
   /// In en, this message translates to:
   /// **'Import contacts'**
@@ -3792,13 +3276,19 @@ abstract class AppLocalizations {
   /// **'Intro to Zcash'**
   String get onboardingStepIntroToZcash;
 
-  /// Sidebar step label for the step where the user enters the block height at which the wallet was created.
+  /// [security] Onboarding step for setting the wallet password.
+  ///
+  /// In en, this message translates to:
+  /// **'Set Password'**
+  String get onboardingStepSetPassword;
+
+  /// Onboarding step and back-link name for choosing the wallet birthday height.
   ///
   /// In en, this message translates to:
   /// **'Wallet Birthday Height'**
   String get onboardingStepWalletBirthdayHeight;
 
-  /// Disabled primary button label while the app stops the running sync before it finishes wallet setup.
+  /// Button label while sync is stopped before import.
   ///
   /// In en, this message translates to:
   /// **'Stop syncing...'**
@@ -3821,12 +3311,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Vizor needs access to the system keyring before it can open your wallet. Unlock the keyring, then try again.'**
   String get onboardingStorageKeyringLockedBody;
-
-  /// Title of the startup screen on Linux when the system keyring is locked.
-  ///
-  /// In en, this message translates to:
-  /// **'Unlock your keyring'**
-  String get onboardingStorageKeyringLockedTitle;
 
   /// Error shown on the startup failure screen after the user retried and the device secure storage could still not be opened.
   ///
@@ -3857,12 +3341,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Vizor could not load the local startup state. Try again, or quit and restart Vizor.'**
   String get onboardingStorageStartupFailureBody;
-
-  /// Title of the startup failure screen when the app's local startup state could not be loaded.
-  ///
-  /// In en, this message translates to:
-  /// **'Unable to open Vizor'**
-  String get onboardingStorageStartupFailureTitle;
 
   /// Primary button on the Zcash education steps that continues to the next explanation.
   ///
@@ -3906,12 +3384,6 @@ abstract class AppLocalizations {
   /// **'Things to know'**
   String get onboardingThingsToKnow;
 
-  /// Primary button on the customise-account step that retries saving the wallet after a failure.
-  ///
-  /// In en, this message translates to:
-  /// **'Try again'**
-  String get onboardingTryAgain;
-
   /// Explains that skipping the wallet birthday makes Vizor scan from the earliest supported shielded block, which is safe but slow.
   ///
   /// In en, this message translates to:
@@ -3935,12 +3407,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unlock your wallet'**
   String get onboardingUnlockBiometricReason;
-
-  /// Button on the desktop unlock screen that submits the password and opens the wallet.
-  ///
-  /// In en, this message translates to:
-  /// **'Unlock Vizor'**
-  String get onboardingUnlockButton;
 
   /// Subtitle on the desktop unlock screen asking for the wallet password.
   ///
@@ -3978,13 +3444,7 @@ abstract class AppLocalizations {
   /// **'Welcome back'**
   String get onboardingUnlockWelcomeBack;
 
-  /// Heading of the mobile unlock screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Welcome Back'**
-  String get onboardingUnlockWelcomeBackMobile;
-
-  /// Back-button label that returns to the welcome screen.
+  /// Name of the Welcome screen, used in back links.
   ///
   /// In en, this message translates to:
   /// **'Welcome'**
@@ -4008,6 +3468,60 @@ abstract class AppLocalizations {
   /// **'Import wallet'**
   String get onboardingWelcomeImportWallet;
 
+  /// [security] Title of the step that repeats a new 6-digit passcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Passcode'**
+  String get passcodeConfirmTitle;
+
+  /// [security] Error when the entered 6-digit passcode is wrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect Passcode'**
+  String get passcodeIncorrect;
+
+  /// [security] Hint that a passcode has 6 digits.
+  ///
+  /// In en, this message translates to:
+  /// **'6 digits length'**
+  String get passcodeSixDigits;
+
+  /// [security] Error when the two new passcode entries differ.
+  ///
+  /// In en, this message translates to:
+  /// **'Passcodes didn\'t match. Try again.'**
+  String get passcodesDidNotMatch;
+
+  /// [security] Error when the wallet password could not be checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check your password. Please try again.'**
+  String get passwordCheckFailed;
+
+  /// [security] Label of the field that repeats a new wallet password.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm password'**
+  String get passwordConfirmLabel;
+
+  /// [security] Error when the entered wallet password is wrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect password. Please try again.'**
+  String get passwordIncorrect;
+
+  /// [security] Label of a wallet password field.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get passwordLabel;
+
+  /// [security] Error when the two new password entries differ.
+  ///
+  /// In en, this message translates to:
+  /// **'Passwords do not match.'**
+  String get passwordsDoNotMatch;
+
   /// Badge naming a shielded pool or address. See the glossary entry for shielded.
   ///
   /// In en, this message translates to:
@@ -4019,6 +3533,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Transparent'**
   String get poolTransparent;
+
+  /// Button or label that opens the profile picture picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Change profile picture'**
+  String get profilePictureChange;
+
+  /// Title of the profile picture picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Select profile picture'**
+  String get profilePictureSelect;
 
   /// Error in the profile picture picker when saving failed.
   ///
@@ -4032,6 +3558,18 @@ abstract class AppLocalizations {
   /// **'Message'**
   String get receiptMessageLabel;
 
+  /// [security] Button that copies the seed phrase to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy secret passphrase'**
+  String get secretPassphraseCopy;
+
+  /// [security] Name of the seed phrase screen or step.
+  ///
+  /// In en, this message translates to:
+  /// **'Secret Passphrase'**
+  String get secretPassphraseTitle;
+
   /// [security] Error shown when the selected account changed while a passcode-protected secret screen was open.
   ///
   /// In en, this message translates to:
@@ -4043,12 +3581,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Selected account changed. Enter your password again.'**
   String get settingsAccountChangedPassword;
-
-  /// Toast shown when saving the account name or profile picture failed.
-  ///
-  /// In en, this message translates to:
-  /// **'Couldn\'t save the account changes'**
-  String get settingsAccountSaveFailed;
 
   /// Error shown when the account the screen was opened for no longer exists.
   ///
@@ -4110,18 +3642,6 @@ abstract class AppLocalizations {
   /// **'Copy BIP39 passphrase'**
   String get settingsBip39PassphraseCopy;
 
-  /// [security] Label of the row showing the optional BIP39 passphrase on mobile.
-  ///
-  /// In en, this message translates to:
-  /// **'BIP39 Passphrase'**
-  String get settingsBip39PassphraseTitle;
-
-  /// [security] Row showing the optional BIP39 passphrase (an extra secret word added to the recovery phrase); the placeholder is the secret itself.
-  ///
-  /// In en, this message translates to:
-  /// **'BIP39 Passphrase: {passphrase}'**
-  String settingsBip39PassphraseValue(String passphrase);
-
   /// Label of the row showing the block height the wallet was created at (wallet birthday).
   ///
   /// In en, this message translates to:
@@ -4146,12 +3666,6 @@ abstract class AppLocalizations {
   /// **'Birthday height copied'**
   String get settingsBirthdayHeightCopied;
 
-  /// [security] Error shown on the change-passcode keypad when the current passcode is wrong.
-  ///
-  /// In en, this message translates to:
-  /// **'Incorrect Passcode'**
-  String get settingsChangePasscodeIncorrect;
-
   /// Subtitle under the passcode keypad title asking the user to prove it is them.
   ///
   /// In en, this message translates to:
@@ -4163,30 +3677,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Confirm access'**
   String get settingsConfirmAccessTitle;
-
-  /// Title of the keypad step where the user re-enters the new passcode.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirm Passcode'**
-  String get settingsConfirmPasscodeTitle;
-
-  /// Accessibility label of the button that submits the password, and label of the repeat-password field when changing the password.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirm password'**
-  String get settingsConfirmPasswordLabel;
-
-  /// Button that continues to the password prompt before the secret passphrase is shown.
-  ///
-  /// In en, this message translates to:
-  /// **'Continue'**
-  String get settingsContinue;
-
-  /// Short button label that copies the adjacent value to the clipboard.
-  ///
-  /// In en, this message translates to:
-  /// **'Copy'**
-  String get settingsCopy;
 
   /// Accessibility label of a button that copies a labeled value (for example the birthday date).
   ///
@@ -4218,23 +3708,11 @@ abstract class AppLocalizations {
   /// **'Couldn\'t connect to that endpoint. Check the host and port.'**
   String get settingsEndpointConnectFailed;
 
-  /// Shows the host and port of the endpoint in use, optionally followed by latency and a default marker.
-  ///
-  /// In en, this message translates to:
-  /// **'Current: {endpoint}'**
-  String settingsEndpointCurrent(String endpoint);
-
   /// Prefix (with trailing space) before the highlighted host and port of the endpoint in use.
   ///
   /// In en, this message translates to:
   /// **'Current: '**
   String get settingsEndpointCurrentPrefix;
-
-  /// Tab label, heading and accessibility label for entering your own server address.
-  ///
-  /// In en, this message translates to:
-  /// **'Custom endpoint'**
-  String get settingsEndpointCustom;
 
   /// Button on the mobile endpoint list that switches to entering a custom endpoint.
   ///
@@ -4254,12 +3732,6 @@ abstract class AppLocalizations {
   /// **'(Default)'**
   String get settingsEndpointDefaultMarker;
 
-  /// Heading of the network settings dialog.
-  ///
-  /// In en, this message translates to:
-  /// **'Network settings'**
-  String get settingsEndpointNetworkSettings;
-
   /// Tab label for choosing an endpoint from a list of known servers.
   ///
   /// In en, this message translates to:
@@ -4271,18 +3743,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Endpoint'**
   String get settingsEndpointTitle;
-
-  /// Button that saves the selected endpoint.
-  ///
-  /// In en, this message translates to:
-  /// **'Update endpoint'**
-  String get settingsEndpointUpdate;
-
-  /// Toast shown after the endpoint was saved.
-  ///
-  /// In en, this message translates to:
-  /// **'Endpoint updated'**
-  String get settingsEndpointUpdatedToast;
 
   /// Label of the endpoint save button while the connection is being checked.
   ///
@@ -4380,23 +3840,11 @@ abstract class AppLocalizations {
   /// **'Incorrect passcode'**
   String get settingsIncorrectPasscode;
 
-  /// [security] Error shown under the password field when the entered wallet password is wrong.
-  ///
-  /// In en, this message translates to:
-  /// **'Incorrect password. Please try again.'**
-  String get settingsIncorrectPassword;
-
   /// Explains the keep-screen-awake setting during sync and that the app still locks after one minute of inactivity.
   ///
   /// In en, this message translates to:
   /// **'Prevents your phone from sleeping so sync can finish faster. The app still locks after 1 minute of inactivity.'**
   String get settingsKeepAwakeDescription;
-
-  /// Label and accessibility label of the toggle that keeps the screen on while syncing.
-  ///
-  /// In en, this message translates to:
-  /// **'Keep screen awake'**
-  String get settingsKeepAwakeLabel;
 
   /// Toast shown when changing the keep-screen-awake setting failed.
   ///
@@ -4434,12 +3882,6 @@ abstract class AppLocalizations {
   /// **'Couldn\'t check your passcode. Please try again.'**
   String get settingsPasscodeCheckFailed;
 
-  /// Subtitle under the keypad title telling the user the passcode has six digits.
-  ///
-  /// In en, this message translates to:
-  /// **'6 digits length'**
-  String get settingsPasscodeLengthHint;
-
   /// [security] Error when the new passcode equals the current one.
   ///
   /// In en, this message translates to:
@@ -4470,29 +3912,11 @@ abstract class AppLocalizations {
   /// **'Couldn\'t verify the passcode. Try again.'**
   String get settingsPasscodeVerifyFailed;
 
-  /// [security] Error when the confirmation passcode differs from the new passcode.
-  ///
-  /// In en, this message translates to:
-  /// **'Passcodes didn\'t match. Try again.'**
-  String get settingsPasscodesMismatch;
-
-  /// [security] Error shown when verifying the current password failed unexpectedly.
-  ///
-  /// In en, this message translates to:
-  /// **'Couldn\'t check your password. Please try again.'**
-  String get settingsPasswordCheckFailed;
-
   /// Placeholder inside the wallet password field on the access confirmation card.
   ///
   /// In en, this message translates to:
   /// **'Your password...'**
   String get settingsPasswordHint;
-
-  /// Accessibility label of the wallet password text field in Settings.
-  ///
-  /// In en, this message translates to:
-  /// **'Password'**
-  String get settingsPasswordLabel;
 
   /// [security] Hint under the new-password heading about the minimum length and how to make a stronger password.
   ///
@@ -4511,12 +3935,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t update your password. Please try again.'**
   String get settingsPasswordUpdateFailed;
-
-  /// [security] Error under the repeat-password field when the two new passwords differ.
-  ///
-  /// In en, this message translates to:
-  /// **'Passwords do not match.'**
-  String get settingsPasswordsMismatch;
 
   /// Name of a built-in profile picture (a knight character).
   ///
@@ -4620,12 +4038,6 @@ abstract class AppLocalizations {
   /// **'No servers are offered yet. You can enter a custom server.'**
   String get settingsPirNoServers;
 
-  /// Latency placeholder in a server row while its response time is being measured.
-  ///
-  /// In en, this message translates to:
-  /// **'Checking...'**
-  String get settingsPirPingChecking;
-
   /// Error shown when switching the private query server failed.
   ///
   /// In en, this message translates to:
@@ -4704,12 +4116,6 @@ abstract class AppLocalizations {
   /// **'Vizor will rebuild your transparent history publicly, allowing the server to learn all your addresses.'**
   String get settingsPrivateQueriesTurnOffBody;
 
-  /// Destructive button that confirms turning off a setting such as private queries or a biometric unlock.
-  ///
-  /// In en, this message translates to:
-  /// **'Turn off'**
-  String get settingsPrivateQueriesTurnOffConfirm;
-
   /// [security] Warning listing what the server learns once private queries are off: addresses, transaction IDs, and linkage to the IP address when Tor is not used.
   ///
   /// In en, this message translates to:
@@ -4734,12 +4140,6 @@ abstract class AppLocalizations {
   /// **'About Vizor'**
   String get settingsRowAboutVizor;
 
-  /// Settings row that opens the account rename dialog.
-  ///
-  /// In en, this message translates to:
-  /// **'Account name'**
-  String get settingsRowAccountName;
-
   /// Mobile Settings row that opens the account rename sheet (title case).
   ///
   /// In en, this message translates to:
@@ -4763,12 +4163,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Change password'**
   String get settingsRowChangePassword;
-
-  /// Mobile Settings row that opens coinholder governance voting.
-  ///
-  /// In en, this message translates to:
-  /// **'Coinholder voting'**
-  String get settingsRowCoinholderVoting;
 
   /// Settings row that links the desktop wallet with the Vizor mobile app.
   ///
@@ -4817,12 +4211,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Viewing Key'**
   String get settingsRowViewingKeyMobile;
-
-  /// [security] Title of the screen and card that show the wallet's secret recovery phrase.
-  ///
-  /// In en, this message translates to:
-  /// **'Secret Passphrase'**
-  String get settingsSecretPassphraseTitle;
 
   /// Heading of the Settings group with account items such as secret passphrase and password.
   ///
@@ -4877,12 +4265,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Secret passphrase copied'**
   String get settingsSeedCopiedToast;
-
-  /// [security] Accessibility label of the button that copies the secret passphrase.
-  ///
-  /// In en, this message translates to:
-  /// **'Copy secret passphrase'**
-  String get settingsSeedCopyLabel;
 
   /// [security] Warning under the Secret Passphrase heading; two lines separated by a line break.
   ///
@@ -5202,29 +4584,17 @@ abstract class AppLocalizations {
   /// **'Use Tor'**
   String get settingsTorUse;
 
-  /// Button that retries a failed action in Settings.
+  /// Destructive button that confirms turning off a setting such as private queries or a biometric unlock.
   ///
   /// In en, this message translates to:
-  /// **'Try again'**
-  String get settingsTryAgain;
+  /// **'Turn off'**
+  String get settingsTurnOffConfirm;
 
   /// [security] Blocks uninstalling while swaps are still in progress, because funds could arrive after the wipe and be lost.
   ///
   /// In en, this message translates to:
   /// **'This wallet has {count, plural, =1{1 active swap} other{{count} active swaps}}. Wait for them to complete before uninstalling.'**
   String settingsUninstallActiveSwaps(int count);
-
-  /// [security] Short warning under the uninstall subtitle: deletion is irreversible.
-  ///
-  /// In en, this message translates to:
-  /// **'This cannot be undone.'**
-  String get settingsUninstallCannotUndo;
-
-  /// Label of the uninstall button while swaps and gift card claims are being checked.
-  ///
-  /// In en, this message translates to:
-  /// **'Checking...'**
-  String get settingsUninstallChecking;
 
   /// Error shown when checking for gift cards that are still being claimed failed.
   ///
@@ -5382,12 +4752,6 @@ abstract class AppLocalizations {
   /// **'Update password'**
   String get settingsUpdatePasswordTitle;
 
-  /// Short value on the Updates row when an update is downloaded and needs a restart.
-  ///
-  /// In en, this message translates to:
-  /// **'Restart'**
-  String get settingsUpdateRestart;
-
   /// Button in the Updates dialog that restarts the app to install the downloaded update.
   ///
   /// In en, this message translates to:
@@ -5417,12 +4781,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Downloading {percent}%.'**
   String settingsUpdateStatusDownloading(String percent);
-
-  /// Status line in the Updates dialog when the update failed without a specific message.
-  ///
-  /// In en, this message translates to:
-  /// **'Couldn\'t complete the update. Try again.'**
-  String get settingsUpdateStatusFailed;
 
   /// Status line in the Updates dialog before any check has run.
   ///
@@ -5706,12 +5064,6 @@ abstract class AppLocalizations {
   /// **'Hide balance'**
   String get sidebarHideBalance;
 
-  /// Sidebar Home item label while an imported account scans.
-  ///
-  /// In en, this message translates to:
-  /// **'Importing...'**
-  String get sidebarImporting;
-
   /// Button in the sidebar account menu that opens account management.
   ///
   /// In en, this message translates to:
@@ -5778,6 +5130,18 @@ abstract class AppLocalizations {
   /// **'Tx fee'**
   String get txFeeInfoTitle;
 
+  /// Message when installing a Vizor update failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t complete the update. Try again.'**
+  String get updateFailedMessage;
+
+  /// Button that restarts Vizor to apply a downloaded update.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart'**
+  String get updateRestart;
+
   /// Section title above the list of importable accounts.
   ///
   /// In en, this message translates to:
@@ -5813,12 +5177,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{found, plural, =1{1 contact} other{{found} contacts}} found, {imported} already imported.'**
   String walletLinkContactsReadySubtitle(int found, int imported);
-
-  /// Button on the account selection screen when no account is selected but contacts can still be imported.
-  ///
-  /// In en, this message translates to:
-  /// **'Continue'**
-  String get walletLinkContinue;
 
   /// Action in a list section header that clears the selection.
   ///
@@ -5862,29 +5220,11 @@ abstract class AppLocalizations {
   /// **'Invalid QR code'**
   String get walletLinkErrorInvalidTitle;
 
-  /// Button on the account selection screen when there is nothing to import; leaves the flow.
-  ///
-  /// In en, this message translates to:
-  /// **'Go back'**
-  String get walletLinkGoBack;
-
   /// Button on the contact selection screen that imports the selected contacts.
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =1{Import 1 contact} other{Import {count} contacts}}'**
   String walletLinkImportContacts(int count);
-
-  /// Heading of the mobile screen where the user chooses which desktop contacts to import.
-  ///
-  /// In en, this message translates to:
-  /// **'Import contacts'**
-  String get walletLinkImportContactsTitle;
-
-  /// Button label while the selected accounts or contacts are being imported.
-  ///
-  /// In en, this message translates to:
-  /// **'Importing...'**
-  String get walletLinkImporting;
 
   /// Reassurance card on the intro screen: linking copies the wallet and contacts and leaves the desktop unchanged.
   ///
@@ -5957,18 +5297,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Scan the code on your desktop'**
   String get walletLinkScanSubtitleDesktop;
-
-  /// Heading of the mobile screen that scans the desktop link QR code.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan QR Code'**
-  String get walletLinkScanTitle;
-
-  /// Heading of the mobile screen where the user chooses which desktop accounts to link.
-  ///
-  /// In en, this message translates to:
-  /// **'Select account'**
-  String get walletLinkSelectAccountTitle;
 
   /// Action in a list section header that selects every importable item.
   ///

@@ -83,7 +83,7 @@ class MobileImportBirthdayUnknownHeightSheet extends StatelessWidget {
             variant: AppButtonVariant.ghost,
             expand: true,
             onPressed: onCancel,
-            child: Text(context.l10n.onboardingGoBackMobile),
+            child: Text(context.l10n.commonGoBack),
           ),
         ],
       ),

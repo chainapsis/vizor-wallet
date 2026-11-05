@@ -24,7 +24,7 @@ class AccountProfilePictureModal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppProfilePicturePickerModal(
-      title: context.l10n.accountsSelectProfilePicture,
+      title: context.l10n.profilePictureSelect,
       currentProfilePictureId: currentProfilePictureId,
       onCancel: onCancel,
       onUpdate: onUpdate,

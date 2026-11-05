@@ -37,7 +37,7 @@ class _KeystoneSelectAccountScreenState
 
     return KeystoneOnboardingTrailingPane(
       backTarget: OnboardingBackTarget.route(
-        label: KeystoneOnboardingStep.scanQrCode.localizedLabel(context.l10n),
+        label: KeystoneOnboardingStep.scanQrCode.label(context.l10n),
         routePath: desktopImportLocation(
           context,
           KeystoneOnboardingStep.scanQrCode.routePath,
@@ -159,7 +159,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            context.l10n.keystoneSelectAccountTitle,
+            context.l10n.commonSelectAccount,
             style: AppTypography.displayLarge.copyWith(
               fontFamily: 'Young Serif',
               fontWeight: FontWeight.w400,

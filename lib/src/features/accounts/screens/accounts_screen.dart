@@ -733,7 +733,7 @@ class _AccountsAddAccountButtonState extends State<_AccountsAddAccountButton> {
           onTapCancel: () => _setPressed(false),
           child: Semantics(
             button: true,
-            label: context.l10n.accountsAdd,
+            label: context.l10n.commonAddAccount,
             child: ConstrainedBox(
               constraints: const BoxConstraints(minWidth: 96),
               child: AnimatedContainer(
@@ -759,7 +759,7 @@ class _AccountsAddAccountButtonState extends State<_AccountsAddAccountButton> {
                           padding: const EdgeInsets.symmetric(
                             horizontal: AppSpacing.xxs,
                           ),
-                          child: Text(context.l10n.accountsAdd),
+                          child: Text(context.l10n.commonAddAccount),
                         ),
                       ],
                     ),

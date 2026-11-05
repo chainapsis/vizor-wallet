@@ -367,7 +367,7 @@ class _AddAccountButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return _AccountSheetButtonShell(
-      label: context.l10n.accountsAdd,
+      label: context.l10n.commonAddAccount,
       onTap: onTap,
       child: Container(
         key: const ValueKey('mobile_accounts_add'),

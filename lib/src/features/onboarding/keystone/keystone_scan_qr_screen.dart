@@ -64,7 +64,7 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
     if (!mounted || _decoding) return;
     final message = error.toString().contains('Unexpected UR type')
         ? context.l10n.keystoneScanOpenAccountQr
-        : context.l10n.keystoneScanKeepSteady;
+        : context.l10n.commonKeepQrSteady;
     if (_error == message) return;
     setState(() {
       _error = message;
@@ -75,7 +75,7 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
   Widget build(BuildContext context) {
     return KeystoneOnboardingTrailingPane(
       backTarget: OnboardingBackTarget.route(
-        label: KeystoneOnboardingStep.howToConnect.localizedLabel(context.l10n),
+        label: KeystoneOnboardingStep.howToConnect.label(context.l10n),
         routePath: desktopImportLocation(
           context,
           KeystoneOnboardingStep.howToConnect.routePath,
@@ -170,7 +170,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            context.l10n.keystoneScanTitle,
+            context.l10n.commonScanQrCode,
             style: AppTypography.displayLarge.copyWith(
               fontFamily: 'Young Serif',
               fontWeight: FontWeight.w400,

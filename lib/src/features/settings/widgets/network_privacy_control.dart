@@ -226,7 +226,7 @@ class NetworkPrivacyControl extends ConsumerWidget {
               leading: const AppIcon(AppIcons.renew),
               child: Text(
                 (state.targetTorEnabled ?? state.torEnabled)
-                    ? context.l10n.settingsTryAgain
+                    ? context.l10n.commonTryAgain
                     : context.l10n.settingsTorTryDirect,
               ),
             ),

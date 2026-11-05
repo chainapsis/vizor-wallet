@@ -9,16 +9,13 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get accountNameLabel => 'Account name';
+
+  @override
   String get accountsActionsLabel => 'Account actions';
 
   @override
-  String get accountsAdd => 'Add account';
-
-  @override
   String get accountsAddressLoadFailed => 'Couldn\'t load the account address';
-
-  @override
-  String get accountsChangeProfilePicture => 'Change profile picture';
 
   @override
   String get accountsClearName => 'Clear account name';
@@ -34,9 +31,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get accountsEditNameHint => '1-20 characters';
-
-  @override
-  String get accountsEditNameLabel => 'Account name';
 
   @override
   String get accountsManage => 'Manage accounts';
@@ -122,18 +116,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Are you sure you want to remove this account? This action can\'t be reverted.\nYou will have to re-import your account.';
 
   @override
-  String get accountsRemovePasswordCheckFailed =>
-      'Couldn\'t check your password. Please try again.';
-
-  @override
   String get accountsRemovePasswordHint => 'Enter your password';
-
-  @override
-  String get accountsRemovePasswordIncorrect =>
-      'Incorrect password. Please try again.';
-
-  @override
-  String get accountsRemovePasswordLabel => 'Password';
 
   @override
   String get accountsRemoveStoppingSync => 'Stopping sync...';
@@ -164,9 +147,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Removing this account will completely reset the Vizor app. This means deleting all accounts and requiring you to import accounts again.\nUnshared gift card links will also be permanently lost.\nThis cannot be undone.';
 
   @override
-  String get accountsResetVizor => 'Reset Vizor';
-
-  @override
   String get accountsResetting => 'Resetting...';
 
   @override
@@ -174,9 +154,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get accountsSaveFailed => 'Couldn\'t save the account changes';
-
-  @override
-  String get accountsSelectProfilePicture => 'Select profile picture';
 
   @override
   String get accountsSendFailed => 'Send couldn\'t be started';
@@ -197,19 +174,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountsViewViewingKey => 'View viewing key';
 
   @override
-  String get appBackAddAccount => 'Add account';
-
-  @override
   String get appBackHardwareWallets => 'Hardware wallets';
 
   @override
   String get appBackImportMethods => 'Import methods';
-
-  @override
-  String get appBackWalletBirthdayHeight => 'Wallet Birthday Height';
-
-  @override
-  String get appBackWelcome => 'Welcome';
 
   @override
   String get appExitBackHint => 'Go back again to exit';
@@ -232,6 +200,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get appLinuxUpdateViewRelease => 'View release';
+
+  @override
+  String get appOpenFailedTitle => 'Unable to open Vizor';
 
   @override
   String get appPrivacyPolicyTitle => 'Privacy Policy';
@@ -271,10 +242,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appUpdateDownloadingTitle => 'Downloading update';
 
   @override
-  String get appUpdateFailedMessage =>
-      'Couldn\'t complete the update. Try again.';
-
-  @override
   String get appUpdateFailedTitle => 'Update failed';
 
   @override
@@ -287,16 +254,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appUpdateReadyTitle => 'Update ready';
 
   @override
-  String get appUpdateRestart => 'Restart';
-
-  @override
   String get appUpdateRestarting => 'Restarting';
 
   @override
   String get appUpdateRestartingTitle => 'Restarting Vizor';
 
   @override
-  String get appUpdateTryAgain => 'Try again';
+  String get bip39PassphraseTitle => 'BIP39 Passphrase';
+
+  @override
+  String bip39PassphraseValue(String passphrase) {
+    return 'BIP39 Passphrase: $passphrase';
+  }
 
   @override
   String carouselPageSemantics(
@@ -312,6 +281,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String carouselShowPage(String name, int page, int count) {
     return 'Show $name $page of $count';
   }
+
+  @override
+  String get commonAddAccount => 'Add account';
 
   @override
   String get commonAddressCopied => 'Address copied';
@@ -332,13 +304,28 @@ class AppLocalizationsEn extends AppLocalizations {
       'Could not finish cancellation. Try again.';
 
   @override
+  String get commonCannotBeUndone => 'This cannot be undone.';
+
+  @override
+  String get commonChecking => 'Checking...';
+
+  @override
   String get commonClearText => 'Clear text';
 
   @override
   String get commonClose => 'Close';
 
   @override
+  String get commonCoinholderVoting => 'Coinholder voting';
+
+  @override
+  String get commonContinue => 'Continue';
+
+  @override
   String get commonCopied => 'Copied';
+
+  @override
+  String get commonCopy => 'Copy';
 
   @override
   String get commonCopyAddress => 'Copy address';
@@ -350,7 +337,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonFeatureInProgress => 'This feature is still in progress.';
 
   @override
+  String get commonGoBack => 'Go back';
+
+  @override
+  String get commonImporting => 'Importing...';
+
+  @override
   String get commonInformation => 'Information';
+
+  @override
+  String get commonKeepQrSteady => 'Keep the QR code steady and fully visible.';
+
+  @override
+  String get commonKeepScreenAwake => 'Keep screen awake';
 
   @override
   String get commonNotAvailableYet => 'Not available yet';
@@ -359,13 +358,51 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonOk => 'OK';
 
   @override
+  String get commonQuit => 'Quit';
+
+  @override
+  String get commonResetVizor => 'Reset Vizor';
+
+  @override
+  String get commonRetry => 'Retry';
+
+  @override
+  String get commonScanQrCode => 'Scan QR Code';
+
+  @override
+  String get commonSelectAccount => 'Select account';
+
+  @override
   String get commonSensitiveContentHidden => 'Sensitive content hidden';
+
+  @override
+  String get commonTryAgain => 'Try again';
+
+  @override
+  String get commonUnlockVizor => 'Unlock Vizor';
 
   @override
   String get commonUpdate => 'Update';
 
   @override
   String get commonUpdating => 'Updating...';
+
+  @override
+  String get commonWelcomeBack => 'Welcome Back';
+
+  @override
+  String endpointCurrent(String endpoint) {
+    return 'Current: $endpoint';
+  }
+
+  @override
+  String get endpointCustom => 'Custom endpoint';
+
+  @override
+  String get endpointUpdate => 'Update endpoint';
+
+  @override
+  String get endpointUpdated => 'Endpoint updated';
 
   @override
   String get homeActivityEmpty => 'No activity, yet...';
@@ -421,9 +458,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeKeepAwakeBody =>
       'Your phone pauses syncing when screen is off. This allows sync to finish faster.';
-
-  @override
-  String get homeKeepAwakeEnable => 'Keep screen awake';
 
   @override
   String get homeKeepAwakeLater => 'Maybe later';
@@ -723,9 +757,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'This QR code could not be decoded as a Keystone signature.';
 
   @override
-  String get homeShieldScanHold => 'Keep the QR code steady and fully visible.';
-
-  @override
   String get homeShieldScanTitle => 'Scan your Keystone signature';
 
   @override
@@ -760,9 +791,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeShieldToggleFlashlight => 'Toggle flashlight';
 
   @override
-  String get homeShieldTryAgain => 'Try again';
-
-  @override
   String get homeShieldedBalance => 'Shielded balance';
 
   @override
@@ -783,17 +811,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeVotingSubtitle => 'Help to shape the network';
 
   @override
-  String get homeVotingTitle => 'Coinholder voting';
-
-  @override
   String get keyringLockedBody =>
       'Vizor cannot access your system keyring. Unlock the keyring, then choose Retry. A system prompt may ask for your keyring password.';
 
   @override
   String get keyringNoResponse => 'The keyring did not respond. Try again.';
-
-  @override
-  String get keyringOpenFailedTitle => 'Unable to open Vizor';
 
   @override
   String get keyringOpeningTitle => 'Opening Vizor';
@@ -803,13 +825,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Complete any system keyring prompt to continue in Vizor.';
 
   @override
-  String get keyringQuit => 'Quit';
-
-  @override
   String get keyringRestartHint => 'Quit and restart Vizor to try again.';
-
-  @override
-  String get keyringRetry => 'Retry';
 
   @override
   String get keyringSaveUnconfirmedBody =>
@@ -850,47 +866,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get keystoneBackWelcome => 'Welcome';
-
-  @override
-  String get keystoneBirthdayDatePlaceholder => 'mm/dd/yyyy';
-
-  @override
-  String get keystoneBirthdayEstimateError =>
-      'Could not estimate the wallet birthday height.';
-
-  @override
-  String get keystoneBirthdayEstimating => 'Estimating...';
-
-  @override
-  String get keystoneBirthdayHeightHint => 'Block height';
-
-  @override
   String get keystoneBirthdayInvalidHeight =>
       'That doesn\'t look like a valid block height.';
 
   @override
-  String get keystoneBirthdayMetadataError =>
-      'Could not load wallet birthday metadata.';
-
-  @override
-  String get keystoneBirthdayStopSyncing => 'Stop syncing...';
-
-  @override
   String get keystoneBirthdaySubtitle =>
       'It helps us import your wallet faster.';
-
-  @override
-  String get keystoneBirthdayTabBlockHeight => 'Enter the block height';
-
-  @override
-  String get keystoneBirthdayTabDate => 'Enter the date';
-
-  @override
-  String get keystoneBirthdayTitle => 'Around when did you create your wallet?';
-
-  @override
-  String get keystoneBirthdayUnknown => 'I can’t remember';
 
   @override
   String get keystoneCameraDeniedBody =>
@@ -917,9 +898,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneCameraRestrictedTitle => 'Camera access is restricted';
 
   @override
-  String get keystoneCameraTryAgain => 'Try again';
-
-  @override
   String get keystoneCameraUnavailableBody =>
       'Keystone import uses camera QR scanning only.\nConnect a camera and try again.';
 
@@ -928,12 +906,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get keystoneConfirmSelection => 'Confirm selection';
-
-  @override
-  String get keystoneConnectTitle => 'Connect Keystone';
-
-  @override
-  String get keystoneContinue => 'Continue';
 
   @override
   String get keystoneFirmwareBody =>
@@ -950,9 +922,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get keystoneImReadyNow => 'I\'m ready now';
-
-  @override
-  String get keystoneImporting => 'Importing...';
 
   @override
   String get keystoneOnVizor => 'On Vizor';
@@ -978,10 +947,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'This QR code could not be decoded as a Keystone Zcash account.';
 
   @override
-  String get keystoneScanKeepSteady =>
-      'Keep the QR code steady and fully visible.';
-
-  @override
   String get keystoneScanNoAccounts =>
       'No Zcash accounts were found on this Keystone QR.';
 
@@ -996,15 +961,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get keystoneScanReadingAccounts => 'Reading accounts...';
-
-  @override
-  String get keystoneScanTitle => 'Scan QR Code';
-
-  @override
-  String get keystoneSelectAccountTitle => 'Select account';
-
-  @override
-  String get keystoneStepCustomiseWallet => 'Customise wallet';
 
   @override
   String get keystoneStepHowToConnect => 'How to Connect';
@@ -1022,12 +978,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get keystoneStepSelectVizor => 'Select Vizor (or ZODL)';
-
-  @override
-  String get keystoneStepSetPassword => 'Set Password';
-
-  @override
-  String get keystoneStepWalletBirthdayHeight => 'Wallet Birthday Height';
 
   @override
   String languageSystemOption(String language) {
@@ -1050,9 +1000,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ledgerAdvancedOptions => 'Advanced options';
-
-  @override
-  String get ledgerBackAddAccount => 'Add account';
 
   @override
   String get ledgerBalanceActivityNote =>
@@ -1101,9 +1048,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ledgerConfirmOpeningZcash => 'Confirm opening Zcash on Ledger.';
-
-  @override
-  String get ledgerConnect => 'Connect Ledger';
 
   @override
   String get ledgerConnectSubtitle => 'Prepare your Ledger wallet.';
@@ -1247,13 +1191,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ledgerSheetDeclinedTitle => 'Request declined';
 
   @override
-  String get ledgerStepAddAccount => 'Add account';
-
-  @override
   String get ledgerStepApproveViewingKey => 'Approve viewing key';
-
-  @override
-  String get ledgerStepCustomiseWallet => 'Customise wallet';
 
   @override
   String ledgerStepOpenApp(String appName) {
@@ -1262,12 +1200,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ledgerStepOpenZcash => 'Open Zcash';
-
-  @override
-  String get ledgerStepSetPassword => 'Set Password';
-
-  @override
-  String get ledgerStepWalletBirthdayHeight => 'Wallet Birthday Height';
 
   @override
   String get ledgerStoppingSearch => 'Stopping search';
@@ -1280,9 +1212,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ledgerTransportUsb => 'USB';
-
-  @override
-  String get ledgerTryAgain => 'Try again';
 
   @override
   String get ledgerUnlockBluetoothNearby =>
@@ -1307,15 +1236,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lockConfirmPasscodeSemantics => 'Confirm passcode to unlock Vizor';
 
   @override
-  String get lockNavSynced => 'Synced';
-
-  @override
   String lockNavSyncing(int percent) {
     return '$percent% Syncing...';
   }
-
-  @override
-  String get lockPasscodeIncorrect => 'Incorrect Passcode';
 
   @override
   String get lockSyncCompleteTitle => 'Sync Complete';
@@ -1342,12 +1265,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lockUnlockToContinuePausedBody => 'Unlock Vizor to continue.';
 
   @override
-  String get lockUnlockVizor => 'Unlock Vizor';
-
-  @override
-  String get lockWelcomeBack => 'Welcome Back';
-
-  @override
   String get navActivity => 'Activity';
 
   @override
@@ -1369,7 +1286,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navVote => 'Vote';
 
   @override
-  String get onboardingAccountName => 'Account name';
+  String get networkSettingsTitle => 'Network settings';
 
   @override
   String get onboardingAdd => 'Add';
@@ -1421,9 +1338,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingAddressTypesTitle => 'Zcash Address Types';
 
   @override
-  String get onboardingAddressTypesTitleMobile => 'Zcash Address Types';
-
-  @override
   String onboardingBiometricEnableFailed(String method) {
     return 'Couldn\'t enable $method. You can try again in settings.';
   }
@@ -1454,14 +1368,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingBip39PassphraseHint => '1–100 characters';
-
-  @override
-  String onboardingBip39PassphrasePreview(String passphrase) {
-    return 'BIP39 Passphrase: $passphrase';
-  }
-
-  @override
-  String get onboardingBip39PassphraseTitle => 'BIP39 Passphrase';
 
   @override
   String get onboardingBip39PassphraseTitleOptional =>
@@ -1547,109 +1453,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingBlockHeight => 'Block height';
 
   @override
-  String get onboardingCalendarMonthApril => 'April';
-
-  @override
-  String get onboardingCalendarMonthAugust => 'August';
-
-  @override
-  String get onboardingCalendarMonthDecember => 'December';
-
-  @override
-  String get onboardingCalendarMonthFebruary => 'February';
-
-  @override
-  String get onboardingCalendarMonthJanuary => 'January';
-
-  @override
-  String get onboardingCalendarMonthJuly => 'July';
-
-  @override
-  String get onboardingCalendarMonthJune => 'June';
-
-  @override
-  String get onboardingCalendarMonthMarch => 'March';
-
-  @override
-  String get onboardingCalendarMonthMay => 'May';
-
-  @override
-  String get onboardingCalendarMonthNovember => 'November';
-
-  @override
-  String get onboardingCalendarMonthOctober => 'October';
-
-  @override
-  String get onboardingCalendarMonthSeptember => 'September';
-
-  @override
-  String get onboardingCalendarMonthShortApr => 'Apr';
-
-  @override
-  String get onboardingCalendarMonthShortAug => 'Aug';
-
-  @override
-  String get onboardingCalendarMonthShortDec => 'Dec';
-
-  @override
-  String get onboardingCalendarMonthShortFeb => 'Feb';
-
-  @override
-  String get onboardingCalendarMonthShortJan => 'Jan';
-
-  @override
-  String get onboardingCalendarMonthShortJul => 'Jul';
-
-  @override
-  String get onboardingCalendarMonthShortJun => 'Jun';
-
-  @override
-  String get onboardingCalendarMonthShortMar => 'Mar';
-
-  @override
-  String get onboardingCalendarMonthShortMay => 'May';
-
-  @override
-  String get onboardingCalendarMonthShortNov => 'Nov';
-
-  @override
-  String get onboardingCalendarMonthShortOct => 'Oct';
-
-  @override
-  String get onboardingCalendarMonthShortSep => 'Sep';
-
-  @override
-  String get onboardingCalendarWeekdayFri => 'Fri';
-
-  @override
-  String get onboardingCalendarWeekdayMon => 'Mon';
-
-  @override
-  String get onboardingCalendarWeekdaySat => 'Sat';
-
-  @override
-  String get onboardingCalendarWeekdaySun => 'Sun';
-
-  @override
-  String get onboardingCalendarWeekdayThu => 'Thu';
-
-  @override
-  String get onboardingCalendarWeekdayTue => 'Tue';
-
-  @override
-  String get onboardingCalendarWeekdayWed => 'Wed';
-
-  @override
-  String get onboardingChangeProfilePicture => 'Change profile picture';
-
-  @override
   String get onboardingCheckingAccounts => 'Checking accounts...';
 
   @override
   String get onboardingClear => 'Clear';
-
-  @override
-  String get onboardingConfirmPassword => 'Confirm password';
 
   @override
   String get onboardingConnectHardwareSubtitleDesktop =>
@@ -1672,19 +1479,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingConnectLedger => 'Connect Ledger';
 
   @override
-  String get onboardingContinue => 'Continue';
-
-  @override
   String get onboardingContinueAnywayDesktop => 'Continue Anyway';
 
   @override
   String get onboardingContinueAnywayMobile => 'Continue anyway';
-
-  @override
-  String get onboardingCopy => 'Copy';
-
-  @override
-  String get onboardingCopySecretPassphrase => 'Copy secret passphrase';
 
   @override
   String get onboardingCreatingWallet => 'Creating wallet...';
@@ -1756,9 +1554,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingGoBackDesktop => 'Go Back';
-
-  @override
-  String get onboardingGoBackMobile => 'Go back';
 
   @override
   String get onboardingHardwareKeystoneOnly => 'Keystone wallet';
@@ -1847,9 +1642,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingImportWalletTitleMobile => 'Import Wallet';
 
   @override
-  String get onboardingImporting => 'Importing...';
-
-  @override
   String get onboardingIntroCard =>
       'Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount — verified by cryptography, not trust.';
 
@@ -1928,29 +1720,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingNetworkCheckingEndpoint => 'Checking endpoint…';
 
   @override
-  String onboardingNetworkCurrentEndpoint(String endpoint) {
-    return 'Current: $endpoint';
-  }
-
-  @override
-  String get onboardingNetworkCustomEndpoint => 'Custom endpoint';
-
-  @override
   String get onboardingNetworkEndpointHelper =>
       'Use a lightwalletd server for this wallet’s network.';
 
   @override
-  String get onboardingNetworkEndpointUpdated => 'Endpoint updated';
-
-  @override
   String get onboardingNetworkSaveFailed =>
       'Couldn\'t save the endpoint. Try again.';
-
-  @override
-  String get onboardingNetworkSettings => 'Network settings';
-
-  @override
-  String get onboardingNetworkUpdateEndpoint => 'Update endpoint';
 
   @override
   String get onboardingNetworkVerifyFailed =>
@@ -1963,9 +1738,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingNotNow => 'Not now';
 
   @override
-  String get onboardingPasscodeConfirmTitle => 'Confirm Passcode';
-
-  @override
   String get onboardingPasscodeCreateTitle => 'Create Passcode';
 
   @override
@@ -1974,29 +1746,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get onboardingPasscodeIncorrect => 'Incorrect Passcode';
-
-  @override
   String get onboardingPasscodeReEnter => 'Re-enter your passcode.';
 
   @override
   String get onboardingPasscodeSettingUp => 'Setting up your wallet...';
-
-  @override
-  String get onboardingPasscodeSixDigits => '6 digits length';
-
-  @override
-  String get onboardingPasscodesDidNotMatch =>
-      'Passcodes didn\'t match. Try again.';
-
-  @override
-  String get onboardingPassword => 'Password';
-
-  @override
-  String get onboardingPasswordsDoNotMatch => 'Passwords do not match.';
-
-  @override
-  String get onboardingQuit => 'Quit';
 
   @override
   String get onboardingRandomiseAccountPersona =>
@@ -2010,17 +1763,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'Couldn\'t reset the app. Please try again.';
 
   @override
-  String get onboardingResetCannotBeUndone => 'This cannot be undone.';
-
-  @override
-  String get onboardingResetVizor => 'Reset Vizor';
-
-  @override
   String get onboardingResumeSetupFailed =>
       'Couldn\'t resume setup. Please try again.';
-
-  @override
-  String get onboardingRetry => 'Retry';
 
   @override
   String get onboardingRetrySetup => 'Retry setup';
@@ -2046,9 +1790,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingSavingWallet => 'Saving wallet...';
-
-  @override
-  String get onboardingSecretPassphrase => 'Secret Passphrase';
 
   @override
   String get onboardingSecretPassphraseAboutToSee =>
@@ -2078,12 +1819,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingSeedWordHint => 'Seed word';
-
-  @override
-  String get onboardingSelectProfilePicture => 'Select profile picture';
-
-  @override
-  String get onboardingSetPassword => 'Set Password';
 
   @override
   String get onboardingSetPasswordAndFinish => 'Set password & finish';
@@ -2116,6 +1851,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingStepIntroToZcash => 'Intro to Zcash';
 
   @override
+  String get onboardingStepSetPassword => 'Set Password';
+
+  @override
   String get onboardingStepWalletBirthdayHeight => 'Wallet Birthday Height';
 
   @override
@@ -2132,9 +1870,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get onboardingStorageKeyringLockedBody =>
       'Vizor needs access to the system keyring before it can open your wallet. Unlock the keyring, then try again.';
-
-  @override
-  String get onboardingStorageKeyringLockedTitle => 'Unlock your keyring';
 
   @override
   String get onboardingStorageRetrySecureStorageFailed =>
@@ -2155,9 +1890,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get onboardingStorageStartupFailureBody =>
       'Vizor could not load the local startup state. Try again, or quit and restart Vizor.';
-
-  @override
-  String get onboardingStorageStartupFailureTitle => 'Unable to open Vizor';
 
   @override
   String get onboardingTellMeHowZcashWorks => 'Tell me how Zcash works';
@@ -2183,9 +1915,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingThingsToKnow => 'Things to know';
 
   @override
-  String get onboardingTryAgain => 'Try again';
-
-  @override
   String get onboardingUnknownHeightBody =>
       'If you continue without a wallet birthday, Vizor will scan from the earliest supported shielded height. This is safe, but the first sync can take a very long time.';
 
@@ -2198,9 +1927,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingUnlockBiometricReason => 'Unlock your wallet';
-
-  @override
-  String get onboardingUnlockButton => 'Unlock Vizor';
 
   @override
   String get onboardingUnlockDescription =>
@@ -2225,9 +1951,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingUnlockWelcomeBack => 'Welcome back';
 
   @override
-  String get onboardingUnlockWelcomeBackMobile => 'Welcome Back';
-
-  @override
   String get onboardingWelcome => 'Welcome';
 
   @override
@@ -2240,10 +1963,44 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingWelcomeImportWallet => 'Import wallet';
 
   @override
+  String get passcodeConfirmTitle => 'Confirm Passcode';
+
+  @override
+  String get passcodeIncorrect => 'Incorrect Passcode';
+
+  @override
+  String get passcodeSixDigits => '6 digits length';
+
+  @override
+  String get passcodesDidNotMatch => 'Passcodes didn\'t match. Try again.';
+
+  @override
+  String get passwordCheckFailed =>
+      'Couldn\'t check your password. Please try again.';
+
+  @override
+  String get passwordConfirmLabel => 'Confirm password';
+
+  @override
+  String get passwordIncorrect => 'Incorrect password. Please try again.';
+
+  @override
+  String get passwordLabel => 'Password';
+
+  @override
+  String get passwordsDoNotMatch => 'Passwords do not match.';
+
+  @override
   String get poolShielded => 'Shielded';
 
   @override
   String get poolTransparent => 'Transparent';
+
+  @override
+  String get profilePictureChange => 'Change profile picture';
+
+  @override
+  String get profilePictureSelect => 'Select profile picture';
 
   @override
   String get profilePictureUpdateFailed => 'Couldn\'t update profile picture.';
@@ -2252,15 +2009,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiptMessageLabel => 'Message';
 
   @override
+  String get secretPassphraseCopy => 'Copy secret passphrase';
+
+  @override
+  String get secretPassphraseTitle => 'Secret Passphrase';
+
+  @override
   String get settingsAccountChangedPasscode =>
       'Selected account changed. Enter your passcode again.';
 
   @override
   String get settingsAccountChangedPassword =>
       'Selected account changed. Enter your password again.';
-
-  @override
-  String get settingsAccountSaveFailed => 'Couldn\'t save the account changes';
 
   @override
   String get settingsAccountUnavailable =>
@@ -2306,14 +2066,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsBip39PassphraseCopy => 'Copy BIP39 passphrase';
 
   @override
-  String get settingsBip39PassphraseTitle => 'BIP39 Passphrase';
-
-  @override
-  String settingsBip39PassphraseValue(String passphrase) {
-    return 'BIP39 Passphrase: $passphrase';
-  }
-
-  @override
   String get settingsBirthdayBlockHeight => 'Birthday block height';
 
   @override
@@ -2326,25 +2078,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsBirthdayHeightCopied => 'Birthday height copied';
 
   @override
-  String get settingsChangePasscodeIncorrect => 'Incorrect Passcode';
-
-  @override
   String get settingsConfirmAccessSubtitle => 'Confirm your access';
 
   @override
   String get settingsConfirmAccessTitle => 'Confirm access';
-
-  @override
-  String get settingsConfirmPasscodeTitle => 'Confirm Passcode';
-
-  @override
-  String get settingsConfirmPasswordLabel => 'Confirm password';
-
-  @override
-  String get settingsContinue => 'Continue';
-
-  @override
-  String get settingsCopy => 'Copy';
 
   @override
   String settingsCopyLabel(String label) {
@@ -2369,15 +2106,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Couldn\'t connect to that endpoint. Check the host and port.';
 
   @override
-  String settingsEndpointCurrent(String endpoint) {
-    return 'Current: $endpoint';
-  }
-
-  @override
   String get settingsEndpointCurrentPrefix => 'Current: ';
-
-  @override
-  String get settingsEndpointCustom => 'Custom endpoint';
 
   @override
   String get settingsEndpointCustomise => 'Customise endpoint';
@@ -2389,19 +2118,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsEndpointDefaultMarker => '(Default)';
 
   @override
-  String get settingsEndpointNetworkSettings => 'Network settings';
-
-  @override
   String get settingsEndpointSelectFromList => 'Select from the list';
 
   @override
   String get settingsEndpointTitle => 'Endpoint';
-
-  @override
-  String get settingsEndpointUpdate => 'Update endpoint';
-
-  @override
-  String get settingsEndpointUpdatedToast => 'Endpoint updated';
 
   @override
   String get settingsEndpointUpdating => 'Updating endpoint...';
@@ -2460,15 +2180,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsIncorrectPasscode => 'Incorrect passcode';
 
   @override
-  String get settingsIncorrectPassword =>
-      'Incorrect password. Please try again.';
-
-  @override
   String get settingsKeepAwakeDescription =>
       'Prevents your phone from sleeping so sync can finish faster. The app still locks after 1 minute of inactivity.';
-
-  @override
-  String get settingsKeepAwakeLabel => 'Keep screen awake';
 
   @override
   String get settingsKeepAwakeUpdateFailed =>
@@ -2491,9 +2204,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Couldn\'t check your passcode. Please try again.';
 
   @override
-  String get settingsPasscodeLengthHint => '6 digits length';
-
-  @override
   String get settingsPasscodeMustDiffer =>
       'Your new passcode must be different.';
 
@@ -2513,17 +2223,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Couldn\'t verify the passcode. Try again.';
 
   @override
-  String get settingsPasscodesMismatch => 'Passcodes didn\'t match. Try again.';
-
-  @override
-  String get settingsPasswordCheckFailed =>
-      'Couldn\'t check your password. Please try again.';
-
-  @override
   String get settingsPasswordHint => 'Your password...';
-
-  @override
-  String get settingsPasswordLabel => 'Password';
 
   @override
   String get settingsPasswordMinimumHint =>
@@ -2536,9 +2236,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get settingsPasswordUpdateFailed =>
       'Couldn\'t update your password. Please try again.';
-
-  @override
-  String get settingsPasswordsMismatch => 'Passwords do not match.';
 
   @override
   String get settingsPfpKnight => 'Knight';
@@ -2599,9 +2296,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'No servers are offered yet. You can enter a custom server.';
 
   @override
-  String get settingsPirPingChecking => 'Checking...';
-
-  @override
   String get settingsPirServerChangeFailed =>
       'Couldn\'t change server. Try again.';
 
@@ -2647,9 +2341,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Vizor will rebuild your transparent history publicly, allowing the server to learn all your addresses.';
 
   @override
-  String get settingsPrivateQueriesTurnOffConfirm => 'Turn off';
-
-  @override
   String get settingsPrivateQueriesTurnOffDisclosure =>
       'The server receives every transparent address of every account and the IDs of transactions private recovery found. It can link them to each other and, without Tor, to your IP address.';
 
@@ -2663,9 +2354,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsRowAboutVizor => 'About Vizor';
 
   @override
-  String get settingsRowAccountName => 'Account name';
-
-  @override
   String get settingsRowAccountNameMobile => 'Account Name';
 
   @override
@@ -2676,9 +2364,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsRowChangePassword => 'Change password';
-
-  @override
-  String get settingsRowCoinholderVoting => 'Coinholder voting';
 
   @override
   String get settingsRowLinkMobile => 'Link Vizor mobile';
@@ -2703,9 +2388,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsRowViewingKeyMobile => 'Viewing Key';
-
-  @override
-  String get settingsSecretPassphraseTitle => 'Secret Passphrase';
 
   @override
   String get settingsSectionAccount => 'Account';
@@ -2734,9 +2416,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsSeedCopiedToast => 'Secret passphrase copied';
-
-  @override
-  String get settingsSeedCopyLabel => 'Copy secret passphrase';
 
   @override
   String get settingsSeedHeadingSubtitle =>
@@ -2924,7 +2603,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsTorUse => 'Use Tor';
 
   @override
-  String get settingsTryAgain => 'Try again';
+  String get settingsTurnOffConfirm => 'Turn off';
 
   @override
   String settingsUninstallActiveSwaps(int count) {
@@ -2936,12 +2615,6 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return 'This wallet has $_temp0. Wait for them to complete before uninstalling.';
   }
-
-  @override
-  String get settingsUninstallCannotUndo => 'This cannot be undone.';
-
-  @override
-  String get settingsUninstallChecking => 'Checking...';
 
   @override
   String get settingsUninstallClaimCheckFailed =>
@@ -3030,9 +2703,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsUpdatePasswordTitle => 'Update password';
 
   @override
-  String get settingsUpdateRestart => 'Restart';
-
-  @override
   String get settingsUpdateRestartButton => 'Restart to update';
 
   @override
@@ -3050,10 +2720,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String settingsUpdateStatusDownloading(String percent) {
     return 'Downloading $percent%.';
   }
-
-  @override
-  String get settingsUpdateStatusFailed =>
-      'Couldn\'t complete the update. Try again.';
 
   @override
   String get settingsUpdateStatusIdle => 'Ready to check for updates.';
@@ -3219,9 +2885,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sidebarHideBalance => 'Hide balance';
 
   @override
-  String get sidebarImporting => 'Importing...';
-
-  @override
   String get sidebarManageAccounts => 'Manage';
 
   @override
@@ -3256,6 +2919,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get txFeeInfoTitle => 'Tx fee';
+
+  @override
+  String get updateFailedMessage => 'Couldn\'t complete the update. Try again.';
+
+  @override
+  String get updateRestart => 'Restart';
 
   @override
   String walletLinkAccountsFound(int count) {
@@ -3311,9 +2980,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get walletLinkContinue => 'Continue';
-
-  @override
   String get walletLinkDeselectAll => 'Deselect all';
 
   @override
@@ -3338,9 +3004,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get walletLinkErrorInvalidTitle => 'Invalid QR code';
 
   @override
-  String get walletLinkGoBack => 'Go back';
-
-  @override
   String walletLinkImportContacts(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -3350,12 +3013,6 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
-
-  @override
-  String get walletLinkImportContactsTitle => 'Import contacts';
-
-  @override
-  String get walletLinkImporting => 'Importing...';
 
   @override
   String get walletLinkIntroNotice =>
@@ -3404,12 +3061,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get walletLinkScanSubtitleDesktop => 'Scan the code on your desktop';
-
-  @override
-  String get walletLinkScanTitle => 'Scan QR Code';
-
-  @override
-  String get walletLinkSelectAccountTitle => 'Select account';
 
   @override
   String get walletLinkSelectAll => 'Select all';

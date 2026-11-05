@@ -383,7 +383,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       WindowsUpdateStatus.checking => l10n.settingsUpdateChecking,
       WindowsUpdateStatus.available => l10n.settingsUpdateAvailable,
       WindowsUpdateStatus.downloading => '${state.downloadProgress}%',
-      WindowsUpdateStatus.ready => l10n.settingsUpdateRestart,
+      WindowsUpdateStatus.ready => l10n.updateRestart,
       WindowsUpdateStatus.applying => l10n.settingsUpdateApplying,
       WindowsUpdateStatus.failed => l10n.settingsUpdateFailed,
       WindowsUpdateStatus.noUpdate => l10n.settingsUpdateUpToDate,
@@ -623,7 +623,7 @@ class _SettingsList extends ConsumerWidget {
             ),
             _SettingsRow(
               iconName: AppIcons.scroll,
-              label: context.l10n.settingsRowAccountName,
+              label: context.l10n.accountNameLabel,
               value: accountName,
               onTap: onAccountName,
             ),
@@ -939,7 +939,7 @@ class _WindowsUpdateModal extends ConsumerWidget {
         },
       ),
       WindowsUpdateStatus.failed => _UpdatePrimaryAction(
-        label: context.l10n.settingsTryAgain,
+        label: context.l10n.commonTryAgain,
         onPressed: () {
           unawaited(ref.read(windowsUpdateProvider.notifier).checkForUpdates());
         },
@@ -972,7 +972,7 @@ class _WindowsUpdateModal extends ConsumerWidget {
       WindowsUpdateStatus.applying => l10n.settingsUpdateStatusRestarting,
       WindowsUpdateStatus.failed =>
         state.message.trim().isEmpty
-            ? l10n.settingsUpdateStatusFailed
+            ? l10n.updateFailedMessage
             : state.message.trim(),
       _ => l10n.settingsUpdateStatusIdle,
     };

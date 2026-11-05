@@ -115,7 +115,7 @@ class ConfirmAccessCard extends StatelessWidget {
                   child: AppPasswordInput(
                     warningOnDarkCard: true,
                     child: AppTextField(
-                      label: context.l10n.settingsPasswordLabel,
+                      label: context.l10n.passwordLabel,
                       showLabel: false,
                       controller: controller,
                       hintText: context.l10n.settingsPasswordHint,
@@ -139,7 +139,7 @@ class ConfirmAccessCard extends StatelessWidget {
               const SizedBox(width: AppSpacing.xs),
               Semantics(
                 button: true,
-                label: context.l10n.settingsConfirmPasswordLabel,
+                label: context.l10n.passwordConfirmLabel,
                 child: AppButton(
                   onPressed: canSubmit && !isSubmitting ? onSubmit : null,
                   variant: AppButtonVariant.secondary,

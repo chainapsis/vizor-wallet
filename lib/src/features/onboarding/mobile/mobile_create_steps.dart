@@ -144,7 +144,7 @@ class MobileAddressTypesScreen extends StatelessWidget {
               context,
             ).at(OnboardingFlow.create, OnboardingStage.addressTypes).value,
       onBack: onBack ?? () => Navigator.of(context).maybePop(),
-      title: context.l10n.onboardingAddressTypesTitleMobile,
+      title: context.l10n.onboardingAddressTypesTitle,
       contentGap: 32,
       bottomAreaPadding: _educationActionPadding(context),
       // Line break matches the Figma subtitle wrap.
@@ -157,7 +157,7 @@ class MobileAddressTypesScreen extends StatelessWidget {
             : onContinue ??
                   () => context.pushOnboarding('/onboarding/things-to-know'),
         trailing: const AppIcon(AppIcons.chevronForward),
-        child: Text(context.l10n.onboardingContinue),
+        child: Text(context.l10n.commonContinue),
       ),
       child: _EducationSections(
         separateCards: true,
@@ -225,7 +225,7 @@ class MobileThingsToKnowScreen extends StatelessWidget {
             : onContinue ??
                   () => context.pushOnboarding('/onboarding/secret-passphrase'),
         trailing: const AppIcon(AppIcons.chevronForward),
-        child: Text(context.l10n.onboardingContinue),
+        child: Text(context.l10n.commonContinue),
       ),
       child: _EducationSections(
         separateCards: false,

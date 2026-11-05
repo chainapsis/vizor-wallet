@@ -109,7 +109,7 @@ class PrivateQueriesTurnOffDialog extends StatelessWidget {
                 expand: true,
                 variant: AppButtonVariant.destructive,
                 onPressed: () => Navigator.of(context).pop(true),
-                child: Text(context.l10n.settingsPrivateQueriesTurnOffConfirm),
+                child: Text(context.l10n.settingsTurnOffConfirm),
               ),
               const SizedBox(height: AppSpacing.xs),
               AppButton(
@@ -159,7 +159,7 @@ class PrivateQueriesTurnOffSheet extends StatelessWidget {
             variant: AppButtonVariant.destructive,
             expand: true,
             onPressed: () => Navigator.of(context).pop(true),
-            child: Text(context.l10n.settingsPrivateQueriesTurnOffConfirm),
+            child: Text(context.l10n.settingsTurnOffConfirm),
           ),
           const SizedBox(height: AppSpacing.s),
           MobileSheetCancel(onTap: () => Navigator.of(context).pop(false)),

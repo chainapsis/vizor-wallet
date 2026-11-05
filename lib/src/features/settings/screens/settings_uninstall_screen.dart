@@ -211,7 +211,7 @@ class _SettingsUninstallScreenState
       if (!mounted) return;
       if (!isValid) {
         setState(() {
-          _gateError = context.l10n.settingsIncorrectPassword;
+          _gateError = context.l10n.passwordIncorrect;
           _isSubmitting = false;
         });
         return;
@@ -222,7 +222,7 @@ class _SettingsUninstallScreenState
       log('SettingsUninstallScreen._submitGatePassword: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _gateError = context.l10n.settingsPasswordCheckFailed;
+        _gateError = context.l10n.passwordCheckFailed;
         _isSubmitting = false;
       });
     }
@@ -530,7 +530,7 @@ class _UninstallConfirmView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              errorText ?? context.l10n.settingsUninstallCannotUndo,
+              errorText ?? context.l10n.commonCannotBeUndone,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.destructive,
@@ -549,7 +549,7 @@ class _UninstallConfirmView extends StatelessWidget {
               ),
               child: Text(
                 isCheckingSwaps
-                    ? context.l10n.settingsUninstallChecking
+                    ? context.l10n.commonChecking
                     : context.l10n.settingsUninstallTitle,
               ),
             ),

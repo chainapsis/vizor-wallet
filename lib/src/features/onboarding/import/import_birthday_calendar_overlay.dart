@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -785,45 +786,18 @@ int _yearPageStartFor(int year) {
   return year - ((year - 1) % pageSize);
 }
 
-String _formatMonth(AppLocalizations l10n, DateTime date) {
-  final monthNames = [
-    l10n.onboardingCalendarMonthJanuary,
-    l10n.onboardingCalendarMonthFebruary,
-    l10n.onboardingCalendarMonthMarch,
-    l10n.onboardingCalendarMonthApril,
-    l10n.onboardingCalendarMonthMay,
-    l10n.onboardingCalendarMonthJune,
-    l10n.onboardingCalendarMonthJuly,
-    l10n.onboardingCalendarMonthAugust,
-    l10n.onboardingCalendarMonthSeptember,
-    l10n.onboardingCalendarMonthOctober,
-    l10n.onboardingCalendarMonthNovember,
-    l10n.onboardingCalendarMonthDecember,
-  ];
-  return '${monthNames[date.month - 1]} ${date.year}';
-}
+// Month and weekday names come from intl's CLDR data so each language gets
+// its own forms ("January 2025", "2025년 1월", "2025年1月").
+String _formatMonth(AppLocalizations l10n, DateTime date) =>
+    DateFormat.yMMMM(l10n.localeName).format(date);
 
+// 2023-01-01 is a Sunday; the grid starts on Sunday.
 List<String> _weekdayLabels(AppLocalizations l10n) => [
-  l10n.onboardingCalendarWeekdaySun,
-  l10n.onboardingCalendarWeekdayMon,
-  l10n.onboardingCalendarWeekdayTue,
-  l10n.onboardingCalendarWeekdayWed,
-  l10n.onboardingCalendarWeekdayThu,
-  l10n.onboardingCalendarWeekdayFri,
-  l10n.onboardingCalendarWeekdaySat,
+  for (var day = 1; day <= DateTime.daysPerWeek; day++)
+    DateFormat.E(l10n.localeName).format(DateTime(2023, 1, day)),
 ];
 
 List<String> _shortMonthLabels(AppLocalizations l10n) => [
-  l10n.onboardingCalendarMonthShortJan,
-  l10n.onboardingCalendarMonthShortFeb,
-  l10n.onboardingCalendarMonthShortMar,
-  l10n.onboardingCalendarMonthShortApr,
-  l10n.onboardingCalendarMonthShortMay,
-  l10n.onboardingCalendarMonthShortJun,
-  l10n.onboardingCalendarMonthShortJul,
-  l10n.onboardingCalendarMonthShortAug,
-  l10n.onboardingCalendarMonthShortSep,
-  l10n.onboardingCalendarMonthShortOct,
-  l10n.onboardingCalendarMonthShortNov,
-  l10n.onboardingCalendarMonthShortDec,
+  for (var month = 1; month <= 12; month++)
+    DateFormat.MMM(l10n.localeName).format(DateTime(2023, month)),
 ];

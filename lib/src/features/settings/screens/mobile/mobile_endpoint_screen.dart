@@ -152,7 +152,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
         }
         _isSubmitting = false;
       });
-      showAppToast(context, context.l10n.settingsEndpointUpdatedToast);
+      showAppToast(context, context.l10n.endpointUpdated);
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -209,7 +209,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                     child: _ModeTab(
                       key: const ValueKey('mobile_endpoint_tab_custom'),
                       iconName: AppIcons.edit,
-                      label: context.l10n.settingsEndpointCustom,
+                      label: context.l10n.endpointCustom,
                       selected: _activeTab == _EndpointTab.custom,
                       alignment: Alignment.centerLeft,
                       onTap: () => _selectTab(_EndpointTab.custom),
@@ -271,7 +271,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                             child: Text(
                               _isSubmitting
                                   ? context.l10n.commonUpdating
-                                  : context.l10n.settingsEndpointUpdate,
+                                  : context.l10n.endpointUpdate,
                             ),
                           ),
                         ),
@@ -379,7 +379,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      context.l10n.settingsEndpointCustom,
+                      context.l10n.endpointCustom,
                       style: AppTypography.displaySmall.copyWith(
                         color: colors.text.homeCard,
                       ),

@@ -315,7 +315,7 @@ class _SyncKeepAwakePrivacyLockScreenState
     final wasEnabled = biometric.enabled;
     final passcode = await ref
         .read(biometricUnlockProvider.notifier)
-        .readPasscode(reason: context.l10n.lockUnlockVizor);
+        .readPasscode(reason: context.l10n.commonUnlockVizor);
     if (!mounted) return;
 
     if (passcode == null) {
@@ -358,7 +358,7 @@ class _SyncKeepAwakePrivacyLockScreenState
       _unlockAttemptInFlight = false;
       _showPasscode = true;
       _passcodeEntry = '';
-      _passcodeError = (l10n) => l10n.lockPasscodeIncorrect;
+      _passcodeError = (l10n) => l10n.passcodeIncorrect;
     });
   }
 
@@ -461,7 +461,7 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
                     onPressed: onUnlockPressed,
                     leading: _SyncKeepAwakeUnlockIcon(biometric: biometric),
                     minWidth: 165,
-                    child: Text(l10n.lockUnlockVizor),
+                    child: Text(l10n.commonUnlockVizor),
                   ),
                 ],
               );
@@ -675,7 +675,7 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
                     final sectionGap = compact ? AppSpacing.xs : AppSpacing.md;
 
                     return AdaptivePasscodeLayout(
-                      title: context.l10n.lockWelcomeBack,
+                      title: context.l10n.commonWelcomeBack,
                       subtitle: _bodyForMode(context.l10n),
                       prompt: PasscodePromptField(
                         length: kMobilePasscodeLength,
@@ -705,7 +705,7 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
                           children: [
                             SizedBox(height: topGap),
                             Text(
-                              context.l10n.lockWelcomeBack,
+                              context.l10n.commonWelcomeBack,
                               textAlign: TextAlign.center,
                               style: AppTypography.displayLarge.copyWith(
                                 color: colors.text.accent,
@@ -753,7 +753,7 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
 
   String _titleForMode(AppLocalizations l10n, int displayWholePercentage) {
     return switch (mode) {
-      SyncKeepAwakePrivacyLockMode.done => l10n.lockNavSynced,
+      SyncKeepAwakePrivacyLockMode.done => l10n.syncSynced,
       SyncKeepAwakePrivacyLockMode.interrupted => l10n.lockSyncPausedTitle,
       SyncKeepAwakePrivacyLockMode.hidden ||
       SyncKeepAwakePrivacyLockMode.syncing => l10n.lockNavSyncing(

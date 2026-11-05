@@ -613,7 +613,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                             ? null
                             : () => context.push('/add-account'),
                         leading: const AppIcon(AppIcons.addNew),
-                        child: Text(context.l10n.accountsAdd),
+                        child: Text(context.l10n.commonAddAccount),
                       ),
                     ],
                   ),
@@ -841,7 +841,7 @@ class MobileAccountRemovalSheet extends StatelessWidget {
               leading: isLastAccount ? null : const AppIcon(AppIcons.trash),
               child: Text(
                 isLastAccount
-                    ? context.l10n.accountsResetVizor
+                    ? context.l10n.commonResetVizor
                     : context.l10n.accountsRemoveConfirm,
                 style: AppTypography.labelLarge.copyWith(
                   color: colors.button.destructive.label,

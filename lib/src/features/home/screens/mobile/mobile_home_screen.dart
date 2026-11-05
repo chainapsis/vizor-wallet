@@ -820,7 +820,7 @@ class _SyncKeepAwakePromptSheet extends StatelessWidget {
             leading: const AppIcon(AppIcons.day),
             onPressed: onKeepAwake,
             child: Text(
-              context.l10n.homeKeepAwakeEnable,
+              context.l10n.commonKeepScreenAwake,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1619,7 +1619,7 @@ class _MobileVotingEntryState extends ConsumerState<_MobileVotingEntry> {
       child: _MobileHomeEntryCard(
         key: const ValueKey('mobile_home_coinholder_voting'),
         icon: AppIcons.vote,
-        title: context.l10n.homeVotingTitle,
+        title: context.l10n.commonCoinholderVoting,
         subtitle: context.l10n.homeVotingSubtitle,
         semanticsLabel: context.l10n.homeVotingSemantics,
         onTap: () => context.push('/voting'),
