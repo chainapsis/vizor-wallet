@@ -18,6 +18,9 @@ import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/services/wallet_pir/wallet_pir_config.dart';
 import 'package:zcash_wallet/src/services/wallet_pir/wallet_pir_latency.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
+
+final _en = lookupAppLocalizations(const Locale('en'));
 
 const _sourceA = 'https://config.example/a/static.json?checksum=sha256:aaaa';
 const _sourceB = 'https://config.example/b/static.json?checksum=sha256:bbbb';
@@ -688,7 +691,7 @@ void main() {
       expect(h.state.config, isNull);
       expect(h.applied.last, 'https://custom.example');
       expect(
-        walletPirServerStatusText(h.state)?.text,
+        walletPirServerStatusText(_en, h.state)?.text,
         contains('custom server is still selected'),
       );
       h.dispose();
@@ -721,7 +724,7 @@ void main() {
     expect(h.state.hasNoServers, isTrue);
     expect(h.applied.whereType<String>(), isEmpty);
     expect(
-      walletPirServerStatusText(h.state)!.text,
+      walletPirServerStatusText(_en, h.state)!.text,
       contains('No servers are offered'),
     );
   });
@@ -775,7 +778,7 @@ void main() {
     expect(h.state.refreshError, isNotNull);
     expect(h.applied, isNot(contains(null)));
     expect(
-      walletPirServerStatusText(h.state)!.text,
+      walletPirServerStatusText(_en, h.state)!.text,
       contains('Using the last list loaded'),
     );
   });
@@ -899,7 +902,7 @@ void main() {
     await h.start();
     expect(h.state.source, isNull);
     expect(h.applied, [null]);
-    expect(walletPirServerStatusText(h.state)!.warning, isTrue);
+    expect(walletPirServerStatusText(_en, h.state)!.warning, isTrue);
   });
 
   test('the transport URL drops only the pin', () {

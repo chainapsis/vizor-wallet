@@ -1347,10 +1347,946 @@ class AppLocalizationsKo extends AppLocalizations {
   String get receiptMessageLabel => '메⁠시⁠지';
 
   @override
+  String get settingsAccountChangedPasscode =>
+      '선⁠택⁠한 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 암⁠호⁠를 다⁠시 입⁠력⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsAccountChangedPassword =>
+      '선⁠택⁠한 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 비⁠밀⁠번⁠호⁠를 다⁠시 입⁠력⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsAccountSaveFailed => '계⁠정 변⁠경 사⁠항⁠을 저⁠장⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get settingsAccountUnavailable => '선⁠택⁠한 계⁠정⁠을 더 이⁠상 사⁠용⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get settingsBackToAccounts => '계⁠정⁠으⁠로 돌⁠아⁠가⁠기';
+
+  @override
+  String settingsBiometricOffToast(String feature) {
+    return '$feature 꺼⁠짐';
+  }
+
+  @override
+  String settingsBiometricOnToast(String feature) {
+    return '$feature 켜⁠짐';
+  }
+
+  @override
+  String settingsBiometricSetupFirst(String biometric) {
+    return '먼⁠저 기⁠기 설⁠정⁠에⁠서 $biometric⁠을(를) 설⁠정⁠하⁠세⁠요.';
+  }
+
+  @override
+  String settingsBiometricTurnOffBody(String feature) {
+    return 'Vizor⁠는 암⁠호⁠로 잠⁠금 해⁠제⁠해⁠요. $feature⁠은(는) 언⁠제⁠든 설⁠정⁠에⁠서 다⁠시 켤 수 있⁠어⁠요.';
+  }
+
+  @override
+  String settingsBiometricTurnOffTitle(String feature) {
+    return '$feature⁠을(를) 끌⁠까⁠요?';
+  }
+
+  @override
+  String settingsBiometricUpdateFailed(String feature) {
+    return '$feature⁠을(를) 변⁠경⁠하⁠지 못⁠했⁠어⁠요.';
+  }
+
+  @override
+  String get settingsBip39PassphraseCopied => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈⁠를 복⁠사⁠했⁠어⁠요';
+
+  @override
+  String get settingsBip39PassphraseCopy => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈 복⁠사';
+
+  @override
+  String get settingsBip39PassphraseTitle => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈';
+
+  @override
+  String settingsBip39PassphraseValue(String passphrase) {
+    return 'BIP39 패⁠스⁠프⁠레⁠이⁠즈: $passphrase';
+  }
+
+  @override
+  String get settingsBirthdayBlockHeight => '생⁠성 블⁠록 높⁠이';
+
+  @override
+  String get settingsBirthdayDate => '생⁠성 날⁠짜';
+
+  @override
+  String get settingsBirthdayDateCopied => '생⁠성 날⁠짜⁠를 복⁠사⁠했⁠어⁠요';
+
+  @override
+  String get settingsBirthdayHeightCopied => '생⁠성 블⁠록 높⁠이⁠를 복⁠사⁠했⁠어⁠요';
+
+  @override
+  String get settingsChangePasscodeIncorrect => '암⁠호⁠가 맞⁠지 않⁠아⁠요';
+
+  @override
+  String get settingsConfirmAccessSubtitle => '본⁠인 확⁠인⁠이 필⁠요⁠해⁠요';
+
+  @override
+  String get settingsConfirmAccessTitle => '접⁠근 확⁠인';
+
+  @override
+  String get settingsConfirmPasscodeTitle => '암⁠호 확⁠인';
+
+  @override
+  String get settingsConfirmPasswordLabel => '비⁠밀⁠번⁠호 확⁠인';
+
+  @override
+  String get settingsContinue => '계⁠속';
+
+  @override
+  String get settingsCopy => '복⁠사';
+
+  @override
+  String settingsCopyLabel(String label) {
+    return '$label 복⁠사';
+  }
+
+  @override
+  String settingsCopyLabelCopied(String label) {
+    return '$label 복⁠사⁠됨';
+  }
+
+  @override
+  String settingsEndpointBalanceNote(String ticker) {
+    return '지⁠갑⁠에⁠는 마⁠지⁠막⁠으⁠로 연⁠결⁠에 성⁠공⁠했⁠을 때⁠의 잔⁠액⁠이 표⁠시⁠돼⁠요. 최⁠근⁠에 받⁠은 $ticker⁠는 표⁠시⁠되⁠지 않⁠아⁠요.';
+  }
+
+  @override
+  String get settingsEndpointCloseSettings => '엔⁠드⁠포⁠인⁠트 설⁠정 닫⁠기';
+
+  @override
+  String get settingsEndpointConnectFailed =>
+      '엔⁠드⁠포⁠인⁠트⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요. 호⁠스⁠트⁠와 포⁠트⁠를 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String settingsEndpointCurrent(String endpoint) {
+    return '현⁠재: $endpoint';
+  }
+
+  @override
+  String get settingsEndpointCurrentPrefix => '현⁠재: ';
+
+  @override
+  String get settingsEndpointCustom => '사⁠용⁠자 지⁠정 엔⁠드⁠포⁠인⁠트';
+
+  @override
+  String get settingsEndpointCustomise => '엔⁠드⁠포⁠인⁠트 직⁠접 설⁠정';
+
+  @override
+  String get settingsEndpointCustomize => '엔⁠드⁠포⁠인⁠트 직⁠접 설⁠정';
+
+  @override
+  String get settingsEndpointDefaultMarker => '(기⁠본⁠값)';
+
+  @override
+  String get settingsEndpointNetworkSettings => '네⁠트⁠워⁠크 설⁠정';
+
+  @override
+  String get settingsEndpointSelectFromList => '목⁠록⁠에⁠서 선⁠택';
+
+  @override
+  String get settingsEndpointTitle => '엔⁠드⁠포⁠인⁠트';
+
+  @override
+  String get settingsEndpointUpdate => '엔⁠드⁠포⁠인⁠트 업⁠데⁠이⁠트';
+
+  @override
+  String get settingsEndpointUpdatedToast => '엔⁠드⁠포⁠인⁠트⁠를 업⁠데⁠이⁠트⁠했⁠어⁠요';
+
+  @override
+  String get settingsEndpointUpdating => '엔⁠드⁠포⁠인⁠트 업⁠데⁠이⁠트 중...';
+
+  @override
+  String get settingsEndpointWarningBlockchain =>
+      '엔⁠드⁠포⁠인⁠트⁠를 잘⁠못 설⁠정⁠하⁠면 지⁠갑⁠이 Zcash 블⁠록⁠체⁠인⁠과 동⁠기⁠화⁠되⁠지 않⁠아⁠요.';
+
+  @override
+  String get settingsEndpointWarningNetwork =>
+      '엔⁠드⁠포⁠인⁠트⁠를 잘⁠못 설⁠정⁠하⁠면 지⁠갑⁠이 Zcash 네⁠트⁠워⁠크⁠와 동⁠기⁠화⁠되⁠지 않⁠아⁠요.';
+
+  @override
+  String get settingsEndpointsTitle => '엔⁠드⁠포⁠인⁠트';
+
+  @override
+  String get settingsEnterCurrentPasswordAgain =>
+      '현⁠재 비⁠밀⁠번⁠호⁠를 다⁠시 입⁠력⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsEnterCurrentPasswordFirst =>
+      '먼⁠저 현⁠재 비⁠밀⁠번⁠호⁠를 입⁠력⁠하⁠세⁠요.';
+
+  @override
+  String get settingsEnterPasscodeTitle => '암⁠호 입⁠력';
+
+  @override
+  String settingsExplorerCurrent(String explorer) {
+    return '현⁠재: $explorer';
+  }
+
+  @override
+  String settingsExplorerCurrentDefault(String host) {
+    return '현⁠재: $host (기⁠본⁠값)';
+  }
+
+  @override
+  String get settingsExplorerCustom => '직⁠접 입⁠력';
+
+  @override
+  String get settingsExplorerCustomSubtitle => '원⁠하⁠는 탐⁠색⁠기⁠를 사⁠용⁠해⁠요';
+
+  @override
+  String get settingsExplorerSaveFailed => '탐⁠색⁠기 URL⁠을 저⁠장⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get settingsExplorerTitle => '블⁠록 탐⁠색⁠기';
+
+  @override
+  String get settingsExplorerUpdate => '탐⁠색⁠기 업⁠데⁠이⁠트';
+
+  @override
+  String get settingsExplorerUrlLabel => '탐⁠색⁠기 URL';
+
+  @override
+  String get settingsIncorrectPasscode => '암⁠호⁠가 맞⁠지 않⁠아⁠요';
+
+  @override
+  String get settingsIncorrectPassword =>
+      '비⁠밀⁠번⁠호⁠가 맞⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsKeepAwakeDescription =>
+      '휴⁠대⁠폰⁠이 잠⁠자⁠기 모⁠드⁠로 전⁠환⁠되⁠지 않⁠아 동⁠기⁠화⁠가 더 빨⁠리 끝⁠나⁠요. 앱⁠은 1⁠분⁠간 사⁠용⁠하⁠지 않⁠으⁠면 그⁠대⁠로 잠⁠겨⁠요.';
+
+  @override
+  String get settingsKeepAwakeLabel => '화⁠면 켜⁠짐 유⁠지';
+
+  @override
+  String get settingsKeepAwakeUpdateFailed =>
+      '화⁠면 켜⁠짐 유⁠지 설⁠정⁠을 변⁠경⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
   String get settingsLanguageLabel => '언⁠어';
 
   @override
   String get settingsLanguageUpdateFailed => '언⁠어⁠를 바⁠꾸⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get settingsNewBadge => '신⁠규';
+
+  @override
+  String get settingsNoActiveAccount => '선⁠택⁠된 계⁠정⁠이 없⁠어⁠요.';
+
+  @override
+  String get settingsPasscodeCheckFailed =>
+      '암⁠호⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsPasscodeLengthHint => '6⁠자⁠리 숫⁠자';
+
+  @override
+  String get settingsPasscodeMustDiffer => '새 암⁠호⁠는 기⁠존 암⁠호⁠와 달⁠라⁠야 해⁠요.';
+
+  @override
+  String get settingsPasscodeRotationRecoveryFailed =>
+      '이⁠전 암⁠호 변⁠경⁠을 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 복⁠구 문⁠구⁠를 준⁠비⁠해 두⁠세⁠요.';
+
+  @override
+  String get settingsPasscodeUpdateFailed =>
+      '암⁠호⁠를 변⁠경⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsPasscodeUpdatedToast => '암⁠호⁠를 변⁠경⁠했⁠어⁠요';
+
+  @override
+  String get settingsPasscodeVerifyFailed =>
+      '암⁠호⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsPasscodesMismatch =>
+      '암⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsPasswordCheckFailed =>
+      '비⁠밀⁠번⁠호⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsPasswordHint => '비⁠밀⁠번⁠호 입⁠력...';
+
+  @override
+  String get settingsPasswordLabel => '비⁠밀⁠번⁠호';
+
+  @override
+  String get settingsPasswordMinimumHint =>
+      '8⁠자 이⁠상⁠이⁠어⁠야 해⁠요. 숫⁠자⁠와 기⁠호⁠를 더⁠하⁠거⁠나 더 길⁠게 만⁠들⁠면 더 안⁠전⁠해⁠요.';
+
+  @override
+  String get settingsPasswordRotationRecoveryFailed =>
+      '이⁠전 비⁠밀⁠번⁠호 변⁠경⁠을 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 복⁠구 문⁠구⁠를 준⁠비⁠해 두⁠세⁠요.';
+
+  @override
+  String get settingsPasswordUpdateFailed =>
+      '비⁠밀⁠번⁠호⁠를 변⁠경⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsPasswordsMismatch => '비⁠밀⁠번⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get settingsPfpKnight => '기⁠사';
+
+  @override
+  String get settingsPfpSamurai => '사⁠무⁠라⁠이';
+
+  @override
+  String get settingsPfpViking => '바⁠이⁠킹';
+
+  @override
+  String get settingsPfpWizard => '마⁠법⁠사';
+
+  @override
+  String get settingsPirCheckingUpdates => '업⁠데⁠이⁠트 확⁠인 중…';
+
+  @override
+  String get settingsPirChooseServer => '서⁠버 선⁠택';
+
+  @override
+  String get settingsPirConfigOpenFailed => '설⁠정 저⁠장⁠소⁠를 열⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get settingsPirCustomInvalid =>
+      '저⁠장⁠된 사⁠용⁠자 지⁠정 서⁠버⁠가 올⁠바⁠르⁠지 않⁠아⁠요. 수⁠정⁠하⁠거⁠나 다⁠른 서⁠버⁠를 선⁠택⁠하⁠세⁠요.';
+
+  @override
+  String get settingsPirCustomServer => '사⁠용⁠자 지⁠정 서⁠버';
+
+  @override
+  String get settingsPirCustomServerEllipsis => '사⁠용⁠자 지⁠정 서⁠버…';
+
+  @override
+  String get settingsPirCustomUrlInvalid =>
+      '자⁠격 증⁠명, 쿼⁠리, 프⁠래⁠그⁠먼⁠트⁠가 없⁠는 HTTPS 기⁠본 URL⁠을 입⁠력⁠하⁠세⁠요.';
+
+  @override
+  String get settingsPirEditCustomServer => '사⁠용⁠자 지⁠정 서⁠버 편⁠집…';
+
+  @override
+  String get settingsPirListLoadFailed =>
+      '서⁠버 목⁠록⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 사⁠용⁠자 지⁠정 서⁠버⁠를 입⁠력⁠하⁠세⁠요.';
+
+  @override
+  String get settingsPirListUpdateFailed =>
+      '서⁠버 목⁠록⁠을 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요. 마⁠지⁠막⁠으⁠로 불⁠러⁠온 목⁠록⁠을 사⁠용⁠해⁠요.';
+
+  @override
+  String get settingsPirListUpdateFailedCustom =>
+      '목⁠록⁠을 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요. 사⁠용⁠자 지⁠정 서⁠버⁠가 계⁠속 선⁠택⁠되⁠어 있⁠어⁠요.';
+
+  @override
+  String get settingsPirLoadingServers => '서⁠버 목⁠록⁠을 불⁠러⁠오⁠는 중…';
+
+  @override
+  String get settingsPirNoServers =>
+      '아⁠직 제⁠공⁠되⁠는 서⁠버⁠가 없⁠어⁠요. 사⁠용⁠자 지⁠정 서⁠버⁠를 입⁠력⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get settingsPirPingChecking => '확⁠인 중...';
+
+  @override
+  String get settingsPirServerChangeFailed =>
+      '서⁠버⁠를 변⁠경⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsPirServerCloseLabel => '비⁠공⁠개 조⁠회 서⁠버 설⁠정 닫⁠기';
+
+  @override
+  String get settingsPirServerRemoved =>
+      '선⁠택⁠한 서⁠버⁠가 더 이⁠상 제⁠공⁠되⁠지 않⁠아⁠요. 비⁠공⁠개 조⁠회⁠를 다⁠시 시⁠작⁠하⁠려⁠면 다⁠른 서⁠버⁠를 선⁠택⁠하⁠세⁠요.';
+
+  @override
+  String get settingsPirServerSettingsLabel => '비⁠공⁠개 조⁠회 서⁠버 설⁠정';
+
+  @override
+  String get settingsPirServerTitle => '비⁠공⁠개 조⁠회 서⁠버';
+
+  @override
+  String get settingsPirSettingsReadFailed =>
+      '비⁠공⁠개 조⁠회 서⁠버 설⁠정⁠을 읽⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get settingsPirShareServer => '내 서⁠버 공⁠유';
+
+  @override
+  String get settingsPirUnavailable =>
+      '이 네⁠트⁠워⁠크⁠에⁠서⁠는 비⁠공⁠개 조⁠회⁠를 사⁠용⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get settingsPirUpdatingServer => '서⁠버 변⁠경 중…';
+
+  @override
+  String get settingsPirUseCustomServer => '사⁠용⁠자 지⁠정 서⁠버 사⁠용';
+
+  @override
+  String get settingsPrivacyTitle => '개⁠인⁠정⁠보 보⁠호';
+
+  @override
+  String get settingsPrivateQueriesLabel => '비⁠공⁠개 조⁠회';
+
+  @override
+  String get settingsPrivateQueriesTurnOffBody =>
+      'Vizor⁠가 투⁠명 내⁠역⁠을 공⁠개 방⁠식⁠으⁠로 다⁠시 구⁠성⁠하⁠며, 서⁠버⁠가 모⁠든 주⁠소⁠를 알⁠게 돼⁠요.';
+
+  @override
+  String get settingsPrivateQueriesTurnOffConfirm => '끄⁠기';
+
+  @override
+  String get settingsPrivateQueriesTurnOffDisclosure =>
+      '서⁠버⁠가 모⁠든 계⁠정⁠의 투⁠명 주⁠소 전⁠부⁠와 비⁠공⁠개 복⁠구⁠로 찾⁠은 거⁠래 ID⁠를 받⁠아⁠요. 서⁠버⁠는 이⁠를 서⁠로 연⁠결⁠할 수 있⁠고, Tor⁠를 쓰⁠지 않⁠으⁠면 IP 주⁠소⁠와⁠도 연⁠결⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get settingsPrivateQueriesTurnOffTitle => '비⁠공⁠개 조⁠회⁠를 끌⁠까⁠요?';
+
+  @override
+  String get settingsProfilePictureCustom => '사⁠용⁠자 지⁠정';
+
+  @override
+  String get settingsRowAboutVizor => 'Vizor 정⁠보';
+
+  @override
+  String get settingsRowAccountName => '계⁠정 이⁠름';
+
+  @override
+  String get settingsRowAccountNameMobile => '계⁠정 이⁠름';
+
+  @override
+  String get settingsRowAddressBook => '주⁠소⁠록';
+
+  @override
+  String get settingsRowChangePasscode => '암⁠호 변⁠경';
+
+  @override
+  String get settingsRowChangePassword => '비⁠밀⁠번⁠호 변⁠경';
+
+  @override
+  String get settingsRowCoinholderVoting => '코⁠인 보⁠유⁠자 투⁠표';
+
+  @override
+  String get settingsRowLinkMobile => 'Vizor 모⁠바⁠일 연⁠결';
+
+  @override
+  String get settingsRowMyGiftCards => '내 기⁠프⁠트 카⁠드';
+
+  @override
+  String get settingsRowProfilePicture => '프⁠로⁠필 사⁠진';
+
+  @override
+  String get settingsRowProfilePictureMobile => '프⁠로⁠필 사⁠진';
+
+  @override
+  String get settingsRowSecretPassphrase => '복⁠구 문⁠구';
+
+  @override
+  String get settingsRowSupportVizor => 'Vizor 후⁠원';
+
+  @override
+  String get settingsRowUpdates => '업⁠데⁠이⁠트';
+
+  @override
+  String get settingsRowViewingKeyMobile => '뷰⁠잉 키';
+
+  @override
+  String get settingsSecretPassphraseTitle => '복⁠구 문⁠구';
+
+  @override
+  String get settingsSectionAccount => '계⁠정';
+
+  @override
+  String get settingsSectionDangerZone => '위⁠험 구⁠역';
+
+  @override
+  String get settingsSectionMisc => '기⁠타';
+
+  @override
+  String get settingsSectionPersonal => '개⁠인';
+
+  @override
+  String get settingsSectionSyncing => '동⁠기⁠화';
+
+  @override
+  String get settingsSectionSystem => '시⁠스⁠템';
+
+  @override
+  String get settingsSeedBackupSaveFailed =>
+      '저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsSeedBiometricReason => '복⁠구 문⁠구 접⁠근 확⁠인';
+
+  @override
+  String get settingsSeedCopiedToast => '복⁠구 문⁠구⁠를 복⁠사⁠했⁠어⁠요';
+
+  @override
+  String get settingsSeedCopyLabel => '복⁠구 문⁠구 복⁠사';
+
+  @override
+  String get settingsSeedHeadingSubtitle =>
+      '이⁠것⁠은 지⁠갑⁠의 마⁠스⁠터 키⁠예⁠요.\n누⁠구⁠에⁠게⁠도 공⁠유⁠하⁠지 마⁠세⁠요.';
+
+  @override
+  String get settingsSeedLoadFailed =>
+      '복⁠구 문⁠구⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsSeedPasswordSubtitle => '복⁠구 문⁠구⁠를 보⁠려⁠면 필⁠요⁠해⁠요.';
+
+  @override
+  String get settingsSeedRemindLater => '나⁠중⁠에 알⁠림';
+
+  @override
+  String get settingsSeedScreenshotAck => '확⁠인⁠했⁠어⁠요';
+
+  @override
+  String get settingsSeedScreenshotBodyLead => '스⁠크⁠린⁠샷⁠은 안⁠전⁠하⁠지 않⁠아⁠요';
+
+  @override
+  String get settingsSeedScreenshotBodyRest =>
+      '. 휴⁠대⁠폰⁠이⁠나 사⁠진 보⁠관⁠함⁠에 접⁠근⁠할 수 있⁠는 사⁠람⁠은 누⁠구⁠나 복⁠구 문⁠구⁠를 볼 수 있⁠어⁠요. 대⁠신 종⁠이⁠에 직⁠접 적⁠어 두⁠세⁠요.';
+
+  @override
+  String get settingsSeedScreenshotTitle => '복⁠구 문⁠구⁠를 스⁠크⁠린⁠샷⁠으⁠로 남⁠기⁠지 마⁠세⁠요';
+
+  @override
+  String get settingsSeedUnavailableAccount => '이 계⁠정⁠에⁠는 복⁠구 문⁠구⁠가 없⁠어⁠요.';
+
+  @override
+  String get settingsSeedUnavailableHardware =>
+      '하⁠드⁠웨⁠어 계⁠정⁠에⁠는 복⁠구 문⁠구⁠가 없⁠어⁠요.';
+
+  @override
+  String get settingsSeedWrittenDown => '적⁠어 두⁠었⁠어⁠요';
+
+  @override
+  String get settingsSetNewPasscodeTitle => '새 암⁠호 설⁠정';
+
+  @override
+  String get settingsStatusOff => '꺼⁠짐';
+
+  @override
+  String get settingsStatusOn => '켜⁠짐';
+
+  @override
+  String get settingsThemeDark => '다⁠크';
+
+  @override
+  String get settingsThemeLight => '라⁠이⁠트';
+
+  @override
+  String get settingsThemeSystem => '시⁠스⁠템';
+
+  @override
+  String get settingsThemeSystemAuto => '시⁠스⁠템(자⁠동)';
+
+  @override
+  String get settingsThemeTitle => '테⁠마';
+
+  @override
+  String get settingsThemeUpdateFailed => '테⁠마⁠를 변⁠경⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get settingsTorDescBootstrapFailed =>
+      'Vizor⁠가 Tor⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요. 연⁠결⁠되⁠거⁠나 Tor⁠를 끌 때⁠까⁠지 요⁠청⁠이 차⁠단⁠돼⁠요.';
+
+  @override
+  String get settingsTorDescConnected =>
+      'Vizor⁠의 네⁠트⁠워⁠크 요⁠청⁠은 Tor⁠를 거⁠쳐⁠요. 다⁠른 앱⁠에⁠서 연 링⁠크⁠는 해⁠당 앱⁠의 네⁠트⁠워⁠크 설⁠정⁠을 따⁠라⁠요.';
+
+  @override
+  String get settingsTorDescConnectedIos =>
+      'Vizor⁠의 네⁠트⁠워⁠크 요⁠청⁠은 Tor⁠를 거⁠쳐⁠요. Ironwood 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠은 Vizor⁠가 닫⁠혀 있⁠는 동⁠안 직⁠접 연⁠결⁠을 사⁠용⁠해⁠요. 다⁠른 앱⁠에⁠서 연 링⁠크⁠는 해⁠당 앱⁠의 네⁠트⁠워⁠크 설⁠정⁠을 따⁠라⁠요.';
+
+  @override
+  String get settingsTorDescConnectedNoUpdates =>
+      'Vizor⁠의 네⁠트⁠워⁠크 요⁠청⁠은 Tor⁠를 거⁠치⁠지⁠만 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 사⁠용⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get settingsTorDescConnecting =>
+      '새 요⁠청⁠은 Tor 연⁠결⁠이 준⁠비⁠될 때⁠까⁠지 기⁠다⁠려⁠요. 연⁠결⁠을 멈⁠추⁠고 직⁠접 연⁠결⁠을 쓰⁠려⁠면 Tor⁠를 끄⁠세⁠요.';
+
+  @override
+  String get settingsTorDescConnectingLinux =>
+      '새 요⁠청⁠은 Tor 연⁠결⁠이 준⁠비⁠될 때⁠까⁠지 기⁠다⁠려⁠요. 연⁠결⁠을 멈⁠추⁠고 직⁠접 연⁠결⁠을 쓰⁠려⁠면 Tor⁠를 끄⁠세⁠요. 다⁠른 앱⁠에⁠서 연 업⁠데⁠이⁠트 페⁠이⁠지⁠와 다⁠운⁠로⁠드⁠는 그 앱⁠의 연⁠결⁠을 사⁠용⁠해⁠요.';
+
+  @override
+  String get settingsTorDescConnectionFailed =>
+      '직⁠접 요⁠청⁠은 계⁠속 차⁠단⁠돼⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 Tor⁠를 끄⁠세⁠요.';
+
+  @override
+  String get settingsTorDescDirectNoUpdates =>
+      '네⁠트⁠워⁠크 요⁠청⁠이 직⁠접 연⁠결⁠돼⁠요. 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 사⁠용⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get settingsTorDescDisableNotSaved =>
+      '요⁠청⁠은 이⁠제 직⁠접 연⁠결⁠을 사⁠용⁠하⁠지⁠만 Vizor⁠가 변⁠경 사⁠항⁠을 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 앱⁠을 다⁠시 열⁠면 Tor⁠가 다⁠시 켜⁠져⁠요.';
+
+  @override
+  String get settingsTorDescEnableNotSaved =>
+      'Vizor⁠가 변⁠경 사⁠항⁠을 저⁠장⁠하⁠지 못⁠해 Tor⁠가 켜⁠지⁠지 않⁠았⁠어⁠요. 요⁠청⁠은 계⁠속 직⁠접 연⁠결⁠을 사⁠용⁠해⁠요.';
+
+  @override
+  String get settingsTorDescOff =>
+      'Tor⁠가 꺼⁠져 있⁠어⁠요. Zcash 네⁠트⁠워⁠크, 앱 내 서⁠비⁠스, 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트 요⁠청⁠이 직⁠접 연⁠결⁠돼⁠요.';
+
+  @override
+  String get settingsTorDescOffLinux =>
+      'Tor⁠가 꺼⁠져 있⁠어⁠요. 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트 확⁠인⁠을 포⁠함⁠한 Vizor⁠의 요⁠청⁠이 직⁠접 연⁠결⁠돼⁠요. 업⁠데⁠이⁠트 페⁠이⁠지⁠와 다⁠운⁠로⁠드⁠는 다⁠른 앱⁠에⁠서 열⁠려⁠요.';
+
+  @override
+  String get settingsTorDescOffMobile =>
+      '지⁠갑 동⁠기⁠화⁠와 앱 내 요⁠청⁠이 직⁠접 연⁠결⁠돼⁠요. Vizor⁠가 통⁠신⁠하⁠는 서⁠버⁠로⁠부⁠터 IP 주⁠소⁠를 숨⁠기⁠려⁠면 Tor⁠를 켜⁠세⁠요.';
+
+  @override
+  String get settingsTorDescSwitchFailed =>
+      'Vizor⁠가 직⁠접 연⁠결⁠로 전⁠환⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsTorDescSwitchFailedStillOn =>
+      'Vizor⁠가 직⁠접 연⁠결⁠로 전⁠환⁠하⁠지 못⁠했⁠어⁠요. Tor⁠는 계⁠속 켜⁠져 있⁠고 요⁠청⁠은 계⁠속 Tor⁠를 거⁠쳐⁠요.';
+
+  @override
+  String get settingsTorDescSwitching =>
+      'Vizor⁠가 네⁠트⁠워⁠크 요⁠청⁠과 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 직⁠접 연⁠결⁠로 전⁠환⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get settingsTorDescSwitchingLinux =>
+      'Vizor⁠가 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트 확⁠인⁠을 포⁠함⁠한 요⁠청⁠을 직⁠접 연⁠결⁠로 전⁠환⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get settingsTorDescSwitchingMobile =>
+      'Vizor⁠가 네⁠트⁠워⁠크 요⁠청⁠을 직⁠접 연⁠결⁠로 전⁠환⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get settingsTorGeneralDescription =>
+      'Tor⁠를 사⁠용⁠하⁠면 서⁠버⁠로⁠부⁠터 IP 주⁠소⁠를 숨⁠길 수 있⁠어⁠요. 다⁠른 앱⁠은 자⁠체 네⁠트⁠워⁠크 설⁠정⁠을 사⁠용⁠해⁠요.';
+
+  @override
+  String get settingsTorGeneralIosSuffix =>
+      ' Ironwood 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠은 Vizor⁠가 닫⁠혀 있⁠는 동⁠안 직⁠접 연⁠결⁠돼⁠요.';
+
+  @override
+  String get settingsTorRetryUpdates => '업⁠데⁠이⁠트 다⁠시 시⁠도';
+
+  @override
+  String get settingsTorStatusConnected => '연⁠결⁠됨';
+
+  @override
+  String get settingsTorStatusConnecting => '연⁠결 중…';
+
+  @override
+  String get settingsTorStatusConnectionFailed => '연⁠결 실⁠패';
+
+  @override
+  String get settingsTorStatusDirect => '직⁠접 연⁠결';
+
+  @override
+  String get settingsTorStatusFailed => '실⁠패';
+
+  @override
+  String get settingsTorStatusNotSaved => '설⁠정⁠이 저⁠장⁠되⁠지 않⁠았⁠어⁠요';
+
+  @override
+  String get settingsTorStatusSwitchFailed => '전⁠환 실⁠패';
+
+  @override
+  String get settingsTorStatusSwitching => '전⁠환 중…';
+
+  @override
+  String get settingsTorStatusSwitchingDirect => '직⁠접 연⁠결⁠로 전⁠환 중…';
+
+  @override
+  String get settingsTorStopConnecting => 'Tor 연⁠결 중⁠단';
+
+  @override
+  String get settingsTorTryDirect => '직⁠접 연⁠결 다⁠시 시⁠도';
+
+  @override
+  String get settingsTorUse => 'Tor 사⁠용';
+
+  @override
+  String get settingsTryAgain => '다⁠시 시⁠도';
+
+  @override
+  String settingsUninstallActiveSwaps(int count) {
+    return '이 지⁠갑⁠에 진⁠행 중⁠인 스⁠왑⁠이 $count⁠개 있⁠어⁠요. 삭⁠제⁠하⁠기 전⁠에 모⁠두 끝⁠날 때⁠까⁠지 기⁠다⁠려 주⁠세⁠요.';
+  }
+
+  @override
+  String get settingsUninstallCannotUndo => '되⁠돌⁠릴 수 없⁠어⁠요.';
+
+  @override
+  String get settingsUninstallChecking => '확⁠인 중...';
+
+  @override
+  String get settingsUninstallClaimCheckFailed =>
+      '받⁠는 중⁠인 기⁠프⁠트 카⁠드⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 삭⁠제⁠하⁠기 전⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsUninstallCloseApp => 'Vizor 닫⁠기';
+
+  @override
+  String get settingsUninstallDeviceGeneric => '이 기⁠기';
+
+  @override
+  String get settingsUninstallDeviceMac => '이 Mac';
+
+  @override
+  String get settingsUninstallDevicePc => '이 PC';
+
+  @override
+  String get settingsUninstallDoneTitle => '데⁠이⁠터⁠가 삭⁠제⁠되⁠었⁠어⁠요';
+
+  @override
+  String get settingsUninstallFinishGeneric =>
+      '삭⁠제⁠를 마⁠치⁠려⁠면 이 기⁠기⁠에⁠서 Vizor 앱⁠을 제⁠거⁠하⁠세⁠요.';
+
+  @override
+  String get settingsUninstallFinishMac =>
+      '삭⁠제⁠를 마⁠치⁠려⁠면 응⁠용 프⁠로⁠그⁠램⁠에⁠서 Vizor 앱⁠을 제⁠거⁠하⁠세⁠요.';
+
+  @override
+  String get settingsUninstallFinishWindows =>
+      '삭⁠제⁠를 마⁠치⁠려⁠면 Windows 설⁠정⁠에⁠서 Vizor⁠를 제⁠거⁠하⁠세⁠요.';
+
+  @override
+  String get settingsUninstallPasswordSubtitle => 'Vizor⁠를 삭⁠제⁠하⁠려⁠면 필⁠요⁠해⁠요.';
+
+  @override
+  String get settingsUninstallRemovingTitle => '데⁠이⁠터 삭⁠제 중...';
+
+  @override
+  String get settingsUninstallSwapCheckFailed =>
+      '진⁠행 중⁠인 스⁠왑⁠을 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 삭⁠제⁠하⁠기 전⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsUninstallTitle => 'Vizor 삭⁠제';
+
+  @override
+  String get settingsUninstallWipeFailed =>
+      '데⁠이⁠터⁠를 모⁠두 삭⁠제⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String settingsUninstallWipeSubtitle(String device) {
+    return 'Vizor⁠가 $device⁠에⁠서 지⁠갑 데⁠이⁠터⁠와 보⁠안 저⁠장⁠소⁠를 삭⁠제⁠해⁠요. 공⁠유⁠하⁠지 않⁠은 기⁠프⁠트 카⁠드 링⁠크⁠는 영⁠구⁠적⁠으⁠로 사⁠라⁠져⁠요.';
+  }
+
+  @override
+  String get settingsUpdateApplying => '적⁠용 중';
+
+  @override
+  String get settingsUpdateAvailable => '사⁠용 가⁠능';
+
+  @override
+  String get settingsUpdateCheck => '확⁠인';
+
+  @override
+  String get settingsUpdateCheckForUpdates => '업⁠데⁠이⁠트 확⁠인';
+
+  @override
+  String get settingsUpdateChecking => '확⁠인 중';
+
+  @override
+  String get settingsUpdateCheckingButton => '확⁠인 중…';
+
+  @override
+  String get settingsUpdateCurrentLabel => '현⁠재';
+
+  @override
+  String get settingsUpdateDownloadButton => '업⁠데⁠이⁠트 다⁠운⁠로⁠드';
+
+  @override
+  String get settingsUpdateDownloadingButton => '다⁠운⁠로⁠드 중…';
+
+  @override
+  String get settingsUpdateFailed => '실⁠패';
+
+  @override
+  String get settingsUpdatePasswordTitle => '비⁠밀⁠번⁠호 변⁠경';
+
+  @override
+  String get settingsUpdateRestart => '재⁠시⁠작';
+
+  @override
+  String get settingsUpdateRestartButton => '재⁠시⁠작⁠하⁠여 업⁠데⁠이⁠트';
+
+  @override
+  String get settingsUpdateRestartingButton => '재⁠시⁠작 중…';
+
+  @override
+  String settingsUpdateStatusAvailable(String version) {
+    return '버⁠전 $version⁠을(를) 사⁠용⁠할 수 있⁠어⁠요.';
+  }
+
+  @override
+  String get settingsUpdateStatusChecking => '업⁠데⁠이⁠트⁠를 확⁠인⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String settingsUpdateStatusDownloading(String percent) {
+    return '$percent% 다⁠운⁠로⁠드 중⁠이⁠에⁠요.';
+  }
+
+  @override
+  String get settingsUpdateStatusFailed =>
+      '업⁠데⁠이⁠트⁠를 완⁠료⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsUpdateStatusIdle => '업⁠데⁠이⁠트⁠를 확⁠인⁠할 준⁠비⁠가 되⁠었⁠어⁠요.';
+
+  @override
+  String settingsUpdateStatusReady(String version) {
+    return '버⁠전 $version 설⁠치 준⁠비⁠가 되⁠었⁠어⁠요.';
+  }
+
+  @override
+  String get settingsUpdateStatusRestarting => 'Vizor⁠를 다⁠시 시⁠작⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get settingsUpdateStatusUnsupported =>
+      '설⁠치⁠된 Windows 앱⁠에⁠서 업⁠데⁠이⁠트⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get settingsUpdateStatusUpToDate => 'Vizor⁠가 최⁠신 버⁠전⁠이⁠에⁠요.';
+
+  @override
+  String get settingsUpdateUnavailable => '사⁠용 불⁠가';
+
+  @override
+  String get settingsUpdateUpToDate => '최⁠신 버⁠전';
+
+  @override
+  String get settingsUpdatingPassword => '비⁠밀⁠번⁠호 변⁠경 중...';
+
+  @override
+  String settingsVersionFooterLabel(String version) {
+    return 'Vizor, 버⁠전 $version';
+  }
+
+  @override
+  String get settingsViewingKeyBiometricReason => '뷰⁠잉 키 접⁠근 확⁠인';
+
+  @override
+  String get settingsViewingKeyChoiceSharingWarning =>
+      '신⁠뢰⁠하⁠는 상⁠대⁠에⁠게⁠만 공⁠유⁠하⁠세⁠요. 두 키 모⁠두 투⁠명 잔⁠액⁠과 지⁠출⁠을 드⁠러⁠낼 수 있⁠어⁠요.';
+
+  @override
+  String get settingsViewingKeyChooseTitle =>
+      '다⁠른 사⁠람⁠이 볼 수 있⁠는 범⁠위⁠를 선⁠택⁠하⁠세⁠요';
+
+  @override
+  String get settingsViewingKeyConfirmAgain =>
+      '접⁠근⁠을 다⁠시 확⁠인⁠한 뒤 이 키⁠를 불⁠러⁠와 주⁠세⁠요.';
+
+  @override
+  String get settingsViewingKeyCopy => '뷰⁠잉 키 복⁠사';
+
+  @override
+  String get settingsViewingKeyExplanation =>
+      '잔⁠액⁠과 과⁠거·미⁠래⁠의 모⁠든 거⁠래⁠를 드⁠러⁠내⁠요. ZEC⁠를 사⁠용⁠할 수⁠는 없⁠어⁠요.';
+
+  @override
+  String get settingsViewingKeyFormatQr => 'QR 코⁠드';
+
+  @override
+  String get settingsViewingKeyFormatText => '텍⁠스⁠트';
+
+  @override
+  String get settingsViewingKeyFullDescription =>
+      '잔⁠액⁠과 받⁠은 거⁠래, 보⁠낸 거⁠래⁠를 볼 수 있⁠어⁠요.';
+
+  @override
+  String get settingsViewingKeyIncomingExplanation =>
+      '과⁠거⁠와 미⁠래⁠의 받⁠은 결⁠제⁠를 드⁠러⁠내⁠요. ZEC⁠를 사⁠용⁠할 수⁠는 없⁠어⁠요.';
+
+  @override
+  String get settingsViewingKeyIncomingOnly => '수⁠신 전⁠용';
+
+  @override
+  String get settingsViewingKeyIncomingOnlyDescription =>
+      '받⁠은 거⁠래⁠만 볼 수 있⁠어⁠요.';
+
+  @override
+  String get settingsViewingKeyIncomingWarningTitle =>
+      '이 키⁠로 받⁠은 결⁠제⁠를 볼 수 있⁠어⁠요';
+
+  @override
+  String get settingsViewingKeyLoadFailedTitle => '뷰⁠잉 키⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get settingsViewingKeyPasswordSubtitle => '뷰⁠잉 키⁠를 보⁠려⁠면 필⁠요⁠해⁠요.';
+
+  @override
+  String get settingsViewingKeyQrFull => '전⁠체 뷰⁠잉 키 QR 코⁠드';
+
+  @override
+  String get settingsViewingKeyQrIncoming => '수⁠신 전⁠용 뷰⁠잉 키 QR 코⁠드';
+
+  @override
+  String get settingsViewingKeyTitle => '뷰⁠잉 키';
+
+  @override
+  String get settingsViewingKeyTryCopyAgain => '다⁠시 복⁠사';
+
+  @override
+  String get settingsViewingKeyTypeFull => '전⁠체 뷰⁠잉 키';
+
+  @override
+  String get settingsViewingKeyTypeIncoming => '수⁠신 전⁠용 키';
+
+  @override
+  String get settingsViewingKeyWarningTitle => '이 키⁠로 거⁠래⁠를 볼 수 있⁠어⁠요';
+
+  @override
+  String get settingsWalletSessionChanged =>
+      '지⁠갑 세⁠션⁠이 바⁠뀌⁠었⁠어⁠요. 비⁠밀⁠번⁠호⁠를 다⁠시 입⁠력⁠해 주⁠세⁠요.';
+
+  @override
+  String get settingsWinUpdateContinueTor => 'Tor⁠로 계⁠속';
+
+  @override
+  String get settingsWinUpdateStartFailedTitle => '업⁠데⁠이⁠트⁠를 시⁠작⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get settingsWinUpdateTorBlockedBody =>
+      'Vizor⁠는 직⁠접 요⁠청⁠을 계⁠속 차⁠단⁠했⁠어⁠요. 설⁠정⁠에⁠서 업⁠데⁠이⁠트⁠를 다⁠시 시⁠도⁠하⁠거⁠나, Tor⁠를 끄⁠고 다⁠시 다⁠운⁠로⁠드⁠해 보⁠세⁠요.';
+
+  @override
+  String get settingsWinUpdateTorBlockedTitle =>
+      'Tor⁠로⁠는 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 사⁠용⁠할 수 없⁠어⁠요';
+
+  @override
+  String get settingsWinUpdateTorChoiceBody =>
+      'Tor⁠로 업⁠데⁠이⁠트⁠하⁠면 더 오⁠래 걸⁠릴 수 있⁠어⁠요. Tor⁠를 끄⁠면 Vizor⁠의 모⁠든 네⁠트⁠워⁠크 요⁠청⁠이 직⁠접 연⁠결⁠로 바⁠뀌⁠어⁠요.';
+
+  @override
+  String get settingsWinUpdateTorChoiceTitle => '이 업⁠데⁠이⁠트⁠에 Tor⁠를 사⁠용⁠할⁠까⁠요?';
+
+  @override
+  String get settingsWinUpdateTorOffFailedBody =>
+      'Tor⁠가 켜⁠진 채⁠라⁠서 Vizor⁠가 업⁠데⁠이⁠트⁠를 계⁠속 차⁠단⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나, 설⁠정⁠에⁠서 Tor⁠를 끈 뒤 다⁠운⁠로⁠드⁠하⁠세⁠요.';
+
+  @override
+  String get settingsWinUpdateTorOffFailedTitle => 'Tor⁠를 끄⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get settingsWinUpdateTurnOffTorAndUpdate => 'Tor⁠를 끄⁠고 업⁠데⁠이⁠트';
+
+  @override
+  String get settingsWinUpdateUnavailableBody =>
+      'Tor⁠는 꺼⁠져 있⁠지⁠만 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 아⁠직 사⁠용⁠할 수 없⁠어⁠요. 다⁠운⁠로⁠드⁠하⁠기 전⁠에 설⁠정⁠에⁠서 업⁠데⁠이⁠트⁠를 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get settingsWinUpdateUnavailableTitle =>
+      '소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 사⁠용⁠할 수 없⁠어⁠요';
 
   @override
   String get sidebarAccountNameFallback => '사⁠용⁠자 이⁠름';

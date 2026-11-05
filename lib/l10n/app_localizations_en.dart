@@ -1381,10 +1381,959 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiptMessageLabel => 'Message';
 
   @override
+  String get settingsAccountChangedPasscode =>
+      'Selected account changed. Enter your passcode again.';
+
+  @override
+  String get settingsAccountChangedPassword =>
+      'Selected account changed. Enter your password again.';
+
+  @override
+  String get settingsAccountSaveFailed => 'Couldn\'t save the account changes';
+
+  @override
+  String get settingsAccountUnavailable =>
+      'The selected account is no longer available.';
+
+  @override
+  String get settingsBackToAccounts => 'Back to accounts';
+
+  @override
+  String settingsBiometricOffToast(String feature) {
+    return '$feature off';
+  }
+
+  @override
+  String settingsBiometricOnToast(String feature) {
+    return '$feature on';
+  }
+
+  @override
+  String settingsBiometricSetupFirst(String biometric) {
+    return 'Set up $biometric in your device settings first.';
+  }
+
+  @override
+  String settingsBiometricTurnOffBody(String feature) {
+    return 'You will use your passcode to unlock Vizor. You can turn $feature back on in settings anytime.';
+  }
+
+  @override
+  String settingsBiometricTurnOffTitle(String feature) {
+    return 'Turn off $feature?';
+  }
+
+  @override
+  String settingsBiometricUpdateFailed(String feature) {
+    return 'Couldn\'t update $feature.';
+  }
+
+  @override
+  String get settingsBip39PassphraseCopied => 'BIP39 passphrase copied';
+
+  @override
+  String get settingsBip39PassphraseCopy => 'Copy BIP39 passphrase';
+
+  @override
+  String get settingsBip39PassphraseTitle => 'BIP39 Passphrase';
+
+  @override
+  String settingsBip39PassphraseValue(String passphrase) {
+    return 'BIP39 Passphrase: $passphrase';
+  }
+
+  @override
+  String get settingsBirthdayBlockHeight => 'Birthday block height';
+
+  @override
+  String get settingsBirthdayDate => 'Birthday date';
+
+  @override
+  String get settingsBirthdayDateCopied => 'Birthday date copied';
+
+  @override
+  String get settingsBirthdayHeightCopied => 'Birthday height copied';
+
+  @override
+  String get settingsChangePasscodeIncorrect => 'Incorrect Passcode';
+
+  @override
+  String get settingsConfirmAccessSubtitle => 'Confirm your access';
+
+  @override
+  String get settingsConfirmAccessTitle => 'Confirm access';
+
+  @override
+  String get settingsConfirmPasscodeTitle => 'Confirm Passcode';
+
+  @override
+  String get settingsConfirmPasswordLabel => 'Confirm password';
+
+  @override
+  String get settingsContinue => 'Continue';
+
+  @override
+  String get settingsCopy => 'Copy';
+
+  @override
+  String settingsCopyLabel(String label) {
+    return 'Copy $label';
+  }
+
+  @override
+  String settingsCopyLabelCopied(String label) {
+    return '$label copied';
+  }
+
+  @override
+  String settingsEndpointBalanceNote(String ticker) {
+    return 'The wallet will show the balance from the last time it was successfully connected. It won\'t show any $ticker you recently received.';
+  }
+
+  @override
+  String get settingsEndpointCloseSettings => 'Close endpoint settings';
+
+  @override
+  String get settingsEndpointConnectFailed =>
+      'Couldn\'t connect to that endpoint. Check the host and port.';
+
+  @override
+  String settingsEndpointCurrent(String endpoint) {
+    return 'Current: $endpoint';
+  }
+
+  @override
+  String get settingsEndpointCurrentPrefix => 'Current: ';
+
+  @override
+  String get settingsEndpointCustom => 'Custom endpoint';
+
+  @override
+  String get settingsEndpointCustomise => 'Customise endpoint';
+
+  @override
+  String get settingsEndpointCustomize => 'Customize endpoint';
+
+  @override
+  String get settingsEndpointDefaultMarker => '(Default)';
+
+  @override
+  String get settingsEndpointNetworkSettings => 'Network settings';
+
+  @override
+  String get settingsEndpointSelectFromList => 'Select from the list';
+
+  @override
+  String get settingsEndpointTitle => 'Endpoint';
+
+  @override
+  String get settingsEndpointUpdate => 'Update endpoint';
+
+  @override
+  String get settingsEndpointUpdatedToast => 'Endpoint updated';
+
+  @override
+  String get settingsEndpointUpdating => 'Updating endpoint...';
+
+  @override
+  String get settingsEndpointWarningBlockchain =>
+      'If the endpoint is configured wrong, your wallet won\'t be able to sync with the Zcash blockchain.';
+
+  @override
+  String get settingsEndpointWarningNetwork =>
+      'If the endpoint is configured wrong, your wallet won\'t be able to sync with the Zcash network.';
+
+  @override
+  String get settingsEndpointsTitle => 'Endpoints';
+
+  @override
+  String get settingsEnterCurrentPasswordAgain =>
+      'Enter your current password again.';
+
+  @override
+  String get settingsEnterCurrentPasswordFirst =>
+      'Enter your current password first.';
+
+  @override
+  String get settingsEnterPasscodeTitle => 'Enter Passcode';
+
+  @override
+  String settingsExplorerCurrent(String explorer) {
+    return 'Current: $explorer';
+  }
+
+  @override
+  String settingsExplorerCurrentDefault(String host) {
+    return 'Current: $host (default)';
+  }
+
+  @override
+  String get settingsExplorerCustom => 'Custom';
+
+  @override
+  String get settingsExplorerCustomSubtitle => 'Any explorer you prefer';
+
+  @override
+  String get settingsExplorerSaveFailed => 'Couldn\'t save that explorer URL.';
+
+  @override
+  String get settingsExplorerTitle => 'Explorer';
+
+  @override
+  String get settingsExplorerUpdate => 'Update explorer';
+
+  @override
+  String get settingsExplorerUrlLabel => 'Explorer URL';
+
+  @override
+  String get settingsIncorrectPasscode => 'Incorrect passcode';
+
+  @override
+  String get settingsIncorrectPassword =>
+      'Incorrect password. Please try again.';
+
+  @override
+  String get settingsKeepAwakeDescription =>
+      'Prevents your phone from sleeping so sync can finish faster. The app still locks after 1 minute of inactivity.';
+
+  @override
+  String get settingsKeepAwakeLabel => 'Keep screen awake';
+
+  @override
+  String get settingsKeepAwakeUpdateFailed =>
+      'Couldn\'t update screen awake setting.';
+
+  @override
   String get settingsLanguageLabel => 'Language';
 
   @override
   String get settingsLanguageUpdateFailed => 'Couldn\'t update language.';
+
+  @override
+  String get settingsNewBadge => 'New';
+
+  @override
+  String get settingsNoActiveAccount => 'No active account is selected.';
+
+  @override
+  String get settingsPasscodeCheckFailed =>
+      'Couldn\'t check your passcode. Please try again.';
+
+  @override
+  String get settingsPasscodeLengthHint => '6 digits length';
+
+  @override
+  String get settingsPasscodeMustDiffer =>
+      'Your new passcode must be different.';
+
+  @override
+  String get settingsPasscodeRotationRecoveryFailed =>
+      'We couldn\'t verify the previous passcode change. Keep your secret passphrase available before trying again.';
+
+  @override
+  String get settingsPasscodeUpdateFailed =>
+      'Couldn\'t update your passcode. Please try again.';
+
+  @override
+  String get settingsPasscodeUpdatedToast => 'Passcode updated';
+
+  @override
+  String get settingsPasscodeVerifyFailed =>
+      'Couldn\'t verify the passcode. Try again.';
+
+  @override
+  String get settingsPasscodesMismatch => 'Passcodes didn\'t match. Try again.';
+
+  @override
+  String get settingsPasswordCheckFailed =>
+      'Couldn\'t check your password. Please try again.';
+
+  @override
+  String get settingsPasswordHint => 'Your password...';
+
+  @override
+  String get settingsPasswordLabel => 'Password';
+
+  @override
+  String get settingsPasswordMinimumHint =>
+      'Minimum 8 characters. Add numbers and symbols, or make it longer, for stronger security.';
+
+  @override
+  String get settingsPasswordRotationRecoveryFailed =>
+      'We couldn\'t verify the previous password change. Please keep your secret passphrase available before trying again.';
+
+  @override
+  String get settingsPasswordUpdateFailed =>
+      'Couldn\'t update your password. Please try again.';
+
+  @override
+  String get settingsPasswordsMismatch => 'Passwords do not match.';
+
+  @override
+  String get settingsPfpKnight => 'Knight';
+
+  @override
+  String get settingsPfpSamurai => 'Samurai';
+
+  @override
+  String get settingsPfpViking => 'Viking';
+
+  @override
+  String get settingsPfpWizard => 'Wizard';
+
+  @override
+  String get settingsPirCheckingUpdates => 'Checking for updates…';
+
+  @override
+  String get settingsPirChooseServer => 'Choose a server';
+
+  @override
+  String get settingsPirConfigOpenFailed =>
+      'Couldn\'t open the config repository.';
+
+  @override
+  String get settingsPirCustomInvalid =>
+      'The saved custom server is invalid. Edit it or choose another server.';
+
+  @override
+  String get settingsPirCustomServer => 'Custom server';
+
+  @override
+  String get settingsPirCustomServerEllipsis => 'Custom server…';
+
+  @override
+  String get settingsPirCustomUrlInvalid =>
+      'Enter an HTTPS base URL without credentials, a query or a fragment.';
+
+  @override
+  String get settingsPirEditCustomServer => 'Edit custom server…';
+
+  @override
+  String get settingsPirListLoadFailed =>
+      'Couldn\'t load the server list. Try again or enter a custom server.';
+
+  @override
+  String get settingsPirListUpdateFailed =>
+      'Couldn\'t update the server list. Using the last list loaded.';
+
+  @override
+  String get settingsPirListUpdateFailedCustom =>
+      'Couldn\'t update the list. Your custom server is still selected.';
+
+  @override
+  String get settingsPirLoadingServers => 'Loading the server list…';
+
+  @override
+  String get settingsPirNoServers =>
+      'No servers are offered yet. You can enter a custom server.';
+
+  @override
+  String get settingsPirPingChecking => 'Checking...';
+
+  @override
+  String get settingsPirServerChangeFailed =>
+      'Couldn\'t change server. Try again.';
+
+  @override
+  String get settingsPirServerCloseLabel =>
+      'Close private query server settings';
+
+  @override
+  String get settingsPirServerRemoved =>
+      'The server you chose is no longer offered. Choose another to resume private queries.';
+
+  @override
+  String get settingsPirServerSettingsLabel => 'Private query server settings';
+
+  @override
+  String get settingsPirServerTitle => 'Private query server';
+
+  @override
+  String get settingsPirSettingsReadFailed =>
+      'Couldn\'t read the private query server settings.';
+
+  @override
+  String get settingsPirShareServer => 'Share your server';
+
+  @override
+  String get settingsPirUnavailable =>
+      'Private queries are unavailable on this network.';
+
+  @override
+  String get settingsPirUpdatingServer => 'Updating server…';
+
+  @override
+  String get settingsPirUseCustomServer => 'Use custom server';
+
+  @override
+  String get settingsPrivacyTitle => 'Privacy';
+
+  @override
+  String get settingsPrivateQueriesLabel => 'Private queries';
+
+  @override
+  String get settingsPrivateQueriesTurnOffBody =>
+      'Vizor will rebuild your transparent history publicly, allowing the server to learn all your addresses.';
+
+  @override
+  String get settingsPrivateQueriesTurnOffConfirm => 'Turn off';
+
+  @override
+  String get settingsPrivateQueriesTurnOffDisclosure =>
+      'The server receives every transparent address of every account and the IDs of transactions private recovery found. It can link them to each other and, without Tor, to your IP address.';
+
+  @override
+  String get settingsPrivateQueriesTurnOffTitle => 'Turn off private queries?';
+
+  @override
+  String get settingsProfilePictureCustom => 'Custom';
+
+  @override
+  String get settingsRowAboutVizor => 'About Vizor';
+
+  @override
+  String get settingsRowAccountName => 'Account name';
+
+  @override
+  String get settingsRowAccountNameMobile => 'Account Name';
+
+  @override
+  String get settingsRowAddressBook => 'Address book';
+
+  @override
+  String get settingsRowChangePasscode => 'Change passcode';
+
+  @override
+  String get settingsRowChangePassword => 'Change password';
+
+  @override
+  String get settingsRowCoinholderVoting => 'Coinholder voting';
+
+  @override
+  String get settingsRowLinkMobile => 'Link Vizor mobile';
+
+  @override
+  String get settingsRowMyGiftCards => 'My gift cards';
+
+  @override
+  String get settingsRowProfilePicture => 'Profile picture';
+
+  @override
+  String get settingsRowProfilePictureMobile => 'Profile Picture';
+
+  @override
+  String get settingsRowSecretPassphrase => 'Secret passphrase';
+
+  @override
+  String get settingsRowSupportVizor => 'Support Vizor';
+
+  @override
+  String get settingsRowUpdates => 'Updates';
+
+  @override
+  String get settingsRowViewingKeyMobile => 'Viewing Key';
+
+  @override
+  String get settingsSecretPassphraseTitle => 'Secret Passphrase';
+
+  @override
+  String get settingsSectionAccount => 'Account';
+
+  @override
+  String get settingsSectionDangerZone => 'Danger zone';
+
+  @override
+  String get settingsSectionMisc => 'Misc';
+
+  @override
+  String get settingsSectionPersonal => 'Personal';
+
+  @override
+  String get settingsSectionSyncing => 'Syncing';
+
+  @override
+  String get settingsSectionSystem => 'System';
+
+  @override
+  String get settingsSeedBackupSaveFailed => 'Couldn’t save that. Try again.';
+
+  @override
+  String get settingsSeedBiometricReason =>
+      'Confirm access to your secret passphrase';
+
+  @override
+  String get settingsSeedCopiedToast => 'Secret passphrase copied';
+
+  @override
+  String get settingsSeedCopyLabel => 'Copy secret passphrase';
+
+  @override
+  String get settingsSeedHeadingSubtitle =>
+      'This is the master key to your wallet.\nDon’t share it with anyone.';
+
+  @override
+  String get settingsSeedLoadFailed =>
+      'Couldn\'t load your secret passphrase. Please try again.';
+
+  @override
+  String get settingsSeedPasswordSubtitle => 'To view the secret passphrase.';
+
+  @override
+  String get settingsSeedRemindLater => 'Remind me later';
+
+  @override
+  String get settingsSeedScreenshotAck => 'I understand';
+
+  @override
+  String get settingsSeedScreenshotBodyLead => 'Screenshots are not reliable';
+
+  @override
+  String get settingsSeedScreenshotBodyRest =>
+      '. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
+
+  @override
+  String get settingsSeedScreenshotTitle =>
+      'Don’t take screenshots of your Secret Passphrase';
+
+  @override
+  String get settingsSeedUnavailableAccount =>
+      'Secret passphrase is not available for this account.';
+
+  @override
+  String get settingsSeedUnavailableHardware =>
+      'Secret passphrase is not available for hardware accounts.';
+
+  @override
+  String get settingsSeedWrittenDown => 'I’ve written it down';
+
+  @override
+  String get settingsSetNewPasscodeTitle => 'Set New Passcode';
+
+  @override
+  String get settingsStatusOff => 'Off';
+
+  @override
+  String get settingsStatusOn => 'On';
+
+  @override
+  String get settingsThemeDark => 'Dark';
+
+  @override
+  String get settingsThemeLight => 'Light';
+
+  @override
+  String get settingsThemeSystem => 'System';
+
+  @override
+  String get settingsThemeSystemAuto => 'System (Auto)';
+
+  @override
+  String get settingsThemeTitle => 'Theme';
+
+  @override
+  String get settingsThemeUpdateFailed => 'Couldn\'t update theme.';
+
+  @override
+  String get settingsTorDescBootstrapFailed =>
+      'Vizor could not connect to Tor. Requests stay blocked until it connects or you turn Tor off.';
+
+  @override
+  String get settingsTorDescConnected =>
+      'Vizor’s network requests go through Tor. Links opened in other apps use those apps’ network settings.';
+
+  @override
+  String get settingsTorDescConnectedIos =>
+      'Vizor’s network requests go through Tor. Ironwood private migration uses a direct connection while Vizor is closed. Links opened in other apps use those apps’ network settings.';
+
+  @override
+  String get settingsTorDescConnectedNoUpdates =>
+      'Vizor’s network requests go through Tor, but software updates are unavailable.';
+
+  @override
+  String get settingsTorDescConnecting =>
+      'New requests wait until the Tor connection is ready. Turn Tor off to stop connecting and use a direct connection.';
+
+  @override
+  String get settingsTorDescConnectingLinux =>
+      'New requests wait until the Tor connection is ready. Turn Tor off to stop connecting and use a direct connection. Update pages and downloads opened in another app use that app’s connection.';
+
+  @override
+  String get settingsTorDescConnectionFailed =>
+      'Direct requests remain blocked. Try again or turn off Tor.';
+
+  @override
+  String get settingsTorDescDirectNoUpdates =>
+      'Network requests connect directly. Software updates are unavailable.';
+
+  @override
+  String get settingsTorDescDisableNotSaved =>
+      'Requests now use a direct connection, but Vizor could not save the change. Tor turns back on the next time you open the app.';
+
+  @override
+  String get settingsTorDescEnableNotSaved =>
+      'Vizor could not save the change, so Tor was not turned on. Requests keep using a direct connection.';
+
+  @override
+  String get settingsTorDescOff =>
+      'Tor is off. Requests to the Zcash network, in-app services, and software updates connect directly.';
+
+  @override
+  String get settingsTorDescOffLinux =>
+      'Tor is off. Vizor requests, including software update checks, connect directly. Update pages and downloads open in another app.';
+
+  @override
+  String get settingsTorDescOffMobile =>
+      'Wallet sync and in-app requests connect directly. Turn Tor on to hide your IP address from the servers Vizor talks to.';
+
+  @override
+  String get settingsTorDescSwitchFailed =>
+      'Vizor could not switch to a direct connection. Try again.';
+
+  @override
+  String get settingsTorDescSwitchFailedStillOn =>
+      'Vizor could not switch to a direct connection. Tor is still on and requests keep going through it.';
+
+  @override
+  String get settingsTorDescSwitching =>
+      'Vizor is switching network requests and software updates to a direct connection.';
+
+  @override
+  String get settingsTorDescSwitchingLinux =>
+      'Vizor is switching its requests, including software update checks, to a direct connection.';
+
+  @override
+  String get settingsTorDescSwitchingMobile =>
+      'Vizor is switching network requests to a direct connection.';
+
+  @override
+  String get settingsTorGeneralDescription =>
+      'Use Tor to hide your IP address from servers. Other apps use their own network settings.';
+
+  @override
+  String get settingsTorGeneralIosSuffix =>
+      ' Ironwood private migration connects directly while Vizor is closed.';
+
+  @override
+  String get settingsTorRetryUpdates => 'Retry updates';
+
+  @override
+  String get settingsTorStatusConnected => 'Connected';
+
+  @override
+  String get settingsTorStatusConnecting => 'Connecting…';
+
+  @override
+  String get settingsTorStatusConnectionFailed => 'Connection failed';
+
+  @override
+  String get settingsTorStatusDirect => 'Direct';
+
+  @override
+  String get settingsTorStatusFailed => 'Failed';
+
+  @override
+  String get settingsTorStatusNotSaved => 'Setting not saved';
+
+  @override
+  String get settingsTorStatusSwitchFailed => 'Switch failed';
+
+  @override
+  String get settingsTorStatusSwitching => 'Switching…';
+
+  @override
+  String get settingsTorStatusSwitchingDirect => 'Switching to direct…';
+
+  @override
+  String get settingsTorStopConnecting => 'Stop connecting to Tor';
+
+  @override
+  String get settingsTorTryDirect => 'Try direct connection';
+
+  @override
+  String get settingsTorUse => 'Use Tor';
+
+  @override
+  String get settingsTryAgain => 'Try again';
+
+  @override
+  String settingsUninstallActiveSwaps(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count active swaps',
+      one: '1 active swap',
+    );
+    return 'This wallet has $_temp0. Wait for them to complete before uninstalling.';
+  }
+
+  @override
+  String get settingsUninstallCannotUndo => 'This cannot be undone.';
+
+  @override
+  String get settingsUninstallChecking => 'Checking...';
+
+  @override
+  String get settingsUninstallClaimCheckFailed =>
+      'Couldn\'t check for incoming gift cards. Try again before uninstalling.';
+
+  @override
+  String get settingsUninstallCloseApp => 'Close Vizor';
+
+  @override
+  String get settingsUninstallDeviceGeneric => 'this device';
+
+  @override
+  String get settingsUninstallDeviceMac => 'this Mac';
+
+  @override
+  String get settingsUninstallDevicePc => 'this PC';
+
+  @override
+  String get settingsUninstallDoneTitle => 'Your data has been removed';
+
+  @override
+  String get settingsUninstallFinishGeneric =>
+      'To finish uninstallation, remove the Vizor app from this device.';
+
+  @override
+  String get settingsUninstallFinishMac =>
+      'To finish uninstallation, remove the Vizor app from Applications.';
+
+  @override
+  String get settingsUninstallFinishWindows =>
+      'To finish uninstallation, uninstall Vizor from Windows settings.';
+
+  @override
+  String get settingsUninstallPasswordSubtitle => 'To uninstall Vizor.';
+
+  @override
+  String get settingsUninstallRemovingTitle => 'Removing data...';
+
+  @override
+  String get settingsUninstallSwapCheckFailed =>
+      'Couldn\'t check for active swaps. Try again before uninstalling.';
+
+  @override
+  String get settingsUninstallTitle => 'Uninstall Vizor';
+
+  @override
+  String get settingsUninstallWipeFailed =>
+      'Couldn\'t finish removing data. Please try again.';
+
+  @override
+  String settingsUninstallWipeSubtitle(String device) {
+    return 'Vizor will delete wallet data and secure storage from $device. Unshared gift card links will be permanently lost.';
+  }
+
+  @override
+  String get settingsUpdateApplying => 'Applying';
+
+  @override
+  String get settingsUpdateAvailable => 'Available';
+
+  @override
+  String get settingsUpdateCheck => 'Check';
+
+  @override
+  String get settingsUpdateCheckForUpdates => 'Check for updates';
+
+  @override
+  String get settingsUpdateChecking => 'Checking';
+
+  @override
+  String get settingsUpdateCheckingButton => 'Checking…';
+
+  @override
+  String get settingsUpdateCurrentLabel => 'Current';
+
+  @override
+  String get settingsUpdateDownloadButton => 'Download update';
+
+  @override
+  String get settingsUpdateDownloadingButton => 'Downloading…';
+
+  @override
+  String get settingsUpdateFailed => 'Failed';
+
+  @override
+  String get settingsUpdatePasswordTitle => 'Update password';
+
+  @override
+  String get settingsUpdateRestart => 'Restart';
+
+  @override
+  String get settingsUpdateRestartButton => 'Restart to update';
+
+  @override
+  String get settingsUpdateRestartingButton => 'Restarting…';
+
+  @override
+  String settingsUpdateStatusAvailable(String version) {
+    return 'Version $version is available.';
+  }
+
+  @override
+  String get settingsUpdateStatusChecking => 'Checking for updates.';
+
+  @override
+  String settingsUpdateStatusDownloading(String percent) {
+    return 'Downloading $percent%.';
+  }
+
+  @override
+  String get settingsUpdateStatusFailed =>
+      'Couldn\'t complete the update. Try again.';
+
+  @override
+  String get settingsUpdateStatusIdle => 'Ready to check for updates.';
+
+  @override
+  String settingsUpdateStatusReady(String version) {
+    return 'Version $version is ready.';
+  }
+
+  @override
+  String get settingsUpdateStatusRestarting => 'Restarting Vizor.';
+
+  @override
+  String get settingsUpdateStatusUnsupported =>
+      'Updates are available in the installed Windows app.';
+
+  @override
+  String get settingsUpdateStatusUpToDate => 'Vizor is up to date.';
+
+  @override
+  String get settingsUpdateUnavailable => 'Unavailable';
+
+  @override
+  String get settingsUpdateUpToDate => 'Up to date';
+
+  @override
+  String get settingsUpdatingPassword => 'Updating password...';
+
+  @override
+  String settingsVersionFooterLabel(String version) {
+    return 'Vizor, version $version';
+  }
+
+  @override
+  String get settingsViewingKeyBiometricReason =>
+      'Confirm access to your viewing key';
+
+  @override
+  String get settingsViewingKeyChoiceSharingWarning =>
+      'Share only with trusted parties. Both keys may reveal transparent balances and spending.';
+
+  @override
+  String get settingsViewingKeyChooseTitle => 'Choose what others can view';
+
+  @override
+  String get settingsViewingKeyConfirmAgain =>
+      'Confirm access again to try loading this key.';
+
+  @override
+  String get settingsViewingKeyCopy => 'Copy viewing key';
+
+  @override
+  String get settingsViewingKeyExplanation =>
+      'Reveals your balance and all past and future transactions. It cannot spend ZEC.';
+
+  @override
+  String get settingsViewingKeyFormatQr => 'QR code';
+
+  @override
+  String get settingsViewingKeyFormatText => 'Text';
+
+  @override
+  String get settingsViewingKeyFullDescription =>
+      'Balance, incoming and outgoing transactions.';
+
+  @override
+  String get settingsViewingKeyIncomingExplanation =>
+      'Reveals past and future incoming payments. It cannot spend ZEC.';
+
+  @override
+  String get settingsViewingKeyIncomingOnly => 'Incoming only';
+
+  @override
+  String get settingsViewingKeyIncomingOnlyDescription =>
+      'Incoming transactions only.';
+
+  @override
+  String get settingsViewingKeyIncomingWarningTitle =>
+      'This key reveals incoming payments';
+
+  @override
+  String get settingsViewingKeyLoadFailedTitle =>
+      'Couldn\'t load the viewing key';
+
+  @override
+  String get settingsViewingKeyPasswordSubtitle => 'To view the viewing key.';
+
+  @override
+  String get settingsViewingKeyQrFull => 'Full viewing key QR code';
+
+  @override
+  String get settingsViewingKeyQrIncoming => 'Incoming viewing key QR code';
+
+  @override
+  String get settingsViewingKeyTitle => 'Viewing key';
+
+  @override
+  String get settingsViewingKeyTryCopyAgain => 'Try copying again';
+
+  @override
+  String get settingsViewingKeyTypeFull => 'Full viewing key';
+
+  @override
+  String get settingsViewingKeyTypeIncoming => 'Incoming key';
+
+  @override
+  String get settingsViewingKeyWarningTitle =>
+      'This key reveals your transactions';
+
+  @override
+  String get settingsWalletSessionChanged =>
+      'The wallet session changed. Enter your password again.';
+
+  @override
+  String get settingsWinUpdateContinueTor => 'Continue with Tor';
+
+  @override
+  String get settingsWinUpdateStartFailedTitle => 'Couldn\'t start the update';
+
+  @override
+  String get settingsWinUpdateTorBlockedBody =>
+      'Vizor kept direct requests blocked. Retry updates in Settings, or turn off Tor and try the download again.';
+
+  @override
+  String get settingsWinUpdateTorBlockedTitle =>
+      'Software updates unavailable over Tor';
+
+  @override
+  String get settingsWinUpdateTorChoiceBody =>
+      'Updating over Tor may take longer. Turning Tor off switches all Vizor network requests to a direct connection.';
+
+  @override
+  String get settingsWinUpdateTorChoiceTitle => 'Use Tor for this update?';
+
+  @override
+  String get settingsWinUpdateTorOffFailedBody =>
+      'Tor remains on, so Vizor kept the update blocked. Try again, or turn off Tor in Settings before downloading.';
+
+  @override
+  String get settingsWinUpdateTorOffFailedTitle => 'Couldn\'t turn off Tor';
+
+  @override
+  String get settingsWinUpdateTurnOffTorAndUpdate => 'Turn off Tor and update';
+
+  @override
+  String get settingsWinUpdateUnavailableBody =>
+      'Tor is off, but software updates are still unavailable. Retry updates in Settings before downloading.';
+
+  @override
+  String get settingsWinUpdateUnavailableTitle =>
+      'Software updates unavailable';
 
   @override
   String get sidebarAccountNameFallback => 'Username';

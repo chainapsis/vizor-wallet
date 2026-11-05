@@ -2481,6 +2481,378 @@ abstract class AppLocalizations {
   /// **'Message'**
   String get receiptMessageLabel;
 
+  /// [security] Error shown when the selected account changed while a passcode-protected secret screen was open.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected account changed. Enter your passcode again.'**
+  String get settingsAccountChangedPasscode;
+
+  /// [security] Error shown when the selected account changed while a password-protected secret screen was open.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected account changed. Enter your password again.'**
+  String get settingsAccountChangedPassword;
+
+  /// Toast shown when saving the account name or profile picture failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the account changes'**
+  String get settingsAccountSaveFailed;
+
+  /// Error shown when the account the screen was opened for no longer exists.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected account is no longer available.'**
+  String get settingsAccountUnavailable;
+
+  /// Button that returns to the accounts list when the target account no longer exists.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to accounts'**
+  String get settingsBackToAccounts;
+
+  /// Toast after turning off the biometric unlock; the placeholder is the platform's unlock feature name such as 'Face ID unlock'.
+  ///
+  /// In en, this message translates to:
+  /// **'{feature} off'**
+  String settingsBiometricOffToast(String feature);
+
+  /// Toast after turning on the biometric unlock; the placeholder is the platform's unlock feature name such as 'Face ID unlock'.
+  ///
+  /// In en, this message translates to:
+  /// **'{feature} on'**
+  String settingsBiometricOnToast(String feature);
+
+  /// Toast shown when the user turns on biometric unlock but the device has none set up; the placeholder is the biometric name such as 'Face ID'.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up {biometric} in your device settings first.'**
+  String settingsBiometricSetupFirst(String biometric);
+
+  /// [security] Body of the sheet that confirms turning off biometric unlock; the placeholder is the lowercase unlock feature name.
+  ///
+  /// In en, this message translates to:
+  /// **'You will use your passcode to unlock Vizor. You can turn {feature} back on in settings anytime.'**
+  String settingsBiometricTurnOffBody(String feature);
+
+  /// Title of the sheet that confirms turning off biometric unlock; the placeholder is the lowercase unlock feature name.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off {feature}?'**
+  String settingsBiometricTurnOffTitle(String feature);
+
+  /// Toast shown when turning biometric unlock on or off failed; the placeholder is the unlock feature name.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update {feature}.'**
+  String settingsBiometricUpdateFailed(String feature);
+
+  /// [security] Accessibility label and toast after the BIP39 passphrase was copied.
+  ///
+  /// In en, this message translates to:
+  /// **'BIP39 passphrase copied'**
+  String get settingsBip39PassphraseCopied;
+
+  /// [security] Accessibility label of the button that copies the BIP39 passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy BIP39 passphrase'**
+  String get settingsBip39PassphraseCopy;
+
+  /// [security] Label of the row showing the optional BIP39 passphrase on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'BIP39 Passphrase'**
+  String get settingsBip39PassphraseTitle;
+
+  /// [security] Row showing the optional BIP39 passphrase (an extra secret word added to the recovery phrase); the placeholder is the secret itself.
+  ///
+  /// In en, this message translates to:
+  /// **'BIP39 Passphrase: {passphrase}'**
+  String settingsBip39PassphraseValue(String passphrase);
+
+  /// Label of the row showing the block height the wallet was created at (wallet birthday).
+  ///
+  /// In en, this message translates to:
+  /// **'Birthday block height'**
+  String get settingsBirthdayBlockHeight;
+
+  /// Label of the row showing the date of the block the wallet was created at (wallet birthday).
+  ///
+  /// In en, this message translates to:
+  /// **'Birthday date'**
+  String get settingsBirthdayDate;
+
+  /// Toast after the wallet birthday date was copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Birthday date copied'**
+  String get settingsBirthdayDateCopied;
+
+  /// Toast after the wallet birthday block height was copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Birthday height copied'**
+  String get settingsBirthdayHeightCopied;
+
+  /// [security] Error shown on the change-passcode keypad when the current passcode is wrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect Passcode'**
+  String get settingsChangePasscodeIncorrect;
+
+  /// Subtitle under the passcode keypad title asking the user to prove it is them.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm your access'**
+  String get settingsConfirmAccessSubtitle;
+
+  /// Title of the card that asks the user to enter their wallet password before a sensitive Settings screen opens.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm access'**
+  String get settingsConfirmAccessTitle;
+
+  /// Title of the keypad step where the user re-enters the new passcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Passcode'**
+  String get settingsConfirmPasscodeTitle;
+
+  /// Accessibility label of the button that submits the password, and label of the repeat-password field when changing the password.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm password'**
+  String get settingsConfirmPasswordLabel;
+
+  /// Button that continues to the password prompt before the secret passphrase is shown.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get settingsContinue;
+
+  /// Short button label that copies the adjacent value to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get settingsCopy;
+
+  /// Accessibility label of a button that copies a labeled value (for example the birthday date).
+  ///
+  /// In en, this message translates to:
+  /// **'Copy {label}'**
+  String settingsCopyLabel(String label);
+
+  /// Accessibility label after a labeled value (for example the birthday date) was copied.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} copied'**
+  String settingsCopyLabelCopied(String label);
+
+  /// Explains that with a broken endpoint the balance is stale and recent incoming funds are missing; the placeholder is the currency ticker.
+  ///
+  /// In en, this message translates to:
+  /// **'The wallet will show the balance from the last time it was successfully connected. It won\'t show any {ticker} you recently received.'**
+  String settingsEndpointBalanceNote(String ticker);
+
+  /// Accessibility label of the button that closes the endpoint settings dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Close endpoint settings'**
+  String get settingsEndpointCloseSettings;
+
+  /// Error shown when the custom endpoint could not be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t connect to that endpoint. Check the host and port.'**
+  String get settingsEndpointConnectFailed;
+
+  /// Shows the host and port of the endpoint in use, optionally followed by latency and a default marker.
+  ///
+  /// In en, this message translates to:
+  /// **'Current: {endpoint}'**
+  String settingsEndpointCurrent(String endpoint);
+
+  /// Prefix (with trailing space) before the highlighted host and port of the endpoint in use.
+  ///
+  /// In en, this message translates to:
+  /// **'Current: '**
+  String get settingsEndpointCurrentPrefix;
+
+  /// Tab label, heading and accessibility label for entering your own server address.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom endpoint'**
+  String get settingsEndpointCustom;
+
+  /// Button on the mobile endpoint list that switches to entering a custom endpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'Customise endpoint'**
+  String get settingsEndpointCustomise;
+
+  /// Button on the desktop endpoint list that switches to entering a custom endpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'Customize endpoint'**
+  String get settingsEndpointCustomize;
+
+  /// Marker appended to the current endpoint when it is the built-in default.
+  ///
+  /// In en, this message translates to:
+  /// **'(Default)'**
+  String get settingsEndpointDefaultMarker;
+
+  /// Heading of the network settings dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Network settings'**
+  String get settingsEndpointNetworkSettings;
+
+  /// Tab label for choosing an endpoint from a list of known servers.
+  ///
+  /// In en, this message translates to:
+  /// **'Select from the list'**
+  String get settingsEndpointSelectFromList;
+
+  /// Title of the lightwalletd server (endpoint) setting, used as the Settings row label and screen heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoint'**
+  String get settingsEndpointTitle;
+
+  /// Button that saves the selected endpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'Update endpoint'**
+  String get settingsEndpointUpdate;
+
+  /// Toast shown after the endpoint was saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoint updated'**
+  String get settingsEndpointUpdatedToast;
+
+  /// Label of the endpoint save button while the connection is being checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating endpoint...'**
+  String get settingsEndpointUpdating;
+
+  /// Mobile warning shown with the custom endpoint field that a wrong endpoint stops syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'If the endpoint is configured wrong, your wallet won\'t be able to sync with the Zcash blockchain.'**
+  String get settingsEndpointWarningBlockchain;
+
+  /// Warning shown with the custom endpoint field that a wrong endpoint stops syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'If the endpoint is configured wrong, your wallet won\'t be able to sync with the Zcash network.'**
+  String get settingsEndpointWarningNetwork;
+
+  /// Top-bar title of the mobile endpoint settings screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoints'**
+  String get settingsEndpointsTitle;
+
+  /// [security] Error shown when the verified current password was lost and must be entered again.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your current password again.'**
+  String get settingsEnterCurrentPasswordAgain;
+
+  /// Subtitle of the access confirmation card on the change-password screen; the user must confirm the current password before choosing a new one.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your current password first.'**
+  String get settingsEnterCurrentPasswordFirst;
+
+  /// Title of the passcode keypad screen that gates access to a secret.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter Passcode'**
+  String get settingsEnterPasscodeTitle;
+
+  /// Shows which custom block explorer is in use.
+  ///
+  /// In en, this message translates to:
+  /// **'Current: {explorer}'**
+  String settingsExplorerCurrent(String explorer);
+
+  /// Shows which block explorer host is in use when it is the built-in default.
+  ///
+  /// In en, this message translates to:
+  /// **'Current: {host} (default)'**
+  String settingsExplorerCurrentDefault(String host);
+
+  /// Title of the option card to enter your own block explorer URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get settingsExplorerCustom;
+
+  /// Subtitle of the custom block explorer option card.
+  ///
+  /// In en, this message translates to:
+  /// **'Any explorer you prefer'**
+  String get settingsExplorerCustomSubtitle;
+
+  /// Error shown under the custom explorer URL field when saving it failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save that explorer URL.'**
+  String get settingsExplorerSaveFailed;
+
+  /// Title of the block explorer setting, used as the Settings row label and the screen heading; the explorer is the website used to look up transactions.
+  ///
+  /// In en, this message translates to:
+  /// **'Explorer'**
+  String get settingsExplorerTitle;
+
+  /// Button that saves the chosen block explorer.
+  ///
+  /// In en, this message translates to:
+  /// **'Update explorer'**
+  String get settingsExplorerUpdate;
+
+  /// Label of the text field for a custom block explorer URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Explorer URL'**
+  String get settingsExplorerUrlLabel;
+
+  /// [security] Error shown on the passcode keypad when the entered passcode is wrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect passcode'**
+  String get settingsIncorrectPasscode;
+
+  /// [security] Error shown under the password field when the entered wallet password is wrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect password. Please try again.'**
+  String get settingsIncorrectPassword;
+
+  /// Explains the keep-screen-awake setting during sync and that the app still locks after one minute of inactivity.
+  ///
+  /// In en, this message translates to:
+  /// **'Prevents your phone from sleeping so sync can finish faster. The app still locks after 1 minute of inactivity.'**
+  String get settingsKeepAwakeDescription;
+
+  /// Label and accessibility label of the toggle that keeps the screen on while syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep screen awake'**
+  String get settingsKeepAwakeLabel;
+
+  /// Toast shown when changing the keep-screen-awake setting failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update screen awake setting.'**
+  String get settingsKeepAwakeUpdateFailed;
+
   /// Settings > System row label and picker title for choosing the app language. Also the screen-reader label of the Welcome language button.
   ///
   /// In en, this message translates to:
@@ -2492,6 +2864,1272 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t update language.'**
   String get settingsLanguageUpdateFailed;
+
+  /// Small pill next to a Settings row label that flags a recently added feature (gift cards).
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get settingsNewBadge;
+
+  /// Error shown when a secret screen opens but no account is selected.
+  ///
+  /// In en, this message translates to:
+  /// **'No active account is selected.'**
+  String get settingsNoActiveAccount;
+
+  /// [security] Error shown when verifying the current passcode failed unexpectedly.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check your passcode. Please try again.'**
+  String get settingsPasscodeCheckFailed;
+
+  /// Subtitle under the keypad title telling the user the passcode has six digits.
+  ///
+  /// In en, this message translates to:
+  /// **'6 digits length'**
+  String get settingsPasscodeLengthHint;
+
+  /// [security] Error when the new passcode equals the current one.
+  ///
+  /// In en, this message translates to:
+  /// **'Your new passcode must be different.'**
+  String get settingsPasscodeMustDiffer;
+
+  /// [security] Error shown when an earlier passcode change was interrupted and its result could not be verified; the secret passphrase is the recovery path.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t verify the previous passcode change. Keep your secret passphrase available before trying again.'**
+  String get settingsPasscodeRotationRecoveryFailed;
+
+  /// [security] Error shown when changing the passcode failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update your passcode. Please try again.'**
+  String get settingsPasscodeUpdateFailed;
+
+  /// [security] Toast shown after the passcode was changed.
+  ///
+  /// In en, this message translates to:
+  /// **'Passcode updated'**
+  String get settingsPasscodeUpdatedToast;
+
+  /// Error shown when the passcode check itself failed unexpectedly.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t verify the passcode. Try again.'**
+  String get settingsPasscodeVerifyFailed;
+
+  /// [security] Error when the confirmation passcode differs from the new passcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Passcodes didn\'t match. Try again.'**
+  String get settingsPasscodesMismatch;
+
+  /// [security] Error shown when verifying the current password failed unexpectedly.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check your password. Please try again.'**
+  String get settingsPasswordCheckFailed;
+
+  /// Placeholder inside the wallet password field on the access confirmation card.
+  ///
+  /// In en, this message translates to:
+  /// **'Your password...'**
+  String get settingsPasswordHint;
+
+  /// Accessibility label of the wallet password text field in Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get settingsPasswordLabel;
+
+  /// [security] Hint under the new-password heading about the minimum length and how to make a stronger password.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimum 8 characters. Add numbers and symbols, or make it longer, for stronger security.'**
+  String get settingsPasswordMinimumHint;
+
+  /// [security] Error shown when an earlier password change was interrupted and its result could not be verified; the secret passphrase is the recovery path.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t verify the previous password change. Please keep your secret passphrase available before trying again.'**
+  String get settingsPasswordRotationRecoveryFailed;
+
+  /// [security] Error shown when changing the wallet password failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update your password. Please try again.'**
+  String get settingsPasswordUpdateFailed;
+
+  /// [security] Error under the repeat-password field when the two new passwords differ.
+  ///
+  /// In en, this message translates to:
+  /// **'Passwords do not match.'**
+  String get settingsPasswordsMismatch;
+
+  /// Name of a built-in profile picture (a knight character).
+  ///
+  /// In en, this message translates to:
+  /// **'Knight'**
+  String get settingsPfpKnight;
+
+  /// Name of a built-in profile picture (a samurai character).
+  ///
+  /// In en, this message translates to:
+  /// **'Samurai'**
+  String get settingsPfpSamurai;
+
+  /// Name of a built-in profile picture (a viking character).
+  ///
+  /// In en, this message translates to:
+  /// **'Viking'**
+  String get settingsPfpViking;
+
+  /// Name of a built-in profile picture (a wizard character).
+  ///
+  /// In en, this message translates to:
+  /// **'Wizard'**
+  String get settingsPfpWizard;
+
+  /// Status while the server list is being refreshed.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking for updates…'**
+  String get settingsPirCheckingUpdates;
+
+  /// Heading above the list of private query servers.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a server'**
+  String get settingsPirChooseServer;
+
+  /// Error shown when the public repository listing private query servers could not be opened.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open the config repository.'**
+  String get settingsPirConfigOpenFailed;
+
+  /// Status shown when the saved custom server URL is invalid.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved custom server is invalid. Edit it or choose another server.'**
+  String get settingsPirCustomInvalid;
+
+  /// Label of the custom private query server field and list entry.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom server'**
+  String get settingsPirCustomServer;
+
+  /// Button that opens the field to enter a custom private query server.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom server…'**
+  String get settingsPirCustomServerEllipsis;
+
+  /// Validation message under the custom server field: HTTPS URL only, no credentials, query string or fragment.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an HTTPS base URL without credentials, a query or a fragment.'**
+  String get settingsPirCustomUrlInvalid;
+
+  /// Button that edits the saved custom private query server.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit custom server…'**
+  String get settingsPirEditCustomServer;
+
+  /// Status shown when the server list could not be loaded at all.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the server list. Try again or enter a custom server.'**
+  String get settingsPirListLoadFailed;
+
+  /// Status shown when refreshing the server list failed and the last known list is used.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update the server list. Using the last list loaded.'**
+  String get settingsPirListUpdateFailed;
+
+  /// Status shown when refreshing the server list failed while a custom server is selected.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update the list. Your custom server is still selected.'**
+  String get settingsPirListUpdateFailedCustom;
+
+  /// Status while the list of private query servers is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading the server list…'**
+  String get settingsPirLoadingServers;
+
+  /// Status shown when the server list is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'No servers are offered yet. You can enter a custom server.'**
+  String get settingsPirNoServers;
+
+  /// Latency placeholder in a server row while its response time is being measured.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking...'**
+  String get settingsPirPingChecking;
+
+  /// Error shown when switching the private query server failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t change server. Try again.'**
+  String get settingsPirServerChangeFailed;
+
+  /// Accessibility label of the button that closes the private query server settings dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Close private query server settings'**
+  String get settingsPirServerCloseLabel;
+
+  /// Status shown when the previously selected server was removed from the list; private queries pause until another is chosen.
+  ///
+  /// In en, this message translates to:
+  /// **'The server you chose is no longer offered. Choose another to resume private queries.'**
+  String get settingsPirServerRemoved;
+
+  /// Accessibility label of the small button next to Private queries that opens the server settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Private query server settings'**
+  String get settingsPirServerSettingsLabel;
+
+  /// Title of the dialog and tooltip for choosing the server that answers private queries.
+  ///
+  /// In en, this message translates to:
+  /// **'Private query server'**
+  String get settingsPirServerTitle;
+
+  /// Error shown when the saved private query server settings could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t read the private query server settings.'**
+  String get settingsPirSettingsReadFailed;
+
+  /// Button that opens the public config repository so the user can add their own private query server.
+  ///
+  /// In en, this message translates to:
+  /// **'Share your server'**
+  String get settingsPirShareServer;
+
+  /// Status shown when the current network has no private query service.
+  ///
+  /// In en, this message translates to:
+  /// **'Private queries are unavailable on this network.'**
+  String get settingsPirUnavailable;
+
+  /// Label of the save button while the server change is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating server…'**
+  String get settingsPirUpdatingServer;
+
+  /// Button that saves the custom private query server.
+  ///
+  /// In en, this message translates to:
+  /// **'Use custom server'**
+  String get settingsPirUseCustomServer;
+
+  /// Title of the Settings card or section that holds network privacy options such as Tor and private queries.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy'**
+  String get settingsPrivacyTitle;
+
+  /// Label of the Settings toggle row and its accessibility label for the private queries feature, which sends wallet lookups to a privacy-preserving server.
+  ///
+  /// In en, this message translates to:
+  /// **'Private queries'**
+  String get settingsPrivateQueriesLabel;
+
+  /// [security] Explains that turning off private queries makes the wallet rebuild its transparent history through public lookups, exposing addresses to the server.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor will rebuild your transparent history publicly, allowing the server to learn all your addresses.'**
+  String get settingsPrivateQueriesTurnOffBody;
+
+  /// Destructive button that confirms turning off a setting such as private queries or a biometric unlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off'**
+  String get settingsPrivateQueriesTurnOffConfirm;
+
+  /// [security] Warning listing what the server learns once private queries are off: addresses, transaction IDs, and linkage to the IP address when Tor is not used.
+  ///
+  /// In en, this message translates to:
+  /// **'The server receives every transparent address of every account and the IDs of transactions private recovery found. It can link them to each other and, without Tor, to your IP address.'**
+  String get settingsPrivateQueriesTurnOffDisclosure;
+
+  /// Title of the confirmation shown before private queries are turned off.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off private queries?'**
+  String get settingsPrivateQueriesTurnOffTitle;
+
+  /// Value shown on the profile picture row when the picture is not one of the built-in options.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get settingsProfilePictureCustom;
+
+  /// Settings row that opens the About screen.
+  ///
+  /// In en, this message translates to:
+  /// **'About Vizor'**
+  String get settingsRowAboutVizor;
+
+  /// Settings row that opens the account rename dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Account name'**
+  String get settingsRowAccountName;
+
+  /// Mobile Settings row that opens the account rename sheet (title case).
+  ///
+  /// In en, this message translates to:
+  /// **'Account Name'**
+  String get settingsRowAccountNameMobile;
+
+  /// Settings row that opens the address book.
+  ///
+  /// In en, this message translates to:
+  /// **'Address book'**
+  String get settingsRowAddressBook;
+
+  /// [security] Mobile Settings row that opens the change passcode screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Change passcode'**
+  String get settingsRowChangePasscode;
+
+  /// [security] Settings row that opens the change wallet password screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Change password'**
+  String get settingsRowChangePassword;
+
+  /// Mobile Settings row that opens coinholder governance voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Coinholder voting'**
+  String get settingsRowCoinholderVoting;
+
+  /// Settings row that links the desktop wallet with the Vizor mobile app.
+  ///
+  /// In en, this message translates to:
+  /// **'Link Vizor mobile'**
+  String get settingsRowLinkMobile;
+
+  /// Settings row that opens the user's gift cards.
+  ///
+  /// In en, this message translates to:
+  /// **'My gift cards'**
+  String get settingsRowMyGiftCards;
+
+  /// Settings row that opens the profile picture picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile picture'**
+  String get settingsRowProfilePicture;
+
+  /// Mobile Settings row that opens the profile picture sheet (title case).
+  ///
+  /// In en, this message translates to:
+  /// **'Profile Picture'**
+  String get settingsRowProfilePictureMobile;
+
+  /// [security] Settings row that opens the secret recovery phrase screen (desktop, sentence case).
+  ///
+  /// In en, this message translates to:
+  /// **'Secret passphrase'**
+  String get settingsRowSecretPassphrase;
+
+  /// Settings row that opens the donation screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Support Vizor'**
+  String get settingsRowSupportVizor;
+
+  /// Settings row and dialog title for checking and installing app updates.
+  ///
+  /// In en, this message translates to:
+  /// **'Updates'**
+  String get settingsRowUpdates;
+
+  /// [security] Mobile Settings row that opens the viewing key screen (title case).
+  ///
+  /// In en, this message translates to:
+  /// **'Viewing Key'**
+  String get settingsRowViewingKeyMobile;
+
+  /// [security] Title of the screen and card that show the wallet's secret recovery phrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Secret Passphrase'**
+  String get settingsSecretPassphraseTitle;
+
+  /// Heading of the Settings group with account items such as secret passphrase and password.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get settingsSectionAccount;
+
+  /// Heading of the Settings group that holds destructive actions such as uninstalling.
+  ///
+  /// In en, this message translates to:
+  /// **'Danger zone'**
+  String get settingsSectionDangerZone;
+
+  /// Heading of the Settings group with miscellaneous items such as About and Support.
+  ///
+  /// In en, this message translates to:
+  /// **'Misc'**
+  String get settingsSectionMisc;
+
+  /// Heading of the Settings group with personal items such as gift cards and address book.
+  ///
+  /// In en, this message translates to:
+  /// **'Personal'**
+  String get settingsSectionPersonal;
+
+  /// Heading of the Settings card that holds the keep-screen-awake option.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing'**
+  String get settingsSectionSyncing;
+
+  /// Heading of the Settings group with endpoint, explorer, theme and language.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get settingsSectionSystem;
+
+  /// Error shown when saving the 'written down' or 'remind me later' choice for the passphrase backup failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t save that. Try again.'**
+  String get settingsSeedBackupSaveFailed;
+
+  /// [security] Reason text shown in the system biometric prompt before revealing the secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm access to your secret passphrase'**
+  String get settingsSeedBiometricReason;
+
+  /// [security] Toast after the secret passphrase was copied to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Secret passphrase copied'**
+  String get settingsSeedCopiedToast;
+
+  /// [security] Accessibility label of the button that copies the secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy secret passphrase'**
+  String get settingsSeedCopyLabel;
+
+  /// [security] Warning under the Secret Passphrase heading; two lines separated by a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'This is the master key to your wallet.\nDon’t share it with anyone.'**
+  String get settingsSeedHeadingSubtitle;
+
+  /// [security] Error shown when the secret passphrase could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load your secret passphrase. Please try again.'**
+  String get settingsSeedLoadFailed;
+
+  /// Subtitle of the access confirmation card; completes the sentence 'Confirm access ... to view the secret passphrase'.
+  ///
+  /// In en, this message translates to:
+  /// **'To view the secret passphrase.'**
+  String get settingsSeedPasswordSubtitle;
+
+  /// [security] Button that postpones backing up the secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Remind me later'**
+  String get settingsSeedRemindLater;
+
+  /// Button that dismisses the screenshot warning sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'I understand'**
+  String get settingsSeedScreenshotAck;
+
+  /// [security] Bold first words of the screenshot warning body; the next string continues the same sentence.
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshots are not reliable'**
+  String get settingsSeedScreenshotBodyLead;
+
+  /// [security] Rest of the screenshot warning body; it directly follows the bold lead and so starts with a period.
+  ///
+  /// In en, this message translates to:
+  /// **'. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.'**
+  String get settingsSeedScreenshotBodyRest;
+
+  /// [security] Heading of the warning sheet shown when a screenshot is taken while the secret passphrase is visible.
+  ///
+  /// In en, this message translates to:
+  /// **'Don’t take screenshots of your Secret Passphrase'**
+  String get settingsSeedScreenshotTitle;
+
+  /// Error shown when the account has no stored secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Secret passphrase is not available for this account.'**
+  String get settingsSeedUnavailableAccount;
+
+  /// Error shown for hardware wallet accounts, whose secret never leaves the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Secret passphrase is not available for hardware accounts.'**
+  String get settingsSeedUnavailableHardware;
+
+  /// [security] Button confirming the user has written down the secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'I’ve written it down'**
+  String get settingsSeedWrittenDown;
+
+  /// Title of the keypad step where the user chooses a new 6-digit passcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Set New Passcode'**
+  String get settingsSetNewPasscodeTitle;
+
+  /// Status text shown under a Settings row when the feature is turned off.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get settingsStatusOff;
+
+  /// Status text shown under a Settings row when the feature is turned on.
+  ///
+  /// In en, this message translates to:
+  /// **'On'**
+  String get settingsStatusOn;
+
+  /// Dark color theme option and row value.
+  ///
+  /// In en, this message translates to:
+  /// **'Dark'**
+  String get settingsThemeDark;
+
+  /// Light color theme option and row value.
+  ///
+  /// In en, this message translates to:
+  /// **'Light'**
+  String get settingsThemeLight;
+
+  /// Short value of the theme row when the theme follows the operating system.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get settingsThemeSystem;
+
+  /// Theme option that follows the operating system's light or dark setting.
+  ///
+  /// In en, this message translates to:
+  /// **'System (Auto)'**
+  String get settingsThemeSystemAuto;
+
+  /// Settings row label and dialog title for choosing the color theme.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme'**
+  String get settingsThemeTitle;
+
+  /// Error shown in the theme dialog when saving the theme failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update theme.'**
+  String get settingsThemeUpdateFailed;
+
+  /// [security] Tor status description on mobile when connecting failed; requests fail closed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not connect to Tor. Requests stay blocked until it connects or you turn Tor off.'**
+  String get settingsTorDescBootstrapFailed;
+
+  /// Tor status description when connected.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor’s network requests go through Tor. Links opened in other apps use those apps’ network settings.'**
+  String get settingsTorDescConnected;
+
+  /// [security] Tor status description on iOS: the background Ironwood migration is direct while the app is closed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor’s network requests go through Tor. Ironwood private migration uses a direct connection while Vizor is closed. Links opened in other apps use those apps’ network settings.'**
+  String get settingsTorDescConnectedIos;
+
+  /// Tor status description when connected but software updates cannot be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor’s network requests go through Tor, but software updates are unavailable.'**
+  String get settingsTorDescConnectedNoUpdates;
+
+  /// Tor status description while connecting; it names the way out for networks that block Tor.
+  ///
+  /// In en, this message translates to:
+  /// **'New requests wait until the Tor connection is ready. Turn Tor off to stop connecting and use a direct connection.'**
+  String get settingsTorDescConnecting;
+
+  /// Tor status description while connecting on Linux.
+  ///
+  /// In en, this message translates to:
+  /// **'New requests wait until the Tor connection is ready. Turn Tor off to stop connecting and use a direct connection. Update pages and downloads opened in another app use that app’s connection.'**
+  String get settingsTorDescConnectingLinux;
+
+  /// Tor status description when connecting to Tor failed (desktop); direct requests stay blocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct requests remain blocked. Try again or turn off Tor.'**
+  String get settingsTorDescConnectionFailed;
+
+  /// Tor status description when requests are direct and software updates cannot be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Network requests connect directly. Software updates are unavailable.'**
+  String get settingsTorDescDirectNoUpdates;
+
+  /// [security] Tor status description on mobile when requests are direct but the setting could not be saved; Tor returns at the next launch.
+  ///
+  /// In en, this message translates to:
+  /// **'Requests now use a direct connection, but Vizor could not save the change. Tor turns back on the next time you open the app.'**
+  String get settingsTorDescDisableNotSaved;
+
+  /// Tor status description on mobile when the enable toggle could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not save the change, so Tor was not turned on. Requests keep using a direct connection.'**
+  String get settingsTorDescEnableNotSaved;
+
+  /// Tor status description when Tor is off (desktop).
+  ///
+  /// In en, this message translates to:
+  /// **'Tor is off. Requests to the Zcash network, in-app services, and software updates connect directly.'**
+  String get settingsTorDescOff;
+
+  /// Tor status description when Tor is off on Linux; update pages and downloads open in another app.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor is off. Vizor requests, including software update checks, connect directly. Update pages and downloads open in another app.'**
+  String get settingsTorDescOffLinux;
+
+  /// Tor status description on mobile when Tor is off.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet sync and in-app requests connect directly. Turn Tor on to hide your IP address from the servers Vizor talks to.'**
+  String get settingsTorDescOffMobile;
+
+  /// Tor status description when switching to direct failed (desktop).
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not switch to a direct connection. Try again.'**
+  String get settingsTorDescSwitchFailed;
+
+  /// Tor status description on mobile when switching to direct failed and Tor is still carrying traffic.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not switch to a direct connection. Tor is still on and requests keep going through it.'**
+  String get settingsTorDescSwitchFailedStillOn;
+
+  /// Tor status description while switching to direct (desktop).
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is switching network requests and software updates to a direct connection.'**
+  String get settingsTorDescSwitching;
+
+  /// Tor status description while switching to direct on Linux.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is switching its requests, including software update checks, to a direct connection.'**
+  String get settingsTorDescSwitchingLinux;
+
+  /// Tor status description while switching to direct (mobile).
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is switching network requests to a direct connection.'**
+  String get settingsTorDescSwitchingMobile;
+
+  /// Short general description of the Tor setting on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Tor to hide your IP address from servers. Other apps use their own network settings.'**
+  String get settingsTorGeneralDescription;
+
+  /// [security] Sentence appended (with a leading space) to the general Tor description on iOS.
+  ///
+  /// In en, this message translates to:
+  /// **' Ironwood private migration connects directly while Vizor is closed.'**
+  String get settingsTorGeneralIosSuffix;
+
+  /// Button that retries making software updates available after they were blocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry updates'**
+  String get settingsTorRetryUpdates;
+
+  /// Tor status label when requests go through Tor.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get settingsTorStatusConnected;
+
+  /// Tor status label while the Tor connection is being established.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting…'**
+  String get settingsTorStatusConnecting;
+
+  /// Tor status label when connecting to Tor failed (desktop).
+  ///
+  /// In en, this message translates to:
+  /// **'Connection failed'**
+  String get settingsTorStatusConnectionFailed;
+
+  /// Tor status label when requests connect directly without Tor.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct'**
+  String get settingsTorStatusDirect;
+
+  /// Tor status label when connecting to Tor failed (mobile).
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get settingsTorStatusFailed;
+
+  /// Tor status label when the Tor preference could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Setting not saved'**
+  String get settingsTorStatusNotSaved;
+
+  /// Tor status label when switching to a direct connection failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch failed'**
+  String get settingsTorStatusSwitchFailed;
+
+  /// Tor status label while switching from Tor to a direct connection (mobile).
+  ///
+  /// In en, this message translates to:
+  /// **'Switching…'**
+  String get settingsTorStatusSwitching;
+
+  /// Tor status label while switching from Tor to a direct connection (desktop).
+  ///
+  /// In en, this message translates to:
+  /// **'Switching to direct…'**
+  String get settingsTorStatusSwitchingDirect;
+
+  /// Accessibility label of the Tor toggle while Tor is still connecting; turning it off cancels the attempt.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop connecting to Tor'**
+  String get settingsTorStopConnecting;
+
+  /// Button that retries switching to a direct (non-Tor) connection after a failure.
+  ///
+  /// In en, this message translates to:
+  /// **'Try direct connection'**
+  String get settingsTorTryDirect;
+
+  /// Label of the toggle that routes Vizor's network requests through Tor.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Tor'**
+  String get settingsTorUse;
+
+  /// Button that retries a failed action in Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get settingsTryAgain;
+
+  /// [security] Blocks uninstalling while swaps are still in progress, because funds could arrive after the wipe and be lost.
+  ///
+  /// In en, this message translates to:
+  /// **'This wallet has {count, plural, =1{1 active swap} other{{count} active swaps}}. Wait for them to complete before uninstalling.'**
+  String settingsUninstallActiveSwaps(int count);
+
+  /// [security] Short warning under the uninstall subtitle: deletion is irreversible.
+  ///
+  /// In en, this message translates to:
+  /// **'This cannot be undone.'**
+  String get settingsUninstallCannotUndo;
+
+  /// Label of the uninstall button while swaps and gift card claims are being checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking...'**
+  String get settingsUninstallChecking;
+
+  /// Error shown when checking for gift cards that are still being claimed failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check for incoming gift cards. Try again before uninstalling.'**
+  String get settingsUninstallClaimCheckFailed;
+
+  /// Button that quits the app after wallet data was removed.
+  ///
+  /// In en, this message translates to:
+  /// **'Close Vizor'**
+  String get settingsUninstallCloseApp;
+
+  /// Phrase naming the current computer on other platforms, inserted into the uninstall warning.
+  ///
+  /// In en, this message translates to:
+  /// **'this device'**
+  String get settingsUninstallDeviceGeneric;
+
+  /// Phrase naming the current computer on macOS, inserted into the uninstall warning.
+  ///
+  /// In en, this message translates to:
+  /// **'this Mac'**
+  String get settingsUninstallDeviceMac;
+
+  /// Phrase naming the current computer on Windows, inserted into the uninstall warning.
+  ///
+  /// In en, this message translates to:
+  /// **'this PC'**
+  String get settingsUninstallDevicePc;
+
+  /// Title shown after wallet data was deleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Your data has been removed'**
+  String get settingsUninstallDoneTitle;
+
+  /// Final instruction on other platforms after wallet data was removed.
+  ///
+  /// In en, this message translates to:
+  /// **'To finish uninstallation, remove the Vizor app from this device.'**
+  String get settingsUninstallFinishGeneric;
+
+  /// Final instruction on macOS after wallet data was removed.
+  ///
+  /// In en, this message translates to:
+  /// **'To finish uninstallation, remove the Vizor app from Applications.'**
+  String get settingsUninstallFinishMac;
+
+  /// Final instruction on Windows after wallet data was removed.
+  ///
+  /// In en, this message translates to:
+  /// **'To finish uninstallation, uninstall Vizor from Windows settings.'**
+  String get settingsUninstallFinishWindows;
+
+  /// Subtitle of the access confirmation card on the uninstall screen.
+  ///
+  /// In en, this message translates to:
+  /// **'To uninstall Vizor.'**
+  String get settingsUninstallPasswordSubtitle;
+
+  /// Title shown while wallet data is being deleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Removing data...'**
+  String get settingsUninstallRemovingTitle;
+
+  /// Error shown when checking for in-progress swaps failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check for active swaps. Try again before uninstalling.'**
+  String get settingsUninstallSwapCheckFailed;
+
+  /// [security] Title and destructive button label of the screen that wipes all wallet data from this device.
+  ///
+  /// In en, this message translates to:
+  /// **'Uninstall Vizor'**
+  String get settingsUninstallTitle;
+
+  /// Error shown when wiping wallet data failed part way.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t finish removing data. Please try again.'**
+  String get settingsUninstallWipeFailed;
+
+  /// [security] Irreversible-deletion warning on the uninstall screen. {device} is one of the phrases 'this Mac', 'this PC' or 'this device'.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor will delete wallet data and secure storage from {device}. Unshared gift card links will be permanently lost.'**
+  String settingsUninstallWipeSubtitle(String device);
+
+  /// Short value on the Updates row while an update is being applied.
+  ///
+  /// In en, this message translates to:
+  /// **'Applying'**
+  String get settingsUpdateApplying;
+
+  /// Short value on the Updates row, and label of the available-version line, when a new version exists.
+  ///
+  /// In en, this message translates to:
+  /// **'Available'**
+  String get settingsUpdateAvailable;
+
+  /// Short value on the Updates row prompting the user to check for updates.
+  ///
+  /// In en, this message translates to:
+  /// **'Check'**
+  String get settingsUpdateCheck;
+
+  /// Button in the Updates dialog that checks for a new version.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for updates'**
+  String get settingsUpdateCheckForUpdates;
+
+  /// Short value on the Updates row while checking for an update.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking'**
+  String get settingsUpdateChecking;
+
+  /// Disabled button label in the Updates dialog while checking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get settingsUpdateCheckingButton;
+
+  /// Label before the currently installed version number in the Updates dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Current'**
+  String get settingsUpdateCurrentLabel;
+
+  /// Button in the Updates dialog that downloads the new version.
+  ///
+  /// In en, this message translates to:
+  /// **'Download update'**
+  String get settingsUpdateDownloadButton;
+
+  /// Disabled button label in the Updates dialog while downloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading…'**
+  String get settingsUpdateDownloadingButton;
+
+  /// Short value on the Updates row when the update failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get settingsUpdateFailed;
+
+  /// [security] Heading and button label for setting a new wallet password.
+  ///
+  /// In en, this message translates to:
+  /// **'Update password'**
+  String get settingsUpdatePasswordTitle;
+
+  /// Short value on the Updates row when an update is downloaded and needs a restart.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart'**
+  String get settingsUpdateRestart;
+
+  /// Button in the Updates dialog that restarts the app to install the downloaded update.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart to update'**
+  String get settingsUpdateRestartButton;
+
+  /// Disabled button label in the Updates dialog while the app restarts to apply the update.
+  ///
+  /// In en, this message translates to:
+  /// **'Restarting…'**
+  String get settingsUpdateRestartingButton;
+
+  /// Status line in the Updates dialog when a newer version exists.
+  ///
+  /// In en, this message translates to:
+  /// **'Version {version} is available.'**
+  String settingsUpdateStatusAvailable(String version);
+
+  /// Status line in the Updates dialog while checking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking for updates.'**
+  String get settingsUpdateStatusChecking;
+
+  /// Status line in the Updates dialog during the download; the placeholder is a whole-number percentage.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading {percent}%.'**
+  String settingsUpdateStatusDownloading(String percent);
+
+  /// Status line in the Updates dialog when the update failed without a specific message.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t complete the update. Try again.'**
+  String get settingsUpdateStatusFailed;
+
+  /// Status line in the Updates dialog before any check has run.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to check for updates.'**
+  String get settingsUpdateStatusIdle;
+
+  /// Status line in the Updates dialog when the download finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Version {version} is ready.'**
+  String settingsUpdateStatusReady(String version);
+
+  /// Status line in the Updates dialog while the app restarts.
+  ///
+  /// In en, this message translates to:
+  /// **'Restarting Vizor.'**
+  String get settingsUpdateStatusRestarting;
+
+  /// Status line in the Updates dialog for builds that cannot update themselves.
+  ///
+  /// In en, this message translates to:
+  /// **'Updates are available in the installed Windows app.'**
+  String get settingsUpdateStatusUnsupported;
+
+  /// Status line in the Updates dialog when no newer version exists.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is up to date.'**
+  String get settingsUpdateStatusUpToDate;
+
+  /// Short value on the Updates row when updates are not supported in this build.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get settingsUpdateUnavailable;
+
+  /// Short value on the Updates row when there is no newer version.
+  ///
+  /// In en, this message translates to:
+  /// **'Up to date'**
+  String get settingsUpdateUpToDate;
+
+  /// Label of the update-password button while the password change is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating password...'**
+  String get settingsUpdatingPassword;
+
+  /// Accessibility label of the version footer at the bottom of mobile Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor, version {version}'**
+  String settingsVersionFooterLabel(String version);
+
+  /// [security] Reason text shown in the system biometric prompt before revealing the viewing key.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm access to your viewing key'**
+  String get settingsViewingKeyBiometricReason;
+
+  /// [security] Warning under the viewing key choice: share only with trusted parties.
+  ///
+  /// In en, this message translates to:
+  /// **'Share only with trusted parties. Both keys may reveal transparent balances and spending.'**
+  String get settingsViewingKeyChoiceSharingWarning;
+
+  /// Heading above the choice between sharing an incoming-only or a full viewing key.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose what others can view'**
+  String get settingsViewingKeyChooseTitle;
+
+  /// Error text asking the user to re-enter their password or passcode and retry loading the viewing key.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm access again to try loading this key.'**
+  String get settingsViewingKeyConfirmAgain;
+
+  /// [security] Button that copies the viewing key to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy viewing key'**
+  String get settingsViewingKeyCopy;
+
+  /// [security] Explains what the full viewing key reveals and that it cannot spend funds.
+  ///
+  /// In en, this message translates to:
+  /// **'Reveals your balance and all past and future transactions. It cannot spend ZEC.'**
+  String get settingsViewingKeyExplanation;
+
+  /// Segmented control option that shows the viewing key as a QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'QR code'**
+  String get settingsViewingKeyFormatQr;
+
+  /// Segmented control option that shows the viewing key as text.
+  ///
+  /// In en, this message translates to:
+  /// **'Text'**
+  String get settingsViewingKeyFormatText;
+
+  /// Description of the full viewing key choice.
+  ///
+  /// In en, this message translates to:
+  /// **'Balance, incoming and outgoing transactions.'**
+  String get settingsViewingKeyFullDescription;
+
+  /// [security] Explains what the incoming viewing key reveals and that it cannot spend funds.
+  ///
+  /// In en, this message translates to:
+  /// **'Reveals past and future incoming payments. It cannot spend ZEC.'**
+  String get settingsViewingKeyIncomingExplanation;
+
+  /// Title of the choice card for the viewing key that reveals only incoming transactions.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming only'**
+  String get settingsViewingKeyIncomingOnly;
+
+  /// Description of the incoming-only viewing key choice.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming transactions only.'**
+  String get settingsViewingKeyIncomingOnlyDescription;
+
+  /// [security] Warning heading above the incoming-only viewing key.
+  ///
+  /// In en, this message translates to:
+  /// **'This key reveals incoming payments'**
+  String get settingsViewingKeyIncomingWarningTitle;
+
+  /// Heading of the error card shown when the viewing key could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the viewing key'**
+  String get settingsViewingKeyLoadFailedTitle;
+
+  /// Subtitle of the access confirmation card; completes the sentence 'Confirm access ... to view the viewing key'.
+  ///
+  /// In en, this message translates to:
+  /// **'To view the viewing key.'**
+  String get settingsViewingKeyPasswordSubtitle;
+
+  /// Accessibility label of the QR code that encodes the full viewing key.
+  ///
+  /// In en, this message translates to:
+  /// **'Full viewing key QR code'**
+  String get settingsViewingKeyQrFull;
+
+  /// Accessibility label of the QR code that encodes the incoming-only viewing key.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming viewing key QR code'**
+  String get settingsViewingKeyQrIncoming;
+
+  /// [security] Title and back-link label of the viewing key screen, which shows a key that lets others see wallet activity.
+  ///
+  /// In en, this message translates to:
+  /// **'Viewing key'**
+  String get settingsViewingKeyTitle;
+
+  /// Label of the copy button after copying the viewing key to the clipboard failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Try copying again'**
+  String get settingsViewingKeyTryCopyAgain;
+
+  /// [security] Name of the viewing key that reveals balance plus incoming and outgoing transactions; used as a choice title and screen title.
+  ///
+  /// In en, this message translates to:
+  /// **'Full viewing key'**
+  String get settingsViewingKeyTypeFull;
+
+  /// [security] Screen title for the viewing key that reveals only incoming payments.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming key'**
+  String get settingsViewingKeyTypeIncoming;
+
+  /// [security] Warning heading above the full viewing key.
+  ///
+  /// In en, this message translates to:
+  /// **'This key reveals your transactions'**
+  String get settingsViewingKeyWarningTitle;
+
+  /// [security] Error shown when the secure storage session changed while the secret passphrase screen was open.
+  ///
+  /// In en, this message translates to:
+  /// **'The wallet session changed. Enter your password again.'**
+  String get settingsWalletSessionChanged;
+
+  /// Button that downloads the update over Tor.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue with Tor'**
+  String get settingsWinUpdateContinueTor;
+
+  /// Title of the error dialog when the update download could not start; the message below comes from the updater.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t start the update'**
+  String get settingsWinUpdateStartFailedTitle;
+
+  /// Body of the error dialog when updates are unavailable over Tor; direct requests were deliberately not used.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor kept direct requests blocked. Retry updates in Settings, or turn off Tor and try the download again.'**
+  String get settingsWinUpdateTorBlockedBody;
+
+  /// Title of the error dialog shown when the user picked Tor for a Windows update but updates cannot go through Tor.
+  ///
+  /// In en, this message translates to:
+  /// **'Software updates unavailable over Tor'**
+  String get settingsWinUpdateTorBlockedTitle;
+
+  /// [security] Explains that updating over Tor is slower and that turning Tor off makes every Vizor request direct.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating over Tor may take longer. Turning Tor off switches all Vizor network requests to a direct connection.'**
+  String get settingsWinUpdateTorChoiceBody;
+
+  /// Title of the dialog that asks whether to download the Windows update over Tor.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Tor for this update?'**
+  String get settingsWinUpdateTorChoiceTitle;
+
+  /// Body of the error dialog when turning off Tor failed and the update stayed blocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor remains on, so Vizor kept the update blocked. Try again, or turn off Tor in Settings before downloading.'**
+  String get settingsWinUpdateTorOffFailedBody;
+
+  /// Title of the error dialog when turning off Tor for the update failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t turn off Tor'**
+  String get settingsWinUpdateTorOffFailedTitle;
+
+  /// Button that turns Tor off and downloads the update over a direct connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off Tor and update'**
+  String get settingsWinUpdateTurnOffTorAndUpdate;
+
+  /// Body of the error dialog when updates are still unavailable after Tor was turned off.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor is off, but software updates are still unavailable. Retry updates in Settings before downloading.'**
+  String get settingsWinUpdateUnavailableBody;
+
+  /// Title of the error dialog when updates are still unavailable after Tor was turned off.
+  ///
+  /// In en, this message translates to:
+  /// **'Software updates unavailable'**
+  String get settingsWinUpdateUnavailableTitle;
 
   /// Sidebar account name shown before an account has loaded.
   ///

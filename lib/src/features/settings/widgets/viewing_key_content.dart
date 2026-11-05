@@ -5,6 +5,7 @@ import 'package:flutter/material.dart'
 import 'package:flutter/widgets.dart';
 
 import '../../../core/clipboard/sensitive_clipboard.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -12,15 +13,14 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_models.dart';
 import '../../../rust/api/wallet.dart' show AccountViewingKeys;
 import '../../receive/widgets/request/request_qr_surface.dart';
-import '../viewing_key_copy.dart';
 
 enum ViewingKeyType {
   full,
   incoming;
 
-  String get title => switch (this) {
-    full => 'Full viewing key',
-    incoming => 'Incoming key',
+  String title(AppLocalizations l10n) => switch (this) {
+    full => l10n.settingsViewingKeyTypeFull,
+    incoming => l10n.settingsViewingKeyTypeIncoming,
   };
 }
 
@@ -144,7 +144,8 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
             header: true,
             liveRegion: true,
             child: Text(
-              widget.type?.title ?? 'Viewing key',
+              widget.type?.title(context.l10n) ??
+                  context.l10n.settingsViewingKeyTitle,
               textAlign: TextAlign.center,
               style: AppTypography.headlineLarge.copyWith(
                 color: colors.text.accent,
@@ -182,8 +183,8 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
                   ? Semantics(
                       container: true,
                       label: incoming
-                          ? 'Incoming viewing key QR code'
-                          : 'Full viewing key QR code',
+                          ? context.l10n.settingsViewingKeyQrIncoming
+                          : context.l10n.settingsViewingKeyQrFull,
                       image: true,
                       child: ExcludeSemantics(
                         child: LayoutBuilder(
@@ -292,7 +293,7 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  "Couldn't load the viewing key",
+                  context.l10n.settingsViewingKeyLoadFailedTitle,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: colors.text.accent,
                   ),
@@ -302,7 +303,7 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
                   liveRegion: true,
                   child: Text(
                     widget.errorText ??
-                        'Confirm access again to try loading this key.',
+                        context.l10n.settingsViewingKeyConfirmAgain,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.primary,
                     ),
@@ -321,7 +322,11 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
               expand: true,
               constrainContent: true,
               growWithContent: true,
-              child: Text(account == null ? 'Back to accounts' : 'Try again'),
+              child: Text(
+                account == null
+                    ? context.l10n.settingsBackToAccounts
+                    : context.l10n.settingsTryAgain,
+              ),
             ),
           ),
         ],
@@ -374,10 +379,10 @@ class _ViewingKeyContentState extends State<ViewingKeyContent> {
                 ),
                 child: _ViewingKeyCopyLabel(
                   label: _copyFailed
-                      ? 'Try copying again'
+                      ? context.l10n.settingsViewingKeyTryCopyAgain
                       : _copied
-                      ? 'Copied'
-                      : 'Copy viewing key',
+                      ? context.l10n.commonCopied
+                      : context.l10n.settingsViewingKeyCopy,
                 ),
               ),
             ),
@@ -434,8 +439,10 @@ class _ViewingKeyPrivacyNotice extends StatelessWidget {
                     children: [
                       Text(
                         incoming
-                            ? incomingViewingKeyWarningTitle
-                            : viewingKeyWarningTitle,
+                            ? context
+                                  .l10n
+                                  .settingsViewingKeyIncomingWarningTitle
+                            : context.l10n.settingsViewingKeyWarningTitle,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: incoming
                               ? colors.text.accent
@@ -445,8 +452,8 @@ class _ViewingKeyPrivacyNotice extends StatelessWidget {
                       const SizedBox(height: AppSpacing.xs),
                       Text(
                         incoming
-                            ? incomingViewingKeyExplanation
-                            : viewingKeyExplanation,
+                            ? context.l10n.settingsViewingKeyIncomingExplanation
+                            : context.l10n.settingsViewingKeyExplanation,
                         key: ValueKey(
                           incoming
                               ? 'incoming_viewing_key_explanation'
@@ -479,24 +486,24 @@ class _ViewingKeyChoice extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Choose what others can view',
+          context.l10n.settingsViewingKeyChooseTitle,
           textAlign: TextAlign.center,
           style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
         ),
         const SizedBox(height: AppSpacing.md),
         _ViewingKeyChoiceCard(
           type: ViewingKeyType.incoming,
-          title: 'Incoming only',
+          title: context.l10n.settingsViewingKeyIncomingOnly,
           icon: AppIcons.arrowBottomLeft,
-          description: 'Incoming transactions only.',
+          description: context.l10n.settingsViewingKeyIncomingOnlyDescription,
           onPressed: () => onSelected(ViewingKeyType.incoming),
         ),
         const SizedBox(height: AppSpacing.s),
         _ViewingKeyChoiceCard(
           type: ViewingKeyType.full,
-          title: 'Full viewing key',
+          title: context.l10n.settingsViewingKeyTypeFull,
           icon: AppIcons.history,
-          description: 'Balance, incoming and outgoing transactions.',
+          description: context.l10n.settingsViewingKeyFullDescription,
           onPressed: () => onSelected(ViewingKeyType.full),
         ),
         const SizedBox(height: AppSpacing.md),
@@ -518,7 +525,7 @@ class _ViewingKeyChoice extends StatelessWidget {
               const SizedBox(width: AppSpacing.s),
               Expanded(
                 child: Text(
-                  viewingKeyChoiceSharingWarning,
+                  context.l10n.settingsViewingKeyChoiceSharingWarning,
                   style: AppTypography.bodySmall.copyWith(
                     color: colors.text.primary,
                   ),
@@ -663,7 +670,9 @@ class _ViewingKeyFormatTabs extends StatelessWidget {
                     constrainContent: true,
                     growWithContent: true,
                     child: Text(
-                      format == ViewingKeyFormat.qr ? 'QR code' : 'Text',
+                      format == ViewingKeyFormat.qr
+                          ? context.l10n.settingsViewingKeyFormatQr
+                          : context.l10n.settingsViewingKeyFormatText,
                     ),
                   ),
                 ),

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/config/zcash_explorer.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
@@ -24,7 +25,6 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../core/l10n/app_language.dart';
-import '../../../core/l10n/l10n.dart';
 import '../../../providers/app_language_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 import '../../../providers/zcash_explorer_provider.dart';
@@ -211,7 +211,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       },
     );
     final accountState = ref.watch(accountProvider).value;
-    final activeAccountName = accountState?.activeAccount?.name ?? 'Wallet 1';
+    final activeAccountName =
+        accountState?.activeAccount?.name ??
+        'Wallet 1'; // l10n-ignore: default account name is data
     final activeProfilePictureId =
         accountState?.activeAccount?.profilePictureId ??
         kDefaultProfilePictureId;
@@ -252,18 +254,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 accountName: activeAccountName,
                 profilePictureId: activeProfilePictureId,
                 profilePictureLabel: _profilePictureLabel(
+                  context.l10n,
                   activeProfilePictureId,
                 ),
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 explorerLabel: explorerLabel,
-                themeLabel: _themeLabel(themeMode),
+                themeLabel: _themeLabel(context.l10n, themeMode),
                 languageLabel: showLanguage
                     ? appLanguageLabel(context, appLanguage, languages)
                     : null,
                 updateLabel: updateState == null
                     ? null
-                    : _updateLabel(updateState),
+                    : _updateLabel(context.l10n, updateState),
                 onSeedPhrase: () => context.push('/settings/secret-passphrase'),
                 onViewingKey: () => context.push('/settings/viewing-key'),
                 onChangePassword: () =>
@@ -358,29 +361,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  static String _themeLabel(ThemeMode mode) {
+  static String _themeLabel(AppLocalizations l10n, ThemeMode mode) {
     return switch (mode) {
-      ThemeMode.system => 'System',
-      ThemeMode.light => 'Light',
-      ThemeMode.dark => 'Dark',
+      ThemeMode.system => l10n.settingsThemeSystem,
+      ThemeMode.light => l10n.settingsThemeLight,
+      ThemeMode.dark => l10n.settingsThemeDark,
     };
   }
 
-  static String _profilePictureLabel(String profilePictureId) {
-    return findProfilePictureOption(profilePictureId)?.label ?? 'Custom';
+  static String _profilePictureLabel(
+    AppLocalizations l10n,
+    String profilePictureId,
+  ) {
+    return findProfilePictureOption(profilePictureId)?.label ??
+        l10n.settingsProfilePictureCustom;
   }
 
-  static String _updateLabel(WindowsUpdateState state) {
-    if (!state.supported) return 'Unavailable';
+  static String _updateLabel(AppLocalizations l10n, WindowsUpdateState state) {
+    if (!state.supported) return l10n.settingsUpdateUnavailable;
     return switch (state.status) {
-      WindowsUpdateStatus.checking => 'Checking',
-      WindowsUpdateStatus.available => 'Available',
+      WindowsUpdateStatus.checking => l10n.settingsUpdateChecking,
+      WindowsUpdateStatus.available => l10n.settingsUpdateAvailable,
       WindowsUpdateStatus.downloading => '${state.downloadProgress}%',
-      WindowsUpdateStatus.ready => 'Restart',
-      WindowsUpdateStatus.applying => 'Applying',
-      WindowsUpdateStatus.failed => 'Failed',
-      WindowsUpdateStatus.noUpdate => 'Up to date',
-      _ => 'Check',
+      WindowsUpdateStatus.ready => l10n.settingsUpdateRestart,
+      WindowsUpdateStatus.applying => l10n.settingsUpdateApplying,
+      WindowsUpdateStatus.failed => l10n.settingsUpdateFailed,
+      WindowsUpdateStatus.noUpdate => l10n.settingsUpdateUpToDate,
+      _ => l10n.settingsUpdateCheck,
     };
   }
 }
@@ -458,7 +465,7 @@ class _SettingsPane extends StatelessWidget {
             children: [
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'Settings',
+                context.l10n.navSettings,
                 textAlign: TextAlign.center,
                 style: AppTypography.headlineLarge.copyWith(
                   color: colors.text.accent,
@@ -569,44 +576,44 @@ class _SettingsList extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _SettingsBlock(
-          title: 'Personal',
+          title: context.l10n.settingsSectionPersonal,
           rows: [
             _SettingsRow(
               key: const ValueKey('settings_gift_cards_row'),
               iconName: AppIcons.giftCardOutline,
-              label: 'My gift cards',
+              label: context.l10n.settingsRowMyGiftCards,
               labelBadge: const SettingsNewBadge(),
               onTap: onGiftCards,
             ),
             _SettingsRow(
               iconName: AppIcons.users,
-              label: 'Address book',
+              label: context.l10n.settingsRowAddressBook,
               onTap: onAddressBook,
             ),
           ],
         ),
         const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
-          title: 'Account',
+          title: context.l10n.settingsSectionAccount,
           rows: [
             _SettingsRow(
               iconName: AppIcons.key,
-              label: 'Secret passphrase',
+              label: context.l10n.settingsRowSecretPassphrase,
               onTap: activeAccountIsHardware ? null : onSeedPhrase,
             ),
             _SettingsRow(
               iconName: AppIcons.eye,
-              label: 'Viewing key',
+              label: context.l10n.settingsViewingKeyTitle,
               onTap: onViewingKey,
             ),
             _SettingsRow(
               iconName: AppIcons.lock,
-              label: 'Change password',
+              label: context.l10n.settingsRowChangePassword,
               onTap: onChangePassword,
             ),
             _SettingsRow(
               iconName: AppIcons.user,
-              label: 'Profile picture',
+              label: context.l10n.settingsRowProfilePicture,
               value: profilePictureLabel,
               valueLeading: AppProfilePicture(
                 profilePictureId: profilePictureId,
@@ -616,36 +623,36 @@ class _SettingsList extends ConsumerWidget {
             ),
             _SettingsRow(
               iconName: AppIcons.scroll,
-              label: 'Account name',
+              label: context.l10n.settingsRowAccountName,
               value: accountName,
               onTap: onAccountName,
             ),
             _SettingsRow(
               iconName: AppIcons.link,
-              label: 'Link Vizor mobile',
+              label: context.l10n.settingsRowLinkMobile,
               onTap: onLinkMobile,
             ),
           ],
         ),
         const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
-          title: 'System',
+          title: context.l10n.settingsSectionSystem,
           rows: [
             _SettingsRow(
               iconName: AppIcons.endpoint,
-              label: 'Endpoint',
+              label: context.l10n.settingsEndpointTitle,
               value: endpointLabel,
               onTap: onEndpoint,
             ),
             _SettingsRow(
               iconName: AppIcons.globe,
-              label: 'Explorer',
+              label: context.l10n.settingsExplorerTitle,
               value: explorerLabel,
               onTap: onExplorer,
             ),
             _SettingsRow(
               iconName: AppIcons.theme,
-              label: 'Theme',
+              label: context.l10n.settingsThemeTitle,
               value: themeLabel,
               onTap: onTheme,
             ),
@@ -660,7 +667,7 @@ class _SettingsList extends ConsumerWidget {
             if (updateLabel != null && onUpdates != null)
               _SettingsRow(
                 iconName: AppIcons.sync,
-                label: 'Updates',
+                label: context.l10n.settingsRowUpdates,
                 value: updateLabel,
                 onTap: onUpdates,
               ),
@@ -668,7 +675,7 @@ class _SettingsList extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
-          title: 'Privacy',
+          title: context.l10n.settingsPrivacyTitle,
           rows: [
             const NetworkPrivacyControl(
               key: ValueKey('settings_tor_control'),
@@ -688,19 +695,19 @@ class _SettingsList extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
-          title: 'Misc',
+          title: context.l10n.settingsSectionMisc,
           rows: [
             _SettingsRow(
               iconName: AppIcons.vizor,
               iconGlyphSize: 16.5,
-              label: 'About Vizor',
+              label: context.l10n.settingsRowAboutVizor,
               onTap: onAbout,
             ),
             if (onDonation != null)
               _SettingsRow(
                 iconName: AppIcons.donation,
                 iconGlyphSize: 16.5,
-                label: 'Support Vizor',
+                label: context.l10n.settingsRowSupportVizor,
                 onTap: onDonation!,
               ),
           ],
@@ -708,11 +715,11 @@ class _SettingsList extends ConsumerWidget {
         if (onUninstall != null) ...[
           const SizedBox(height: AppSpacing.md),
           _SettingsBlock(
-            title: 'Danger zone',
+            title: context.l10n.settingsSectionDangerZone,
             rows: [
               _SettingsRow(
                 iconName: AppIcons.trash,
-                label: 'Uninstall Vizor',
+                label: context.l10n.settingsUninstallTitle,
                 destructive: true,
                 onTap: onUninstall!,
               ),
@@ -764,7 +771,7 @@ class _ThemeModalState extends State<_ThemeModal> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _submitError = "Couldn't update theme.";
+        _submitError = context.l10n.settingsThemeUpdateFailed;
       });
     } finally {
       if (mounted) {
@@ -783,7 +790,7 @@ class _ThemeModalState extends State<_ThemeModal> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Theme',
+            context.l10n.settingsThemeTitle,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
               color: context.colors.text.accent,
@@ -793,21 +800,21 @@ class _ThemeModalState extends State<_ThemeModal> {
           const SizedBox(height: AppSpacing.md),
           SettingsOptionCard(
             iconName: AppIcons.monitor,
-            label: 'System (Auto)',
+            label: context.l10n.settingsThemeSystemAuto,
             selected: _selectedMode == ThemeMode.system,
             onTap: () => _select(ThemeMode.system),
           ),
           const SizedBox(height: AppSpacing.xs),
           SettingsOptionCard(
             iconName: AppIcons.day,
-            label: 'Light',
+            label: context.l10n.settingsThemeLight,
             selected: _selectedMode == ThemeMode.light,
             onTap: () => _select(ThemeMode.light),
           ),
           const SizedBox(height: AppSpacing.xs),
           SettingsOptionCard(
             iconName: AppIcons.night,
-            label: 'Dark',
+            label: context.l10n.settingsThemeDark,
             selected: _selectedMode == ThemeMode.dark,
             onTap: () => _select(ThemeMode.dark),
           ),
@@ -824,7 +831,9 @@ class _ThemeModalState extends State<_ThemeModal> {
           ],
           AccountModalActions(
             onCancel: _isSubmitting ? null : widget.onCancel,
-            actionLabel: _isSubmitting ? 'Updating...' : 'Update',
+            actionLabel: _isSubmitting
+                ? context.l10n.commonUpdating
+                : context.l10n.commonUpdate,
             onAction: _canUpdate ? _submit : null,
           ),
         ],
@@ -849,7 +858,7 @@ class _WindowsUpdateModal extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Updates',
+            context.l10n.settingsRowUpdates,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
               color: context.colors.text.accent,
@@ -857,14 +866,20 @@ class _WindowsUpdateModal extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          _UpdateInfoRow(label: 'Current', value: state.currentVersion),
+          _UpdateInfoRow(
+            label: context.l10n.settingsUpdateCurrentLabel,
+            value: state.currentVersion,
+          ),
           if (state.availableVersion.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xxs),
-            _UpdateInfoRow(label: 'Available', value: state.availableVersion),
+            _UpdateInfoRow(
+              label: context.l10n.settingsUpdateAvailable,
+              value: state.availableVersion,
+            ),
           ],
           const SizedBox(height: AppSpacing.s),
           Text(
-            _statusText(state),
+            _statusText(context.l10n, state),
             textAlign: TextAlign.center,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
@@ -895,26 +910,28 @@ class _WindowsUpdateModal extends ConsumerWidget {
     WindowsUpdateState state,
   ) {
     if (!state.supported) {
-      return const _UpdatePrimaryAction(label: 'Check for updates');
+      return _UpdatePrimaryAction(
+        label: context.l10n.settingsUpdateCheckForUpdates,
+      );
     }
     return switch (state.status) {
-      WindowsUpdateStatus.checking => const _UpdatePrimaryAction(
-        label: 'Checking…',
+      WindowsUpdateStatus.checking => _UpdatePrimaryAction(
+        label: context.l10n.settingsUpdateCheckingButton,
       ),
-      WindowsUpdateStatus.downloading => const _UpdatePrimaryAction(
-        label: 'Downloading…',
+      WindowsUpdateStatus.downloading => _UpdatePrimaryAction(
+        label: context.l10n.settingsUpdateDownloadingButton,
       ),
-      WindowsUpdateStatus.applying => const _UpdatePrimaryAction(
-        label: 'Restarting…',
+      WindowsUpdateStatus.applying => _UpdatePrimaryAction(
+        label: context.l10n.settingsUpdateRestartingButton,
       ),
       WindowsUpdateStatus.available => _UpdatePrimaryAction(
-        label: 'Download update',
+        label: context.l10n.settingsUpdateDownloadButton,
         onPressed: () {
           unawaited(startWindowsUpdateDownload(context: context, ref: ref));
         },
       ),
       WindowsUpdateStatus.ready => _UpdatePrimaryAction(
-        label: 'Restart to update',
+        label: context.l10n.settingsUpdateRestartButton,
         onPressed: () {
           unawaited(
             ref.read(windowsUpdateProvider.notifier).applyUpdateAndRestart(),
@@ -922,13 +939,13 @@ class _WindowsUpdateModal extends ConsumerWidget {
         },
       ),
       WindowsUpdateStatus.failed => _UpdatePrimaryAction(
-        label: 'Try again',
+        label: context.l10n.settingsTryAgain,
         onPressed: () {
           unawaited(ref.read(windowsUpdateProvider.notifier).checkForUpdates());
         },
       ),
       _ => _UpdatePrimaryAction(
-        label: 'Check for updates',
+        label: context.l10n.settingsUpdateCheckForUpdates,
         onPressed: () {
           unawaited(ref.read(windowsUpdateProvider.notifier).checkForUpdates());
         },
@@ -936,25 +953,28 @@ class _WindowsUpdateModal extends ConsumerWidget {
     };
   }
 
-  static String _statusText(WindowsUpdateState state) {
+  static String _statusText(AppLocalizations l10n, WindowsUpdateState state) {
     if (!state.supported) {
-      return 'Updates are available in the installed Windows app.';
+      return l10n.settingsUpdateStatusUnsupported;
     }
     return switch (state.status) {
-      WindowsUpdateStatus.checking => 'Checking for updates.',
-      WindowsUpdateStatus.noUpdate => 'Vizor is up to date.',
-      WindowsUpdateStatus.available =>
-        'Version ${state.availableVersion} is available.',
-      WindowsUpdateStatus.downloading =>
-        'Downloading ${state.downloadProgress}%.',
-      WindowsUpdateStatus.ready =>
-        'Version ${state.availableVersion} is ready.',
-      WindowsUpdateStatus.applying => 'Restarting Vizor.',
+      WindowsUpdateStatus.checking => l10n.settingsUpdateStatusChecking,
+      WindowsUpdateStatus.noUpdate => l10n.settingsUpdateStatusUpToDate,
+      WindowsUpdateStatus.available => l10n.settingsUpdateStatusAvailable(
+        state.availableVersion,
+      ),
+      WindowsUpdateStatus.downloading => l10n.settingsUpdateStatusDownloading(
+        state.downloadProgress.toString(),
+      ),
+      WindowsUpdateStatus.ready => l10n.settingsUpdateStatusReady(
+        state.availableVersion,
+      ),
+      WindowsUpdateStatus.applying => l10n.settingsUpdateStatusRestarting,
       WindowsUpdateStatus.failed =>
         state.message.trim().isEmpty
-            ? "Couldn't complete the update. Try again."
+            ? l10n.settingsUpdateStatusFailed
             : state.message.trim(),
-      _ => 'Ready to check for updates.',
+      _ => l10n.settingsUpdateStatusIdle,
     };
   }
 }

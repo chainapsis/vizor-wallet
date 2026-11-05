@@ -1275,10 +1275,892 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiptMessageLabel => '消息';
 
   @override
+  String get settingsAccountChangedPasscode => '所选账户已更改。请重新输入数字密码。';
+
+  @override
+  String get settingsAccountChangedPassword => '所选账户已更改。请重新输入密码。';
+
+  @override
+  String get settingsAccountSaveFailed => '无法保存账户更改';
+
+  @override
+  String get settingsAccountUnavailable => '所选账户已不可用。';
+
+  @override
+  String get settingsBackToAccounts => '返回账户';
+
+  @override
+  String settingsBiometricOffToast(String feature) {
+    return '$feature已关闭';
+  }
+
+  @override
+  String settingsBiometricOnToast(String feature) {
+    return '$feature已开启';
+  }
+
+  @override
+  String settingsBiometricSetupFirst(String biometric) {
+    return '请先在设备设置中设置$biometric。';
+  }
+
+  @override
+  String settingsBiometricTurnOffBody(String feature) {
+    return '你将使用数字密码解锁 Vizor。你可以随时在设置中重新开启$feature。';
+  }
+
+  @override
+  String settingsBiometricTurnOffTitle(String feature) {
+    return '要关闭$feature吗？';
+  }
+
+  @override
+  String settingsBiometricUpdateFailed(String feature) {
+    return '无法更新$feature。';
+  }
+
+  @override
+  String get settingsBip39PassphraseCopied => '已复制 BIP39 密码短语';
+
+  @override
+  String get settingsBip39PassphraseCopy => '复制 BIP39 密码短语';
+
+  @override
+  String get settingsBip39PassphraseTitle => 'BIP39 密码短语';
+
+  @override
+  String settingsBip39PassphraseValue(String passphrase) {
+    return 'BIP39 密码短语：$passphrase';
+  }
+
+  @override
+  String get settingsBirthdayBlockHeight => '创建区块高度';
+
+  @override
+  String get settingsBirthdayDate => '创建日期';
+
+  @override
+  String get settingsBirthdayDateCopied => '已复制创建日期';
+
+  @override
+  String get settingsBirthdayHeightCopied => '已复制创建区块高度';
+
+  @override
+  String get settingsChangePasscodeIncorrect => '数字密码错误';
+
+  @override
+  String get settingsConfirmAccessSubtitle => '确认你的访问';
+
+  @override
+  String get settingsConfirmAccessTitle => '确认访问';
+
+  @override
+  String get settingsConfirmPasscodeTitle => '确认数字密码';
+
+  @override
+  String get settingsConfirmPasswordLabel => '确认密码';
+
+  @override
+  String get settingsContinue => '继续';
+
+  @override
+  String get settingsCopy => '复制';
+
+  @override
+  String settingsCopyLabel(String label) {
+    return '复制$label';
+  }
+
+  @override
+  String settingsCopyLabelCopied(String label) {
+    return '已复制$label';
+  }
+
+  @override
+  String settingsEndpointBalanceNote(String ticker) {
+    return '钱包将显示上次成功连接时的余额，不会显示你最近收到的 $ticker。';
+  }
+
+  @override
+  String get settingsEndpointCloseSettings => '关闭节点设置';
+
+  @override
+  String get settingsEndpointConnectFailed => '无法连接到该节点。请检查主机和端口。';
+
+  @override
+  String settingsEndpointCurrent(String endpoint) {
+    return '当前：$endpoint';
+  }
+
+  @override
+  String get settingsEndpointCurrentPrefix => '当前：';
+
+  @override
+  String get settingsEndpointCustom => '自定义节点';
+
+  @override
+  String get settingsEndpointCustomise => '自定义节点';
+
+  @override
+  String get settingsEndpointCustomize => '自定义节点';
+
+  @override
+  String get settingsEndpointDefaultMarker => '（默认）';
+
+  @override
+  String get settingsEndpointNetworkSettings => '网络设置';
+
+  @override
+  String get settingsEndpointSelectFromList => '从列表选择';
+
+  @override
+  String get settingsEndpointTitle => '节点';
+
+  @override
+  String get settingsEndpointUpdate => '更新节点';
+
+  @override
+  String get settingsEndpointUpdatedToast => '节点已更新';
+
+  @override
+  String get settingsEndpointUpdating => '正在更新节点...';
+
+  @override
+  String get settingsEndpointWarningBlockchain =>
+      '如果节点配置错误，你的钱包将无法与 Zcash 区块链同步。';
+
+  @override
+  String get settingsEndpointWarningNetwork => '如果节点配置错误，你的钱包将无法与 Zcash 网络同步。';
+
+  @override
+  String get settingsEndpointsTitle => '节点';
+
+  @override
+  String get settingsEnterCurrentPasswordAgain => '请重新输入当前密码。';
+
+  @override
+  String get settingsEnterCurrentPasswordFirst => '请先输入当前密码。';
+
+  @override
+  String get settingsEnterPasscodeTitle => '输入数字密码';
+
+  @override
+  String settingsExplorerCurrent(String explorer) {
+    return '当前：$explorer';
+  }
+
+  @override
+  String settingsExplorerCurrentDefault(String host) {
+    return '当前：$host（默认）';
+  }
+
+  @override
+  String get settingsExplorerCustom => '自定义';
+
+  @override
+  String get settingsExplorerCustomSubtitle => '任何你喜欢的浏览器';
+
+  @override
+  String get settingsExplorerSaveFailed => '无法保存该浏览器网址。';
+
+  @override
+  String get settingsExplorerTitle => '区块浏览器';
+
+  @override
+  String get settingsExplorerUpdate => '更新浏览器';
+
+  @override
+  String get settingsExplorerUrlLabel => '浏览器网址';
+
+  @override
+  String get settingsIncorrectPasscode => '数字密码错误';
+
+  @override
+  String get settingsIncorrectPassword => '密码错误。请重试。';
+
+  @override
+  String get settingsKeepAwakeDescription =>
+      '防止手机进入休眠，使同步更快完成。应用仍会在闲置 1 分钟后锁定。';
+
+  @override
+  String get settingsKeepAwakeLabel => '保持屏幕常亮';
+
+  @override
+  String get settingsKeepAwakeUpdateFailed => '无法更新屏幕常亮设置。';
+
+  @override
   String get settingsLanguageLabel => '语言';
 
   @override
   String get settingsLanguageUpdateFailed => '无法更改语言。';
+
+  @override
+  String get settingsNewBadge => '新';
+
+  @override
+  String get settingsNoActiveAccount => '未选择任何账户。';
+
+  @override
+  String get settingsPasscodeCheckFailed => '无法验证你的数字密码。请重试。';
+
+  @override
+  String get settingsPasscodeLengthHint => '6 位数字';
+
+  @override
+  String get settingsPasscodeMustDiffer => '新数字密码必须与当前不同。';
+
+  @override
+  String get settingsPasscodeRotationRecoveryFailed =>
+      '我们无法验证上一次的数字密码修改。重试前请妥善备好你的助记词。';
+
+  @override
+  String get settingsPasscodeUpdateFailed => '无法更新你的数字密码。请重试。';
+
+  @override
+  String get settingsPasscodeUpdatedToast => '数字密码已更新';
+
+  @override
+  String get settingsPasscodeVerifyFailed => '无法验证数字密码。请重试。';
+
+  @override
+  String get settingsPasscodesMismatch => '两次输入的数字密码不一致。请重试。';
+
+  @override
+  String get settingsPasswordCheckFailed => '无法验证你的密码。请重试。';
+
+  @override
+  String get settingsPasswordHint => '输入密码...';
+
+  @override
+  String get settingsPasswordLabel => '密码';
+
+  @override
+  String get settingsPasswordMinimumHint => '至少 8 个字符。加入数字和符号，或使用更长的密码，可提高安全性。';
+
+  @override
+  String get settingsPasswordRotationRecoveryFailed =>
+      '我们无法验证上一次的密码修改。重试前请妥善备好你的助记词。';
+
+  @override
+  String get settingsPasswordUpdateFailed => '无法更新你的密码。请重试。';
+
+  @override
+  String get settingsPasswordsMismatch => '两次输入的密码不一致。';
+
+  @override
+  String get settingsPfpKnight => '骑士';
+
+  @override
+  String get settingsPfpSamurai => '武士';
+
+  @override
+  String get settingsPfpViking => '维京人';
+
+  @override
+  String get settingsPfpWizard => '巫师';
+
+  @override
+  String get settingsPirCheckingUpdates => '正在检查更新…';
+
+  @override
+  String get settingsPirChooseServer => '选择服务器';
+
+  @override
+  String get settingsPirConfigOpenFailed => '无法打开配置仓库。';
+
+  @override
+  String get settingsPirCustomInvalid => '已保存的自定义服务器无效。请编辑它或选择其他服务器。';
+
+  @override
+  String get settingsPirCustomServer => '自定义服务器';
+
+  @override
+  String get settingsPirCustomServerEllipsis => '自定义服务器…';
+
+  @override
+  String get settingsPirCustomUrlInvalid => '请输入不含凭据、查询参数或片段的 HTTPS 基础网址。';
+
+  @override
+  String get settingsPirEditCustomServer => '编辑自定义服务器…';
+
+  @override
+  String get settingsPirListLoadFailed => '无法加载服务器列表。请重试或输入自定义服务器。';
+
+  @override
+  String get settingsPirListUpdateFailed => '无法更新服务器列表。正在使用上次加载的列表。';
+
+  @override
+  String get settingsPirListUpdateFailedCustom => '无法更新列表。你的自定义服务器仍处于选中状态。';
+
+  @override
+  String get settingsPirLoadingServers => '正在加载服务器列表…';
+
+  @override
+  String get settingsPirNoServers => '暂无可用服务器。你可以输入自定义服务器。';
+
+  @override
+  String get settingsPirPingChecking => '检查中...';
+
+  @override
+  String get settingsPirServerChangeFailed => '无法更换服务器。请重试。';
+
+  @override
+  String get settingsPirServerCloseLabel => '关闭隐私查询服务器设置';
+
+  @override
+  String get settingsPirServerRemoved => '你选择的服务器已不再提供。请选择其他服务器以恢复隐私查询。';
+
+  @override
+  String get settingsPirServerSettingsLabel => '隐私查询服务器设置';
+
+  @override
+  String get settingsPirServerTitle => '隐私查询服务器';
+
+  @override
+  String get settingsPirSettingsReadFailed => '无法读取隐私查询服务器设置。';
+
+  @override
+  String get settingsPirShareServer => '分享你的服务器';
+
+  @override
+  String get settingsPirUnavailable => '此网络不支持隐私查询。';
+
+  @override
+  String get settingsPirUpdatingServer => '正在更新服务器…';
+
+  @override
+  String get settingsPirUseCustomServer => '使用自定义服务器';
+
+  @override
+  String get settingsPrivacyTitle => '隐私';
+
+  @override
+  String get settingsPrivateQueriesLabel => '隐私查询';
+
+  @override
+  String get settingsPrivateQueriesTurnOffBody =>
+      'Vizor 将以公开方式重建你的透明交易记录，服务器会获知你的所有地址。';
+
+  @override
+  String get settingsPrivateQueriesTurnOffConfirm => '关闭';
+
+  @override
+  String get settingsPrivateQueriesTurnOffDisclosure =>
+      '服务器会收到每个账户的所有透明地址，以及隐私恢复找到的交易 ID。它可以将这些信息相互关联；不使用 Tor 时，还能与你的 IP 地址关联。';
+
+  @override
+  String get settingsPrivateQueriesTurnOffTitle => '要关闭隐私查询吗？';
+
+  @override
+  String get settingsProfilePictureCustom => '自定义';
+
+  @override
+  String get settingsRowAboutVizor => '关于 Vizor';
+
+  @override
+  String get settingsRowAccountName => '账户名称';
+
+  @override
+  String get settingsRowAccountNameMobile => '账户名称';
+
+  @override
+  String get settingsRowAddressBook => '地址簿';
+
+  @override
+  String get settingsRowChangePasscode => '修改数字密码';
+
+  @override
+  String get settingsRowChangePassword => '修改密码';
+
+  @override
+  String get settingsRowCoinholderVoting => '持币者投票';
+
+  @override
+  String get settingsRowLinkMobile => '关联 Vizor 手机端';
+
+  @override
+  String get settingsRowMyGiftCards => '我的礼品卡';
+
+  @override
+  String get settingsRowProfilePicture => '头像';
+
+  @override
+  String get settingsRowProfilePictureMobile => '头像';
+
+  @override
+  String get settingsRowSecretPassphrase => '助记词';
+
+  @override
+  String get settingsRowSupportVizor => '支持 Vizor';
+
+  @override
+  String get settingsRowUpdates => '更新';
+
+  @override
+  String get settingsRowViewingKeyMobile => '查看密钥';
+
+  @override
+  String get settingsSecretPassphraseTitle => '助记词';
+
+  @override
+  String get settingsSectionAccount => '账户';
+
+  @override
+  String get settingsSectionDangerZone => '危险区域';
+
+  @override
+  String get settingsSectionMisc => '其他';
+
+  @override
+  String get settingsSectionPersonal => '个人';
+
+  @override
+  String get settingsSectionSyncing => '同步';
+
+  @override
+  String get settingsSectionSystem => '系统';
+
+  @override
+  String get settingsSeedBackupSaveFailed => '无法保存。请重试。';
+
+  @override
+  String get settingsSeedBiometricReason => '确认访问你的助记词';
+
+  @override
+  String get settingsSeedCopiedToast => '已复制助记词';
+
+  @override
+  String get settingsSeedCopyLabel => '复制助记词';
+
+  @override
+  String get settingsSeedHeadingSubtitle => '这是你钱包的主密钥。\n请勿与任何人分享。';
+
+  @override
+  String get settingsSeedLoadFailed => '无法加载你的助记词。请重试。';
+
+  @override
+  String get settingsSeedPasswordSubtitle => '以查看助记词。';
+
+  @override
+  String get settingsSeedRemindLater => '稍后提醒我';
+
+  @override
+  String get settingsSeedScreenshotAck => '我明白了';
+
+  @override
+  String get settingsSeedScreenshotBodyLead => '截图并不可靠';
+
+  @override
+  String get settingsSeedScreenshotBodyRest =>
+      '。任何能访问你手机或相册的人都能看到你的助记词。请改为将助记词抄写在纸上。';
+
+  @override
+  String get settingsSeedScreenshotTitle => '请勿截取助记词的屏幕截图';
+
+  @override
+  String get settingsSeedUnavailableAccount => '此账户没有助记词。';
+
+  @override
+  String get settingsSeedUnavailableHardware => '硬件账户没有助记词。';
+
+  @override
+  String get settingsSeedWrittenDown => '我已抄写';
+
+  @override
+  String get settingsSetNewPasscodeTitle => '设置新数字密码';
+
+  @override
+  String get settingsStatusOff => '已关闭';
+
+  @override
+  String get settingsStatusOn => '已开启';
+
+  @override
+  String get settingsThemeDark => '深色';
+
+  @override
+  String get settingsThemeLight => '浅色';
+
+  @override
+  String get settingsThemeSystem => '系统';
+
+  @override
+  String get settingsThemeSystemAuto => '跟随系统（自动）';
+
+  @override
+  String get settingsThemeTitle => '主题';
+
+  @override
+  String get settingsThemeUpdateFailed => '无法更新主题。';
+
+  @override
+  String get settingsTorDescBootstrapFailed =>
+      'Vizor 无法连接到 Tor。在连接成功或你关闭 Tor 之前，请求会一直被阻止。';
+
+  @override
+  String get settingsTorDescConnected =>
+      'Vizor 的网络请求通过 Tor 发送。在其他应用中打开的链接使用这些应用的网络设置。';
+
+  @override
+  String get settingsTorDescConnectedIos =>
+      'Vizor 的网络请求通过 Tor 发送。Vizor 关闭期间，Ironwood 隐私迁移使用直接连接。在其他应用中打开的链接使用这些应用的网络设置。';
+
+  @override
+  String get settingsTorDescConnectedNoUpdates =>
+      'Vizor 的网络请求通过 Tor 发送，但无法进行软件更新。';
+
+  @override
+  String get settingsTorDescConnecting =>
+      '新请求会等待 Tor 连接就绪。关闭 Tor 可停止连接并使用直接连接。';
+
+  @override
+  String get settingsTorDescConnectingLinux =>
+      '新请求会等待 Tor 连接就绪。关闭 Tor 可停止连接并使用直接连接。在其他应用中打开的更新页面和下载将使用该应用的连接。';
+
+  @override
+  String get settingsTorDescConnectionFailed => '直接请求仍被阻止。请重试或关闭 Tor。';
+
+  @override
+  String get settingsTorDescDirectNoUpdates => '网络请求直接连接。无法进行软件更新。';
+
+  @override
+  String get settingsTorDescDisableNotSaved =>
+      '请求现在使用直接连接，但 Vizor 无法保存此更改。下次打开应用时 Tor 将重新开启。';
+
+  @override
+  String get settingsTorDescEnableNotSaved =>
+      'Vizor 无法保存此更改，因此未开启 Tor。请求仍使用直接连接。';
+
+  @override
+  String get settingsTorDescOff => 'Tor 已关闭。对 Zcash 网络、应用内服务和软件更新的请求均直接连接。';
+
+  @override
+  String get settingsTorDescOffLinux =>
+      'Tor 已关闭。Vizor 的请求（包括软件更新检查）直接连接。更新页面和下载会在其他应用中打开。';
+
+  @override
+  String get settingsTorDescOffMobile =>
+      '钱包同步和应用内请求直接连接。开启 Tor 可向 Vizor 所连接的服务器隐藏你的 IP 地址。';
+
+  @override
+  String get settingsTorDescSwitchFailed => 'Vizor 无法切换为直接连接。请重试。';
+
+  @override
+  String get settingsTorDescSwitchFailedStillOn =>
+      'Vizor 无法切换为直接连接。Tor 仍处于开启状态，请求继续通过 Tor 发送。';
+
+  @override
+  String get settingsTorDescSwitching => 'Vizor 正在将网络请求和软件更新切换为直接连接。';
+
+  @override
+  String get settingsTorDescSwitchingLinux => 'Vizor 正在将其请求（包括软件更新检查）切换为直接连接。';
+
+  @override
+  String get settingsTorDescSwitchingMobile => 'Vizor 正在将网络请求切换为直接连接。';
+
+  @override
+  String get settingsTorGeneralDescription =>
+      '使用 Tor 可向服务器隐藏你的 IP 地址。其他应用使用各自的网络设置。';
+
+  @override
+  String get settingsTorGeneralIosSuffix => ' Vizor 关闭期间，Ironwood 隐私迁移使用直接连接。';
+
+  @override
+  String get settingsTorRetryUpdates => '重试更新';
+
+  @override
+  String get settingsTorStatusConnected => '已连接';
+
+  @override
+  String get settingsTorStatusConnecting => '正在连接…';
+
+  @override
+  String get settingsTorStatusConnectionFailed => '连接失败';
+
+  @override
+  String get settingsTorStatusDirect => '直接连接';
+
+  @override
+  String get settingsTorStatusFailed => '失败';
+
+  @override
+  String get settingsTorStatusNotSaved => '设置未保存';
+
+  @override
+  String get settingsTorStatusSwitchFailed => '切换失败';
+
+  @override
+  String get settingsTorStatusSwitching => '正在切换…';
+
+  @override
+  String get settingsTorStatusSwitchingDirect => '正在切换为直接连接…';
+
+  @override
+  String get settingsTorStopConnecting => '停止连接 Tor';
+
+  @override
+  String get settingsTorTryDirect => '重试直接连接';
+
+  @override
+  String get settingsTorUse => '使用 Tor';
+
+  @override
+  String get settingsTryAgain => '重试';
+
+  @override
+  String settingsUninstallActiveSwaps(int count) {
+    return '此钱包有 $count 笔进行中的兑换。请等待它们完成后再卸载。';
+  }
+
+  @override
+  String get settingsUninstallCannotUndo => '此操作无法撤销。';
+
+  @override
+  String get settingsUninstallChecking => '正在检查...';
+
+  @override
+  String get settingsUninstallClaimCheckFailed => '无法检查正在接收的礼品卡。卸载前请重试。';
+
+  @override
+  String get settingsUninstallCloseApp => '关闭 Vizor';
+
+  @override
+  String get settingsUninstallDeviceGeneric => '此设备';
+
+  @override
+  String get settingsUninstallDeviceMac => '这台 Mac';
+
+  @override
+  String get settingsUninstallDevicePc => '这台电脑';
+
+  @override
+  String get settingsUninstallDoneTitle => '你的数据已被删除';
+
+  @override
+  String get settingsUninstallFinishGeneric => '要完成卸载，请从此设备移除 Vizor 应用。';
+
+  @override
+  String get settingsUninstallFinishMac => '要完成卸载，请从“应用程序”中移除 Vizor 应用。';
+
+  @override
+  String get settingsUninstallFinishWindows => '要完成卸载，请在 Windows 设置中卸载 Vizor。';
+
+  @override
+  String get settingsUninstallPasswordSubtitle => '以卸载 Vizor。';
+
+  @override
+  String get settingsUninstallRemovingTitle => '正在删除数据...';
+
+  @override
+  String get settingsUninstallSwapCheckFailed => '无法检查进行中的兑换。卸载前请重试。';
+
+  @override
+  String get settingsUninstallTitle => '卸载 Vizor';
+
+  @override
+  String get settingsUninstallWipeFailed => '无法完成数据删除。请重试。';
+
+  @override
+  String settingsUninstallWipeSubtitle(String device) {
+    return 'Vizor 将从$device删除钱包数据和安全存储。尚未分享的礼品卡链接将永久丢失。';
+  }
+
+  @override
+  String get settingsUpdateApplying => '应用中';
+
+  @override
+  String get settingsUpdateAvailable => '可用';
+
+  @override
+  String get settingsUpdateCheck => '检查';
+
+  @override
+  String get settingsUpdateCheckForUpdates => '检查更新';
+
+  @override
+  String get settingsUpdateChecking => '检查中';
+
+  @override
+  String get settingsUpdateCheckingButton => '正在检查…';
+
+  @override
+  String get settingsUpdateCurrentLabel => '当前';
+
+  @override
+  String get settingsUpdateDownloadButton => '下载更新';
+
+  @override
+  String get settingsUpdateDownloadingButton => '正在下载…';
+
+  @override
+  String get settingsUpdateFailed => '失败';
+
+  @override
+  String get settingsUpdatePasswordTitle => '更新密码';
+
+  @override
+  String get settingsUpdateRestart => '重启';
+
+  @override
+  String get settingsUpdateRestartButton => '重启以更新';
+
+  @override
+  String get settingsUpdateRestartingButton => '正在重启…';
+
+  @override
+  String settingsUpdateStatusAvailable(String version) {
+    return '版本 $version 可用。';
+  }
+
+  @override
+  String get settingsUpdateStatusChecking => '正在检查更新。';
+
+  @override
+  String settingsUpdateStatusDownloading(String percent) {
+    return '正在下载 $percent%。';
+  }
+
+  @override
+  String get settingsUpdateStatusFailed => '无法完成更新。请重试。';
+
+  @override
+  String get settingsUpdateStatusIdle => '可以检查更新了。';
+
+  @override
+  String settingsUpdateStatusReady(String version) {
+    return '版本 $version 已就绪。';
+  }
+
+  @override
+  String get settingsUpdateStatusRestarting => '正在重启 Vizor。';
+
+  @override
+  String get settingsUpdateStatusUnsupported => '已安装的 Windows 应用支持更新。';
+
+  @override
+  String get settingsUpdateStatusUpToDate => 'Vizor 已是最新版本。';
+
+  @override
+  String get settingsUpdateUnavailable => '不可用';
+
+  @override
+  String get settingsUpdateUpToDate => '已是最新';
+
+  @override
+  String get settingsUpdatingPassword => '正在更新密码...';
+
+  @override
+  String settingsVersionFooterLabel(String version) {
+    return 'Vizor，版本 $version';
+  }
+
+  @override
+  String get settingsViewingKeyBiometricReason => '确认访问你的查看密钥';
+
+  @override
+  String get settingsViewingKeyChoiceSharingWarning =>
+      '仅与可信方分享。两种密钥都可能泄露透明余额和支出。';
+
+  @override
+  String get settingsViewingKeyChooseTitle => '选择他人可以查看的内容';
+
+  @override
+  String get settingsViewingKeyConfirmAgain => '请再次确认访问，然后重试加载此密钥。';
+
+  @override
+  String get settingsViewingKeyCopy => '复制查看密钥';
+
+  @override
+  String get settingsViewingKeyExplanation => '会泄露你的余额以及所有过去和未来的交易。它无法花费 ZEC。';
+
+  @override
+  String get settingsViewingKeyFormatQr => '二维码';
+
+  @override
+  String get settingsViewingKeyFormatText => '文本';
+
+  @override
+  String get settingsViewingKeyFullDescription => '可查看余额以及收入和支出的交易。';
+
+  @override
+  String get settingsViewingKeyIncomingExplanation =>
+      '会泄露过去和未来收到的付款。它无法花费 ZEC。';
+
+  @override
+  String get settingsViewingKeyIncomingOnly => '仅收款';
+
+  @override
+  String get settingsViewingKeyIncomingOnlyDescription => '仅可查看收到的交易。';
+
+  @override
+  String get settingsViewingKeyIncomingWarningTitle => '此密钥会泄露收到的付款';
+
+  @override
+  String get settingsViewingKeyLoadFailedTitle => '无法加载查看密钥';
+
+  @override
+  String get settingsViewingKeyPasswordSubtitle => '以查看查看密钥。';
+
+  @override
+  String get settingsViewingKeyQrFull => '完整查看密钥二维码';
+
+  @override
+  String get settingsViewingKeyQrIncoming => '仅收款查看密钥二维码';
+
+  @override
+  String get settingsViewingKeyTitle => '查看密钥';
+
+  @override
+  String get settingsViewingKeyTryCopyAgain => '重新复制';
+
+  @override
+  String get settingsViewingKeyTypeFull => '完整查看密钥';
+
+  @override
+  String get settingsViewingKeyTypeIncoming => '仅收款密钥';
+
+  @override
+  String get settingsViewingKeyWarningTitle => '此密钥会泄露你的交易';
+
+  @override
+  String get settingsWalletSessionChanged => '钱包会话已更改。请重新输入密码。';
+
+  @override
+  String get settingsWinUpdateContinueTor => '继续使用 Tor';
+
+  @override
+  String get settingsWinUpdateStartFailedTitle => '无法开始更新';
+
+  @override
+  String get settingsWinUpdateTorBlockedBody =>
+      'Vizor 已继续阻止直接请求。请在设置中重试更新，或关闭 Tor 后重新下载。';
+
+  @override
+  String get settingsWinUpdateTorBlockedTitle => '无法通过 Tor 进行软件更新';
+
+  @override
+  String get settingsWinUpdateTorChoiceBody =>
+      '通过 Tor 更新可能耗时更长。关闭 Tor 会将 Vizor 的所有网络请求切换为直接连接。';
+
+  @override
+  String get settingsWinUpdateTorChoiceTitle => '此次更新是否使用 Tor？';
+
+  @override
+  String get settingsWinUpdateTorOffFailedBody =>
+      'Tor 仍处于开启状态，因此 Vizor 继续阻止更新。请重试，或在设置中关闭 Tor 后再下载。';
+
+  @override
+  String get settingsWinUpdateTorOffFailedTitle => '无法关闭 Tor';
+
+  @override
+  String get settingsWinUpdateTurnOffTorAndUpdate => '关闭 Tor 并更新';
+
+  @override
+  String get settingsWinUpdateUnavailableBody =>
+      'Tor 已关闭，但仍无法进行软件更新。下载前请在设置中重试更新。';
+
+  @override
+  String get settingsWinUpdateUnavailableTitle => '无法进行软件更新';
 
   @override
   String get sidebarAccountNameFallback => '用户名';

@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/input/app_password_input_source.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -78,7 +79,7 @@ class ConfirmAccessCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Confirm access',
+                      context.l10n.settingsConfirmAccessTitle,
                       style: AppTypography.headlineLarge.copyWith(
                         color: cardTextColor,
                       ),
@@ -114,10 +115,10 @@ class ConfirmAccessCard extends StatelessWidget {
                   child: AppPasswordInput(
                     warningOnDarkCard: true,
                     child: AppTextField(
-                      label: 'Password',
+                      label: context.l10n.settingsPasswordLabel,
                       showLabel: false,
                       controller: controller,
-                      hintText: 'Your password...',
+                      hintText: context.l10n.settingsPasswordHint,
                       obscureText: true,
                       enableSuggestions: false,
                       autocorrect: false,
@@ -138,7 +139,7 @@ class ConfirmAccessCard extends StatelessWidget {
               const SizedBox(width: AppSpacing.xs),
               Semantics(
                 button: true,
-                label: 'Confirm password',
+                label: context.l10n.settingsConfirmPasswordLabel,
                 child: AppButton(
                   onPressed: canSubmit && !isSubmitting ? onSubmit : null,
                   variant: AppButtonVariant.secondary,

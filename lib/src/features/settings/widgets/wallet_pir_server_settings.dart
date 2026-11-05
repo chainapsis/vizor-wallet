@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -98,7 +99,7 @@ class _WalletPirServerSettingsState
       if (opened) return;
     } catch (_) {}
     if (mounted) {
-      setState(() => _linkError = "Couldn't open the config repository.");
+      setState(() => _linkError = context.l10n.settingsPirConfigOpenFailed);
     }
   }
 
@@ -130,7 +131,9 @@ class _WalletPirServerSettingsState
       if (mounted) widget.onSelected?.call();
     } catch (_) {
       if (mounted) {
-        setState(() => _selectionError = "Couldn't change server. Try again.");
+        setState(
+          () => _selectionError = context.l10n.settingsPirServerChangeFailed,
+        );
       }
     } finally {
       if (mounted) setState(() => _selecting = false);
@@ -145,7 +148,7 @@ class _WalletPirServerSettingsState
           .normalizeCustomServer(_customController.text);
       return null;
     } catch (_) {
-      return 'Enter an HTTPS base URL without credentials, a query or a fragment.';
+      return context.l10n.settingsPirCustomUrlInvalid;
     }
   }
 
@@ -156,9 +159,9 @@ class _WalletPirServerSettingsState
     if (state == null) {
       return async.hasError
           ? WalletPirServerSettingsView.message(
-              'Couldn\'t read the private query server settings.',
+              context.l10n.settingsPirSettingsReadFailed,
             )
-          : const Text('Loading the server list…');
+          : Text(context.l10n.settingsPirLoadingServers);
     }
     _updatePingTargets(state);
     final customMessage = _customMessage();
@@ -180,8 +183,8 @@ class _WalletPirServerSettingsState
             height: 106,
             child: AppTextField(
               key: const ValueKey('wallet_pir_custom_server_input'),
-              label: 'Custom server',
-              hintText: 'https://pir.example',
+              label: context.l10n.settingsPirCustomServer,
+              hintText: 'https://pir.example', // l10n-ignore: URL example
               controller: _customController,
               enabled: !_selecting,
               autofocus: true,
@@ -211,7 +214,7 @@ class _WalletPirServerSettingsState
                     ? null
                     : () => setState(() => _editingCustom = false),
                 variant: AppButtonVariant.secondary,
-                child: const Text('Cancel'),
+                child: Text(context.l10n.commonCancel),
               ),
               const SizedBox(width: AppSpacing.xs),
               AppButton(
@@ -223,7 +226,9 @@ class _WalletPirServerSettingsState
                     ? null
                     : () => unawaited(_selectCustom()),
                 child: Text(
-                  _selecting ? 'Updating server…' : 'Use custom server',
+                  _selecting
+                      ? context.l10n.settingsPirUpdatingServer
+                      : context.l10n.settingsPirUseCustomServer,
                 ),
               ),
             ],
@@ -251,7 +256,7 @@ class _WalletPirServerSettingsState
             onPressed: _selecting ? null : () => unawaited(_shareRepository()),
             variant: AppButtonVariant.ghost,
             size: AppButtonSize.small,
-            child: const Text('Share your server'),
+            child: Text(context.l10n.settingsPirShareServer),
           ),
         ),
         if (_linkError != null)
@@ -300,14 +305,14 @@ class WalletPirServerSettingsView extends StatelessWidget {
     if (state == null) {
       return Text(_message ?? '', style: bodyStyle);
     }
-    final status = walletPirServerStatusText(state);
+    final status = walletPirServerStatusText(context.l10n, state);
     return Column(
       key: const ValueKey('wallet_pir_server_settings'),
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Choose a server',
+          context.l10n.settingsPirChooseServer,
           style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
         ),
         const SizedBox(height: AppSpacing.xxs),
@@ -338,7 +343,7 @@ class WalletPirServerSettingsView extends StatelessWidget {
         if (state.customServer case final custom?) ...[
           _ServerRow(
             server: WalletPirServerOption(
-              label: 'Custom server',
+              label: context.l10n.settingsPirCustomServer,
               baseUrl: custom.baseUrl,
             ),
             selected: custom.isValid,
@@ -355,8 +360,8 @@ class WalletPirServerSettingsView extends StatelessWidget {
             trailing: const AppIcon(AppIcons.chevronForward),
             child: Text(
               state.customServer == null
-                  ? 'Custom server…'
-                  : 'Edit custom server…',
+                  ? context.l10n.settingsPirCustomServerEllipsis
+                  : context.l10n.settingsPirEditCustomServer,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
@@ -369,65 +374,40 @@ class WalletPirServerSettingsView extends StatelessWidget {
 /// The one status line under the source, in everyday words. `null` when
 /// everything is in order.
 ({String text, bool warning})? walletPirServerStatusText(
+  AppLocalizations l10n,
   WalletPirServerState state,
 ) {
   if (state.source == null) {
-    return (
-      text: 'Private queries are unavailable on this network.',
-      warning: true,
-    );
+    return (text: l10n.settingsPirUnavailable, warning: true);
   }
   if (state.customServer case final custom?) {
     if (!custom.isValid) {
-      return (
-        text:
-            'The saved custom server is invalid. Edit it or choose another server.',
-        warning: true,
-      );
+      return (text: l10n.settingsPirCustomInvalid, warning: true);
     }
     return state.refreshError == null
         ? null
-        : (
-            text:
-                "Couldn't update the list. Your custom server is still selected.",
-            warning: true,
-          );
+        : (text: l10n.settingsPirListUpdateFailedCustom, warning: true);
   }
   if (state.refreshing && state.config == null) {
-    return (text: 'Loading the server list…', warning: false);
+    return (text: l10n.settingsPirLoadingServers, warning: false);
   }
   final error = state.refreshError;
   if (state.config == null) {
     return error == null
-        ? (text: 'Loading the server list…', warning: false)
-        : (
-            text:
-                'Couldn\'t load the server list. Try again or enter a custom server.',
-            warning: true,
-          );
+        ? (text: l10n.settingsPirLoadingServers, warning: false)
+        : (text: l10n.settingsPirListLoadFailed, warning: true);
   }
   if (state.needsSelection) {
-    return (
-      text:
-          'The server you chose is no longer offered. Choose another to '
-          'resume private queries.',
-      warning: true,
-    );
+    return (text: l10n.settingsPirServerRemoved, warning: true);
   }
   if (state.hasNoServers) {
-    return (
-      text: 'No servers are offered yet. You can enter a custom server.',
-      warning: true,
-    );
+    return (text: l10n.settingsPirNoServers, warning: true);
   }
   if (error != null) {
-    return (
-      text: 'Couldn\'t update the server list. Using the last list loaded.',
-      warning: true,
-    );
+    return (text: l10n.settingsPirListUpdateFailed, warning: true);
   }
   if (state.refreshing) {
-    return (text: 'Checking for updates…', warning: false);
+    return (text: l10n.settingsPirCheckingUpdates, warning: false);
   }
   return null;
 }
@@ -497,7 +477,7 @@ class _ServerRow extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          ping?.label ?? 'Checking...',
+                          ping?.label ?? context.l10n.settingsPirPingChecking,
                           key: ValueKey(
                             'wallet_pir_server_ping_${server.baseUrl}',
                           ),

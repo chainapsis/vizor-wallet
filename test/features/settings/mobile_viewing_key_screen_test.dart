@@ -28,13 +28,15 @@ import 'package:zcash_wallet/src/core/clipboard/sensitive_clipboard.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_viewing_key_screen.dart';
-import 'package:zcash_wallet/src/features/settings/viewing_key_copy.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/viewing_key_content.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
+
+final _en = lookupAppLocalizations(const Locale('en'));
 
 const _ufvk =
     'uview1qthqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
@@ -458,7 +460,7 @@ void main() {
       );
       await _selectFullIfNeeded(tester);
       expect(find.text('Full viewing key'), findsOneWidget);
-      expect(find.text(viewingKeyExplanation), findsOneWidget);
+      expect(find.text(_en.settingsViewingKeyExplanation), findsOneWidget);
       expect(
         tester
             .widget<Text>(
@@ -493,7 +495,10 @@ void main() {
       }
       expect(find.text(_uivk), findsOneWidget);
       expect(find.text(_ufvk), findsNothing);
-      expect(find.text(incomingViewingKeyExplanation), findsOneWidget);
+      expect(
+        find.text(_en.settingsViewingKeyIncomingExplanation),
+        findsOneWidget,
+      );
       await tester.binding.handlePopRoute();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 220));

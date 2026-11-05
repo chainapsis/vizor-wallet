@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/input/app_password_input_source.dart';
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -68,7 +69,7 @@ class _SettingsChangePasswordScreenState
   String? get _confirmMessage {
     final value = _confirmController.text;
     if (value.isEmpty || _passwordMessage != null || _matches) return null;
-    return 'Passwords do not match.';
+    return context.l10n.settingsPasswordsMismatch;
   }
 
   @override
@@ -130,7 +131,7 @@ class _SettingsChangePasswordScreenState
       if (!mounted) return;
       if (!isValid) {
         setState(() {
-          _currentPasswordError = 'Incorrect password. Please try again.';
+          _currentPasswordError = context.l10n.settingsIncorrectPassword;
           _isSubmitting = false;
         });
         return;
@@ -148,8 +149,7 @@ class _SettingsChangePasswordScreenState
       );
       if (!mounted) return;
       setState(() {
-        _currentPasswordError =
-            "Couldn't check your password. Please try again.";
+        _currentPasswordError = context.l10n.settingsPasswordCheckFailed;
         _isSubmitting = false;
       });
     }
@@ -162,7 +162,7 @@ class _SettingsChangePasswordScreenState
     if (currentPassword == null) {
       setState(() {
         _stage = _ChangePasswordStage.currentPassword;
-        _currentPasswordError = 'Enter your current password again.';
+        _currentPasswordError = context.l10n.settingsEnterCurrentPasswordAgain;
       });
       return;
     }
@@ -190,7 +190,7 @@ class _SettingsChangePasswordScreenState
           _passwordController.clear();
           _confirmController.clear();
           _stage = _ChangePasswordStage.currentPassword;
-          _currentPasswordError = 'Incorrect password. Please try again.';
+          _currentPasswordError = context.l10n.settingsIncorrectPassword;
           _isSubmitting = false;
         });
         return;
@@ -202,9 +202,7 @@ class _SettingsChangePasswordScreenState
     } on PasswordRotationRecoveryFailedException {
       if (!mounted) return;
       setState(() {
-        _submitError =
-            "We couldn't verify the previous password change. "
-            'Please keep your secret passphrase available before trying again.';
+        _submitError = context.l10n.settingsPasswordRotationRecoveryFailed;
         _isSubmitting = false;
       });
     } catch (e, st) {
@@ -213,7 +211,7 @@ class _SettingsChangePasswordScreenState
       setState(() {
         _submitError = e is ArgumentError && e.message != null
             ? e.message.toString()
-            : "Couldn't update your password. Please try again.";
+            : context.l10n.settingsPasswordUpdateFailed;
         _isSubmitting = false;
       });
     }
@@ -229,7 +227,7 @@ class _SettingsChangePasswordScreenState
         child: switch (_stage) {
           _ChangePasswordStage.currentPassword => Center(
             child: ConfirmAccessCard(
-              subtitle: 'Enter your current password first.',
+              subtitle: context.l10n.settingsEnterCurrentPasswordFirst,
               controller: _currentPasswordController,
               errorText: _currentPasswordError ?? _currentPasswordPolicyMessage,
               isSubmitting: _isSubmitting,
@@ -329,7 +327,7 @@ class _NewPasswordView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Update password',
+            context.l10n.settingsUpdatePasswordTitle,
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
@@ -339,8 +337,7 @@ class _NewPasswordView extends StatelessWidget {
           SizedBox(
             width: _subtitleWidth,
             child: Text(
-              'Minimum 8 characters. Add numbers and symbols, or make '
-              'it longer, for stronger security.',
+              context.l10n.settingsPasswordMinimumHint,
               textAlign: TextAlign.center,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.accent,
@@ -357,7 +354,7 @@ class _NewPasswordView extends StatelessWidget {
                   reserveMessageSpace: _fieldReservedMessageHeight,
                   child: AppPasswordInput(
                     child: PasswordTextField(
-                      label: 'Password',
+                      label: context.l10n.settingsPasswordLabel,
                       controller: passwordController,
                       messageText: passwordMessage,
                       tone: passwordMessage == null
@@ -378,7 +375,7 @@ class _NewPasswordView extends StatelessWidget {
                   reserveMessageSpace: _fieldReservedMessageHeight,
                   child: AppPasswordInput(
                     child: PasswordTextField(
-                      label: 'Confirm password',
+                      label: context.l10n.settingsConfirmPasswordLabel,
                       controller: confirmController,
                       messageText: confirmMessage,
                       tone: confirmMessage == null
@@ -416,7 +413,9 @@ class _NewPasswordView extends StatelessWidget {
             variant: AppButtonVariant.primary,
             minWidth: _buttonMinWidth,
             child: Text(
-              isSubmitting ? 'Updating password...' : 'Update password',
+              isSubmitting
+                  ? context.l10n.settingsUpdatingPassword
+                  : context.l10n.settingsUpdatePasswordTitle,
             ),
           ),
         ],

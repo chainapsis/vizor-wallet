@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_button.dart';
@@ -116,8 +117,7 @@ class _CustomEndpointSettingsPanelState
       log('CustomEndpointSettingsPanel._submit: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _submitError =
-            "Couldn't connect to that endpoint. Check the host and port.";
+        _submitError = context.l10n.settingsEndpointConnectFailed;
         _isSubmitting = false;
       });
     }
@@ -215,7 +215,9 @@ class _CustomEndpointSettingsPanelState
                 minWidth: 256,
                 trailing: const AppIcon(AppIcons.chevronForward),
                 child: Text(
-                  _isSubmitting ? 'Updating endpoint...' : 'Update endpoint',
+                  _isSubmitting
+                      ? context.l10n.settingsEndpointUpdating
+                      : context.l10n.settingsEndpointUpdate,
                 ),
               ),
             ],
@@ -241,7 +243,7 @@ class _PanelHeader extends StatelessWidget {
         children: [
           Center(
             child: Text(
-              'Network settings',
+              context.l10n.settingsEndpointNetworkSettings,
               style: AppTypography.headlineMedium.copyWith(
                 color: colors.text.accent,
               ),
@@ -252,7 +254,7 @@ class _PanelHeader extends StatelessWidget {
               right: 0,
               child: AppIconHoverButton(
                 icon: AppIcons.cross,
-                semanticLabel: 'Close endpoint settings',
+                semanticLabel: context.l10n.settingsEndpointCloseSettings,
                 onTap: onClose!,
               ),
             ),
@@ -284,12 +286,13 @@ class CurrentEndpointText extends StatelessWidget {
     );
     final suffix = [
       if (latency != null) latency.label,
-      if (preset?.isDefault ?? false) '(Default)',
+      if (preset?.isDefault ?? false)
+        context.l10n.settingsEndpointDefaultMarker,
     ].join(' ');
 
     return Text.rich(
       TextSpan(
-        text: 'Current: ',
+        text: context.l10n.settingsEndpointCurrentPrefix,
         children: [
           TextSpan(
             text: current.hostPort,
@@ -329,8 +332,8 @@ class CustomEndpointForm extends StatelessWidget {
           SizedBox(
             height: 86,
             child: AppTextField(
-              label: 'Custom endpoint',
-              hintText: '<hostname>:<port>',
+              label: context.l10n.settingsEndpointCustom,
+              hintText: '<hostname>:<port>', // l10n-ignore: address format hint
               controller: controller,
               autofocus: true,
               leading: const AppIcon(AppIcons.endpoint),
@@ -355,15 +358,12 @@ class CustomEndpointForm extends StatelessWidget {
               Expanded(
                 child: Text.rich(
                   TextSpan(
-                    text:
-                        "If the endpoint is configured wrong, your wallet won't "
-                        'be able to sync with the Zcash network.\n',
+                    text: '${context.l10n.settingsEndpointWarningNetwork}\n',
                     children: [
                       TextSpan(
-                        text:
-                            "The wallet will show the balance from the last "
-                            "time it was successfully connected. It won't "
-                            'show any $kZcashDefaultCurrencyTicker you recently received.',
+                        text: context.l10n.settingsEndpointBalanceNote(
+                          kZcashDefaultCurrencyTicker,
+                        ),
                         style: TextStyle(color: colors.text.primary),
                       ),
                     ],

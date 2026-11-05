@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_floating_bar.dart';
@@ -161,8 +162,7 @@ class _SettingsEndpointScreenState
       log('SettingsEndpointScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _submitError =
-            "Couldn't connect to that endpoint. Check the host and port.";
+        _submitError = context.l10n.settingsEndpointConnectFailed;
         _isSubmitting = false;
       });
     }
@@ -273,7 +273,7 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Endpoint',
+                    context.l10n.settingsEndpointTitle,
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineLarge.copyWith(
                       color: colors.text.accent,
@@ -347,9 +347,10 @@ class _CurrentEndpointSubtitle extends StatelessWidget {
       current.normalizedLightwalletdUrl,
     );
     final text = [
-      'Current: ${current.hostPort}',
+      context.l10n.settingsEndpointCurrent(current.hostPort),
       if (latency != null) latency.label,
-      if (preset?.isDefault ?? false) '(Default)',
+      if (preset?.isDefault ?? false)
+        context.l10n.settingsEndpointDefaultMarker,
     ].join(' ');
 
     return Text(
@@ -381,14 +382,14 @@ class _EndpointTabs extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _EndpointTabButton(
-              label: 'Select from the list',
+              label: context.l10n.settingsEndpointSelectFromList,
               icon: AppIcons.endpoint,
               selected: activeTab == _EndpointTab.list,
               onTap: () => onSelect(_EndpointTab.list),
             ),
             const SizedBox(width: AppSpacing.xs),
             _EndpointTabButton(
-              label: 'Custom endpoint',
+              label: context.l10n.settingsEndpointCustom,
               icon: AppIcons.edit,
               selected: activeTab == _EndpointTab.custom,
               onTap: () => onSelect(_EndpointTab.custom),
@@ -754,7 +755,11 @@ class _FloatingUpdateBar extends StatelessWidget {
             onPressed: canUpdate ? onSubmit : null,
             variant: AppButtonVariant.primary,
             minWidth: 196,
-            child: Text(isSubmitting ? 'Updating...' : 'Update endpoint'),
+            child: Text(
+              isSubmitting
+                  ? context.l10n.commonUpdating
+                  : context.l10n.settingsEndpointUpdate,
+            ),
           ),
       ],
     );
@@ -811,7 +816,11 @@ class _CustomEndpointTab extends StatelessWidget {
             onPressed: canUpdate ? onSubmit : null,
             variant: AppButtonVariant.primary,
             minWidth: 196,
-            child: Text(isSubmitting ? 'Updating...' : 'Customize endpoint'),
+            child: Text(
+              isSubmitting
+                  ? context.l10n.commonUpdating
+                  : context.l10n.settingsEndpointCustomize,
+            ),
           ),
         ),
       ],
@@ -884,7 +893,7 @@ class _CustomEndpointHeroCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Custom endpoint',
+                    context.l10n.settingsEndpointCustom,
                     style: AppTypography.headlineLarge.copyWith(
                       color: colors.text.homeCard,
                     ),
@@ -929,9 +938,9 @@ class _CustomEndpointField extends StatelessWidget {
     return SizedBox(
       height: _height,
       child: AppTextField(
-        label: 'Custom endpoint',
+        label: context.l10n.settingsEndpointCustom,
         showLabel: false,
-        hintText: '<hostname>:<port>',
+        hintText: '<hostname>:<port>', // l10n-ignore: address format hint
         hintStyle: AppTypography.labelMedium.copyWith(
           fontWeight: FontWeight.w400,
           color: colors.text.muted,
@@ -971,17 +980,16 @@ class _CustomEndpointInfo extends StatelessWidget {
           AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            "If the endpoint is configured wrong, your wallet won't be able "
-            'to sync with the Zcash network.',
+            context.l10n.settingsEndpointWarningNetwork,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.accent,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'The wallet will show the balance from the last time it was '
-            "successfully connected. It won't show any "
-            '$kZcashDefaultCurrencyTicker you recently received.',
+            context.l10n.settingsEndpointBalanceNote(
+              kZcashDefaultCurrencyTicker,
+            ),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.primary,
             ),

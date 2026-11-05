@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 
@@ -67,7 +68,7 @@ class _MobileChangePasscodeScreenState
         if (_entry == _currentPasscode) {
           setState(() {
             _entry = '';
-            _error = 'Your new passcode must be different.';
+            _error = context.l10n.settingsPasscodeMustDiffer;
           });
           return;
         }
@@ -84,7 +85,7 @@ class _MobileChangePasscodeScreenState
             _entry = '';
             _newPasscode = null;
             _phase = _Phase.create;
-            _error = "Passcodes didn't match. Try again.";
+            _error = context.l10n.settingsPasscodesMismatch;
           });
         }
     }
@@ -102,7 +103,7 @@ class _MobileChangePasscodeScreenState
         setState(() {
           _submitting = false;
           _entry = '';
-          _error = 'Incorrect Passcode';
+          _error = context.l10n.settingsChangePasscodeIncorrect;
         });
         return;
       }
@@ -119,7 +120,7 @@ class _MobileChangePasscodeScreenState
       setState(() {
         _submitting = false;
         _entry = '';
-        _error = "Couldn't check your passcode. Please try again.";
+        _error = context.l10n.settingsPasscodeCheckFailed;
       });
     }
   }
@@ -167,7 +168,7 @@ class _MobileChangePasscodeScreenState
           // — restart from scratch rather than trusting stale state.
           setState(() {
             _submitting = false;
-            _restartFlow('Incorrect Passcode');
+            _restartFlow(context.l10n.settingsChangePasscodeIncorrect);
           });
           return;
         }
@@ -188,10 +189,7 @@ class _MobileChangePasscodeScreenState
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _restartFlow(
-          "We couldn't verify the previous passcode change. Keep your "
-          'secret passphrase available before trying again.',
-        );
+        _restartFlow(context.l10n.settingsPasscodeRotationRecoveryFailed);
       });
     } catch (e, st) {
       log('MobileChangePasscode._submit: ERROR: $e\n$st');
@@ -201,7 +199,7 @@ class _MobileChangePasscodeScreenState
         _entry = '';
         _newPasscode = null;
         _phase = _Phase.create;
-        _error = "Couldn't update your passcode. Please try again.";
+        _error = context.l10n.settingsPasscodeUpdateFailed;
       });
     }
   }
@@ -218,9 +216,18 @@ class _MobileChangePasscodeScreenState
   Widget build(BuildContext context) {
     final colors = context.colors;
     final (title, subtitle) = switch (_phase) {
-      _Phase.verify => ('Enter Passcode', 'Confirm your access'),
-      _Phase.create => ('Set New Passcode', '6 digits length'),
-      _Phase.confirm => ('Confirm Passcode', '6 digits length'),
+      _Phase.verify => (
+        context.l10n.settingsEnterPasscodeTitle,
+        context.l10n.settingsConfirmAccessSubtitle,
+      ),
+      _Phase.create => (
+        context.l10n.settingsSetNewPasscodeTitle,
+        context.l10n.settingsPasscodeLengthHint,
+      ),
+      _Phase.confirm => (
+        context.l10n.settingsConfirmPasscodeTitle,
+        context.l10n.settingsPasscodeLengthHint,
+      ),
     };
 
     return MobileSidebarExitScope(
