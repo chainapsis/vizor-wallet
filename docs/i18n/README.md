@@ -70,7 +70,12 @@ translation:
 - adds a URL, or a number the English source does not contain;
 - translates a never-translate term (`ZEC`, `Vizor`, `Ledger`, ...) or uses a
   forbidden variant from the glossary;
-- misses a `confirmed` glossary term.
+- misses a `confirmed` glossary term;
+- copies a description tag such as `[security]` into the message.
+
+The same test fails when app code gains a hard-coded English string or
+compares text with English copy (`label == 'Selected'`), which breaks as soon
+as the label is translated.
 
 Translations are a security surface in a wallet: the URL and number checks
 exist so that no translation can point users somewhere else or change an

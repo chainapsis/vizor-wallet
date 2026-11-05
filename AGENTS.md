@@ -234,8 +234,14 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
 - `LocaleTypography` (applied in every app root's `builder`) gives Korean and
   Chinese UI their own CJK font fallback. Without it the engine picks Han
   glyphs by the OS language. A `TextPainter` built from a token style misses
-  the fallback; merge with `DefaultTextStyle.of(context).style` when
-  measurement must match rendering.
+  the fallback; measure with `withLocaleFontFallback(context, style)`.
+- Code never branches on a translated label (`status == 'Completed'`); give
+  the data a kind. The gate test rejects such comparisons in `lib/src`.
+- Check ko/zh screens with `scripts/figma-compare.sh widget --locale ko` or
+  the layout scan over every scenario ("Checking a language on screen" in
+  `docs/i18n/README.md`); `scripts/fetch-capture-fonts.sh` fetches the CJK
+  test fonts once. Fixed-height boxes that fit English exactly overflow in
+  CJK, so prefer minimum heights.
 
 ## Mainnet Block-Time Table
 
