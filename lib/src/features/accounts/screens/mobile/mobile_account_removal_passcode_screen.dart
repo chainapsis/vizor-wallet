@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/app_security_provider.dart';
@@ -51,10 +54,12 @@ class _MobileAccountRemovalPasscodeScreenState
       // A popped screen can stay mounted during its exit animation.
       if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
       if (verified) {
+        unawaited(AppHaptics.accessGranted());
         _entry = '';
         context.pop(true);
         return;
       }
+      unawaited(AppHaptics.error());
       setState(() => _error = 'Incorrect passcode');
     } catch (_) {
       if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;

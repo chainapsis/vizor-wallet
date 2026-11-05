@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
@@ -585,6 +586,21 @@ void main() {
       final notifier = _FakeAccountNotifier(accounts);
       final sync = _FakeWalletMutationSyncNotifier();
       final security = _FakeSecurityNotifier();
+      const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
+      final haptics = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        hapticsChannel,
+        (call) async {
+          haptics.add(call.method);
+          return true;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          hapticsChannel,
+          null,
+        ),
+      );
       await tester.pumpWidget(
         _app(
           accounts,
@@ -667,6 +683,8 @@ void main() {
       await tester.pump();
       await _enterPasscode(tester, '56');
       expect(security.confirmations, ['000000', '123456', '123456', '123456']);
+      // A cancelled late success stays silent.
+      expect(haptics, ['error', 'success']);
       expect(notifier.removedUuid, lastAccount ? isNull : 'a');
       expect(notifier.resetCount, lastAccount ? 1 : 0);
       expect(sync.pauseCount, 1);
