@@ -22,8 +22,6 @@ lib/src/features/pay
 lib/src/features/receive
 lib/src/features/send
 lib/src/features/settings
-lib/src/features/swap/models
-lib/src/features/swap/screens
-lib/src/features/swap/widgets
+lib/src/features/swap
 lib/src/features/voting
 lib/src/features/wallet_link

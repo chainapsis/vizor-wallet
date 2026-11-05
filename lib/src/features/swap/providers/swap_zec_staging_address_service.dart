@@ -45,7 +45,7 @@ class SwapZecStagingAddressUnavailableException implements Exception {
 
   // The quote error shows SwapNoticeKind.receiveAddressUnavailable instead.
   @override
-  String toString() => 'SwapZecStagingAddressUnavailableException: $cause';
+  String toString() => 'SwapZecStagingAddressUnavailableException: $cause'; // l10n-ignore: log text
 }
 
 class SwapZecStagingAddressService {
