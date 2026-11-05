@@ -4089,9 +4089,21 @@
   "@ledgerMobileCheckBluetoothBelow": {
     "description": "Guidance when Bluetooth permission was denied; a Bluetooth access checker is shown below."
   },
+  "ledgerMobileConnectionFailed": "Ledger mobile connection failed.",
+  "@ledgerMobileConnectionFailed": {
+    "description": "Error on the Ledger sheet when the Bluetooth connection failed without a reason."
+  },
   "ledgerMobileConnectionLost": "The Bluetooth connection to your Ledger was lost or could not be established. Turn on and unlock your Ledger, keep it nearby, then try again.",
   "@ledgerMobileConnectionLost": {
     "description": "Guidance when the Bluetooth connection failed or dropped."
+  },
+  "ledgerMobileDiscoveryFailed": "Ledger discovery failed.",
+  "@ledgerMobileDiscoveryFailed": {
+    "description": "Error on the Ledger connection sheet when the Bluetooth device search failed without a reason."
+  },
+  "ledgerMobileEmptyResponse": "Ledger returned an empty response.",
+  "@ledgerMobileEmptyResponse": {
+    "description": "Error on the Ledger signing sheet when the Bluetooth connection answered with nothing."
   },
   "ledgerMobilePairingInvalid": "Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.",
   "@ledgerMobilePairingInvalid": {
@@ -4120,6 +4132,10 @@
   "ledgerMobileUnavailable": "Vizor could not reach your Ledger. Make sure it is on, unlocked and nearby, then try again.",
   "@ledgerMobileUnavailable": {
     "description": "Fallback guidance when the Bluetooth connection to the Ledger failed for an unknown reason."
+  },
+  "ledgerMobileUnknownDiscoveryEvent": "Ledger discovery returned an unknown event.",
+  "@ledgerMobileUnknownDiscoveryEvent": {
+    "description": "Error on the Ledger connection sheet when the Bluetooth device search reported something Vizor does not recognize."
   },
   "ledgerNoDevicesFound": "No Ledger devices found",
   "@ledgerNoDevicesFound": {
@@ -7973,6 +7989,14 @@
   "onboardingDiscoveryTitle": "Additional accounts found",
   "@onboardingDiscoveryTitle": {
     "description": "Title of the dialog shown when the secret passphrase has more accounts with activity than the first one."
+  },
+  "onboardingDuplicateAccount": "This account is already in your wallet.",
+  "@onboardingDuplicateAccount": {
+    "description": "Error under the import form when the imported account is already in this wallet."
+  },
+  "onboardingDuplicateKeystoneAccount": "This Keystone account is already in your wallet.",
+  "@onboardingDuplicateKeystoneAccount": {
+    "description": "Error on the Keystone import screen when that hardware account is already in this wallet."
   },
   "onboardingEditBip39Passphrase": "Edit BIP39 passphrase",
   "@onboardingEditBip39Passphrase": {

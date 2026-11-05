@@ -3228,8 +3228,17 @@ class AppLocalizationsEn extends AppLocalizations {
       'Check Bluetooth access below, then try connecting to your Ledger again.';
 
   @override
+  String get ledgerMobileConnectionFailed => 'Ledger mobile connection failed.';
+
+  @override
   String get ledgerMobileConnectionLost =>
       'The Bluetooth connection to your Ledger was lost or could not be established. Turn on and unlock your Ledger, keep it nearby, then try again.';
+
+  @override
+  String get ledgerMobileDiscoveryFailed => 'Ledger discovery failed.';
+
+  @override
+  String get ledgerMobileEmptyResponse => 'Ledger returned an empty response.';
 
   @override
   String get ledgerMobilePairingInvalid =>
@@ -3258,6 +3267,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get ledgerMobileUnavailable =>
       'Vizor could not reach your Ledger. Make sure it is on, unlocked and nearby, then try again.';
+
+  @override
+  String get ledgerMobileUnknownDiscoveryEvent =>
+      'Ledger discovery returned an unknown event.';
 
   @override
   String get ledgerNoDevicesFound => 'No Ledger devices found';
@@ -6240,6 +6253,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingDiscoveryTitle => 'Additional accounts found';
+
+  @override
+  String get onboardingDuplicateAccount =>
+      'This account is already in your wallet.';
+
+  @override
+  String get onboardingDuplicateKeystoneAccount =>
+      'This Keystone account is already in your wallet.';
 
   @override
   String get onboardingEditBip39Passphrase => 'Edit BIP39 passphrase';

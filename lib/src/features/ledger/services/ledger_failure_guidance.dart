@@ -218,7 +218,17 @@ LedgerFailureGuidance _mobileGuidance(
     error.platformText
         ? error
               .message // l10n-ignore: platform text, wording unknown
-        : l10n.ledgerMobileUnavailable,
+        : switch (error.fallback) {
+            LedgerMobileFallback.emptyResponse =>
+              l10n.ledgerMobileEmptyResponse,
+            LedgerMobileFallback.unknownDiscoveryEvent =>
+              l10n.ledgerMobileUnknownDiscoveryEvent,
+            LedgerMobileFallback.discoveryFailed =>
+              l10n.ledgerMobileDiscoveryFailed,
+            LedgerMobileFallback.connectionFailed =>
+              l10n.ledgerMobileConnectionFailed,
+            null => l10n.ledgerMobileUnavailable,
+          },
   ),
 };
 

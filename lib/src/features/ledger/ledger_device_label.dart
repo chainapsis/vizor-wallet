@@ -23,7 +23,9 @@ String ledgerDeviceLabel(LedgerBleDevice device) {
   if (name.isEmpty || ['ledger', 'noname', 'unknown'].contains(nameKey)) {
     return model;
   }
-  if (model != 'Ledger' && (nameKey == modelKey || nameKey == compact(model))) {
+  const genericModel = 'Ledger'; // l10n-ignore: device model name
+  if (model != genericModel &&
+      (nameKey == modelKey || nameKey == compact(model))) {
     return model;
   }
   // Preserve custom names that already include the full model designation.

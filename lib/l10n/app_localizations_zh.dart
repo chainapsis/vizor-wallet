@@ -3015,8 +3015,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerMobileCheckBluetoothBelow => '请在下方检查蓝牙权限，然后重新尝试连接 Ledger。';
 
   @override
+  String get ledgerMobileConnectionFailed => '连接 Ledger 失败。';
+
+  @override
   String get ledgerMobileConnectionLost =>
       '与 Ledger 的蓝牙连接已断开或无法建立。请开启并解锁 Ledger，将其放在附近，然后重试。';
+
+  @override
+  String get ledgerMobileDiscoveryFailed => '搜索 Ledger 失败。';
+
+  @override
+  String get ledgerMobileEmptyResponse => 'Ledger 返回了空响应。';
 
   @override
   String get ledgerMobilePairingInvalid =>
@@ -3042,6 +3051,9 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get ledgerMobileUnavailable =>
       'Vizor 无法连接你的 Ledger。请确认它已开启、已解锁且在附近，然后重试。';
+
+  @override
+  String get ledgerMobileUnknownDiscoveryEvent => '搜索 Ledger 时收到未知事件。';
 
   @override
   String get ledgerNoDevicesFound => '未找到 Ledger 设备';
@@ -5783,6 +5795,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingDiscoveryTitle => '发现其他账户';
+
+  @override
+  String get onboardingDuplicateAccount => '此账户已在你的钱包中。';
+
+  @override
+  String get onboardingDuplicateKeystoneAccount => '此 Keystone 账户已在你的钱包中。';
 
   @override
   String get onboardingEditBip39Passphrase => '编辑 BIP39 密码短语';

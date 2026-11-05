@@ -61,7 +61,8 @@ class _MobileSecretPassphraseScreenState
   String? _mnemonic;
   bool _revealed = false;
   bool _copied = false;
-  String? _error;
+  // Worded in build: initState cannot read localizations.
+  Object? _error;
   Timer? _copyResetTimer;
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
@@ -101,7 +102,7 @@ class _MobileSecretPassphraseScreenState
       });
     } catch (e, st) {
       log('MobileSecretPassphrase: ERROR generating mnemonic: $e\n$st');
-      _error = onboardingSubmitErrorMessage(context.l10n, e);
+      _error = e;
     }
   }
 
@@ -195,7 +196,7 @@ class _MobileSecretPassphraseScreenState
           children: [
             if (_error != null) ...[
               Text(
-                _error!,
+                onboardingSubmitErrorMessage(context.l10n, _error!),
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.destructive,

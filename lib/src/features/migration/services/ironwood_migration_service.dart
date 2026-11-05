@@ -94,7 +94,9 @@ bool _isUnusableMigrationCredentialError(Object error) {
       error is IronwoodMigrationCredentialContextMismatchException) {
     return true;
   }
-  return error.toString().contains('Failed to decrypt secure-storage payload');
+  const undecryptable =
+      'Failed to decrypt secure-storage payload'; // l10n-ignore: storage error text
+  return error.toString().contains(undecryptable);
 }
 
 typedef IronwoodMigrationStatusGetter =

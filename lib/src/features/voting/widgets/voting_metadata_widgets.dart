@@ -674,7 +674,7 @@ class _VotingProposalOptionRow extends StatelessWidget {
               const SizedBox(width: AppSpacing.sm),
               Text(
                 trailingLabel,
-                key: trailingLabel == 'Selected'
+                key: selected
                     ? const ValueKey('voting_selected_choice_indicator')
                     : null,
                 style: AppTypography.bodySmall.copyWith(

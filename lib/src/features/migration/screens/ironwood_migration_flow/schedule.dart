@@ -331,7 +331,9 @@ class _IronwoodMigrationScheduleRouteState
 
 String _migrationManageErrorMessage(AppLocalizations l10n, Object error) {
   final message = error.toString();
-  if (message.contains('No remaining Orchard balance')) {
+  const noBalance =
+      'No remaining Orchard balance'; // l10n-ignore: Rust error text
+  if (message.contains(noBalance)) {
     return l10n.migrationManageNoBalance;
   }
   return l10n.migrationManageUpdateFailed;

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show immutable;
 
 import '../../../core/l10n/l10n.dart';
+import '../../../core/security/password_policy.dart';
 import '../../../providers/account_provider.dart';
 
 /// A submit error shown on an onboarding step: either already-produced text
@@ -50,6 +51,7 @@ String onboardingSubmitErrorMessage(AppLocalizations l10n, Object error) {
   if (error is WalletCreationCurrentBlockHeightException) {
     return l10n.onboardingBlockHeightRequired;
   }
+  if (error is PasswordPolicyViolation) return error.issue.message(l10n);
 
   const exceptionPrefix = 'Exception: ';
   var message = error.toString();
@@ -60,8 +62,13 @@ String onboardingSubmitErrorMessage(AppLocalizations l10n, Object error) {
   if (anyhowMatch != null) {
     message = anyhowMatch.group(1)!;
   }
-  if (_isAccountCollisionMessage(message)) {
-    return kDuplicateAccountImportErrorMessage;
+  // Rust words these two duplicates; the matching keeps their English.
+  if (message == kDuplicateSecretPassphraseImportErrorMessage ||
+      _isAccountCollisionMessage(message)) {
+    return l10n.onboardingDuplicateAccount;
+  }
+  if (message == kDuplicateKeystoneAccountImportErrorMessage) {
+    return l10n.onboardingDuplicateKeystoneAccount;
   }
   return message;
 }

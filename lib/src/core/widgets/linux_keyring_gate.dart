@@ -9,6 +9,7 @@ import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import 'app_button.dart';
 import 'app_icon.dart';
+import '../l10n/locale_typography.dart';
 
 bool _needsKeyringNotice(LinuxKeyringCoordinator coordinator) {
   if (!coordinator.isEnabled) return false;
@@ -148,11 +149,16 @@ class _LinuxKeyringStartupHostState extends State<LinuxKeyringStartupHost> {
       debugShowCheckedModeBanner: false,
       supportedLocales: appSupportedLocales(),
       localizationsDelegates: appLocalizationsDelegates,
-      builder: (context, child) => AppTheme(
-        data: MediaQuery.platformBrightnessOf(context) == Brightness.dark
-            ? AppThemeData.dark
-            : AppThemeData.light,
-        child: LinuxKeyringGate(coordinator: widget.coordinator, child: child!),
+      builder: (context, child) => LocaleTypography(
+        child: AppTheme(
+          data: MediaQuery.platformBrightnessOf(context) == Brightness.dark
+              ? AppThemeData.dark
+              : AppThemeData.light,
+          child: LinuxKeyringGate(
+            coordinator: widget.coordinator,
+            child: child!,
+          ),
+        ),
       ),
       home: Builder(
         builder: (context) => Material(

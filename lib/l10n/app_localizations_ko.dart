@@ -3187,8 +3187,17 @@ class AppLocalizationsKo extends AppLocalizations {
       '아⁠래⁠에⁠서 Bluetooth 접⁠근 권⁠한⁠을 확⁠인⁠한 뒤 Ledger⁠에 다⁠시 연⁠결⁠해 보⁠세⁠요.';
 
   @override
+  String get ledgerMobileConnectionFailed => 'Ledger⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
   String get ledgerMobileConnectionLost =>
       'Ledger⁠와⁠의 Bluetooth 연⁠결⁠이 끊⁠겼⁠거⁠나 연⁠결⁠할 수 없⁠어⁠요. Ledger⁠를 켜⁠고 잠⁠금⁠을 해⁠제⁠한 뒤 가⁠까⁠이⁠에 두⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerMobileDiscoveryFailed => 'Ledger⁠를 찾⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get ledgerMobileEmptyResponse => 'Ledger⁠가 빈 응⁠답⁠을 보⁠냈⁠어⁠요.';
 
   @override
   String get ledgerMobilePairingInvalid =>
@@ -3216,6 +3225,10 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get ledgerMobileUnavailable =>
       'Vizor⁠가 Ledger⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요. Ledger⁠가 켜⁠져 있⁠고 잠⁠금⁠이 해⁠제⁠되⁠어 있⁠으⁠며 가⁠까⁠이⁠에 있⁠는⁠지 확⁠인⁠한 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerMobileUnknownDiscoveryEvent =>
+      'Ledger 검⁠색 중 알 수 없⁠는 응⁠답⁠을 받⁠았⁠어⁠요.';
 
   @override
   String get ledgerNoDevicesFound => 'Ledger 기⁠기⁠를 찾⁠지 못⁠했⁠어⁠요';
@@ -6124,6 +6137,13 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingDiscoveryTitle => '추⁠가 계⁠정⁠을 찾⁠았⁠어⁠요';
+
+  @override
+  String get onboardingDuplicateAccount => '이 계⁠정⁠은 이⁠미 지⁠갑⁠에 있⁠어⁠요.';
+
+  @override
+  String get onboardingDuplicateKeystoneAccount =>
+      '이 Keystone 계⁠정⁠은 이⁠미 지⁠갑⁠에 있⁠어⁠요.';
 
   @override
   String get onboardingEditBip39Passphrase => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈 수⁠정';

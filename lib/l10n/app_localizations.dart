@@ -5522,11 +5522,29 @@ abstract class AppLocalizations {
   /// **'Check Bluetooth access below, then try connecting to your Ledger again.'**
   String get ledgerMobileCheckBluetoothBelow;
 
+  /// Error on the Ledger sheet when the Bluetooth connection failed without a reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger mobile connection failed.'**
+  String get ledgerMobileConnectionFailed;
+
   /// Guidance when the Bluetooth connection failed or dropped.
   ///
   /// In en, this message translates to:
   /// **'The Bluetooth connection to your Ledger was lost or could not be established. Turn on and unlock your Ledger, keep it nearby, then try again.'**
   String get ledgerMobileConnectionLost;
+
+  /// Error on the Ledger connection sheet when the Bluetooth device search failed without a reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger discovery failed.'**
+  String get ledgerMobileDiscoveryFailed;
+
+  /// Error on the Ledger signing sheet when the Bluetooth connection answered with nothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger returned an empty response.'**
+  String get ledgerMobileEmptyResponse;
 
   /// Guidance when the stored Bluetooth pairing with the Ledger is stale and must be removed in system settings.
   ///
@@ -5569,6 +5587,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Vizor could not reach your Ledger. Make sure it is on, unlocked and nearby, then try again.'**
   String get ledgerMobileUnavailable;
+
+  /// Error on the Ledger connection sheet when the Bluetooth device search reported something Vizor does not recognize.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger discovery returned an unknown event.'**
+  String get ledgerMobileUnknownDiscoveryEvent;
 
   /// Title of the status block when the search found no Ledger device.
   ///
@@ -10237,6 +10261,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Additional accounts found'**
   String get onboardingDiscoveryTitle;
+
+  /// Error under the import form when the imported account is already in this wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'This account is already in your wallet.'**
+  String get onboardingDuplicateAccount;
+
+  /// Error on the Keystone import screen when that hardware account is already in this wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'This Keystone account is already in your wallet.'**
+  String get onboardingDuplicateKeystoneAccount;
 
   /// [security] Accessibility label of the bar that reopens the BIP39 passphrase dialog for editing.
   ///
