@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/l10n/app_language.dart';
+import '../src/core/l10n/locale_typography.dart';
 import '../src/core/theme/app_theme.dart';
 import 'address_book_use_cases.dart';
 import 'address_verify_use_cases.dart';
@@ -76,8 +77,10 @@ class WidgetbookApp extends StatelessWidget {
             WidgetbookTheme(name: 'Dark', data: AppThemeData.dark),
             WidgetbookTheme(name: 'Light', data: AppThemeData.light),
           ],
-          themeBuilder: (context, theme, child) =>
-              AppTheme(data: theme, child: child),
+          themeBuilder: (context, theme, child) => AppTheme(
+            data: theme,
+            child: LocaleTypography(child: child),
+          ),
           initialTheme: const WidgetbookTheme(
             name: 'Dark',
             data: AppThemeData.dark,

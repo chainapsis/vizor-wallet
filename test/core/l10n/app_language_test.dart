@@ -133,8 +133,13 @@ void main() {
       ),
     );
 
-    expect(app.settingsLanguageLabel, '언어');
-    expect(app.languageSystemOption(AppLanguage.ko.nativeName), '시스템 (한국어)');
+    // Shipped Korean strings carry word joiners (tool/l10n/korean_arb.dart).
+    String visible(String text) => text.replaceAll('⁠', '');
+    expect(visible(app.settingsLanguageLabel), '언어');
+    expect(
+      visible(app.languageSystemOption(AppLanguage.ko.nativeName)),
+      '시스템 (한국어)',
+    );
     expect(material.cancelButtonLabel, isNot('Cancel'));
   });
 }

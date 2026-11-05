@@ -8,11 +8,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:yaml/yaml.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../tool/l10n/korean_arb.dart';
 import '../../tool/l10n/strings.dart';
 
-Map<String, Object?> _readArb(String tag) =>
-    (jsonDecode(File('lib/l10n/app_$tag.arb').readAsStringSync()) as Map)
-        .cast<String, Object?>();
+/// The file translators edit: `lib/l10n/source/` when a locale has a
+/// generated ARB (Korean), otherwise the ARB itself.
+Map<String, Object?> _readArb(String tag) {
+  final source = File('lib/l10n/source/app_$tag.arb');
+  final file = source.existsSync() ? source : File('lib/l10n/app_$tag.arb');
+  return (jsonDecode(file.readAsStringSync()) as Map).cast<String, Object?>();
+}
 
 List<String> _messageKeys(Map<String, Object?> arb) =>
     arb.keys.where((k) => !k.startsWith('@')).toList();
@@ -45,6 +50,16 @@ void main() {
       (loadYaml(File('lib/l10n/glossary.yaml').readAsStringSync())
               as YamlMap)['terms']
           as YamlList;
+
+  test('app_ko.arb is generated from its source', () {
+    expect(
+      File(koreanOutputPath).readAsStringSync(),
+      buildKoreanArb(File(koreanSourcePath).readAsStringSync()),
+      reason:
+          'Edit $koreanSourcePath, then run '
+          '`fvm dart run tool/l10n/korean_arb.dart`.',
+    );
+  });
 
   test('message keys are sorted so parallel changes rarely conflict', () {
     expect(keys, [...keys]..sort());

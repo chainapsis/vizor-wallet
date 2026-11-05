@@ -10,9 +10,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String languageSystemOption(String language) {
-    return '시스템 ($language)';
+    return '시⁠스⁠템 ($language)';
   }
 
   @override
-  String get settingsLanguageLabel => '언어';
+  String get settingsLanguageLabel => '언⁠어';
 }

@@ -9,9 +9,9 @@
 4. Add native resources: iOS `<tag>.lproj` (`InfoPlist.strings` and the string
    catalog used by background notifications) and Android
    `values-<qualifier>` plus its `localeConfig` entry.
-5. Check fonts: the language's script needs a system fallback on every
-   platform, and the `fontFamilyFallback` list for the language must name
-   fonts that cover it.
+5. Check fonts: the language's script needs a system font on every platform.
+   A CJK language also gets its own list in `fontFamilyFallbackFor`
+   (`lib/src/core/l10n/locale_typography.dart`).
 6. Review it on screen with `--dart-define=VIZOR_I18N_PREVIEW=true`.
 7. Set `released: true` once every message is translated and a native
    reviewer approved the `[security]` strings. The gate test then requires

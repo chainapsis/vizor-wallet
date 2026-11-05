@@ -215,6 +215,16 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
   `tool/l10n/migrated_dirs.txt` gains a hardcoded string.
   `fvm dart run tool/l10n/strings.dart list <dir>` lists what is left to move.
   Translation rules live in `docs/i18n/`.
+- Korean is edited in `lib/l10n/source/app_ko.arb`. Regenerate
+  `lib/l10n/app_ko.arb` with `fvm dart run tool/l10n/korean_arb.dart`; it adds
+  invisible word joiners so Flutter breaks Korean lines between words, not
+  inside them. Compare shipped Korean strings in tests with the joiners
+  removed.
+- `LocaleTypography` (applied in every app root's `builder`) gives Korean and
+  Chinese UI their own CJK font fallback. Without it the engine picks Han
+  glyphs by the OS language. A `TextPainter` built from a token style misses
+  the fallback; merge with `DefaultTextStyle.of(context).style` when
+  measurement must match rendering.
 
 ## Mainnet Block-Time Table
 

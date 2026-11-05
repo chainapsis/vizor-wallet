@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 
 import '../src/core/l10n/app_language.dart';
+import '../src/core/l10n/locale_typography.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/theme/app_theme_host.dart';
 import '../src/core/theme/legacy_material_theme.dart';
@@ -51,11 +52,13 @@ class FigmaCompareApp extends StatelessWidget {
           ? const SizedBox.shrink()
           : Scaffold(body: capture),
       builder: (context, child) {
-        final themed = AppThemeHost(
-          themeMode: themeMode,
-          child: ColoredBox(
-            color: appTheme.colors.background.window,
-            child: scenario.outsideScaffold ? capture : child!,
+        final themed = LocaleTypography(
+          child: AppThemeHost(
+            themeMode: themeMode,
+            child: ColoredBox(
+              color: appTheme.colors.background.window,
+              child: scenario.outsideScaffold ? capture : child!,
+            ),
           ),
         );
         final mediaQuery = MediaQuery.maybeOf(context);

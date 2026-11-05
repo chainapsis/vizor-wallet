@@ -3,6 +3,10 @@
 Vizor ships English, with Korean and Simplified Chinese in progress. All app
 copy lives in `lib/l10n/app_<locale>.arb`; `app_en.arb` is the source.
 
+Korean is the exception: edit `lib/l10n/source/app_ko.arb`, then run
+`fvm dart run tool/l10n/korean_arb.dart`. The generated `lib/l10n/app_ko.arb`
+adds invisible word joiners so lines break between words.
+
 - [Glossary](../../lib/l10n/glossary.yaml): one entry per concept. Use the
   term for your language whenever the English source contains the English
   term.

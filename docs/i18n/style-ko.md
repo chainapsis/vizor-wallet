@@ -28,7 +28,7 @@
 
 ## Line breaks
 
-Flutter can break Korean lines inside a word. The app inserts invisible word
-joiners between Hangul syllables of the translations it ships, so write normal
-text with ordinary spaces and never insert joiners or manual line breaks
-yourself.
+Flutter can break Korean lines inside a word. `tool/l10n/korean_arb.dart`
+inserts invisible word joiners into the shipped translations, so write normal
+text with ordinary spaces in `lib/l10n/source/app_ko.arb` and never insert
+joiners or manual line breaks yourself.
