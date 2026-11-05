@@ -11,10 +11,12 @@ import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/navigation/incoming_link_entry_policy.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/app_secure_store.dart';
 import '../../../core/theme/app_theme.dart';
@@ -42,7 +44,6 @@ import '../providers/gift_card_check_progress_provider.dart';
 import '../services/payment_link_clipboard.dart';
 import '../services/payment_link_batch_export.dart';
 import '../services/payment_link_batch_limits.dart';
-import '../services/payment_link_entry_policy.dart';
 import '../services/payment_link_hardware_signing_service.dart';
 import '../services/payment_link_qr_export.dart';
 import '../services/payment_link_qr_image_saver.dart';
@@ -629,7 +630,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   void _showDeferredPendingLinkMessage() {
     showAppToast(
       context,
-      kPaymentLinkDeferredByActiveFlowMessage,
+      IncomingLinkNotice.giftBusy.text(context.l10n),
       iconName: AppIcons.warning,
     );
   }

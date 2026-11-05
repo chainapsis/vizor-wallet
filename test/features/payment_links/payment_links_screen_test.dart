@@ -1,4 +1,5 @@
 import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
+import 'package:zcash_wallet/src/core/navigation/incoming_link_entry_policy.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_check_progress_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -19,7 +20,6 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
@@ -45,6 +45,7 @@ import '../../support/leading_decimal_input.dart';
 import '../../support/payment_links_screen_support.dart';
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   registerGiftCardEntryChecks(mobile: false);
@@ -3080,7 +3081,10 @@ void main() {
       find.byKey(const ValueKey('payment_link_amount_editor')),
       findsOneWidget,
     );
-    expect(find.text(kPaymentLinkDeferredByActiveFlowMessage), findsOneWidget);
+    expect(
+      find.text(IncomingLinkNotice.giftBusy.text(testL10n)),
+      findsOneWidget,
+    );
     expect(operations.allowLongSyncCalls, isEmpty);
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
 

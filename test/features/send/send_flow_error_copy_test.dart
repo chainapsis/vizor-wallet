@@ -71,7 +71,10 @@ void main() {
         kNetworkUpgradeHoldMessage,
       );
       expect(friendlyBroadcastError(testL10n, raw), kNetworkUpgradeHoldMessage);
-      expect(friendlyPaymentRequestCheckError(raw), kNetworkUpgradeHoldMessage);
+      expect(
+        paymentRequestCheckIssueFor(raw).text(testL10n),
+        kNetworkUpgradeHoldMessage,
+      );
     });
 
     test('reports incomplete private recovery, not insufficient funds', () {
@@ -86,16 +89,18 @@ void main() {
     });
   });
 
-  group('friendlyPaymentRequestCheckError', () {
+  group('paymentRequestCheckIssueFor', () {
     test('names the network when the check could not reach it', () {
       expect(
-        friendlyPaymentRequestCheckError('grpc connect failed: dns error'),
+        paymentRequestCheckIssueFor(
+          'grpc connect failed: dns error',
+        ).text(testL10n),
         "Couldn't reach the network — check your connection and try again",
       );
     });
 
     test('never claims a send happened for an unknown failure', () {
-      final copy = friendlyPaymentRequestCheckError('something odd');
+      final copy = paymentRequestCheckIssueFor('something odd').text(testL10n);
       expect(
         copy,
         "Couldn't check this request — try again or edit the details",

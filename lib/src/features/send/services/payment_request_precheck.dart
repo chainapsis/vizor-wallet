@@ -25,6 +25,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../models/send_prefill_args.dart';
+import '../models/payment_request_check_issue.dart';
 import 'send_flow.dart';
 
 /// Validates a recipient address. Matches `rust_sync.validateAddress`.
@@ -160,14 +161,14 @@ final class PaymentRequestPrecheckReady extends PaymentRequestPrecheckResult {
 /// The link carries an address this wallet cannot pay.
 final class PaymentRequestPrecheckInvalidAddress
     extends PaymentRequestPrecheckResult {
-  const PaymentRequestPrecheckInvalidAddress({this.message});
+  const PaymentRequestPrecheckInvalidAddress({this.issue});
 
   /// Overrides the card's default "Recipient address doesn't look right".
   ///
   /// Set only when the wallet knows something more useful than "bad address" —
-  /// today that is [kWrongNetworkAddressMessage], where the address is real
+  /// today that is [PaymentRequestCheckIssue.wrongNetworkAddress], where the address is real
   /// but belongs to another network. Null keeps the default copy.
-  final String? message;
+  final PaymentRequestCheckIssue? issue;
 }
 
 /// The requested amount is above what the account can spend.
@@ -194,11 +195,11 @@ final class PaymentRequestPrecheckSyncing extends PaymentRequestPrecheckResult {
   const PaymentRequestPrecheckSyncing();
 }
 
-/// Anything else, with a message already made friendly.
+/// Anything else, classified for a friendly one-line reason.
 final class PaymentRequestPrecheckFailed extends PaymentRequestPrecheckResult {
-  const PaymentRequestPrecheckFailed(this.message);
+  const PaymentRequestPrecheckFailed(this.issue);
 
-  final String message;
+  final PaymentRequestCheckIssue issue;
 }
 
 /// Runs the checks behind the payment-request card.
@@ -266,7 +267,9 @@ class PaymentRequestPrecheck {
         // it is not a malformed one — say which, so the user is not hunting
         // for a typo that is not there.
         return PaymentRequestPrecheckInvalidAddress(
-          message: validation.wrongNetwork ? kWrongNetworkAddressMessage : null,
+          issue: validation.wrongNetwork
+              ? PaymentRequestCheckIssue.wrongNetworkAddress
+              : null,
         );
       }
       addressType = validation.addressType;
@@ -307,7 +310,7 @@ class PaymentRequestPrecheck {
     final amountZatoshi = parseZecAmount(amountText);
     if (amountZatoshi == null) {
       return const PaymentRequestPrecheckFailed(
-        "This link doesn't ask for a payable amount — enter one to continue", // l10n-ignore: stored by the payment request flow state (deferred)
+        PaymentRequestCheckIssue.noPayableAmount,
       );
     }
     if (amountZatoshi <= BigInt.zero) {
@@ -319,7 +322,7 @@ class PaymentRequestPrecheck {
 
     if (accountUuid == null) {
       return const PaymentRequestPrecheckFailed(
-        'No active account — choose one, then open this link again', // l10n-ignore: stored by the payment request flow state (deferred)
+        PaymentRequestCheckIssue.noActiveAccount,
       );
     }
 
@@ -421,7 +424,7 @@ class PaymentRequestPrecheck {
         lower.contains('bad address')) {
       return const PaymentRequestPrecheckInvalidAddress();
     }
-    return PaymentRequestPrecheckFailed(friendlyPaymentRequestCheckError(raw));
+    return PaymentRequestPrecheckFailed(paymentRequestCheckIssueFor(raw));
   }
 
   static String _formatZec(BigInt zatoshi) =>

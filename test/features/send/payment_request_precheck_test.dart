@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
+import 'package:zcash_wallet/src/features/send/models/payment_request_check_issue.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
@@ -203,7 +204,7 @@ void main() {
     final result = await run(api);
     expect(result, isA<PaymentRequestPrecheckInvalidAddress>());
     expect(
-      (result as PaymentRequestPrecheckInvalidAddress).message,
+      (result as PaymentRequestPrecheckInvalidAddress).issue,
       isNull,
       reason: 'a malformed address keeps the card default copy',
     );
@@ -239,8 +240,8 @@ void main() {
 
     expect(result, isA<PaymentRequestPrecheckInvalidAddress>());
     expect(
-      (result as PaymentRequestPrecheckInvalidAddress).message,
-      kWrongNetworkAddressMessage,
+      (result as PaymentRequestPrecheckInvalidAddress).issue,
+      PaymentRequestCheckIssue.wrongNetworkAddress,
     );
     expect(
       api.proposeCalls,
@@ -419,8 +420,8 @@ void main() {
 
     expect(result, isA<PaymentRequestPrecheckFailed>());
     expect(
-      (result as PaymentRequestPrecheckFailed).message,
-      'No active account — choose one, then open this link again',
+      (result as PaymentRequestPrecheckFailed).issue,
+      PaymentRequestCheckIssue.noActiveAccount,
       reason: 'the same term the composer and Receive already use',
     );
     expect(api.proposeCalls, 0);
@@ -431,8 +432,8 @@ void main() {
     final result = await run(api);
     expect(result, isA<PaymentRequestPrecheckFailed>());
     expect(
-      (result as PaymentRequestPrecheckFailed).message,
-      "Couldn't reach the network — check your connection and try again",
+      (result as PaymentRequestPrecheckFailed).issue,
+      PaymentRequestCheckIssue.network,
     );
   });
 
@@ -441,8 +442,8 @@ void main() {
     final result = await run(api);
     expect(result, isA<PaymentRequestPrecheckFailed>());
     expect(
-      (result as PaymentRequestPrecheckFailed).message,
-      "Couldn't check this request — try again or edit the details",
+      (result as PaymentRequestPrecheckFailed).issue,
+      PaymentRequestCheckIssue.generic,
       reason: 'nothing was sent from this card, so no send wording applies',
     );
   });
@@ -475,8 +476,8 @@ void main() {
     final result = await run(api, request: prefill(amountText: 'not-a-number'));
     expect(result, isA<PaymentRequestPrecheckFailed>());
     expect(
-      (result as PaymentRequestPrecheckFailed).message,
-      "This link doesn't ask for a payable amount — enter one to continue",
+      (result as PaymentRequestPrecheckFailed).issue,
+      PaymentRequestCheckIssue.noPayableAmount,
     );
     expect(api.proposeCalls, 0);
   });

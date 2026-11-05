@@ -353,7 +353,7 @@ void main() {
       expect(state.view.status, PaymentRequestStatus.invalidAddress);
       expect(
         state.view.resolvedStatusMessage(testL10n),
-        kWrongNetworkAddressMessage,
+        testL10n.sendRecipientWrongNetwork,
       );
       expect(state.canReview, isFalse);
     },

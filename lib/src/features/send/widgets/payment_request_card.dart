@@ -12,6 +12,7 @@ import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/full_address_viewer.dart';
 import '../../../core/widgets/pool_badge.dart';
 import '../../../core/widgets/review_wrap_card.dart';
+import '../models/payment_request_check_issue.dart';
 import '../models/send_prefill_args.dart' show PaymentRequestSource;
 export '../models/send_prefill_args.dart' show PaymentRequestSource;
 
@@ -92,7 +93,7 @@ enum PaymentRequestStatus {
   syncStalled,
 
   /// The check itself could not complete; the reason always comes through
-  /// [PaymentRequestView.statusMessage].
+  /// [PaymentRequestView.statusIssue].
   failed,
 }
 
@@ -127,7 +128,7 @@ extension PaymentRequestStatusX on PaymentRequestStatus {
 /// One line each, no trailing period: the buttons under them already say
 /// what the user can do, so the message only has to name the condition.
 /// Callers may override any of these through
-/// [PaymentRequestView.statusMessage].
+/// [PaymentRequestView.statusIssue].
 ///
 /// [spendableText] is the preformatted spendable balance (`0.21 ZEC`). When
 /// the caller supplies it, the insufficient-funds message states the amount
@@ -280,7 +281,7 @@ class PaymentRequestView {
     this.spendableText,
     this.recipientIdentity,
     this.status = PaymentRequestStatus.ready,
-    this.statusMessage,
+    this.statusIssue,
     this.replacedNotice = false,
     this.linkDifferences,
   });
@@ -334,7 +335,7 @@ class PaymentRequestView {
   final PaymentRequestStatus status;
 
   /// Overrides [defaultPaymentRequestStatusMessage] for [status].
-  final String? statusMessage;
+  final PaymentRequestCheckIssue? statusIssue;
 
   /// Indicates that this request replaced one already being reviewed.
   final bool replacedNotice;
@@ -349,7 +350,7 @@ class PaymentRequestView {
   /// status line reads) change as the checks land.
   PaymentRequestView copyWithStatus(
     PaymentRequestStatus status, {
-    String? statusMessage,
+    PaymentRequestCheckIssue? statusIssue,
     String? spendableText,
   }) => PaymentRequestView(
     source: source,
@@ -362,7 +363,7 @@ class PaymentRequestView {
     spendableText: spendableText ?? this.spendableText,
     recipientIdentity: recipientIdentity,
     status: status,
-    statusMessage: statusMessage,
+    statusIssue: statusIssue,
     replacedNotice: replacedNotice,
     linkDifferences: linkDifferences,
   );
@@ -387,7 +388,7 @@ class PaymentRequestView {
       spendableText: spendableText,
       recipientIdentity: recipientIdentity,
       status: status,
-      statusMessage: statusMessage,
+      statusIssue: statusIssue,
       replacedNotice: true,
       linkDifferences: linkDifferences,
     );
@@ -413,7 +414,7 @@ class PaymentRequestView {
       spendableText: spendableText,
       recipientIdentity: recipientIdentity,
       status: status,
-      statusMessage: statusMessage,
+      statusIssue: statusIssue,
       replacedNotice: replacedNotice,
       linkDifferences: linkDifferences,
     );
@@ -438,14 +439,14 @@ class PaymentRequestView {
       spendableText: spendableText,
       recipientIdentity: identity,
       status: status,
-      statusMessage: statusMessage,
+      statusIssue: statusIssue,
       replacedNotice: replacedNotice,
       linkDifferences: linkDifferences,
     );
   }
 
   String? resolvedStatusMessage(AppLocalizations l10n) =>
-      statusMessage ??
+      statusIssue?.text(l10n) ??
       defaultPaymentRequestStatusMessage(
         l10n,
         status,

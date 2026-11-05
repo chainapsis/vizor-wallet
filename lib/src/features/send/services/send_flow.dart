@@ -36,6 +36,7 @@ import '../../ledger/services/ledger_signed_operation_service.dart';
 import 'recent_send_recipients.dart';
 import 'sapling_params.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
+import '../models/payment_request_check_issue.dart';
 
 /// Longest requester label the review screens will render.
 ///
@@ -533,39 +534,23 @@ Future<void> retainSendProposalLockUntilExpiry({
   }
 }
 
-/// Shown wherever a recipient address is well-formed but belongs to another
-/// Zcash network — a `utest1…` pasted into a mainnet wallet, say.
-///
-/// It has its own sentence because "Invalid address" reads as a typo, and this
-/// is not one: the address is real, it just is not payable from this build.
-/// Before validation was network-aware the wallet accepted these and only
-/// refused them at proposal time, as an opaque "Bad address: IncorrectNetwork".
-// l10n-ignore: stored by the payment request flow state; widgets show
-// `sendRecipientWrongNetwork`.
-const kWrongNetworkAddressMessage =
-    'This address is for a different Zcash network'; // l10n-ignore: stored by the payment request flow state (deferred)
-
-/// Propose-time failures as the payment-request card states them.
-///
-/// The card is a pre-send consent surface: nothing has been broadcast, it
-/// holds an unconsumed proposal, and offers Check again or Edit.
-/// [friendlyProposeSendError] is written for a screen that actually
-/// sent, so its wording ("Send failed", "Some parts of this transaction were
-/// sent") would assert an event that never happened here.
-///
-/// Follows the card's status-line convention: one line, no trailing period.
-String friendlyPaymentRequestCheckError(String raw) {
-  // l10n-ignore: stored by the payment request flow state (deferred).
+/// Classifies a propose-time failure for the payment-request card.
+PaymentRequestCheckIssue paymentRequestCheckIssueFor(String raw) {
   final upgradeHold = networkUpgradeHoldMessage(raw);
-  if (upgradeHold != null) return upgradeHold;
+  if (upgradeHold == kNetworkUpgradeHoldMessage) {
+    return PaymentRequestCheckIssue.networkUpgradeHold;
+  }
+  if (upgradeHold != null) {
+    return PaymentRequestCheckIssue.networkUpgradeScheduleChanged;
+  }
   final lower = raw.toLowerCase();
   if (lower.contains('grpc connect failed') ||
       lower.contains('connection refused') ||
       lower.contains('dns error') ||
       lower.contains('tls error')) {
-    return "Couldn't reach the network — check your connection and try again"; // l10n-ignore: stored by the payment request flow state (deferred)
+    return PaymentRequestCheckIssue.network;
   }
-  return "Couldn't check this request — try again or edit the details"; // l10n-ignore: stored by the payment request flow state (deferred)
+  return PaymentRequestCheckIssue.generic;
 }
 
 String friendlyProposeSendError(

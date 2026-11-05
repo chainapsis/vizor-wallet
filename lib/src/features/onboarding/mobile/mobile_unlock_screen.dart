@@ -288,7 +288,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
           // which outlives the navigation.
           showAppToast(
             context,
-            notice,
+            notice.text(context.l10n),
             duration: const Duration(seconds: 4),
             iconName: AppIcons.warning,
           );

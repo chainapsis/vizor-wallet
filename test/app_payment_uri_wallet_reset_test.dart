@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fakes/fake_sync_notifier.dart';
+import 'support/test_l10n.dart';
 
 // A `zcash:` link parked while the wallet is locked must disappear quietly
 // when the user resets the wallet from the locked screens — no "Set up or
@@ -133,7 +134,7 @@ void main() {
         reason: 'the card must be dropped by the reset too',
       );
       expect(
-        find.text(kPaymentUriNoWalletMessage),
+        find.text(PaymentUriNotice.noWallet.text(testL10n)),
         findsNothing,
         reason: 'the wipe must not be followed by a no-wallet snackbar',
       );
@@ -215,7 +216,7 @@ void main() {
         reason: 'latest wins: the second link must be the parked one',
       );
       expect(
-        find.text(kPaymentUriReplacedMessage),
+        find.text(PaymentUriNotice.replaced.text(testL10n)),
         findsOneWidget,
         reason: 'the dropped first link must be visible to the user',
       );

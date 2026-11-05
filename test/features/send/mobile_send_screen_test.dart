@@ -2967,7 +2967,7 @@ void main() {
       kZcashDefaultNetworkName,
       reason: 'validation has to be asked about the network we actually pay on',
     );
-    expect(find.text(kWrongNetworkAddressMessage), findsOneWidget);
+    expect(find.text(testL10n.sendRecipientWrongNetwork), findsOneWidget);
     expect(
       find.text('Invalid address'),
       findsNothing,
@@ -2982,7 +2982,7 @@ void main() {
     );
 
     await _enterAddress(tester, _shieldedAddress);
-    expect(find.text(kWrongNetworkAddressMessage), findsNothing);
+    expect(find.text(testL10n.sendRecipientWrongNetwork), findsNothing);
   });
 
   testWidgets('recipient step names a matched saved contact', (tester) async {

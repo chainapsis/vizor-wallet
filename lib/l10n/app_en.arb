@@ -2391,6 +2391,26 @@
   "@homeVotingSubtitle": {
     "description": "Subtitle of the Home coinholder voting card."
   },
+  "incomingLinkGiftBusy": "Finish or cancel your current task to open this gift card.",
+  "@incomingLinkGiftBusy": {
+    "description": "Toast shown when a gift card link is opened while the user is in the middle of a task."
+  },
+  "incomingLinkGiftSetup": "Finish account setup to open this gift card.",
+  "@incomingLinkGiftSetup": {
+    "description": "Toast shown when a gift card link is opened during account setup."
+  },
+  "incomingLinkHomeBusy": "Finish or cancel your task, then reopen the link.",
+  "@incomingLinkHomeBusy": {
+    "description": "Toast shown when a Vizor home link is opened while the user is in the middle of a task; asks them to finish or cancel and reopen it."
+  },
+  "incomingLinkHomeSetup": "Finish account setup, then reopen the link.",
+  "@incomingLinkHomeSetup": {
+    "description": "Toast shown when a Vizor home link is opened during account setup; asks them to finish setup and reopen it."
+  },
+  "incomingLinkPaymentBusy": "Finish or cancel your current task to open this payment request.",
+  "@incomingLinkPaymentBusy": {
+    "description": "Toast shown when a payment request link is opened while the user is in the middle of a task."
+  },
   "keyringLockedBody": "Vizor cannot access your system keyring. Unlock the keyring, then choose Retry. A system prompt may ask for your keyring password.",
   "@keyringLockedBody": {
     "description": "[security] Body of the Linux keyring screen when the system keyring is locked; mentions the keyring password prompt."
@@ -4048,6 +4068,38 @@
       }
     }
   },
+  "paymentUriExpired": "That request link timed out. Open it again to pay.",
+  "@paymentUriExpired": {
+    "description": "Toast shown when a payment request link waited too long before it could be opened."
+  },
+  "paymentUriMalformed": "This request link isn't valid. Ask the sender for a new one.",
+  "@paymentUriMalformed": {
+    "description": "Toast shown when a payment request link cannot be read."
+  },
+  "paymentUriMigrationSendGate": "Finish your Ironwood migration before opening request links.",
+  "@paymentUriMigrationSendGate": {
+    "description": "Toast shown when a payment request link is opened while an Ironwood migration blocks sending."
+  },
+  "paymentUriNoWallet": "Set up or import a wallet before opening request links.",
+  "@paymentUriNoWallet": {
+    "description": "Toast shown when a payment request link is opened but no wallet exists yet."
+  },
+  "paymentUriOnboarding": "Finish setting up your wallet before opening request links.",
+  "@paymentUriOnboarding": {
+    "description": "Toast shown when a payment request link is opened while the user is part-way through wallet setup."
+  },
+  "paymentUriReplaced": "Only the newest request link was kept. Open the earlier one again to pay it.",
+  "@paymentUriReplaced": {
+    "description": "Toast shown when a second payment request link arrives before the first one was handled, so only the newest is kept."
+  },
+  "paymentUriUnavailable": "Vizor couldn't open this request link. Open it again once your wallet has loaded.",
+  "@paymentUriUnavailable": {
+    "description": "Toast shown when a payment request link cannot be opened because of a storage failure or a wallet load error."
+  },
+  "paymentUriUnsupported": "This request link uses a feature Vizor doesn't support yet.",
+  "@paymentUriUnsupported": {
+    "description": "Message shown when a payment request link or QR code asks for a feature Vizor does not support, such as several recipients."
+  },
   "poolShielded": "Shielded",
   "@poolShielded": {
     "description": "Badge naming a shielded pool or address. See the glossary entry for shielded."
@@ -4735,6 +4787,30 @@
   "@sendPaymentRequestCheckFailed": {
     "description": "Fallback status line on the payment request card when checking the request failed without a specific reason."
   },
+  "sendPaymentRequestCheckGeneric": "Couldn't check this request — try again or edit the details",
+  "@sendPaymentRequestCheckGeneric": {
+    "description": "Status line on the payment request card when the check failed for an unspecified reason."
+  },
+  "sendPaymentRequestCheckNetwork": "Couldn't reach the network — check your connection and try again",
+  "@sendPaymentRequestCheckNetwork": {
+    "description": "Status line on the payment request card when the check failed because the network was unreachable."
+  },
+  "sendPaymentRequestCheckNoAccount": "No active account — choose one, then open this link again",
+  "@sendPaymentRequestCheckNoAccount": {
+    "description": "Status line on the payment request card when no account is selected."
+  },
+  "sendPaymentRequestCheckNoAmount": "This link doesn't ask for a payable amount — enter one to continue",
+  "@sendPaymentRequestCheckNoAmount": {
+    "description": "Status line on the payment request card when the link's amount cannot be paid as written."
+  },
+  "sendPaymentRequestCheckUpgradeHold": "Paused for the network upgrade. Try again in a few minutes.",
+  "@sendPaymentRequestCheckUpgradeHold": {
+    "description": "Status line on the payment request card while sending is paused just before a network upgrade."
+  },
+  "sendPaymentRequestCheckUpgradeScheduleChanged": "The network upgrade changed the migration timing. Review the plan and start again.",
+  "@sendPaymentRequestCheckUpgradeScheduleChanged": {
+    "description": "Status line on the payment request card when a network upgrade changed the migration schedule."
+  },
   "sendPaymentRequestClose": "Close payment request",
   "@sendPaymentRequestClose": {
     "description": "Accessibility label of the button that closes the payment request card."
@@ -4943,6 +5019,18 @@
   "@sendRequestScanCheckFailed": {
     "description": "Error when a scanned payment request QR code could not be checked."
   },
+  "sendRequestScanInvalidAddress": "This QR code isn't a valid Zcash address.",
+  "@sendRequestScanInvalidAddress": {
+    "description": "Error shown after scanning a QR code whose address is not valid."
+  },
+  "sendRequestScanInvalidRequest": "This QR code doesn't contain a valid payment request.",
+  "@sendRequestScanInvalidRequest": {
+    "description": "Error shown after scanning a QR code that holds an unreadable zcash: payment request."
+  },
+  "sendRequestScanNotRequest": "This QR code isn't a Zcash address or payment request.",
+  "@sendRequestScanNotRequest": {
+    "description": "Error shown after scanning a QR code that is neither a Zcash address nor a payment request."
+  },
   "sendRequestScanPermission": "A camera is required to scan the payment request QR code.\nYou can change camera access in settings at any time.",
   "@sendRequestScanPermission": {
     "description": "Explains why camera permission is needed for scanning the payment request QR code and that it can be changed in settings."
@@ -4970,6 +5058,10 @@
   "sendRequestScanUnavailable": "Connect a camera, or go back and review the link details.",
   "@sendRequestScanUnavailable": {
     "description": "Message when no camera is available for scanning the payment request QR code."
+  },
+  "sendRequestScanWrongNetwork": "This address belongs to a different network.",
+  "@sendRequestScanWrongNetwork": {
+    "description": "Error shown after scanning a QR code whose address is for another Zcash network."
   },
   "sendReviewAction": "Review",
   "@sendReviewAction": {

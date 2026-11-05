@@ -8,6 +8,7 @@ import '../src/features/send/models/send_prefill_args.dart';
 import '../src/features/send/widgets/send_review_content_view.dart';
 import '../src/features/send/widgets/send_review_layout.dart';
 import '../src/core/theme/app_theme.dart';
+import '../src/features/send/models/payment_request_check_issue.dart';
 import '../src/features/send/widgets/payment_request_card.dart';
 import '../src/features/send/widgets/payment_request_surface.dart';
 
@@ -126,7 +127,7 @@ final _longValuesRequest = PaymentRequestView(
 
 PaymentRequestView _statusRequest(
   PaymentRequestStatus status, {
-  String? statusMessage,
+  PaymentRequestCheckIssue? statusIssue,
 }) {
   return PaymentRequestView(
     source: _fullRequest.source,
@@ -138,14 +139,12 @@ PaymentRequestView _statusRequest(
     note: _fullRequest.note,
     spendableText: _fullRequest.spendableText,
     status: status,
-    statusMessage: statusMessage,
+    statusIssue: statusIssue,
   );
 }
 
 /// A check that could not complete. Every real failure overrides the default
 /// message with its own reason, so the gallery shows one that does.
-const _failedStatusMessage =
-    "Couldn't check this request — try again or edit the details";
 
 const _replacedRequest = PaymentRequestView(
   source: PaymentRequestSource.link,
@@ -276,7 +275,7 @@ Widget buildPaymentRequestSyncStalledUseCase(BuildContext context) => _desktop(
 Widget buildPaymentRequestFailedUseCase(BuildContext context) => _desktop(
   _statusRequest(
     PaymentRequestStatus.failed,
-    statusMessage: _failedStatusMessage,
+    statusIssue: PaymentRequestCheckIssue.generic,
   ),
   linkDetails: true,
 );
@@ -364,7 +363,7 @@ Widget buildMobilePaymentRequestSyncingUseCase(BuildContext context) =>
 Widget buildMobilePaymentRequestFailedUseCase(BuildContext context) => _mobile(
   _statusRequest(
     PaymentRequestStatus.failed,
-    statusMessage: _failedStatusMessage,
+    statusIssue: PaymentRequestCheckIssue.generic,
   ),
   linkDetails: true,
 );

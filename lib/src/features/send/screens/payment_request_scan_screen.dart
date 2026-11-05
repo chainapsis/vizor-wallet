@@ -42,10 +42,10 @@ class _PaymentRequestScanScreenState extends State<PaymentRequestScanScreen> {
       }
       _finished = true;
       context.pop(prefill);
-    } on FormatException catch (error) {
+    } on PaymentRequestQrException catch (error) {
       if (!mounted || _finished) return;
       setState(() {
-        _error = error.message;
+        _error = error.issue.text(context.l10n);
         _resetToken++;
       });
     } catch (_) {

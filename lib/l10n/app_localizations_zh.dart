@@ -1701,6 +1701,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeVotingSubtitle => '参与塑造网络未来';
 
   @override
+  String get incomingLinkGiftBusy => '请先完成或取消当前操作，再打开此礼品卡。';
+
+  @override
+  String get incomingLinkGiftSetup => '请先完成账户设置，再打开此礼品卡。';
+
+  @override
+  String get incomingLinkHomeBusy => '请先完成或取消当前操作，然后重新打开链接。';
+
+  @override
+  String get incomingLinkHomeSetup => '请先完成账户设置，然后重新打开链接。';
+
+  @override
+  String get incomingLinkPaymentBusy => '请先完成或取消当前操作，再打开此收款请求。';
+
+  @override
   String get keyringLockedBody =>
       'Vizor 无法访问系统密钥环。请解锁密钥环，然后选择“重试”。系统可能会要求输入密钥环密码。';
 
@@ -2920,6 +2935,30 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get paymentUriExpired => '该请求链接已超时。请重新打开以支付。';
+
+  @override
+  String get paymentUriMalformed => '此请求链接无效。请向发送方索取新的链接。';
+
+  @override
+  String get paymentUriMigrationSendGate => '打开请求链接前，请先完成 Ironwood 迁移。';
+
+  @override
+  String get paymentUriNoWallet => '打开请求链接前，请先设置或导入钱包。';
+
+  @override
+  String get paymentUriOnboarding => '打开请求链接前，请先完成钱包设置。';
+
+  @override
+  String get paymentUriReplaced => '仅保留了最新的请求链接。如需支付之前的请求，请重新打开该链接。';
+
+  @override
+  String get paymentUriUnavailable => 'Vizor 无法打开此请求链接。请在钱包加载完成后重新打开。';
+
+  @override
+  String get paymentUriUnsupported => '此请求链接使用了 Vizor 尚不支持的功能。';
+
+  @override
   String get poolShielded => '屏蔽';
 
   @override
@@ -3431,6 +3470,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendPaymentRequestCheckFailed => '无法检查此请求';
 
   @override
+  String get sendPaymentRequestCheckGeneric => '无法检查此请求——请重试或修改详情';
+
+  @override
+  String get sendPaymentRequestCheckNetwork => '无法连接到网络——请检查网络连接后重试';
+
+  @override
+  String get sendPaymentRequestCheckNoAccount => '没有活跃的账户——请先选择一个，然后重新打开此链接';
+
+  @override
+  String get sendPaymentRequestCheckNoAmount => '此链接未提供可支付的金额——请输入金额后继续';
+
+  @override
+  String get sendPaymentRequestCheckUpgradeHold => '因网络升级已暂停。请几分钟后重试。';
+
+  @override
+  String get sendPaymentRequestCheckUpgradeScheduleChanged =>
+      '网络升级改变了迁移时间。请查看方案后重新开始。';
+
+  @override
   String get sendPaymentRequestClose => '关闭收款请求';
 
   @override
@@ -3576,6 +3634,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendRequestScanCheckFailed => '无法检查此二维码，请重试。';
 
   @override
+  String get sendRequestScanInvalidAddress => '此二维码不是有效的 Zcash 地址。';
+
+  @override
+  String get sendRequestScanInvalidRequest => '此二维码不包含有效的收款请求。';
+
+  @override
+  String get sendRequestScanNotRequest => '此二维码不是 Zcash 地址或收款请求。';
+
+  @override
   String get sendRequestScanPermission =>
       '扫描收款请求二维码需要使用摄像头。\n你可以随时在设置中更改摄像头权限。';
 
@@ -3597,6 +3664,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sendRequestScanUnavailable => '请连接摄像头，或返回查看链接详情。';
+
+  @override
+  String get sendRequestScanWrongNetwork => '此地址属于另一个网络。';
 
   @override
   String get sendReviewAction => '查看确认';

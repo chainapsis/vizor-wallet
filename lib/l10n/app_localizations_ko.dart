@@ -1767,6 +1767,25 @@ class AppLocalizationsKo extends AppLocalizations {
   String get homeVotingSubtitle => '네⁠트⁠워⁠크⁠의 방⁠향⁠을 함⁠께 정⁠해⁠요';
 
   @override
+  String get incomingLinkGiftBusy =>
+      '이 기⁠프⁠트 카⁠드⁠를 열⁠려⁠면 진⁠행 중⁠인 작⁠업⁠을 끝⁠내⁠거⁠나 취⁠소⁠해 주⁠세⁠요.';
+
+  @override
+  String get incomingLinkGiftSetup =>
+      '이 기⁠프⁠트 카⁠드⁠를 열⁠려⁠면 계⁠정 설⁠정⁠을 마⁠쳐 주⁠세⁠요.';
+
+  @override
+  String get incomingLinkHomeBusy =>
+      '작⁠업⁠을 끝⁠내⁠거⁠나 취⁠소⁠한 다⁠음 링⁠크⁠를 다⁠시 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get incomingLinkHomeSetup => '계⁠정 설⁠정⁠을 마⁠친 다⁠음 링⁠크⁠를 다⁠시 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get incomingLinkPaymentBusy =>
+      '이 결⁠제 요⁠청⁠을 열⁠려⁠면 진⁠행 중⁠인 작⁠업⁠을 끝⁠내⁠거⁠나 취⁠소⁠해 주⁠세⁠요.';
+
+  @override
   String get keyringLockedBody =>
       'Vizor⁠가 시⁠스⁠템 키⁠링⁠에 접⁠근⁠할 수 없⁠어⁠요. 키⁠링 잠⁠금⁠을 해⁠제⁠한 뒤 다⁠시 시⁠도⁠를 선⁠택⁠하⁠세⁠요. 시⁠스⁠템⁠에⁠서 키⁠링 비⁠밀⁠번⁠호⁠를 물⁠어⁠볼 수 있⁠어⁠요.';
 
@@ -3051,6 +3070,37 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get paymentUriExpired =>
+      '이 요⁠청 링⁠크⁠의 유⁠효 시⁠간⁠이 지⁠났⁠어⁠요. 결⁠제⁠하⁠려⁠면 다⁠시 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get paymentUriMalformed =>
+      '이 요⁠청 링⁠크⁠가 올⁠바⁠르⁠지 않⁠아⁠요. 보⁠낸 사⁠람⁠에⁠게 새 링⁠크⁠를 요⁠청⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentUriMigrationSendGate =>
+      '요⁠청 링⁠크⁠를 열⁠기 전⁠에 Ironwood 마⁠이⁠그⁠레⁠이⁠션⁠을 마⁠쳐 주⁠세⁠요.';
+
+  @override
+  String get paymentUriNoWallet =>
+      '요⁠청 링⁠크⁠를 열⁠기 전⁠에 지⁠갑⁠을 설⁠정⁠하⁠거⁠나 가⁠져⁠와 주⁠세⁠요.';
+
+  @override
+  String get paymentUriOnboarding => '요⁠청 링⁠크⁠를 열⁠기 전⁠에 지⁠갑 설⁠정⁠을 마⁠쳐 주⁠세⁠요.';
+
+  @override
+  String get paymentUriReplaced =>
+      '가⁠장 최⁠근 요⁠청 링⁠크⁠만 남⁠아 있⁠어⁠요. 이⁠전 요⁠청⁠을 결⁠제⁠하⁠려⁠면 해⁠당 링⁠크⁠를 다⁠시 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get paymentUriUnavailable =>
+      'Vizor⁠에⁠서 이 요⁠청 링⁠크⁠를 열 수 없⁠었⁠어⁠요. 지⁠갑⁠이 로⁠드⁠된 후 다⁠시 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get paymentUriUnsupported =>
+      '이 요⁠청 링⁠크⁠는 Vizor⁠가 아⁠직 지⁠원⁠하⁠지 않⁠는 기⁠능⁠을 사⁠용⁠해⁠요.';
+
+  @override
   String get poolShielded => '차⁠폐⁠됨';
 
   @override
@@ -3604,6 +3654,30 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendPaymentRequestCheckFailed => '이 요⁠청⁠을 확⁠인⁠하⁠지 못⁠했⁠어⁠요';
 
   @override
+  String get sendPaymentRequestCheckGeneric =>
+      '이 요⁠청⁠을 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 내⁠용⁠을 수⁠정⁠해 주⁠세⁠요';
+
+  @override
+  String get sendPaymentRequestCheckNetwork =>
+      '네⁠트⁠워⁠크⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요. 연⁠결 상⁠태⁠를 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요';
+
+  @override
+  String get sendPaymentRequestCheckNoAccount =>
+      '선⁠택⁠된 계⁠정⁠이 없⁠어⁠요. 계⁠정⁠을 선⁠택⁠한 다⁠음 이 링⁠크⁠를 다⁠시 열⁠어 주⁠세⁠요';
+
+  @override
+  String get sendPaymentRequestCheckNoAmount =>
+      '이 링⁠크⁠에⁠는 결⁠제⁠할 수 있⁠는 금⁠액⁠이 없⁠어⁠요. 금⁠액⁠을 입⁠력⁠하⁠고 계⁠속⁠해 주⁠세⁠요';
+
+  @override
+  String get sendPaymentRequestCheckUpgradeHold =>
+      '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠를 위⁠해 일⁠시 중⁠지⁠됐⁠어⁠요. 몇 분 후⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get sendPaymentRequestCheckUpgradeScheduleChanged =>
+      '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 마⁠이⁠그⁠레⁠이⁠션 일⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 계⁠획⁠을 확⁠인⁠한 다⁠음 다⁠시 시⁠작⁠해 주⁠세⁠요.';
+
+  @override
   String get sendPaymentRequestClose => '결⁠제 요⁠청 닫⁠기';
 
   @override
@@ -3760,6 +3834,18 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 QR 코⁠드⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
 
   @override
+  String get sendRequestScanInvalidAddress =>
+      '이 QR 코⁠드⁠는 올⁠바⁠른 Zcash 주⁠소⁠가 아⁠니⁠에⁠요.';
+
+  @override
+  String get sendRequestScanInvalidRequest =>
+      '이 QR 코⁠드⁠에⁠는 올⁠바⁠른 결⁠제 요⁠청⁠이 들⁠어 있⁠지 않⁠아⁠요.';
+
+  @override
+  String get sendRequestScanNotRequest =>
+      '이 QR 코⁠드⁠는 Zcash 주⁠소⁠나 결⁠제 요⁠청⁠이 아⁠니⁠에⁠요.';
+
+  @override
   String get sendRequestScanPermission =>
       '결⁠제 요⁠청 QR 코⁠드⁠를 스⁠캔⁠하⁠려⁠면 카⁠메⁠라⁠가 필⁠요⁠해⁠요.\n카⁠메⁠라 접⁠근 권⁠한⁠은 언⁠제⁠든 설⁠정⁠에⁠서 바⁠꿀 수 있⁠어⁠요.';
 
@@ -3786,6 +3872,9 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get sendRequestScanUnavailable =>
       '카⁠메⁠라⁠를 연⁠결⁠하⁠거⁠나 뒤⁠로 가⁠서 링⁠크 상⁠세⁠를 검⁠토⁠하⁠세⁠요.';
+
+  @override
+  String get sendRequestScanWrongNetwork => '이 주⁠소⁠는 다⁠른 네⁠트⁠워⁠크⁠의 주⁠소⁠예⁠요.';
 
   @override
   String get sendReviewAction => '검⁠토';

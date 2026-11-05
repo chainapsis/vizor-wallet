@@ -1798,6 +1798,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeVotingSubtitle => 'Help to shape the network';
 
   @override
+  String get incomingLinkGiftBusy =>
+      'Finish or cancel your current task to open this gift card.';
+
+  @override
+  String get incomingLinkGiftSetup =>
+      'Finish account setup to open this gift card.';
+
+  @override
+  String get incomingLinkHomeBusy =>
+      'Finish or cancel your task, then reopen the link.';
+
+  @override
+  String get incomingLinkHomeSetup =>
+      'Finish account setup, then reopen the link.';
+
+  @override
+  String get incomingLinkPaymentBusy =>
+      'Finish or cancel your current task to open this payment request.';
+
+  @override
   String get keyringLockedBody =>
       'Vizor cannot access your system keyring. Unlock the keyring, then choose Retry. A system prompt may ask for your keyring password.';
 
@@ -3105,6 +3125,38 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get paymentUriExpired =>
+      'That request link timed out. Open it again to pay.';
+
+  @override
+  String get paymentUriMalformed =>
+      'This request link isn\'t valid. Ask the sender for a new one.';
+
+  @override
+  String get paymentUriMigrationSendGate =>
+      'Finish your Ironwood migration before opening request links.';
+
+  @override
+  String get paymentUriNoWallet =>
+      'Set up or import a wallet before opening request links.';
+
+  @override
+  String get paymentUriOnboarding =>
+      'Finish setting up your wallet before opening request links.';
+
+  @override
+  String get paymentUriReplaced =>
+      'Only the newest request link was kept. Open the earlier one again to pay it.';
+
+  @override
+  String get paymentUriUnavailable =>
+      'Vizor couldn\'t open this request link. Open it again once your wallet has loaded.';
+
+  @override
+  String get paymentUriUnsupported =>
+      'This request link uses a feature Vizor doesn\'t support yet.';
+
+  @override
   String get poolShielded => 'Shielded';
 
   @override
@@ -3667,6 +3719,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendPaymentRequestCheckFailed => 'Couldn\'t check this request';
 
   @override
+  String get sendPaymentRequestCheckGeneric =>
+      'Couldn\'t check this request — try again or edit the details';
+
+  @override
+  String get sendPaymentRequestCheckNetwork =>
+      'Couldn\'t reach the network — check your connection and try again';
+
+  @override
+  String get sendPaymentRequestCheckNoAccount =>
+      'No active account — choose one, then open this link again';
+
+  @override
+  String get sendPaymentRequestCheckNoAmount =>
+      'This link doesn\'t ask for a payable amount — enter one to continue';
+
+  @override
+  String get sendPaymentRequestCheckUpgradeHold =>
+      'Paused for the network upgrade. Try again in a few minutes.';
+
+  @override
+  String get sendPaymentRequestCheckUpgradeScheduleChanged =>
+      'The network upgrade changed the migration timing. Review the plan and start again.';
+
+  @override
   String get sendPaymentRequestClose => 'Close payment request';
 
   @override
@@ -3832,6 +3908,18 @@ class AppLocalizationsEn extends AppLocalizations {
       'Couldn\'t check this QR code. Try again.';
 
   @override
+  String get sendRequestScanInvalidAddress =>
+      'This QR code isn\'t a valid Zcash address.';
+
+  @override
+  String get sendRequestScanInvalidRequest =>
+      'This QR code doesn\'t contain a valid payment request.';
+
+  @override
+  String get sendRequestScanNotRequest =>
+      'This QR code isn\'t a Zcash address or payment request.';
+
+  @override
   String get sendRequestScanPermission =>
       'A camera is required to scan the payment request QR code.\nYou can change camera access in settings at any time.';
 
@@ -3858,6 +3946,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get sendRequestScanUnavailable =>
       'Connect a camera, or go back and review the link details.';
+
+  @override
+  String get sendRequestScanWrongNetwork =>
+      'This address belongs to a different network.';
 
   @override
   String get sendReviewAction => 'Review';

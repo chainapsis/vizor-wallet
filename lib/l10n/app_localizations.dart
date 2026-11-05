@@ -3260,6 +3260,36 @@ abstract class AppLocalizations {
   /// **'Help to shape the network'**
   String get homeVotingSubtitle;
 
+  /// Toast shown when a gift card link is opened while the user is in the middle of a task.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish or cancel your current task to open this gift card.'**
+  String get incomingLinkGiftBusy;
+
+  /// Toast shown when a gift card link is opened during account setup.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish account setup to open this gift card.'**
+  String get incomingLinkGiftSetup;
+
+  /// Toast shown when a Vizor home link is opened while the user is in the middle of a task; asks them to finish or cancel and reopen it.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish or cancel your task, then reopen the link.'**
+  String get incomingLinkHomeBusy;
+
+  /// Toast shown when a Vizor home link is opened during account setup; asks them to finish setup and reopen it.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish account setup, then reopen the link.'**
+  String get incomingLinkHomeSetup;
+
+  /// Toast shown when a payment request link is opened while the user is in the middle of a task.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish or cancel your current task to open this payment request.'**
+  String get incomingLinkPaymentBusy;
+
   /// [security] Body of the Linux keyring screen when the system keyring is locked; mentions the keyring password prompt.
   ///
   /// In en, this message translates to:
@@ -5525,6 +5555,54 @@ abstract class AppLocalizations {
   /// **'Pay in {symbol}'**
   String payTitleAmount(String symbol);
 
+  /// Toast shown when a payment request link waited too long before it could be opened.
+  ///
+  /// In en, this message translates to:
+  /// **'That request link timed out. Open it again to pay.'**
+  String get paymentUriExpired;
+
+  /// Toast shown when a payment request link cannot be read.
+  ///
+  /// In en, this message translates to:
+  /// **'This request link isn\'t valid. Ask the sender for a new one.'**
+  String get paymentUriMalformed;
+
+  /// Toast shown when a payment request link is opened while an Ironwood migration blocks sending.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish your Ironwood migration before opening request links.'**
+  String get paymentUriMigrationSendGate;
+
+  /// Toast shown when a payment request link is opened but no wallet exists yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up or import a wallet before opening request links.'**
+  String get paymentUriNoWallet;
+
+  /// Toast shown when a payment request link is opened while the user is part-way through wallet setup.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish setting up your wallet before opening request links.'**
+  String get paymentUriOnboarding;
+
+  /// Toast shown when a second payment request link arrives before the first one was handled, so only the newest is kept.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the newest request link was kept. Open the earlier one again to pay it.'**
+  String get paymentUriReplaced;
+
+  /// Toast shown when a payment request link cannot be opened because of a storage failure or a wallet load error.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t open this request link. Open it again once your wallet has loaded.'**
+  String get paymentUriUnavailable;
+
+  /// Message shown when a payment request link or QR code asks for a feature Vizor does not support, such as several recipients.
+  ///
+  /// In en, this message translates to:
+  /// **'This request link uses a feature Vizor doesn\'t support yet.'**
+  String get paymentUriUnsupported;
+
   /// Badge naming a shielded pool or address. See the glossary entry for shielded.
   ///
   /// In en, this message translates to:
@@ -6461,6 +6539,42 @@ abstract class AppLocalizations {
   /// **'Couldn\'t check this request'**
   String get sendPaymentRequestCheckFailed;
 
+  /// Status line on the payment request card when the check failed for an unspecified reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check this request — try again or edit the details'**
+  String get sendPaymentRequestCheckGeneric;
+
+  /// Status line on the payment request card when the check failed because the network was unreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach the network — check your connection and try again'**
+  String get sendPaymentRequestCheckNetwork;
+
+  /// Status line on the payment request card when no account is selected.
+  ///
+  /// In en, this message translates to:
+  /// **'No active account — choose one, then open this link again'**
+  String get sendPaymentRequestCheckNoAccount;
+
+  /// Status line on the payment request card when the link's amount cannot be paid as written.
+  ///
+  /// In en, this message translates to:
+  /// **'This link doesn\'t ask for a payable amount — enter one to continue'**
+  String get sendPaymentRequestCheckNoAmount;
+
+  /// Status line on the payment request card while sending is paused just before a network upgrade.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused for the network upgrade. Try again in a few minutes.'**
+  String get sendPaymentRequestCheckUpgradeHold;
+
+  /// Status line on the payment request card when a network upgrade changed the migration schedule.
+  ///
+  /// In en, this message translates to:
+  /// **'The network upgrade changed the migration timing. Review the plan and start again.'**
+  String get sendPaymentRequestCheckUpgradeScheduleChanged;
+
   /// Accessibility label of the button that closes the payment request card.
   ///
   /// In en, this message translates to:
@@ -6731,6 +6845,24 @@ abstract class AppLocalizations {
   /// **'Couldn\'t check this QR code. Try again.'**
   String get sendRequestScanCheckFailed;
 
+  /// Error shown after scanning a QR code whose address is not valid.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code isn\'t a valid Zcash address.'**
+  String get sendRequestScanInvalidAddress;
+
+  /// Error shown after scanning a QR code that holds an unreadable zcash: payment request.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code doesn\'t contain a valid payment request.'**
+  String get sendRequestScanInvalidRequest;
+
+  /// Error shown after scanning a QR code that is neither a Zcash address nor a payment request.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code isn\'t a Zcash address or payment request.'**
+  String get sendRequestScanNotRequest;
+
   /// Explains why camera permission is needed for scanning the payment request QR code and that it can be changed in settings.
   ///
   /// In en, this message translates to:
@@ -6772,6 +6904,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connect a camera, or go back and review the link details.'**
   String get sendRequestScanUnavailable;
+
+  /// Error shown after scanning a QR code whose address is for another Zcash network.
+  ///
+  /// In en, this message translates to:
+  /// **'This address belongs to a different network.'**
+  String get sendRequestScanWrongNetwork;
 
   /// Label of the primary button on the send screen that opens the review step.
   ///
