@@ -6301,6 +6301,1258 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get paymentLinkAboveMaximumZec => '超过你的最大 ZEC 额度';
+
+  @override
+  String get paymentLinkAccountChangedRedeemAgain =>
+      '活动账户已更改。请重新兑换此礼品卡，以便在新账户中接收。';
+
+  @override
+  String get paymentLinkAccountChangedReviewAmount => '活动账户已更改。请重新检查礼品卡金额和手续费。';
+
+  @override
+  String get paymentLinkActiveAccountChangedReviewAmount => '活动账户已更改。请检查金额后重试。';
+
+  @override
+  String get paymentLinkAlmostReadyHeading => '礼品卡\n即将准备好！';
+
+  @override
+  String get paymentLinkAlmostReadyReceivedHeading => '你的礼品卡\n即将准备好！';
+
+  @override
+  String paymentLinkAmountCurrencyDisabledSemantic(
+    String currency,
+    String reason,
+  ) {
+    return '以 $currency 输入金额。$reason';
+  }
+
+  @override
+  String paymentLinkAmountCurrencySemantic(String currency) {
+    return '以 $currency 输入金额';
+  }
+
+  @override
+  String get paymentLinkAmountEnterAmount => '输入金额';
+
+  @override
+  String get paymentLinkAmountEnterDollars => '输入美元金额';
+
+  @override
+  String get paymentLinkAmountInputSemantic => '礼品卡金额输入';
+
+  @override
+  String get paymentLinkAmountStepSubtitleDesktop => '输入金额并选择设计。';
+
+  @override
+  String get paymentLinkAmountStepSubtitleMobile => '输入金额并选择设计。';
+
+  @override
+  String get paymentLinkApproveAndCreate => '确认并创建';
+
+  @override
+  String paymentLinkArchivedCount(int count) {
+    return '已归档（$count）';
+  }
+
+  @override
+  String get paymentLinkArchivedHeading => '已归档';
+
+  @override
+  String get paymentLinkArtworkChestCave => '水晶洞穴中的宝箱';
+
+  @override
+  String get paymentLinkArtworkChestLava => '熔岩洞穴中的宝箱';
+
+  @override
+  String get paymentLinkArtworkCoin => 'Zcash 硬币';
+
+  @override
+  String get paymentLinkArtworkCrystal => '水晶';
+
+  @override
+  String get paymentLinkArtworkDiamond => '钻石';
+
+  @override
+  String get paymentLinkArtworkDragon => '巨龙';
+
+  @override
+  String get paymentLinkArtworkGandalf => '巫师';
+
+  @override
+  String get paymentLinkArtworkGift => '礼盒';
+
+  @override
+  String get paymentLinkArtworkKnight => '骑士';
+
+  @override
+  String get paymentLinkArtworkKnightMagic => '魔法骑士';
+
+  @override
+  String get paymentLinkArtworkRogueCat => '盗贼猫';
+
+  @override
+  String get paymentLinkArtworkRuby => '红宝石';
+
+  @override
+  String get paymentLinkAvailabilityCheckingDescription => '领取结果尚未确认。请稍后再查看。';
+
+  @override
+  String get paymentLinkAvailabilityCheckingResult => '正在检查结果';
+
+  @override
+  String get paymentLinkAvailabilityClaim => '领取';
+
+  @override
+  String get paymentLinkAvailabilityClaimFailed => '领取失败';
+
+  @override
+  String get paymentLinkAvailabilityFailedDescription => '领取未完成。重试前请先检查卡片。';
+
+  @override
+  String get paymentLinkAvailabilityNoBalance => '无余额';
+
+  @override
+  String get paymentLinkAvailabilityNoBalanceDescription => '目前没有可领取的余额。';
+
+  @override
+  String get paymentLinkAvailabilityReadyDescription => '此礼品卡可以领取。';
+
+  @override
+  String get paymentLinkAvailabilityRejectedDescription =>
+      '网络未接受此次领取。重试前请先检查其状态。';
+
+  @override
+  String get paymentLinkBackToGiftCard => '返回礼品卡';
+
+  @override
+  String get paymentLinkBatchAddCard => '增加一张卡片';
+
+  @override
+  String get paymentLinkBatchCardsInGroup => '此群组中的卡片';
+
+  @override
+  String get paymentLinkBatchCheckFailed => '无法检查所有卡片';
+
+  @override
+  String get paymentLinkBatchCheckingUse => '正在检查卡片使用情况…';
+
+  @override
+  String get paymentLinkBatchChooseLocation => '选择位置';
+
+  @override
+  String paymentLinkBatchCopyLinkSemantic(String number) {
+    return '复制卡片 $number 的链接';
+  }
+
+  @override
+  String paymentLinkBatchCountSemantic(int max) {
+    return '卡片数量，2 至 $max';
+  }
+
+  @override
+  String paymentLinkBatchCreated(String date) {
+    return '创建于 $date';
+  }
+
+  @override
+  String get paymentLinkBatchDetailsNotSaved => '无法保存卡片详情。请重试。';
+
+  @override
+  String get paymentLinkBatchFeeChanged => '网络手续费已变化。请检查新的总额。';
+
+  @override
+  String get paymentLinkBatchFundedNotSaved => '充值已发送，但无法保存卡片。关闭 Vizor 前请重试。';
+
+  @override
+  String paymentLinkBatchGiftCardsCount(int count) {
+    return '$count 张礼品卡';
+  }
+
+  @override
+  String get paymentLinkBatchLinksShareableLater => '付款确认后即可分享链接。';
+
+  @override
+  String get paymentLinkBatchMessageOptional => '留言（可选）';
+
+  @override
+  String get paymentLinkBatchMessageOptionalEveryCard => '留言（可选），会显示在每张卡片上';
+
+  @override
+  String get paymentLinkBatchNoneFunded => '没有卡片完成充值。请检查金额后重试。';
+
+  @override
+  String get paymentLinkBatchNotAllReady => '此群组中并非所有卡片都已就绪。在全部就绪之前，请勿分享任何链接。';
+
+  @override
+  String get paymentLinkBatchOverBalance => '请减少金额或卡片数量，以符合你的可用余额。';
+
+  @override
+  String get paymentLinkBatchPaymentUnconfirmed =>
+      'Vizor 尚未确认付款已发送。请保留这些卡片，并在分享任何链接前再次检查。';
+
+  @override
+  String get paymentLinkBatchPrepareFailed => '无法准备这些卡片。';
+
+  @override
+  String get paymentLinkBatchPreviousAccount => '这些卡片是在上一个账户下创建的。请切换回去查看。';
+
+  @override
+  String get paymentLinkBatchQuoteNotReady => '可用余额仍在加载。请在钱包同步后重试。';
+
+  @override
+  String get paymentLinkBatchRemoveCard => '减少一张卡片';
+
+  @override
+  String paymentLinkBatchRowSemantic(
+    String number,
+    String status,
+    String failed,
+  ) {
+    String _temp0 = intl.Intl.selectLogic(failed, {
+      'true': '，更新失败',
+      'other': '',
+    });
+    return '卡片 $number，$status$_temp0';
+  }
+
+  @override
+  String paymentLinkBatchRowTitle(String number) {
+    return '卡片 $number';
+  }
+
+  @override
+  String get paymentLinkBatchRowUpdateFailed => '无法更新';
+
+  @override
+  String get paymentLinkBatchSaveAllCsv => '将所有链接保存为 CSV';
+
+  @override
+  String get paymentLinkBatchSaveLinksTitle => '保存礼品卡链接';
+
+  @override
+  String get paymentLinkBatchSaveLinksWarning =>
+      '任何拥有此文件的人都可以领取这些卡片。请将其保存在私密位置。';
+
+  @override
+  String paymentLinkBatchShowQrSemantic(String number) {
+    return '显示卡片 $number 的二维码';
+  }
+
+  @override
+  String get paymentLinkBatchUncertain =>
+      'Vizor 无法确认付款是否已发送。创建其他群组前，请先在礼品卡中检查此群组。';
+
+  @override
+  String get paymentLinkBatchUseNotChecked => '尚未检查卡片使用情况';
+
+  @override
+  String get paymentLinkBulkAmountPerCard => '每张卡片金额';
+
+  @override
+  String get paymentLinkBulkBalanceLoading => '正在加载余额';
+
+  @override
+  String get paymentLinkBulkCardDesign => '卡片设计';
+
+  @override
+  String paymentLinkBulkCountSemantic(int count) {
+    return '$count 张卡片';
+  }
+
+  @override
+  String paymentLinkBulkCreateCards(int count) {
+    return '创建 $count 张卡片';
+  }
+
+  @override
+  String get paymentLinkBulkCreateMultiple => '创建多张卡片';
+
+  @override
+  String get paymentLinkBulkDifferentDesign => '每张卡片使用不同设计';
+
+  @override
+  String get paymentLinkBulkEditCards => '编辑卡片';
+
+  @override
+  String paymentLinkBulkLedgerLimit(int max) {
+    return '使用 Ledger 一次最多可创建 $max 张卡片。';
+  }
+
+  @override
+  String paymentLinkBulkReviewCards(int count) {
+    return '检查 $count 张卡片';
+  }
+
+  @override
+  String paymentLinkBulkZecAvailable(String amount) {
+    return '可用 $amount ZEC';
+  }
+
+  @override
+  String get paymentLinkCardAmountLabel => '卡片金额';
+
+  @override
+  String get paymentLinkCardBalanceCheckFailed => '无法检查卡片余额。请重试。';
+
+  @override
+  String paymentLinkCardDesignSemantic(String design) {
+    return '$design卡片设计';
+  }
+
+  @override
+  String get paymentLinkCardFeeHelpText => '包含创建手续费和为领取预留的手续费。';
+
+  @override
+  String get paymentLinkCardFeeLabel => '卡片手续费（充值 + 兑换）';
+
+  @override
+  String get paymentLinkCardRemoveFailed => '无法移除卡片。请重试。';
+
+  @override
+  String get paymentLinkCardStatusCheckFailed => '无法检查卡片状态。请重试。';
+
+  @override
+  String get paymentLinkCardUnreadable => '无法读取此卡片。';
+
+  @override
+  String get paymentLinkCardUpdateFailed => '无法更新卡片。请重试。';
+
+  @override
+  String get paymentLinkCardsLabel => '卡片';
+
+  @override
+  String get paymentLinkCardsLoadFailed => '无法加载礼品卡。';
+
+  @override
+  String paymentLinkCheckProgress(String phase, String percent) {
+    String _temp0 = intl.Intl.selectLogic(phase, {
+      'finding': '正在查找礼物',
+      'other': '正在检查礼物',
+    });
+    return '$_temp0… $percent%';
+  }
+
+  @override
+  String get paymentLinkCheckStatus => '检查状态';
+
+  @override
+  String paymentLinkCheckedHoursAgo(int hours) {
+    return '$hours 小时前检查';
+  }
+
+  @override
+  String get paymentLinkCheckedJustNow => '刚刚检查';
+
+  @override
+  String paymentLinkCheckedMinutesAgo(int minutes) {
+    return '$minutes 分钟前检查';
+  }
+
+  @override
+  String paymentLinkCheckedOnDate(String date) {
+    return '检查于 $date';
+  }
+
+  @override
+  String get paymentLinkCheckingGiftEllipsis => '正在检查礼物…';
+
+  @override
+  String get paymentLinkCheckingGiftFull => '正在检查礼物… 100%';
+
+  @override
+  String get paymentLinkCheckingLabel => '检查中…';
+
+  @override
+  String get paymentLinkChooseReceivingAccount => '选择接收账户';
+
+  @override
+  String get paymentLinkClaimAccountPrepareFailed => '无法准备这份礼物。请重试或选择其他账户。';
+
+  @override
+  String get paymentLinkClaimActionCheckAgain => '重新检查';
+
+  @override
+  String get paymentLinkClaimActionCreateAccount => '创建账户并领取';
+
+  @override
+  String get paymentLinkClaimActionCreateWallet => '创建钱包并领取';
+
+  @override
+  String get paymentLinkClaimActionExistingWallet => '使用已有钱包领取';
+
+  @override
+  String get paymentLinkClaimCheckingDescription => '正在检查这张礼品卡\n是否已被领取。';
+
+  @override
+  String get paymentLinkClaimCheckingHeading => '正在检查\n你的礼品卡';
+
+  @override
+  String get paymentLinkClaimCloseFailed => '无法关闭卡片。请重试。';
+
+  @override
+  String get paymentLinkClaimFailedMaybePending => '礼品卡领取失败。它可能仍在等待确认，或已被使用。';
+
+  @override
+  String get paymentLinkClaimFailureToast => '无法兑换你的礼品卡。';
+
+  @override
+  String get paymentLinkClaimGiftButton => '领取礼物';
+
+  @override
+  String get paymentLinkClaimQueueFull => '等待中的礼品卡过多。请先完成另一张卡片。';
+
+  @override
+  String get paymentLinkClaimResultNotConfirmed => '领取结果尚未确认。请检查其状态。';
+
+  @override
+  String get paymentLinkClaimSaveFailed => '无法保存卡片。请重试。';
+
+  @override
+  String get paymentLinkClaimStatusAlreadyClaimed => '这份礼物已被领取。';
+
+  @override
+  String get paymentLinkClaimStatusAskSender => '请向发送者索取新的礼品卡。';
+
+  @override
+  String get paymentLinkClaimStatusCheckConnection => '请检查网络连接后重试。';
+
+  @override
+  String get paymentLinkClaimStatusCreateAccountNow => '现在可以创建你的账户。';
+
+  @override
+  String get paymentLinkClaimStatusCreateAccountOrUseOne => '创建账户或使用已有账户即可领取。';
+
+  @override
+  String get paymentLinkClaimStatusCreateWalletNow => '现在可以创建你的钱包。';
+
+  @override
+  String get paymentLinkClaimStatusCreateWalletOrUseOne => '创建钱包或使用已有钱包即可领取。';
+
+  @override
+  String get paymentLinkClaimStatusGiftFound => '找到礼物';
+
+  @override
+  String get paymentLinkClaimStatusMayNotBeFunded => '发送者可能尚未充值。';
+
+  @override
+  String get paymentLinkClaimStatusNetworkUnreachable => '无法连接到网络。';
+
+  @override
+  String get paymentLinkClaimStatusOtherNetwork => '此礼品卡适用于其他网络。';
+
+  @override
+  String paymentLinkClaimStatusWaitingDeposit(int count, int target) {
+    return '等待充值确认 · $count/$target';
+  }
+
+  @override
+  String get paymentLinkClaimSubmitted => '礼物领取已提交';
+
+  @override
+  String get paymentLinkClaimTheGift => '领取礼物';
+
+  @override
+  String get paymentLinkClaimTheGiftCard => '领取礼品卡';
+
+  @override
+  String get paymentLinkClaimWaitingDescription => '礼物马上就可以领取。';
+
+  @override
+  String get paymentLinkClaimedElsewhereDescription =>
+      '此卡已先在另一个钱包中领取。你的余额没有变化。';
+
+  @override
+  String get paymentLinkClaimedElsewhereLabel => '已在别处领取';
+
+  @override
+  String get paymentLinkClaiming => '正在领取…';
+
+  @override
+  String get paymentLinkClearClipboardLabel => '清除剪贴板';
+
+  @override
+  String get paymentLinkClickToRevealMessage => '点击卡片即可查看留言。';
+
+  @override
+  String get paymentLinkClickToRevealShort => '点击卡片即可查看';
+
+  @override
+  String get paymentLinkConfirmGiftCardTitle => '确认礼品卡';
+
+  @override
+  String get paymentLinkCopyLink => '复制链接';
+
+  @override
+  String get paymentLinkCopyLinkAgainHint => '你可以在“设置 → 我的礼品卡”中再次复制此链接。';
+
+  @override
+  String get paymentLinkCopyLinkSemanticLabel => '复制礼品卡链接';
+
+  @override
+  String get paymentLinkCopying => '正在复制…';
+
+  @override
+  String get paymentLinkCostAdditionalZecNeeded => '还需要的 ZEC';
+
+  @override
+  String paymentLinkCostAtLeast(String amount) {
+    return '至少 $amount';
+  }
+
+  @override
+  String get paymentLinkCostCalculatingFee => '正在计算网络手续费';
+
+  @override
+  String get paymentLinkCostCalculatingTotal => '正在计算总额';
+
+  @override
+  String paymentLinkCostCardsMultiplier(int count) {
+    return '× $count 张卡片';
+  }
+
+  @override
+  String get paymentLinkCostMessageOnEveryCard => '每张卡片上的留言';
+
+  @override
+  String get paymentLinkCostNetworkFee => '网络手续费';
+
+  @override
+  String get paymentLinkCostPerCard => '每张卡片';
+
+  @override
+  String paymentLinkCostPerCardBreakdown(String amount, String fee) {
+    return '$amount ZEC + 兑换手续费 $fee ZEC';
+  }
+
+  @override
+  String get paymentLinkCostWaitingForSync => '等待同步';
+
+  @override
+  String get paymentLinkCostYouWillSpend => '你将花费';
+
+  @override
+  String get paymentLinkCreateCardButton => '创建卡片';
+
+  @override
+  String get paymentLinkCreateCardLabel => '创建礼品卡';
+
+  @override
+  String get paymentLinkCreateGiftCardTitle => '创建礼品卡';
+
+  @override
+  String get paymentLinkCreateNewCard => '创建新卡片';
+
+  @override
+  String get paymentLinkCreatedTabLabel => '已创建';
+
+  @override
+  String get paymentLinkCreating => '正在创建…';
+
+  @override
+  String get paymentLinkCreationFailed => '创建礼品卡失败。请重试。';
+
+  @override
+  String get paymentLinkCustomiseAccountStep => '自定义账户';
+
+  @override
+  String get paymentLinkCustomiseWalletStep => '自定义钱包';
+
+  @override
+  String get paymentLinkDeleteMessageSemantic => '删除礼品卡留言';
+
+  @override
+  String get paymentLinkEmptyTitle => '还没有礼品卡';
+
+  @override
+  String get paymentLinkEnterValidAmount => '请输入有效的礼品卡金额。';
+
+  @override
+  String get paymentLinkEntryExplainAccountDesktop =>
+      '兑换卡片后，将在你的钱包中创建一个包含卡片余额的新账户。';
+
+  @override
+  String get paymentLinkEntryExplainWalletDesktop =>
+      '兑换卡片后，我们会创建一个包含卡片余额的新 Vizor 钱包。';
+
+  @override
+  String get paymentLinkEntryExplanationAccount => '创建新账户以接收卡片余额。';
+
+  @override
+  String get paymentLinkEntryExplanationWallet => '创建新的 Vizor 钱包以接收卡片余额。';
+
+  @override
+  String get paymentLinkEntrySubtitle => '复制收到的卡片链接，\n并粘贴到下方。';
+
+  @override
+  String get paymentLinkEntryTitleAccount => '兑换 Vizor 礼品卡以创建账户';
+
+  @override
+  String get paymentLinkEntryTitleWallet => '兑换 Vizor 礼品卡以创建钱包';
+
+  @override
+  String get paymentLinkExportNotReady => '导出链接前，所有卡片都必须就绪。';
+
+  @override
+  String get paymentLinkExportStatusChanged => '账户或卡片状态已更改。请检查卡片后重试。';
+
+  @override
+  String get paymentLinkFeeEstimateFailed => '无法估算卡片手续费。请重试。';
+
+  @override
+  String get paymentLinkFeeEstimatedAfterSync => '钱包同步完成后将估算卡片手续费。';
+
+  @override
+  String get paymentLinkFeeHelpSemantic => '关于礼品卡手续费';
+
+  @override
+  String get paymentLinkFeeHelpTextLong => '包含为礼品卡充值的手续费，以及为接收人领取预留的手续费。';
+
+  @override
+  String get paymentLinkFeeUpdateFailed => '无法更新卡片手续费。请返回金额步骤后重试。';
+
+  @override
+  String get paymentLinkFiatLoadingSemantic => '正在加载法币价值';
+
+  @override
+  String get paymentLinkFlipCardSemanticLabel => '翻转礼品卡';
+
+  @override
+  String get paymentLinkFundingExpired => '礼品卡充值已过期。请重新创建。';
+
+  @override
+  String get paymentLinkFundingIncompleteStatus => '充值未完成';
+
+  @override
+  String get paymentLinkFundingNeedsAttention => '礼品卡充值需要处理';
+
+  @override
+  String get paymentLinkFundingSentCardNotSaved =>
+      '充值已发送，但无法保存礼品卡。关闭 Vizor 前请重试。';
+
+  @override
+  String get paymentLinkFundingStillVerifying => '仍在验证充值。Vizor 将继续检查。';
+
+  @override
+  String get paymentLinkFundingStorageNeedsSync => '充值已发送，但本地交易存储需要同步。';
+
+  @override
+  String get paymentLinkGiftAmountLabel => '礼物金额';
+
+  @override
+  String paymentLinkGiftCardDesignSemantic(String design) {
+    return '礼品卡，$design设计';
+  }
+
+  @override
+  String get paymentLinkGiftCardMessageSemantic => '礼品卡留言';
+
+  @override
+  String get paymentLinkGiftCardsLowerBreadcrumb => '礼品卡';
+
+  @override
+  String get paymentLinkGiftCardsTitle => '礼品卡';
+
+  @override
+  String get paymentLinkGiftMessageLabel => '礼物留言';
+
+  @override
+  String get paymentLinkGoHome => '返回首页';
+
+  @override
+  String get paymentLinkGroupConfirmingPayment => '正在确认付款';
+
+  @override
+  String get paymentLinkGroupEntryForGroup => '群组用';
+
+  @override
+  String get paymentLinkGroupEntryGroupSemantic => '为群组创建卡片';
+
+  @override
+  String paymentLinkGroupEntryLedgerSemantic(int max) {
+    return '创建多张卡片，使用 Ledger 最多 $max 张';
+  }
+
+  @override
+  String get paymentLinkGroupEntryMultipleCards => '多张卡片';
+
+  @override
+  String paymentLinkGroupEntryUpToWithLedger(int max) {
+    return '使用 Ledger 最多 $max 张';
+  }
+
+  @override
+  String get paymentLinkGroupNotFunded => '此群组未完成充值。请重新创建。';
+
+  @override
+  String get paymentLinkGroupOtherAccount => '此群组属于其他账户。请切换账户后查看。';
+
+  @override
+  String get paymentLinkGroupPaymentPending => '付款状态待确认';
+
+  @override
+  String get paymentLinkGroupReadyToShare => '已可分享';
+
+  @override
+  String get paymentLinkGroupSomeNotReady => '部分卡片尚未就绪';
+
+  @override
+  String get paymentLinkGroupsHeading => '群组';
+
+  @override
+  String get paymentLinkHideCard => '隐藏卡片';
+
+  @override
+  String get paymentLinkHowDesktopStepCreate =>
+      '输入赠送金额，选择设计，添加留言（可选），一键创建你的卡片。';
+
+  @override
+  String get paymentLinkHowDesktopStepRedeem =>
+      '接收人可使用链接在其 Vizor 钱包中兑换卡片。发送者承担充值和兑换手续费，因此接收人将收到完整的卡片金额。';
+
+  @override
+  String get paymentLinkHowDesktopStepShare =>
+      '卡片创建后，你会得到一个包含领取密钥的专属链接。请只将其发送给预期的接收人。';
+
+  @override
+  String get paymentLinkHowGiftCardsWork => '礼品卡使用说明';
+
+  @override
+  String get paymentLinkHowItWorksSubtitle => '庆祝任何时刻的绝佳方式。';
+
+  @override
+  String get paymentLinkHowItWorksTitle => '礼品卡使用说明';
+
+  @override
+  String get paymentLinkHowStepCreate => '输入金额，选择设计，并可添加留言。';
+
+  @override
+  String get paymentLinkHowStepRedeem =>
+      '接收人在 Vizor 中打开链接并领取全部卡片金额。发送者承担两笔手续费。';
+
+  @override
+  String get paymentLinkHowStepShare => '充值到达网络后，复制专属链接，并且只发送给预期的接收人。';
+
+  @override
+  String get paymentLinkHowTheCardWorks => '礼品卡使用说明';
+
+  @override
+  String get paymentLinkIntakeCouldNotOpen => '无法打开支付链接。';
+
+  @override
+  String get paymentLinkIntakeQueueFull => '等待打开的支付链接过多。';
+
+  @override
+  String get paymentLinkInterruptedCheckMessage => '卡片检查已中断。请重试。';
+
+  @override
+  String get paymentLinkInvalidSubtitle => '请重新复制链接后再试';
+
+  @override
+  String get paymentLinkInvalidTitle => '这个链接看起来不对。';
+
+  @override
+  String get paymentLinkKeystoneBroadcastFailed => '无法广播礼品卡充值。';
+
+  @override
+  String get paymentLinkKeystoneBroadcastingTitle => '正在广播礼品卡充值';
+
+  @override
+  String get paymentLinkKeystoneCreatingGiftCard => '正在创建你的礼品卡…';
+
+  @override
+  String get paymentLinkKeystoneFundingUncertain => '充值状态不确定。重试前请先查看活动记录。';
+
+  @override
+  String get paymentLinkKeystoneKeepOpen => '交易发送期间请保持 Vizor 打开。';
+
+  @override
+  String get paymentLinkKeystoneQrMismatch => '此二维码与当前 Keystone 请求不匹配。';
+
+  @override
+  String get paymentLinkKeystoneReadingSignature => '正在读取签名…';
+
+  @override
+  String get paymentLinkKeystoneScanCaption => '扫描 Keystone 上的二维码以完成创建';
+
+  @override
+  String get paymentLinkKeystoneScanToSign => '扫码签名';
+
+  @override
+  String get paymentLinkKeystoneSignTitle => '在 Keystone 上签署礼品卡';
+
+  @override
+  String get paymentLinkKeystoneSignatureFailed => '无法应用 Keystone 签名。';
+
+  @override
+  String get paymentLinkKeystoneSigningFailed => '无法完成礼品卡签名。';
+
+  @override
+  String get paymentLinkKeystoneSubmittingTransaction => '正在提交交易';
+
+  @override
+  String get paymentLinkLeaveSaveMany => '离开此页面前，请先保存这些礼品卡。';
+
+  @override
+  String get paymentLinkLeaveSaveOne => '离开此页面前，请先保存这张礼品卡。';
+
+  @override
+  String get paymentLinkLedgerFundingExpired => '此礼品卡交易已过期或被拒绝。请返回并创建新的礼品卡。';
+
+  @override
+  String get paymentLinkLedgerFundingRejected => '已在你的 Ledger 上拒绝礼品卡充值。';
+
+  @override
+  String get paymentLinkLedgerSavedForRecovery =>
+      '礼品卡充值已保存以便恢复。请重试以检查其状态并完成保存。';
+
+  @override
+  String get paymentLinkLedgerSigningIncomplete => '无法完成 Ledger 签名。请检查设备后重试。';
+
+  @override
+  String get paymentLinkLinkCopied => '已复制礼品链接';
+
+  @override
+  String get paymentLinkLinkCopiedStatusFailed => '已复制礼品链接，但无法更新其状态。';
+
+  @override
+  String get paymentLinkLinkCopyFailed => '无法复制礼品链接。';
+
+  @override
+  String get paymentLinkLinksSaveFailed => '无法保存礼品卡链接。请重试。';
+
+  @override
+  String get paymentLinkLinksSaved => '已保存礼品卡链接';
+
+  @override
+  String get paymentLinkLoadingGiftCard => '正在加载礼品卡';
+
+  @override
+  String get paymentLinkLongSyncBody =>
+      'Vizor 需要扫描比平时更多的历史记录才能验证余额。这样做是安全的，但可能需要很长时间。';
+
+  @override
+  String get paymentLinkLongSyncConfirm => '检查礼品卡';
+
+  @override
+  String get paymentLinkLongSyncSupporting => '你可以返回，不会开始扫描。';
+
+  @override
+  String get paymentLinkLongSyncTitle => '此礼品卡可能需要较长时间';
+
+  @override
+  String get paymentLinkMemoOptionalSubtitle => '可附上一条简短的加密备注（可选）。';
+
+  @override
+  String get paymentLinkMessageAttachedTitle => '已附上留言。';
+
+  @override
+  String get paymentLinkMessageInputSemantic => '礼品卡留言输入';
+
+  @override
+  String get paymentLinkMessageStepTitle => '输入留言';
+
+  @override
+  String get paymentLinkMessageTooLarge => '留言过长。请尝试减少复杂表情符号。';
+
+  @override
+  String get paymentLinkMyCards => '我的卡片';
+
+  @override
+  String get paymentLinkNewGiftCardRequired => '需要新的礼品卡';
+
+  @override
+  String get paymentLinkNoActiveAccountAvailable => '没有可用的活动账户。';
+
+  @override
+  String get paymentLinkNoCreatedCardsText => '还没有创建的卡片。';
+
+  @override
+  String get paymentLinkNoReceivedCardsText => '还没有接收的卡片。';
+
+  @override
+  String get paymentLinkOpenGroupChecking => '检查中';
+
+  @override
+  String paymentLinkOpenGroupCreated(String date) {
+    return '创建于 $date';
+  }
+
+  @override
+  String paymentLinkOpenGroupEach(String amount) {
+    return '每张 $amount';
+  }
+
+  @override
+  String paymentLinkOpenGroupSemantic(int count) {
+    return '打开包含 $count 张礼品卡的群组';
+  }
+
+  @override
+  String get paymentLinkPasteLabel => '粘贴卡片链接';
+
+  @override
+  String get paymentLinkPendingSectionLabel => '处理中';
+
+  @override
+  String get paymentLinkPreparing => '准备中…';
+
+  @override
+  String get paymentLinkPreparingStatus => '准备中…';
+
+  @override
+  String get paymentLinkPrivacyModeOff => '关闭隐私模式';
+
+  @override
+  String get paymentLinkPrivacyModeOn => '开启隐私模式';
+
+  @override
+  String get paymentLinkQrCardHeading => '你收到了\nZEC';
+
+  @override
+  String get paymentLinkQrCardScanToRedeem => '扫码兑换';
+
+  @override
+  String get paymentLinkQrCardSemantic => '礼品卡二维码';
+
+  @override
+  String get paymentLinkQrCouldNotBeGenerated => '无法生成二维码';
+
+  @override
+  String get paymentLinkQrSaveFailed => '无法保存礼品卡二维码。';
+
+  @override
+  String get paymentLinkQrSaved => '已保存礼品卡二维码';
+
+  @override
+  String get paymentLinkQrSavedStatusFailed => '已保存礼品卡二维码，但无法更新其状态。';
+
+  @override
+  String get paymentLinkReadyHeading => '已可分享';
+
+  @override
+  String get paymentLinkReceiveFinishFailed => '无法完成接收这份礼物。请重试以检查其状态。';
+
+  @override
+  String get paymentLinkReceiveToLabel => '接收账户';
+
+  @override
+  String get paymentLinkReceivedCardsLoadFailed => '无法加载已接收的礼品卡。';
+
+  @override
+  String get paymentLinkReceivedGiftHeading => '你收到了一份礼物！';
+
+  @override
+  String get paymentLinkReceivedHeadingDesktop => '你收到了\n一张礼品卡！';
+
+  @override
+  String get paymentLinkReceivedTabLabel => '已接收';
+
+  @override
+  String get paymentLinkReceivingAccountChangedReopen => '接收账户已更改。请重新打开礼品卡以继续。';
+
+  @override
+  String get paymentLinkReceivingAccountChangedRetry => '接收账户已更改。请重试以检查此礼物。';
+
+  @override
+  String get paymentLinkReceivingStatus => '接收中…';
+
+  @override
+  String get paymentLinkRedeemCardLabel => '兑换礼品卡';
+
+  @override
+  String get paymentLinkRedeemCardStepTitle => '兑换礼品卡';
+
+  @override
+  String get paymentLinkRedeemPasteOrScan => '粘贴卡片链接或扫描其二维码。';
+
+  @override
+  String get paymentLinkRedeemSubtitle => '复制收到的卡片链接，并粘贴到下方。';
+
+  @override
+  String get paymentLinkRedeemTheCardTitle => '兑换礼品卡';
+
+  @override
+  String paymentLinkRemovalWarningCheckFailed(String action) {
+    String _temp0 = intl.Intl.selectLogic(action, {
+      'reset': '重置 Vizor',
+      'other': '移除此账户',
+    });
+    return '无法检查是否有未分享的礼品卡链接。在$_temp0之前，请复制仍需要的链接。';
+  }
+
+  @override
+  String paymentLinkRemovalWarningUnshared(int count, String subject) {
+    String _temp0 = intl.Intl.selectLogic(subject, {
+      'reset': '重置 Vizor',
+      'other': '移除此账户',
+    });
+    String _temp1 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '有 $count 个已充值的礼品卡链接尚未分享。$_temp0会丢失这些链接。请先复制链接。',
+    );
+    return '$_temp1';
+  }
+
+  @override
+  String get paymentLinkRemoveCardLabel => '移除卡片';
+
+  @override
+  String get paymentLinkRemoveCardSupporting => '此操作无法撤销。';
+
+  @override
+  String get paymentLinkRemoveCardTitle => '移除此卡？';
+
+  @override
+  String get paymentLinkRestoreCard => '恢复卡片';
+
+  @override
+  String get paymentLinkRevealMessageSemanticLabel => '显示礼品卡留言';
+
+  @override
+  String get paymentLinkReviewAndConfirm => '检查并确认';
+
+  @override
+  String get paymentLinkReviewCardTitle => '检查卡片';
+
+  @override
+  String get paymentLinkSaveQrCode => '保存二维码';
+
+  @override
+  String get paymentLinkSaving => '正在保存…';
+
+  @override
+  String get paymentLinkScanAgain => '重新扫描';
+
+  @override
+  String get paymentLinkScanAgainOrPaste => '请重新扫描或粘贴其他卡片链接。';
+
+  @override
+  String get paymentLinkScanCameraHint => '请连接摄像头扫描礼品卡二维码，或返回粘贴卡片链接。';
+
+  @override
+  String get paymentLinkScanQrCode => '扫描二维码';
+
+  @override
+  String get paymentLinkScanSheetSemantic => '扫描礼品卡二维码';
+
+  @override
+  String get paymentLinkScanSheetTitle => '扫描礼品卡二维码';
+
+  @override
+  String get paymentLinkScanShowQrToCamera => '请将礼品卡二维码对准摄像头';
+
+  @override
+  String paymentLinkSenderMessageSemantic(String message) {
+    return '发送者留言：$message；显示礼品卡正面';
+  }
+
+  @override
+  String get paymentLinkShareCard => '分享卡片';
+
+  @override
+  String get paymentLinkShareFailed => '无法分享礼品链接。';
+
+  @override
+  String get paymentLinkShareFailedCopyInstead => '无法分享这张礼品卡。请改为复制链接。';
+
+  @override
+  String get paymentLinkShareGiftCardTitle => '分享礼品卡';
+
+  @override
+  String get paymentLinkShareLinkInstruction =>
+      '请只将此链接分享给预期的接收人，对方即可在 Vizor 应用中领取卡片。';
+
+  @override
+  String get paymentLinkShareLinkInstructionDesktop =>
+      '请只将此链接分享给预期的接收人，\n对方即可在 Vizor 应用中领取卡片。';
+
+  @override
+  String get paymentLinkShareSheetTitle => '分享礼品卡';
+
+  @override
+  String get paymentLinkShareWaitingDescription => '正在准备你的礼品卡以便分享。';
+
+  @override
+  String get paymentLinkSharedStatusFailed => '已分享礼品卡，但无法更新其状态。';
+
+  @override
+  String get paymentLinkSharing => '正在分享…';
+
+  @override
+  String get paymentLinkShowCardFrontSemantic => '显示礼品卡正面';
+
+  @override
+  String get paymentLinkShowHowCardsWork => '显示礼品卡使用说明';
+
+  @override
+  String get paymentLinkShowQrSemantic => '显示礼品卡二维码';
+
+  @override
+  String get paymentLinkSkipMessage => '跳过留言';
+
+  @override
+  String get paymentLinkStartTyping => '开始输入…';
+
+  @override
+  String get paymentLinkStartWritingMessage => '开始撰写礼品卡留言';
+
+  @override
+  String get paymentLinkStepAddMessage => '添加留言';
+
+  @override
+  String get paymentLinkStepCreate => '创建';
+
+  @override
+  String get paymentLinkStepReview => '检查';
+
+  @override
+  String get paymentLinkStillNotSaved => '仍然无法保存礼品卡。关闭 Vizor 前请重试。';
+
+  @override
+  String get paymentLinkTapToRevealMessage => '点按卡片即可查看留言。';
+
+  @override
+  String get paymentLinkTapToRevealMessageTwoLines => '点按卡片\n即可查看留言。';
+
+  @override
+  String get paymentLinkTotalAmountHelpSemantic => '关于礼品卡总金额';
+
+  @override
+  String get paymentLinkTotalDeductedLabel => '扣除总额';
+
+  @override
+  String get paymentLinkTrySavingAgain => '重试保存';
+
+  @override
+  String get paymentLinkUnusedSectionLabel => '未使用';
+
+  @override
+  String get paymentLinkUsageAllUsed => '全部已使用';
+
+  @override
+  String get paymentLinkUsageAmountMismatch => '检测到的充值金额与预期的卡片充值金额不一致。';
+
+  @override
+  String get paymentLinkUsageAwaitingConfirmation => '链接已可分享。充值交易确认后将开始追踪使用情况。';
+
+  @override
+  String paymentLinkUsageCardUse(String label, String suffix) {
+    String _temp0 = intl.Intl.selectLogic(suffix, {
+      'checking': ' · 检查中…',
+      'failed': ' · 更新失败',
+      'other': '',
+    });
+    return '卡片使用状态：$label$_temp0';
+  }
+
+  @override
+  String get paymentLinkUsageConfirming => '确认中';
+
+  @override
+  String get paymentLinkUsageFundingNotObserved => '尚未能在追踪记录中验证充值交易。';
+
+  @override
+  String paymentLinkUsageLastChecked(String time) {
+    return '上次检查：$time';
+  }
+
+  @override
+  String get paymentLinkUsageMissingFundingInfo => '已保存的充值信息不完整，无法验证使用情况。';
+
+  @override
+  String get paymentLinkUsageNotEnoughInfo => '目前信息不足，无法验证此卡是否已被使用。';
+
+  @override
+  String get paymentLinkUsageScanIncomplete => '追踪记录尚未扫描到充值交易。';
+
+  @override
+  String paymentLinkUsageSemantics(
+    String label,
+    String state,
+    String hasExplanation,
+    String explanation,
+  ) {
+    String _temp0 = intl.Intl.selectLogic(state, {
+      'checking': '。检查中',
+      'failed': '。更新失败',
+      'other': '',
+    });
+    String _temp1 = intl.Intl.selectLogic(hasExplanation, {
+      'true': '。$explanation',
+      'other': '',
+    });
+    return '卡片使用状态：$label$_temp0$_temp1';
+  }
+
+  @override
+  String paymentLinkUsageUnusedOfCount(int unused, int count) {
+    return '$count 张中未使用 $unused 张';
+  }
+
+  @override
+  String get paymentLinkUsageUnverified => '未验证';
+
+  @override
+  String get paymentLinkUsageUpdateFailed => '更新失败';
+
+  @override
+  String get paymentLinkUsageUseDetected => '检测到已使用';
+
+  @override
+  String paymentLinkUsageUsedOfCount(int used, int count) {
+    return '$count 张中已使用 $used 张';
+  }
+
+  @override
+  String get paymentLinkUsdAmountTooSmall => '金额过小，无法以 USD 输入。';
+
+  @override
+  String get paymentLinkUsdFetchingPrice => '正在获取 USD 价格…';
+
+  @override
+  String get paymentLinkUsdPriceUnavailable => 'USD 价格不可用';
+
+  @override
+  String paymentLinkUseMaxCurrencySemantic(String amount, String currency) {
+    return '使用最大金额：$amount $currency';
+  }
+
+  @override
+  String paymentLinkUseMaxSemantic(String amount) {
+    return '使用最大金额：$amount';
+  }
+
+  @override
+  String get paymentLinkUsedSectionLabel => '已使用';
+
+  @override
+  String get paymentLinkViewCardAction => '查看卡片';
+
+  @override
+  String paymentLinkWaitToClaim(int minutes, String seconds) {
+    return '请等待 $minutes:$seconds 后领取';
+  }
+
+  @override
+  String get paymentLinkWaitToClaimSample => '请等待 3:45 后领取';
+
+  @override
+  String paymentLinkWaitToGetLink(int minutes, String seconds) {
+    return '请等待 $minutes:$seconds 以获取链接';
+  }
+
+  @override
+  String get paymentLinkWaitingDescription => '这可能需要一点时间。';
+
+  @override
+  String get paymentLinkWaitingStatusLabel => '请等待 1:15 以获取链接';
+
+  @override
+  String get paymentLinkWalletSaveRecoveryFailed => '无法完成钱包保存。请重试。';
+
+  @override
   String get paymentUriExpired => '该请求链接已超时。请重新打开以支付。';
 
   @override

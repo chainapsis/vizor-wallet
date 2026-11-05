@@ -77,7 +77,8 @@ class PaymentLinkClaimWallet {
     return _ref
         .read(rpcEndpointFailoverProvider.notifier)
         .runWithEndpointFallback<rust_sync.ApiGiftCardCheckProgress>(
-          operation: 'Gift Card check',
+          operation:
+              'Gift Card check', // l10n-ignore: endpoint failover operation, logged only
           action: (endpoint) async {
             coordinator.requirePreparation(generation);
             if (epoch != _checkCancellationEpoch ||
@@ -254,7 +255,8 @@ class PaymentLinkClaimWallet {
     return _ref
         .read(rpcEndpointFailoverProvider.notifier)
         .runWithEndpointFallback<void>(
-          operation: 'Gift Card claim sync',
+          operation:
+              'Gift Card claim sync', // l10n-ignore: endpoint failover operation, logged only
           action: (endpoint) {
             ensureActive?.call();
             if (endpoint.networkName != network) {
@@ -480,7 +482,7 @@ class PaymentLinkClaimWallet {
     if (legacyAddress != null) {
       final legacyIdentity = sha256.convert(
         utf8.encode(
-          '${link.network}:$legacyAddress:${link.mnemonic}:'
+          '${link.network}:$legacyAddress:${link.mnemonic}:' // l10n-ignore: storage key
           '${link.birthdayHeight}',
         ),
       );
@@ -530,7 +532,8 @@ class PaymentLinkClaimWallet {
       birthdayHeight: BigInt.from(birthdayHeight),
       network: network,
       dbPath: dbPath,
-      accountName: 'Payment link claim',
+      accountName:
+          'Payment link claim', // l10n-ignore: persisted temporary wallet account name
     );
     return (
       address: imported.unifiedAddress,

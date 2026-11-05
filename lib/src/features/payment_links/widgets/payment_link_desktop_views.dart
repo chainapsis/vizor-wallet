@@ -12,19 +12,17 @@ import '../../../core/widgets/app_tooltip.dart';
 import 'payment_link_action.dart';
 import 'payment_link_card_motion.dart';
 import 'payment_link_cards_layout.dart';
-import 'payment_link_copy.dart';
 import 'payment_link_received_desktop_view.dart';
 export 'payment_link_received_desktop_view.dart';
 import 'payment_link_gift_card.dart';
 import 'payment_link_group_entry.dart';
 import 'payment_link_qr_share_card.dart';
 import 'payment_link_wizard_chrome.dart';
+import '../../../core/l10n/l10n.dart';
 
 export 'payment_link_cards_layout.dart'
     show PaymentLinkCardsSection, PaymentLinkCardsTab;
 
-const kPaymentLinkMessageTooLargeText =
-    'This message is too large. Try using fewer complex emoji.';
 const _wizardCardTopSpacing = 78.0;
 
 /// Static desktop states represented by the payment-link Figma flow.
@@ -63,11 +61,11 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
     required this.onRedeem,
     this.onCreateMultiple,
     this.isLedger = false,
-    this.backLabel = 'Home',
-    this.title = kPaymentLinkEmptyTitle,
-    this.helpLabel = 'How gift cards work',
-    this.createLabel = 'Create new card',
-    this.redeemLabel = kPaymentLinkRedeemCardLabel,
+    this.backLabel,
+    this.title,
+    this.helpLabel,
+    this.createLabel,
+    this.redeemLabel,
     super.key,
   });
 
@@ -78,14 +76,22 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
   final VoidCallback onRedeem;
   final VoidCallback? onCreateMultiple;
   final bool isLedger;
-  final String backLabel;
-  final String title;
-  final String helpLabel;
-  final String createLabel;
-  final String redeemLabel;
+  final String? backLabel;
+  final String? title;
+  final String? helpLabel;
+  final String? createLabel;
+  final String? redeemLabel;
 
   @override
   Widget build(BuildContext context) {
+    final helpLabel =
+        this.helpLabel ?? context.l10n.paymentLinkHowGiftCardsWork;
+    final createLabel =
+        this.createLabel ?? context.l10n.paymentLinkCreateNewCard;
+    final backLabel = this.backLabel ?? context.l10n.navHome;
+    final title = this.title ?? context.l10n.paymentLinkEmptyTitle;
+    final redeemLabel =
+        this.redeemLabel ?? context.l10n.paymentLinkRedeemCardLabel;
     final heading = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -243,33 +249,36 @@ class PaymentLinkHowItWorksDesktopView extends StatelessWidget {
   const PaymentLinkHowItWorksDesktopView({
     required this.background,
     required this.onClose,
-    this.title = kPaymentLinkHowItWorksTitle,
-    this.subtitle = kPaymentLinkHowItWorksSubtitle,
-    this.createDescription =
-        'Enter amount to gift, pick a design, add a message (optional) '
-        'and create your Card with a single click.',
-    this.shareDescription =
-        'After the card is created, you will get a unique Link containing its '
-        'claim secret. Send it only to the intended recipient.',
-    this.redeemDescription =
-        'Recipient can redeem the Card in their Vizor wallet using the Link. '
-        'The sender covers the deposit and redeem fees, so the recipient '
-        'receives the full Card amount.',
-    this.closeLabel = 'Close',
+    this.title,
+    this.subtitle,
+    this.createDescription,
+    this.shareDescription,
+    this.redeemDescription,
+    this.closeLabel,
     super.key,
   });
 
   final Widget background;
   final VoidCallback onClose;
-  final String title;
-  final String subtitle;
-  final String createDescription;
-  final String shareDescription;
-  final String redeemDescription;
-  final String closeLabel;
+  final String? title;
+  final String? subtitle;
+  final String? createDescription;
+  final String? shareDescription;
+  final String? redeemDescription;
+  final String? closeLabel;
 
   @override
   Widget build(BuildContext context) {
+    final createDescription =
+        this.createDescription ?? context.l10n.paymentLinkHowDesktopStepCreate;
+    final shareDescription =
+        this.shareDescription ?? context.l10n.paymentLinkHowDesktopStepShare;
+    final redeemDescription =
+        this.redeemDescription ?? context.l10n.paymentLinkHowDesktopStepRedeem;
+    final closeLabel = this.closeLabel ?? context.l10n.commonClose;
+    final title = this.title ?? context.l10n.paymentLinkHowItWorksTitle;
+    final subtitle =
+        this.subtitle ?? context.l10n.paymentLinkHowItWorksSubtitle;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -340,11 +349,11 @@ class PaymentLinkAmountDesktopView extends StatelessWidget {
     this.onStepSelected,
     this.supportingText,
     this.supportingTextIsError = false,
-    this.backLabel = 'Home',
-    this.title = kPaymentLinkCreateGiftCardTitle,
-    this.subtitle = 'Enter amount & select the design.',
-    this.createLabel = 'Continue',
-    this.emptyActionLabel = 'Continue',
+    this.backLabel,
+    this.title,
+    this.subtitle,
+    this.createLabel,
+    this.emptyActionLabel,
     super.key,
   });
 
@@ -356,11 +365,11 @@ class PaymentLinkAmountDesktopView extends StatelessWidget {
   final ValueChanged<int>? onStepSelected;
   final String? supportingText;
   final bool supportingTextIsError;
-  final String backLabel;
-  final String title;
-  final String subtitle;
-  final String createLabel;
-  final String emptyActionLabel;
+  final String? backLabel;
+  final String? title;
+  final String? subtitle;
+  final String? createLabel;
+  final String? emptyActionLabel;
 
   bool get _hasAmount => switch (state) {
     PaymentLinkAmountVisualState.amount ||
@@ -372,6 +381,13 @@ class PaymentLinkAmountDesktopView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final subtitle =
+        this.subtitle ?? context.l10n.paymentLinkAmountStepSubtitleDesktop;
+    final backLabel = this.backLabel ?? context.l10n.navHome;
+    final createLabel = this.createLabel ?? context.l10n.commonContinue;
+    final emptyActionLabel =
+        this.emptyActionLabel ?? context.l10n.commonContinue;
+    final title = this.title ?? context.l10n.paymentLinkCreateGiftCardTitle;
     final canContinue = _hasAmount && onCreate != null;
     return PaymentLinkWizardPane(
       title: title,
@@ -424,12 +440,12 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
     this.onContinue,
     this.onStepSelected,
     this.errorText,
-    this.backLabel = 'Home',
-    this.title = kPaymentLinkCreateGiftCardTitle,
-    this.subtitle = 'Enter amount & select the design.',
-    this.skipLabel = 'Skip message',
-    this.emptyContinueLabel = 'Continue',
-    this.continueLabel = 'Review & confirm',
+    this.backLabel,
+    this.title,
+    this.subtitle,
+    this.skipLabel,
+    this.emptyContinueLabel,
+    this.continueLabel,
     super.key,
   });
 
@@ -440,15 +456,24 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
   final VoidCallback? onContinue;
   final ValueChanged<int>? onStepSelected;
   final String? errorText;
-  final String backLabel;
-  final String title;
-  final String subtitle;
-  final String skipLabel;
-  final String emptyContinueLabel;
-  final String continueLabel;
+  final String? backLabel;
+  final String? title;
+  final String? subtitle;
+  final String? skipLabel;
+  final String? emptyContinueLabel;
+  final String? continueLabel;
 
   @override
   Widget build(BuildContext context) {
+    final subtitle =
+        this.subtitle ?? context.l10n.paymentLinkAmountStepSubtitleDesktop;
+    final skipLabel = this.skipLabel ?? context.l10n.paymentLinkSkipMessage;
+    final continueLabel =
+        this.continueLabel ?? context.l10n.paymentLinkReviewAndConfirm;
+    final backLabel = this.backLabel ?? context.l10n.navHome;
+    final emptyContinueLabel =
+        this.emptyContinueLabel ?? context.l10n.commonContinue;
+    final title = this.title ?? context.l10n.paymentLinkCreateGiftCardTitle;
     return PaymentLinkWizardPane(
       title: title,
       subtitle: subtitle,
@@ -509,10 +534,10 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
     required this.totalAmountText,
     this.onConfirm,
     this.onStepSelected,
-    this.backLabel = 'Home',
-    this.title = kPaymentLinkCreateGiftCardTitle,
-    this.subtitle = 'Enter amount & select the design.',
-    this.confirmLabel = 'Create card',
+    this.backLabel,
+    this.title,
+    this.subtitle,
+    this.confirmLabel,
     super.key,
   });
 
@@ -523,13 +548,19 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
   final String totalAmountText;
   final VoidCallback? onConfirm;
   final ValueChanged<int>? onStepSelected;
-  final String backLabel;
-  final String title;
-  final String subtitle;
-  final String confirmLabel;
+  final String? backLabel;
+  final String? title;
+  final String? subtitle;
+  final String? confirmLabel;
 
   @override
   Widget build(BuildContext context) {
+    final subtitle =
+        this.subtitle ?? context.l10n.paymentLinkAmountStepSubtitleDesktop;
+    final confirmLabel =
+        this.confirmLabel ?? context.l10n.paymentLinkCreateCardButton;
+    final backLabel = this.backLabel ?? context.l10n.navHome;
+    final title = this.title ?? context.l10n.paymentLinkCreateGiftCardTitle;
     // Preserve the standard window's geometry while letting scaled text grow
     // the content. The card and summary must never compete for the same space.
     return LayoutBuilder(
@@ -602,7 +633,8 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
                                     minHeight: AppSpacing.base,
                                   ),
                                   child: _ReviewAmountRow(
-                                    label: 'Card amount',
+                                    label:
+                                        context.l10n.paymentLinkCardAmountLabel,
                                     value: cardAmountText,
                                   ),
                                 ),
@@ -611,7 +643,7 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
                                     minHeight: AppSpacing.base,
                                   ),
                                   child: _ReviewAmountRow(
-                                    label: kPaymentLinkCardFeeLabel,
+                                    label: context.l10n.paymentLinkCardFeeLabel,
                                     value: cardFeeText,
                                   ),
                                 ),
@@ -621,7 +653,9 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
                                     minHeight: AppSpacing.base,
                                   ),
                                   child: _ReviewAmountRow(
-                                    label: kPaymentLinkTotalDeductedLabel,
+                                    label: context
+                                        .l10n
+                                        .paymentLinkTotalDeductedLabel,
                                     value: totalAmountText,
                                     emphasized: true,
                                     showHelp: true,
@@ -699,12 +733,10 @@ class _ReviewAmountRow extends StatelessWidget {
           if (showHelp) ...[
             const SizedBox(width: AppSpacing.xxs),
             AppTooltip(
-              message:
-                  'Includes the fee to fund the gift card and the fee reserved '
-                  'for the recipient to claim it.',
+              message: context.l10n.paymentLinkFeeHelpTextLong,
               preferBelow: true,
               child: Semantics(
-                label: 'About the total gift card amount',
+                label: context.l10n.paymentLinkTotalAmountHelpSemantic,
                 child: AppIcon(
                   AppIcons.help,
                   size: 16,
@@ -729,13 +761,13 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
     this.usageStatus,
     this.onCardTap,
     this.onReturnHome,
-    this.backLabel = 'Home',
-    this.waitingStatusLabel = kPaymentLinkWaitingStatusLabel,
-    this.waitingHeading = kPaymentLinkAlmostReadyHeading,
-    this.waitingPrimaryText = kPaymentLinkShareWaitingDescription,
-    this.waitingSecondaryText = kPaymentLinkWaitingDescription,
-    this.copyLabel = 'Copy link',
-    this.returnLabel = 'Return home',
+    this.backLabel,
+    this.waitingStatusLabel,
+    this.waitingHeading,
+    this.waitingPrimaryText,
+    this.waitingSecondaryText,
+    this.copyLabel,
+    this.returnLabel,
     super.key,
   });
 
@@ -747,16 +779,27 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
   final VoidCallback? onCopy;
   final VoidCallback? onCardTap;
   final VoidCallback? onReturnHome;
-  final String backLabel;
-  final String waitingStatusLabel;
-  final String waitingHeading;
-  final String waitingPrimaryText;
-  final String waitingSecondaryText;
-  final String copyLabel;
-  final String returnLabel;
+  final String? backLabel;
+  final String? waitingStatusLabel;
+  final String? waitingHeading;
+  final String? waitingPrimaryText;
+  final String? waitingSecondaryText;
+  final String? copyLabel;
+  final String? returnLabel;
 
   @override
   Widget build(BuildContext context) {
+    final copyLabel = this.copyLabel ?? context.l10n.paymentLinkCopyLink;
+    final backLabel = this.backLabel ?? context.l10n.navHome;
+    final waitingStatusLabel =
+        this.waitingStatusLabel ?? context.l10n.paymentLinkWaitingStatusLabel;
+    final waitingHeading =
+        this.waitingHeading ?? context.l10n.paymentLinkAlmostReadyHeading;
+    final waitingPrimaryText =
+        this.waitingPrimaryText ??
+        context.l10n.paymentLinkShareWaitingDescription;
+    final waitingSecondaryText =
+        this.waitingSecondaryText ?? context.l10n.paymentLinkWaitingDescription;
     final checking = state == PaymentLinkReadyVisualState.checking;
     final waiting = state != PaymentLinkReadyVisualState.ready;
     final canFlip = !waiting && onCardTap != null;
@@ -767,7 +810,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
     final cardContent = canFlip
         ? PaymentLinkAction(
             onPressed: onCardTap,
-            semanticLabel: kPaymentLinkFlipCardSemanticLabel,
+            semanticLabel: context.l10n.paymentLinkFlipCardSemanticLabel,
             builder: (context, _, focused) => PaymentLinkActionFocusRing(
               focused: focused,
               borderRadius: AppRadii.large,
@@ -801,7 +844,9 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                 left: 0,
                 right: 0,
                 child: Text(
-                  waiting ? waitingHeading : kPaymentLinkReadyHeading,
+                  waiting
+                      ? waitingHeading
+                      : context.l10n.paymentLinkReadyHeading,
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
                     color: context.colors.text.accent,
@@ -838,8 +883,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                       ),
                     ] else ...[
                       Text(
-                        'Share this link with the intended recipient so they\n'
-                        'can claim the Card using their Vizor app.',
+                        context.l10n.paymentLinkShareLinkInstructionDesktop,
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMedium.copyWith(
                           color: context.colors.text.secondary,
@@ -857,7 +901,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                             bottom: AppSpacing.sm,
                           ),
                           child: Text(
-                            'You can copy this link again from Settings → My gift cards.',
+                            context.l10n.paymentLinkCopyLinkAgainHint,
                             textAlign: TextAlign.center,
                             style: AppTypography.bodyMedium.copyWith(
                               color: context.colors.text.secondary,
@@ -880,7 +924,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                     if (!waiting) ...[
                       const SizedBox(height: AppSpacing.xs),
                       PaymentLinkTextAction(
-                        label: returnLabel,
+                        label: returnLabel ?? context.l10n.commonReturnHome,
                         onTap: onReturnHome ?? onBack,
                       ),
                     ],
@@ -904,8 +948,8 @@ class PaymentLinkShareQrDesktopView extends StatelessWidget {
     required this.onSaveQr,
     required this.onCopyLink,
     this.shareCardKey,
-    this.saveLabel = 'Save QR code',
-    this.copyLabel = 'Copy link',
+    this.saveLabel,
+    this.copyLabel,
     super.key,
   });
 
@@ -915,13 +959,15 @@ class PaymentLinkShareQrDesktopView extends StatelessWidget {
   final VoidCallback? onSaveQr;
   final VoidCallback? onCopyLink;
   final Key? shareCardKey;
-  final String saveLabel;
-  final String copyLabel;
+  final String? saveLabel;
+  final String? copyLabel;
 
   @override
   Widget build(BuildContext context) {
+    final saveLabel = this.saveLabel ?? context.l10n.paymentLinkSaveQrCode;
+    final copyLabel = this.copyLabel ?? context.l10n.paymentLinkCopyLink;
     return PaymentLinkPane(
-      backLabel: 'Gift cards',
+      backLabel: context.l10n.paymentLinkGiftCardsLowerBreadcrumb,
       onBack: onBack,
       child: Center(
         child: SizedBox(
@@ -930,7 +976,7 @@ class PaymentLinkShareQrDesktopView extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Share Gift Card',
+                context.l10n.paymentLinkShareGiftCardTitle,
                 style: AppTypography.headlineSmall.copyWith(
                   color: context.colors.text.accent,
                 ),
@@ -1066,14 +1112,14 @@ class PaymentLinkCardListRow extends StatelessWidget {
                 PaymentLinkIconAction(
                   key: const ValueKey('payment_link_card_copy_action'),
                   icon: AppIcons.copy,
-                  semanticLabel: kPaymentLinkCopyLinkSemanticLabel,
+                  semanticLabel: context.l10n.paymentLinkCopyLinkSemanticLabel,
                   onPressed: onCopyLink,
                 ),
                 const SizedBox(width: AppSpacing.xxs),
                 PaymentLinkIconAction(
                   key: const ValueKey('payment_link_card_qr_action'),
                   icon: AppIcons.qr,
-                  semanticLabel: 'Show gift card QR code',
+                  semanticLabel: context.l10n.paymentLinkShowQrSemantic,
                   onPressed: onShowQr,
                 ),
               ],
@@ -1169,11 +1215,11 @@ class PaymentLinkBatchListRow extends StatelessWidget {
     );
     return PaymentLinkAction(
       semanticLabel: [
-        'Open group of $count gift cards',
-        '$amountText each',
-        'created $dateText',
+        context.l10n.paymentLinkOpenGroupSemantic(count),
+        context.l10n.paymentLinkOpenGroupEach(amountText),
+        context.l10n.paymentLinkOpenGroupCreated(dateText),
         if (statusText.isNotEmpty) statusText,
-        if (showLoader) 'Checking',
+        if (showLoader) context.l10n.paymentLinkOpenGroupChecking,
       ].join(', '),
       onPressed: onOpen,
       builder: (context, hovered, focused) => Stack(
@@ -1313,8 +1359,8 @@ class PaymentLinkCardsDesktopView extends StatefulWidget {
     this.isLedger = false,
     this.activeTab = PaymentLinkCardsTab.created,
     this.onTabSelected,
-    this.backLabel = 'Home',
-    this.title = 'Gift Cards',
+    this.backLabel,
+    this.title,
     super.key,
   });
 
@@ -1326,8 +1372,8 @@ class PaymentLinkCardsDesktopView extends StatefulWidget {
   final bool isLedger;
   final PaymentLinkCardsTab activeTab;
   final ValueChanged<PaymentLinkCardsTab>? onTabSelected;
-  final String backLabel;
-  final String title;
+  final String? backLabel;
+  final String? title;
 
   @override
   State<PaymentLinkCardsDesktopView> createState() =>
@@ -1382,7 +1428,7 @@ class _PaymentLinkCardsDesktopViewState
   @override
   Widget build(BuildContext context) {
     return PaymentLinkPane(
-      backLabel: widget.backLabel,
+      backLabel: widget.backLabel ?? context.l10n.navHome,
       onBack: widget.onBack,
       scrollController: _scrollController,
       showTopScrollFade: _showTopFade,
@@ -1391,14 +1437,14 @@ class _PaymentLinkCardsDesktopViewState
       actions: _PaymentLinkDesktopCreateActions(
         onCreate: widget.onCreate,
         onRedeem: widget.onRedeem,
-        createLabel: kPaymentLinkCreateCardLabel,
-        redeemLabel: kPaymentLinkRedeemCardLabel,
+        createLabel: context.l10n.paymentLinkCreateCardLabel,
+        redeemLabel: context.l10n.paymentLinkRedeemCardLabel,
       ),
       child: LayoutBuilder(
         builder: (context, constraints) => Column(
           children: [
             Text(
-              widget.title,
+              widget.title ?? context.l10n.paymentLinkGiftCardsTitle,
               textAlign: TextAlign.center,
               style: AppTypography.headlineLarge.copyWith(
                 color: context.colors.text.accent,
@@ -1412,7 +1458,7 @@ class _PaymentLinkCardsDesktopViewState
                 children: [
                   PaymentLinkTabAction(
                     icon: AppIcons.plane,
-                    label: kPaymentLinkCreatedTabLabel,
+                    label: context.l10n.paymentLinkCreatedTabLabel,
                     selected: widget.activeTab == PaymentLinkCardsTab.created,
                     onTap: widget.onTabSelected == null
                         ? null
@@ -1423,7 +1469,7 @@ class _PaymentLinkCardsDesktopViewState
                   const SizedBox(width: AppSpacing.sm),
                   PaymentLinkTabAction(
                     icon: AppIcons.importWallet,
-                    label: kPaymentLinkReceivedTabLabel,
+                    label: context.l10n.paymentLinkReceivedTabLabel,
                     selected: widget.activeTab == PaymentLinkCardsTab.received,
                     onTap: widget.onTabSelected == null
                         ? null
@@ -1513,13 +1559,13 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
     this.loadingPlaceholder,
     this.statusContent,
     this.secondaryAction,
-    this.backLabel = 'My Cards',
+    this.backLabel,
     this.title,
-    this.subtitle = kPaymentLinkRedeemSubtitle,
-    this.pasteLabel = kPaymentLinkPasteLabel,
-    this.invalidTitle = kPaymentLinkInvalidTitle,
-    this.invalidSubtitle = kPaymentLinkInvalidSubtitle,
-    this.clearLabel = kPaymentLinkClearClipboardLabel,
+    this.subtitle,
+    this.pasteLabel,
+    this.invalidTitle,
+    this.invalidSubtitle,
+    this.clearLabel,
     super.key,
   });
 
@@ -1532,16 +1578,25 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
   final Widget? loadingPlaceholder;
   final Widget? statusContent;
   final Widget? secondaryAction;
-  final String backLabel;
+  final String? backLabel;
   final String? title;
-  final String subtitle;
-  final String pasteLabel;
-  final String invalidTitle;
-  final String invalidSubtitle;
-  final String clearLabel;
+  final String? subtitle;
+  final String? pasteLabel;
+  final String? invalidTitle;
+  final String? invalidSubtitle;
+  final String? clearLabel;
 
   @override
   Widget build(BuildContext context) {
+    final backLabel = this.backLabel ?? context.l10n.paymentLinkMyCards;
+    final subtitle = this.subtitle ?? context.l10n.paymentLinkRedeemSubtitle;
+    final pasteLabel = this.pasteLabel ?? context.l10n.paymentLinkPasteLabel;
+    final invalidTitle =
+        this.invalidTitle ?? context.l10n.paymentLinkInvalidTitle;
+    final invalidSubtitle =
+        this.invalidSubtitle ?? context.l10n.paymentLinkInvalidSubtitle;
+    final clearLabel =
+        this.clearLabel ?? context.l10n.paymentLinkClearClipboardLabel;
     final loading = state == PaymentLinkRedeemVisualState.loading;
     final invalid = state == PaymentLinkRedeemVisualState.invalid;
     if (loading) {
@@ -1567,8 +1622,8 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
               Text(
                 title ??
                     (loading
-                        ? kPaymentLinkCheckingLabel
-                        : kPaymentLinkRedeemTheCardTitle),
+                        ? context.l10n.paymentLinkCheckingLabel
+                        : context.l10n.paymentLinkRedeemTheCardTitle),
                 textAlign: TextAlign.center,
                 style: AppTypography.headlineLarge.copyWith(
                   color: context.colors.text.accent,
@@ -1628,7 +1683,7 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
                                               const SizedBox(
                                                 height: AppSpacing.s,
                                               ),
-                                              _scanButton(),
+                                              _scanButton(context),
                                             ],
                                           ],
                                         )
@@ -1643,7 +1698,7 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
                                               const SizedBox(
                                                 height: AppSpacing.s,
                                               ),
-                                              _scanButton(),
+                                              _scanButton(context),
                                             ],
                                           ],
                                         )),
@@ -1693,12 +1748,12 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
     );
   }
 
-  Widget _scanButton() => AppButton(
+  Widget _scanButton(BuildContext context) => AppButton(
     key: const ValueKey('payment_link_desktop_scan_button'),
     onPressed: scanEnabled ? onScan : null,
     size: AppButtonSize.mediumLarge,
     variant: AppButtonVariant.secondary,
     leading: const AppIcon(AppIcons.qr),
-    child: const Text('Scan QR code'),
+    child: Text(context.l10n.paymentLinkScanQrCode),
   );
 }

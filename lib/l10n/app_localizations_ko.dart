@@ -6652,6 +6652,1360 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get paymentLinkAboveMaximumZec => '보⁠유⁠한 최⁠대 ZEC⁠를 초⁠과⁠했⁠어⁠요';
+
+  @override
+  String get paymentLinkAccountChangedRedeemAgain =>
+      '활⁠성 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 새 계⁠정⁠으⁠로 받⁠으⁠려⁠면 이 기⁠프⁠트 카⁠드⁠를 다⁠시 받⁠아 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkAccountChangedReviewAmount =>
+      '활⁠성 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 기⁠프⁠트 카⁠드 금⁠액⁠과 수⁠수⁠료⁠를 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkActiveAccountChangedReviewAmount =>
+      '활⁠성 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 금⁠액⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkAlmostReadyHeading => '기⁠프⁠트 카⁠드⁠가\n거⁠의 준⁠비⁠됐⁠어⁠요!';
+
+  @override
+  String get paymentLinkAlmostReadyReceivedHeading =>
+      '기⁠프⁠트 카⁠드⁠가\n거⁠의 준⁠비⁠됐⁠어⁠요!';
+
+  @override
+  String paymentLinkAmountCurrencyDisabledSemantic(
+    String currency,
+    String reason,
+  ) {
+    return '$currency⁠로 금⁠액 입⁠력. $reason';
+  }
+
+  @override
+  String paymentLinkAmountCurrencySemantic(String currency) {
+    return '$currency⁠로 금⁠액 입⁠력';
+  }
+
+  @override
+  String get paymentLinkAmountEnterAmount => '금⁠액⁠을 입⁠력⁠하⁠세⁠요';
+
+  @override
+  String get paymentLinkAmountEnterDollars => '달⁠러⁠를 입⁠력⁠하⁠세⁠요';
+
+  @override
+  String get paymentLinkAmountInputSemantic => '기⁠프⁠트 카⁠드 금⁠액 입⁠력';
+
+  @override
+  String get paymentLinkAmountStepSubtitleDesktop =>
+      '금⁠액⁠을 입⁠력⁠하⁠고 디⁠자⁠인⁠을 선⁠택⁠하⁠세⁠요.';
+
+  @override
+  String get paymentLinkAmountStepSubtitleMobile =>
+      '금⁠액⁠을 입⁠력⁠하⁠고 디⁠자⁠인⁠을 고⁠르⁠세⁠요.';
+
+  @override
+  String get paymentLinkApproveAndCreate => '승⁠인⁠하⁠고 만⁠들⁠기';
+
+  @override
+  String paymentLinkArchivedCount(int count) {
+    return '보⁠관⁠됨 ($count)';
+  }
+
+  @override
+  String get paymentLinkArchivedHeading => '보⁠관⁠됨';
+
+  @override
+  String get paymentLinkArtworkChestCave => '수⁠정 동⁠굴⁠의 상⁠자';
+
+  @override
+  String get paymentLinkArtworkChestLava => '용⁠암 동⁠굴⁠의 상⁠자';
+
+  @override
+  String get paymentLinkArtworkCoin => 'Zcash 코⁠인';
+
+  @override
+  String get paymentLinkArtworkCrystal => '수⁠정';
+
+  @override
+  String get paymentLinkArtworkDiamond => '다⁠이⁠아⁠몬⁠드';
+
+  @override
+  String get paymentLinkArtworkDragon => '드⁠래⁠곤';
+
+  @override
+  String get paymentLinkArtworkGandalf => '마⁠법⁠사';
+
+  @override
+  String get paymentLinkArtworkGift => '선⁠물 상⁠자';
+
+  @override
+  String get paymentLinkArtworkKnight => '기⁠사';
+
+  @override
+  String get paymentLinkArtworkKnightMagic => '마⁠법 기⁠사';
+
+  @override
+  String get paymentLinkArtworkRogueCat => '도⁠적 고⁠양⁠이';
+
+  @override
+  String get paymentLinkArtworkRuby => '루⁠비';
+
+  @override
+  String get paymentLinkAvailabilityCheckingDescription =>
+      '받⁠기 결⁠과⁠가 아⁠직 확⁠인⁠되⁠지 않⁠았⁠어⁠요. 잠⁠시 후 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkAvailabilityCheckingResult => '결⁠과 확⁠인 중';
+
+  @override
+  String get paymentLinkAvailabilityClaim => '받⁠기';
+
+  @override
+  String get paymentLinkAvailabilityClaimFailed => '받⁠기 실⁠패';
+
+  @override
+  String get paymentLinkAvailabilityFailedDescription =>
+      '받⁠기⁠가 완⁠료⁠되⁠지 않⁠았⁠어⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 카⁠드⁠를 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkAvailabilityNoBalance => '잔⁠액 없⁠음';
+
+  @override
+  String get paymentLinkAvailabilityNoBalanceDescription =>
+      '지⁠금⁠은 받⁠을 수 있⁠는 잔⁠액⁠이 없⁠어⁠요.';
+
+  @override
+  String get paymentLinkAvailabilityReadyDescription =>
+      '이 기⁠프⁠트 카⁠드⁠를 받⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkAvailabilityRejectedDescription =>
+      '네⁠트⁠워⁠크⁠가 이 받⁠기 요⁠청⁠을 받⁠아⁠들⁠이⁠지 않⁠았⁠어⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 상⁠태⁠를 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkBackToGiftCard => '기⁠프⁠트 카⁠드⁠로 돌⁠아⁠가⁠기';
+
+  @override
+  String get paymentLinkBatchAddCard => '카⁠드 한 장 추⁠가';
+
+  @override
+  String get paymentLinkBatchCardsInGroup => '이 그⁠룹⁠의 카⁠드';
+
+  @override
+  String get paymentLinkBatchCheckFailed => '일⁠부 카⁠드⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get paymentLinkBatchCheckingUse => '카⁠드 사⁠용 여⁠부 확⁠인 중…';
+
+  @override
+  String get paymentLinkBatchChooseLocation => '위⁠치 선⁠택';
+
+  @override
+  String paymentLinkBatchCopyLinkSemantic(String number) {
+    return '카⁠드 $number 링⁠크 복⁠사';
+  }
+
+  @override
+  String paymentLinkBatchCountSemantic(int max) {
+    return '카⁠드 수, 2~$max⁠장';
+  }
+
+  @override
+  String paymentLinkBatchCreated(String date) {
+    return '$date⁠에 만⁠듦';
+  }
+
+  @override
+  String get paymentLinkBatchDetailsNotSaved =>
+      '카⁠드 정⁠보⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchFeeChanged =>
+      '네⁠트⁠워⁠크 수⁠수⁠료⁠가 바⁠뀌⁠었⁠어⁠요. 새 총⁠액⁠을 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchFundedNotSaved =>
+      '충⁠전⁠은 전⁠송⁠됐⁠지⁠만 카⁠드⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. Vizor⁠를 닫⁠기 전⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String paymentLinkBatchGiftCardsCount(int count) {
+    return '기⁠프⁠트 카⁠드 $count⁠장';
+  }
+
+  @override
+  String get paymentLinkBatchLinksShareableLater =>
+      '결⁠제⁠가 확⁠인⁠되⁠면 링⁠크⁠를 공⁠유⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkBatchMessageOptional => '메⁠시⁠지 (선⁠택)';
+
+  @override
+  String get paymentLinkBatchMessageOptionalEveryCard =>
+      '메⁠시⁠지 (선⁠택), 모⁠든 카⁠드⁠에 표⁠시⁠돼⁠요';
+
+  @override
+  String get paymentLinkBatchNoneFunded =>
+      '충⁠전⁠된 카⁠드⁠가 없⁠어⁠요. 금⁠액⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchNotAllReady =>
+      '이 그⁠룹⁠의 일⁠부 카⁠드⁠가 아⁠직 준⁠비⁠되⁠지 않⁠았⁠어⁠요. 모⁠든 카⁠드⁠가 준⁠비⁠될 때⁠까⁠지 링⁠크⁠를 공⁠유⁠하⁠지 마⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchOverBalance =>
+      '사⁠용 가⁠능⁠한 잔⁠액⁠에 맞⁠게 금⁠액⁠이⁠나 카⁠드 수⁠를 줄⁠여 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchPaymentUnconfirmed =>
+      'Vizor⁠가 결⁠제⁠가 전⁠송⁠되⁠었⁠는⁠지 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 이 카⁠드⁠를 보⁠관⁠하⁠고, 링⁠크⁠를 공⁠유⁠하⁠기 전⁠에 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchPrepareFailed => '이 카⁠드⁠들⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkBatchPreviousAccount =>
+      '카⁠드⁠가 이⁠전 계⁠정⁠으⁠로 만⁠들⁠어⁠졌⁠어⁠요. 보⁠려⁠면 다⁠시 전⁠환⁠하⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchQuoteNotReady =>
+      '사⁠용 가⁠능⁠한 잔⁠액⁠을 아⁠직 불⁠러⁠오⁠는 중⁠이⁠에⁠요. 지⁠갑 동⁠기⁠화 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchRemoveCard => '카⁠드 한 장 빼⁠기';
+
+  @override
+  String paymentLinkBatchRowSemantic(
+    String number,
+    String status,
+    String failed,
+  ) {
+    String _temp0 = intl.Intl.selectLogic(failed, {
+      'true': ', 업⁠데⁠이⁠트 실⁠패',
+      'other': '',
+    });
+    return '카⁠드 $number, $status$_temp0';
+  }
+
+  @override
+  String paymentLinkBatchRowTitle(String number) {
+    return '카⁠드 $number';
+  }
+
+  @override
+  String get paymentLinkBatchRowUpdateFailed => '업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get paymentLinkBatchSaveAllCsv => '모⁠든 링⁠크⁠를 CSV⁠로 저⁠장';
+
+  @override
+  String get paymentLinkBatchSaveLinksTitle => '기⁠프⁠트 카⁠드 링⁠크 저⁠장';
+
+  @override
+  String get paymentLinkBatchSaveLinksWarning =>
+      '이 파⁠일⁠이 있⁠는 사⁠람⁠은 누⁠구⁠나 이 카⁠드⁠를 받⁠을 수 있⁠어⁠요. 안⁠전⁠한 곳⁠에 저⁠장⁠하⁠세⁠요.';
+
+  @override
+  String paymentLinkBatchShowQrSemantic(String number) {
+    return '카⁠드 $number QR 코⁠드 보⁠기';
+  }
+
+  @override
+  String get paymentLinkBatchUncertain =>
+      'Vizor⁠가 결⁠제⁠가 전⁠송⁠되⁠었⁠는⁠지 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠른 그⁠룹⁠을 만⁠들⁠기 전⁠에 기⁠프⁠트 카⁠드⁠에⁠서 이 그⁠룹⁠을 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchUseNotChecked =>
+      '카⁠드 사⁠용 여⁠부⁠를 아⁠직 확⁠인⁠하⁠지 않⁠았⁠어⁠요';
+
+  @override
+  String get paymentLinkBulkAmountPerCard => '카⁠드⁠당 금⁠액';
+
+  @override
+  String get paymentLinkBulkBalanceLoading => '잔⁠액 불⁠러⁠오⁠는 중';
+
+  @override
+  String get paymentLinkBulkCardDesign => '카⁠드 디⁠자⁠인';
+
+  @override
+  String paymentLinkBulkCountSemantic(int count) {
+    return '카⁠드 $count⁠장';
+  }
+
+  @override
+  String paymentLinkBulkCreateCards(int count) {
+    return '카⁠드 $count⁠장 만⁠들⁠기';
+  }
+
+  @override
+  String get paymentLinkBulkCreateMultiple => '카⁠드 여⁠러 장 만⁠들⁠기';
+
+  @override
+  String get paymentLinkBulkDifferentDesign => '카⁠드⁠마⁠다 다⁠른 디⁠자⁠인';
+
+  @override
+  String get paymentLinkBulkEditCards => '카⁠드 편⁠집';
+
+  @override
+  String paymentLinkBulkLedgerLimit(int max) {
+    return 'Ledger⁠로 한 번⁠에 최⁠대 $max⁠장⁠까⁠지 만⁠들 수 있⁠어⁠요.';
+  }
+
+  @override
+  String paymentLinkBulkReviewCards(int count) {
+    return '카⁠드 $count⁠장 검⁠토';
+  }
+
+  @override
+  String paymentLinkBulkZecAvailable(String amount) {
+    return '사⁠용 가⁠능 $amount ZEC';
+  }
+
+  @override
+  String get paymentLinkCardAmountLabel => '카⁠드 금⁠액';
+
+  @override
+  String get paymentLinkCardBalanceCheckFailed =>
+      '카⁠드 잔⁠액⁠을 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String paymentLinkCardDesignSemantic(String design) {
+    return '$design 카⁠드 디⁠자⁠인';
+  }
+
+  @override
+  String get paymentLinkCardFeeHelpText =>
+      '카⁠드 생⁠성 수⁠수⁠료⁠와 받⁠을 때 쓰⁠도⁠록 남⁠겨 둔 수⁠수⁠료⁠가 포⁠함⁠돼⁠요.';
+
+  @override
+  String get paymentLinkCardFeeLabel => '카⁠드 수⁠수⁠료 (입⁠금 + 받⁠기)';
+
+  @override
+  String get paymentLinkCardRemoveFailed =>
+      '카⁠드⁠를 삭⁠제⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkCardStatusCheckFailed =>
+      '카⁠드 상⁠태⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkCardUnreadable => '이 카⁠드⁠를 읽⁠을 수 없⁠어⁠요.';
+
+  @override
+  String get paymentLinkCardUpdateFailed =>
+      '카⁠드⁠를 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkCardsLabel => '카⁠드';
+
+  @override
+  String get paymentLinkCardsLoadFailed => '기⁠프⁠트 카⁠드⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String paymentLinkCheckProgress(String phase, String percent) {
+    String _temp0 = intl.Intl.selectLogic(phase, {
+      'finding': '선⁠물⁠을 찾⁠는 중',
+      'other': '선⁠물⁠을 확⁠인⁠하⁠는 중',
+    });
+    return '$_temp0… $percent%';
+  }
+
+  @override
+  String get paymentLinkCheckStatus => '상⁠태 확⁠인';
+
+  @override
+  String paymentLinkCheckedHoursAgo(int hours) {
+    return '$hours⁠시⁠간 전⁠에 확⁠인⁠함';
+  }
+
+  @override
+  String get paymentLinkCheckedJustNow => '방⁠금 확⁠인⁠함';
+
+  @override
+  String paymentLinkCheckedMinutesAgo(int minutes) {
+    return '$minutes⁠분 전⁠에 확⁠인⁠함';
+  }
+
+  @override
+  String paymentLinkCheckedOnDate(String date) {
+    return '$date⁠에 확⁠인⁠함';
+  }
+
+  @override
+  String get paymentLinkCheckingGiftEllipsis => '선⁠물⁠을 확⁠인⁠하⁠는 중…';
+
+  @override
+  String get paymentLinkCheckingGiftFull => '선⁠물⁠을 확⁠인⁠하⁠는 중… 100%';
+
+  @override
+  String get paymentLinkCheckingLabel => '확⁠인 중…';
+
+  @override
+  String get paymentLinkChooseReceivingAccount => '받⁠을 계⁠정 선⁠택';
+
+  @override
+  String get paymentLinkClaimAccountPrepareFailed =>
+      '이 선⁠물⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 다⁠른 계⁠정⁠을 선⁠택⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkClaimActionCheckAgain => '다⁠시 확⁠인';
+
+  @override
+  String get paymentLinkClaimActionCreateAccount => '계⁠정⁠을 만⁠들⁠어 받⁠기';
+
+  @override
+  String get paymentLinkClaimActionCreateWallet => '지⁠갑⁠을 만⁠들⁠어 받⁠기';
+
+  @override
+  String get paymentLinkClaimActionExistingWallet => '기⁠존 지⁠갑⁠으⁠로 받⁠기';
+
+  @override
+  String get paymentLinkClaimCheckingDescription =>
+      '이 기⁠프⁠트 카⁠드⁠를 이⁠미\n받⁠았⁠는⁠지 확⁠인⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkClaimCheckingHeading => '기⁠프⁠트 카⁠드⁠를\n확⁠인⁠하⁠고 있⁠어⁠요';
+
+  @override
+  String get paymentLinkClaimCloseFailed =>
+      '카⁠드⁠를 닫⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkClaimFailedMaybePending =>
+      '기⁠프⁠트 카⁠드 받⁠기⁠에 실⁠패⁠했⁠어⁠요. 아⁠직 확⁠인⁠을 기⁠다⁠리⁠는 중⁠이⁠거⁠나 이⁠미 사⁠용⁠됐⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkClaimFailureToast => '기⁠프⁠트 카⁠드⁠를 받⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkClaimGiftButton => '선⁠물 받⁠기';
+
+  @override
+  String get paymentLinkClaimQueueFull =>
+      '기⁠다⁠리⁠는 기⁠프⁠트 카⁠드⁠가 너⁠무 많⁠아⁠요. 다⁠른 카⁠드⁠를 먼⁠저 마⁠무⁠리⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkClaimResultNotConfirmed =>
+      '받⁠기 결⁠과⁠가 확⁠인⁠되⁠지 않⁠았⁠어⁠요. 상⁠태⁠를 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkClaimSaveFailed =>
+      '카⁠드⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkClaimStatusAlreadyClaimed => '이 선⁠물⁠은 이⁠미 받⁠았⁠어⁠요.';
+
+  @override
+  String get paymentLinkClaimStatusAskSender =>
+      '보⁠낸 사⁠람⁠에⁠게 새 카⁠드⁠를 요⁠청⁠해 보⁠세⁠요.';
+
+  @override
+  String get paymentLinkClaimStatusCheckConnection =>
+      '연⁠결⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkClaimStatusCreateAccountNow => '지⁠금 계⁠정⁠을 만⁠들 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkClaimStatusCreateAccountOrUseOne =>
+      '계⁠정⁠을 만⁠들⁠거⁠나 이⁠미 있⁠는 계⁠정⁠으⁠로 받⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkClaimStatusCreateWalletNow => '지⁠금 지⁠갑⁠을 만⁠들 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkClaimStatusCreateWalletOrUseOne =>
+      '지⁠갑⁠을 만⁠들⁠거⁠나 이⁠미 있⁠는 지⁠갑⁠으⁠로 받⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkClaimStatusGiftFound => '선⁠물⁠을 찾⁠았⁠어⁠요';
+
+  @override
+  String get paymentLinkClaimStatusMayNotBeFunded =>
+      '보⁠낸 사⁠람⁠이 아⁠직 충⁠전⁠하⁠지 않⁠았⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkClaimStatusNetworkUnreachable =>
+      '네⁠트⁠워⁠크⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkClaimStatusOtherNetwork =>
+      '이 기⁠프⁠트 카⁠드⁠는 다⁠른 네⁠트⁠워⁠크⁠용⁠이⁠에⁠요.';
+
+  @override
+  String paymentLinkClaimStatusWaitingDeposit(int count, int target) {
+    return '입⁠금 확⁠인 대⁠기 중 · $count/$target';
+  }
+
+  @override
+  String get paymentLinkClaimSubmitted => '선⁠물 받⁠기⁠를 제⁠출⁠했⁠어⁠요';
+
+  @override
+  String get paymentLinkClaimTheGift => '선⁠물 받⁠기';
+
+  @override
+  String get paymentLinkClaimTheGiftCard => '기⁠프⁠트 카⁠드 받⁠기';
+
+  @override
+  String get paymentLinkClaimWaitingDescription => '곧 선⁠물⁠을 받⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkClaimedElsewhereDescription =>
+      '이 카⁠드⁠는 다⁠른 지⁠갑⁠에⁠서 먼⁠저 받⁠았⁠어⁠요. 잔⁠액⁠은 바⁠뀌⁠지 않⁠았⁠어⁠요.';
+
+  @override
+  String get paymentLinkClaimedElsewhereLabel => '다⁠른 곳⁠에⁠서 받⁠음';
+
+  @override
+  String get paymentLinkClaiming => '받⁠는 중…';
+
+  @override
+  String get paymentLinkClearClipboardLabel => '클⁠립⁠보⁠드 지⁠우⁠기';
+
+  @override
+  String get paymentLinkClickToRevealMessage =>
+      '카⁠드⁠를 클⁠릭⁠하⁠면 메⁠시⁠지⁠를 볼 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkClickToRevealShort => '카⁠드⁠를 클⁠릭⁠하⁠면 볼 수 있⁠어⁠요';
+
+  @override
+  String get paymentLinkConfirmGiftCardTitle => '기⁠프⁠트 카⁠드 확⁠인';
+
+  @override
+  String get paymentLinkCopyLink => '링⁠크 복⁠사';
+
+  @override
+  String get paymentLinkCopyLinkAgainHint =>
+      '설⁠정 → 내 기⁠프⁠트 카⁠드⁠에⁠서 이 링⁠크⁠를 다⁠시 복⁠사⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkCopyLinkSemanticLabel => '기⁠프⁠트 카⁠드 링⁠크 복⁠사';
+
+  @override
+  String get paymentLinkCopying => '복⁠사 중…';
+
+  @override
+  String get paymentLinkCostAdditionalZecNeeded => '추⁠가⁠로 필⁠요⁠한 ZEC';
+
+  @override
+  String paymentLinkCostAtLeast(String amount) {
+    return '최⁠소 $amount';
+  }
+
+  @override
+  String get paymentLinkCostCalculatingFee => '네⁠트⁠워⁠크 수⁠수⁠료 계⁠산 중';
+
+  @override
+  String get paymentLinkCostCalculatingTotal => '총⁠액 계⁠산 중';
+
+  @override
+  String paymentLinkCostCardsMultiplier(int count) {
+    return '× 카⁠드 $count⁠장';
+  }
+
+  @override
+  String get paymentLinkCostMessageOnEveryCard => '모⁠든 카⁠드⁠의 메⁠시⁠지';
+
+  @override
+  String get paymentLinkCostNetworkFee => '네⁠트⁠워⁠크 수⁠수⁠료';
+
+  @override
+  String get paymentLinkCostPerCard => '카⁠드⁠당';
+
+  @override
+  String paymentLinkCostPerCardBreakdown(String amount, String fee) {
+    return '$amount ZEC + 받⁠기 수⁠수⁠료 $fee ZEC';
+  }
+
+  @override
+  String get paymentLinkCostWaitingForSync => '동⁠기⁠화 대⁠기 중';
+
+  @override
+  String get paymentLinkCostYouWillSpend => '총 사⁠용 금⁠액';
+
+  @override
+  String get paymentLinkCreateCardButton => '카⁠드 만⁠들⁠기';
+
+  @override
+  String get paymentLinkCreateCardLabel => '카⁠드 만⁠들⁠기';
+
+  @override
+  String get paymentLinkCreateGiftCardTitle => '기⁠프⁠트 카⁠드 만⁠들⁠기';
+
+  @override
+  String get paymentLinkCreateNewCard => '새 카⁠드 만⁠들⁠기';
+
+  @override
+  String get paymentLinkCreatedTabLabel => '만⁠든 카⁠드';
+
+  @override
+  String get paymentLinkCreating => '만⁠드⁠는 중…';
+
+  @override
+  String get paymentLinkCreationFailed =>
+      '기⁠프⁠트 카⁠드⁠를 만⁠들⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkCustomiseAccountStep => '계⁠정 꾸⁠미⁠기';
+
+  @override
+  String get paymentLinkCustomiseWalletStep => '지⁠갑 꾸⁠미⁠기';
+
+  @override
+  String get paymentLinkDeleteMessageSemantic => '기⁠프⁠트 카⁠드 메⁠시⁠지 삭⁠제';
+
+  @override
+  String get paymentLinkEmptyTitle => '아⁠직 기⁠프⁠트 카⁠드⁠가 없⁠어⁠요';
+
+  @override
+  String get paymentLinkEnterValidAmount => '올⁠바⁠른 기⁠프⁠트 카⁠드 금⁠액⁠을 입⁠력⁠하⁠세⁠요.';
+
+  @override
+  String get paymentLinkEntryExplainAccountDesktop =>
+      '카⁠드⁠를 받⁠으⁠면 카⁠드 잔⁠액⁠이 들⁠어 있⁠는 새 계⁠정⁠이 지⁠갑⁠에 만⁠들⁠어⁠져⁠요.';
+
+  @override
+  String get paymentLinkEntryExplainWalletDesktop =>
+      '카⁠드⁠를 받⁠으⁠면 카⁠드 잔⁠액⁠이 들⁠어 있⁠는 새 Vizor 지⁠갑⁠을 만⁠들⁠어 드⁠려⁠요.';
+
+  @override
+  String get paymentLinkEntryExplanationAccount =>
+      '카⁠드 잔⁠액⁠을 받⁠을 새 계⁠정⁠을 만⁠들⁠어⁠요.';
+
+  @override
+  String get paymentLinkEntryExplanationWallet =>
+      '카⁠드 잔⁠액⁠을 받⁠을 새 Vizor 지⁠갑⁠을 만⁠들⁠어⁠요.';
+
+  @override
+  String get paymentLinkEntrySubtitle =>
+      '받⁠은 카⁠드 링⁠크⁠를\n복⁠사⁠해⁠서 아⁠래⁠에 붙⁠여⁠넣⁠으⁠세⁠요.';
+
+  @override
+  String get paymentLinkEntryTitleAccount => 'Vizor 기⁠프⁠트 카⁠드⁠를 받⁠아 계⁠정 만⁠들⁠기';
+
+  @override
+  String get paymentLinkEntryTitleWallet => 'Vizor 기⁠프⁠트 카⁠드⁠를 받⁠아 지⁠갑 만⁠들⁠기';
+
+  @override
+  String get paymentLinkExportNotReady =>
+      '링⁠크⁠를 내⁠보⁠내⁠려⁠면 모⁠든 카⁠드⁠가 준⁠비⁠되⁠어⁠야 해⁠요.';
+
+  @override
+  String get paymentLinkExportStatusChanged =>
+      '계⁠정 또⁠는 카⁠드 상⁠태⁠가 바⁠뀌⁠었⁠어⁠요. 카⁠드⁠를 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkFeeEstimateFailed =>
+      '카⁠드 수⁠수⁠료⁠를 추⁠정⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkFeeEstimatedAfterSync =>
+      '지⁠갑 동⁠기⁠화⁠가 끝⁠나⁠면 카⁠드 수⁠수⁠료⁠를 추⁠정⁠해⁠요.';
+
+  @override
+  String get paymentLinkFeeHelpSemantic => '기⁠프⁠트 카⁠드 수⁠수⁠료 안⁠내';
+
+  @override
+  String get paymentLinkFeeHelpTextLong =>
+      '기⁠프⁠트 카⁠드⁠를 충⁠전⁠하⁠는 수⁠수⁠료⁠와 받⁠는 사⁠람⁠이 카⁠드⁠를 받⁠을 때 쓰⁠도⁠록 남⁠겨 둔 수⁠수⁠료⁠가 포⁠함⁠돼⁠요.';
+
+  @override
+  String get paymentLinkFeeUpdateFailed =>
+      '카⁠드 수⁠수⁠료⁠를 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요. 금⁠액 단⁠계⁠로 돌⁠아⁠가 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkFiatLoadingSemantic => '법⁠정⁠화⁠폐 환⁠산 금⁠액 불⁠러⁠오⁠는 중';
+
+  @override
+  String get paymentLinkFlipCardSemanticLabel => '기⁠프⁠트 카⁠드 뒤⁠집⁠기';
+
+  @override
+  String get paymentLinkFundingExpired =>
+      '기⁠프⁠트 카⁠드 충⁠전⁠이 만⁠료⁠됐⁠어⁠요. 다⁠시 만⁠들⁠어 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkFundingIncompleteStatus => '충⁠전 미⁠완⁠료';
+
+  @override
+  String get paymentLinkFundingNeedsAttention => '기⁠프⁠트 카⁠드 충⁠전 확⁠인⁠이 필⁠요⁠해⁠요';
+
+  @override
+  String get paymentLinkFundingSentCardNotSaved =>
+      '충⁠전⁠은 전⁠송⁠됐⁠지⁠만 기⁠프⁠트 카⁠드⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. Vizor⁠를 닫⁠기 전⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkFundingStillVerifying =>
+      '충⁠전⁠을 아⁠직 확⁠인⁠하⁠는 중⁠이⁠에⁠요. Vizor⁠가 계⁠속 확⁠인⁠할⁠게⁠요.';
+
+  @override
+  String get paymentLinkFundingStorageNeedsSync =>
+      '충⁠전⁠은 전⁠송⁠됐⁠지⁠만 로⁠컬 거⁠래 저⁠장⁠소⁠를 동⁠기⁠화⁠해⁠야 해⁠요.';
+
+  @override
+  String get paymentLinkGiftAmountLabel => '선⁠물 금⁠액';
+
+  @override
+  String paymentLinkGiftCardDesignSemantic(String design) {
+    return '기⁠프⁠트 카⁠드, $design 디⁠자⁠인';
+  }
+
+  @override
+  String get paymentLinkGiftCardMessageSemantic => '기⁠프⁠트 카⁠드 메⁠시⁠지';
+
+  @override
+  String get paymentLinkGiftCardsLowerBreadcrumb => '기⁠프⁠트 카⁠드';
+
+  @override
+  String get paymentLinkGiftCardsTitle => '기⁠프⁠트 카⁠드';
+
+  @override
+  String get paymentLinkGiftMessageLabel => '선⁠물 메⁠시⁠지';
+
+  @override
+  String get paymentLinkGoHome => '홈⁠으⁠로 가⁠기';
+
+  @override
+  String get paymentLinkGroupConfirmingPayment => '결⁠제 확⁠인 중';
+
+  @override
+  String get paymentLinkGroupEntryForGroup => '그⁠룹⁠용';
+
+  @override
+  String get paymentLinkGroupEntryGroupSemantic => '그⁠룹⁠용 카⁠드 만⁠들⁠기';
+
+  @override
+  String paymentLinkGroupEntryLedgerSemantic(int max) {
+    return '카⁠드 여⁠러 장 만⁠들⁠기, Ledger⁠로 최⁠대 $max⁠장';
+  }
+
+  @override
+  String get paymentLinkGroupEntryMultipleCards => '카⁠드 여⁠러 장';
+
+  @override
+  String paymentLinkGroupEntryUpToWithLedger(int max) {
+    return 'Ledger⁠로 최⁠대 $max⁠장';
+  }
+
+  @override
+  String get paymentLinkGroupNotFunded =>
+      '이 그⁠룹⁠은 충⁠전⁠되⁠지 않⁠았⁠어⁠요. 다⁠시 만⁠들⁠어 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkGroupOtherAccount =>
+      '이 그⁠룹⁠은 다⁠른 계⁠정⁠에 속⁠해 있⁠어⁠요. 보⁠려⁠면 계⁠정⁠을 전⁠환⁠하⁠세⁠요.';
+
+  @override
+  String get paymentLinkGroupPaymentPending => '결⁠제 상⁠태 확⁠인 대⁠기 중';
+
+  @override
+  String get paymentLinkGroupReadyToShare => '공⁠유⁠할 준⁠비⁠가 됐⁠어⁠요';
+
+  @override
+  String get paymentLinkGroupSomeNotReady => '일⁠부 카⁠드⁠가 아⁠직 준⁠비⁠되⁠지 않⁠았⁠어⁠요';
+
+  @override
+  String get paymentLinkGroupsHeading => '그⁠룹';
+
+  @override
+  String get paymentLinkHideCard => '카⁠드 숨⁠기⁠기';
+
+  @override
+  String get paymentLinkHowDesktopStepCreate =>
+      '선⁠물⁠할 금⁠액⁠을 입⁠력⁠하⁠고, 디⁠자⁠인⁠을 고⁠르⁠고, 메⁠시⁠지(선⁠택)를 추⁠가⁠한 뒤 클⁠릭 한 번⁠으⁠로 카⁠드⁠를 만⁠드⁠세⁠요.';
+
+  @override
+  String get paymentLinkHowDesktopStepRedeem =>
+      '받⁠는 사⁠람⁠은 링⁠크⁠로 Vizor 지⁠갑⁠에⁠서 카⁠드⁠를 받⁠을 수 있⁠어⁠요. 입⁠금 수⁠수⁠료⁠와 받⁠기 수⁠수⁠료⁠는 보⁠내⁠는 사⁠람⁠이 부⁠담⁠하⁠므⁠로 받⁠는 사⁠람⁠은 카⁠드 금⁠액 전⁠액⁠을 받⁠아⁠요.';
+
+  @override
+  String get paymentLinkHowDesktopStepShare =>
+      '카⁠드⁠를 만⁠들⁠면 받⁠기 비⁠밀 정⁠보⁠가 담⁠긴 고⁠유 링⁠크⁠가 생⁠성⁠돼⁠요. 이 링⁠크⁠는 받⁠을 사⁠람⁠에⁠게⁠만 보⁠내⁠세⁠요.';
+
+  @override
+  String get paymentLinkHowGiftCardsWork => '기⁠프⁠트 카⁠드 사⁠용 방⁠법';
+
+  @override
+  String get paymentLinkHowItWorksSubtitle =>
+      '어⁠떤 순⁠간⁠이⁠든 축⁠하⁠할 수 있⁠는 좋⁠은 방⁠법⁠이⁠에⁠요.';
+
+  @override
+  String get paymentLinkHowItWorksTitle => '기⁠프⁠트 카⁠드 사⁠용 방⁠법';
+
+  @override
+  String get paymentLinkHowStepCreate =>
+      '금⁠액⁠을 입⁠력⁠하⁠고, 디⁠자⁠인⁠을 고⁠르⁠고, 원⁠하⁠면 메⁠시⁠지⁠를 추⁠가⁠하⁠세⁠요.';
+
+  @override
+  String get paymentLinkHowStepRedeem =>
+      '받⁠는 사⁠람⁠이 Vizor⁠에⁠서 링⁠크⁠를 열⁠어 카⁠드 금⁠액 전⁠액⁠을 받⁠아⁠요. 수⁠수⁠료⁠는 보⁠내⁠는 사⁠람⁠이 모⁠두 부⁠담⁠해⁠요.';
+
+  @override
+  String get paymentLinkHowStepShare =>
+      '충⁠전⁠이 네⁠트⁠워⁠크⁠에 반⁠영⁠되⁠면 고⁠유 링⁠크⁠를 복⁠사⁠해 받⁠을 사⁠람⁠에⁠게⁠만 보⁠내⁠세⁠요.';
+
+  @override
+  String get paymentLinkHowTheCardWorks => '기⁠프⁠트 카⁠드 사⁠용 방⁠법';
+
+  @override
+  String get paymentLinkIntakeCouldNotOpen => '결⁠제 링⁠크⁠를 열 수 없⁠어⁠요.';
+
+  @override
+  String get paymentLinkIntakeQueueFull => '열⁠기⁠를 기⁠다⁠리⁠는 결⁠제 링⁠크⁠가 너⁠무 많⁠아⁠요.';
+
+  @override
+  String get paymentLinkInterruptedCheckMessage =>
+      '카⁠드 확⁠인⁠이 중⁠단⁠됐⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkInvalidSubtitle => '링⁠크⁠를 다⁠시 복⁠사⁠해⁠서 시⁠도⁠해 주⁠세⁠요';
+
+  @override
+  String get paymentLinkInvalidTitle => '올⁠바⁠른 링⁠크⁠가 아⁠닌 것 같⁠아⁠요.';
+
+  @override
+  String get paymentLinkKeystoneBroadcastFailed =>
+      '기⁠프⁠트 카⁠드 충⁠전⁠을 전⁠송⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkKeystoneBroadcastingTitle => '기⁠프⁠트 카⁠드 충⁠전 전⁠송 중';
+
+  @override
+  String get paymentLinkKeystoneCreatingGiftCard => '기⁠프⁠트 카⁠드⁠를 만⁠드⁠는 중…';
+
+  @override
+  String get paymentLinkKeystoneFundingUncertain =>
+      '충⁠전 상⁠태⁠가 불⁠확⁠실⁠해⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 활⁠동 내⁠역⁠을 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkKeystoneKeepOpen =>
+      '거⁠래⁠가 전⁠송⁠되⁠는 동⁠안 Vizor⁠를 열⁠어 두⁠세⁠요.';
+
+  @override
+  String get paymentLinkKeystoneQrMismatch =>
+      '이 QR 코⁠드⁠는 현⁠재 Keystone 요⁠청⁠과 일⁠치⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get paymentLinkKeystoneReadingSignature => '서⁠명 읽⁠는 중…';
+
+  @override
+  String get paymentLinkKeystoneScanCaption =>
+      'Keystone⁠의 QR 코⁠드⁠를 스⁠캔⁠해⁠서 만⁠들⁠기⁠를 마⁠무⁠리⁠하⁠세⁠요';
+
+  @override
+  String get paymentLinkKeystoneScanToSign => '스⁠캔⁠해⁠서 서⁠명';
+
+  @override
+  String get paymentLinkKeystoneSignTitle => 'Keystone⁠에⁠서 기⁠프⁠트 카⁠드 서⁠명';
+
+  @override
+  String get paymentLinkKeystoneSignatureFailed =>
+      'Keystone 서⁠명⁠을 적⁠용⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkKeystoneSigningFailed =>
+      '기⁠프⁠트 카⁠드 서⁠명⁠을 완⁠료⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkKeystoneSubmittingTransaction => '거⁠래 제⁠출 중';
+
+  @override
+  String get paymentLinkLeaveSaveMany =>
+      '이 화⁠면⁠을 나⁠가⁠기 전⁠에 이 기⁠프⁠트 카⁠드⁠들⁠을 저⁠장⁠하⁠세⁠요.';
+
+  @override
+  String get paymentLinkLeaveSaveOne =>
+      '이 화⁠면⁠을 나⁠가⁠기 전⁠에 이 기⁠프⁠트 카⁠드⁠를 저⁠장⁠하⁠세⁠요.';
+
+  @override
+  String get paymentLinkLedgerFundingExpired =>
+      '이 기⁠프⁠트 카⁠드 거⁠래⁠가 만⁠료⁠되⁠었⁠거⁠나 거⁠부⁠됐⁠어⁠요. 돌⁠아⁠가⁠서 새 기⁠프⁠트 카⁠드⁠를 만⁠들⁠어 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkLedgerFundingRejected =>
+      'Ledger⁠에⁠서 기⁠프⁠트 카⁠드 충⁠전⁠을 거⁠부⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkLedgerSavedForRecovery =>
+      '기⁠프⁠트 카⁠드 충⁠전⁠이 복⁠구⁠용⁠으⁠로 저⁠장⁠됐⁠어⁠요. 다⁠시 시⁠도⁠해⁠서 상⁠태⁠를 확⁠인⁠하⁠고 저⁠장⁠을 마⁠무⁠리⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkLedgerSigningIncomplete =>
+      'Ledger 서⁠명⁠을 완⁠료⁠하⁠지 못⁠했⁠어⁠요. 기⁠기⁠를 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkLinkCopied => '기⁠프⁠트 링⁠크⁠를 복⁠사⁠했⁠어⁠요';
+
+  @override
+  String get paymentLinkLinkCopiedStatusFailed =>
+      '기⁠프⁠트 링⁠크⁠를 복⁠사⁠했⁠지⁠만 상⁠태⁠를 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkLinkCopyFailed => '기⁠프⁠트 링⁠크⁠를 복⁠사⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkLinksSaveFailed =>
+      '기⁠프⁠트 카⁠드 링⁠크⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkLinksSaved => '기⁠프⁠트 카⁠드 링⁠크⁠를 저⁠장⁠했⁠어⁠요';
+
+  @override
+  String get paymentLinkLoadingGiftCard => '기⁠프⁠트 카⁠드 불⁠러⁠오⁠는 중';
+
+  @override
+  String get paymentLinkLongSyncBody =>
+      'Vizor⁠가 잔⁠액⁠을 확⁠인⁠하⁠려⁠면 평⁠소⁠보⁠다 더 많⁠은 내⁠역⁠을 스⁠캔⁠해⁠야 해⁠요. 안⁠전⁠하⁠지⁠만 오⁠래 걸⁠릴 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkLongSyncConfirm => '기⁠프⁠트 카⁠드 확⁠인';
+
+  @override
+  String get paymentLinkLongSyncSupporting =>
+      '스⁠캔⁠을 시⁠작⁠하⁠지 않⁠고 돌⁠아⁠갈 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkLongSyncTitle => '이 기⁠프⁠트 카⁠드⁠는 시⁠간⁠이 걸⁠릴 수 있⁠어⁠요';
+
+  @override
+  String get paymentLinkMemoOptionalSubtitle =>
+      '짧⁠은 암⁠호⁠화 메⁠모⁠를 첨⁠부⁠할 수 있⁠어⁠요 (선⁠택).';
+
+  @override
+  String get paymentLinkMessageAttachedTitle => '메⁠시⁠지⁠를 첨⁠부⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkMessageInputSemantic => '기⁠프⁠트 카⁠드 메⁠시⁠지 입⁠력';
+
+  @override
+  String get paymentLinkMessageStepTitle => '메⁠시⁠지 입⁠력';
+
+  @override
+  String get paymentLinkMessageTooLarge =>
+      '메⁠시⁠지⁠가 너⁠무 커⁠요. 복⁠잡⁠한 이⁠모⁠지⁠를 줄⁠여 보⁠세⁠요.';
+
+  @override
+  String get paymentLinkMyCards => '내 카⁠드';
+
+  @override
+  String get paymentLinkNewGiftCardRequired => '새 기⁠프⁠트 카⁠드⁠가 필⁠요⁠해⁠요';
+
+  @override
+  String get paymentLinkNoActiveAccountAvailable =>
+      '사⁠용 가⁠능⁠한 활⁠성 계⁠정⁠이 없⁠어⁠요.';
+
+  @override
+  String get paymentLinkNoCreatedCardsText => '아⁠직 만⁠든 카⁠드⁠가 없⁠어⁠요.';
+
+  @override
+  String get paymentLinkNoReceivedCardsText => '아⁠직 받⁠은 카⁠드⁠가 없⁠어⁠요.';
+
+  @override
+  String get paymentLinkOpenGroupChecking => '확⁠인 중';
+
+  @override
+  String paymentLinkOpenGroupCreated(String date) {
+    return '$date⁠에 만⁠듦';
+  }
+
+  @override
+  String paymentLinkOpenGroupEach(String amount) {
+    return '장⁠당 $amount';
+  }
+
+  @override
+  String paymentLinkOpenGroupSemantic(int count) {
+    return '기⁠프⁠트 카⁠드 $count⁠장 그⁠룹 열⁠기';
+  }
+
+  @override
+  String get paymentLinkPasteLabel => '카⁠드 링⁠크 붙⁠여⁠넣⁠기';
+
+  @override
+  String get paymentLinkPendingSectionLabel => '대⁠기 중';
+
+  @override
+  String get paymentLinkPreparing => '준⁠비 중…';
+
+  @override
+  String get paymentLinkPreparingStatus => '준⁠비 중…';
+
+  @override
+  String get paymentLinkPrivacyModeOff => '개⁠인⁠정⁠보 보⁠호 모⁠드 끄⁠기';
+
+  @override
+  String get paymentLinkPrivacyModeOn => '개⁠인⁠정⁠보 보⁠호 모⁠드 켜⁠기';
+
+  @override
+  String get paymentLinkQrCardHeading => 'ZEC⁠를\n받⁠았⁠어⁠요';
+
+  @override
+  String get paymentLinkQrCardScanToRedeem => '스⁠캔⁠해⁠서 받⁠기';
+
+  @override
+  String get paymentLinkQrCardSemantic => '기⁠프⁠트 카⁠드 QR 코⁠드';
+
+  @override
+  String get paymentLinkQrCouldNotBeGenerated => 'QR 코⁠드⁠를 만⁠들⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get paymentLinkQrSaveFailed => '기⁠프⁠트 카⁠드 QR⁠을 저⁠장⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkQrSaved => '기⁠프⁠트 카⁠드 QR⁠을 저⁠장⁠했⁠어⁠요';
+
+  @override
+  String get paymentLinkQrSavedStatusFailed =>
+      '기⁠프⁠트 카⁠드 QR⁠을 저⁠장⁠했⁠지⁠만 상⁠태⁠를 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkReadyHeading => '공⁠유⁠할 준⁠비⁠가 됐⁠어⁠요';
+
+  @override
+  String get paymentLinkReceiveFinishFailed =>
+      '이 선⁠물 받⁠기⁠를 마⁠무⁠리⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해⁠서 상⁠태⁠를 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkReceiveToLabel => '받⁠을 계⁠정';
+
+  @override
+  String get paymentLinkReceivedCardsLoadFailed =>
+      '받⁠은 기⁠프⁠트 카⁠드⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkReceivedGiftHeading => '선⁠물⁠을 받⁠았⁠어⁠요!';
+
+  @override
+  String get paymentLinkReceivedHeadingDesktop => '기⁠프⁠트 카⁠드⁠를\n받⁠았⁠어⁠요!';
+
+  @override
+  String get paymentLinkReceivedTabLabel => '받⁠은 카⁠드';
+
+  @override
+  String get paymentLinkReceivingAccountChangedReopen =>
+      '받⁠는 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 계⁠속⁠하⁠려⁠면 기⁠프⁠트 카⁠드⁠를 다⁠시 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkReceivingAccountChangedRetry =>
+      '받⁠는 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 이 선⁠물⁠을 확⁠인⁠하⁠려⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkReceivingStatus => '받⁠는 중…';
+
+  @override
+  String get paymentLinkRedeemCardLabel => '카⁠드 받⁠기';
+
+  @override
+  String get paymentLinkRedeemCardStepTitle => '카⁠드 받⁠기';
+
+  @override
+  String get paymentLinkRedeemPasteOrScan =>
+      '카⁠드 링⁠크⁠를 붙⁠여⁠넣⁠거⁠나 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요.';
+
+  @override
+  String get paymentLinkRedeemSubtitle =>
+      '받⁠은 카⁠드 링⁠크⁠를 복⁠사⁠해⁠서 아⁠래⁠에 붙⁠여⁠넣⁠으⁠세⁠요.';
+
+  @override
+  String get paymentLinkRedeemTheCardTitle => '카⁠드 받⁠기';
+
+  @override
+  String paymentLinkRemovalWarningCheckFailed(String action) {
+    String _temp0 = intl.Intl.selectLogic(action, {
+      'reset': 'Vizor⁠를 초⁠기⁠화⁠하⁠기',
+      'other': '이 계⁠정⁠을 삭⁠제⁠하⁠기',
+    });
+    return '공⁠유⁠하⁠지 않⁠은 기⁠프⁠트 카⁠드 링⁠크⁠가 있⁠는⁠지 확⁠인⁠하⁠지 못⁠했⁠어⁠요. $_temp0 전⁠에 필⁠요⁠한 링⁠크⁠를 복⁠사⁠해 두⁠세⁠요.';
+  }
+
+  @override
+  String paymentLinkRemovalWarningUnshared(int count, String subject) {
+    String _temp0 = intl.Intl.selectLogic(subject, {
+      'reset': 'Vizor⁠를 초⁠기⁠화⁠하⁠면',
+      'other': '이 계⁠정⁠을 삭⁠제⁠하⁠면',
+    });
+    String _temp1 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '공⁠유⁠하⁠지 않⁠은 충⁠전⁠된 기⁠프⁠트 카⁠드 링⁠크⁠가 $count⁠개 있⁠어⁠요. $_temp0 링⁠크⁠를 잃⁠게 돼⁠요. 먼⁠저 링⁠크⁠를 복⁠사⁠해 두⁠세⁠요.',
+    );
+    return '$_temp1';
+  }
+
+  @override
+  String get paymentLinkRemoveCardLabel => '카⁠드 삭⁠제';
+
+  @override
+  String get paymentLinkRemoveCardSupporting => '되⁠돌⁠릴 수 없⁠어⁠요.';
+
+  @override
+  String get paymentLinkRemoveCardTitle => '이 카⁠드⁠를 삭⁠제⁠할⁠까⁠요?';
+
+  @override
+  String get paymentLinkRestoreCard => '카⁠드 복⁠원';
+
+  @override
+  String get paymentLinkRevealMessageSemanticLabel => '기⁠프⁠트 카⁠드 메⁠시⁠지 보⁠기';
+
+  @override
+  String get paymentLinkReviewAndConfirm => '검⁠토⁠하⁠고 확⁠인';
+
+  @override
+  String get paymentLinkReviewCardTitle => '카⁠드 검⁠토';
+
+  @override
+  String get paymentLinkSaveQrCode => 'QR 코⁠드 저⁠장';
+
+  @override
+  String get paymentLinkSaving => '저⁠장 중…';
+
+  @override
+  String get paymentLinkScanAgain => '다⁠시 스⁠캔';
+
+  @override
+  String get paymentLinkScanAgainOrPaste =>
+      '다⁠시 스⁠캔⁠하⁠거⁠나 다⁠른 카⁠드 링⁠크⁠를 붙⁠여⁠넣⁠으⁠세⁠요.';
+
+  @override
+  String get paymentLinkScanCameraHint =>
+      '카⁠메⁠라⁠를 연⁠결⁠해 기⁠프⁠트 카⁠드 QR 코⁠드⁠를 스⁠캔⁠하⁠거⁠나, 돌⁠아⁠가⁠서 카⁠드 링⁠크⁠를 붙⁠여⁠넣⁠으⁠세⁠요.';
+
+  @override
+  String get paymentLinkScanQrCode => 'QR 코⁠드 스⁠캔';
+
+  @override
+  String get paymentLinkScanSheetSemantic => '기⁠프⁠트 카⁠드 QR 코⁠드 스⁠캔';
+
+  @override
+  String get paymentLinkScanSheetTitle => '기⁠프⁠트 카⁠드 QR 스⁠캔';
+
+  @override
+  String get paymentLinkScanShowQrToCamera =>
+      '기⁠프⁠트 카⁠드 QR 코⁠드⁠를 카⁠메⁠라⁠에 보⁠여 주⁠세⁠요';
+
+  @override
+  String paymentLinkSenderMessageSemantic(String message) {
+    return '보⁠낸 사⁠람⁠의 메⁠시⁠지: $message; 기⁠프⁠트 카⁠드 앞⁠면 보⁠기';
+  }
+
+  @override
+  String get paymentLinkShareCard => '카⁠드 공⁠유';
+
+  @override
+  String get paymentLinkShareFailed => '기⁠프⁠트 링⁠크⁠를 공⁠유⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkShareFailedCopyInstead =>
+      '이 기⁠프⁠트 카⁠드⁠를 공⁠유⁠하⁠지 못⁠했⁠어⁠요. 대⁠신 링⁠크⁠를 복⁠사⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkShareGiftCardTitle => '기⁠프⁠트 카⁠드 공⁠유';
+
+  @override
+  String get paymentLinkShareLinkInstruction =>
+      '이 링⁠크⁠를 받⁠을 사⁠람⁠에⁠게⁠만 공⁠유⁠하⁠세⁠요. Vizor 앱⁠에⁠서 카⁠드⁠를 받⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkShareLinkInstructionDesktop =>
+      '이 링⁠크⁠를 받⁠을 사⁠람⁠에⁠게⁠만 공⁠유⁠하⁠세⁠요.\nVizor 앱⁠에⁠서 카⁠드⁠를 받⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkShareSheetTitle => '기⁠프⁠트 카⁠드 공⁠유';
+
+  @override
+  String get paymentLinkShareWaitingDescription =>
+      '기⁠프⁠트 카⁠드⁠를 공⁠유⁠할 수 있⁠게 준⁠비⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkSharedStatusFailed =>
+      '기⁠프⁠트 카⁠드⁠를 공⁠유⁠했⁠지⁠만 상⁠태⁠를 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkSharing => '공⁠유 중…';
+
+  @override
+  String get paymentLinkShowCardFrontSemantic => '기⁠프⁠트 카⁠드 앞⁠면 보⁠기';
+
+  @override
+  String get paymentLinkShowHowCardsWork => '기⁠프⁠트 카⁠드 사⁠용 방⁠법 보⁠기';
+
+  @override
+  String get paymentLinkShowQrSemantic => '기⁠프⁠트 카⁠드 QR 코⁠드 보⁠기';
+
+  @override
+  String get paymentLinkSkipMessage => '메⁠시⁠지 건⁠너⁠뛰⁠기';
+
+  @override
+  String get paymentLinkStartTyping => '입⁠력⁠을 시⁠작⁠하⁠세⁠요…';
+
+  @override
+  String get paymentLinkStartWritingMessage => '기⁠프⁠트 카⁠드 메⁠시⁠지 쓰⁠기 시⁠작';
+
+  @override
+  String get paymentLinkStepAddMessage => '메⁠시⁠지 추⁠가';
+
+  @override
+  String get paymentLinkStepCreate => '만⁠들⁠기';
+
+  @override
+  String get paymentLinkStepReview => '검⁠토';
+
+  @override
+  String get paymentLinkStillNotSaved =>
+      '기⁠프⁠트 카⁠드⁠를 여⁠전⁠히 저⁠장⁠하⁠지 못⁠했⁠어⁠요. Vizor⁠를 닫⁠기 전⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkTapToRevealMessage => '카⁠드⁠를 탭⁠하⁠면 메⁠시⁠지⁠를 볼 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkTapToRevealMessageTwoLines =>
+      '카⁠드⁠를 탭⁠하⁠면\n메⁠시⁠지⁠를 볼 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkTotalAmountHelpSemantic => '기⁠프⁠트 카⁠드 총 금⁠액 안⁠내';
+
+  @override
+  String get paymentLinkTotalDeductedLabel => '총 차⁠감 금⁠액';
+
+  @override
+  String get paymentLinkTrySavingAgain => '다⁠시 저⁠장';
+
+  @override
+  String get paymentLinkUnusedSectionLabel => '사⁠용 전';
+
+  @override
+  String get paymentLinkUsageAllUsed => '모⁠두 사⁠용⁠됨';
+
+  @override
+  String get paymentLinkUsageAmountMismatch =>
+      '확⁠인⁠된 충⁠전 금⁠액⁠이 예⁠상⁠한 카⁠드 충⁠전 금⁠액⁠과 달⁠라⁠요.';
+
+  @override
+  String get paymentLinkUsageAwaitingConfirmation =>
+      '링⁠크⁠를 공⁠유⁠할 준⁠비⁠가 됐⁠어⁠요. 충⁠전 거⁠래⁠가 확⁠인⁠되⁠면 사⁠용 추⁠적⁠이 시⁠작⁠돼⁠요.';
+
+  @override
+  String paymentLinkUsageCardUse(String label, String suffix) {
+    String _temp0 = intl.Intl.selectLogic(suffix, {
+      'checking': ' · 확⁠인 중…',
+      'failed': ' · 업⁠데⁠이⁠트 실⁠패',
+      'other': '',
+    });
+    return '카⁠드 사⁠용: $label$_temp0';
+  }
+
+  @override
+  String get paymentLinkUsageConfirming => '확⁠인 중';
+
+  @override
+  String get paymentLinkUsageFundingNotObserved =>
+      '추⁠적 기⁠록⁠에⁠서 아⁠직 충⁠전 거⁠래⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String paymentLinkUsageLastChecked(String time) {
+    return '마⁠지⁠막 확⁠인: $time';
+  }
+
+  @override
+  String get paymentLinkUsageMissingFundingInfo =>
+      '저⁠장⁠된 충⁠전 정⁠보⁠가 불⁠완⁠전⁠해⁠서 사⁠용 여⁠부⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get paymentLinkUsageNotEnoughInfo =>
+      '이 카⁠드⁠를 사⁠용⁠했⁠는⁠지 확⁠인⁠할 정⁠보⁠가 아⁠직 충⁠분⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get paymentLinkUsageScanIncomplete =>
+      '추⁠적 기⁠록⁠이 아⁠직 충⁠전 거⁠래⁠까⁠지 도⁠달⁠하⁠지 않⁠았⁠어⁠요.';
+
+  @override
+  String paymentLinkUsageSemantics(
+    String label,
+    String state,
+    String hasExplanation,
+    String explanation,
+  ) {
+    String _temp0 = intl.Intl.selectLogic(state, {
+      'checking': '. 확⁠인 중',
+      'failed': '. 업⁠데⁠이⁠트 실⁠패',
+      'other': '',
+    });
+    String _temp1 = intl.Intl.selectLogic(hasExplanation, {
+      'true': '. $explanation',
+      'other': '',
+    });
+    return '카⁠드 사⁠용: $label$_temp0$_temp1';
+  }
+
+  @override
+  String paymentLinkUsageUnusedOfCount(int unused, int count) {
+    return '$count⁠장 중 $unused⁠장 사⁠용 전';
+  }
+
+  @override
+  String get paymentLinkUsageUnverified => '확⁠인 안 됨';
+
+  @override
+  String get paymentLinkUsageUpdateFailed => '업⁠데⁠이⁠트 실⁠패';
+
+  @override
+  String get paymentLinkUsageUseDetected => '사⁠용 감⁠지⁠됨';
+
+  @override
+  String paymentLinkUsageUsedOfCount(int used, int count) {
+    return '$count⁠장 중 $used⁠장 사⁠용⁠됨';
+  }
+
+  @override
+  String get paymentLinkUsdAmountTooSmall =>
+      '금⁠액⁠이 너⁠무 작⁠아⁠서 USD⁠로 입⁠력⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get paymentLinkUsdFetchingPrice => 'USD 가⁠격⁠을 가⁠져⁠오⁠는 중…';
+
+  @override
+  String get paymentLinkUsdPriceUnavailable => 'USD 가⁠격⁠을 사⁠용⁠할 수 없⁠어⁠요';
+
+  @override
+  String paymentLinkUseMaxCurrencySemantic(String amount, String currency) {
+    return '최⁠대 금⁠액 사⁠용: $amount $currency';
+  }
+
+  @override
+  String paymentLinkUseMaxSemantic(String amount) {
+    return '최⁠대 금⁠액 사⁠용: $amount';
+  }
+
+  @override
+  String get paymentLinkUsedSectionLabel => '사⁠용⁠됨';
+
+  @override
+  String get paymentLinkViewCardAction => '카⁠드 보⁠기';
+
+  @override
+  String paymentLinkWaitToClaim(int minutes, String seconds) {
+    return '받⁠으⁠려⁠면 $minutes:$seconds 기⁠다⁠려 주⁠세⁠요';
+  }
+
+  @override
+  String get paymentLinkWaitToClaimSample => '받⁠으⁠려⁠면 3:45 기⁠다⁠려 주⁠세⁠요';
+
+  @override
+  String paymentLinkWaitToGetLink(int minutes, String seconds) {
+    return '링⁠크⁠를 받⁠으⁠려⁠면 $minutes:$seconds 기⁠다⁠려 주⁠세⁠요';
+  }
+
+  @override
+  String get paymentLinkWaitingDescription => '잠⁠시 걸⁠릴 수 있⁠어⁠요.';
+
+  @override
+  String get paymentLinkWaitingStatusLabel => '링⁠크⁠를 받⁠으⁠려⁠면 1:15 기⁠다⁠려 주⁠세⁠요';
+
+  @override
+  String get paymentLinkWalletSaveRecoveryFailed =>
+      '지⁠갑 저⁠장⁠을 마⁠무⁠리⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
   String get paymentUriExpired =>
       '이 요⁠청 링⁠크⁠의 유⁠효 시⁠간⁠이 지⁠났⁠어⁠요. 결⁠제⁠하⁠려⁠면 다⁠시 열⁠어 주⁠세⁠요.';
 

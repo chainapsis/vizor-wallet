@@ -792,6 +792,7 @@ class MobileAccountRemovalSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final unsharedGiftCardWarning = unsharedGiftCardRemovalWarning(
+      context.l10n,
       unsharedGiftCardCount,
       walletReset: isLastAccount,
     );

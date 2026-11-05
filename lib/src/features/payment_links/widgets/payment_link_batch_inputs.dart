@@ -10,6 +10,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_batch_limits.dart';
 import 'payment_link_wizard_chrome.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// The count field between hold-to-repeat decrement and increment buttons,
 /// drawn on the same shell as [AppTextField].
@@ -104,7 +105,7 @@ class _PaymentLinkBatchCountStepperState
           _RepeatStepButton(
             buttonKey: const ValueKey('payment_link_bulk_decrease'),
             icon: AppIcons.minus,
-            semanticLabel: 'Remove a card',
+            semanticLabel: context.l10n.paymentLinkBatchRemoveCard,
             onStep: widget.count > kPaymentLinkBatchMinCount
                 ? () => _step(-1)
                 : null,
@@ -112,7 +113,9 @@ class _PaymentLinkBatchCountStepperState
           SizedBox(
             width: 52,
             child: Semantics(
-              label: 'Number of cards, 2 to ${widget.maxCount}',
+              label: context.l10n.paymentLinkBatchCountSemantic(
+                widget.maxCount,
+              ),
               child: TextField(
                 key: const ValueKey('payment_link_bulk_count'),
                 controller: _controller,
@@ -137,7 +140,7 @@ class _PaymentLinkBatchCountStepperState
           _RepeatStepButton(
             buttonKey: const ValueKey('payment_link_bulk_increase'),
             icon: AppIcons.plus,
-            semanticLabel: 'Add a card',
+            semanticLabel: context.l10n.paymentLinkBatchAddCard,
             onStep: widget.count < widget.maxCount ? () => _step(1) : null,
           ),
         ],
@@ -307,13 +310,16 @@ class _PaymentLinkBatchMessageFieldState
     // same shell around a field that grows from one line to two.
     final max = PaymentLinkPresentation.maxMessageCharacters;
     return Semantics(
-      label: 'Message (optional), appears on every card',
+      label: context.l10n.paymentLinkBatchMessageOptionalEveryCard,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Titled like the amount field; screen readers get the name above.
           ExcludeSemantics(
-            child: Text('Message (optional)', style: widget.labelStyle),
+            child: Text(
+              context.l10n.paymentLinkBatchMessageOptional,
+              style: widget.labelStyle,
+            ),
           ),
           const SizedBox(height: AppSpacing.xxs),
           GestureDetector(
@@ -347,7 +353,7 @@ class _PaymentLinkBatchMessageFieldState
                       ),
                       cursorColor: colors.text.accent,
                       decoration: InputDecoration.collapsed(
-                        hintText: 'Add a message',
+                        hintText: context.l10n.commonAddAMessage,
                         hintStyle: AppTypography.labelLarge.copyWith(
                           color: colors.text.muted,
                         ),

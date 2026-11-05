@@ -7,10 +7,10 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../support/test_l10n.dart';
 
 const _feeHelpText =
     'Includes the fee to fund the gift card and the fee reserved for '
@@ -51,7 +51,10 @@ void main() {
           closeTo(width / 2, 0.01),
         );
         expect(
-          tester.getRect(find.text(kPaymentLinkClaimCheckingHeading)).center.dx,
+          tester
+              .getRect(find.text(testL10n.paymentLinkClaimCheckingHeading))
+              .center
+              .dx,
           closeTo(width / 2, 0.01),
         );
         expect(tester.takeException(), isNull);
@@ -84,8 +87,10 @@ void main() {
           ),
         ),
       );
-      final heading = find.text(kPaymentLinkClaimCheckingHeading);
-      final description = find.text(kPaymentLinkClaimCheckingDescription);
+      final heading = find.text(testL10n.paymentLinkClaimCheckingHeading);
+      final description = find.text(
+        testL10n.paymentLinkClaimCheckingDescription,
+      );
       final progress = find.text('Checking the gift… 50%');
       expect(
         tester.getRect(heading).bottom,

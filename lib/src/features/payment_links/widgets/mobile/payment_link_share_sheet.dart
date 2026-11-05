@@ -10,6 +10,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../services/payment_link_qr_export.dart';
 import '../payment_link_gift_card.dart';
 import '../payment_link_qr_share_card.dart';
+import '../../../../core/l10n/l10n.dart';
 
 class PaymentLinkShareSheet extends StatefulWidget {
   const PaymentLinkShareSheet({
@@ -70,7 +71,7 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
   Widget build(BuildContext context) {
     return MobileModalScaffold(
       key: const ValueKey('payment_link_share_sheet'),
-      title: 'Share gift card',
+      title: context.l10n.paymentLinkShareSheetTitle,
       onClose: widget.onClose,
       bottomPadding: AppSpacing.base,
       constrainBody: true,
@@ -98,7 +99,11 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
               constrainContent: true,
               onPressed: _sharing ? null : _share,
               leading: const AppIcon(AppIcons.share),
-              child: Text(_sharing ? 'Sharing…' : 'Share card'),
+              child: Text(
+                _sharing
+                    ? context.l10n.paymentLinkSharing
+                    : context.l10n.paymentLinkShareCard,
+              ),
             ),
             const SizedBox(height: AppSpacing.s),
             AppButton(
@@ -107,7 +112,11 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
               expand: true,
               constrainContent: true,
               onPressed: _copying ? null : _copy,
-              child: Text(_copying ? 'Copying…' : 'Copy link'),
+              child: Text(
+                _copying
+                    ? context.l10n.paymentLinkCopying
+                    : context.l10n.paymentLinkCopyLink,
+              ),
             ),
           ],
         ),

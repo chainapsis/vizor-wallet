@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_se
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import '../../support/ledger_gift_card_support.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   test(
@@ -310,7 +311,7 @@ void main() {
       h.submit(draft),
       throwsA(
         isA<LedgerGiftFundingTerminalException>().having(
-          (error) => error.userMessage,
+          (error) => error.userMessage(testL10n),
           'userMessage',
           kNetworkUpgradeHoldMessage,
         ),

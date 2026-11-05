@@ -5,33 +5,33 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../services/payment_link_received_store.dart';
 import 'mobile/payment_link_mobile_views.dart';
-import 'payment_link_copy.dart';
 import 'payment_link_desktop_views.dart';
+import '../../../core/l10n/l10n.dart';
 
 extension PaymentLinkAvailabilityCopy on PaymentLinkAvailability {
-  String get label => switch (this) {
+  String label(AppLocalizations l10n) => switch (this) {
     PaymentLinkAvailability.unchecked ||
-    PaymentLinkAvailability.available => 'Claim',
-    PaymentLinkAvailability.noBalance => 'No balance',
+    PaymentLinkAvailability.available => l10n.paymentLinkAvailabilityClaim,
+    PaymentLinkAvailability.noBalance => l10n.paymentLinkAvailabilityNoBalance,
     PaymentLinkAvailability.claimedElsewhere =>
-      kPaymentLinkClaimedElsewhereLabel,
-    PaymentLinkAvailability.checking ||
-    PaymentLinkAvailability.rejected => 'Checking result',
-    PaymentLinkAvailability.failed => 'Claim failed',
+      l10n.paymentLinkClaimedElsewhereLabel,
+    PaymentLinkAvailability.checking || PaymentLinkAvailability.rejected =>
+      l10n.paymentLinkAvailabilityCheckingResult,
+    PaymentLinkAvailability.failed => l10n.paymentLinkAvailabilityClaimFailed,
   };
 
-  String get description => switch (this) {
+  String description(AppLocalizations l10n) => switch (this) {
     PaymentLinkAvailability.claimedElsewhere =>
-      kPaymentLinkClaimedElsewhereDescription,
+      l10n.paymentLinkClaimedElsewhereDescription,
     PaymentLinkAvailability.failed =>
-      'Your claim did not complete. Check the card before trying again.',
+      l10n.paymentLinkAvailabilityFailedDescription,
     PaymentLinkAvailability.rejected =>
-      'The network did not accept this claim. Check its status before trying again.',
+      l10n.paymentLinkAvailabilityRejectedDescription,
     PaymentLinkAvailability.checking =>
-      'Your claim result is not confirmed yet. Check again shortly.',
+      l10n.paymentLinkAvailabilityCheckingDescription,
     PaymentLinkAvailability.noBalance =>
-      'There is currently no balance available to claim.',
-    _ => 'This gift card is ready to claim.',
+      l10n.paymentLinkAvailabilityNoBalanceDescription,
+    _ => l10n.paymentLinkAvailabilityReadyDescription,
   };
 }
 
@@ -76,7 +76,7 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            availability.label,
+            availability.label(context.l10n),
             textAlign: TextAlign.center,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: isError
@@ -86,7 +86,7 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            availability.description,
+            availability.description(context.l10n),
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
@@ -97,7 +97,11 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
             AppButton(
               onPressed: busy ? null : onCheck,
               growWithContent: embedded,
-              child: Text(busy ? 'Checking…' : 'Check status'),
+              child: Text(
+                busy
+                    ? context.l10n.commonCheckingEllipsis
+                    : context.l10n.paymentLinkCheckStatus,
+              ),
             ),
           ],
         ],
@@ -112,7 +116,7 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
             onPressed: busy ? null : onRemove,
             growWithContent: embedded,
             variant: AppButtonVariant.secondary,
-            child: const Text(kPaymentLinkRemoveCardLabel),
+            child: Text(context.l10n.paymentLinkRemoveCardLabel),
           )
         : onArchive == null
         ? null
@@ -120,7 +124,11 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
             onPressed: busy ? null : onArchive,
             growWithContent: embedded,
             variant: AppButtonVariant.secondary,
-            child: Text(archived ? 'Restore card' : 'Hide card'),
+            child: Text(
+              archived
+                  ? context.l10n.paymentLinkRestoreCard
+                  : context.l10n.paymentLinkHideCard,
+            ),
           );
     if (embedded) {
       return Column(

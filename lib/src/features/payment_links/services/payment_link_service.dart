@@ -292,7 +292,8 @@ class PaymentLinkBatchRejected implements Exception {
   final String message;
 
   /// Rust prefixes every user-facing batch rejection with this.
-  static const _prefix = 'This group ';
+  static const _prefix =
+      'This group '; // l10n-ignore: Rust error prefix matched with indexOf
 
   static PaymentLinkBatchRejected? from(Object error) {
     final text = error.toString();
@@ -576,14 +577,14 @@ class PaymentLinkClaimDestinationChangedException implements Exception {
 
   @override
   String toString() =>
-      'The gift card receiving account or address changed before claim.';
+      'The gift card receiving account or address changed before claim.'; // l10n-ignore: exception text, UI branches on the type
 }
 
 class PaymentLinkClaimInFlightException implements Exception {
   const PaymentLinkClaimInFlightException();
 
   @override
-  String toString() => 'This gift card is already being received.';
+  String toString() => 'This gift card is already being received.'; // l10n-ignore: exception text, UI branches on the type
 }
 
 /// A pasted Gift Card belongs to a different Zcash network than the wallet.
@@ -600,7 +601,7 @@ class PaymentLinkNetworkMismatchException implements Exception {
   final String walletNetwork;
 
   @override
-  String toString() => 'This gift card is for a different Zcash network.';
+  String toString() => 'This gift card is for a different Zcash network.'; // l10n-ignore: exception text, UI branches on the type
 }
 
 @visibleForTesting
@@ -1229,7 +1230,7 @@ class PaymentLinkService
       amountZatoshi: amountZatoshi,
       mnemonic: paymentAccount.mnemonic,
       birthdayHeight: linkBirthdayHeight,
-      label: 'Payment link',
+      label: 'Payment link', // l10n-ignore: stored link label, data
       createdAt: DateTime.now(),
       presentation: presentation,
     );

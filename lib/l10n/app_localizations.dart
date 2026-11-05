@@ -11408,6 +11408,2226 @@ abstract class AppLocalizations {
   /// **'Pay in {symbol}'**
   String payTitleAmount(String symbol);
 
+  /// Error under the Gift Card amount when it is larger than the available balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Above your maximum ZEC'**
+  String get paymentLinkAboveMaximumZec;
+
+  /// Message shown when the active account changed while redeeming a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Active account changed. Redeem this gift card again to receive it in the new account.'**
+  String get paymentLinkAccountChangedRedeemAgain;
+
+  /// Message shown when the active account changed while creating a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Active account changed. Review the gift card amount and fees again.'**
+  String get paymentLinkAccountChangedReviewAmount;
+
+  /// Error shown when the active account changed while a Gift Card was being created.
+  ///
+  /// In en, this message translates to:
+  /// **'The active account changed. Review the amount and try again.'**
+  String get paymentLinkActiveAccountChangedReviewAmount;
+
+  /// Two-line heading shown while a Gift Card is still being prepared; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift Card is\nalmost ready!'**
+  String get paymentLinkAlmostReadyHeading;
+
+  /// Two-line heading shown while a received Gift Card is being prepared; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Gift Card\nis almost ready!'**
+  String get paymentLinkAlmostReadyReceivedHeading;
+
+  /// Screen reader label of a disabled currency toggle on the Gift Card amount field; {currency} is USD and {reason} explains why it is unavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in {currency}. {reason}'**
+  String paymentLinkAmountCurrencyDisabledSemantic(
+    String currency,
+    String reason,
+  );
+
+  /// Screen reader label of a currency toggle on the Gift Card amount field; {currency} is ZEC or USD.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in {currency}'**
+  String paymentLinkAmountCurrencySemantic(String currency);
+
+  /// Placeholder of the Gift Card amount field.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount'**
+  String get paymentLinkAmountEnterAmount;
+
+  /// Placeholder of the Gift Card amount field when the amount is entered in US dollars.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter dollars'**
+  String get paymentLinkAmountEnterDollars;
+
+  /// Screen reader label of the Gift Card amount text field.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card amount input'**
+  String get paymentLinkAmountInputSemantic;
+
+  /// Subtitle of the first steps of desktop Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount & select the design.'**
+  String get paymentLinkAmountStepSubtitleDesktop;
+
+  /// Subtitle of the mobile amount step of Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount & pick a design.'**
+  String get paymentLinkAmountStepSubtitleMobile;
+
+  /// Button that approves the funding and creates the Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve & create'**
+  String get paymentLinkApproveAndCreate;
+
+  /// Heading of the collapsible list of archived Gift Cards; {count} is how many cards are archived.
+  ///
+  /// In en, this message translates to:
+  /// **'Archived ({count})'**
+  String paymentLinkArchivedCount(int count);
+
+  /// Heading above the list of archived Gift Cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Archived'**
+  String get paymentLinkArchivedHeading;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Chest in crystal cave'**
+  String get paymentLinkArtworkChestCave;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Chest in lava cave'**
+  String get paymentLinkArtworkChestLava;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash coin'**
+  String get paymentLinkArtworkCoin;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Crystal'**
+  String get paymentLinkArtworkCrystal;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Diamond'**
+  String get paymentLinkArtworkDiamond;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Dragon'**
+  String get paymentLinkArtworkDragon;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Wizard'**
+  String get paymentLinkArtworkGandalf;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift box'**
+  String get paymentLinkArtworkGift;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Knight'**
+  String get paymentLinkArtworkKnight;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Magic knight'**
+  String get paymentLinkArtworkKnightMagic;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Rogue cat'**
+  String get paymentLinkArtworkRogueCat;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Ruby'**
+  String get paymentLinkArtworkRuby;
+
+  /// Explanation shown while the result of claiming a received Gift Card is not yet confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your claim result is not confirmed yet. Check again shortly.'**
+  String get paymentLinkAvailabilityCheckingDescription;
+
+  /// Status label of a received Gift Card whose claim result is being checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking result'**
+  String get paymentLinkAvailabilityCheckingResult;
+
+  /// Status label of a received Gift Card that is ready to be claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim'**
+  String get paymentLinkAvailabilityClaim;
+
+  /// Status label of a received Gift Card whose claim did not complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim failed'**
+  String get paymentLinkAvailabilityClaimFailed;
+
+  /// Explanation shown when claiming a received Gift Card did not complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Your claim did not complete. Check the card before trying again.'**
+  String get paymentLinkAvailabilityFailedDescription;
+
+  /// Status label of a received Gift Card that currently holds no balance.
+  ///
+  /// In en, this message translates to:
+  /// **'No balance'**
+  String get paymentLinkAvailabilityNoBalance;
+
+  /// Explanation shown for a received Gift Card that holds no balance.
+  ///
+  /// In en, this message translates to:
+  /// **'There is currently no balance available to claim.'**
+  String get paymentLinkAvailabilityNoBalanceDescription;
+
+  /// Explanation shown for a received Gift Card that is ready to be claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card is ready to claim.'**
+  String get paymentLinkAvailabilityReadyDescription;
+
+  /// Explanation shown when the network rejected the claim of a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'The network did not accept this claim. Check its status before trying again.'**
+  String get paymentLinkAvailabilityRejectedDescription;
+
+  /// Button on the signing screens that returns to the Gift Card being created.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to gift card'**
+  String get paymentLinkBackToGiftCard;
+
+  /// Screen reader label of the button that increases the number of cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a card'**
+  String get paymentLinkBatchAddCard;
+
+  /// Heading above the list of cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Cards in this group'**
+  String get paymentLinkBatchCardsInGroup;
+
+  /// Status line of a batch when the usage of some cards could not be checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t check every card'**
+  String get paymentLinkBatchCheckFailed;
+
+  /// Status line of a batch while the usage of its cards is being checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking card use…'**
+  String get paymentLinkBatchCheckingUse;
+
+  /// Confirm button of the file-save dialog for Gift Card links.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose location'**
+  String get paymentLinkBatchChooseLocation;
+
+  /// Screen reader label of the button that copies the link of one card in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy link for card {number}'**
+  String paymentLinkBatchCopyLinkSemantic(String number);
+
+  /// Screen reader label of the field holding the number of cards in a batch; {max} is the largest allowed count.
+  ///
+  /// In en, this message translates to:
+  /// **'Number of cards, 2 to {max}'**
+  String paymentLinkBatchCountSemantic(int max);
+
+  /// Subtitle of a batch detail page; {date} is the creation date.
+  ///
+  /// In en, this message translates to:
+  /// **'Created {date}'**
+  String paymentLinkBatchCreated(String date);
+
+  /// Error shown when the details of the cards in a group could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Card details could not be saved. Try again.'**
+  String get paymentLinkBatchDetailsNotSaved;
+
+  /// Error shown when the network fee of a group changed after the quote.
+  ///
+  /// In en, this message translates to:
+  /// **'The network fee changed. Review the new total.'**
+  String get paymentLinkBatchFeeChanged;
+
+  /// [security] Error shown when the funding for a group was sent but the cards could not be saved; the user must retry before closing the app or the links are lost.
+  ///
+  /// In en, this message translates to:
+  /// **'Funding was sent, but the cards could not be saved. Try again before closing Vizor.'**
+  String get paymentLinkBatchFundedNotSaved;
+
+  /// Title of a batch detail page; {count} is the number of cards in the group.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} gift cards'**
+  String paymentLinkBatchGiftCardsCount(int count);
+
+  /// [security] Note on a batch whose payment is still confirming; its links must not be shared yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Links become shareable once the payment confirms.'**
+  String get paymentLinkBatchLinksShareableLater;
+
+  /// Hint of the message field in batch Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Message (optional)'**
+  String get paymentLinkBatchMessageOptional;
+
+  /// Hint of the message field in batch Gift Card creation; the message is printed on every card.
+  ///
+  /// In en, this message translates to:
+  /// **'Message (optional), appears on every card'**
+  String get paymentLinkBatchMessageOptionalEveryCard;
+
+  /// Error shown when none of the cards in a group was funded.
+  ///
+  /// In en, this message translates to:
+  /// **'No cards were funded. Review the amount and try again.'**
+  String get paymentLinkBatchNoneFunded;
+
+  /// [security] Warning on a batch where some cards are not ready; none of the links should be shared until all cards are ready.
+  ///
+  /// In en, this message translates to:
+  /// **'Not every card in this group is ready. Don’t share any links until they all are.'**
+  String get paymentLinkBatchNotAllReady;
+
+  /// Error shown when the group costs more than the available balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Reduce the amount or number of cards to fit your available balance.'**
+  String get paymentLinkBatchOverBalance;
+
+  /// [security] Warning on a batch whose payment could not be confirmed; the links must not be shared until the payment is confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor hasn’t confirmed that the payment was sent. Keep these cards and check again before sharing any links.'**
+  String get paymentLinkBatchPaymentUnconfirmed;
+
+  /// Error shown when preparing the cards of a group failed.
+  ///
+  /// In en, this message translates to:
+  /// **'These cards could not be prepared.'**
+  String get paymentLinkBatchPrepareFailed;
+
+  /// Message shown when the cards of a group were created under the previous account.
+  ///
+  /// In en, this message translates to:
+  /// **'Cards were created under the previous account. Switch back to view them.'**
+  String get paymentLinkBatchPreviousAccount;
+
+  /// Error shown when a group cannot be created yet because the balance is still loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Available balance is still loading. Try again after wallet sync.'**
+  String get paymentLinkBatchQuoteNotReady;
+
+  /// Screen reader label of the button that decreases the number of cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove a card'**
+  String get paymentLinkBatchRemoveCard;
+
+  /// Screen reader label of a card row in a batch; {number} is the zero-padded card number, {status} its usage status, and {failed} is true when refreshing the status failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Card {number}, {status}{failed, select, true{, update failed} other{}}'**
+  String paymentLinkBatchRowSemantic(
+    String number,
+    String status,
+    String failed,
+  );
+
+  /// Title of a card row in a batch; {number} is the zero-padded card number.
+  ///
+  /// In en, this message translates to:
+  /// **'Card {number}'**
+  String paymentLinkBatchRowTitle(String number);
+
+  /// Note on a card row in a batch when refreshing its usage failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t update'**
+  String get paymentLinkBatchRowUpdateFailed;
+
+  /// Button that saves the links of all Gift Cards in a batch to a CSV file.
+  ///
+  /// In en, this message translates to:
+  /// **'Save all links as CSV'**
+  String get paymentLinkBatchSaveAllCsv;
+
+  /// Title of the file-save dialog for the links of all Gift Cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Save gift card links'**
+  String get paymentLinkBatchSaveLinksTitle;
+
+  /// [security] Warning in the file-save dialog for Gift Card links: the file holds secrets that let anyone who has it claim the funds, so it must be stored privately.
+  ///
+  /// In en, this message translates to:
+  /// **'Anyone with this file can claim these cards. Save it somewhere private.'**
+  String get paymentLinkBatchSaveLinksWarning;
+
+  /// Screen reader label of the button that shows the QR code of one card in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Show QR code for card {number}'**
+  String paymentLinkBatchShowQrSemantic(String number);
+
+  /// [security] Error shown when Vizor could not confirm that the funding payment for a group was sent; the user must check before creating another group.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn’t confirm the payment was sent. Check this group in Gift Cards before creating another.'**
+  String get paymentLinkBatchUncertain;
+
+  /// Status line of a batch whose cards have not been checked yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Card use not checked yet'**
+  String get paymentLinkBatchUseNotChecked;
+
+  /// Label of the field holding the amount of each card in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount per card'**
+  String get paymentLinkBulkAmountPerCard;
+
+  /// Screen reader label shown while the wallet balance next to the batch amount loads.
+  ///
+  /// In en, this message translates to:
+  /// **'Balance loading'**
+  String get paymentLinkBulkBalanceLoading;
+
+  /// Label of the section where the user picks the artwork of the cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Card design'**
+  String get paymentLinkBulkCardDesign;
+
+  /// Screen reader label of a preset button that sets the number of cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} cards'**
+  String paymentLinkBulkCountSemantic(int count);
+
+  /// Button that creates a batch of Gift Cards; {count} is the number of cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Create {count} cards'**
+  String paymentLinkBulkCreateCards(int count);
+
+  /// Title of the batch creation page for Ledger accounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Create multiple cards'**
+  String get paymentLinkBulkCreateMultiple;
+
+  /// Label of the option that gives every card in a batch a different design.
+  ///
+  /// In en, this message translates to:
+  /// **'Different design on each card'**
+  String get paymentLinkBulkDifferentDesign;
+
+  /// Breadcrumb label for editing the cards of a batch before creating them.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit cards'**
+  String get paymentLinkBulkEditCards;
+
+  /// Subtitle of the batch creation page for Ledger accounts; {max} is the maximum number of cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Create up to {max} cards at once with Ledger.'**
+  String paymentLinkBulkLedgerLimit(int max);
+
+  /// Title and button of the batch review step; {count} is the number of cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Review {count} cards'**
+  String paymentLinkBulkReviewCards(int count);
+
+  /// Screen reader label of the spendable balance next to the batch amount; {amount} is the formatted amount.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} ZEC available'**
+  String paymentLinkBulkZecAvailable(String amount);
+
+  /// Label of the Gift Card amount row in the review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Card amount'**
+  String get paymentLinkCardAmountLabel;
+
+  /// Toast shown when checking the balance of a received Gift Card failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Card balance could not be checked. Try again.'**
+  String get paymentLinkCardBalanceCheckFailed;
+
+  /// Screen reader label of a Gift Card artwork choice; {design} is the artwork name, for example Knight or Dragon.
+  ///
+  /// In en, this message translates to:
+  /// **'{design} card design'**
+  String paymentLinkCardDesignSemantic(String design);
+
+  /// Help text explaining the Gift Card fee: the creation fee plus the fee reserved for the recipient to claim.
+  ///
+  /// In en, this message translates to:
+  /// **'Includes the creation fee and the fee reserved for claiming.'**
+  String get paymentLinkCardFeeHelpText;
+
+  /// Label of the row showing the combined fee to fund a Gift Card and the fee reserved for the recipient to redeem it.
+  ///
+  /// In en, this message translates to:
+  /// **'Card fee (deposit + redeem)'**
+  String get paymentLinkCardFeeLabel;
+
+  /// Toast shown when removing a Gift Card from the list failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Card could not be removed. Try again.'**
+  String get paymentLinkCardRemoveFailed;
+
+  /// Toast shown when checking the status of a Gift Card failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Card status could not be checked. Try again.'**
+  String get paymentLinkCardStatusCheckFailed;
+
+  /// Title shown when a scanned Gift Card QR code could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'This card could not be read.'**
+  String get paymentLinkCardUnreadable;
+
+  /// Toast shown when archiving or restoring a Gift Card failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Card could not be updated. Try again.'**
+  String get paymentLinkCardUpdateFailed;
+
+  /// Breadcrumb and tab label for the list of Gift Cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Cards'**
+  String get paymentLinkCardsLabel;
+
+  /// Error shown in place of the Gift Cards list when loading it failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift cards could not be loaded.'**
+  String get paymentLinkCardsLoadFailed;
+
+  /// Progress text while the app checks a received Gift Card; {phase} is finding or checking and {percent} is the percentage done.
+  ///
+  /// In en, this message translates to:
+  /// **'{phase, select, finding{Finding the gift} other{Checking the gift}}… {percent}%'**
+  String paymentLinkCheckProgress(String phase, String percent);
+
+  /// Button that checks the current status of a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Check status'**
+  String get paymentLinkCheckStatus;
+
+  /// Caption showing that the Gift Card usage was checked {hours} hours ago.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked {hours}h ago'**
+  String paymentLinkCheckedHoursAgo(int hours);
+
+  /// Caption showing that the Gift Card usage was checked less than a minute ago.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked just now'**
+  String get paymentLinkCheckedJustNow;
+
+  /// Caption showing that the Gift Card usage was checked {minutes} minutes ago.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked {minutes}m ago'**
+  String paymentLinkCheckedMinutesAgo(int minutes);
+
+  /// Caption showing the date the Gift Card usage was last checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked {date}'**
+  String paymentLinkCheckedOnDate(String date);
+
+  /// Status text while the app checks a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking the gift…'**
+  String get paymentLinkCheckingGiftEllipsis;
+
+  /// Invisible sizing placeholder that reserves the width of the Gift Card check progress text.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking the gift… 100%'**
+  String get paymentLinkCheckingGiftFull;
+
+  /// Status label while a Gift Card is being checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get paymentLinkCheckingLabel;
+
+  /// Title and screen reader label of the sheet where the user picks which account receives a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose receiving account'**
+  String get paymentLinkChooseReceivingAccount;
+
+  /// Error in the receiving-account sheet when preparing the Gift Card claim failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t prepare this gift. Try again or choose another account.'**
+  String get paymentLinkClaimAccountPrepareFailed;
+
+  /// Button that rechecks a received Gift Card that showed no balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get paymentLinkClaimActionCheckAgain;
+
+  /// Button that creates a new account to claim a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Create an account to claim'**
+  String get paymentLinkClaimActionCreateAccount;
+
+  /// Button that creates a new wallet to claim a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a wallet to claim'**
+  String get paymentLinkClaimActionCreateWallet;
+
+  /// Button that claims a received Gift Card with a wallet the user already has.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim with an existing wallet'**
+  String get paymentLinkClaimActionExistingWallet;
+
+  /// Two-line description shown while the app checks whether a received Gift Card was already claimed; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking whether this gift card\nhas already been claimed.'**
+  String get paymentLinkClaimCheckingDescription;
+
+  /// Two-line heading shown while a received Gift Card is checked; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking your\ngift card'**
+  String get paymentLinkClaimCheckingHeading;
+
+  /// Toast shown when closing a received Gift Card before account setup failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t close the card. Try again.'**
+  String get paymentLinkClaimCloseFailed;
+
+  /// Message shown when claiming a Gift Card failed; the card may still be confirming or may already have been claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card claim failed. It may still be waiting for confirmation or may already be spent.'**
+  String get paymentLinkClaimFailedMaybePending;
+
+  /// Toast shown when redeeming a received Gift Card failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t redeem your gift card.'**
+  String get paymentLinkClaimFailureToast;
+
+  /// Button in the receiving-account sheet that claims the Gift Card into the selected account.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim gift'**
+  String get paymentLinkClaimGiftButton;
+
+  /// Toast shown when a received Gift Card cannot be saved because too many other cards are already waiting to be redeemed.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many gift cards are waiting. Finish another card first.'**
+  String get paymentLinkClaimQueueFull;
+
+  /// Message shown when the result of claiming a Gift Card is not confirmed yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim result is not confirmed. Check its status.'**
+  String get paymentLinkClaimResultNotConfirmed;
+
+  /// Toast shown when a received Gift Card could not be saved before account setup.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t save the card. Try again.'**
+  String get paymentLinkClaimSaveFailed;
+
+  /// Status shown when a received Gift Card was already claimed by someone else.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift has already been claimed.'**
+  String get paymentLinkClaimStatusAlreadyClaimed;
+
+  /// Detail under the already-claimed status suggesting the user ask the sender for a new Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask the sender for a new one.'**
+  String get paymentLinkClaimStatusAskSender;
+
+  /// Detail under the network error while checking a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your connection and try again.'**
+  String get paymentLinkClaimStatusCheckConnection;
+
+  /// Detail while the Gift Card deposit confirms, for a user who already has a wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'You can create your account now.'**
+  String get paymentLinkClaimStatusCreateAccountNow;
+
+  /// Detail under Gift found for a user who already has a wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Create an account or use one you have to claim it.'**
+  String get paymentLinkClaimStatusCreateAccountOrUseOne;
+
+  /// Detail while the Gift Card deposit confirms, for a user who has no wallet yet.
+  ///
+  /// In en, this message translates to:
+  /// **'You can create your wallet now.'**
+  String get paymentLinkClaimStatusCreateWalletNow;
+
+  /// Detail under Gift found for a user who has no wallet yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a wallet or use one you have to claim it.'**
+  String get paymentLinkClaimStatusCreateWalletOrUseOne;
+
+  /// Status title shown when a received Gift Card holds a balance that can be claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift found'**
+  String get paymentLinkClaimStatusGiftFound;
+
+  /// Detail under the no-balance status of a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'The sender may not have funded it yet.'**
+  String get paymentLinkClaimStatusMayNotBeFunded;
+
+  /// Status shown when the app could not reach the network while checking a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn’t reach the network.'**
+  String get paymentLinkClaimStatusNetworkUnreachable;
+
+  /// Status shown when a received Gift Card was created for a different Zcash network than the wallet uses.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card is for a different network.'**
+  String get paymentLinkClaimStatusOtherNetwork;
+
+  /// Status shown while the Gift Card funding deposit is confirming; {count} is the confirmations seen and {target} the number needed.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the deposit to confirm · {count} of {target}'**
+  String paymentLinkClaimStatusWaitingDeposit(int count, int target);
+
+  /// Title shown after a Gift Card claim was submitted to the network.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift claim submitted'**
+  String get paymentLinkClaimSubmitted;
+
+  /// Button that claims a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim the gift'**
+  String get paymentLinkClaimTheGift;
+
+  /// Button that claims a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim the gift card'**
+  String get paymentLinkClaimTheGiftCard;
+
+  /// Description while a received Gift Card is not yet ready to claim.
+  ///
+  /// In en, this message translates to:
+  /// **'Your gift will be ready to claim shortly.'**
+  String get paymentLinkClaimWaitingDescription;
+
+  /// Explanation shown when a received Gift Card was already claimed in another wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'This card was claimed in another wallet first. Your balance hasn\'t changed.'**
+  String get paymentLinkClaimedElsewhereDescription;
+
+  /// Status label of a received Gift Card that someone claimed in another wallet before the user.
+  ///
+  /// In en, this message translates to:
+  /// **'Claimed elsewhere'**
+  String get paymentLinkClaimedElsewhereLabel;
+
+  /// Button label while a Gift Card is being claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Claiming…'**
+  String get paymentLinkClaiming;
+
+  /// [security] Button that clears the clipboard after a Gift Card link was pasted, so the bearer link does not stay copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear clipboard'**
+  String get paymentLinkClearClipboardLabel;
+
+  /// Hint under a received Gift Card on desktop explaining how to read its message.
+  ///
+  /// In en, this message translates to:
+  /// **'Click on the card to reveal the message.'**
+  String get paymentLinkClickToRevealMessage;
+
+  /// Hint under a received Gift Card on desktop; the message is revealed by clicking the card.
+  ///
+  /// In en, this message translates to:
+  /// **'Click on the card to reveal'**
+  String get paymentLinkClickToRevealShort;
+
+  /// Title of the hardware wallet signing screen for creating a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Gift Card'**
+  String get paymentLinkConfirmGiftCardTitle;
+
+  /// Button that copies the Gift Card link to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy link'**
+  String get paymentLinkCopyLink;
+
+  /// Hint on the Gift Card ready screen that the link can be copied again later from the settings.
+  ///
+  /// In en, this message translates to:
+  /// **'You can copy this link again from Settings → My gift cards.'**
+  String get paymentLinkCopyLinkAgainHint;
+
+  /// Screen reader label of the button that copies a Gift Card link.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy gift card link'**
+  String get paymentLinkCopyLinkSemanticLabel;
+
+  /// Button label while a Gift Card link is being copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Copying…'**
+  String get paymentLinkCopying;
+
+  /// Label of the cost row showing how much more ZEC the user needs for the batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Additional ZEC needed'**
+  String get paymentLinkCostAdditionalZecNeeded;
+
+  /// Value of the additional-ZEC row when the total is not known yet; {amount} is the formatted minimum shortfall.
+  ///
+  /// In en, this message translates to:
+  /// **'At least {amount}'**
+  String paymentLinkCostAtLeast(String amount);
+
+  /// Screen reader label shown while the network fee of a batch is calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating network fee'**
+  String get paymentLinkCostCalculatingFee;
+
+  /// Screen reader label shown while the total cost of a batch is calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating total'**
+  String get paymentLinkCostCalculatingTotal;
+
+  /// Label of the cost row showing the number of cards the per-card cost is multiplied by.
+  ///
+  /// In en, this message translates to:
+  /// **'× {count} cards'**
+  String paymentLinkCostCardsMultiplier(int count);
+
+  /// Label of the row showing the message printed on every card in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Message on every card'**
+  String get paymentLinkCostMessageOnEveryCard;
+
+  /// Label of the cost row showing the network fee of a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Network fee'**
+  String get paymentLinkCostNetworkFee;
+
+  /// Label of the cost row showing the cost of one card.
+  ///
+  /// In en, this message translates to:
+  /// **'Per card'**
+  String get paymentLinkCostPerCard;
+
+  /// Caption under the per-card cost; {amount} is the card amount and {fee} the fee reserved for redeeming, or a dash if unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} ZEC + {fee} ZEC redeem fee'**
+  String paymentLinkCostPerCardBreakdown(String amount, String fee);
+
+  /// Shown in place of the network fee while the wallet is still syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for sync'**
+  String get paymentLinkCostWaitingForSync;
+
+  /// Label of the row showing the total the user will spend on a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'You will spend'**
+  String get paymentLinkCostYouWillSpend;
+
+  /// Button that creates the Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Create card'**
+  String get paymentLinkCreateCardButton;
+
+  /// Button or entry label that starts creating a Gift Card to send to someone.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a card'**
+  String get paymentLinkCreateCardLabel;
+
+  /// Title of the desktop page and wizard where the user creates a single Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Create Gift Card'**
+  String get paymentLinkCreateGiftCardTitle;
+
+  /// Button that starts creating a new Gift Card on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Create new card'**
+  String get paymentLinkCreateNewCard;
+
+  /// Tab label on the Gift Cards page listing cards the user created.
+  ///
+  /// In en, this message translates to:
+  /// **'Created'**
+  String get paymentLinkCreatedTabLabel;
+
+  /// Button label while a Gift Card is being created.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating…'**
+  String get paymentLinkCreating;
+
+  /// Error shown when creating a Gift Card failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card creation failed. Try again.'**
+  String get paymentLinkCreationFailed;
+
+  /// Title of the setup step where the user customises the new account created from a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Customise Account'**
+  String get paymentLinkCustomiseAccountStep;
+
+  /// Label of the desktop setup step where the user customises the new wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Customise wallet'**
+  String get paymentLinkCustomiseWalletStep;
+
+  /// Screen reader label of the button that clears the message on a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete gift card message'**
+  String get paymentLinkDeleteMessageSemantic;
+
+  /// Title of the empty state shown on the Gift Cards page when the user has no cards.
+  ///
+  /// In en, this message translates to:
+  /// **'No Gift Cards yet'**
+  String get paymentLinkEmptyTitle;
+
+  /// Error shown when the Gift Card amount is missing or invalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid gift card amount.'**
+  String get paymentLinkEnterValidAmount;
+
+  /// Explanation on the desktop redeem screen when redeeming creates a new account in the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeem the card to create a new account with the card’s balance in your wallet.'**
+  String get paymentLinkEntryExplainAccountDesktop;
+
+  /// Explanation on the desktop redeem screen when redeeming creates a new wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Once the card is redeemed, we will create a new Vizor wallet with the card’s balance.'**
+  String get paymentLinkEntryExplainWalletDesktop;
+
+  /// Explanation on the redeem screen when redeeming creates a new account in an existing wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a new account to receive the card’s balance.'**
+  String get paymentLinkEntryExplanationAccount;
+
+  /// Explanation on the redeem screen when redeeming creates a new wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a new Vizor wallet to receive the card’s balance.'**
+  String get paymentLinkEntryExplanationWallet;
+
+  /// Two-line instruction to paste the received Gift Card link; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy the card link you’ve\nreceived, and paste it below.'**
+  String get paymentLinkEntrySubtitle;
+
+  /// Title of the screen shown before an account exists; redeeming a Gift Card creates a new account.
+  ///
+  /// In en, this message translates to:
+  /// **'Create account by redeeming Vizor Gift Card'**
+  String get paymentLinkEntryTitleAccount;
+
+  /// Title of the screen shown to a user with no wallet; redeeming a Gift Card creates a new wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Create wallet by redeeming Vizor Gift Card'**
+  String get paymentLinkEntryTitleWallet;
+
+  /// [security] Message shown when exporting links of a group is not possible because not every card is ready.
+  ///
+  /// In en, this message translates to:
+  /// **'All cards must be ready before exporting links.'**
+  String get paymentLinkExportNotReady;
+
+  /// Message shown when the account or card status changed while exporting links.
+  ///
+  /// In en, this message translates to:
+  /// **'The account or card status changed. Check the cards and try again.'**
+  String get paymentLinkExportStatusChanged;
+
+  /// Error under the Gift Card amount when the fee could not be estimated.
+  ///
+  /// In en, this message translates to:
+  /// **'Card fee could not be estimated. Try again.'**
+  String get paymentLinkFeeEstimateFailed;
+
+  /// Supporting text under the Gift Card amount while the wallet is still syncing and the fee cannot be estimated.
+  ///
+  /// In en, this message translates to:
+  /// **'Card fee will be estimated when wallet sync completes.'**
+  String get paymentLinkFeeEstimatedAfterSync;
+
+  /// Screen reader label of the info button next to the Gift Card fee on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'About the gift card fee'**
+  String get paymentLinkFeeHelpSemantic;
+
+  /// Help text of the info icon next to the total Gift Card amount; explains the funding fee and the fee reserved for the recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Includes the fee to fund the gift card and the fee reserved for the recipient to claim it.'**
+  String get paymentLinkFeeHelpTextLong;
+
+  /// Error shown when the fee of a Gift Card could not be updated.
+  ///
+  /// In en, this message translates to:
+  /// **'Card fee could not be updated. Return to the amount step and try again.'**
+  String get paymentLinkFeeUpdateFailed;
+
+  /// Screen reader label shown while the fiat value of the Gift Card amount loads.
+  ///
+  /// In en, this message translates to:
+  /// **'Fiat value loading'**
+  String get paymentLinkFiatLoadingSemantic;
+
+  /// Screen reader label of the control that flips a Gift Card over.
+  ///
+  /// In en, this message translates to:
+  /// **'Flip gift card'**
+  String get paymentLinkFlipCardSemanticLabel;
+
+  /// [security] Message shown when the funding of a Gift Card expired before it was sent; the user must create the card again.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card funding expired. Create it again.'**
+  String get paymentLinkFundingExpired;
+
+  /// Status label of a Gift Card whose funding payment did not complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Funding incomplete'**
+  String get paymentLinkFundingIncompleteStatus;
+
+  /// Title of the Ledger signing screen when the funding needs the user's attention.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card funding needs attention'**
+  String get paymentLinkFundingNeedsAttention;
+
+  /// [security] Error shown when the funding transaction was sent but the Gift Card could not be saved; the user must retry before closing the app or the card link is lost.
+  ///
+  /// In en, this message translates to:
+  /// **'Funding was sent, but the gift card could not be saved. Try again before closing Vizor.'**
+  String get paymentLinkFundingSentCardNotSaved;
+
+  /// Message shown while the Gift Card funding transaction is still being verified.
+  ///
+  /// In en, this message translates to:
+  /// **'Funding is still being verified. Vizor will keep checking it.'**
+  String get paymentLinkFundingStillVerifying;
+
+  /// Message shown when the funding transaction was sent but the wallet has not yet stored it locally.
+  ///
+  /// In en, this message translates to:
+  /// **'Funding was sent, but local transaction storage needs to sync.'**
+  String get paymentLinkFundingStorageNeedsSync;
+
+  /// Label above the amount of a received Gift Card in the sheet where the user picks the receiving account.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift amount'**
+  String get paymentLinkGiftAmountLabel;
+
+  /// Screen reader label of the front of a Gift Card; {design} is the artwork name.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card, {design} design'**
+  String paymentLinkGiftCardDesignSemantic(String design);
+
+  /// Screen reader label of the message side of a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card message'**
+  String get paymentLinkGiftCardMessageSemantic;
+
+  /// Breadcrumb label of the Gift Cards section on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift cards'**
+  String get paymentLinkGiftCardsLowerBreadcrumb;
+
+  /// Title of the Gift Cards page and its breadcrumb.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift Cards'**
+  String get paymentLinkGiftCardsTitle;
+
+  /// Label of the message attached to a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift message'**
+  String get paymentLinkGiftMessageLabel;
+
+  /// Button that returns to the home screen after a Gift Card was created or received.
+  ///
+  /// In en, this message translates to:
+  /// **'Go home'**
+  String get paymentLinkGoHome;
+
+  /// Status of a group of Gift Cards while its payment is confirming.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming payment'**
+  String get paymentLinkGroupConfirmingPayment;
+
+  /// Title of the batch-creation entry shown for non-Ledger accounts.
+  ///
+  /// In en, this message translates to:
+  /// **'For a group'**
+  String get paymentLinkGroupEntryForGroup;
+
+  /// Screen reader label and title of the button that opens batch Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Create cards for a group'**
+  String get paymentLinkGroupEntryGroupSemantic;
+
+  /// Screen reader label of the button that opens batch Gift Card creation for a Ledger account; {max} is the maximum number of cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Create multiple cards, up to {max} with Ledger'**
+  String paymentLinkGroupEntryLedgerSemantic(int max);
+
+  /// Title of the batch-creation entry shown for Ledger accounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Multiple cards'**
+  String get paymentLinkGroupEntryMultipleCards;
+
+  /// Subtitle of the batch-creation entry for Ledger accounts; {max} is the maximum number of cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Up to {max} with Ledger'**
+  String paymentLinkGroupEntryUpToWithLedger(int max);
+
+  /// Message shown when a group of Gift Cards was never funded.
+  ///
+  /// In en, this message translates to:
+  /// **'This group wasn’t funded. Create it again.'**
+  String get paymentLinkGroupNotFunded;
+
+  /// Message shown for a group of Gift Cards that was created under another account.
+  ///
+  /// In en, this message translates to:
+  /// **'This group belongs to another account. Switch accounts to view it.'**
+  String get paymentLinkGroupOtherAccount;
+
+  /// Status of a group of Gift Cards whose payment status is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment status pending'**
+  String get paymentLinkGroupPaymentPending;
+
+  /// Status of a group of Gift Cards whose links are ready to share.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to share'**
+  String get paymentLinkGroupReadyToShare;
+
+  /// Status of a group of Gift Cards when some cards are not ready.
+  ///
+  /// In en, this message translates to:
+  /// **'Some cards aren’t ready'**
+  String get paymentLinkGroupSomeNotReady;
+
+  /// Heading above the list of Gift Card groups.
+  ///
+  /// In en, this message translates to:
+  /// **'Groups'**
+  String get paymentLinkGroupsHeading;
+
+  /// Button that moves a Gift Card to the archive list.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide card'**
+  String get paymentLinkHideCard;
+
+  /// First step of the Gift Cards explainer on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount to gift, pick a design, add a message (optional) and create your Card with a single click.'**
+  String get paymentLinkHowDesktopStepCreate;
+
+  /// Third step of the Gift Cards explainer on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient can redeem the Card in their Vizor wallet using the Link. The sender covers the deposit and redeem fees, so the recipient receives the full Card amount.'**
+  String get paymentLinkHowDesktopStepRedeem;
+
+  /// [security] Second step of the Gift Cards explainer on desktop; the link contains a secret that gives access to the funds and must only be sent to the recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'After the card is created, you will get a unique Link containing its claim secret. Send it only to the intended recipient.'**
+  String get paymentLinkHowDesktopStepShare;
+
+  /// Breadcrumb and button label that open the Gift Cards explainer on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'How gift cards work'**
+  String get paymentLinkHowGiftCardsWork;
+
+  /// Subtitle under the Gift Cards explainer title; a friendly tagline.
+  ///
+  /// In en, this message translates to:
+  /// **'A great way to celebrate anything.'**
+  String get paymentLinkHowItWorksSubtitle;
+
+  /// Title of the explainer that describes how Gift Cards are created and redeemed.
+  ///
+  /// In en, this message translates to:
+  /// **'How Gift Cards work'**
+  String get paymentLinkHowItWorksTitle;
+
+  /// First step of the Gift Cards explainer on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an amount, pick a design, and add an optional message.'**
+  String get paymentLinkHowStepCreate;
+
+  /// Third step of the Gift Cards explainer on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'The recipient opens the link in Vizor and claims the full card amount. The sender covers both fees.'**
+  String get paymentLinkHowStepRedeem;
+
+  /// [security] Second step of the Gift Cards explainer on mobile; warns that the link is a secret that gives access to the funds and must only be sent to the recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Once funding reaches the network, copy the unique link and send it only to the intended recipient.'**
+  String get paymentLinkHowStepShare;
+
+  /// Label of the link that opens the Gift Cards explainer on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'How the gift card works'**
+  String get paymentLinkHowTheCardWorks;
+
+  /// Toast shown when an incoming Gift Card link could not be read or opened.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment link could not be opened.'**
+  String get paymentLinkIntakeCouldNotOpen;
+
+  /// Toast shown when an incoming Gift Card link is rejected because too many links are already queued to open.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many payment links are waiting to open.'**
+  String get paymentLinkIntakeQueueFull;
+
+  /// Error shown when checking a received Gift Card was interrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Card check was interrupted. Try again.'**
+  String get paymentLinkInterruptedCheckMessage;
+
+  /// Hint under the invalid-link title telling the user to copy the link again.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy the link & try again'**
+  String get paymentLinkInvalidSubtitle;
+
+  /// Title shown when the pasted Gift Card link is not valid.
+  ///
+  /// In en, this message translates to:
+  /// **'The link doesn’t look legit.'**
+  String get paymentLinkInvalidTitle;
+
+  /// Error on the Keystone signing screen when the funding transaction could not be sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card funding could not be broadcast.'**
+  String get paymentLinkKeystoneBroadcastFailed;
+
+  /// Title of the Keystone signing screen while the funding transaction is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasting gift card funding'**
+  String get paymentLinkKeystoneBroadcastingTitle;
+
+  /// Status on the mobile Keystone signing screen while the Gift Card is created after signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating your gift card…'**
+  String get paymentLinkKeystoneCreatingGiftCard;
+
+  /// Error on the Keystone signing screen when the network response did not confirm the funding transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'The funding status is uncertain. Check activity before trying again.'**
+  String get paymentLinkKeystoneFundingUncertain;
+
+  /// Instruction on the Keystone signing screen while the transaction is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open while the transaction is sent.'**
+  String get paymentLinkKeystoneKeepOpen;
+
+  /// Error on the Keystone signing screen when the scanned QR code belongs to a different request.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code does not match the current Keystone request.'**
+  String get paymentLinkKeystoneQrMismatch;
+
+  /// Status on the mobile Keystone signing screen while the signature QR code is read.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading signature…'**
+  String get paymentLinkKeystoneReadingSignature;
+
+  /// Caption on the mobile Keystone signing screen asking the user to scan the signature QR code shown on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code on your Keystone to finish creating'**
+  String get paymentLinkKeystoneScanCaption;
+
+  /// Subtitle of the Keystone signing screen that shows the QR code to scan.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan to sign'**
+  String get paymentLinkKeystoneScanToSign;
+
+  /// Title of the Keystone signing screen on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign gift card on Keystone'**
+  String get paymentLinkKeystoneSignTitle;
+
+  /// Error on the Keystone signing screen when the signature returned by the device could not be applied.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signature could not be applied.'**
+  String get paymentLinkKeystoneSignatureFailed;
+
+  /// Error on the Keystone signing screen when signing failed for another reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card signing could not be completed.'**
+  String get paymentLinkKeystoneSigningFailed;
+
+  /// Subtitle of the Keystone signing screen while the funding transaction is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting transaction'**
+  String get paymentLinkKeystoneSubmittingTransaction;
+
+  /// [security] Warning that the newly created Gift Card links must be saved or copied before the user leaves, otherwise the funds are lost.
+  ///
+  /// In en, this message translates to:
+  /// **'Save these gift cards before leaving this screen.'**
+  String get paymentLinkLeaveSaveMany;
+
+  /// [security] Warning that the newly created Gift Card link must be saved or copied before the user leaves, otherwise the funds are lost.
+  ///
+  /// In en, this message translates to:
+  /// **'Save this gift card before leaving this screen.'**
+  String get paymentLinkLeaveSaveOne;
+
+  /// Error shown on the Gift Card signing screen when the funding transaction expired or the network rejected it.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card transaction expired or was rejected. Go back to create a new gift card.'**
+  String get paymentLinkLedgerFundingExpired;
+
+  /// Message on the Ledger signing screen when the user rejected the funding transaction on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'The gift card funding was rejected on your Ledger.'**
+  String get paymentLinkLedgerFundingRejected;
+
+  /// Message on the Ledger signing screen when the funding transaction was already saved and the user should retry to finish.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card funding is saved for recovery. Try again to check its status and finish saving.'**
+  String get paymentLinkLedgerSavedForRecovery;
+
+  /// Message on the Ledger signing screen when signing failed for another reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger signing could not be completed. Check your device and try again.'**
+  String get paymentLinkLedgerSigningIncomplete;
+
+  /// Toast shown after a Gift Card link was copied to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift link copied'**
+  String get paymentLinkLinkCopied;
+
+  /// Toast shown after a Gift Card link was copied but its shared status could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift link copied, but its status could not be updated.'**
+  String get paymentLinkLinkCopiedStatusFailed;
+
+  /// Toast shown when copying a Gift Card link failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift link could not be copied.'**
+  String get paymentLinkLinkCopyFailed;
+
+  /// Toast shown when saving the links of a group of Gift Cards to a file failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card links could not be saved. Try again.'**
+  String get paymentLinkLinksSaveFailed;
+
+  /// Toast shown after the links of a group of Gift Cards were saved to a file.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card links saved'**
+  String get paymentLinkLinksSaved;
+
+  /// Screen reader label shown while a Gift Card is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading gift card'**
+  String get paymentLinkLoadingGiftCard;
+
+  /// Body of the long-scan warning shown before checking a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor needs to scan more history than usual before it can verify the balance. This is safe, but it may take a long time.'**
+  String get paymentLinkLongSyncBody;
+
+  /// Button in the long-scan warning that starts checking the Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Check gift card'**
+  String get paymentLinkLongSyncConfirm;
+
+  /// Reassurance in the long-scan warning that the user can leave without starting the scan.
+  ///
+  /// In en, this message translates to:
+  /// **'You can go back without starting the scan.'**
+  String get paymentLinkLongSyncSupporting;
+
+  /// Title of the warning shown before checking a Gift Card that needs a long wallet scan.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card may take a while'**
+  String get paymentLinkLongSyncTitle;
+
+  /// Subtitle of the message step and the review step of mobile Gift Card creation; the message is stored as an encrypted memo.
+  ///
+  /// In en, this message translates to:
+  /// **'Attach a short encrypted memo (optional).'**
+  String get paymentLinkMemoOptionalSubtitle;
+
+  /// Title shown when a gift message is attached to a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Message attached.'**
+  String get paymentLinkMessageAttachedTitle;
+
+  /// Screen reader label of the text field for a Gift Card message.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card message input'**
+  String get paymentLinkMessageInputSemantic;
+
+  /// Title of the message step of mobile Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a message'**
+  String get paymentLinkMessageStepTitle;
+
+  /// Error under the Gift Card message field when the message does not fit in the memo.
+  ///
+  /// In en, this message translates to:
+  /// **'This message is too large. Try using fewer complex emoji.'**
+  String get paymentLinkMessageTooLarge;
+
+  /// Title of the page listing the user's own Gift Cards on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'My Cards'**
+  String get paymentLinkMyCards;
+
+  /// Status label on the Ledger signing screen when the request cannot be retried and a new gift card must be created.
+  ///
+  /// In en, this message translates to:
+  /// **'New gift card required'**
+  String get paymentLinkNewGiftCardRequired;
+
+  /// Error shown when no account is active while creating a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'No active account is available.'**
+  String get paymentLinkNoActiveAccountAvailable;
+
+  /// Empty-state text on the Created tab of the Gift Cards page.
+  ///
+  /// In en, this message translates to:
+  /// **'No created cards yet.'**
+  String get paymentLinkNoCreatedCardsText;
+
+  /// Empty-state text on the Received tab of the Gift Cards page.
+  ///
+  /// In en, this message translates to:
+  /// **'No received cards yet.'**
+  String get paymentLinkNoReceivedCardsText;
+
+  /// Screen reader label of a batch row that is being checked, read as the last part of the description.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking'**
+  String get paymentLinkOpenGroupChecking;
+
+  /// Screen reader label of a batch row; {date} is the creation date.
+  ///
+  /// In en, this message translates to:
+  /// **'created {date}'**
+  String paymentLinkOpenGroupCreated(String date);
+
+  /// Screen reader label of a batch row; {amount} is the amount of one card.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} each'**
+  String paymentLinkOpenGroupEach(String amount);
+
+  /// Screen reader label of a batch row; first part of the description, {count} is the number of cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Open group of {count} gift cards'**
+  String paymentLinkOpenGroupSemantic(int count);
+
+  /// Button that pastes the Gift Card link from the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste card link'**
+  String get paymentLinkPasteLabel;
+
+  /// Section heading above Gift Cards whose funding is still being confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get paymentLinkPendingSectionLabel;
+
+  /// Button label while a Gift Card claim is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing…'**
+  String get paymentLinkPreparing;
+
+  /// Status label while a Gift Card is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing…'**
+  String get paymentLinkPreparingStatus;
+
+  /// Tooltip and screen reader label of the button that turns privacy mode off, which hides amounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off privacy mode'**
+  String get paymentLinkPrivacyModeOff;
+
+  /// Tooltip and screen reader label of the button that turns privacy mode on, which hides amounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on privacy mode'**
+  String get paymentLinkPrivacyModeOn;
+
+  /// Two-line heading on the shareable Gift Card QR image; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'You’ve\ngot ZEC'**
+  String get paymentLinkQrCardHeading;
+
+  /// Caption on the shareable Gift Card QR image telling the recipient to scan it.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan to redeem'**
+  String get paymentLinkQrCardScanToRedeem;
+
+  /// Screen reader label of the shareable Gift Card QR image.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card QR code'**
+  String get paymentLinkQrCardSemantic;
+
+  /// Message shown in place of the Gift Card QR image when it could not be drawn.
+  ///
+  /// In en, this message translates to:
+  /// **'QR code could not be generated'**
+  String get paymentLinkQrCouldNotBeGenerated;
+
+  /// Toast shown when saving the Gift Card QR image failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card QR could not be saved.'**
+  String get paymentLinkQrSaveFailed;
+
+  /// Toast shown after the Gift Card QR image was saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card QR saved'**
+  String get paymentLinkQrSaved;
+
+  /// Toast shown after the Gift Card QR image was saved but its shared status could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card QR saved, but its status could not be updated.'**
+  String get paymentLinkQrSavedStatusFailed;
+
+  /// Heading shown when a created Gift Card is ready to be shared.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to share'**
+  String get paymentLinkReadyHeading;
+
+  /// Message shown when finishing the receipt of a Gift Card failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t finish receiving this gift. Try again to check its status.'**
+  String get paymentLinkReceiveFinishFailed;
+
+  /// Label above the account that will receive a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive to'**
+  String get paymentLinkReceiveToLabel;
+
+  /// Error shown in place of the received Gift Cards list when loading it failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Received gift cards could not be loaded.'**
+  String get paymentLinkReceivedCardsLoadFailed;
+
+  /// Heading shown when a Gift Card was received.
+  ///
+  /// In en, this message translates to:
+  /// **'You’ve received a gift!'**
+  String get paymentLinkReceivedGiftHeading;
+
+  /// Two-line heading on the desktop screen for a received Gift Card; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'You’ve received\na gift card!'**
+  String get paymentLinkReceivedHeadingDesktop;
+
+  /// Tab label on the Gift Cards page listing cards the user received.
+  ///
+  /// In en, this message translates to:
+  /// **'Received'**
+  String get paymentLinkReceivedTabLabel;
+
+  /// Message shown when the receiving account changed while a Gift Card was being claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving account changed. Open the gift card again to continue.'**
+  String get paymentLinkReceivingAccountChangedReopen;
+
+  /// Message shown when the receiving account changed while a Gift Card was being checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving account changed. Try again to check this gift.'**
+  String get paymentLinkReceivingAccountChangedRetry;
+
+  /// Status label of a received Gift Card while it is being received.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving…'**
+  String get paymentLinkReceivingStatus;
+
+  /// Button or entry label that starts redeeming a Gift Card someone sent the user.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeem a card'**
+  String get paymentLinkRedeemCardLabel;
+
+  /// Title of the desktop setup steps shown while redeeming a Gift Card into a new account.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeem the card'**
+  String get paymentLinkRedeemCardStepTitle;
+
+  /// Subtitle of the mobile redeem screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste a card link or scan its QR code.'**
+  String get paymentLinkRedeemPasteOrScan;
+
+  /// Instruction on the redeem screen asking the user to paste the received Gift Card link.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy the card link you’ve received, and paste it below.'**
+  String get paymentLinkRedeemSubtitle;
+
+  /// Title of the screen where a recipient redeems a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeem the Card'**
+  String get paymentLinkRedeemTheCardTitle;
+
+  /// [security] Warning in the remove-account and reset dialogs when the app could not check for funded Gift Card links that were never shared; {action} is reset or remove.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check for unshared gift card links. Copy any links you still need before {action, select, reset{resetting Vizor} other{removing this account}}.'**
+  String paymentLinkRemovalWarningCheckFailed(String action);
+
+  /// [security] Warning in the remove-account and reset dialogs that funded Gift Card links which were never shared will be permanently lost; {count} is how many, {subject} is reset or remove.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 funded gift card link has not been shared. {subject, select, reset{Resetting Vizor} other{Removing this account}} loses it. Copy the link first.} other{{count} funded gift card links have not been shared. {subject, select, reset{Resetting Vizor} other{Removing this account}} loses them. Copy the links first.}}'**
+  String paymentLinkRemovalWarningUnshared(int count, String subject);
+
+  /// Confirm button of the dialog for removing a Gift Card from the list.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove card'**
+  String get paymentLinkRemoveCardLabel;
+
+  /// [security] Warning in the remove-card dialog that removing the card, and with it access to its link, is irreversible.
+  ///
+  /// In en, this message translates to:
+  /// **'This can\'t be undone.'**
+  String get paymentLinkRemoveCardSupporting;
+
+  /// Title of the confirmation dialog for removing a Gift Card from the list.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove this card?'**
+  String get paymentLinkRemoveCardTitle;
+
+  /// Button that moves an archived Gift Card back to the active list.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore card'**
+  String get paymentLinkRestoreCard;
+
+  /// Screen reader label of the control that reveals the message on a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Reveal gift card message'**
+  String get paymentLinkRevealMessageSemanticLabel;
+
+  /// Button that continues to the review step of Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Review & confirm'**
+  String get paymentLinkReviewAndConfirm;
+
+  /// Title of the review step of mobile Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Review a Card'**
+  String get paymentLinkReviewCardTitle;
+
+  /// Button that saves the Gift Card QR code image.
+  ///
+  /// In en, this message translates to:
+  /// **'Save QR code'**
+  String get paymentLinkSaveQrCode;
+
+  /// Button label while a Gift Card is being saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving…'**
+  String get paymentLinkSaving;
+
+  /// Button that reopens the QR scanner after a failed scan.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan again'**
+  String get paymentLinkScanAgain;
+
+  /// Hint shown when a scanned Gift Card QR code could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan again or paste another card link.'**
+  String get paymentLinkScanAgainOrPaste;
+
+  /// Message shown on the desktop scan screen when no camera is available.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect a camera to scan the gift card QR code, or go back to paste the card link.'**
+  String get paymentLinkScanCameraHint;
+
+  /// Button that opens the camera to scan a Gift Card QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan QR code'**
+  String get paymentLinkScanQrCode;
+
+  /// Screen reader label of the camera preview in the Gift Card QR scanner sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the gift card QR code'**
+  String get paymentLinkScanSheetSemantic;
+
+  /// Title of the Gift Card QR scanner sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan gift card QR'**
+  String get paymentLinkScanSheetTitle;
+
+  /// Instruction on the desktop scan screen to hold the Gift Card QR code in front of the camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the gift card QR code to your camera'**
+  String get paymentLinkScanShowQrToCamera;
+
+  /// Screen reader label of the back of a received Gift Card, which shows the sender's message; {message} is the sender's text.
+  ///
+  /// In en, this message translates to:
+  /// **'Sender message: {message}; Show gift card front'**
+  String paymentLinkSenderMessageSemantic(String message);
+
+  /// Button that shares the Gift Card image and link through the system share sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Share card'**
+  String get paymentLinkShareCard;
+
+  /// Toast shown when sharing a Gift Card link failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift link could not be shared.'**
+  String get paymentLinkShareFailed;
+
+  /// Toast shown when sharing a Gift Card failed and copying the link is suggested.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t share this gift card. Copy the link instead.'**
+  String get paymentLinkShareFailedCopyInstead;
+
+  /// Title of the desktop dialog where a created Gift Card is shared.
+  ///
+  /// In en, this message translates to:
+  /// **'Share Gift Card'**
+  String get paymentLinkShareGiftCardTitle;
+
+  /// [security] Instruction on the Gift Card ready screen; the link is a secret that gives access to the funds and must only be shared with the intended recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Share this link with the intended recipient so they can claim the Card using their Vizor app.'**
+  String get paymentLinkShareLinkInstruction;
+
+  /// [security] Two-line instruction on the desktop Gift Card ready screen; the link is a secret that gives access to the funds and must only be shared with the intended recipient. The line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Share this link with the intended recipient so they\ncan claim the Card using their Vizor app.'**
+  String get paymentLinkShareLinkInstructionDesktop;
+
+  /// Title of the sheet where a created Gift Card is shared.
+  ///
+  /// In en, this message translates to:
+  /// **'Share gift card'**
+  String get paymentLinkShareSheetTitle;
+
+  /// Description while the created Gift Card is not yet ready to share.
+  ///
+  /// In en, this message translates to:
+  /// **'We’re getting your gift card ready to share.'**
+  String get paymentLinkShareWaitingDescription;
+
+  /// Toast shown after a Gift Card was shared but its shared status could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card shared, but its status could not be updated.'**
+  String get paymentLinkSharedStatusFailed;
+
+  /// Button label while a Gift Card is being shared.
+  ///
+  /// In en, this message translates to:
+  /// **'Sharing…'**
+  String get paymentLinkSharing;
+
+  /// Screen reader label of the control that turns a Gift Card back to its front.
+  ///
+  /// In en, this message translates to:
+  /// **'Show gift card front'**
+  String get paymentLinkShowCardFrontSemantic;
+
+  /// Screen reader label of the button that opens the Gift Cards explainer.
+  ///
+  /// In en, this message translates to:
+  /// **'Show how gift cards work'**
+  String get paymentLinkShowHowCardsWork;
+
+  /// Screen reader label of the button that shows the QR code of a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Show gift card QR code'**
+  String get paymentLinkShowQrSemantic;
+
+  /// Button that skips adding a message to a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip message'**
+  String get paymentLinkSkipMessage;
+
+  /// Placeholder of the message field on the back of a Gift Card being written.
+  ///
+  /// In en, this message translates to:
+  /// **'Start typing…'**
+  String get paymentLinkStartTyping;
+
+  /// Screen reader label of the button that starts writing a message on a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Start writing gift card message'**
+  String get paymentLinkStartWritingMessage;
+
+  /// Label of the second step in the Gift Card creation stepper.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Message'**
+  String get paymentLinkStepAddMessage;
+
+  /// Label of the first step in the Gift Card creation stepper.
+  ///
+  /// In en, this message translates to:
+  /// **'Create'**
+  String get paymentLinkStepCreate;
+
+  /// Label of the third step in the Gift Card creation stepper.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get paymentLinkStepReview;
+
+  /// [security] Error shown when saving a Gift Card failed again; the user must retry before closing the app or the card link is lost.
+  ///
+  /// In en, this message translates to:
+  /// **'The gift card still could not be saved. Try again before closing Vizor.'**
+  String get paymentLinkStillNotSaved;
+
+  /// Hint under a received Gift Card on touch devices explaining how to read its message.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap on the card to reveal the message.'**
+  String get paymentLinkTapToRevealMessage;
+
+  /// Two-line hint under a received Gift Card on mobile explaining how to read its message; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap on the card to reveal\nthe message.'**
+  String get paymentLinkTapToRevealMessageTwoLines;
+
+  /// Screen reader label of the info button next to the total Gift Card amount on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'About the total gift card amount'**
+  String get paymentLinkTotalAmountHelpSemantic;
+
+  /// Label of the row showing the total amount taken from the wallet to create a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Total amount deducted'**
+  String get paymentLinkTotalDeductedLabel;
+
+  /// Button that retries saving a Gift Card after saving failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Try saving again'**
+  String get paymentLinkTrySavingAgain;
+
+  /// Section heading above Gift Cards that nobody has claimed yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Unused'**
+  String get paymentLinkUnusedSectionLabel;
+
+  /// Summary of a group of Gift Cards when every card has been used.
+  ///
+  /// In en, this message translates to:
+  /// **'All used'**
+  String get paymentLinkUsageAllUsed;
+
+  /// Explanation of the Unverified usage status: the funded amount differs from the card amount.
+  ///
+  /// In en, this message translates to:
+  /// **'The observed funding amount does not match the expected card funding.'**
+  String get paymentLinkUsageAmountMismatch;
+
+  /// Explanation under the usage status of a new Gift Card: the link can be shared while the funding payment confirms.
+  ///
+  /// In en, this message translates to:
+  /// **'Your link is ready to share. Usage tracking will begin once the funding transaction is confirmed.'**
+  String get paymentLinkUsageAwaitingConfirmation;
+
+  /// Tooltip and caption showing the usage status of a Gift Card; {label} is the status and {suffix} is checking, failed or none to append the refresh state.
+  ///
+  /// In en, this message translates to:
+  /// **'Card use: {label}{suffix, select, checking{ · Checking…} failed{ · Update failed} other{}}'**
+  String paymentLinkUsageCardUse(String label, String suffix);
+
+  /// Usage status of a Gift Card whose funding transaction is still being confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming'**
+  String get paymentLinkUsageConfirming;
+
+  /// Explanation of the Unverified usage status: the funding transaction was not found in the scanned history.
+  ///
+  /// In en, this message translates to:
+  /// **'The funding transaction could not yet be verified in the tracking history.'**
+  String get paymentLinkUsageFundingNotObserved;
+
+  /// Caption showing when the Gift Card usage was last checked; {time} is a formatted date and time.
+  ///
+  /// In en, this message translates to:
+  /// **'Last checked: {time}'**
+  String paymentLinkUsageLastChecked(String time);
+
+  /// Explanation of the Unverified usage status: the saved funding details are missing.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved funding information is incomplete, so usage could not be verified.'**
+  String get paymentLinkUsageMissingFundingInfo;
+
+  /// Explanation of the Unverified usage status when no specific reason is known.
+  ///
+  /// In en, this message translates to:
+  /// **'There is not enough information yet to verify whether this card has been used.'**
+  String get paymentLinkUsageNotEnoughInfo;
+
+  /// Explanation of the Unverified usage status: the wallet scan has not yet reached the funding transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'The tracking history has not yet reached the funding transaction.'**
+  String get paymentLinkUsageScanIncomplete;
+
+  /// Screen reader description of the inline Gift Card usage status; {state} is checking, failed or none, and {explanation} is the usage explanation when {hasExplanation} is true.
+  ///
+  /// In en, this message translates to:
+  /// **'Card use: {label}{state, select, checking{. Checking} failed{. Update failed} other{}}{hasExplanation, select, true{. {explanation}} other{}}'**
+  String paymentLinkUsageSemantics(
+    String label,
+    String state,
+    String hasExplanation,
+    String explanation,
+  );
+
+  /// Summary of a group of Gift Cards; {unused} is how many cards are unused out of {count}.
+  ///
+  /// In en, this message translates to:
+  /// **'{unused} of {count} unused'**
+  String paymentLinkUsageUnusedOfCount(int unused, int count);
+
+  /// Usage status of a Gift Card whose usage could not be verified.
+  ///
+  /// In en, this message translates to:
+  /// **'Unverified'**
+  String get paymentLinkUsageUnverified;
+
+  /// Short status shown on a Gift Card row when refreshing its usage failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Update failed'**
+  String get paymentLinkUsageUpdateFailed;
+
+  /// Usage status of a Gift Card when the app saw funds leave the card but has not confirmed the claim.
+  ///
+  /// In en, this message translates to:
+  /// **'Use detected'**
+  String get paymentLinkUsageUseDetected;
+
+  /// Summary of a group of Gift Cards; {used} is how many cards were used out of {count}.
+  ///
+  /// In en, this message translates to:
+  /// **'{used} of {count} used'**
+  String paymentLinkUsageUsedOfCount(int used, int count);
+
+  /// Reason shown on the disabled USD toggle when the amount is too small to enter in US dollars.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount is too small for USD input.'**
+  String get paymentLinkUsdAmountTooSmall;
+
+  /// Reason shown on the disabled USD toggle while the ZEC price in US dollars is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetching USD price…'**
+  String get paymentLinkUsdFetchingPrice;
+
+  /// Reason shown on the disabled USD toggle when the ZEC price in US dollars could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'USD price unavailable'**
+  String get paymentLinkUsdPriceUnavailable;
+
+  /// Screen reader label of the control that fills in the maximum Gift Card amount; {amount} is the formatted maximum and {currency} its currency symbol.
+  ///
+  /// In en, this message translates to:
+  /// **'Use max: {amount} {currency}'**
+  String paymentLinkUseMaxCurrencySemantic(String amount, String currency);
+
+  /// Visible text and screen reader label of the control that fills in the maximum Gift Card amount; {amount} is the formatted maximum.
+  ///
+  /// In en, this message translates to:
+  /// **'Use max: {amount}'**
+  String paymentLinkUseMaxSemantic(String amount);
+
+  /// Section heading above Gift Cards that have already been claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Used'**
+  String get paymentLinkUsedSectionLabel;
+
+  /// Action button on a toast or row that opens a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'View card'**
+  String get paymentLinkViewCardAction;
+
+  /// Status label of a received Gift Card telling the user how long until it can be claimed; {minutes}:{seconds} is a countdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait {minutes}:{seconds} to claim'**
+  String paymentLinkWaitToClaim(int minutes, String seconds);
+
+  /// Sample status label (preview only) telling the user how long to wait before a received Gift Card can be claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait 3:45 to claim'**
+  String get paymentLinkWaitToClaimSample;
+
+  /// Status label of a created Gift Card telling the user how long until the link is available; {minutes}:{seconds} is a countdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait {minutes}:{seconds} to get the link'**
+  String paymentLinkWaitToGetLink(int minutes, String seconds);
+
+  /// Secondary line shown while a Gift Card is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'This may take a little while.'**
+  String get paymentLinkWaitingDescription;
+
+  /// Sample status label (preview only) telling the user how long to wait before the Gift Card link is available.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait 1:15 to get the link'**
+  String get paymentLinkWaitingStatusLabel;
+
+  /// Error shown on the account setup screen after redeeming a Gift Card when saving the new wallet could not be finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t finish saving your wallet. Try again.'**
+  String get paymentLinkWalletSaveRecoveryFailed;
+
   /// Toast shown when a payment request link waited too long before it could be opened.
   ///
   /// In en, this message translates to:

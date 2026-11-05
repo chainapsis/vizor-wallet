@@ -25,12 +25,12 @@ import '../widgets/payment_link_card_flip.dart';
 import '../widgets/payment_link_amount_card.dart';
 import '../widgets/payment_link_card_selector_rail.dart';
 import '../widgets/payment_link_confetti.dart';
-import '../widgets/payment_link_copy.dart';
 import '../widgets/payment_link_desktop_views.dart';
 import '../widgets/payment_link_gift_card.dart';
 import '../widgets/payment_link_ledger_signing_overlay.dart';
 import '../widgets/payment_link_privacy_button.dart';
 import 'payment_links_local_page.dart';
+import '../../../core/l10n/l10n.dart';
 
 class PaymentLinksMobileBody extends StatelessWidget {
   const PaymentLinksMobileBody({
@@ -40,6 +40,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
     required this.operationInProgress,
     this.claimPreparationLabel,
     required this.redeemActionLabel,
+    required this.redeemIsRetry,
     required this.redeemFromQrCode,
     required this.keystoneOverlay,
     required this.onCancelKeystone,
@@ -112,12 +113,13 @@ class PaymentLinksMobileBody extends StatelessWidget {
   final bool operationInProgress;
   final String? claimPreparationLabel;
   final String redeemActionLabel;
+  final bool redeemIsRetry;
   final bool redeemFromQrCode;
 
   /// The hardware funding round trip, already built by the screen. A hardware
   /// account funds its Card through the same Keystone handoff the desktop pane
   /// runs; without this overlay the mobile review CTA would sit on
-  /// "Creating…" forever.
+  /// context.l10n.paymentLinkCreating forever.
   final Widget? keystoneOverlay;
   final VoidCallback onCancelKeystone;
   final bool navigationLocked;
@@ -203,9 +205,9 @@ class PaymentLinksMobileBody extends StatelessWidget {
         PaymentLinksLocalPage.home => _buildHome(context),
         PaymentLinksLocalPage.bulk ||
         PaymentLinksLocalPage.batchDetail => _buildHome(context),
-        PaymentLinksLocalPage.amount => _buildAmount(),
-        PaymentLinksLocalPage.message => _buildMessage(),
-        PaymentLinksLocalPage.review => _buildReview(),
+        PaymentLinksLocalPage.amount => _buildAmount(context),
+        PaymentLinksLocalPage.message => _buildMessage(context),
+        PaymentLinksLocalPage.review => _buildReview(context),
         PaymentLinksLocalPage.ready => _buildReady(context),
         PaymentLinksLocalPage.shareQr => _buildHome(context),
         PaymentLinksLocalPage.redeem =>
@@ -220,6 +222,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
                 fromQrCode: redeemFromQrCode,
                 onClearClipboard: operationInProgress ? null : onClearClipboard,
                 pasteLabel: redeemActionLabel,
+                pasteIsRetry: redeemIsRetry,
               ),
         PaymentLinksLocalPage.received => _buildReceived(context),
       };
@@ -240,7 +243,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
       illustration: Image.asset(
         'assets/illustrations/payment_links/payment_link_empty_card.webp',
         fit: BoxFit.contain,
-        semanticLabel: 'Gift box',
+        semanticLabel: context.l10n.paymentLinkArtworkGift,
       ),
       onBack: () => _leavePaymentLinks(context),
       onShowHelp: () => _showHelpSheet(context),
@@ -254,8 +257,8 @@ class PaymentLinksMobileBody extends StatelessWidget {
       headerAction: const PaymentLinkPrivacyButton(),
       sections: cardsSections(),
       emptyLabel: activeCardsTab == PaymentLinkCardsTab.created
-          ? kPaymentLinkNoCreatedCardsText
-          : kPaymentLinkNoReceivedCardsText,
+          ? context.l10n.paymentLinkNoCreatedCardsText
+          : context.l10n.paymentLinkNoReceivedCardsText,
       onBack: () => _leavePaymentLinks(context),
       onCreate: onStartCreate,
       onRedeem: () => onShowPage(PaymentLinksLocalPage.redeem),
@@ -273,7 +276,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
     );
   }
 
-  Widget _buildAmount() {
+  Widget _buildAmount(BuildContext context) {
     final maxAmount = maxAmountText;
     return PaymentLinkAmountMobileView(
       card: PaymentLinkAmountCard(
@@ -317,7 +320,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
     );
   }
 
-  Widget _buildMessage() {
+  Widget _buildMessage(BuildContext context) {
     return PaymentLinkMessageMobileView(
       card: PaymentLinkGiftCard(
         artwork: selectedArtwork,
@@ -334,7 +337,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
         ],
         onMessageChanged: onMessageChanged,
         onDeleteMessage: hasMessage ? onClearMessage : null,
-        semanticLabel: 'Gift card message input',
+        semanticLabel: context.l10n.paymentLinkMessageInputSemantic,
       ),
       onBack: () => onShowPage(PaymentLinksLocalPage.amount),
       onSkip: onSkipMessage,
@@ -342,12 +345,12 @@ class PaymentLinksMobileBody extends StatelessWidget {
           ? () => onShowPage(PaymentLinksLocalPage.review)
           : null,
       errorText: messageExceedsByteLimit
-          ? kPaymentLinkMessageTooLargeText
+          ? context.l10n.paymentLinkMessageTooLarge
           : null,
     );
   }
 
-  Widget _buildReview() {
+  Widget _buildReview(BuildContext context) {
     final quote = fundingQuote!;
     final message = messageController.text.trim();
     final front = PaymentLinkGiftCard(
@@ -359,7 +362,9 @@ class PaymentLinksMobileBody extends StatelessWidget {
       supportingLoading: amountFiatLoading,
       showCaret: false,
       onTap: message.isEmpty ? null : () => onReviewShowsBackChanged(true),
-      semanticLabel: message.isEmpty ? null : 'Reveal gift card message',
+      semanticLabel: message.isEmpty
+          ? null
+          : context.l10n.paymentLinkRevealMessageSemanticLabel,
     );
     final card = message.isEmpty
         ? front
@@ -373,15 +378,18 @@ class PaymentLinksMobileBody extends StatelessWidget {
               showBack: true,
               message: message,
               onTap: () => onReviewShowsBackChanged(false),
-              semanticLabel: 'Show gift card front',
+              semanticLabel: context.l10n.paymentLinkShowCardFrontSemantic,
             ),
           );
     return PaymentLinkReviewMobileView(
       card: card,
       onBack: () => onShowPage(PaymentLinksLocalPage.message),
-      cardAmountText: '${formatZecAmount(quote.recipientAmountZatoshi)} ZEC',
-      cardFeeText: '${formatZecAmount(quote.cardFeeZatoshi)} ZEC',
-      totalAmountText: '${formatZecAmount(quote.totalDeductedZatoshi)} ZEC',
+      cardAmountText:
+          '${formatZecAmount(quote.recipientAmountZatoshi)} ZEC', // l10n-ignore: amount format
+      cardFeeText:
+          '${formatZecAmount(quote.cardFeeZatoshi)} ZEC', // l10n-ignore: amount format
+      totalAmountText:
+          '${formatZecAmount(quote.totalDeductedZatoshi)} ZEC', // l10n-ignore: amount format
       onContinue:
           operationInProgress ||
               (!hasPendingFundingMetadata && !canContinueAmount)
@@ -392,11 +400,11 @@ class PaymentLinksMobileBody extends StatelessWidget {
       onFeeHelp: () {},
       continueLabel: operationInProgress
           ? !hasPendingFundingMetadata
-                ? 'Creating…'
-                : 'Saving…'
+                ? context.l10n.paymentLinkCreating
+                : context.l10n.paymentLinkSaving
           : !hasPendingFundingMetadata
-          ? 'Approve & create'
-          : 'Try saving again',
+          ? context.l10n.paymentLinkApproveAndCreate
+          : context.l10n.paymentLinkTrySavingAgain,
     );
   }
 
@@ -452,7 +460,9 @@ class PaymentLinksMobileBody extends StatelessWidget {
           : null,
       onCardTap: ready && message.isNotEmpty ? onToggleReadyBack : null,
       waitingStatusLabel: linkWaitLabel(progress),
-      copyLabel: readyCopyInProgress ? 'Copying…' : 'Copy link',
+      copyLabel: readyCopyInProgress
+          ? context.l10n.paymentLinkCopying
+          : context.l10n.paymentLinkCopyLink,
     );
   }
 
@@ -465,6 +475,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
         onPaste: operationInProgress ? null : onRunRedeemAction,
         onClearClipboard: operationInProgress ? null : onClearClipboard,
         pasteLabel: redeemActionLabel,
+        pasteIsRetry: redeemIsRetry,
         onScan: operationInProgress ? null : onScanCard,
         fromQrCode: redeemFromQrCode,
       );
@@ -517,12 +528,12 @@ class PaymentLinksMobileBody extends StatelessWidget {
         card: card,
         cardTop: kPaymentLinkMobileReceivedCardTop,
         onHome: onReceivedHome,
-        waitingHeading: 'Your Gift Card\nis almost ready!',
+        waitingHeading: context.l10n.paymentLinkAlmostReadyReceivedHeading,
         waitingDescription:
-            '$kPaymentLinkClaimWaitingDescription\n$kPaymentLinkWaitingDescription',
+            '${context.l10n.paymentLinkClaimWaitingDescription}\n${context.l10n.paymentLinkWaitingDescription}',
         waitingIcon: AppIcons.time,
         waitingStatusLabel: claimWaitLabel(session),
-        homeLabel: 'Go home',
+        homeLabel: context.l10n.paymentLinkGoHome,
       );
     }
     return PaymentLinkReceivedMobileView(
@@ -533,10 +544,10 @@ class PaymentLinksMobileBody extends StatelessWidget {
       onRevealMessage: hasCardMessage ? onToggleReceivedBack : null,
       onClaim: operationInProgress ? null : onClaimReceivedLink,
       claimLabel: (operationInProgress
-          ? 'Claiming…'
+          ? context.l10n.paymentLinkClaiming
           : receivedClaimSession == null
-          ? 'Try again'
-          : 'Claim the gift'),
+          ? context.l10n.commonTryAgain
+          : context.l10n.paymentLinkClaimTheGift),
     );
   }
 }

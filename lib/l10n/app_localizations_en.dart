@@ -6786,6 +6786,1383 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get paymentLinkAboveMaximumZec => 'Above your maximum ZEC';
+
+  @override
+  String get paymentLinkAccountChangedRedeemAgain =>
+      'Active account changed. Redeem this gift card again to receive it in the new account.';
+
+  @override
+  String get paymentLinkAccountChangedReviewAmount =>
+      'Active account changed. Review the gift card amount and fees again.';
+
+  @override
+  String get paymentLinkActiveAccountChangedReviewAmount =>
+      'The active account changed. Review the amount and try again.';
+
+  @override
+  String get paymentLinkAlmostReadyHeading => 'Gift Card is\nalmost ready!';
+
+  @override
+  String get paymentLinkAlmostReadyReceivedHeading =>
+      'Your Gift Card\nis almost ready!';
+
+  @override
+  String paymentLinkAmountCurrencyDisabledSemantic(
+    String currency,
+    String reason,
+  ) {
+    return 'Enter amount in $currency. $reason';
+  }
+
+  @override
+  String paymentLinkAmountCurrencySemantic(String currency) {
+    return 'Enter amount in $currency';
+  }
+
+  @override
+  String get paymentLinkAmountEnterAmount => 'Enter amount';
+
+  @override
+  String get paymentLinkAmountEnterDollars => 'Enter dollars';
+
+  @override
+  String get paymentLinkAmountInputSemantic => 'Gift card amount input';
+
+  @override
+  String get paymentLinkAmountStepSubtitleDesktop =>
+      'Enter amount & select the design.';
+
+  @override
+  String get paymentLinkAmountStepSubtitleMobile =>
+      'Enter amount & pick a design.';
+
+  @override
+  String get paymentLinkApproveAndCreate => 'Approve & create';
+
+  @override
+  String paymentLinkArchivedCount(int count) {
+    return 'Archived ($count)';
+  }
+
+  @override
+  String get paymentLinkArchivedHeading => 'Archived';
+
+  @override
+  String get paymentLinkArtworkChestCave => 'Chest in crystal cave';
+
+  @override
+  String get paymentLinkArtworkChestLava => 'Chest in lava cave';
+
+  @override
+  String get paymentLinkArtworkCoin => 'Zcash coin';
+
+  @override
+  String get paymentLinkArtworkCrystal => 'Crystal';
+
+  @override
+  String get paymentLinkArtworkDiamond => 'Diamond';
+
+  @override
+  String get paymentLinkArtworkDragon => 'Dragon';
+
+  @override
+  String get paymentLinkArtworkGandalf => 'Wizard';
+
+  @override
+  String get paymentLinkArtworkGift => 'Gift box';
+
+  @override
+  String get paymentLinkArtworkKnight => 'Knight';
+
+  @override
+  String get paymentLinkArtworkKnightMagic => 'Magic knight';
+
+  @override
+  String get paymentLinkArtworkRogueCat => 'Rogue cat';
+
+  @override
+  String get paymentLinkArtworkRuby => 'Ruby';
+
+  @override
+  String get paymentLinkAvailabilityCheckingDescription =>
+      'Your claim result is not confirmed yet. Check again shortly.';
+
+  @override
+  String get paymentLinkAvailabilityCheckingResult => 'Checking result';
+
+  @override
+  String get paymentLinkAvailabilityClaim => 'Claim';
+
+  @override
+  String get paymentLinkAvailabilityClaimFailed => 'Claim failed';
+
+  @override
+  String get paymentLinkAvailabilityFailedDescription =>
+      'Your claim did not complete. Check the card before trying again.';
+
+  @override
+  String get paymentLinkAvailabilityNoBalance => 'No balance';
+
+  @override
+  String get paymentLinkAvailabilityNoBalanceDescription =>
+      'There is currently no balance available to claim.';
+
+  @override
+  String get paymentLinkAvailabilityReadyDescription =>
+      'This gift card is ready to claim.';
+
+  @override
+  String get paymentLinkAvailabilityRejectedDescription =>
+      'The network did not accept this claim. Check its status before trying again.';
+
+  @override
+  String get paymentLinkBackToGiftCard => 'Back to gift card';
+
+  @override
+  String get paymentLinkBatchAddCard => 'Add a card';
+
+  @override
+  String get paymentLinkBatchCardsInGroup => 'Cards in this group';
+
+  @override
+  String get paymentLinkBatchCheckFailed => 'Couldn’t check every card';
+
+  @override
+  String get paymentLinkBatchCheckingUse => 'Checking card use…';
+
+  @override
+  String get paymentLinkBatchChooseLocation => 'Choose location';
+
+  @override
+  String paymentLinkBatchCopyLinkSemantic(String number) {
+    return 'Copy link for card $number';
+  }
+
+  @override
+  String paymentLinkBatchCountSemantic(int max) {
+    return 'Number of cards, 2 to $max';
+  }
+
+  @override
+  String paymentLinkBatchCreated(String date) {
+    return 'Created $date';
+  }
+
+  @override
+  String get paymentLinkBatchDetailsNotSaved =>
+      'Card details could not be saved. Try again.';
+
+  @override
+  String get paymentLinkBatchFeeChanged =>
+      'The network fee changed. Review the new total.';
+
+  @override
+  String get paymentLinkBatchFundedNotSaved =>
+      'Funding was sent, but the cards could not be saved. Try again before closing Vizor.';
+
+  @override
+  String paymentLinkBatchGiftCardsCount(int count) {
+    return '$count gift cards';
+  }
+
+  @override
+  String get paymentLinkBatchLinksShareableLater =>
+      'Links become shareable once the payment confirms.';
+
+  @override
+  String get paymentLinkBatchMessageOptional => 'Message (optional)';
+
+  @override
+  String get paymentLinkBatchMessageOptionalEveryCard =>
+      'Message (optional), appears on every card';
+
+  @override
+  String get paymentLinkBatchNoneFunded =>
+      'No cards were funded. Review the amount and try again.';
+
+  @override
+  String get paymentLinkBatchNotAllReady =>
+      'Not every card in this group is ready. Don’t share any links until they all are.';
+
+  @override
+  String get paymentLinkBatchOverBalance =>
+      'Reduce the amount or number of cards to fit your available balance.';
+
+  @override
+  String get paymentLinkBatchPaymentUnconfirmed =>
+      'Vizor hasn’t confirmed that the payment was sent. Keep these cards and check again before sharing any links.';
+
+  @override
+  String get paymentLinkBatchPrepareFailed =>
+      'These cards could not be prepared.';
+
+  @override
+  String get paymentLinkBatchPreviousAccount =>
+      'Cards were created under the previous account. Switch back to view them.';
+
+  @override
+  String get paymentLinkBatchQuoteNotReady =>
+      'Available balance is still loading. Try again after wallet sync.';
+
+  @override
+  String get paymentLinkBatchRemoveCard => 'Remove a card';
+
+  @override
+  String paymentLinkBatchRowSemantic(
+    String number,
+    String status,
+    String failed,
+  ) {
+    String _temp0 = intl.Intl.selectLogic(failed, {
+      'true': ', update failed',
+      'other': '',
+    });
+    return 'Card $number, $status$_temp0';
+  }
+
+  @override
+  String paymentLinkBatchRowTitle(String number) {
+    return 'Card $number';
+  }
+
+  @override
+  String get paymentLinkBatchRowUpdateFailed => 'Couldn’t update';
+
+  @override
+  String get paymentLinkBatchSaveAllCsv => 'Save all links as CSV';
+
+  @override
+  String get paymentLinkBatchSaveLinksTitle => 'Save gift card links';
+
+  @override
+  String get paymentLinkBatchSaveLinksWarning =>
+      'Anyone with this file can claim these cards. Save it somewhere private.';
+
+  @override
+  String paymentLinkBatchShowQrSemantic(String number) {
+    return 'Show QR code for card $number';
+  }
+
+  @override
+  String get paymentLinkBatchUncertain =>
+      'Vizor couldn’t confirm the payment was sent. Check this group in Gift Cards before creating another.';
+
+  @override
+  String get paymentLinkBatchUseNotChecked => 'Card use not checked yet';
+
+  @override
+  String get paymentLinkBulkAmountPerCard => 'Amount per card';
+
+  @override
+  String get paymentLinkBulkBalanceLoading => 'Balance loading';
+
+  @override
+  String get paymentLinkBulkCardDesign => 'Card design';
+
+  @override
+  String paymentLinkBulkCountSemantic(int count) {
+    return '$count cards';
+  }
+
+  @override
+  String paymentLinkBulkCreateCards(int count) {
+    return 'Create $count cards';
+  }
+
+  @override
+  String get paymentLinkBulkCreateMultiple => 'Create multiple cards';
+
+  @override
+  String get paymentLinkBulkDifferentDesign => 'Different design on each card';
+
+  @override
+  String get paymentLinkBulkEditCards => 'Edit cards';
+
+  @override
+  String paymentLinkBulkLedgerLimit(int max) {
+    return 'Create up to $max cards at once with Ledger.';
+  }
+
+  @override
+  String paymentLinkBulkReviewCards(int count) {
+    return 'Review $count cards';
+  }
+
+  @override
+  String paymentLinkBulkZecAvailable(String amount) {
+    return '$amount ZEC available';
+  }
+
+  @override
+  String get paymentLinkCardAmountLabel => 'Card amount';
+
+  @override
+  String get paymentLinkCardBalanceCheckFailed =>
+      'Card balance could not be checked. Try again.';
+
+  @override
+  String paymentLinkCardDesignSemantic(String design) {
+    return '$design card design';
+  }
+
+  @override
+  String get paymentLinkCardFeeHelpText =>
+      'Includes the creation fee and the fee reserved for claiming.';
+
+  @override
+  String get paymentLinkCardFeeLabel => 'Card fee (deposit + redeem)';
+
+  @override
+  String get paymentLinkCardRemoveFailed =>
+      'Card could not be removed. Try again.';
+
+  @override
+  String get paymentLinkCardStatusCheckFailed =>
+      'Card status could not be checked. Try again.';
+
+  @override
+  String get paymentLinkCardUnreadable => 'This card could not be read.';
+
+  @override
+  String get paymentLinkCardUpdateFailed =>
+      'Card could not be updated. Try again.';
+
+  @override
+  String get paymentLinkCardsLabel => 'Cards';
+
+  @override
+  String get paymentLinkCardsLoadFailed => 'Gift cards could not be loaded.';
+
+  @override
+  String paymentLinkCheckProgress(String phase, String percent) {
+    String _temp0 = intl.Intl.selectLogic(phase, {
+      'finding': 'Finding the gift',
+      'other': 'Checking the gift',
+    });
+    return '$_temp0… $percent%';
+  }
+
+  @override
+  String get paymentLinkCheckStatus => 'Check status';
+
+  @override
+  String paymentLinkCheckedHoursAgo(int hours) {
+    return 'Checked ${hours}h ago';
+  }
+
+  @override
+  String get paymentLinkCheckedJustNow => 'Checked just now';
+
+  @override
+  String paymentLinkCheckedMinutesAgo(int minutes) {
+    return 'Checked ${minutes}m ago';
+  }
+
+  @override
+  String paymentLinkCheckedOnDate(String date) {
+    return 'Checked $date';
+  }
+
+  @override
+  String get paymentLinkCheckingGiftEllipsis => 'Checking the gift…';
+
+  @override
+  String get paymentLinkCheckingGiftFull => 'Checking the gift… 100%';
+
+  @override
+  String get paymentLinkCheckingLabel => 'Checking…';
+
+  @override
+  String get paymentLinkChooseReceivingAccount => 'Choose receiving account';
+
+  @override
+  String get paymentLinkClaimAccountPrepareFailed =>
+      'Couldn’t prepare this gift. Try again or choose another account.';
+
+  @override
+  String get paymentLinkClaimActionCheckAgain => 'Check again';
+
+  @override
+  String get paymentLinkClaimActionCreateAccount =>
+      'Create an account to claim';
+
+  @override
+  String get paymentLinkClaimActionCreateWallet => 'Create a wallet to claim';
+
+  @override
+  String get paymentLinkClaimActionExistingWallet =>
+      'Claim with an existing wallet';
+
+  @override
+  String get paymentLinkClaimCheckingDescription =>
+      'Checking whether this gift card\nhas already been claimed.';
+
+  @override
+  String get paymentLinkClaimCheckingHeading => 'Checking your\ngift card';
+
+  @override
+  String get paymentLinkClaimCloseFailed =>
+      'Couldn’t close the card. Try again.';
+
+  @override
+  String get paymentLinkClaimFailedMaybePending =>
+      'Gift card claim failed. It may still be waiting for confirmation or may already be spent.';
+
+  @override
+  String get paymentLinkClaimFailureToast => 'Couldn’t redeem your gift card.';
+
+  @override
+  String get paymentLinkClaimGiftButton => 'Claim gift';
+
+  @override
+  String get paymentLinkClaimQueueFull =>
+      'Too many gift cards are waiting. Finish another card first.';
+
+  @override
+  String get paymentLinkClaimResultNotConfirmed =>
+      'Claim result is not confirmed. Check its status.';
+
+  @override
+  String get paymentLinkClaimSaveFailed => 'Couldn’t save the card. Try again.';
+
+  @override
+  String get paymentLinkClaimStatusAlreadyClaimed =>
+      'This gift has already been claimed.';
+
+  @override
+  String get paymentLinkClaimStatusAskSender => 'Ask the sender for a new one.';
+
+  @override
+  String get paymentLinkClaimStatusCheckConnection =>
+      'Check your connection and try again.';
+
+  @override
+  String get paymentLinkClaimStatusCreateAccountNow =>
+      'You can create your account now.';
+
+  @override
+  String get paymentLinkClaimStatusCreateAccountOrUseOne =>
+      'Create an account or use one you have to claim it.';
+
+  @override
+  String get paymentLinkClaimStatusCreateWalletNow =>
+      'You can create your wallet now.';
+
+  @override
+  String get paymentLinkClaimStatusCreateWalletOrUseOne =>
+      'Create a wallet or use one you have to claim it.';
+
+  @override
+  String get paymentLinkClaimStatusGiftFound => 'Gift found';
+
+  @override
+  String get paymentLinkClaimStatusMayNotBeFunded =>
+      'The sender may not have funded it yet.';
+
+  @override
+  String get paymentLinkClaimStatusNetworkUnreachable =>
+      'We couldn’t reach the network.';
+
+  @override
+  String get paymentLinkClaimStatusOtherNetwork =>
+      'This gift card is for a different network.';
+
+  @override
+  String paymentLinkClaimStatusWaitingDeposit(int count, int target) {
+    return 'Waiting for the deposit to confirm · $count of $target';
+  }
+
+  @override
+  String get paymentLinkClaimSubmitted => 'Gift claim submitted';
+
+  @override
+  String get paymentLinkClaimTheGift => 'Claim the gift';
+
+  @override
+  String get paymentLinkClaimTheGiftCard => 'Claim the gift card';
+
+  @override
+  String get paymentLinkClaimWaitingDescription =>
+      'Your gift will be ready to claim shortly.';
+
+  @override
+  String get paymentLinkClaimedElsewhereDescription =>
+      'This card was claimed in another wallet first. Your balance hasn\'t changed.';
+
+  @override
+  String get paymentLinkClaimedElsewhereLabel => 'Claimed elsewhere';
+
+  @override
+  String get paymentLinkClaiming => 'Claiming…';
+
+  @override
+  String get paymentLinkClearClipboardLabel => 'Clear clipboard';
+
+  @override
+  String get paymentLinkClickToRevealMessage =>
+      'Click on the card to reveal the message.';
+
+  @override
+  String get paymentLinkClickToRevealShort => 'Click on the card to reveal';
+
+  @override
+  String get paymentLinkConfirmGiftCardTitle => 'Confirm Gift Card';
+
+  @override
+  String get paymentLinkCopyLink => 'Copy link';
+
+  @override
+  String get paymentLinkCopyLinkAgainHint =>
+      'You can copy this link again from Settings → My gift cards.';
+
+  @override
+  String get paymentLinkCopyLinkSemanticLabel => 'Copy gift card link';
+
+  @override
+  String get paymentLinkCopying => 'Copying…';
+
+  @override
+  String get paymentLinkCostAdditionalZecNeeded => 'Additional ZEC needed';
+
+  @override
+  String paymentLinkCostAtLeast(String amount) {
+    return 'At least $amount';
+  }
+
+  @override
+  String get paymentLinkCostCalculatingFee => 'Calculating network fee';
+
+  @override
+  String get paymentLinkCostCalculatingTotal => 'Calculating total';
+
+  @override
+  String paymentLinkCostCardsMultiplier(int count) {
+    return '× $count cards';
+  }
+
+  @override
+  String get paymentLinkCostMessageOnEveryCard => 'Message on every card';
+
+  @override
+  String get paymentLinkCostNetworkFee => 'Network fee';
+
+  @override
+  String get paymentLinkCostPerCard => 'Per card';
+
+  @override
+  String paymentLinkCostPerCardBreakdown(String amount, String fee) {
+    return '$amount ZEC + $fee ZEC redeem fee';
+  }
+
+  @override
+  String get paymentLinkCostWaitingForSync => 'Waiting for sync';
+
+  @override
+  String get paymentLinkCostYouWillSpend => 'You will spend';
+
+  @override
+  String get paymentLinkCreateCardButton => 'Create card';
+
+  @override
+  String get paymentLinkCreateCardLabel => 'Create a card';
+
+  @override
+  String get paymentLinkCreateGiftCardTitle => 'Create Gift Card';
+
+  @override
+  String get paymentLinkCreateNewCard => 'Create new card';
+
+  @override
+  String get paymentLinkCreatedTabLabel => 'Created';
+
+  @override
+  String get paymentLinkCreating => 'Creating…';
+
+  @override
+  String get paymentLinkCreationFailed =>
+      'Gift card creation failed. Try again.';
+
+  @override
+  String get paymentLinkCustomiseAccountStep => 'Customise Account';
+
+  @override
+  String get paymentLinkCustomiseWalletStep => 'Customise wallet';
+
+  @override
+  String get paymentLinkDeleteMessageSemantic => 'Delete gift card message';
+
+  @override
+  String get paymentLinkEmptyTitle => 'No Gift Cards yet';
+
+  @override
+  String get paymentLinkEnterValidAmount => 'Enter a valid gift card amount.';
+
+  @override
+  String get paymentLinkEntryExplainAccountDesktop =>
+      'Redeem the card to create a new account with the card’s balance in your wallet.';
+
+  @override
+  String get paymentLinkEntryExplainWalletDesktop =>
+      'Once the card is redeemed, we will create a new Vizor wallet with the card’s balance.';
+
+  @override
+  String get paymentLinkEntryExplanationAccount =>
+      'Create a new account to receive the card’s balance.';
+
+  @override
+  String get paymentLinkEntryExplanationWallet =>
+      'Create a new Vizor wallet to receive the card’s balance.';
+
+  @override
+  String get paymentLinkEntrySubtitle =>
+      'Copy the card link you’ve\nreceived, and paste it below.';
+
+  @override
+  String get paymentLinkEntryTitleAccount =>
+      'Create account by redeeming Vizor Gift Card';
+
+  @override
+  String get paymentLinkEntryTitleWallet =>
+      'Create wallet by redeeming Vizor Gift Card';
+
+  @override
+  String get paymentLinkExportNotReady =>
+      'All cards must be ready before exporting links.';
+
+  @override
+  String get paymentLinkExportStatusChanged =>
+      'The account or card status changed. Check the cards and try again.';
+
+  @override
+  String get paymentLinkFeeEstimateFailed =>
+      'Card fee could not be estimated. Try again.';
+
+  @override
+  String get paymentLinkFeeEstimatedAfterSync =>
+      'Card fee will be estimated when wallet sync completes.';
+
+  @override
+  String get paymentLinkFeeHelpSemantic => 'About the gift card fee';
+
+  @override
+  String get paymentLinkFeeHelpTextLong =>
+      'Includes the fee to fund the gift card and the fee reserved for the recipient to claim it.';
+
+  @override
+  String get paymentLinkFeeUpdateFailed =>
+      'Card fee could not be updated. Return to the amount step and try again.';
+
+  @override
+  String get paymentLinkFiatLoadingSemantic => 'Fiat value loading';
+
+  @override
+  String get paymentLinkFlipCardSemanticLabel => 'Flip gift card';
+
+  @override
+  String get paymentLinkFundingExpired =>
+      'Gift card funding expired. Create it again.';
+
+  @override
+  String get paymentLinkFundingIncompleteStatus => 'Funding incomplete';
+
+  @override
+  String get paymentLinkFundingNeedsAttention =>
+      'Gift card funding needs attention';
+
+  @override
+  String get paymentLinkFundingSentCardNotSaved =>
+      'Funding was sent, but the gift card could not be saved. Try again before closing Vizor.';
+
+  @override
+  String get paymentLinkFundingStillVerifying =>
+      'Funding is still being verified. Vizor will keep checking it.';
+
+  @override
+  String get paymentLinkFundingStorageNeedsSync =>
+      'Funding was sent, but local transaction storage needs to sync.';
+
+  @override
+  String get paymentLinkGiftAmountLabel => 'Gift amount';
+
+  @override
+  String paymentLinkGiftCardDesignSemantic(String design) {
+    return 'Gift card, $design design';
+  }
+
+  @override
+  String get paymentLinkGiftCardMessageSemantic => 'Gift card message';
+
+  @override
+  String get paymentLinkGiftCardsLowerBreadcrumb => 'Gift cards';
+
+  @override
+  String get paymentLinkGiftCardsTitle => 'Gift Cards';
+
+  @override
+  String get paymentLinkGiftMessageLabel => 'Gift message';
+
+  @override
+  String get paymentLinkGoHome => 'Go home';
+
+  @override
+  String get paymentLinkGroupConfirmingPayment => 'Confirming payment';
+
+  @override
+  String get paymentLinkGroupEntryForGroup => 'For a group';
+
+  @override
+  String get paymentLinkGroupEntryGroupSemantic => 'Create cards for a group';
+
+  @override
+  String paymentLinkGroupEntryLedgerSemantic(int max) {
+    return 'Create multiple cards, up to $max with Ledger';
+  }
+
+  @override
+  String get paymentLinkGroupEntryMultipleCards => 'Multiple cards';
+
+  @override
+  String paymentLinkGroupEntryUpToWithLedger(int max) {
+    return 'Up to $max with Ledger';
+  }
+
+  @override
+  String get paymentLinkGroupNotFunded =>
+      'This group wasn’t funded. Create it again.';
+
+  @override
+  String get paymentLinkGroupOtherAccount =>
+      'This group belongs to another account. Switch accounts to view it.';
+
+  @override
+  String get paymentLinkGroupPaymentPending => 'Payment status pending';
+
+  @override
+  String get paymentLinkGroupReadyToShare => 'Ready to share';
+
+  @override
+  String get paymentLinkGroupSomeNotReady => 'Some cards aren’t ready';
+
+  @override
+  String get paymentLinkGroupsHeading => 'Groups';
+
+  @override
+  String get paymentLinkHideCard => 'Hide card';
+
+  @override
+  String get paymentLinkHowDesktopStepCreate =>
+      'Enter amount to gift, pick a design, add a message (optional) and create your Card with a single click.';
+
+  @override
+  String get paymentLinkHowDesktopStepRedeem =>
+      'Recipient can redeem the Card in their Vizor wallet using the Link. The sender covers the deposit and redeem fees, so the recipient receives the full Card amount.';
+
+  @override
+  String get paymentLinkHowDesktopStepShare =>
+      'After the card is created, you will get a unique Link containing its claim secret. Send it only to the intended recipient.';
+
+  @override
+  String get paymentLinkHowGiftCardsWork => 'How gift cards work';
+
+  @override
+  String get paymentLinkHowItWorksSubtitle =>
+      'A great way to celebrate anything.';
+
+  @override
+  String get paymentLinkHowItWorksTitle => 'How Gift Cards work';
+
+  @override
+  String get paymentLinkHowStepCreate =>
+      'Enter an amount, pick a design, and add an optional message.';
+
+  @override
+  String get paymentLinkHowStepRedeem =>
+      'The recipient opens the link in Vizor and claims the full card amount. The sender covers both fees.';
+
+  @override
+  String get paymentLinkHowStepShare =>
+      'Once funding reaches the network, copy the unique link and send it only to the intended recipient.';
+
+  @override
+  String get paymentLinkHowTheCardWorks => 'How the gift card works';
+
+  @override
+  String get paymentLinkIntakeCouldNotOpen =>
+      'Payment link could not be opened.';
+
+  @override
+  String get paymentLinkIntakeQueueFull =>
+      'Too many payment links are waiting to open.';
+
+  @override
+  String get paymentLinkInterruptedCheckMessage =>
+      'Card check was interrupted. Try again.';
+
+  @override
+  String get paymentLinkInvalidSubtitle => 'Copy the link & try again';
+
+  @override
+  String get paymentLinkInvalidTitle => 'The link doesn’t look legit.';
+
+  @override
+  String get paymentLinkKeystoneBroadcastFailed =>
+      'Gift card funding could not be broadcast.';
+
+  @override
+  String get paymentLinkKeystoneBroadcastingTitle =>
+      'Broadcasting gift card funding';
+
+  @override
+  String get paymentLinkKeystoneCreatingGiftCard => 'Creating your gift card…';
+
+  @override
+  String get paymentLinkKeystoneFundingUncertain =>
+      'The funding status is uncertain. Check activity before trying again.';
+
+  @override
+  String get paymentLinkKeystoneKeepOpen =>
+      'Keep Vizor open while the transaction is sent.';
+
+  @override
+  String get paymentLinkKeystoneQrMismatch =>
+      'This QR code does not match the current Keystone request.';
+
+  @override
+  String get paymentLinkKeystoneReadingSignature => 'Reading signature…';
+
+  @override
+  String get paymentLinkKeystoneScanCaption =>
+      'Scan the QR code on your Keystone to finish creating';
+
+  @override
+  String get paymentLinkKeystoneScanToSign => 'Scan to sign';
+
+  @override
+  String get paymentLinkKeystoneSignTitle => 'Sign gift card on Keystone';
+
+  @override
+  String get paymentLinkKeystoneSignatureFailed =>
+      'Keystone signature could not be applied.';
+
+  @override
+  String get paymentLinkKeystoneSigningFailed =>
+      'Gift card signing could not be completed.';
+
+  @override
+  String get paymentLinkKeystoneSubmittingTransaction =>
+      'Submitting transaction';
+
+  @override
+  String get paymentLinkLeaveSaveMany =>
+      'Save these gift cards before leaving this screen.';
+
+  @override
+  String get paymentLinkLeaveSaveOne =>
+      'Save this gift card before leaving this screen.';
+
+  @override
+  String get paymentLinkLedgerFundingExpired =>
+      'This gift card transaction expired or was rejected. Go back to create a new gift card.';
+
+  @override
+  String get paymentLinkLedgerFundingRejected =>
+      'The gift card funding was rejected on your Ledger.';
+
+  @override
+  String get paymentLinkLedgerSavedForRecovery =>
+      'Gift card funding is saved for recovery. Try again to check its status and finish saving.';
+
+  @override
+  String get paymentLinkLedgerSigningIncomplete =>
+      'Ledger signing could not be completed. Check your device and try again.';
+
+  @override
+  String get paymentLinkLinkCopied => 'Gift link copied';
+
+  @override
+  String get paymentLinkLinkCopiedStatusFailed =>
+      'Gift link copied, but its status could not be updated.';
+
+  @override
+  String get paymentLinkLinkCopyFailed => 'Gift link could not be copied.';
+
+  @override
+  String get paymentLinkLinksSaveFailed =>
+      'Gift card links could not be saved. Try again.';
+
+  @override
+  String get paymentLinkLinksSaved => 'Gift card links saved';
+
+  @override
+  String get paymentLinkLoadingGiftCard => 'Loading gift card';
+
+  @override
+  String get paymentLinkLongSyncBody =>
+      'Vizor needs to scan more history than usual before it can verify the balance. This is safe, but it may take a long time.';
+
+  @override
+  String get paymentLinkLongSyncConfirm => 'Check gift card';
+
+  @override
+  String get paymentLinkLongSyncSupporting =>
+      'You can go back without starting the scan.';
+
+  @override
+  String get paymentLinkLongSyncTitle => 'This gift card may take a while';
+
+  @override
+  String get paymentLinkMemoOptionalSubtitle =>
+      'Attach a short encrypted memo (optional).';
+
+  @override
+  String get paymentLinkMessageAttachedTitle => 'Message attached.';
+
+  @override
+  String get paymentLinkMessageInputSemantic => 'Gift card message input';
+
+  @override
+  String get paymentLinkMessageStepTitle => 'Enter a message';
+
+  @override
+  String get paymentLinkMessageTooLarge =>
+      'This message is too large. Try using fewer complex emoji.';
+
+  @override
+  String get paymentLinkMyCards => 'My Cards';
+
+  @override
+  String get paymentLinkNewGiftCardRequired => 'New gift card required';
+
+  @override
+  String get paymentLinkNoActiveAccountAvailable =>
+      'No active account is available.';
+
+  @override
+  String get paymentLinkNoCreatedCardsText => 'No created cards yet.';
+
+  @override
+  String get paymentLinkNoReceivedCardsText => 'No received cards yet.';
+
+  @override
+  String get paymentLinkOpenGroupChecking => 'Checking';
+
+  @override
+  String paymentLinkOpenGroupCreated(String date) {
+    return 'created $date';
+  }
+
+  @override
+  String paymentLinkOpenGroupEach(String amount) {
+    return '$amount each';
+  }
+
+  @override
+  String paymentLinkOpenGroupSemantic(int count) {
+    return 'Open group of $count gift cards';
+  }
+
+  @override
+  String get paymentLinkPasteLabel => 'Paste card link';
+
+  @override
+  String get paymentLinkPendingSectionLabel => 'Pending';
+
+  @override
+  String get paymentLinkPreparing => 'Preparing…';
+
+  @override
+  String get paymentLinkPreparingStatus => 'Preparing…';
+
+  @override
+  String get paymentLinkPrivacyModeOff => 'Turn off privacy mode';
+
+  @override
+  String get paymentLinkPrivacyModeOn => 'Turn on privacy mode';
+
+  @override
+  String get paymentLinkQrCardHeading => 'You’ve\ngot ZEC';
+
+  @override
+  String get paymentLinkQrCardScanToRedeem => 'Scan to redeem';
+
+  @override
+  String get paymentLinkQrCardSemantic => 'Gift card QR code';
+
+  @override
+  String get paymentLinkQrCouldNotBeGenerated =>
+      'QR code could not be generated';
+
+  @override
+  String get paymentLinkQrSaveFailed => 'Gift card QR could not be saved.';
+
+  @override
+  String get paymentLinkQrSaved => 'Gift card QR saved';
+
+  @override
+  String get paymentLinkQrSavedStatusFailed =>
+      'Gift card QR saved, but its status could not be updated.';
+
+  @override
+  String get paymentLinkReadyHeading => 'Ready to share';
+
+  @override
+  String get paymentLinkReceiveFinishFailed =>
+      'Couldn\'t finish receiving this gift. Try again to check its status.';
+
+  @override
+  String get paymentLinkReceiveToLabel => 'Receive to';
+
+  @override
+  String get paymentLinkReceivedCardsLoadFailed =>
+      'Received gift cards could not be loaded.';
+
+  @override
+  String get paymentLinkReceivedGiftHeading => 'You’ve received a gift!';
+
+  @override
+  String get paymentLinkReceivedHeadingDesktop =>
+      'You’ve received\na gift card!';
+
+  @override
+  String get paymentLinkReceivedTabLabel => 'Received';
+
+  @override
+  String get paymentLinkReceivingAccountChangedReopen =>
+      'Receiving account changed. Open the gift card again to continue.';
+
+  @override
+  String get paymentLinkReceivingAccountChangedRetry =>
+      'Receiving account changed. Try again to check this gift.';
+
+  @override
+  String get paymentLinkReceivingStatus => 'Receiving…';
+
+  @override
+  String get paymentLinkRedeemCardLabel => 'Redeem a card';
+
+  @override
+  String get paymentLinkRedeemCardStepTitle => 'Redeem the card';
+
+  @override
+  String get paymentLinkRedeemPasteOrScan =>
+      'Paste a card link or scan its QR code.';
+
+  @override
+  String get paymentLinkRedeemSubtitle =>
+      'Copy the card link you’ve received, and paste it below.';
+
+  @override
+  String get paymentLinkRedeemTheCardTitle => 'Redeem the Card';
+
+  @override
+  String paymentLinkRemovalWarningCheckFailed(String action) {
+    String _temp0 = intl.Intl.selectLogic(action, {
+      'reset': 'resetting Vizor',
+      'other': 'removing this account',
+    });
+    return 'Couldn\'t check for unshared gift card links. Copy any links you still need before $_temp0.';
+  }
+
+  @override
+  String paymentLinkRemovalWarningUnshared(int count, String subject) {
+    String _temp0 = intl.Intl.selectLogic(subject, {
+      'reset': 'Resetting Vizor',
+      'other': 'Removing this account',
+    });
+    String _temp1 = intl.Intl.selectLogic(subject, {
+      'reset': 'Resetting Vizor',
+      'other': 'Removing this account',
+    });
+    String _temp2 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '$count funded gift card links have not been shared. $_temp0 loses them. Copy the links first.',
+      one:
+          '1 funded gift card link has not been shared. $_temp1 loses it. Copy the link first.',
+    );
+    return '$_temp2';
+  }
+
+  @override
+  String get paymentLinkRemoveCardLabel => 'Remove card';
+
+  @override
+  String get paymentLinkRemoveCardSupporting => 'This can\'t be undone.';
+
+  @override
+  String get paymentLinkRemoveCardTitle => 'Remove this card?';
+
+  @override
+  String get paymentLinkRestoreCard => 'Restore card';
+
+  @override
+  String get paymentLinkRevealMessageSemanticLabel =>
+      'Reveal gift card message';
+
+  @override
+  String get paymentLinkReviewAndConfirm => 'Review & confirm';
+
+  @override
+  String get paymentLinkReviewCardTitle => 'Review a Card';
+
+  @override
+  String get paymentLinkSaveQrCode => 'Save QR code';
+
+  @override
+  String get paymentLinkSaving => 'Saving…';
+
+  @override
+  String get paymentLinkScanAgain => 'Scan again';
+
+  @override
+  String get paymentLinkScanAgainOrPaste =>
+      'Scan again or paste another card link.';
+
+  @override
+  String get paymentLinkScanCameraHint =>
+      'Connect a camera to scan the gift card QR code, or go back to paste the card link.';
+
+  @override
+  String get paymentLinkScanQrCode => 'Scan QR code';
+
+  @override
+  String get paymentLinkScanSheetSemantic => 'Scan the gift card QR code';
+
+  @override
+  String get paymentLinkScanSheetTitle => 'Scan gift card QR';
+
+  @override
+  String get paymentLinkScanShowQrToCamera =>
+      'Show the gift card QR code to your camera';
+
+  @override
+  String paymentLinkSenderMessageSemantic(String message) {
+    return 'Sender message: $message; Show gift card front';
+  }
+
+  @override
+  String get paymentLinkShareCard => 'Share card';
+
+  @override
+  String get paymentLinkShareFailed => 'Gift link could not be shared.';
+
+  @override
+  String get paymentLinkShareFailedCopyInstead =>
+      'Couldn\'t share this gift card. Copy the link instead.';
+
+  @override
+  String get paymentLinkShareGiftCardTitle => 'Share Gift Card';
+
+  @override
+  String get paymentLinkShareLinkInstruction =>
+      'Share this link with the intended recipient so they can claim the Card using their Vizor app.';
+
+  @override
+  String get paymentLinkShareLinkInstructionDesktop =>
+      'Share this link with the intended recipient so they\ncan claim the Card using their Vizor app.';
+
+  @override
+  String get paymentLinkShareSheetTitle => 'Share gift card';
+
+  @override
+  String get paymentLinkShareWaitingDescription =>
+      'We’re getting your gift card ready to share.';
+
+  @override
+  String get paymentLinkSharedStatusFailed =>
+      'Gift card shared, but its status could not be updated.';
+
+  @override
+  String get paymentLinkSharing => 'Sharing…';
+
+  @override
+  String get paymentLinkShowCardFrontSemantic => 'Show gift card front';
+
+  @override
+  String get paymentLinkShowHowCardsWork => 'Show how gift cards work';
+
+  @override
+  String get paymentLinkShowQrSemantic => 'Show gift card QR code';
+
+  @override
+  String get paymentLinkSkipMessage => 'Skip message';
+
+  @override
+  String get paymentLinkStartTyping => 'Start typing…';
+
+  @override
+  String get paymentLinkStartWritingMessage =>
+      'Start writing gift card message';
+
+  @override
+  String get paymentLinkStepAddMessage => 'Add Message';
+
+  @override
+  String get paymentLinkStepCreate => 'Create';
+
+  @override
+  String get paymentLinkStepReview => 'Review';
+
+  @override
+  String get paymentLinkStillNotSaved =>
+      'The gift card still could not be saved. Try again before closing Vizor.';
+
+  @override
+  String get paymentLinkTapToRevealMessage =>
+      'Tap on the card to reveal the message.';
+
+  @override
+  String get paymentLinkTapToRevealMessageTwoLines =>
+      'Tap on the card to reveal\nthe message.';
+
+  @override
+  String get paymentLinkTotalAmountHelpSemantic =>
+      'About the total gift card amount';
+
+  @override
+  String get paymentLinkTotalDeductedLabel => 'Total amount deducted';
+
+  @override
+  String get paymentLinkTrySavingAgain => 'Try saving again';
+
+  @override
+  String get paymentLinkUnusedSectionLabel => 'Unused';
+
+  @override
+  String get paymentLinkUsageAllUsed => 'All used';
+
+  @override
+  String get paymentLinkUsageAmountMismatch =>
+      'The observed funding amount does not match the expected card funding.';
+
+  @override
+  String get paymentLinkUsageAwaitingConfirmation =>
+      'Your link is ready to share. Usage tracking will begin once the funding transaction is confirmed.';
+
+  @override
+  String paymentLinkUsageCardUse(String label, String suffix) {
+    String _temp0 = intl.Intl.selectLogic(suffix, {
+      'checking': ' · Checking…',
+      'failed': ' · Update failed',
+      'other': '',
+    });
+    return 'Card use: $label$_temp0';
+  }
+
+  @override
+  String get paymentLinkUsageConfirming => 'Confirming';
+
+  @override
+  String get paymentLinkUsageFundingNotObserved =>
+      'The funding transaction could not yet be verified in the tracking history.';
+
+  @override
+  String paymentLinkUsageLastChecked(String time) {
+    return 'Last checked: $time';
+  }
+
+  @override
+  String get paymentLinkUsageMissingFundingInfo =>
+      'The saved funding information is incomplete, so usage could not be verified.';
+
+  @override
+  String get paymentLinkUsageNotEnoughInfo =>
+      'There is not enough information yet to verify whether this card has been used.';
+
+  @override
+  String get paymentLinkUsageScanIncomplete =>
+      'The tracking history has not yet reached the funding transaction.';
+
+  @override
+  String paymentLinkUsageSemantics(
+    String label,
+    String state,
+    String hasExplanation,
+    String explanation,
+  ) {
+    String _temp0 = intl.Intl.selectLogic(state, {
+      'checking': '. Checking',
+      'failed': '. Update failed',
+      'other': '',
+    });
+    String _temp1 = intl.Intl.selectLogic(hasExplanation, {
+      'true': '. $explanation',
+      'other': '',
+    });
+    return 'Card use: $label$_temp0$_temp1';
+  }
+
+  @override
+  String paymentLinkUsageUnusedOfCount(int unused, int count) {
+    return '$unused of $count unused';
+  }
+
+  @override
+  String get paymentLinkUsageUnverified => 'Unverified';
+
+  @override
+  String get paymentLinkUsageUpdateFailed => 'Update failed';
+
+  @override
+  String get paymentLinkUsageUseDetected => 'Use detected';
+
+  @override
+  String paymentLinkUsageUsedOfCount(int used, int count) {
+    return '$used of $count used';
+  }
+
+  @override
+  String get paymentLinkUsdAmountTooSmall =>
+      'Amount is too small for USD input.';
+
+  @override
+  String get paymentLinkUsdFetchingPrice => 'Fetching USD price…';
+
+  @override
+  String get paymentLinkUsdPriceUnavailable => 'USD price unavailable';
+
+  @override
+  String paymentLinkUseMaxCurrencySemantic(String amount, String currency) {
+    return 'Use max: $amount $currency';
+  }
+
+  @override
+  String paymentLinkUseMaxSemantic(String amount) {
+    return 'Use max: $amount';
+  }
+
+  @override
+  String get paymentLinkUsedSectionLabel => 'Used';
+
+  @override
+  String get paymentLinkViewCardAction => 'View card';
+
+  @override
+  String paymentLinkWaitToClaim(int minutes, String seconds) {
+    return 'Wait $minutes:$seconds to claim';
+  }
+
+  @override
+  String get paymentLinkWaitToClaimSample => 'Wait 3:45 to claim';
+
+  @override
+  String paymentLinkWaitToGetLink(int minutes, String seconds) {
+    return 'Wait $minutes:$seconds to get the link';
+  }
+
+  @override
+  String get paymentLinkWaitingDescription => 'This may take a little while.';
+
+  @override
+  String get paymentLinkWaitingStatusLabel => 'Wait 1:15 to get the link';
+
+  @override
+  String get paymentLinkWalletSaveRecoveryFailed =>
+      'Couldn’t finish saving your wallet. Try again.';
+
+  @override
   String get paymentUriExpired =>
       'That request link timed out. Open it again to pay.';
 

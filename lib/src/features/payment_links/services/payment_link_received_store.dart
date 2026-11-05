@@ -70,7 +70,7 @@ class PaymentLinkInFlightClaimsException implements Exception {
 
   @override
   String toString() =>
-      'Wait for incoming gift cards to finish before deleting this account.';
+      'Wait for incoming gift cards to finish before deleting this account.'; // l10n-ignore: exception text shown by mobile_accounts_screen via toString (out of scope)
 }
 
 class PaymentLinkReceivedRecord {
@@ -246,7 +246,7 @@ class PaymentLinkReceivedStoreFormatException implements Exception {
   final String message;
 
   @override
-  String toString() => 'PaymentLinkReceivedStoreFormatException: $message';
+  String toString() => 'PaymentLinkReceivedStoreFormatException: $message'; // l10n-ignore: exception text
 }
 
 abstract interface class PaymentLinkReceivedStorage {

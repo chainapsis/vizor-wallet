@@ -110,8 +110,8 @@ class GiftCardPreparationInterrupted extends StateError {
   GiftCardPreparationInterrupted(this.reason)
     : super(
         reason == GiftCardPreparationPauseReason.locked
-            ? 'Wallet is locked.'
-            : 'Gift Card preparation is paused.',
+            ? 'Wallet is locked.' // l10n-ignore: StateError text, never displayed
+            : 'Gift Card preparation is paused.', // l10n-ignore: StateError text, never displayed
       );
 
   final GiftCardPreparationPauseReason reason;

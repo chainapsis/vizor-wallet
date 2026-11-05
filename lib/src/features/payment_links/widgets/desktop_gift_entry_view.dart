@@ -7,8 +7,8 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../onboarding/shared/onboarding_chrome.dart';
 import 'desktop_gift_setup_shell.dart';
-import 'payment_link_copy.dart';
 import 'payment_link_wizard_chrome.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// The Gift entry uses the same sidebar and pane as its account setup steps.
 class DesktopGiftEntryView extends StatelessWidget {
@@ -32,7 +32,9 @@ class DesktopGiftEntryView extends StatelessWidget {
     step: DesktopGiftSetupStep.redeem,
     showPasswordStep: !addingAccount,
     backTarget: OnboardingBackTarget.callback(
-      label: addingAccount ? 'Add account' : 'Welcome',
+      label: addingAccount
+          ? context.l10n.commonAddAccount
+          : context.l10n.onboardingWelcome,
       onTap: onBack,
     ),
     child: LayoutBuilder(
@@ -44,7 +46,7 @@ class DesktopGiftEntryView extends StatelessWidget {
             child: Column(
               children: [
                 Text(
-                  kPaymentLinkRedeemTheCardTitle,
+                  context.l10n.paymentLinkRedeemTheCardTitle,
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
                     color: context.colors.text.accent,
@@ -52,7 +54,7 @@ class DesktopGiftEntryView extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  'Copy the card link you’ve\nreceived, and paste it below.',
+                  context.l10n.paymentLinkEntrySubtitle,
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.primary,
@@ -70,7 +72,7 @@ class DesktopGiftEntryView extends StatelessWidget {
                           children: [
                             if (invalid) ...[
                               Text(
-                                kPaymentLinkInvalidTitle,
+                                context.l10n.paymentLinkInvalidTitle,
                                 textAlign: TextAlign.center,
                                 style: AppTypography.bodyMediumStrong.copyWith(
                                   color: context.colors.text.destructive,
@@ -88,7 +90,7 @@ class DesktopGiftEntryView extends StatelessWidget {
                                 size: AppButtonSize.mediumLarge,
                                 expand: true,
                                 leading: const AppIcon(AppIcons.paste),
-                                child: const Text(kPaymentLinkPasteLabel),
+                                child: Text(context.l10n.paymentLinkPasteLabel),
                               ),
                             ),
                             const SizedBox(height: AppSpacing.s),
@@ -101,7 +103,7 @@ class DesktopGiftEntryView extends StatelessWidget {
                                 expand: true,
                                 variant: AppButtonVariant.secondary,
                                 leading: const AppIcon(AppIcons.qr),
-                                child: const Text('Scan QR code'),
+                                child: Text(context.l10n.paymentLinkScanQrCode),
                               ),
                             ),
                           ],
@@ -112,10 +114,12 @@ class DesktopGiftEntryView extends StatelessWidget {
                         width: 233,
                         child: Text(
                           addingAccount
-                              ? 'Redeem the card to create a new account with '
-                                    'the card’s balance in your wallet.'
-                              : 'Once the card is redeemed, we will create a '
-                                    'new Vizor wallet with the card’s balance.',
+                              ? context
+                                    .l10n
+                                    .paymentLinkEntryExplainAccountDesktop
+                              : context
+                                    .l10n
+                                    .paymentLinkEntryExplainWalletDesktop,
                           textAlign: TextAlign.center,
                           style: AppTypography.bodyMedium.copyWith(
                             color: context.colors.text.primary,

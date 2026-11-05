@@ -17,6 +17,7 @@ import '../../onboarding/shared/set_password_screen.dart';
 import '../providers/gift_claim_flow_provider.dart';
 import '../services/gift_claim_setup_coordinator.dart';
 import '../services/payment_link_service.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Final credential step for the already personalised Gift Card account.
 class GiftSecuritySetupScreen extends ConsumerStatefulWidget {
@@ -125,7 +126,7 @@ class _GiftSecuritySetupState extends ConsumerState<GiftSecuritySetupScreen> {
         )
       : SetPasswordScreen.gift(
           backTarget: OnboardingBackTarget.callback(
-            label: 'Customise Account',
+            label: context.l10n.paymentLinkCustomiseAccountStep,
             onTap: _returnToPersona,
           ),
           onContinue: _finish,

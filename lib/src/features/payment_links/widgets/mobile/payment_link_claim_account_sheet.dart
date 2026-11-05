@@ -12,6 +12,7 @@ import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/mobile/mobile_account_avatar.dart';
 import '../../../../core/widgets/mobile/mobile_list_row.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../core/l10n/l10n.dart';
 
 Future<bool> showPaymentLinkClaimAccountSheet({
   required BuildContext context,
@@ -119,17 +120,17 @@ class _PaymentLinkClaimAccountSheetState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Gift amount',
+          context.l10n.paymentLinkGiftAmountLabel,
           style: AppTypography.bodySmall.copyWith(color: colors.text.secondary),
         ),
         const SizedBox(height: AppSpacing.xxs),
         Text(
-          '${formatZecAmount(widget.amountZatoshi)} ZEC',
+          '${formatZecAmount(widget.amountZatoshi)} ZEC', // l10n-ignore: amount format
           style: appSerifDisplayStyle(color: colors.text.accent),
         ),
         const SizedBox(height: AppSpacing.md),
         Text(
-          'Receive to',
+          context.l10n.paymentLinkReceiveToLabel,
           style: AppTypography.bodyMedium.copyWith(
             color: colors.text.secondary,
           ),
@@ -213,7 +214,7 @@ class _PaymentLinkClaimAccountSheetState
           Semantics(
             liveRegion: true,
             child: Text(
-              'Couldn’t prepare this gift. Try again or choose another account.',
+              context.l10n.paymentLinkClaimAccountPrepareFailed,
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.destructive,
               ),
@@ -227,10 +228,10 @@ class _PaymentLinkClaimAccountSheetState
           onPressed: _preparing || accounts.isEmpty ? null : _confirm,
           child: Text(
             _preparing
-                ? 'Preparing…'
+                ? context.l10n.paymentLinkPreparing
                 : _failed
-                ? 'Try again'
-                : 'Claim gift',
+                ? context.l10n.commonTryAgain
+                : context.l10n.paymentLinkClaimGiftButton,
           ),
         ),
       ],
@@ -249,7 +250,7 @@ class _PaymentLinkClaimAccountSheetState
                     children: [
                       Expanded(
                         child: Text(
-                          'Choose receiving account',
+                          context.l10n.paymentLinkChooseReceivingAccount,
                           style: AppTypography.headlineSmall.copyWith(
                             color: colors.text.primary,
                           ),
@@ -261,7 +262,7 @@ class _PaymentLinkClaimAccountSheetState
                         size: AppButtonSize.small,
                         onPressed: _preparing ? null : widget.onClose,
                         child: Semantics(
-                          label: 'Close',
+                          label: context.l10n.commonClose,
                           child: const AppIcon(AppIcons.cross),
                         ),
                       ),
@@ -274,7 +275,7 @@ class _PaymentLinkClaimAccountSheetState
             )
           : MobileModalScaffold(
               key: const ValueKey('payment_link_claim_account_sheet'),
-              title: 'Choose receiving account',
+              title: context.l10n.paymentLinkChooseReceivingAccount,
               constrainBody: true,
               showClose: !_preparing,
               onClose: widget.onClose,

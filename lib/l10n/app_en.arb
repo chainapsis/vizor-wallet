@@ -8706,6 +8706,1736 @@
       }
     }
   },
+  "paymentLinkAboveMaximumZec": "Above your maximum ZEC",
+  "@paymentLinkAboveMaximumZec": {
+    "description": "Error under the Gift Card amount when it is larger than the available balance."
+  },
+  "paymentLinkAccountChangedRedeemAgain": "Active account changed. Redeem this gift card again to receive it in the new account.",
+  "@paymentLinkAccountChangedRedeemAgain": {
+    "description": "Message shown when the active account changed while redeeming a Gift Card."
+  },
+  "paymentLinkAccountChangedReviewAmount": "Active account changed. Review the gift card amount and fees again.",
+  "@paymentLinkAccountChangedReviewAmount": {
+    "description": "Message shown when the active account changed while creating a Gift Card."
+  },
+  "paymentLinkActiveAccountChangedReviewAmount": "The active account changed. Review the amount and try again.",
+  "@paymentLinkActiveAccountChangedReviewAmount": {
+    "description": "Error shown when the active account changed while a Gift Card was being created."
+  },
+  "paymentLinkAlmostReadyHeading": "Gift Card is\nalmost ready!",
+  "@paymentLinkAlmostReadyHeading": {
+    "description": "Two-line heading shown while a Gift Card is still being prepared; the line break is intentional."
+  },
+  "paymentLinkAlmostReadyReceivedHeading": "Your Gift Card\nis almost ready!",
+  "@paymentLinkAlmostReadyReceivedHeading": {
+    "description": "Two-line heading shown while a received Gift Card is being prepared; the line break is intentional."
+  },
+  "paymentLinkAmountCurrencyDisabledSemantic": "Enter amount in {currency}. {reason}",
+  "@paymentLinkAmountCurrencyDisabledSemantic": {
+    "description": "Screen reader label of a disabled currency toggle on the Gift Card amount field; {currency} is USD and {reason} explains why it is unavailable.",
+    "placeholders": {
+      "currency": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkAmountCurrencySemantic": "Enter amount in {currency}",
+  "@paymentLinkAmountCurrencySemantic": {
+    "description": "Screen reader label of a currency toggle on the Gift Card amount field; {currency} is ZEC or USD.",
+    "placeholders": {
+      "currency": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkAmountEnterAmount": "Enter amount",
+  "@paymentLinkAmountEnterAmount": {
+    "description": "Placeholder of the Gift Card amount field."
+  },
+  "paymentLinkAmountEnterDollars": "Enter dollars",
+  "@paymentLinkAmountEnterDollars": {
+    "description": "Placeholder of the Gift Card amount field when the amount is entered in US dollars."
+  },
+  "paymentLinkAmountInputSemantic": "Gift card amount input",
+  "@paymentLinkAmountInputSemantic": {
+    "description": "Screen reader label of the Gift Card amount text field."
+  },
+  "paymentLinkAmountStepSubtitleDesktop": "Enter amount & select the design.",
+  "@paymentLinkAmountStepSubtitleDesktop": {
+    "description": "Subtitle of the first steps of desktop Gift Card creation."
+  },
+  "paymentLinkAmountStepSubtitleMobile": "Enter amount & pick a design.",
+  "@paymentLinkAmountStepSubtitleMobile": {
+    "description": "Subtitle of the mobile amount step of Gift Card creation."
+  },
+  "paymentLinkApproveAndCreate": "Approve & create",
+  "@paymentLinkApproveAndCreate": {
+    "description": "Button that approves the funding and creates the Gift Card."
+  },
+  "paymentLinkArchivedCount": "Archived ({count})",
+  "@paymentLinkArchivedCount": {
+    "description": "Heading of the collapsible list of archived Gift Cards; {count} is how many cards are archived.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkArchivedHeading": "Archived",
+  "@paymentLinkArchivedHeading": {
+    "description": "Heading above the list of archived Gift Cards."
+  },
+  "paymentLinkArtworkChestCave": "Chest in crystal cave",
+  "@paymentLinkArtworkChestCave": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
+  },
+  "paymentLinkArtworkChestLava": "Chest in lava cave",
+  "@paymentLinkArtworkChestLava": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
+  },
+  "paymentLinkArtworkCoin": "Zcash coin",
+  "@paymentLinkArtworkCoin": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
+  },
+  "paymentLinkArtworkCrystal": "Crystal",
+  "@paymentLinkArtworkCrystal": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
+  },
+  "paymentLinkArtworkDiamond": "Diamond",
+  "@paymentLinkArtworkDiamond": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
+  },
+  "paymentLinkArtworkDragon": "Dragon",
+  "@paymentLinkArtworkDragon": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
+  },
+  "paymentLinkArtworkGandalf": "Wizard",
+  "@paymentLinkArtworkGandalf": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
+  },
+  "paymentLinkArtworkGift": "Gift box",
+  "@paymentLinkArtworkGift": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
+  },
+  "paymentLinkArtworkKnight": "Knight",
+  "@paymentLinkArtworkKnight": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
+  },
+  "paymentLinkArtworkKnightMagic": "Magic knight",
+  "@paymentLinkArtworkKnightMagic": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
+  },
+  "paymentLinkArtworkRogueCat": "Rogue cat",
+  "@paymentLinkArtworkRogueCat": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
+  },
+  "paymentLinkArtworkRuby": "Ruby",
+  "@paymentLinkArtworkRuby": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
+  },
+  "paymentLinkAvailabilityCheckingDescription": "Your claim result is not confirmed yet. Check again shortly.",
+  "@paymentLinkAvailabilityCheckingDescription": {
+    "description": "Explanation shown while the result of claiming a received Gift Card is not yet confirmed."
+  },
+  "paymentLinkAvailabilityCheckingResult": "Checking result",
+  "@paymentLinkAvailabilityCheckingResult": {
+    "description": "Status label of a received Gift Card whose claim result is being checked."
+  },
+  "paymentLinkAvailabilityClaim": "Claim",
+  "@paymentLinkAvailabilityClaim": {
+    "description": "Status label of a received Gift Card that is ready to be claimed."
+  },
+  "paymentLinkAvailabilityClaimFailed": "Claim failed",
+  "@paymentLinkAvailabilityClaimFailed": {
+    "description": "Status label of a received Gift Card whose claim did not complete."
+  },
+  "paymentLinkAvailabilityFailedDescription": "Your claim did not complete. Check the card before trying again.",
+  "@paymentLinkAvailabilityFailedDescription": {
+    "description": "Explanation shown when claiming a received Gift Card did not complete."
+  },
+  "paymentLinkAvailabilityNoBalance": "No balance",
+  "@paymentLinkAvailabilityNoBalance": {
+    "description": "Status label of a received Gift Card that currently holds no balance."
+  },
+  "paymentLinkAvailabilityNoBalanceDescription": "There is currently no balance available to claim.",
+  "@paymentLinkAvailabilityNoBalanceDescription": {
+    "description": "Explanation shown for a received Gift Card that holds no balance."
+  },
+  "paymentLinkAvailabilityReadyDescription": "This gift card is ready to claim.",
+  "@paymentLinkAvailabilityReadyDescription": {
+    "description": "Explanation shown for a received Gift Card that is ready to be claimed."
+  },
+  "paymentLinkAvailabilityRejectedDescription": "The network did not accept this claim. Check its status before trying again.",
+  "@paymentLinkAvailabilityRejectedDescription": {
+    "description": "Explanation shown when the network rejected the claim of a received Gift Card."
+  },
+  "paymentLinkBackToGiftCard": "Back to gift card",
+  "@paymentLinkBackToGiftCard": {
+    "description": "Button on the signing screens that returns to the Gift Card being created."
+  },
+  "paymentLinkBatchAddCard": "Add a card",
+  "@paymentLinkBatchAddCard": {
+    "description": "Screen reader label of the button that increases the number of cards in a batch."
+  },
+  "paymentLinkBatchCardsInGroup": "Cards in this group",
+  "@paymentLinkBatchCardsInGroup": {
+    "description": "Heading above the list of cards in a batch."
+  },
+  "paymentLinkBatchCheckFailed": "Couldn’t check every card",
+  "@paymentLinkBatchCheckFailed": {
+    "description": "Status line of a batch when the usage of some cards could not be checked."
+  },
+  "paymentLinkBatchCheckingUse": "Checking card use…",
+  "@paymentLinkBatchCheckingUse": {
+    "description": "Status line of a batch while the usage of its cards is being checked."
+  },
+  "paymentLinkBatchChooseLocation": "Choose location",
+  "@paymentLinkBatchChooseLocation": {
+    "description": "Confirm button of the file-save dialog for Gift Card links."
+  },
+  "paymentLinkBatchCopyLinkSemantic": "Copy link for card {number}",
+  "@paymentLinkBatchCopyLinkSemantic": {
+    "description": "Screen reader label of the button that copies the link of one card in a batch.",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkBatchCountSemantic": "Number of cards, 2 to {max}",
+  "@paymentLinkBatchCountSemantic": {
+    "description": "Screen reader label of the field holding the number of cards in a batch; {max} is the largest allowed count.",
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkBatchCreated": "Created {date}",
+  "@paymentLinkBatchCreated": {
+    "description": "Subtitle of a batch detail page; {date} is the creation date.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkBatchDetailsNotSaved": "Card details could not be saved. Try again.",
+  "@paymentLinkBatchDetailsNotSaved": {
+    "description": "Error shown when the details of the cards in a group could not be saved."
+  },
+  "paymentLinkBatchFeeChanged": "The network fee changed. Review the new total.",
+  "@paymentLinkBatchFeeChanged": {
+    "description": "Error shown when the network fee of a group changed after the quote."
+  },
+  "paymentLinkBatchFundedNotSaved": "Funding was sent, but the cards could not be saved. Try again before closing Vizor.",
+  "@paymentLinkBatchFundedNotSaved": {
+    "description": "[security] Error shown when the funding for a group was sent but the cards could not be saved; the user must retry before closing the app or the links are lost."
+  },
+  "paymentLinkBatchGiftCardsCount": "{count} gift cards",
+  "@paymentLinkBatchGiftCardsCount": {
+    "description": "Title of a batch detail page; {count} is the number of cards in the group.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkBatchLinksShareableLater": "Links become shareable once the payment confirms.",
+  "@paymentLinkBatchLinksShareableLater": {
+    "description": "[security] Note on a batch whose payment is still confirming; its links must not be shared yet."
+  },
+  "paymentLinkBatchMessageOptional": "Message (optional)",
+  "@paymentLinkBatchMessageOptional": {
+    "description": "Hint of the message field in batch Gift Card creation."
+  },
+  "paymentLinkBatchMessageOptionalEveryCard": "Message (optional), appears on every card",
+  "@paymentLinkBatchMessageOptionalEveryCard": {
+    "description": "Hint of the message field in batch Gift Card creation; the message is printed on every card."
+  },
+  "paymentLinkBatchNoneFunded": "No cards were funded. Review the amount and try again.",
+  "@paymentLinkBatchNoneFunded": {
+    "description": "Error shown when none of the cards in a group was funded."
+  },
+  "paymentLinkBatchNotAllReady": "Not every card in this group is ready. Don’t share any links until they all are.",
+  "@paymentLinkBatchNotAllReady": {
+    "description": "[security] Warning on a batch where some cards are not ready; none of the links should be shared until all cards are ready."
+  },
+  "paymentLinkBatchOverBalance": "Reduce the amount or number of cards to fit your available balance.",
+  "@paymentLinkBatchOverBalance": {
+    "description": "Error shown when the group costs more than the available balance."
+  },
+  "paymentLinkBatchPaymentUnconfirmed": "Vizor hasn’t confirmed that the payment was sent. Keep these cards and check again before sharing any links.",
+  "@paymentLinkBatchPaymentUnconfirmed": {
+    "description": "[security] Warning on a batch whose payment could not be confirmed; the links must not be shared until the payment is confirmed."
+  },
+  "paymentLinkBatchPrepareFailed": "These cards could not be prepared.",
+  "@paymentLinkBatchPrepareFailed": {
+    "description": "Error shown when preparing the cards of a group failed."
+  },
+  "paymentLinkBatchPreviousAccount": "Cards were created under the previous account. Switch back to view them.",
+  "@paymentLinkBatchPreviousAccount": {
+    "description": "Message shown when the cards of a group were created under the previous account."
+  },
+  "paymentLinkBatchQuoteNotReady": "Available balance is still loading. Try again after wallet sync.",
+  "@paymentLinkBatchQuoteNotReady": {
+    "description": "Error shown when a group cannot be created yet because the balance is still loading."
+  },
+  "paymentLinkBatchRemoveCard": "Remove a card",
+  "@paymentLinkBatchRemoveCard": {
+    "description": "Screen reader label of the button that decreases the number of cards in a batch."
+  },
+  "paymentLinkBatchRowSemantic": "Card {number}, {status}{failed, select, true{, update failed} other{}}",
+  "@paymentLinkBatchRowSemantic": {
+    "description": "Screen reader label of a card row in a batch; {number} is the zero-padded card number, {status} its usage status, and {failed} is true when refreshing the status failed.",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      },
+      "status": {
+        "type": "String"
+      },
+      "failed": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkBatchRowTitle": "Card {number}",
+  "@paymentLinkBatchRowTitle": {
+    "description": "Title of a card row in a batch; {number} is the zero-padded card number.",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkBatchRowUpdateFailed": "Couldn’t update",
+  "@paymentLinkBatchRowUpdateFailed": {
+    "description": "Note on a card row in a batch when refreshing its usage failed."
+  },
+  "paymentLinkBatchSaveAllCsv": "Save all links as CSV",
+  "@paymentLinkBatchSaveAllCsv": {
+    "description": "Button that saves the links of all Gift Cards in a batch to a CSV file."
+  },
+  "paymentLinkBatchSaveLinksTitle": "Save gift card links",
+  "@paymentLinkBatchSaveLinksTitle": {
+    "description": "Title of the file-save dialog for the links of all Gift Cards in a batch."
+  },
+  "paymentLinkBatchSaveLinksWarning": "Anyone with this file can claim these cards. Save it somewhere private.",
+  "@paymentLinkBatchSaveLinksWarning": {
+    "description": "[security] Warning in the file-save dialog for Gift Card links: the file holds secrets that let anyone who has it claim the funds, so it must be stored privately."
+  },
+  "paymentLinkBatchShowQrSemantic": "Show QR code for card {number}",
+  "@paymentLinkBatchShowQrSemantic": {
+    "description": "Screen reader label of the button that shows the QR code of one card in a batch.",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkBatchUncertain": "Vizor couldn’t confirm the payment was sent. Check this group in Gift Cards before creating another.",
+  "@paymentLinkBatchUncertain": {
+    "description": "[security] Error shown when Vizor could not confirm that the funding payment for a group was sent; the user must check before creating another group."
+  },
+  "paymentLinkBatchUseNotChecked": "Card use not checked yet",
+  "@paymentLinkBatchUseNotChecked": {
+    "description": "Status line of a batch whose cards have not been checked yet."
+  },
+  "paymentLinkBulkAmountPerCard": "Amount per card",
+  "@paymentLinkBulkAmountPerCard": {
+    "description": "Label of the field holding the amount of each card in a batch."
+  },
+  "paymentLinkBulkBalanceLoading": "Balance loading",
+  "@paymentLinkBulkBalanceLoading": {
+    "description": "Screen reader label shown while the wallet balance next to the batch amount loads."
+  },
+  "paymentLinkBulkCardDesign": "Card design",
+  "@paymentLinkBulkCardDesign": {
+    "description": "Label of the section where the user picks the artwork of the cards in a batch."
+  },
+  "paymentLinkBulkCountSemantic": "{count} cards",
+  "@paymentLinkBulkCountSemantic": {
+    "description": "Screen reader label of a preset button that sets the number of cards in a batch.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkBulkCreateCards": "Create {count} cards",
+  "@paymentLinkBulkCreateCards": {
+    "description": "Button that creates a batch of Gift Cards; {count} is the number of cards.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkBulkCreateMultiple": "Create multiple cards",
+  "@paymentLinkBulkCreateMultiple": {
+    "description": "Title of the batch creation page for Ledger accounts."
+  },
+  "paymentLinkBulkDifferentDesign": "Different design on each card",
+  "@paymentLinkBulkDifferentDesign": {
+    "description": "Label of the option that gives every card in a batch a different design."
+  },
+  "paymentLinkBulkEditCards": "Edit cards",
+  "@paymentLinkBulkEditCards": {
+    "description": "Breadcrumb label for editing the cards of a batch before creating them."
+  },
+  "paymentLinkBulkLedgerLimit": "Create up to {max} cards at once with Ledger.",
+  "@paymentLinkBulkLedgerLimit": {
+    "description": "Subtitle of the batch creation page for Ledger accounts; {max} is the maximum number of cards.",
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkBulkReviewCards": "Review {count} cards",
+  "@paymentLinkBulkReviewCards": {
+    "description": "Title and button of the batch review step; {count} is the number of cards.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkBulkZecAvailable": "{amount} ZEC available",
+  "@paymentLinkBulkZecAvailable": {
+    "description": "Screen reader label of the spendable balance next to the batch amount; {amount} is the formatted amount.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkCardAmountLabel": "Card amount",
+  "@paymentLinkCardAmountLabel": {
+    "description": "Label of the Gift Card amount row in the review step."
+  },
+  "paymentLinkCardBalanceCheckFailed": "Card balance could not be checked. Try again.",
+  "@paymentLinkCardBalanceCheckFailed": {
+    "description": "Toast shown when checking the balance of a received Gift Card failed."
+  },
+  "paymentLinkCardDesignSemantic": "{design} card design",
+  "@paymentLinkCardDesignSemantic": {
+    "description": "Screen reader label of a Gift Card artwork choice; {design} is the artwork name, for example Knight or Dragon.",
+    "placeholders": {
+      "design": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkCardFeeHelpText": "Includes the creation fee and the fee reserved for claiming.",
+  "@paymentLinkCardFeeHelpText": {
+    "description": "Help text explaining the Gift Card fee: the creation fee plus the fee reserved for the recipient to claim."
+  },
+  "paymentLinkCardFeeLabel": "Card fee (deposit + redeem)",
+  "@paymentLinkCardFeeLabel": {
+    "description": "Label of the row showing the combined fee to fund a Gift Card and the fee reserved for the recipient to redeem it."
+  },
+  "paymentLinkCardRemoveFailed": "Card could not be removed. Try again.",
+  "@paymentLinkCardRemoveFailed": {
+    "description": "Toast shown when removing a Gift Card from the list failed."
+  },
+  "paymentLinkCardStatusCheckFailed": "Card status could not be checked. Try again.",
+  "@paymentLinkCardStatusCheckFailed": {
+    "description": "Toast shown when checking the status of a Gift Card failed."
+  },
+  "paymentLinkCardUnreadable": "This card could not be read.",
+  "@paymentLinkCardUnreadable": {
+    "description": "Title shown when a scanned Gift Card QR code could not be read."
+  },
+  "paymentLinkCardUpdateFailed": "Card could not be updated. Try again.",
+  "@paymentLinkCardUpdateFailed": {
+    "description": "Toast shown when archiving or restoring a Gift Card failed."
+  },
+  "paymentLinkCardsLabel": "Cards",
+  "@paymentLinkCardsLabel": {
+    "description": "Breadcrumb and tab label for the list of Gift Cards."
+  },
+  "paymentLinkCardsLoadFailed": "Gift cards could not be loaded.",
+  "@paymentLinkCardsLoadFailed": {
+    "description": "Error shown in place of the Gift Cards list when loading it failed."
+  },
+  "paymentLinkCheckProgress": "{phase, select, finding{Finding the gift} other{Checking the gift}}… {percent}%",
+  "@paymentLinkCheckProgress": {
+    "description": "Progress text while the app checks a received Gift Card; {phase} is finding or checking and {percent} is the percentage done.",
+    "placeholders": {
+      "phase": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkCheckStatus": "Check status",
+  "@paymentLinkCheckStatus": {
+    "description": "Button that checks the current status of a Gift Card."
+  },
+  "paymentLinkCheckedHoursAgo": "Checked {hours}h ago",
+  "@paymentLinkCheckedHoursAgo": {
+    "description": "Caption showing that the Gift Card usage was checked {hours} hours ago.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkCheckedJustNow": "Checked just now",
+  "@paymentLinkCheckedJustNow": {
+    "description": "Caption showing that the Gift Card usage was checked less than a minute ago."
+  },
+  "paymentLinkCheckedMinutesAgo": "Checked {minutes}m ago",
+  "@paymentLinkCheckedMinutesAgo": {
+    "description": "Caption showing that the Gift Card usage was checked {minutes} minutes ago.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkCheckedOnDate": "Checked {date}",
+  "@paymentLinkCheckedOnDate": {
+    "description": "Caption showing the date the Gift Card usage was last checked.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkCheckingGiftEllipsis": "Checking the gift…",
+  "@paymentLinkCheckingGiftEllipsis": {
+    "description": "Status text while the app checks a received Gift Card."
+  },
+  "paymentLinkCheckingGiftFull": "Checking the gift… 100%",
+  "@paymentLinkCheckingGiftFull": {
+    "description": "Invisible sizing placeholder that reserves the width of the Gift Card check progress text."
+  },
+  "paymentLinkCheckingLabel": "Checking…",
+  "@paymentLinkCheckingLabel": {
+    "description": "Status label while a Gift Card is being checked."
+  },
+  "paymentLinkChooseReceivingAccount": "Choose receiving account",
+  "@paymentLinkChooseReceivingAccount": {
+    "description": "Title and screen reader label of the sheet where the user picks which account receives a Gift Card."
+  },
+  "paymentLinkClaimAccountPrepareFailed": "Couldn’t prepare this gift. Try again or choose another account.",
+  "@paymentLinkClaimAccountPrepareFailed": {
+    "description": "Error in the receiving-account sheet when preparing the Gift Card claim failed."
+  },
+  "paymentLinkClaimActionCheckAgain": "Check again",
+  "@paymentLinkClaimActionCheckAgain": {
+    "description": "Button that rechecks a received Gift Card that showed no balance."
+  },
+  "paymentLinkClaimActionCreateAccount": "Create an account to claim",
+  "@paymentLinkClaimActionCreateAccount": {
+    "description": "Button that creates a new account to claim a received Gift Card."
+  },
+  "paymentLinkClaimActionCreateWallet": "Create a wallet to claim",
+  "@paymentLinkClaimActionCreateWallet": {
+    "description": "Button that creates a new wallet to claim a received Gift Card."
+  },
+  "paymentLinkClaimActionExistingWallet": "Claim with an existing wallet",
+  "@paymentLinkClaimActionExistingWallet": {
+    "description": "Button that claims a received Gift Card with a wallet the user already has."
+  },
+  "paymentLinkClaimCheckingDescription": "Checking whether this gift card\nhas already been claimed.",
+  "@paymentLinkClaimCheckingDescription": {
+    "description": "Two-line description shown while the app checks whether a received Gift Card was already claimed; the line break is intentional."
+  },
+  "paymentLinkClaimCheckingHeading": "Checking your\ngift card",
+  "@paymentLinkClaimCheckingHeading": {
+    "description": "Two-line heading shown while a received Gift Card is checked; the line break is intentional."
+  },
+  "paymentLinkClaimCloseFailed": "Couldn’t close the card. Try again.",
+  "@paymentLinkClaimCloseFailed": {
+    "description": "Toast shown when closing a received Gift Card before account setup failed."
+  },
+  "paymentLinkClaimFailedMaybePending": "Gift card claim failed. It may still be waiting for confirmation or may already be spent.",
+  "@paymentLinkClaimFailedMaybePending": {
+    "description": "Message shown when claiming a Gift Card failed; the card may still be confirming or may already have been claimed."
+  },
+  "paymentLinkClaimFailureToast": "Couldn’t redeem your gift card.",
+  "@paymentLinkClaimFailureToast": {
+    "description": "Toast shown when redeeming a received Gift Card failed."
+  },
+  "paymentLinkClaimGiftButton": "Claim gift",
+  "@paymentLinkClaimGiftButton": {
+    "description": "Button in the receiving-account sheet that claims the Gift Card into the selected account."
+  },
+  "paymentLinkClaimQueueFull": "Too many gift cards are waiting. Finish another card first.",
+  "@paymentLinkClaimQueueFull": {
+    "description": "Toast shown when a received Gift Card cannot be saved because too many other cards are already waiting to be redeemed."
+  },
+  "paymentLinkClaimResultNotConfirmed": "Claim result is not confirmed. Check its status.",
+  "@paymentLinkClaimResultNotConfirmed": {
+    "description": "Message shown when the result of claiming a Gift Card is not confirmed yet."
+  },
+  "paymentLinkClaimSaveFailed": "Couldn’t save the card. Try again.",
+  "@paymentLinkClaimSaveFailed": {
+    "description": "Toast shown when a received Gift Card could not be saved before account setup."
+  },
+  "paymentLinkClaimStatusAlreadyClaimed": "This gift has already been claimed.",
+  "@paymentLinkClaimStatusAlreadyClaimed": {
+    "description": "Status shown when a received Gift Card was already claimed by someone else."
+  },
+  "paymentLinkClaimStatusAskSender": "Ask the sender for a new one.",
+  "@paymentLinkClaimStatusAskSender": {
+    "description": "Detail under the already-claimed status suggesting the user ask the sender for a new Gift Card."
+  },
+  "paymentLinkClaimStatusCheckConnection": "Check your connection and try again.",
+  "@paymentLinkClaimStatusCheckConnection": {
+    "description": "Detail under the network error while checking a received Gift Card."
+  },
+  "paymentLinkClaimStatusCreateAccountNow": "You can create your account now.",
+  "@paymentLinkClaimStatusCreateAccountNow": {
+    "description": "Detail while the Gift Card deposit confirms, for a user who already has a wallet."
+  },
+  "paymentLinkClaimStatusCreateAccountOrUseOne": "Create an account or use one you have to claim it.",
+  "@paymentLinkClaimStatusCreateAccountOrUseOne": {
+    "description": "Detail under Gift found for a user who already has a wallet."
+  },
+  "paymentLinkClaimStatusCreateWalletNow": "You can create your wallet now.",
+  "@paymentLinkClaimStatusCreateWalletNow": {
+    "description": "Detail while the Gift Card deposit confirms, for a user who has no wallet yet."
+  },
+  "paymentLinkClaimStatusCreateWalletOrUseOne": "Create a wallet or use one you have to claim it.",
+  "@paymentLinkClaimStatusCreateWalletOrUseOne": {
+    "description": "Detail under Gift found for a user who has no wallet yet."
+  },
+  "paymentLinkClaimStatusGiftFound": "Gift found",
+  "@paymentLinkClaimStatusGiftFound": {
+    "description": "Status title shown when a received Gift Card holds a balance that can be claimed."
+  },
+  "paymentLinkClaimStatusMayNotBeFunded": "The sender may not have funded it yet.",
+  "@paymentLinkClaimStatusMayNotBeFunded": {
+    "description": "Detail under the no-balance status of a received Gift Card."
+  },
+  "paymentLinkClaimStatusNetworkUnreachable": "We couldn’t reach the network.",
+  "@paymentLinkClaimStatusNetworkUnreachable": {
+    "description": "Status shown when the app could not reach the network while checking a received Gift Card."
+  },
+  "paymentLinkClaimStatusOtherNetwork": "This gift card is for a different network.",
+  "@paymentLinkClaimStatusOtherNetwork": {
+    "description": "Status shown when a received Gift Card was created for a different Zcash network than the wallet uses."
+  },
+  "paymentLinkClaimStatusWaitingDeposit": "Waiting for the deposit to confirm · {count} of {target}",
+  "@paymentLinkClaimStatusWaitingDeposit": {
+    "description": "Status shown while the Gift Card funding deposit is confirming; {count} is the confirmations seen and {target} the number needed.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "target": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkClaimSubmitted": "Gift claim submitted",
+  "@paymentLinkClaimSubmitted": {
+    "description": "Title shown after a Gift Card claim was submitted to the network."
+  },
+  "paymentLinkClaimTheGift": "Claim the gift",
+  "@paymentLinkClaimTheGift": {
+    "description": "Button that claims a received Gift Card."
+  },
+  "paymentLinkClaimTheGiftCard": "Claim the gift card",
+  "@paymentLinkClaimTheGiftCard": {
+    "description": "Button that claims a received Gift Card."
+  },
+  "paymentLinkClaimWaitingDescription": "Your gift will be ready to claim shortly.",
+  "@paymentLinkClaimWaitingDescription": {
+    "description": "Description while a received Gift Card is not yet ready to claim."
+  },
+  "paymentLinkClaimedElsewhereDescription": "This card was claimed in another wallet first. Your balance hasn't changed.",
+  "@paymentLinkClaimedElsewhereDescription": {
+    "description": "Explanation shown when a received Gift Card was already claimed in another wallet."
+  },
+  "paymentLinkClaimedElsewhereLabel": "Claimed elsewhere",
+  "@paymentLinkClaimedElsewhereLabel": {
+    "description": "Status label of a received Gift Card that someone claimed in another wallet before the user."
+  },
+  "paymentLinkClaiming": "Claiming…",
+  "@paymentLinkClaiming": {
+    "description": "Button label while a Gift Card is being claimed."
+  },
+  "paymentLinkClearClipboardLabel": "Clear clipboard",
+  "@paymentLinkClearClipboardLabel": {
+    "description": "[security] Button that clears the clipboard after a Gift Card link was pasted, so the bearer link does not stay copied."
+  },
+  "paymentLinkClickToRevealMessage": "Click on the card to reveal the message.",
+  "@paymentLinkClickToRevealMessage": {
+    "description": "Hint under a received Gift Card on desktop explaining how to read its message."
+  },
+  "paymentLinkClickToRevealShort": "Click on the card to reveal",
+  "@paymentLinkClickToRevealShort": {
+    "description": "Hint under a received Gift Card on desktop; the message is revealed by clicking the card."
+  },
+  "paymentLinkConfirmGiftCardTitle": "Confirm Gift Card",
+  "@paymentLinkConfirmGiftCardTitle": {
+    "description": "Title of the hardware wallet signing screen for creating a Gift Card."
+  },
+  "paymentLinkCopyLink": "Copy link",
+  "@paymentLinkCopyLink": {
+    "description": "Button that copies the Gift Card link to the clipboard."
+  },
+  "paymentLinkCopyLinkAgainHint": "You can copy this link again from Settings → My gift cards.",
+  "@paymentLinkCopyLinkAgainHint": {
+    "description": "Hint on the Gift Card ready screen that the link can be copied again later from the settings."
+  },
+  "paymentLinkCopyLinkSemanticLabel": "Copy gift card link",
+  "@paymentLinkCopyLinkSemanticLabel": {
+    "description": "Screen reader label of the button that copies a Gift Card link."
+  },
+  "paymentLinkCopying": "Copying…",
+  "@paymentLinkCopying": {
+    "description": "Button label while a Gift Card link is being copied."
+  },
+  "paymentLinkCostAdditionalZecNeeded": "Additional ZEC needed",
+  "@paymentLinkCostAdditionalZecNeeded": {
+    "description": "Label of the cost row showing how much more ZEC the user needs for the batch."
+  },
+  "paymentLinkCostAtLeast": "At least {amount}",
+  "@paymentLinkCostAtLeast": {
+    "description": "Value of the additional-ZEC row when the total is not known yet; {amount} is the formatted minimum shortfall.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkCostCalculatingFee": "Calculating network fee",
+  "@paymentLinkCostCalculatingFee": {
+    "description": "Screen reader label shown while the network fee of a batch is calculated."
+  },
+  "paymentLinkCostCalculatingTotal": "Calculating total",
+  "@paymentLinkCostCalculatingTotal": {
+    "description": "Screen reader label shown while the total cost of a batch is calculated."
+  },
+  "paymentLinkCostCardsMultiplier": "× {count} cards",
+  "@paymentLinkCostCardsMultiplier": {
+    "description": "Label of the cost row showing the number of cards the per-card cost is multiplied by.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkCostMessageOnEveryCard": "Message on every card",
+  "@paymentLinkCostMessageOnEveryCard": {
+    "description": "Label of the row showing the message printed on every card in a batch."
+  },
+  "paymentLinkCostNetworkFee": "Network fee",
+  "@paymentLinkCostNetworkFee": {
+    "description": "Label of the cost row showing the network fee of a batch."
+  },
+  "paymentLinkCostPerCard": "Per card",
+  "@paymentLinkCostPerCard": {
+    "description": "Label of the cost row showing the cost of one card."
+  },
+  "paymentLinkCostPerCardBreakdown": "{amount} ZEC + {fee} ZEC redeem fee",
+  "@paymentLinkCostPerCardBreakdown": {
+    "description": "Caption under the per-card cost; {amount} is the card amount and {fee} the fee reserved for redeeming, or a dash if unknown.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "fee": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkCostWaitingForSync": "Waiting for sync",
+  "@paymentLinkCostWaitingForSync": {
+    "description": "Shown in place of the network fee while the wallet is still syncing."
+  },
+  "paymentLinkCostYouWillSpend": "You will spend",
+  "@paymentLinkCostYouWillSpend": {
+    "description": "Label of the row showing the total the user will spend on a batch."
+  },
+  "paymentLinkCreateCardButton": "Create card",
+  "@paymentLinkCreateCardButton": {
+    "description": "Button that creates the Gift Card."
+  },
+  "paymentLinkCreateCardLabel": "Create a card",
+  "@paymentLinkCreateCardLabel": {
+    "description": "Button or entry label that starts creating a Gift Card to send to someone."
+  },
+  "paymentLinkCreateGiftCardTitle": "Create Gift Card",
+  "@paymentLinkCreateGiftCardTitle": {
+    "description": "Title of the desktop page and wizard where the user creates a single Gift Card."
+  },
+  "paymentLinkCreateNewCard": "Create new card",
+  "@paymentLinkCreateNewCard": {
+    "description": "Button that starts creating a new Gift Card on desktop."
+  },
+  "paymentLinkCreatedTabLabel": "Created",
+  "@paymentLinkCreatedTabLabel": {
+    "description": "Tab label on the Gift Cards page listing cards the user created."
+  },
+  "paymentLinkCreating": "Creating…",
+  "@paymentLinkCreating": {
+    "description": "Button label while a Gift Card is being created."
+  },
+  "paymentLinkCreationFailed": "Gift card creation failed. Try again.",
+  "@paymentLinkCreationFailed": {
+    "description": "Error shown when creating a Gift Card failed."
+  },
+  "paymentLinkCustomiseAccountStep": "Customise Account",
+  "@paymentLinkCustomiseAccountStep": {
+    "description": "Title of the setup step where the user customises the new account created from a Gift Card."
+  },
+  "paymentLinkCustomiseWalletStep": "Customise wallet",
+  "@paymentLinkCustomiseWalletStep": {
+    "description": "Label of the desktop setup step where the user customises the new wallet."
+  },
+  "paymentLinkDeleteMessageSemantic": "Delete gift card message",
+  "@paymentLinkDeleteMessageSemantic": {
+    "description": "Screen reader label of the button that clears the message on a Gift Card."
+  },
+  "paymentLinkEmptyTitle": "No Gift Cards yet",
+  "@paymentLinkEmptyTitle": {
+    "description": "Title of the empty state shown on the Gift Cards page when the user has no cards."
+  },
+  "paymentLinkEnterValidAmount": "Enter a valid gift card amount.",
+  "@paymentLinkEnterValidAmount": {
+    "description": "Error shown when the Gift Card amount is missing or invalid."
+  },
+  "paymentLinkEntryExplainAccountDesktop": "Redeem the card to create a new account with the card’s balance in your wallet.",
+  "@paymentLinkEntryExplainAccountDesktop": {
+    "description": "Explanation on the desktop redeem screen when redeeming creates a new account in the wallet."
+  },
+  "paymentLinkEntryExplainWalletDesktop": "Once the card is redeemed, we will create a new Vizor wallet with the card’s balance.",
+  "@paymentLinkEntryExplainWalletDesktop": {
+    "description": "Explanation on the desktop redeem screen when redeeming creates a new wallet."
+  },
+  "paymentLinkEntryExplanationAccount": "Create a new account to receive the card’s balance.",
+  "@paymentLinkEntryExplanationAccount": {
+    "description": "Explanation on the redeem screen when redeeming creates a new account in an existing wallet."
+  },
+  "paymentLinkEntryExplanationWallet": "Create a new Vizor wallet to receive the card’s balance.",
+  "@paymentLinkEntryExplanationWallet": {
+    "description": "Explanation on the redeem screen when redeeming creates a new wallet."
+  },
+  "paymentLinkEntrySubtitle": "Copy the card link you’ve\nreceived, and paste it below.",
+  "@paymentLinkEntrySubtitle": {
+    "description": "Two-line instruction to paste the received Gift Card link; the line break is intentional."
+  },
+  "paymentLinkEntryTitleAccount": "Create account by redeeming Vizor Gift Card",
+  "@paymentLinkEntryTitleAccount": {
+    "description": "Title of the screen shown before an account exists; redeeming a Gift Card creates a new account."
+  },
+  "paymentLinkEntryTitleWallet": "Create wallet by redeeming Vizor Gift Card",
+  "@paymentLinkEntryTitleWallet": {
+    "description": "Title of the screen shown to a user with no wallet; redeeming a Gift Card creates a new wallet."
+  },
+  "paymentLinkExportNotReady": "All cards must be ready before exporting links.",
+  "@paymentLinkExportNotReady": {
+    "description": "[security] Message shown when exporting links of a group is not possible because not every card is ready."
+  },
+  "paymentLinkExportStatusChanged": "The account or card status changed. Check the cards and try again.",
+  "@paymentLinkExportStatusChanged": {
+    "description": "Message shown when the account or card status changed while exporting links."
+  },
+  "paymentLinkFeeEstimateFailed": "Card fee could not be estimated. Try again.",
+  "@paymentLinkFeeEstimateFailed": {
+    "description": "Error under the Gift Card amount when the fee could not be estimated."
+  },
+  "paymentLinkFeeEstimatedAfterSync": "Card fee will be estimated when wallet sync completes.",
+  "@paymentLinkFeeEstimatedAfterSync": {
+    "description": "Supporting text under the Gift Card amount while the wallet is still syncing and the fee cannot be estimated."
+  },
+  "paymentLinkFeeHelpSemantic": "About the gift card fee",
+  "@paymentLinkFeeHelpSemantic": {
+    "description": "Screen reader label of the info button next to the Gift Card fee on mobile."
+  },
+  "paymentLinkFeeHelpTextLong": "Includes the fee to fund the gift card and the fee reserved for the recipient to claim it.",
+  "@paymentLinkFeeHelpTextLong": {
+    "description": "Help text of the info icon next to the total Gift Card amount; explains the funding fee and the fee reserved for the recipient."
+  },
+  "paymentLinkFeeUpdateFailed": "Card fee could not be updated. Return to the amount step and try again.",
+  "@paymentLinkFeeUpdateFailed": {
+    "description": "Error shown when the fee of a Gift Card could not be updated."
+  },
+  "paymentLinkFiatLoadingSemantic": "Fiat value loading",
+  "@paymentLinkFiatLoadingSemantic": {
+    "description": "Screen reader label shown while the fiat value of the Gift Card amount loads."
+  },
+  "paymentLinkFlipCardSemanticLabel": "Flip gift card",
+  "@paymentLinkFlipCardSemanticLabel": {
+    "description": "Screen reader label of the control that flips a Gift Card over."
+  },
+  "paymentLinkFundingExpired": "Gift card funding expired. Create it again.",
+  "@paymentLinkFundingExpired": {
+    "description": "[security] Message shown when the funding of a Gift Card expired before it was sent; the user must create the card again."
+  },
+  "paymentLinkFundingIncompleteStatus": "Funding incomplete",
+  "@paymentLinkFundingIncompleteStatus": {
+    "description": "Status label of a Gift Card whose funding payment did not complete."
+  },
+  "paymentLinkFundingNeedsAttention": "Gift card funding needs attention",
+  "@paymentLinkFundingNeedsAttention": {
+    "description": "Title of the Ledger signing screen when the funding needs the user's attention."
+  },
+  "paymentLinkFundingSentCardNotSaved": "Funding was sent, but the gift card could not be saved. Try again before closing Vizor.",
+  "@paymentLinkFundingSentCardNotSaved": {
+    "description": "[security] Error shown when the funding transaction was sent but the Gift Card could not be saved; the user must retry before closing the app or the card link is lost."
+  },
+  "paymentLinkFundingStillVerifying": "Funding is still being verified. Vizor will keep checking it.",
+  "@paymentLinkFundingStillVerifying": {
+    "description": "Message shown while the Gift Card funding transaction is still being verified."
+  },
+  "paymentLinkFundingStorageNeedsSync": "Funding was sent, but local transaction storage needs to sync.",
+  "@paymentLinkFundingStorageNeedsSync": {
+    "description": "Message shown when the funding transaction was sent but the wallet has not yet stored it locally."
+  },
+  "paymentLinkGiftAmountLabel": "Gift amount",
+  "@paymentLinkGiftAmountLabel": {
+    "description": "Label above the amount of a received Gift Card in the sheet where the user picks the receiving account."
+  },
+  "paymentLinkGiftCardDesignSemantic": "Gift card, {design} design",
+  "@paymentLinkGiftCardDesignSemantic": {
+    "description": "Screen reader label of the front of a Gift Card; {design} is the artwork name.",
+    "placeholders": {
+      "design": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkGiftCardMessageSemantic": "Gift card message",
+  "@paymentLinkGiftCardMessageSemantic": {
+    "description": "Screen reader label of the message side of a Gift Card."
+  },
+  "paymentLinkGiftCardsLowerBreadcrumb": "Gift cards",
+  "@paymentLinkGiftCardsLowerBreadcrumb": {
+    "description": "Breadcrumb label of the Gift Cards section on desktop."
+  },
+  "paymentLinkGiftCardsTitle": "Gift Cards",
+  "@paymentLinkGiftCardsTitle": {
+    "description": "Title of the Gift Cards page and its breadcrumb."
+  },
+  "paymentLinkGiftMessageLabel": "Gift message",
+  "@paymentLinkGiftMessageLabel": {
+    "description": "Label of the message attached to a Gift Card."
+  },
+  "paymentLinkGoHome": "Go home",
+  "@paymentLinkGoHome": {
+    "description": "Button that returns to the home screen after a Gift Card was created or received."
+  },
+  "paymentLinkGroupConfirmingPayment": "Confirming payment",
+  "@paymentLinkGroupConfirmingPayment": {
+    "description": "Status of a group of Gift Cards while its payment is confirming."
+  },
+  "paymentLinkGroupEntryForGroup": "For a group",
+  "@paymentLinkGroupEntryForGroup": {
+    "description": "Title of the batch-creation entry shown for non-Ledger accounts."
+  },
+  "paymentLinkGroupEntryGroupSemantic": "Create cards for a group",
+  "@paymentLinkGroupEntryGroupSemantic": {
+    "description": "Screen reader label and title of the button that opens batch Gift Card creation."
+  },
+  "paymentLinkGroupEntryLedgerSemantic": "Create multiple cards, up to {max} with Ledger",
+  "@paymentLinkGroupEntryLedgerSemantic": {
+    "description": "Screen reader label of the button that opens batch Gift Card creation for a Ledger account; {max} is the maximum number of cards.",
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkGroupEntryMultipleCards": "Multiple cards",
+  "@paymentLinkGroupEntryMultipleCards": {
+    "description": "Title of the batch-creation entry shown for Ledger accounts."
+  },
+  "paymentLinkGroupEntryUpToWithLedger": "Up to {max} with Ledger",
+  "@paymentLinkGroupEntryUpToWithLedger": {
+    "description": "Subtitle of the batch-creation entry for Ledger accounts; {max} is the maximum number of cards.",
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkGroupNotFunded": "This group wasn’t funded. Create it again.",
+  "@paymentLinkGroupNotFunded": {
+    "description": "Message shown when a group of Gift Cards was never funded."
+  },
+  "paymentLinkGroupOtherAccount": "This group belongs to another account. Switch accounts to view it.",
+  "@paymentLinkGroupOtherAccount": {
+    "description": "Message shown for a group of Gift Cards that was created under another account."
+  },
+  "paymentLinkGroupPaymentPending": "Payment status pending",
+  "@paymentLinkGroupPaymentPending": {
+    "description": "Status of a group of Gift Cards whose payment status is unknown."
+  },
+  "paymentLinkGroupReadyToShare": "Ready to share",
+  "@paymentLinkGroupReadyToShare": {
+    "description": "Status of a group of Gift Cards whose links are ready to share."
+  },
+  "paymentLinkGroupSomeNotReady": "Some cards aren’t ready",
+  "@paymentLinkGroupSomeNotReady": {
+    "description": "Status of a group of Gift Cards when some cards are not ready."
+  },
+  "paymentLinkGroupsHeading": "Groups",
+  "@paymentLinkGroupsHeading": {
+    "description": "Heading above the list of Gift Card groups."
+  },
+  "paymentLinkHideCard": "Hide card",
+  "@paymentLinkHideCard": {
+    "description": "Button that moves a Gift Card to the archive list."
+  },
+  "paymentLinkHowDesktopStepCreate": "Enter amount to gift, pick a design, add a message (optional) and create your Card with a single click.",
+  "@paymentLinkHowDesktopStepCreate": {
+    "description": "First step of the Gift Cards explainer on desktop."
+  },
+  "paymentLinkHowDesktopStepRedeem": "Recipient can redeem the Card in their Vizor wallet using the Link. The sender covers the deposit and redeem fees, so the recipient receives the full Card amount.",
+  "@paymentLinkHowDesktopStepRedeem": {
+    "description": "Third step of the Gift Cards explainer on desktop."
+  },
+  "paymentLinkHowDesktopStepShare": "After the card is created, you will get a unique Link containing its claim secret. Send it only to the intended recipient.",
+  "@paymentLinkHowDesktopStepShare": {
+    "description": "[security] Second step of the Gift Cards explainer on desktop; the link contains a secret that gives access to the funds and must only be sent to the recipient."
+  },
+  "paymentLinkHowGiftCardsWork": "How gift cards work",
+  "@paymentLinkHowGiftCardsWork": {
+    "description": "Breadcrumb and button label that open the Gift Cards explainer on desktop."
+  },
+  "paymentLinkHowItWorksSubtitle": "A great way to celebrate anything.",
+  "@paymentLinkHowItWorksSubtitle": {
+    "description": "Subtitle under the Gift Cards explainer title; a friendly tagline."
+  },
+  "paymentLinkHowItWorksTitle": "How Gift Cards work",
+  "@paymentLinkHowItWorksTitle": {
+    "description": "Title of the explainer that describes how Gift Cards are created and redeemed."
+  },
+  "paymentLinkHowStepCreate": "Enter an amount, pick a design, and add an optional message.",
+  "@paymentLinkHowStepCreate": {
+    "description": "First step of the Gift Cards explainer on mobile."
+  },
+  "paymentLinkHowStepRedeem": "The recipient opens the link in Vizor and claims the full card amount. The sender covers both fees.",
+  "@paymentLinkHowStepRedeem": {
+    "description": "Third step of the Gift Cards explainer on mobile."
+  },
+  "paymentLinkHowStepShare": "Once funding reaches the network, copy the unique link and send it only to the intended recipient.",
+  "@paymentLinkHowStepShare": {
+    "description": "[security] Second step of the Gift Cards explainer on mobile; warns that the link is a secret that gives access to the funds and must only be sent to the recipient."
+  },
+  "paymentLinkHowTheCardWorks": "How the gift card works",
+  "@paymentLinkHowTheCardWorks": {
+    "description": "Label of the link that opens the Gift Cards explainer on mobile."
+  },
+  "paymentLinkIntakeCouldNotOpen": "Payment link could not be opened.",
+  "@paymentLinkIntakeCouldNotOpen": {
+    "description": "Toast shown when an incoming Gift Card link could not be read or opened."
+  },
+  "paymentLinkIntakeQueueFull": "Too many payment links are waiting to open.",
+  "@paymentLinkIntakeQueueFull": {
+    "description": "Toast shown when an incoming Gift Card link is rejected because too many links are already queued to open."
+  },
+  "paymentLinkInterruptedCheckMessage": "Card check was interrupted. Try again.",
+  "@paymentLinkInterruptedCheckMessage": {
+    "description": "Error shown when checking a received Gift Card was interrupted."
+  },
+  "paymentLinkInvalidSubtitle": "Copy the link & try again",
+  "@paymentLinkInvalidSubtitle": {
+    "description": "Hint under the invalid-link title telling the user to copy the link again."
+  },
+  "paymentLinkInvalidTitle": "The link doesn’t look legit.",
+  "@paymentLinkInvalidTitle": {
+    "description": "Title shown when the pasted Gift Card link is not valid."
+  },
+  "paymentLinkKeystoneBroadcastFailed": "Gift card funding could not be broadcast.",
+  "@paymentLinkKeystoneBroadcastFailed": {
+    "description": "Error on the Keystone signing screen when the funding transaction could not be sent."
+  },
+  "paymentLinkKeystoneBroadcastingTitle": "Broadcasting gift card funding",
+  "@paymentLinkKeystoneBroadcastingTitle": {
+    "description": "Title of the Keystone signing screen while the funding transaction is being sent."
+  },
+  "paymentLinkKeystoneCreatingGiftCard": "Creating your gift card…",
+  "@paymentLinkKeystoneCreatingGiftCard": {
+    "description": "Status on the mobile Keystone signing screen while the Gift Card is created after signing."
+  },
+  "paymentLinkKeystoneFundingUncertain": "The funding status is uncertain. Check activity before trying again.",
+  "@paymentLinkKeystoneFundingUncertain": {
+    "description": "Error on the Keystone signing screen when the network response did not confirm the funding transaction."
+  },
+  "paymentLinkKeystoneKeepOpen": "Keep Vizor open while the transaction is sent.",
+  "@paymentLinkKeystoneKeepOpen": {
+    "description": "Instruction on the Keystone signing screen while the transaction is being sent."
+  },
+  "paymentLinkKeystoneQrMismatch": "This QR code does not match the current Keystone request.",
+  "@paymentLinkKeystoneQrMismatch": {
+    "description": "Error on the Keystone signing screen when the scanned QR code belongs to a different request."
+  },
+  "paymentLinkKeystoneReadingSignature": "Reading signature…",
+  "@paymentLinkKeystoneReadingSignature": {
+    "description": "Status on the mobile Keystone signing screen while the signature QR code is read."
+  },
+  "paymentLinkKeystoneScanCaption": "Scan the QR code on your Keystone to finish creating",
+  "@paymentLinkKeystoneScanCaption": {
+    "description": "Caption on the mobile Keystone signing screen asking the user to scan the signature QR code shown on the device."
+  },
+  "paymentLinkKeystoneScanToSign": "Scan to sign",
+  "@paymentLinkKeystoneScanToSign": {
+    "description": "Subtitle of the Keystone signing screen that shows the QR code to scan."
+  },
+  "paymentLinkKeystoneSignTitle": "Sign gift card on Keystone",
+  "@paymentLinkKeystoneSignTitle": {
+    "description": "Title of the Keystone signing screen on desktop."
+  },
+  "paymentLinkKeystoneSignatureFailed": "Keystone signature could not be applied.",
+  "@paymentLinkKeystoneSignatureFailed": {
+    "description": "Error on the Keystone signing screen when the signature returned by the device could not be applied."
+  },
+  "paymentLinkKeystoneSigningFailed": "Gift card signing could not be completed.",
+  "@paymentLinkKeystoneSigningFailed": {
+    "description": "Error on the Keystone signing screen when signing failed for another reason."
+  },
+  "paymentLinkKeystoneSubmittingTransaction": "Submitting transaction",
+  "@paymentLinkKeystoneSubmittingTransaction": {
+    "description": "Subtitle of the Keystone signing screen while the funding transaction is being sent."
+  },
+  "paymentLinkLeaveSaveMany": "Save these gift cards before leaving this screen.",
+  "@paymentLinkLeaveSaveMany": {
+    "description": "[security] Warning that the newly created Gift Card links must be saved or copied before the user leaves, otherwise the funds are lost."
+  },
+  "paymentLinkLeaveSaveOne": "Save this gift card before leaving this screen.",
+  "@paymentLinkLeaveSaveOne": {
+    "description": "[security] Warning that the newly created Gift Card link must be saved or copied before the user leaves, otherwise the funds are lost."
+  },
+  "paymentLinkLedgerFundingExpired": "This gift card transaction expired or was rejected. Go back to create a new gift card.",
+  "@paymentLinkLedgerFundingExpired": {
+    "description": "Error shown on the Gift Card signing screen when the funding transaction expired or the network rejected it."
+  },
+  "paymentLinkLedgerFundingRejected": "The gift card funding was rejected on your Ledger.",
+  "@paymentLinkLedgerFundingRejected": {
+    "description": "Message on the Ledger signing screen when the user rejected the funding transaction on the device."
+  },
+  "paymentLinkLedgerSavedForRecovery": "Gift card funding is saved for recovery. Try again to check its status and finish saving.",
+  "@paymentLinkLedgerSavedForRecovery": {
+    "description": "Message on the Ledger signing screen when the funding transaction was already saved and the user should retry to finish."
+  },
+  "paymentLinkLedgerSigningIncomplete": "Ledger signing could not be completed. Check your device and try again.",
+  "@paymentLinkLedgerSigningIncomplete": {
+    "description": "Message on the Ledger signing screen when signing failed for another reason."
+  },
+  "paymentLinkLinkCopied": "Gift link copied",
+  "@paymentLinkLinkCopied": {
+    "description": "Toast shown after a Gift Card link was copied to the clipboard."
+  },
+  "paymentLinkLinkCopiedStatusFailed": "Gift link copied, but its status could not be updated.",
+  "@paymentLinkLinkCopiedStatusFailed": {
+    "description": "Toast shown after a Gift Card link was copied but its shared status could not be saved."
+  },
+  "paymentLinkLinkCopyFailed": "Gift link could not be copied.",
+  "@paymentLinkLinkCopyFailed": {
+    "description": "Toast shown when copying a Gift Card link failed."
+  },
+  "paymentLinkLinksSaveFailed": "Gift card links could not be saved. Try again.",
+  "@paymentLinkLinksSaveFailed": {
+    "description": "Toast shown when saving the links of a group of Gift Cards to a file failed."
+  },
+  "paymentLinkLinksSaved": "Gift card links saved",
+  "@paymentLinkLinksSaved": {
+    "description": "Toast shown after the links of a group of Gift Cards were saved to a file."
+  },
+  "paymentLinkLoadingGiftCard": "Loading gift card",
+  "@paymentLinkLoadingGiftCard": {
+    "description": "Screen reader label shown while a Gift Card is loading."
+  },
+  "paymentLinkLongSyncBody": "Vizor needs to scan more history than usual before it can verify the balance. This is safe, but it may take a long time.",
+  "@paymentLinkLongSyncBody": {
+    "description": "Body of the long-scan warning shown before checking a received Gift Card."
+  },
+  "paymentLinkLongSyncConfirm": "Check gift card",
+  "@paymentLinkLongSyncConfirm": {
+    "description": "Button in the long-scan warning that starts checking the Gift Card."
+  },
+  "paymentLinkLongSyncSupporting": "You can go back without starting the scan.",
+  "@paymentLinkLongSyncSupporting": {
+    "description": "Reassurance in the long-scan warning that the user can leave without starting the scan."
+  },
+  "paymentLinkLongSyncTitle": "This gift card may take a while",
+  "@paymentLinkLongSyncTitle": {
+    "description": "Title of the warning shown before checking a Gift Card that needs a long wallet scan."
+  },
+  "paymentLinkMemoOptionalSubtitle": "Attach a short encrypted memo (optional).",
+  "@paymentLinkMemoOptionalSubtitle": {
+    "description": "Subtitle of the message step and the review step of mobile Gift Card creation; the message is stored as an encrypted memo."
+  },
+  "paymentLinkMessageAttachedTitle": "Message attached.",
+  "@paymentLinkMessageAttachedTitle": {
+    "description": "Title shown when a gift message is attached to a Gift Card."
+  },
+  "paymentLinkMessageInputSemantic": "Gift card message input",
+  "@paymentLinkMessageInputSemantic": {
+    "description": "Screen reader label of the text field for a Gift Card message."
+  },
+  "paymentLinkMessageStepTitle": "Enter a message",
+  "@paymentLinkMessageStepTitle": {
+    "description": "Title of the message step of mobile Gift Card creation."
+  },
+  "paymentLinkMessageTooLarge": "This message is too large. Try using fewer complex emoji.",
+  "@paymentLinkMessageTooLarge": {
+    "description": "Error under the Gift Card message field when the message does not fit in the memo."
+  },
+  "paymentLinkMyCards": "My Cards",
+  "@paymentLinkMyCards": {
+    "description": "Title of the page listing the user's own Gift Cards on desktop."
+  },
+  "paymentLinkNewGiftCardRequired": "New gift card required",
+  "@paymentLinkNewGiftCardRequired": {
+    "description": "Status label on the Ledger signing screen when the request cannot be retried and a new gift card must be created."
+  },
+  "paymentLinkNoActiveAccountAvailable": "No active account is available.",
+  "@paymentLinkNoActiveAccountAvailable": {
+    "description": "Error shown when no account is active while creating a Gift Card."
+  },
+  "paymentLinkNoCreatedCardsText": "No created cards yet.",
+  "@paymentLinkNoCreatedCardsText": {
+    "description": "Empty-state text on the Created tab of the Gift Cards page."
+  },
+  "paymentLinkNoReceivedCardsText": "No received cards yet.",
+  "@paymentLinkNoReceivedCardsText": {
+    "description": "Empty-state text on the Received tab of the Gift Cards page."
+  },
+  "paymentLinkOpenGroupChecking": "Checking",
+  "@paymentLinkOpenGroupChecking": {
+    "description": "Screen reader label of a batch row that is being checked, read as the last part of the description."
+  },
+  "paymentLinkOpenGroupCreated": "created {date}",
+  "@paymentLinkOpenGroupCreated": {
+    "description": "Screen reader label of a batch row; {date} is the creation date.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkOpenGroupEach": "{amount} each",
+  "@paymentLinkOpenGroupEach": {
+    "description": "Screen reader label of a batch row; {amount} is the amount of one card.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkOpenGroupSemantic": "Open group of {count} gift cards",
+  "@paymentLinkOpenGroupSemantic": {
+    "description": "Screen reader label of a batch row; first part of the description, {count} is the number of cards.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkPasteLabel": "Paste card link",
+  "@paymentLinkPasteLabel": {
+    "description": "Button that pastes the Gift Card link from the clipboard."
+  },
+  "paymentLinkPendingSectionLabel": "Pending",
+  "@paymentLinkPendingSectionLabel": {
+    "description": "Section heading above Gift Cards whose funding is still being confirmed."
+  },
+  "paymentLinkPreparing": "Preparing…",
+  "@paymentLinkPreparing": {
+    "description": "Button label while a Gift Card claim is being prepared."
+  },
+  "paymentLinkPreparingStatus": "Preparing…",
+  "@paymentLinkPreparingStatus": {
+    "description": "Status label while a Gift Card is being prepared."
+  },
+  "paymentLinkPrivacyModeOff": "Turn off privacy mode",
+  "@paymentLinkPrivacyModeOff": {
+    "description": "Tooltip and screen reader label of the button that turns privacy mode off, which hides amounts."
+  },
+  "paymentLinkPrivacyModeOn": "Turn on privacy mode",
+  "@paymentLinkPrivacyModeOn": {
+    "description": "Tooltip and screen reader label of the button that turns privacy mode on, which hides amounts."
+  },
+  "paymentLinkQrCardHeading": "You’ve\ngot ZEC",
+  "@paymentLinkQrCardHeading": {
+    "description": "Two-line heading on the shareable Gift Card QR image; the line break is intentional."
+  },
+  "paymentLinkQrCardScanToRedeem": "Scan to redeem",
+  "@paymentLinkQrCardScanToRedeem": {
+    "description": "Caption on the shareable Gift Card QR image telling the recipient to scan it."
+  },
+  "paymentLinkQrCardSemantic": "Gift card QR code",
+  "@paymentLinkQrCardSemantic": {
+    "description": "Screen reader label of the shareable Gift Card QR image."
+  },
+  "paymentLinkQrCouldNotBeGenerated": "QR code could not be generated",
+  "@paymentLinkQrCouldNotBeGenerated": {
+    "description": "Message shown in place of the Gift Card QR image when it could not be drawn."
+  },
+  "paymentLinkQrSaveFailed": "Gift card QR could not be saved.",
+  "@paymentLinkQrSaveFailed": {
+    "description": "Toast shown when saving the Gift Card QR image failed."
+  },
+  "paymentLinkQrSaved": "Gift card QR saved",
+  "@paymentLinkQrSaved": {
+    "description": "Toast shown after the Gift Card QR image was saved."
+  },
+  "paymentLinkQrSavedStatusFailed": "Gift card QR saved, but its status could not be updated.",
+  "@paymentLinkQrSavedStatusFailed": {
+    "description": "Toast shown after the Gift Card QR image was saved but its shared status could not be saved."
+  },
+  "paymentLinkReadyHeading": "Ready to share",
+  "@paymentLinkReadyHeading": {
+    "description": "Heading shown when a created Gift Card is ready to be shared."
+  },
+  "paymentLinkReceiveFinishFailed": "Couldn't finish receiving this gift. Try again to check its status.",
+  "@paymentLinkReceiveFinishFailed": {
+    "description": "Message shown when finishing the receipt of a Gift Card failed."
+  },
+  "paymentLinkReceiveToLabel": "Receive to",
+  "@paymentLinkReceiveToLabel": {
+    "description": "Label above the account that will receive a Gift Card."
+  },
+  "paymentLinkReceivedCardsLoadFailed": "Received gift cards could not be loaded.",
+  "@paymentLinkReceivedCardsLoadFailed": {
+    "description": "Error shown in place of the received Gift Cards list when loading it failed."
+  },
+  "paymentLinkReceivedGiftHeading": "You’ve received a gift!",
+  "@paymentLinkReceivedGiftHeading": {
+    "description": "Heading shown when a Gift Card was received."
+  },
+  "paymentLinkReceivedHeadingDesktop": "You’ve received\na gift card!",
+  "@paymentLinkReceivedHeadingDesktop": {
+    "description": "Two-line heading on the desktop screen for a received Gift Card; the line break is intentional."
+  },
+  "paymentLinkReceivedTabLabel": "Received",
+  "@paymentLinkReceivedTabLabel": {
+    "description": "Tab label on the Gift Cards page listing cards the user received."
+  },
+  "paymentLinkReceivingAccountChangedReopen": "Receiving account changed. Open the gift card again to continue.",
+  "@paymentLinkReceivingAccountChangedReopen": {
+    "description": "Message shown when the receiving account changed while a Gift Card was being claimed."
+  },
+  "paymentLinkReceivingAccountChangedRetry": "Receiving account changed. Try again to check this gift.",
+  "@paymentLinkReceivingAccountChangedRetry": {
+    "description": "Message shown when the receiving account changed while a Gift Card was being checked."
+  },
+  "paymentLinkReceivingStatus": "Receiving…",
+  "@paymentLinkReceivingStatus": {
+    "description": "Status label of a received Gift Card while it is being received."
+  },
+  "paymentLinkRedeemCardLabel": "Redeem a card",
+  "@paymentLinkRedeemCardLabel": {
+    "description": "Button or entry label that starts redeeming a Gift Card someone sent the user."
+  },
+  "paymentLinkRedeemCardStepTitle": "Redeem the card",
+  "@paymentLinkRedeemCardStepTitle": {
+    "description": "Title of the desktop setup steps shown while redeeming a Gift Card into a new account."
+  },
+  "paymentLinkRedeemPasteOrScan": "Paste a card link or scan its QR code.",
+  "@paymentLinkRedeemPasteOrScan": {
+    "description": "Subtitle of the mobile redeem screen."
+  },
+  "paymentLinkRedeemSubtitle": "Copy the card link you’ve received, and paste it below.",
+  "@paymentLinkRedeemSubtitle": {
+    "description": "Instruction on the redeem screen asking the user to paste the received Gift Card link."
+  },
+  "paymentLinkRedeemTheCardTitle": "Redeem the Card",
+  "@paymentLinkRedeemTheCardTitle": {
+    "description": "Title of the screen where a recipient redeems a received Gift Card."
+  },
+  "paymentLinkRemovalWarningCheckFailed": "Couldn't check for unshared gift card links. Copy any links you still need before {action, select, reset{resetting Vizor} other{removing this account}}.",
+  "@paymentLinkRemovalWarningCheckFailed": {
+    "description": "[security] Warning in the remove-account and reset dialogs when the app could not check for funded Gift Card links that were never shared; {action} is reset or remove.",
+    "placeholders": {
+      "action": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkRemovalWarningUnshared": "{count, plural, =1{1 funded gift card link has not been shared. {subject, select, reset{Resetting Vizor} other{Removing this account}} loses it. Copy the link first.} other{{count} funded gift card links have not been shared. {subject, select, reset{Resetting Vizor} other{Removing this account}} loses them. Copy the links first.}}",
+  "@paymentLinkRemovalWarningUnshared": {
+    "description": "[security] Warning in the remove-account and reset dialogs that funded Gift Card links which were never shared will be permanently lost; {count} is how many, {subject} is reset or remove.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "subject": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkRemoveCardLabel": "Remove card",
+  "@paymentLinkRemoveCardLabel": {
+    "description": "Confirm button of the dialog for removing a Gift Card from the list."
+  },
+  "paymentLinkRemoveCardSupporting": "This can't be undone.",
+  "@paymentLinkRemoveCardSupporting": {
+    "description": "[security] Warning in the remove-card dialog that removing the card, and with it access to its link, is irreversible."
+  },
+  "paymentLinkRemoveCardTitle": "Remove this card?",
+  "@paymentLinkRemoveCardTitle": {
+    "description": "Title of the confirmation dialog for removing a Gift Card from the list."
+  },
+  "paymentLinkRestoreCard": "Restore card",
+  "@paymentLinkRestoreCard": {
+    "description": "Button that moves an archived Gift Card back to the active list."
+  },
+  "paymentLinkRevealMessageSemanticLabel": "Reveal gift card message",
+  "@paymentLinkRevealMessageSemanticLabel": {
+    "description": "Screen reader label of the control that reveals the message on a Gift Card."
+  },
+  "paymentLinkReviewAndConfirm": "Review & confirm",
+  "@paymentLinkReviewAndConfirm": {
+    "description": "Button that continues to the review step of Gift Card creation."
+  },
+  "paymentLinkReviewCardTitle": "Review a Card",
+  "@paymentLinkReviewCardTitle": {
+    "description": "Title of the review step of mobile Gift Card creation."
+  },
+  "paymentLinkSaveQrCode": "Save QR code",
+  "@paymentLinkSaveQrCode": {
+    "description": "Button that saves the Gift Card QR code image."
+  },
+  "paymentLinkSaving": "Saving…",
+  "@paymentLinkSaving": {
+    "description": "Button label while a Gift Card is being saved."
+  },
+  "paymentLinkScanAgain": "Scan again",
+  "@paymentLinkScanAgain": {
+    "description": "Button that reopens the QR scanner after a failed scan."
+  },
+  "paymentLinkScanAgainOrPaste": "Scan again or paste another card link.",
+  "@paymentLinkScanAgainOrPaste": {
+    "description": "Hint shown when a scanned Gift Card QR code could not be read."
+  },
+  "paymentLinkScanCameraHint": "Connect a camera to scan the gift card QR code, or go back to paste the card link.",
+  "@paymentLinkScanCameraHint": {
+    "description": "Message shown on the desktop scan screen when no camera is available."
+  },
+  "paymentLinkScanQrCode": "Scan QR code",
+  "@paymentLinkScanQrCode": {
+    "description": "Button that opens the camera to scan a Gift Card QR code."
+  },
+  "paymentLinkScanSheetSemantic": "Scan the gift card QR code",
+  "@paymentLinkScanSheetSemantic": {
+    "description": "Screen reader label of the camera preview in the Gift Card QR scanner sheet."
+  },
+  "paymentLinkScanSheetTitle": "Scan gift card QR",
+  "@paymentLinkScanSheetTitle": {
+    "description": "Title of the Gift Card QR scanner sheet."
+  },
+  "paymentLinkScanShowQrToCamera": "Show the gift card QR code to your camera",
+  "@paymentLinkScanShowQrToCamera": {
+    "description": "Instruction on the desktop scan screen to hold the Gift Card QR code in front of the camera."
+  },
+  "paymentLinkSenderMessageSemantic": "Sender message: {message}; Show gift card front",
+  "@paymentLinkSenderMessageSemantic": {
+    "description": "Screen reader label of the back of a received Gift Card, which shows the sender's message; {message} is the sender's text.",
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkShareCard": "Share card",
+  "@paymentLinkShareCard": {
+    "description": "Button that shares the Gift Card image and link through the system share sheet."
+  },
+  "paymentLinkShareFailed": "Gift link could not be shared.",
+  "@paymentLinkShareFailed": {
+    "description": "Toast shown when sharing a Gift Card link failed."
+  },
+  "paymentLinkShareFailedCopyInstead": "Couldn't share this gift card. Copy the link instead.",
+  "@paymentLinkShareFailedCopyInstead": {
+    "description": "Toast shown when sharing a Gift Card failed and copying the link is suggested."
+  },
+  "paymentLinkShareGiftCardTitle": "Share Gift Card",
+  "@paymentLinkShareGiftCardTitle": {
+    "description": "Title of the desktop dialog where a created Gift Card is shared."
+  },
+  "paymentLinkShareLinkInstruction": "Share this link with the intended recipient so they can claim the Card using their Vizor app.",
+  "@paymentLinkShareLinkInstruction": {
+    "description": "[security] Instruction on the Gift Card ready screen; the link is a secret that gives access to the funds and must only be shared with the intended recipient."
+  },
+  "paymentLinkShareLinkInstructionDesktop": "Share this link with the intended recipient so they\ncan claim the Card using their Vizor app.",
+  "@paymentLinkShareLinkInstructionDesktop": {
+    "description": "[security] Two-line instruction on the desktop Gift Card ready screen; the link is a secret that gives access to the funds and must only be shared with the intended recipient. The line break is intentional."
+  },
+  "paymentLinkShareSheetTitle": "Share gift card",
+  "@paymentLinkShareSheetTitle": {
+    "description": "Title of the sheet where a created Gift Card is shared."
+  },
+  "paymentLinkShareWaitingDescription": "We’re getting your gift card ready to share.",
+  "@paymentLinkShareWaitingDescription": {
+    "description": "Description while the created Gift Card is not yet ready to share."
+  },
+  "paymentLinkSharedStatusFailed": "Gift card shared, but its status could not be updated.",
+  "@paymentLinkSharedStatusFailed": {
+    "description": "Toast shown after a Gift Card was shared but its shared status could not be saved."
+  },
+  "paymentLinkSharing": "Sharing…",
+  "@paymentLinkSharing": {
+    "description": "Button label while a Gift Card is being shared."
+  },
+  "paymentLinkShowCardFrontSemantic": "Show gift card front",
+  "@paymentLinkShowCardFrontSemantic": {
+    "description": "Screen reader label of the control that turns a Gift Card back to its front."
+  },
+  "paymentLinkShowHowCardsWork": "Show how gift cards work",
+  "@paymentLinkShowHowCardsWork": {
+    "description": "Screen reader label of the button that opens the Gift Cards explainer."
+  },
+  "paymentLinkShowQrSemantic": "Show gift card QR code",
+  "@paymentLinkShowQrSemantic": {
+    "description": "Screen reader label of the button that shows the QR code of a Gift Card."
+  },
+  "paymentLinkSkipMessage": "Skip message",
+  "@paymentLinkSkipMessage": {
+    "description": "Button that skips adding a message to a Gift Card."
+  },
+  "paymentLinkStartTyping": "Start typing…",
+  "@paymentLinkStartTyping": {
+    "description": "Placeholder of the message field on the back of a Gift Card being written."
+  },
+  "paymentLinkStartWritingMessage": "Start writing gift card message",
+  "@paymentLinkStartWritingMessage": {
+    "description": "Screen reader label of the button that starts writing a message on a Gift Card."
+  },
+  "paymentLinkStepAddMessage": "Add Message",
+  "@paymentLinkStepAddMessage": {
+    "description": "Label of the second step in the Gift Card creation stepper."
+  },
+  "paymentLinkStepCreate": "Create",
+  "@paymentLinkStepCreate": {
+    "description": "Label of the first step in the Gift Card creation stepper."
+  },
+  "paymentLinkStepReview": "Review",
+  "@paymentLinkStepReview": {
+    "description": "Label of the third step in the Gift Card creation stepper."
+  },
+  "paymentLinkStillNotSaved": "The gift card still could not be saved. Try again before closing Vizor.",
+  "@paymentLinkStillNotSaved": {
+    "description": "[security] Error shown when saving a Gift Card failed again; the user must retry before closing the app or the card link is lost."
+  },
+  "paymentLinkTapToRevealMessage": "Tap on the card to reveal the message.",
+  "@paymentLinkTapToRevealMessage": {
+    "description": "Hint under a received Gift Card on touch devices explaining how to read its message."
+  },
+  "paymentLinkTapToRevealMessageTwoLines": "Tap on the card to reveal\nthe message.",
+  "@paymentLinkTapToRevealMessageTwoLines": {
+    "description": "Two-line hint under a received Gift Card on mobile explaining how to read its message; the line break is intentional."
+  },
+  "paymentLinkTotalAmountHelpSemantic": "About the total gift card amount",
+  "@paymentLinkTotalAmountHelpSemantic": {
+    "description": "Screen reader label of the info button next to the total Gift Card amount on desktop."
+  },
+  "paymentLinkTotalDeductedLabel": "Total amount deducted",
+  "@paymentLinkTotalDeductedLabel": {
+    "description": "Label of the row showing the total amount taken from the wallet to create a Gift Card."
+  },
+  "paymentLinkTrySavingAgain": "Try saving again",
+  "@paymentLinkTrySavingAgain": {
+    "description": "Button that retries saving a Gift Card after saving failed."
+  },
+  "paymentLinkUnusedSectionLabel": "Unused",
+  "@paymentLinkUnusedSectionLabel": {
+    "description": "Section heading above Gift Cards that nobody has claimed yet."
+  },
+  "paymentLinkUsageAllUsed": "All used",
+  "@paymentLinkUsageAllUsed": {
+    "description": "Summary of a group of Gift Cards when every card has been used."
+  },
+  "paymentLinkUsageAmountMismatch": "The observed funding amount does not match the expected card funding.",
+  "@paymentLinkUsageAmountMismatch": {
+    "description": "Explanation of the Unverified usage status: the funded amount differs from the card amount."
+  },
+  "paymentLinkUsageAwaitingConfirmation": "Your link is ready to share. Usage tracking will begin once the funding transaction is confirmed.",
+  "@paymentLinkUsageAwaitingConfirmation": {
+    "description": "Explanation under the usage status of a new Gift Card: the link can be shared while the funding payment confirms."
+  },
+  "paymentLinkUsageCardUse": "Card use: {label}{suffix, select, checking{ · Checking…} failed{ · Update failed} other{}}",
+  "@paymentLinkUsageCardUse": {
+    "description": "Tooltip and caption showing the usage status of a Gift Card; {label} is the status and {suffix} is checking, failed or none to append the refresh state.",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkUsageConfirming": "Confirming",
+  "@paymentLinkUsageConfirming": {
+    "description": "Usage status of a Gift Card whose funding transaction is still being confirmed."
+  },
+  "paymentLinkUsageFundingNotObserved": "The funding transaction could not yet be verified in the tracking history.",
+  "@paymentLinkUsageFundingNotObserved": {
+    "description": "Explanation of the Unverified usage status: the funding transaction was not found in the scanned history."
+  },
+  "paymentLinkUsageLastChecked": "Last checked: {time}",
+  "@paymentLinkUsageLastChecked": {
+    "description": "Caption showing when the Gift Card usage was last checked; {time} is a formatted date and time.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkUsageMissingFundingInfo": "The saved funding information is incomplete, so usage could not be verified.",
+  "@paymentLinkUsageMissingFundingInfo": {
+    "description": "Explanation of the Unverified usage status: the saved funding details are missing."
+  },
+  "paymentLinkUsageNotEnoughInfo": "There is not enough information yet to verify whether this card has been used.",
+  "@paymentLinkUsageNotEnoughInfo": {
+    "description": "Explanation of the Unverified usage status when no specific reason is known."
+  },
+  "paymentLinkUsageScanIncomplete": "The tracking history has not yet reached the funding transaction.",
+  "@paymentLinkUsageScanIncomplete": {
+    "description": "Explanation of the Unverified usage status: the wallet scan has not yet reached the funding transaction."
+  },
+  "paymentLinkUsageSemantics": "Card use: {label}{state, select, checking{. Checking} failed{. Update failed} other{}}{hasExplanation, select, true{. {explanation}} other{}}",
+  "@paymentLinkUsageSemantics": {
+    "description": "Screen reader description of the inline Gift Card usage status; {state} is checking, failed or none, and {explanation} is the usage explanation when {hasExplanation} is true.",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "state": {
+        "type": "String"
+      },
+      "hasExplanation": {
+        "type": "String"
+      },
+      "explanation": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkUsageUnusedOfCount": "{unused} of {count} unused",
+  "@paymentLinkUsageUnusedOfCount": {
+    "description": "Summary of a group of Gift Cards; {unused} is how many cards are unused out of {count}.",
+    "placeholders": {
+      "unused": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkUsageUnverified": "Unverified",
+  "@paymentLinkUsageUnverified": {
+    "description": "Usage status of a Gift Card whose usage could not be verified."
+  },
+  "paymentLinkUsageUpdateFailed": "Update failed",
+  "@paymentLinkUsageUpdateFailed": {
+    "description": "Short status shown on a Gift Card row when refreshing its usage failed."
+  },
+  "paymentLinkUsageUseDetected": "Use detected",
+  "@paymentLinkUsageUseDetected": {
+    "description": "Usage status of a Gift Card when the app saw funds leave the card but has not confirmed the claim."
+  },
+  "paymentLinkUsageUsedOfCount": "{used} of {count} used",
+  "@paymentLinkUsageUsedOfCount": {
+    "description": "Summary of a group of Gift Cards; {used} is how many cards were used out of {count}.",
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "paymentLinkUsdAmountTooSmall": "Amount is too small for USD input.",
+  "@paymentLinkUsdAmountTooSmall": {
+    "description": "Reason shown on the disabled USD toggle when the amount is too small to enter in US dollars."
+  },
+  "paymentLinkUsdFetchingPrice": "Fetching USD price…",
+  "@paymentLinkUsdFetchingPrice": {
+    "description": "Reason shown on the disabled USD toggle while the ZEC price in US dollars is loading."
+  },
+  "paymentLinkUsdPriceUnavailable": "USD price unavailable",
+  "@paymentLinkUsdPriceUnavailable": {
+    "description": "Reason shown on the disabled USD toggle when the ZEC price in US dollars could not be loaded."
+  },
+  "paymentLinkUseMaxCurrencySemantic": "Use max: {amount} {currency}",
+  "@paymentLinkUseMaxCurrencySemantic": {
+    "description": "Screen reader label of the control that fills in the maximum Gift Card amount; {amount} is the formatted maximum and {currency} its currency symbol.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "currency": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkUseMaxSemantic": "Use max: {amount}",
+  "@paymentLinkUseMaxSemantic": {
+    "description": "Visible text and screen reader label of the control that fills in the maximum Gift Card amount; {amount} is the formatted maximum.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkUsedSectionLabel": "Used",
+  "@paymentLinkUsedSectionLabel": {
+    "description": "Section heading above Gift Cards that have already been claimed."
+  },
+  "paymentLinkViewCardAction": "View card",
+  "@paymentLinkViewCardAction": {
+    "description": "Action button on a toast or row that opens a Gift Card."
+  },
+  "paymentLinkWaitToClaim": "Wait {minutes}:{seconds} to claim",
+  "@paymentLinkWaitToClaim": {
+    "description": "Status label of a received Gift Card telling the user how long until it can be claimed; {minutes}:{seconds} is a countdown.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkWaitToClaimSample": "Wait 3:45 to claim",
+  "@paymentLinkWaitToClaimSample": {
+    "description": "Sample status label (preview only) telling the user how long to wait before a received Gift Card can be claimed."
+  },
+  "paymentLinkWaitToGetLink": "Wait {minutes}:{seconds} to get the link",
+  "@paymentLinkWaitToGetLink": {
+    "description": "Status label of a created Gift Card telling the user how long until the link is available; {minutes}:{seconds} is a countdown.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentLinkWaitingDescription": "This may take a little while.",
+  "@paymentLinkWaitingDescription": {
+    "description": "Secondary line shown while a Gift Card is being prepared."
+  },
+  "paymentLinkWaitingStatusLabel": "Wait 1:15 to get the link",
+  "@paymentLinkWaitingStatusLabel": {
+    "description": "Sample status label (preview only) telling the user how long to wait before the Gift Card link is available."
+  },
+  "paymentLinkWalletSaveRecoveryFailed": "Couldn’t finish saving your wallet. Try again.",
+  "@paymentLinkWalletSaveRecoveryFailed": {
+    "description": "Error shown on the account setup screen after redeeming a Gift Card when saving the new wallet could not be finished."
+  },
   "paymentUriExpired": "That request link timed out. Open it again to pay.",
   "@paymentUriExpired": {
     "description": "Toast shown when a payment request link waited too long before it could be opened."

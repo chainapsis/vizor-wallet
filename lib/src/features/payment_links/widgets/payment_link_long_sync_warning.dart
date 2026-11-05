@@ -5,12 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'payment_link_confirm_modal.dart';
-
-const _title = 'This gift card may take a while';
-const _body =
-    'Vizor needs to scan more history than usual before it can verify the '
-    'balance. This is safe, but it may take a long time.';
-const _supporting = 'You can go back without starting the scan.';
+import '../../../core/l10n/l10n.dart';
 
 class PaymentLinkLongSyncWarningModal extends StatelessWidget {
   const PaymentLinkLongSyncWarningModal({
@@ -26,11 +21,11 @@ class PaymentLinkLongSyncWarningModal extends StatelessWidget {
   Widget build(BuildContext context) {
     return PaymentLinkConfirmModal(
       iconName: AppIcons.warning,
-      title: _title,
-      body: _body,
-      supporting: _supporting,
-      confirmLabel: 'Check gift card',
-      cancelLabel: 'Go back',
+      title: context.l10n.paymentLinkLongSyncTitle,
+      body: context.l10n.paymentLinkLongSyncBody,
+      supporting: context.l10n.paymentLinkLongSyncSupporting,
+      confirmLabel: context.l10n.paymentLinkLongSyncConfirm,
+      cancelLabel: context.l10n.commonGoBack,
       onConfirm: onConfirm,
       onCancel: onCancel,
       confirmKey: const ValueKey('payment_link_long_sync_confirm_button'),
@@ -66,7 +61,7 @@ class PaymentLinkLongSyncWarningSheet extends StatelessWidget {
 
     return MobileModalScaffold(
       key: const ValueKey('payment_link_long_sync_warning_sheet'),
-      title: _title,
+      title: context.l10n.paymentLinkLongSyncTitle,
       titleMaxLines: 2,
       leading: const PaymentLinkModalIcon(AppIcons.warning),
       onClose: onCancel,
@@ -75,12 +70,12 @@ class PaymentLinkLongSyncWarningSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            _body,
+            context.l10n.paymentLinkLongSyncBody,
             style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            _supporting,
+            context.l10n.paymentLinkLongSyncSupporting,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -90,7 +85,7 @@ class PaymentLinkLongSyncWarningSheet extends StatelessWidget {
             key: const ValueKey('payment_link_long_sync_sheet_confirm_button'),
             expand: true,
             onPressed: onConfirm,
-            child: const Text('Check gift card'),
+            child: Text(context.l10n.paymentLinkLongSyncConfirm),
           ),
           const SizedBox(height: AppSpacing.xs),
           AppButton(
@@ -98,7 +93,7 @@ class PaymentLinkLongSyncWarningSheet extends StatelessWidget {
             variant: AppButtonVariant.ghost,
             expand: true,
             onPressed: onCancel,
-            child: const Text('Go back'),
+            child: Text(context.l10n.commonGoBack),
           ),
         ],
       ),

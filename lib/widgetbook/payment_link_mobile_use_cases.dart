@@ -24,12 +24,12 @@ import '../src/features/payment_links/widgets/mobile/payment_link_share_sheet.da
 import '../src/features/payment_links/widgets/payment_link_amount_card.dart';
 import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
 import '../src/features/payment_links/widgets/payment_link_confetti.dart';
-import '../src/features/payment_links/widgets/payment_link_copy.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
 import '../src/features/send/services/send_amount_conversion.dart';
 import '../src/providers/account_provider.dart';
 import 'payment_link_amount_preview.dart';
+import '../src/core/l10n/l10n.dart';
 
 const _mobilePreviewSize = Size(393, 773);
 const _mobileDeviceSize = Size(393, 852);
@@ -399,7 +399,7 @@ Widget _buildClaimAccountPreview(int accountCount) {
 }
 
 Widget buildMobilePaymentLinkReceivedWaitingUseCase(BuildContext context) {
-  return const _MobilePaymentLinkFrame(
+  return _MobilePaymentLinkFrame(
     child: PaymentLinkReadyMobileView(
       state: PaymentLinkReadyMobileState.soon,
       card: PaymentLinkGiftCard(
@@ -414,7 +414,7 @@ Widget buildMobilePaymentLinkReceivedWaitingUseCase(BuildContext context) {
       onHome: _noop,
       waitingHeading: 'Your Gift Card\nis almost ready!',
       waitingDescription:
-          '$kPaymentLinkClaimWaitingDescription\n$kPaymentLinkWaitingDescription',
+          '${context.l10n.paymentLinkClaimWaitingDescription}\n${context.l10n.paymentLinkWaitingDescription}',
       waitingIcon: AppIcons.time,
       waitingStatusLabel: 'Wait 1:15 to claim',
     ),
@@ -503,7 +503,7 @@ class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
       sections: _activeTab == PaymentLinkCardsTab.created
           ? [
               PaymentLinkCardsSection(
-                label: kPaymentLinkPendingSectionLabel,
+                label: context.l10n.paymentLinkPendingSectionLabel,
                 cards: [
                   _createdCard(
                     address: 'confirming',
@@ -532,7 +532,7 @@ class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
                 ],
               ),
               PaymentLinkCardsSection(
-                label: kPaymentLinkUnusedSectionLabel,
+                label: context.l10n.paymentLinkUnusedSectionLabel,
                 cards: [
                   _createdCard(
                     address: 'unused',
@@ -561,7 +561,7 @@ class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
                 ],
               ),
               PaymentLinkCardsSection(
-                label: kPaymentLinkUsedSectionLabel,
+                label: context.l10n.paymentLinkUsedSectionLabel,
                 cards: [
                   _createdCard(
                     address: 'detected',
@@ -590,9 +590,9 @@ class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
                 ],
               ),
             ]
-          : const [
+          : [
               PaymentLinkCardsSection(
-                label: kPaymentLinkReceivedTabLabel,
+                label: context.l10n.paymentLinkReceivedTabLabel,
                 cards: [
                   PaymentLinkCardListMobileRow(
                     thumbnail: _PaymentLinkThumbnail(

@@ -31,7 +31,6 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../payment_links/widgets/mobile/payment_link_mobile_views.dart'
     show kPaymentLinkMobileCardHeight, kPaymentLinkMobileCardWidth;
-import '../../../payment_links/widgets/payment_link_copy.dart';
 import '../../../payment_links/widgets/payment_link_gift_card.dart';
 import '../../../send/widgets/send_recipient_resolver.dart';
 import '../../../send/widgets/send_review_layout.dart'
@@ -1092,7 +1091,7 @@ class _DetailCard extends StatelessWidget {
                       ? showMobileTxFeeInfoSheet(
                           context,
                           title: context.l10n.activityReceiptCardFee,
-                          description: kPaymentLinkCardFeeHelpText,
+                          description: context.l10n.paymentLinkCardFeeHelpText,
                         )
                       : showsNetworkFee
                       ? showMobileTxFeeInfoSheet(
