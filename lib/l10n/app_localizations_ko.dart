@@ -278,7 +278,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityEtaStandard => '약 1–3⁠분';
 
   @override
-  String get activityEtaTakingLonger => '시⁠간⁠이 더 걸⁠리⁠고 있⁠어⁠요';
+  String get activityEtaTakingLonger => '지⁠연 중';
 
   @override
   String get activityFeedEmpty => '아⁠직 활⁠동⁠이 없⁠어⁠요';
@@ -297,11 +297,11 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get activityGiftCreated => '기⁠프⁠트 카⁠드⁠를 만⁠들⁠었⁠어⁠요';
+  String get activityGiftCreated => '기⁠프⁠트 카⁠드 생⁠성';
 
   @override
   String activityGiftCreatedMany(int count) {
-    return '기⁠프⁠트 카⁠드 $count⁠장⁠을 만⁠들⁠었⁠어⁠요';
+    return '기⁠프⁠트 카⁠드 $count⁠장 생⁠성';
   }
 
   @override
@@ -319,7 +319,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityGiftGroupFailed => '기⁠프⁠트 카⁠드 그⁠룹 실⁠패';
 
   @override
-  String get activityGiftRedeemed => '기⁠프⁠트 카⁠드⁠를 받⁠았⁠어⁠요';
+  String get activityGiftRedeemed => '기⁠프⁠트 카⁠드 받⁠음';
 
   @override
   String get activityGiftRedeeming => '카⁠드 받⁠는 중';
