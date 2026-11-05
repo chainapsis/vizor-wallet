@@ -102,7 +102,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         context: context,
         useRootNavigator: true,
         barrierDismissible: true,
-        barrierLabel: 'Dismiss',
+        barrierLabel: context.l10n.swapDismissBarrierLabel,
         barrierColor: context.colors.background.neutralScrim,
         transitionDuration: Duration.zero,
         pageBuilder: (_, _, _) => _buildSwapModal(),
@@ -212,8 +212,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 resolve: (raw) async {
                   final address = normalizeAddressScanPayload(raw);
                   if (address == null || address.isEmpty) {
-                    return const MobileScanOutcome.rejected(
-                      'QR code did not include an address.',
+                    return MobileScanOutcome.rejected(
+                      context.l10n.swapScanNoAddress,
                     );
                   }
                   return MobileScanOutcome.accepted(address);
@@ -298,7 +298,10 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
       if (alreadySaved) {
         final toastContext = _toastOverlayContextKey.currentContext;
         if (toastContext != null && toastContext.mounted) {
-          showAppToast(toastContext, 'Already in your address book');
+          showAppToast(
+            toastContext,
+            toastContext.l10n.swapContactAlreadyInAddressBook,
+          );
         }
         return;
       }
@@ -373,7 +376,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
             Column(
               children: [
                 MobileTopNav.back(
-                  title: 'Swap',
+                  title: context.l10n.swapPageTitle,
                   trailing: const SwapNearIntentsAttribution(alignEnd: true),
                 ),
                 Expanded(
@@ -510,14 +513,14 @@ class _MobileSwapReviewButton extends StatelessWidget {
         : null;
     final label = needsDestinationAddress
         ? (state.direction.sendsZec
-              ? 'Add recipient address'
-              : 'Add refund address')
+              ? context.l10n.swapActionAddRecipientAddress
+              : context.l10n.swapActionAddRefundAddress)
         : destinationFormatError ??
               (balanceExceeded
-                  ? 'Not enough ZEC'
+                  ? context.l10n.swapActionNotEnoughZec
                   : state.quoteLoading
-                  ? 'Getting quote'
-                  : 'Continue to review');
+                  ? context.l10n.swapActionGettingQuote
+                  : context.l10n.swapActionContinueToReview);
 
     return AppButton(
       key: const ValueKey('mobile_swap_review_button'),

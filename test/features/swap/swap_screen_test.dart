@@ -10831,7 +10831,7 @@ Widget _themeHarness(Widget child) {
 Widget _themeHarnessWithTheme(AppThemeData theme, Widget child) {
   return AppTheme(
     data: theme,
-    child: Directionality(textDirection: TextDirection.ltr, child: child),
+    child: LocalizedTestScope(child: child),
   );
 }
 

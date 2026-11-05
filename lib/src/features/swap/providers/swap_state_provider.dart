@@ -1,3 +1,4 @@
+// l10n-ignore-file: state-held and persisted display text (nextAction, errors) built in a notifier without a BuildContext
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';

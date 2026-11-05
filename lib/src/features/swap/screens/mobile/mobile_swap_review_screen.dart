@@ -318,8 +318,8 @@ class _MobileSwapReviewScreenState
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
         ? widget.payMode
-              ? "You don't have enough ZEC for this payment. Try a smaller amount."
-              : "You don't have enough ZEC for this swap. Try a smaller amount."
+              ? context.l10n.swapReviewInsufficientZecPay
+              : context.l10n.swapReviewInsufficientZecSwap
         : null;
     _ensureExpiryTicker(widget.payMode ? quote : null);
     final paymentQuoteExpired =
@@ -361,7 +361,9 @@ class _MobileSwapReviewScreenState
         child: Column(
           children: [
             MobileTopNav.back(
-              title: widget.payMode ? 'Review Payment' : 'Review quote',
+              title: widget.payMode
+                  ? context.l10n.swapReviewTitlePay
+                  : context.l10n.swapReviewTitleSwap,
               onBack: _startIntentInFlight ? null : _returnToSwap,
             ),
             Expanded(
@@ -392,7 +394,7 @@ class _MobileSwapReviewScreenState
                             swapState.statusError,
                             startBlockedReason,
                             if (inactiveReview)
-                              'This quote is no longer active.',
+                              context.l10n.swapReviewQuoteInactive,
                           ])
                             if (message != null) ...[
                               const SizedBox(height: AppSpacing.s),
@@ -422,7 +424,7 @@ class _MobileSwapReviewScreenState
                         startError: swapState.statusError,
                         startBlockedReason: startBlockedReason,
                         inactiveMessage: inactiveReview
-                            ? 'This quote is no longer active.'
+                            ? context.l10n.swapReviewQuoteInactive
                             : null,
                         payFiatTextOverride: swapReviewFiatTextForAsset(
                           swapState,

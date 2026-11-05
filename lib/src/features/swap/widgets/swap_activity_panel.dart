@@ -361,7 +361,9 @@ class _SwapActivityDetailSurfaceState
     }
     showAppToast(
       _toastContext(context),
-      result.broadcast.isCertain ? 'ZEC deposit sent' : 'Checking ZEC deposit',
+      result.broadcast.isCertain
+          ? _toastContext(context).l10n.swapPanelDepositSent
+          : _toastContext(context).l10n.swapPanelDepositChecking,
     );
   }
 
@@ -392,7 +394,9 @@ class _SwapActivityDetailSurfaceState
     if (!toastContext.mounted) return;
     showAppToast(
       toastContext,
-      result.isCertain ? 'ZEC deposit sent' : 'Checking ZEC deposit',
+      result.isCertain
+          ? toastContext.l10n.swapPanelDepositSent
+          : toastContext.l10n.swapPanelDepositChecking,
     );
   }
 
@@ -491,8 +495,10 @@ class _SwapActivityDetailSurfaceState
                       showAppToast(
                         _toastContext(context),
                         result.isCertain
-                            ? 'ZEC deposit sent'
-                            : 'Checking ZEC deposit',
+                            ? _toastContext(context).l10n.swapPanelDepositSent
+                            : _toastContext(
+                                context,
+                              ).l10n.swapPanelDepositChecking,
                       );
                     },
                   )
@@ -926,7 +932,14 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           amountText: trimSwapAmountText(presentation.receiveAmountText),
           asset: presentation.receiveAsset,
           bottomText: hasRecipient
-              ? 'To: ${_headerRecipientText(recipient, presentation: presentation, contacts: addressBookContacts, contactId: recipientContactId)}'
+              ? context.l10n.swapPanelRecipientTo(
+                  _headerRecipientText(
+                    recipient,
+                    presentation: presentation,
+                    contacts: addressBookContacts,
+                    contactId: recipientContactId,
+                  ),
+                )
               : presentation.receiveFiatText,
           fullAddress: recipientFullAddress,
         ),
@@ -1005,8 +1018,11 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           _activeTab = tab;
         });
       },
-      onCopy: (text) =>
-          copyTextWithToast(context, text: text, toastMessage: 'Copied'),
+      onCopy: (text) => copyTextWithToast(
+        context,
+        text: text,
+        toastMessage: context.l10n.commonCopied,
+      ),
     );
   }
 }
@@ -1050,7 +1066,7 @@ String? _payDepositTxid(SwapIntent intent) {
 /// Figma-style 6 ... 5 truncation for the header's "To:" line.
 String _truncateHeaderAddress(String address) {
   if (address.length <= 14) return address;
-  return '${address.substring(0, 6)} ... '
+  return '${address.substring(0, 6)} ... ' // l10n-ignore: address truncation
       '${address.substring(address.length - 5)}';
 }
 
@@ -1108,14 +1124,14 @@ class _SwapActivityMissingPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Couldn't load this swap. Try again or pull to refresh.",
+            context.l10n.swapPanelLoadFailedTitle,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.text.accent,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Return to Activity and select a saved swap.',
+            context.l10n.swapPanelLoadFailedBody,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),

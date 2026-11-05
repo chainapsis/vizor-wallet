@@ -1,3 +1,4 @@
+// l10n-ignore-file: provider snapshot text is persisted in swap intents
 part of 'near_intents_one_click_swap_adapter.dart';
 
 String _string(Map<String, dynamic> json, String key) {

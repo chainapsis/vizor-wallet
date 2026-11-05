@@ -148,16 +148,18 @@ class _MobileSwapAddressEditModalState
     final sendsZec = widget.state.direction.sendsZec;
     final asset = widget.state.externalAsset;
     final title = sendsZec
-        ? '${asset.symbol} recipient address'
-        : '${asset.symbol} refund address';
+        ? context.l10n.swapAddressRecipientTitle(asset.symbol)
+        : context.l10n.swapAddressRefundTitle(asset.symbol);
     final hint = widget.state.destinationFieldHint(context.l10n);
     final description = sendsZec
-        ? 'Your ${asset.symbol} will be delivered to this address.'
-        : "If the swap fails or the rate moves, you'll be refunded in "
-              '${asset.symbol} on ${asset.chainLabel}, minus the fee.';
+        ? context.l10n.swapAddressRecipientDescription(asset.symbol)
+        : context.l10n.swapAddressRefundDescription(
+            asset.symbol,
+            asset.chainLabel,
+          );
     final rememberLabel = sendsZec
-        ? 'Remember this address for recipients'
-        : 'Remember this address for refunds';
+        ? context.l10n.swapAddressRememberRecipient
+        : context.l10n.swapAddressRememberRefund;
     final formatError = _formatError;
     final matchedContact = _matchedContact;
 
@@ -258,7 +260,7 @@ class _MobileSwapAddressEditModalState
             key: const ValueKey('swap_address_update_button'),
             expand: true,
             onPressed: _canSubmit ? _submit : null,
-            child: const Text('Update'),
+            child: Text(context.l10n.commonUpdate),
           ),
           const SizedBox(height: 12),
           AppButton(
@@ -266,7 +268,7 @@ class _MobileSwapAddressEditModalState
             variant: AppButtonVariant.ghost,
             expand: true,
             onPressed: widget.onCancel,
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
         ],
       ),

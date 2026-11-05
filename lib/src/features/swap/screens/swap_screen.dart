@@ -139,7 +139,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         // otherwise the chosen label/avatar would vanish with no feedback.
         final toastContext = _toastOverlayContextKey.currentContext;
         if (toastContext != null && toastContext.mounted) {
-          showAppToast(toastContext, 'Already in your contacts');
+          showAppToast(toastContext, toastContext.l10n.swapContactAlreadySaved);
         }
         return;
       }
@@ -428,7 +428,7 @@ class _SwapPageTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Text(
-      'Swap',
+      context.l10n.swapPageTitle,
       key: const ValueKey('swap_page_title'),
       textAlign: TextAlign.center,
       style: appSerifDisplayStyle(color: colors.text.accent),
@@ -465,13 +465,13 @@ class _SwapReviewFooter extends StatelessWidget {
         : null;
     final loading = state.quoteLoading && !needsDestinationAddress;
     final label = needsDestinationAddress
-        ? _destinationAddressActionLabel(state)
+        ? _destinationAddressActionLabel(context.l10n, state)
         : destinationFormatError ??
               (balanceExceeded
-                  ? 'Not enough ZEC'
+                  ? context.l10n.swapActionNotEnoughZec
                   : state.quoteLoading
-                  ? 'Getting quote'
-                  : 'Review swap');
+                  ? context.l10n.swapActionGettingQuote
+                  : context.l10n.swapActionReview);
     final reviewReady =
         !needsDestinationAddress &&
         destinationFormatError == null &&
@@ -533,10 +533,10 @@ class _SwapReviewButtonLabel extends StatelessWidget {
   }
 }
 
-String _destinationAddressActionLabel(SwapState state) {
+String _destinationAddressActionLabel(AppLocalizations l10n, SwapState state) {
   return state.direction.sendsZec
-      ? 'Add recipient address'
-      : 'Add refund address';
+      ? l10n.swapActionAddRecipientAddress
+      : l10n.swapActionAddRefundAddress;
 }
 
 bool _reviewAmountExceedsAvailableZec(

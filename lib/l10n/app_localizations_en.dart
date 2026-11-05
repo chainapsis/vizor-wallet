@@ -5120,6 +5120,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sidebarShowBalance => 'Show balance';
 
   @override
+  String get swapActionAddRecipientAddress => 'Add recipient address';
+
+  @override
+  String get swapActionAddRefundAddress => 'Add refund address';
+
+  @override
+  String get swapActionContinueToReview => 'Continue to review';
+
+  @override
+  String get swapActionGettingQuote => 'Getting quote';
+
+  @override
+  String get swapActionNotEnoughZec => 'Not enough ZEC';
+
+  @override
+  String get swapActionReview => 'Review swap';
+
+  @override
   String swapActivityAddressBookRecipient(String symbol) {
     return '$symbol recipient';
   }
@@ -5621,6 +5639,561 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapActivityYoureReceiving => 'You\'re receiving';
+
+  @override
+  String swapAddressRecipientDescription(String symbol) {
+    return 'Your $symbol will be delivered to this address.';
+  }
+
+  @override
+  String get swapAddressRecipientFieldLabel => 'Recipient';
+
+  @override
+  String swapAddressRecipientTitle(String symbol) {
+    return '$symbol recipient address';
+  }
+
+  @override
+  String swapAddressRefundDescription(String symbol, String chain) {
+    return 'If the swap fails or the rate moves, you\'ll be refunded in $symbol on $chain, minus the fee.';
+  }
+
+  @override
+  String get swapAddressRefundFieldLabel => 'Refund to';
+
+  @override
+  String swapAddressRefundTitle(String symbol) {
+    return '$symbol refund address';
+  }
+
+  @override
+  String get swapAddressRememberRecipient =>
+      'Remember this address for recipients';
+
+  @override
+  String get swapAddressRememberRefund => 'Remember this address for refunds';
+
+  @override
+  String get swapAssetSelectorEmpty => 'No tokens or chains found';
+
+  @override
+  String get swapAssetSelectorSearchHint => 'Search token or chain';
+
+  @override
+  String get swapAssetSelectorTitle => 'Select asset';
+
+  @override
+  String swapChainAddressTitle(String chain) {
+    return '$chain address';
+  }
+
+  @override
+  String get swapComposerAddRecipientAddressEllipsis =>
+      'Add recipient address...';
+
+  @override
+  String get swapComposerAddRefundAddressEllipsis => 'Add refund address...';
+
+  @override
+  String swapComposerMaxAmount(String amount) {
+    return 'Max: $amount';
+  }
+
+  @override
+  String get swapComposerYouPay => 'You pay';
+
+  @override
+  String get swapComposerYouReceive => 'You receive';
+
+  @override
+  String get swapContactAlreadyInAddressBook => 'Already in your address book';
+
+  @override
+  String get swapContactAlreadySaved => 'Already in your contacts';
+
+  @override
+  String get swapDepositAmount => 'Amount';
+
+  @override
+  String get swapDepositAmountCopiedDesktop => 'Amount Copied';
+
+  @override
+  String get swapDepositAmountCopiedMobile => 'Amount copied';
+
+  @override
+  String get swapDepositAmountToDeposit => 'Amount to deposit';
+
+  @override
+  String get swapDepositChecking => 'Checking';
+
+  @override
+  String get swapDepositDoneDesktop => 'I\'ve deposited';
+
+  @override
+  String get swapDepositDoneMobile => 'I’ve deposited tokens';
+
+  @override
+  String get swapDepositHourOne => '1hr';
+
+  @override
+  String swapDepositHoursMany(int count) {
+    return '${count}hrs';
+  }
+
+  @override
+  String get swapDepositMemo => 'Memo';
+
+  @override
+  String get swapDepositMemoCopied => 'Memo copied';
+
+  @override
+  String get swapDepositMinuteOne => '1min';
+
+  @override
+  String swapDepositMinutesMany(int count) {
+    return '${count}mins';
+  }
+
+  @override
+  String get swapDepositOneTimeAddress => 'One-time address';
+
+  @override
+  String swapDepositSendOnly(String symbol, String chain) {
+    return 'Send only $symbol on $chain';
+  }
+
+  @override
+  String get swapDepositTimeoutBody =>
+      'This deposit address is no longer valid.\nPlease, start another swap transaction.';
+
+  @override
+  String get swapDepositTimeoutTitle => 'Swap failed';
+
+  @override
+  String get swapDepositTitle => 'Deposit tokens';
+
+  @override
+  String get swapDepositWithin => 'Deposit within';
+
+  @override
+  String get swapDepositZecButton => 'Deposit ZEC';
+
+  @override
+  String get swapDismissBarrierLabel => 'Dismiss';
+
+  @override
+  String get swapFullAddress => 'Full address';
+
+  @override
+  String get swapKeystoneAfterScan => 'After you scanned, click Get signature.';
+
+  @override
+  String get swapKeystoneBroadcastFailed =>
+      'Transaction could not be broadcast.';
+
+  @override
+  String get swapKeystoneBroadcastingTitle => 'Broadcasting ZEC deposit';
+
+  @override
+  String get swapKeystoneCancelFailed =>
+      'Could not finish cancelling. Please try again.';
+
+  @override
+  String get swapKeystoneCancelledBeforeParams =>
+      'Signing was cancelled before proving parameters were downloaded.';
+
+  @override
+  String get swapKeystoneCancelling => 'Cancelling…';
+
+  @override
+  String get swapKeystoneExpired =>
+      'Transaction expired before it could be signed.';
+
+  @override
+  String get swapKeystoneFailedTitle => 'Keystone signing failed';
+
+  @override
+  String get swapKeystoneFinalizing => 'Broadcasting ZEC deposit...';
+
+  @override
+  String get swapKeystoneGetSignature => 'Get signature';
+
+  @override
+  String get swapKeystoneIncomplete =>
+      'ZEC deposit signing could not be completed.';
+
+  @override
+  String get swapKeystoneNoTex => 'Keystone does not support TEX sends yet.';
+
+  @override
+  String get swapKeystoneQrMismatch =>
+      'This QR code does not match the current Keystone request.';
+
+  @override
+  String get swapKeystoneScanCaption =>
+      'Scan the QR code on your Keystone to finish the ZEC deposit';
+
+  @override
+  String get swapKeystoneScanDescription =>
+      'Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.';
+
+  @override
+  String get swapKeystoneScanToSign => 'Scan to sign';
+
+  @override
+  String get swapKeystoneSignTitle => 'Sign ZEC deposit on Keystone';
+
+  @override
+  String get swapKeystoneStatusUncertain =>
+      'The transaction status is uncertain. Refresh activity before trying again.';
+
+  @override
+  String get swapKeystoneUnexpectedUr =>
+      'Open the signature result QR on Keystone, then scan again.';
+
+  @override
+  String get swapLedgerBackToActivity => 'Back to activity';
+
+  @override
+  String get swapLedgerBroadcastFailed =>
+      'The ZEC deposit could not be broadcast.';
+
+  @override
+  String get swapLedgerDeclined =>
+      'The ZEC deposit was rejected on your Ledger.';
+
+  @override
+  String get swapLedgerMessageBackground =>
+      'Vizor is already finishing this transaction in the background.';
+
+  @override
+  String get swapLedgerMessageExpired =>
+      'The transaction expired before it was sent. Vizor still needs to release its reserved funds.';
+
+  @override
+  String get swapLedgerMessageSentNotSaved =>
+      'The transaction was sent, but Vizor could not finish saving it.';
+
+  @override
+  String get swapLedgerMessageUncertain =>
+      'Vizor could not confirm whether the transaction was sent, and still needs to save its status.';
+
+  @override
+  String get swapLedgerRetryCleanup => 'Retry cleanup';
+
+  @override
+  String get swapLedgerRetrySaving => 'Retry saving';
+
+  @override
+  String get swapLedgerSigningIncomplete =>
+      'Ledger signing could not be completed.';
+
+  @override
+  String get swapLedgerStatusCleanup => 'Cleanup needed';
+
+  @override
+  String get swapLedgerStatusSaving => 'Saving transaction';
+
+  @override
+  String get swapLedgerStatusWait => 'Please wait';
+
+  @override
+  String get swapLedgerTitleExpired => 'Transaction expired';
+
+  @override
+  String get swapLedgerTitlePending => 'Transaction status pending';
+
+  @override
+  String get swapLedgerTitleRecovery => 'Transaction recovery in progress';
+
+  @override
+  String get swapLedgerTitleSent => 'Transaction sent';
+
+  @override
+  String get swapNoticeAffectedNetworks => 'Affected networks';
+
+  @override
+  String get swapNoticeAllChains => 'All chains';
+
+  @override
+  String get swapNoticeCloseLabel => 'Close service notice';
+
+  @override
+  String swapNoticeExpectedEnd(String time) {
+    return 'Expected end: $time';
+  }
+
+  @override
+  String get swapNoticeListOfMaintenance => 'List of maintenance';
+
+  @override
+  String get swapNoticeMaintenanceIntro => 'NEAR Intents is under maintenance.';
+
+  @override
+  String get swapNoticeMaintenanceTitle => 'Maintenance notice';
+
+  @override
+  String swapNoticeMaintenanceWindow(String networks) {
+    return 'Maintenance window: $networks';
+  }
+
+  @override
+  String get swapNoticeOk => 'Ok';
+
+  @override
+  String get swapNoticePaymentsMayFail => 'Payments may not work right now.';
+
+  @override
+  String get swapNoticeServiceTitle => 'Service notice';
+
+  @override
+  String swapNoticeStart(String time) {
+    return 'Start: $time';
+  }
+
+  @override
+  String get swapNoticeStatusPage => 'NEAR Intents status page';
+
+  @override
+  String get swapNoticeSwapsMayFail => 'Swaps may not work right now.';
+
+  @override
+  String get swapPageTitle => 'Swap';
+
+  @override
+  String get swapPanelDepositChecking => 'Checking ZEC deposit';
+
+  @override
+  String get swapPanelDepositSent => 'ZEC deposit sent';
+
+  @override
+  String get swapPanelLoadFailedBody =>
+      'Return to Activity and select a saved swap.';
+
+  @override
+  String get swapPanelLoadFailedTitle =>
+      'Couldn\'t load this swap. Try again or pull to refresh.';
+
+  @override
+  String swapPanelRecipientTo(String recipient) {
+    return 'To: $recipient';
+  }
+
+  @override
+  String get swapPayStatusConvertedFrom => 'Converted from';
+
+  @override
+  String get swapPayStatusNewAddress => 'New address';
+
+  @override
+  String get swapPayStatusProgressTab => 'Payment progress';
+
+  @override
+  String get swapPayStatusRefundFee => 'Refund fee';
+
+  @override
+  String get swapPayStatusRefundTo => 'Refund to';
+
+  @override
+  String get swapPayStatusRefundedAmount => 'Refunded amount';
+
+  @override
+  String get swapPayStatusShowFullAddress => 'Show full address';
+
+  @override
+  String get swapPayStatusSourceAmount => 'Source amount';
+
+  @override
+  String get swapPayStatusTimestamp => 'Timestamp';
+
+  @override
+  String get swapPayStatusTo => 'To';
+
+  @override
+  String get swapPayStatusTxFee => 'Tx fee';
+
+  @override
+  String get swapPayStatusTxId => 'Tx ID';
+
+  @override
+  String get swapPoweredByLabel => 'Powered by';
+
+  @override
+  String get swapReviewBackPay => 'Pay';
+
+  @override
+  String get swapReviewConfirmAndSwap => 'Confirm & swap';
+
+  @override
+  String get swapReviewConfirmPaymentTitle => 'Confirm payment';
+
+  @override
+  String get swapReviewConfirmSwap => 'Confirm swap';
+
+  @override
+  String swapReviewFromAddress(String address) {
+    return 'From: $address';
+  }
+
+  @override
+  String get swapReviewGuaranteedMinimum => 'Guaranteed minimum';
+
+  @override
+  String get swapReviewInsufficientZecPay =>
+      'You don\'t have enough ZEC for this payment. Try a smaller amount.';
+
+  @override
+  String get swapReviewInsufficientZecSwap =>
+      'You don\'t have enough ZEC for this swap. Try a smaller amount.';
+
+  @override
+  String get swapReviewNetworkFees => 'Network + conversion fees';
+
+  @override
+  String swapReviewPayAmount(String amount) {
+    return 'Pay $amount';
+  }
+
+  @override
+  String get swapReviewPrivately => 'Privately, from shielded balance';
+
+  @override
+  String get swapReviewQuoteExpired =>
+      'Quote expired. Review again for an updated rate.';
+
+  @override
+  String get swapReviewQuoteHolds => 'Quote holds';
+
+  @override
+  String get swapReviewQuoteInactive => 'This quote is no longer active.';
+
+  @override
+  String get swapReviewRate => 'Rate';
+
+  @override
+  String get swapReviewRecipientGets => 'Recipient gets';
+
+  @override
+  String swapReviewRefundToAddress(String address) {
+    return 'Refund to: $address';
+  }
+
+  @override
+  String get swapReviewReturnToSwap => 'Return to swap';
+
+  @override
+  String get swapReviewReviewAgain => 'Review again';
+
+  @override
+  String get swapReviewSlippageTolerance => 'Slippage tolerance';
+
+  @override
+  String get swapReviewStartingLockingQuote => 'Locking quote';
+
+  @override
+  String get swapReviewStartingPaying => 'Paying';
+
+  @override
+  String get swapReviewStartingSending => 'Sending';
+
+  @override
+  String get swapReviewSwapFee => 'Swap fee';
+
+  @override
+  String get swapReviewSwapTitle => 'Review swap';
+
+  @override
+  String get swapReviewTitlePay => 'Review Payment';
+
+  @override
+  String get swapReviewTitleSwap => 'Review quote';
+
+  @override
+  String swapReviewToAddress(String address) {
+    return 'To: $address';
+  }
+
+  @override
+  String swapReviewToAddressOnChain(String address, String chain) {
+    return 'To: $address on $chain';
+  }
+
+  @override
+  String get swapReviewYouPay => 'You pay';
+
+  @override
+  String get swapScanNoAddress => 'QR code did not include an address.';
+
+  @override
+  String get swapSignPayment => 'Sign payment';
+
+  @override
+  String get swapSignZecDeposit => 'Sign ZEC deposit';
+
+  @override
+  String get swapSlippageCustom => 'Custom';
+
+  @override
+  String get swapSlippageDescriptionPay =>
+      'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.';
+
+  @override
+  String get swapSlippageDescriptionSwap =>
+      'Sets the maximum rate change you\'ll accept. Network fees are separate.';
+
+  @override
+  String get swapSlippageRangeError => 'Slippage must be 0.1 - 5%';
+
+  @override
+  String get swapSlippageTitle => 'Slippage';
+
+  @override
+  String get swapStatusBadgeCompleted => 'Completed';
+
+  @override
+  String get swapStatusBadgeFailed => 'Failed';
+
+  @override
+  String get swapStatusBadgeInProgress => 'In progress';
+
+  @override
+  String get swapStatusBadgeNeedsAttention => 'Needs attention';
+
+  @override
+  String get swapStatusBadgeRefunded => 'Refunded';
+
+  @override
+  String get swapStatusDetailsTab => 'Transaction details';
+
+  @override
+  String get swapStatusPayLabel => 'You\'re paying';
+
+  @override
+  String get swapStatusProgressTab => 'Swap progress';
+
+  @override
+  String get swapStatusReceiveLabel => 'You\'re receiving';
+
+  @override
+  String get swapStatusRowLabel => 'Status';
+
+  @override
+  String get swapTimeoutBody => 'Please, start another swap transaction.';
+
+  @override
+  String get swapTimeoutHeadline => 'This deposit address is no longer valid';
+
+  @override
+  String get swapTimeoutRestart => 'Restart swap';
+
+  @override
+  String get swapTimeoutTitle => 'Time’s up';
+
+  @override
+  String get swapViewOnNearIntents => 'View on NEAR Intents';
+
+  @override
+  String get swapZcashAddressTitle => 'Zcash address';
 
   @override
   String syncCheckingPercentSemantics(String percent) {

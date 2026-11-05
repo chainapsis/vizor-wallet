@@ -57,7 +57,6 @@ class MobileSwapReviewContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final sendsZec = quote.direction.sendsZec;
     final externalAddress = addressPlan.userExternalAddress.trim();
-    final externalLabel = sendsZec ? 'To' : 'From';
     final externalContactLabel = addressBookContactForSwapAsset(
       contacts: addressBookContacts,
       asset: sendsZec ? quote.receiveAsset : quote.sellAsset,
@@ -77,10 +76,12 @@ class MobileSwapReviewContent extends StatelessWidget {
             label: externalContactLabel,
             compactAddress: externalCompact,
           );
-    final externalBottom = '$externalLabel: $externalAddressText';
+    final externalBottom = sendsZec
+        ? context.l10n.swapReviewToAddress(externalAddressText)
+        : context.l10n.swapReviewFromAddress(externalAddressText);
 
     final payRow = MobileSwapReviewHeaderRow(
-      label: "You're paying",
+      label: context.l10n.swapStatusPayLabel,
       amountText: trimSwapAmountText(
         compactSwapAmountText(quote.sellAmountText),
       ),
@@ -88,7 +89,7 @@ class MobileSwapReviewContent extends StatelessWidget {
       bottomText: sendsZec ? payFiatTextOverride : null,
     );
     final receiveRow = MobileSwapReviewHeaderRow(
-      label: "You're receiving",
+      label: context.l10n.swapStatusReceiveLabel,
       amountText: trimSwapAmountText(
         compactSwapAmountText(quote.receiveEstimateText),
       ),
@@ -113,9 +114,7 @@ class MobileSwapReviewContent extends StatelessWidget {
         ],
         if (expired) ...[
           const SizedBox(height: AppSpacing.s),
-          const _MobileReviewNotice(
-            message: 'Quote expired. Review again for an updated rate.',
-          ),
+          _MobileReviewNotice(message: context.l10n.swapReviewQuoteExpired),
         ],
         if (startError != null) ...[
           const SizedBox(height: AppSpacing.s),
@@ -159,11 +158,11 @@ class _ReviewCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ReviewRow(
-            label: 'Slippage tolerance',
+            label: context.l10n.swapReviewSlippageTolerance,
             value: swapReviewSlippageToleranceText(quote),
           ),
           _ReviewRow(
-            label: 'Guaranteed minimum',
+            label: context.l10n.swapReviewGuaranteedMinimum,
             value: compactSwapAmountText(quote.minimumReceiveText),
             helpTooltip: swapMinimumReceiveTooltip(
               context.l10n,
@@ -175,7 +174,7 @@ class _ReviewCard extends StatelessWidget {
           Container(height: 1, color: colors.border.regular),
           const SizedBox(height: AppSpacing.sm),
           _ReviewRow(
-            label: 'Swap fee',
+            label: context.l10n.swapReviewSwapFee,
             value: quote.feeLabel,
             helpTooltip: swapFeeTooltip(context.l10n),
           ),
@@ -318,16 +317,18 @@ class MobileSwapReviewActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final startingLabel = sendsZec ? 'Sending' : 'Locking quote';
+    final startingLabel = sendsZec
+        ? context.l10n.swapReviewStartingSending
+        : context.l10n.swapReviewStartingLockingQuote;
     final primaryLabel = inactive
-        ? 'Return to swap'
+        ? context.l10n.swapReviewReturnToSwap
         : expired
-        ? 'Review again'
+        ? context.l10n.swapReviewReviewAgain
         : startBlockedReason != null
-        ? 'Not enough ZEC'
+        ? context.l10n.swapActionNotEnoughZec
         : starting
         ? startingLabel
-        : 'Confirm & swap';
+        : context.l10n.swapReviewConfirmAndSwap;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -365,7 +366,7 @@ class MobileSwapReviewActions extends StatelessWidget {
                 height: AppButtonSizing.largeHeight,
                 child: Center(
                   child: Text(
-                    'Cancel',
+                    context.l10n.commonCancel,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.button.ghost.label,
                     ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
@@ -162,7 +163,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
       // relayout entirely. A deliberate product step away from the Figma
       // filled frames, which hide the labels once a value is entered.
       showTitle: true,
-      title: 'You pay',
+      title: context.l10n.swapComposerYouPay,
       titleTrailing: sendsZec
           ? _MaxAmountTrigger(
               availableText: widget.zecAvailableText,
@@ -184,7 +185,10 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
             : state.direction.fromAsset(state.externalAsset).decimals,
       ),
       asset: sendsZec
-          ? const _CurrencyPicker(asset: SwapAsset.zec, label: 'Zcash')
+          ? const _CurrencyPicker(
+              asset: SwapAsset.zec,
+              label: 'Zcash', // l10n-ignore: product name
+            )
           : _CurrencyPicker(
               key: const ValueKey('swap_external_asset_selector'),
               asset: state.externalAsset,
@@ -209,7 +213,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
           : _AddressChip(
               value: state.destinationText,
               contactName: widget.destinationContactName,
-              emptyText: 'Add refund address...',
+              emptyText: context.l10n.swapComposerAddRefundAddressEllipsis,
               onTap: widget.onOpenDestinationAddress,
             ),
     );
@@ -217,7 +221,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
     final receiveCard = _SwapCard(
       filled: receiveActive,
       showTitle: true,
-      title: 'You receive',
+      title: context.l10n.swapComposerYouReceive,
       amount: _SwapAmountInput(
         key: const ValueKey('swap_receive_amount_field'),
         controller: _receiveAmountController,
@@ -238,7 +242,10 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
               showChainBadge: true,
               onTap: widget.onOpenExternalAssetPicker,
             )
-          : const _CurrencyPicker(asset: SwapAsset.zec, label: 'Zcash'),
+          : const _CurrencyPicker(
+              asset: SwapAsset.zec,
+              label: 'Zcash', // l10n-ignore: product name
+            ),
       fiat: _FiatModeToggle(
         text: _amountMetaText(
           state,
@@ -255,7 +262,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
           ? _AddressChip(
               value: state.destinationText,
               contactName: widget.destinationContactName,
-              emptyText: 'Add recipient address...',
+              emptyText: context.l10n.swapComposerAddRecipientAddressEllipsis,
               onTap: widget.onOpenDestinationAddress,
             )
           : null,
@@ -694,7 +701,7 @@ class _MaxAmountTrigger extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: loading ? null : onTap,
       child: Text(
-        errorText ?? 'Max: $availableText',
+        errorText ?? context.l10n.swapComposerMaxAmount(availableText),
         key: const ValueKey('swap_available_balance'),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,

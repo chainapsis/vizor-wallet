@@ -5031,6 +5031,24 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sidebarShowBalance => '잔⁠액 보⁠기';
 
   @override
+  String get swapActionAddRecipientAddress => '받⁠는 주⁠소 추⁠가';
+
+  @override
+  String get swapActionAddRefundAddress => '환⁠불 주⁠소 추⁠가';
+
+  @override
+  String get swapActionContinueToReview => '검⁠토⁠로 이⁠동';
+
+  @override
+  String get swapActionGettingQuote => '견⁠적 가⁠져⁠오⁠는 중';
+
+  @override
+  String get swapActionNotEnoughZec => 'ZEC⁠가 부⁠족⁠해⁠요';
+
+  @override
+  String get swapActionReview => '스⁠왑 검⁠토';
+
+  @override
   String swapActivityAddressBookRecipient(String symbol) {
     return '$symbol 수⁠신⁠자';
   }
@@ -5527,6 +5545,553 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapActivityYoureReceiving => '받⁠는 금⁠액';
+
+  @override
+  String swapAddressRecipientDescription(String symbol) {
+    return '$symbol⁠이(가) 이 주⁠소⁠로 전⁠송⁠돼⁠요.';
+  }
+
+  @override
+  String get swapAddressRecipientFieldLabel => '받⁠는 주⁠소';
+
+  @override
+  String swapAddressRecipientTitle(String symbol) {
+    return '$symbol 받⁠는 주⁠소';
+  }
+
+  @override
+  String swapAddressRefundDescription(String symbol, String chain) {
+    return '스⁠왑⁠이 실⁠패⁠하⁠거⁠나 환⁠율⁠이 변⁠동⁠되⁠면 수⁠수⁠료⁠를 제⁠외⁠한 금⁠액⁠을 $chain⁠의 $symbol(으)로 환⁠불⁠해 드⁠려⁠요.';
+  }
+
+  @override
+  String get swapAddressRefundFieldLabel => '환⁠불 주⁠소';
+
+  @override
+  String swapAddressRefundTitle(String symbol) {
+    return '$symbol 환⁠불 주⁠소';
+  }
+
+  @override
+  String get swapAddressRememberRecipient => '받⁠는 주⁠소⁠로 이 주⁠소 기⁠억⁠하⁠기';
+
+  @override
+  String get swapAddressRememberRefund => '환⁠불 주⁠소⁠로 이 주⁠소 기⁠억⁠하⁠기';
+
+  @override
+  String get swapAssetSelectorEmpty => '토⁠큰⁠이⁠나 체⁠인⁠을 찾⁠을 수 없⁠어⁠요';
+
+  @override
+  String get swapAssetSelectorSearchHint => '토⁠큰 또⁠는 체⁠인 검⁠색';
+
+  @override
+  String get swapAssetSelectorTitle => '자⁠산 선⁠택';
+
+  @override
+  String swapChainAddressTitle(String chain) {
+    return '$chain 주⁠소';
+  }
+
+  @override
+  String get swapComposerAddRecipientAddressEllipsis => '받⁠는 주⁠소 추⁠가...';
+
+  @override
+  String get swapComposerAddRefundAddressEllipsis => '환⁠불 주⁠소 추⁠가...';
+
+  @override
+  String swapComposerMaxAmount(String amount) {
+    return '최⁠대: $amount';
+  }
+
+  @override
+  String get swapComposerYouPay => '내⁠가 보⁠내⁠는 금⁠액';
+
+  @override
+  String get swapComposerYouReceive => '내⁠가 받⁠는 금⁠액';
+
+  @override
+  String get swapContactAlreadyInAddressBook => '이⁠미 주⁠소⁠록⁠에 있⁠어⁠요';
+
+  @override
+  String get swapContactAlreadySaved => '이⁠미 연⁠락⁠처⁠에 있⁠어⁠요';
+
+  @override
+  String get swapDepositAmount => '금⁠액';
+
+  @override
+  String get swapDepositAmountCopiedDesktop => '금⁠액⁠을 복⁠사⁠했⁠어⁠요';
+
+  @override
+  String get swapDepositAmountCopiedMobile => '금⁠액⁠을 복⁠사⁠했⁠어⁠요';
+
+  @override
+  String get swapDepositAmountToDeposit => '입⁠금⁠할 금⁠액';
+
+  @override
+  String get swapDepositChecking => '확⁠인 중';
+
+  @override
+  String get swapDepositDoneDesktop => '입⁠금⁠했⁠어⁠요';
+
+  @override
+  String get swapDepositDoneMobile => '토⁠큰⁠을 입⁠금⁠했⁠어⁠요';
+
+  @override
+  String get swapDepositHourOne => '1⁠시⁠간';
+
+  @override
+  String swapDepositHoursMany(int count) {
+    return '$count⁠시⁠간';
+  }
+
+  @override
+  String get swapDepositMemo => '메⁠모';
+
+  @override
+  String get swapDepositMemoCopied => '메⁠모⁠를 복⁠사⁠했⁠어⁠요';
+
+  @override
+  String get swapDepositMinuteOne => '1⁠분';
+
+  @override
+  String swapDepositMinutesMany(int count) {
+    return '$count⁠분';
+  }
+
+  @override
+  String get swapDepositOneTimeAddress => '일⁠회⁠용 주⁠소';
+
+  @override
+  String swapDepositSendOnly(String symbol, String chain) {
+    return '$chain⁠의 $symbol⁠만 보⁠내⁠세⁠요';
+  }
+
+  @override
+  String get swapDepositTimeoutBody =>
+      '이 입⁠금 주⁠소⁠는 더 이⁠상 유⁠효⁠하⁠지 않⁠아⁠요.\n새 스⁠왑⁠을 시⁠작⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapDepositTimeoutTitle => '스⁠왑 실⁠패';
+
+  @override
+  String get swapDepositTitle => '토⁠큰 입⁠금';
+
+  @override
+  String get swapDepositWithin => '입⁠금 기⁠한';
+
+  @override
+  String get swapDepositZecButton => 'ZEC 입⁠금';
+
+  @override
+  String get swapDismissBarrierLabel => '닫⁠기';
+
+  @override
+  String get swapFullAddress => '전⁠체 주⁠소';
+
+  @override
+  String get swapKeystoneAfterScan => '스⁠캔⁠한 뒤 서⁠명 가⁠져⁠오⁠기⁠를 누⁠르⁠세⁠요.';
+
+  @override
+  String get swapKeystoneBroadcastFailed => '거⁠래⁠를 전⁠송⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get swapKeystoneBroadcastingTitle => 'ZEC 입⁠금 전⁠송 중';
+
+  @override
+  String get swapKeystoneCancelFailed =>
+      '취⁠소⁠를 완⁠료⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapKeystoneCancelledBeforeParams =>
+      '증⁠명 파⁠라⁠미⁠터⁠를 내⁠려⁠받⁠기 전⁠에 서⁠명⁠이 취⁠소⁠됐⁠어⁠요.';
+
+  @override
+  String get swapKeystoneCancelling => '취⁠소⁠하⁠는 중…';
+
+  @override
+  String get swapKeystoneExpired => '서⁠명⁠하⁠기 전⁠에 거⁠래⁠가 만⁠료⁠됐⁠어⁠요.';
+
+  @override
+  String get swapKeystoneFailedTitle => 'Keystone 서⁠명⁠에 실⁠패⁠했⁠어⁠요';
+
+  @override
+  String get swapKeystoneFinalizing => 'ZEC 입⁠금 전⁠송 중...';
+
+  @override
+  String get swapKeystoneGetSignature => '서⁠명 가⁠져⁠오⁠기';
+
+  @override
+  String get swapKeystoneIncomplete => 'ZEC 입⁠금 서⁠명⁠을 완⁠료⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get swapKeystoneNoTex => 'Keystone⁠은 아⁠직 TEX 전⁠송⁠을 지⁠원⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get swapKeystoneQrMismatch =>
+      '이 QR 코⁠드⁠는 현⁠재 Keystone 요⁠청⁠과 일⁠치⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get swapKeystoneScanCaption =>
+      'Keystone⁠의 QR 코⁠드⁠를 스⁠캔⁠해 ZEC 입⁠금⁠을 마⁠무⁠리⁠하⁠세⁠요';
+
+  @override
+  String get swapKeystoneScanDescription =>
+      'Keystone 지⁠갑⁠으⁠로 이 거⁠래 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요. 기⁠기⁠의 안⁠내⁠를 따⁠라 진⁠행⁠하⁠세⁠요.';
+
+  @override
+  String get swapKeystoneScanToSign => '스⁠캔⁠하⁠여 서⁠명';
+
+  @override
+  String get swapKeystoneSignTitle => 'Keystone⁠에⁠서 ZEC 입⁠금 서⁠명';
+
+  @override
+  String get swapKeystoneStatusUncertain =>
+      '거⁠래 상⁠태⁠가 확⁠실⁠하⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 활⁠동⁠을 새⁠로⁠고⁠침⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapKeystoneUnexpectedUr =>
+      'Keystone⁠에⁠서 서⁠명 결⁠과 QR⁠을 연 다⁠음 다⁠시 스⁠캔⁠하⁠세⁠요.';
+
+  @override
+  String get swapLedgerBackToActivity => '활⁠동⁠으⁠로 돌⁠아⁠가⁠기';
+
+  @override
+  String get swapLedgerBroadcastFailed => 'ZEC 입⁠금⁠을 전⁠송⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get swapLedgerDeclined => 'Ledger⁠에⁠서 ZEC 입⁠금⁠이 거⁠부⁠됐⁠어⁠요.';
+
+  @override
+  String get swapLedgerMessageBackground =>
+      'Vizor⁠가 이⁠미 백⁠그⁠라⁠운⁠드⁠에⁠서 이 거⁠래⁠를 마⁠무⁠리⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get swapLedgerMessageExpired =>
+      '거⁠래⁠가 전⁠송⁠되⁠기 전⁠에 만⁠료⁠됐⁠어⁠요. Vizor⁠가 예⁠약⁠된 자⁠금⁠을 아⁠직 해⁠제⁠해⁠야 해⁠요.';
+
+  @override
+  String get swapLedgerMessageSentNotSaved =>
+      '거⁠래⁠는 전⁠송⁠됐⁠지⁠만 Vizor⁠가 저⁠장⁠을 마⁠치⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get swapLedgerMessageUncertain =>
+      '거⁠래⁠가 전⁠송⁠됐⁠는⁠지 Vizor⁠가 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 상⁠태⁠를 아⁠직 저⁠장⁠해⁠야 해⁠요.';
+
+  @override
+  String get swapLedgerRetryCleanup => '정⁠리 다⁠시 시⁠도';
+
+  @override
+  String get swapLedgerRetrySaving => '저⁠장 다⁠시 시⁠도';
+
+  @override
+  String get swapLedgerSigningIncomplete => 'Ledger 서⁠명⁠을 완⁠료⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get swapLedgerStatusCleanup => '정⁠리 필⁠요';
+
+  @override
+  String get swapLedgerStatusSaving => '거⁠래 저⁠장 중';
+
+  @override
+  String get swapLedgerStatusWait => '잠⁠시⁠만 기⁠다⁠려 주⁠세⁠요';
+
+  @override
+  String get swapLedgerTitleExpired => '거⁠래⁠가 만⁠료⁠됐⁠어⁠요';
+
+  @override
+  String get swapLedgerTitlePending => '거⁠래 상⁠태 확⁠인 중';
+
+  @override
+  String get swapLedgerTitleRecovery => '거⁠래 복⁠구 진⁠행 중';
+
+  @override
+  String get swapLedgerTitleSent => '거⁠래⁠를 보⁠냈⁠어⁠요';
+
+  @override
+  String get swapNoticeAffectedNetworks => '영⁠향⁠받⁠는 네⁠트⁠워⁠크';
+
+  @override
+  String get swapNoticeAllChains => '모⁠든 체⁠인';
+
+  @override
+  String get swapNoticeCloseLabel => '서⁠비⁠스 안⁠내 닫⁠기';
+
+  @override
+  String swapNoticeExpectedEnd(String time) {
+    return '종⁠료 예⁠정: $time';
+  }
+
+  @override
+  String get swapNoticeListOfMaintenance => '점⁠검 목⁠록';
+
+  @override
+  String get swapNoticeMaintenanceIntro => 'NEAR Intents⁠가 점⁠검 중⁠이⁠에⁠요.';
+
+  @override
+  String get swapNoticeMaintenanceTitle => '점⁠검 안⁠내';
+
+  @override
+  String swapNoticeMaintenanceWindow(String networks) {
+    return '점⁠검 대⁠상: $networks';
+  }
+
+  @override
+  String get swapNoticeOk => '확⁠인';
+
+  @override
+  String get swapNoticePaymentsMayFail => '지⁠금⁠은 결⁠제⁠가 되⁠지 않⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get swapNoticeServiceTitle => '서⁠비⁠스 안⁠내';
+
+  @override
+  String swapNoticeStart(String time) {
+    return '시⁠작: $time';
+  }
+
+  @override
+  String get swapNoticeStatusPage => 'NEAR Intents 상⁠태 페⁠이⁠지';
+
+  @override
+  String get swapNoticeSwapsMayFail => '지⁠금⁠은 스⁠왑⁠이 되⁠지 않⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get swapPageTitle => '스⁠왑';
+
+  @override
+  String get swapPanelDepositChecking => 'ZEC 입⁠금⁠을 확⁠인⁠하⁠는 중';
+
+  @override
+  String get swapPanelDepositSent => 'ZEC 입⁠금⁠을 보⁠냈⁠어⁠요';
+
+  @override
+  String get swapPanelLoadFailedBody =>
+      '활⁠동⁠으⁠로 돌⁠아⁠가 저⁠장⁠된 스⁠왑⁠을 선⁠택⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapPanelLoadFailedTitle =>
+      '이 스⁠왑⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 아⁠래⁠로 당⁠겨 새⁠로⁠고⁠침⁠해 주⁠세⁠요.';
+
+  @override
+  String swapPanelRecipientTo(String recipient) {
+    return '받⁠는 사⁠람: $recipient';
+  }
+
+  @override
+  String get swapPayStatusConvertedFrom => '변⁠환 전 금⁠액';
+
+  @override
+  String get swapPayStatusNewAddress => '새 주⁠소';
+
+  @override
+  String get swapPayStatusProgressTab => '결⁠제 진⁠행 상⁠황';
+
+  @override
+  String get swapPayStatusRefundFee => '환⁠불 수⁠수⁠료';
+
+  @override
+  String get swapPayStatusRefundTo => '환⁠불 주⁠소';
+
+  @override
+  String get swapPayStatusRefundedAmount => '환⁠불 금⁠액';
+
+  @override
+  String get swapPayStatusShowFullAddress => '전⁠체 주⁠소 보⁠기';
+
+  @override
+  String get swapPayStatusSourceAmount => '원⁠래 금⁠액';
+
+  @override
+  String get swapPayStatusTimestamp => '일⁠시';
+
+  @override
+  String get swapPayStatusTo => '받⁠는 사⁠람';
+
+  @override
+  String get swapPayStatusTxFee => '거⁠래 수⁠수⁠료';
+
+  @override
+  String get swapPayStatusTxId => '거⁠래 ID';
+
+  @override
+  String get swapPoweredByLabel => '제⁠공:';
+
+  @override
+  String get swapReviewBackPay => '결⁠제';
+
+  @override
+  String get swapReviewConfirmAndSwap => '확⁠인 후 스⁠왑';
+
+  @override
+  String get swapReviewConfirmPaymentTitle => '결⁠제 확⁠인';
+
+  @override
+  String get swapReviewConfirmSwap => '스⁠왑 확⁠인';
+
+  @override
+  String swapReviewFromAddress(String address) {
+    return '보⁠내⁠는 주⁠소: $address';
+  }
+
+  @override
+  String get swapReviewGuaranteedMinimum => '최⁠소 보⁠장 수⁠령⁠액';
+
+  @override
+  String get swapReviewInsufficientZecPay =>
+      '이 결⁠제⁠에 필⁠요⁠한 ZEC⁠가 부⁠족⁠해⁠요. 더 적⁠은 금⁠액⁠으⁠로 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapReviewInsufficientZecSwap =>
+      '이 스⁠왑⁠에 필⁠요⁠한 ZEC⁠가 부⁠족⁠해⁠요. 더 적⁠은 금⁠액⁠으⁠로 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapReviewNetworkFees => '네⁠트⁠워⁠크 + 변⁠환 수⁠수⁠료';
+
+  @override
+  String swapReviewPayAmount(String amount) {
+    return '$amount 결⁠제';
+  }
+
+  @override
+  String get swapReviewPrivately => '차⁠폐 잔⁠액⁠에⁠서 비⁠공⁠개⁠로';
+
+  @override
+  String get swapReviewQuoteExpired =>
+      '견⁠적⁠이 만⁠료⁠됐⁠어⁠요. 최⁠신 환⁠율⁠로 다⁠시 검⁠토⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapReviewQuoteHolds => '견⁠적 유⁠지 시⁠간';
+
+  @override
+  String get swapReviewQuoteInactive => '이 견⁠적⁠은 더 이⁠상 유⁠효⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get swapReviewRate => '환⁠율';
+
+  @override
+  String get swapReviewRecipientGets => '받⁠는 사⁠람⁠이 받⁠는 금⁠액';
+
+  @override
+  String swapReviewRefundToAddress(String address) {
+    return '환⁠불 주⁠소: $address';
+  }
+
+  @override
+  String get swapReviewReturnToSwap => '스⁠왑⁠으⁠로 돌⁠아⁠가⁠기';
+
+  @override
+  String get swapReviewReviewAgain => '다⁠시 검⁠토';
+
+  @override
+  String get swapReviewSlippageTolerance => '슬⁠리⁠피⁠지 허⁠용⁠치';
+
+  @override
+  String get swapReviewStartingLockingQuote => '견⁠적 고⁠정 중';
+
+  @override
+  String get swapReviewStartingPaying => '결⁠제 중';
+
+  @override
+  String get swapReviewStartingSending => '보⁠내⁠는 중';
+
+  @override
+  String get swapReviewSwapFee => '스⁠왑 수⁠수⁠료';
+
+  @override
+  String get swapReviewSwapTitle => '스⁠왑 검⁠토';
+
+  @override
+  String get swapReviewTitlePay => '결⁠제 검⁠토';
+
+  @override
+  String get swapReviewTitleSwap => '견⁠적 검⁠토';
+
+  @override
+  String swapReviewToAddress(String address) {
+    return '받⁠는 주⁠소: $address';
+  }
+
+  @override
+  String swapReviewToAddressOnChain(String address, String chain) {
+    return '받⁠는 주⁠소: $chain⁠의 $address';
+  }
+
+  @override
+  String get swapReviewYouPay => '내⁠가 보⁠내⁠는 금⁠액';
+
+  @override
+  String get swapScanNoAddress => 'QR 코⁠드⁠에 주⁠소⁠가 없⁠어⁠요.';
+
+  @override
+  String get swapSignPayment => '결⁠제 서⁠명';
+
+  @override
+  String get swapSignZecDeposit => 'ZEC 입⁠금 서⁠명';
+
+  @override
+  String get swapSlippageCustom => '직⁠접 입⁠력';
+
+  @override
+  String get swapSlippageDescriptionPay =>
+      '견⁠적⁠이 변⁠동⁠될 때 실⁠행⁠이 실⁠패⁠하⁠기 전⁠까⁠지 이⁠만⁠큼⁠의 추⁠가 ZEC⁠를 허⁠용⁠해⁠요. 네⁠트⁠워⁠크 수⁠수⁠료⁠는 별⁠도⁠예⁠요.';
+
+  @override
+  String get swapSlippageDescriptionSwap =>
+      '허⁠용⁠할 최⁠대 환⁠율 변⁠동⁠폭⁠을 설⁠정⁠해⁠요. 네⁠트⁠워⁠크 수⁠수⁠료⁠는 별⁠도⁠예⁠요.';
+
+  @override
+  String get swapSlippageRangeError => '슬⁠리⁠피⁠지⁠는 0.1 - 5%여⁠야 해⁠요';
+
+  @override
+  String get swapSlippageTitle => '슬⁠리⁠피⁠지';
+
+  @override
+  String get swapStatusBadgeCompleted => '완⁠료';
+
+  @override
+  String get swapStatusBadgeFailed => '실⁠패';
+
+  @override
+  String get swapStatusBadgeInProgress => '진⁠행 중';
+
+  @override
+  String get swapStatusBadgeNeedsAttention => '확⁠인 필⁠요';
+
+  @override
+  String get swapStatusBadgeRefunded => '환⁠불⁠됨';
+
+  @override
+  String get swapStatusDetailsTab => '거⁠래 상⁠세';
+
+  @override
+  String get swapStatusPayLabel => '내⁠가 보⁠내⁠는 중';
+
+  @override
+  String get swapStatusProgressTab => '스⁠왑 진⁠행 상⁠황';
+
+  @override
+  String get swapStatusReceiveLabel => '내⁠가 받⁠는 중';
+
+  @override
+  String get swapStatusRowLabel => '상⁠태';
+
+  @override
+  String get swapTimeoutBody => '새 스⁠왑⁠을 시⁠작⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapTimeoutHeadline => '이 입⁠금 주⁠소⁠는 더 이⁠상 유⁠효⁠하⁠지 않⁠아⁠요';
+
+  @override
+  String get swapTimeoutRestart => '스⁠왑 다⁠시 시⁠작';
+
+  @override
+  String get swapTimeoutTitle => '시⁠간⁠이 지⁠났⁠어⁠요';
+
+  @override
+  String get swapViewOnNearIntents => 'NEAR Intents⁠에⁠서 보⁠기';
+
+  @override
+  String get swapZcashAddressTitle => 'Zcash 주⁠소';
 
   @override
   String syncCheckingPercentSemantics(String percent) {

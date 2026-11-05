@@ -152,7 +152,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final ticket = _SwapTicketShell(
       key: const ValueKey('swap_compact_ticket'),
       payCard: _SwapAmountCard(
-        label: 'You pay',
+        label: context.l10n.swapComposerYouPay,
         active: payActive,
         amount: _SwapAmountInput(
           key: const ValueKey('swap_amount_field'),
@@ -168,7 +168,10 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
               : state.direction.fromAsset(state.externalAsset).decimals,
         ),
         asset: sendsZec
-            ? const _TokenPill(asset: SwapAsset.zec, label: 'Zcash')
+            ? const _TokenPill(
+                asset: SwapAsset.zec,
+                label: 'Zcash', // l10n-ignore: product name
+              )
             : _ExternalAssetButton(
                 selected: state.externalAsset,
                 open: widget.assetSelectorOpen,
@@ -216,13 +219,13 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 trailing: _AddressTrigger(
                   value: state.destinationText,
                   contactName: widget.destinationContactName,
-                  emptyText: 'Add refund address...',
+                  emptyText: context.l10n.swapComposerAddRefundAddressEllipsis,
                   onTap: widget.onOpenDestinationAddress,
                 ),
               ),
       ),
       receiveCard: _SwapAmountCard(
-        label: 'You receive',
+        label: context.l10n.swapComposerYouReceive,
         active: receiveActive,
         amount: _SwapAmountInput(
           key: const ValueKey('swap_receive_amount_field'),
@@ -243,7 +246,10 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 open: widget.assetSelectorOpen,
                 onTap: widget.onOpenExternalAssetPicker,
               )
-            : const _TokenPill(asset: SwapAsset.zec, label: 'Zcash'),
+            : const _TokenPill(
+                asset: SwapAsset.zec,
+                label: 'Zcash', // l10n-ignore: product name
+              ),
         footer: sendsZec
             ? _SwapCardFooter(
                 leading: _SwapFiatValueText(
@@ -261,7 +267,8 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 trailing: _AddressTrigger(
                   value: state.destinationText,
                   contactName: widget.destinationContactName,
-                  emptyText: 'Add recipient address...',
+                  emptyText:
+                      context.l10n.swapComposerAddRecipientAddressEllipsis,
                   onTap: widget.onOpenDestinationAddress,
                 ),
               )
@@ -737,7 +744,7 @@ class _MaxAmountTrigger extends StatelessWidget {
     final colors = context.colors;
     final hasError = errorText != null || balanceExceeded;
     final label =
-        errorText ?? (hasError ? 'Max: $availableText' : 'Max: $availableText');
+        errorText ?? context.l10n.swapComposerMaxAmount(availableText);
     return MouseRegion(
       cursor: loading ? SystemMouseCursors.basic : SystemMouseCursors.click,
       child: GestureDetector(
@@ -781,11 +788,11 @@ String _rateTextForState(SwapState state) {
   final externalPerZec =
       state.indicativeExternalPerZec[state.externalAsset] ??
       state.externalAsset.fallbackExternalPerZec;
-  if (externalPerZec <= 0) return '--';
+  if (externalPerZec <= 0) return '--'; // l10n-ignore: placeholder glyph
   if (state.direction.sendsZec) {
-    return '1 ZEC = ${externalPerZec.toStringAsFixed(2)} ${state.externalAsset.symbol}';
+    return '1 ZEC = ${externalPerZec.toStringAsFixed(2)} ${state.externalAsset.symbol}'; // l10n-ignore: rate format
   }
-  return '1 ${state.externalAsset.symbol} = ${(1 / externalPerZec).toStringAsFixed(4)} ZEC';
+  return '1 ${state.externalAsset.symbol} = ${(1 / externalPerZec).toStringAsFixed(4)} ZEC'; // l10n-ignore: rate format
 }
 
 bool _zecAmountOverAvailable(SwapState state, BigInt availableZatoshi) {

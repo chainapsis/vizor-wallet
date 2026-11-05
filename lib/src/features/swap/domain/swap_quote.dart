@@ -1,3 +1,4 @@
+// l10n-ignore-file: quote labels are stored on persisted quotes and intents
 import 'swap_asset.dart';
 import 'swap_direction.dart';
 import 'swap_fiat_value_basis.dart';

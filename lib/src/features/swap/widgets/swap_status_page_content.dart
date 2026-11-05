@@ -36,8 +36,8 @@ class SwapStatusPageContent extends StatefulWidget {
     required this.receiveAsset,
     required this.payAmountText,
     required this.receiveAmountText,
-    this.payLabel = "You're paying",
-    this.receiveLabel = "You're receiving",
+    this.payLabel,
+    this.receiveLabel,
     required this.payDetailText,
     required this.receiveDetailText,
     required this.statusLabel,
@@ -49,7 +49,7 @@ class SwapStatusPageContent extends StatefulWidget {
     this.activeTab = SwapStatusTab.progress,
     this.steps = const [],
     this.details = const [],
-    this.progressTabLabel = 'Swap progress',
+    this.progressTabLabel,
     this.paymentMode = false,
     this.showTabs = true,
     this.onTabChanged,
@@ -63,8 +63,8 @@ class SwapStatusPageContent extends StatefulWidget {
   final SwapAsset receiveAsset;
   final String payAmountText;
   final String receiveAmountText;
-  final String payLabel;
-  final String receiveLabel;
+  final String? payLabel;
+  final String? receiveLabel;
 
   /// Bottom line of the pay summary row: fiat value, or the refund address
   /// line for external→ZEC swaps.
@@ -87,7 +87,7 @@ class SwapStatusPageContent extends StatefulWidget {
   final SwapStatusTab activeTab;
   final List<SwapStatusStepData> steps;
   final List<SwapStatusDetailRowData> details;
-  final String progressTabLabel;
+  final String? progressTabLabel;
   final bool paymentMode;
   final bool showTabs;
   final ValueChanged<SwapStatusTab>? onTabChanged;
@@ -215,6 +215,9 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final payLabel = widget.payLabel ?? context.l10n.swapStatusPayLabel;
+    final receiveLabel =
+        widget.receiveLabel ?? context.l10n.swapStatusReceiveLabel;
     return SizedBox(
       key: const ValueKey('swap_status_page_content'),
       width: 400,
@@ -237,10 +240,10 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
           const SizedBox(height: AppSpacing.base),
           if (widget.paymentMode)
             _PaymentStatusSummary(
-              payLabel: widget.payLabel,
+              payLabel: payLabel,
               payAmountText: widget.payAmountText,
               payDetailText: widget.payDetailText,
-              receiveLabel: widget.receiveLabel,
+              receiveLabel: receiveLabel,
               receiveAmountText: widget.receiveAmountText,
               receiveDetailText: widget.receiveDetailText,
               receiveDetailCopyText: widget.receiveDetailCopyText,
@@ -250,14 +253,14 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             SwapReviewInfo(
               pay: SwapReviewInfoSideData(
                 asset: widget.payAsset,
-                label: widget.payLabel,
+                label: payLabel,
                 amountText: widget.payAmountText,
                 detailText: widget.payDetailText,
                 detailCopyText: widget.payDetailCopyText,
               ),
               receive: SwapReviewInfoSideData(
                 asset: widget.receiveAsset,
-                label: widget.receiveLabel,
+                label: receiveLabel,
                 amountText: widget.receiveAmountText,
                 detailText: widget.receiveDetailText,
                 detailCopyText: widget.receiveDetailCopyText,
@@ -274,7 +277,8 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             // instance), so the inset is intentionally dropped.
             SwapStatusTabs(
               activeTab: widget.activeTab,
-              progressLabel: widget.progressTabLabel,
+              progressLabel:
+                  widget.progressTabLabel ?? context.l10n.swapStatusProgressTab,
               onChanged: widget.onTabChanged,
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -479,12 +483,14 @@ class SwapStatusTabs extends StatelessWidget {
           children: [
             _StatusTabLabel(
               label: progressLabel,
+              details: false,
               active: activeTab == SwapStatusTab.progress,
               onTap: () => onChanged?.call(SwapStatusTab.progress),
             ),
             const SizedBox(width: AppSpacing.xs),
             _StatusTabLabel(
-              label: 'Transaction details',
+              label: context.l10n.swapStatusDetailsTab,
+              details: true,
               active: activeTab == SwapStatusTab.details,
               onTap: () => onChanged?.call(SwapStatusTab.details),
             ),
@@ -498,11 +504,13 @@ class SwapStatusTabs extends StatelessWidget {
 class _StatusTabLabel extends StatelessWidget {
   const _StatusTabLabel({
     required this.label,
+    required this.details,
     required this.active,
     required this.onTap,
   });
 
   final String label;
+  final bool details;
   final bool active;
   final VoidCallback? onTap;
 
@@ -518,9 +526,7 @@ class _StatusTabLabel extends StatelessWidget {
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         key: ValueKey(
-          label == 'Transaction details'
-              ? 'swap_status_tab_details'
-              : 'swap_status_tab_progress',
+          details ? 'swap_status_tab_details' : 'swap_status_tab_progress',
         ),
         behavior: HitTestBehavior.opaque,
         onTap: active ? null : onTap,
@@ -838,7 +844,7 @@ class _SwapTerminalDetails extends StatelessWidget {
         ..._detailRowsWithFeeDivider(
           rows,
           dividerBeforeLabel: badgeKind == SwapStatusBadgeKind.refunded
-              ? 'Refunded amount'
+              ? 'Refunded amount' // l10n-ignore: matched against row labels
               : null,
         ),
       ],
@@ -912,7 +918,7 @@ class _StatusRow extends StatelessWidget {
         : colors.text.positiveStrong;
     return ReviewListRow(
       key: const ValueKey('swap_status_summary_row'),
-      label: 'Status',
+      label: context.l10n.swapStatusRowLabel,
       value: label,
       valueColor: signalColor,
       leadingIconName: failed
@@ -942,7 +948,7 @@ class _DetailRow extends StatelessWidget {
           onTap: () => copyTextWithToast(
             context,
             text: row.copyText ?? row.value,
-            toastMessage: 'Copied',
+            toastMessage: context.l10n.commonCopied,
           ),
           child: cell,
         ),

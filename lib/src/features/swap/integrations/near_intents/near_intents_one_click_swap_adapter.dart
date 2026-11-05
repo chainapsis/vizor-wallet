@@ -1,3 +1,4 @@
+// l10n-ignore-file: provider snapshot text is persisted in swap intents; protocol values
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';

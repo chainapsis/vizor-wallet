@@ -4777,6 +4777,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidebarShowBalance => '显示余额';
 
   @override
+  String get swapActionAddRecipientAddress => '添加收款地址';
+
+  @override
+  String get swapActionAddRefundAddress => '添加退款地址';
+
+  @override
+  String get swapActionContinueToReview => '继续查看';
+
+  @override
+  String get swapActionGettingQuote => '正在获取报价';
+
+  @override
+  String get swapActionNotEnoughZec => 'ZEC 不足';
+
+  @override
+  String get swapActionReview => '查看兑换';
+
+  @override
   String swapActivityAddressBookRecipient(String symbol) {
     return '$symbol 收款方';
   }
@@ -5263,6 +5281,536 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapActivityYoureReceiving => '正在接收金额';
+
+  @override
+  String swapAddressRecipientDescription(String symbol) {
+    return '您的 $symbol 将发送到此地址。';
+  }
+
+  @override
+  String get swapAddressRecipientFieldLabel => '收款人';
+
+  @override
+  String swapAddressRecipientTitle(String symbol) {
+    return '$symbol 收款地址';
+  }
+
+  @override
+  String swapAddressRefundDescription(String symbol, String chain) {
+    return '如果兑换失败或汇率变动，将扣除手续费后以 $chain 上的 $symbol 退款。';
+  }
+
+  @override
+  String get swapAddressRefundFieldLabel => '退款至';
+
+  @override
+  String swapAddressRefundTitle(String symbol) {
+    return '$symbol 退款地址';
+  }
+
+  @override
+  String get swapAddressRememberRecipient => '记住此地址作为收款地址';
+
+  @override
+  String get swapAddressRememberRefund => '记住此地址作为退款地址';
+
+  @override
+  String get swapAssetSelectorEmpty => '未找到代币或链';
+
+  @override
+  String get swapAssetSelectorSearchHint => '搜索代币或链';
+
+  @override
+  String get swapAssetSelectorTitle => '选择资产';
+
+  @override
+  String swapChainAddressTitle(String chain) {
+    return '$chain 地址';
+  }
+
+  @override
+  String get swapComposerAddRecipientAddressEllipsis => '添加收款地址...';
+
+  @override
+  String get swapComposerAddRefundAddressEllipsis => '添加退款地址...';
+
+  @override
+  String swapComposerMaxAmount(String amount) {
+    return '最多：$amount';
+  }
+
+  @override
+  String get swapComposerYouPay => '您支付';
+
+  @override
+  String get swapComposerYouReceive => '您收到';
+
+  @override
+  String get swapContactAlreadyInAddressBook => '已在您的通讯录中';
+
+  @override
+  String get swapContactAlreadySaved => '已在您的联系人中';
+
+  @override
+  String get swapDepositAmount => '金额';
+
+  @override
+  String get swapDepositAmountCopiedDesktop => '已复制金额';
+
+  @override
+  String get swapDepositAmountCopiedMobile => '已复制金额';
+
+  @override
+  String get swapDepositAmountToDeposit => '充值金额';
+
+  @override
+  String get swapDepositChecking => '正在检查';
+
+  @override
+  String get swapDepositDoneDesktop => '我已充值';
+
+  @override
+  String get swapDepositDoneMobile => '我已充值代币';
+
+  @override
+  String get swapDepositHourOne => '1 小时';
+
+  @override
+  String swapDepositHoursMany(int count) {
+    return '$count 小时';
+  }
+
+  @override
+  String get swapDepositMemo => '备注';
+
+  @override
+  String get swapDepositMemoCopied => '已复制备注';
+
+  @override
+  String get swapDepositMinuteOne => '1 分钟';
+
+  @override
+  String swapDepositMinutesMany(int count) {
+    return '$count 分钟';
+  }
+
+  @override
+  String get swapDepositOneTimeAddress => '一次性地址';
+
+  @override
+  String swapDepositSendOnly(String symbol, String chain) {
+    return '仅发送 $chain 上的 $symbol';
+  }
+
+  @override
+  String get swapDepositTimeoutBody => '此充值地址已失效。\n请重新发起一笔兑换。';
+
+  @override
+  String get swapDepositTimeoutTitle => '兑换失败';
+
+  @override
+  String get swapDepositTitle => '充值代币';
+
+  @override
+  String get swapDepositWithin => '充值时限';
+
+  @override
+  String get swapDepositZecButton => '充值 ZEC';
+
+  @override
+  String get swapDismissBarrierLabel => '关闭';
+
+  @override
+  String get swapFullAddress => '完整地址';
+
+  @override
+  String get swapKeystoneAfterScan => '扫描后，请点击“获取签名”。';
+
+  @override
+  String get swapKeystoneBroadcastFailed => '无法广播交易。';
+
+  @override
+  String get swapKeystoneBroadcastingTitle => '正在广播 ZEC 充值';
+
+  @override
+  String get swapKeystoneCancelFailed => '无法完成取消。请重试。';
+
+  @override
+  String get swapKeystoneCancelledBeforeParams => '在下载证明参数之前，签名已被取消。';
+
+  @override
+  String get swapKeystoneCancelling => '正在取消…';
+
+  @override
+  String get swapKeystoneExpired => '交易在签名前已过期。';
+
+  @override
+  String get swapKeystoneFailedTitle => 'Keystone 签名失败';
+
+  @override
+  String get swapKeystoneFinalizing => '正在广播 ZEC 充值...';
+
+  @override
+  String get swapKeystoneGetSignature => '获取签名';
+
+  @override
+  String get swapKeystoneIncomplete => '无法完成 ZEC 充值签名。';
+
+  @override
+  String get swapKeystoneNoTex => 'Keystone 暂不支持 TEX 发送。';
+
+  @override
+  String get swapKeystoneQrMismatch => '此二维码与当前的 Keystone 请求不匹配。';
+
+  @override
+  String get swapKeystoneScanCaption => '扫描 Keystone 上的二维码以完成 ZEC 充值';
+
+  @override
+  String get swapKeystoneScanDescription =>
+      '请使用您的 Keystone 钱包扫描此交易二维码，并按设备上的提示操作。';
+
+  @override
+  String get swapKeystoneScanToSign => '扫描以签名';
+
+  @override
+  String get swapKeystoneSignTitle => '在 Keystone 上签署 ZEC 充值';
+
+  @override
+  String get swapKeystoneStatusUncertain => '交易状态不确定。请先刷新活动再重试。';
+
+  @override
+  String get swapKeystoneUnexpectedUr => '请在 Keystone 上打开签名结果二维码，然后再次扫描。';
+
+  @override
+  String get swapLedgerBackToActivity => '返回活动';
+
+  @override
+  String get swapLedgerBroadcastFailed => '无法广播 ZEC 充值。';
+
+  @override
+  String get swapLedgerDeclined => 'ZEC 充值已在您的 Ledger 上被拒绝。';
+
+  @override
+  String get swapLedgerMessageBackground => 'Vizor 已在后台完成此交易。';
+
+  @override
+  String get swapLedgerMessageExpired => '交易在发送前已过期。Vizor 仍需释放其保留的资金。';
+
+  @override
+  String get swapLedgerMessageSentNotSaved => '交易已发送，但 Vizor 未能完成保存。';
+
+  @override
+  String get swapLedgerMessageUncertain => 'Vizor 无法确认交易是否已发送，仍需保存其状态。';
+
+  @override
+  String get swapLedgerRetryCleanup => '重试清理';
+
+  @override
+  String get swapLedgerRetrySaving => '重试保存';
+
+  @override
+  String get swapLedgerSigningIncomplete => '无法完成 Ledger 签名。';
+
+  @override
+  String get swapLedgerStatusCleanup => '需要清理';
+
+  @override
+  String get swapLedgerStatusSaving => '正在保存交易';
+
+  @override
+  String get swapLedgerStatusWait => '请稍候';
+
+  @override
+  String get swapLedgerTitleExpired => '交易已过期';
+
+  @override
+  String get swapLedgerTitlePending => '交易状态待确认';
+
+  @override
+  String get swapLedgerTitleRecovery => '交易恢复进行中';
+
+  @override
+  String get swapLedgerTitleSent => '交易已发送';
+
+  @override
+  String get swapNoticeAffectedNetworks => '受影响的网络';
+
+  @override
+  String get swapNoticeAllChains => '所有链';
+
+  @override
+  String get swapNoticeCloseLabel => '关闭服务通知';
+
+  @override
+  String swapNoticeExpectedEnd(String time) {
+    return '预计结束：$time';
+  }
+
+  @override
+  String get swapNoticeListOfMaintenance => '维护列表';
+
+  @override
+  String get swapNoticeMaintenanceIntro => 'NEAR Intents 正在维护中。';
+
+  @override
+  String get swapNoticeMaintenanceTitle => '维护通知';
+
+  @override
+  String swapNoticeMaintenanceWindow(String networks) {
+    return '维护窗口：$networks';
+  }
+
+  @override
+  String get swapNoticeOk => '好的';
+
+  @override
+  String get swapNoticePaymentsMayFail => '支付目前可能无法使用。';
+
+  @override
+  String get swapNoticeServiceTitle => '服务通知';
+
+  @override
+  String swapNoticeStart(String time) {
+    return '开始：$time';
+  }
+
+  @override
+  String get swapNoticeStatusPage => 'NEAR Intents 状态页面';
+
+  @override
+  String get swapNoticeSwapsMayFail => '兑换目前可能无法使用。';
+
+  @override
+  String get swapPageTitle => '兑换';
+
+  @override
+  String get swapPanelDepositChecking => '正在确认 ZEC 充值';
+
+  @override
+  String get swapPanelDepositSent => 'ZEC 充值已发送';
+
+  @override
+  String get swapPanelLoadFailedBody => '请返回“活动”并选择已保存的兑换。';
+
+  @override
+  String get swapPanelLoadFailedTitle => '无法加载此兑换。请重试或下拉刷新。';
+
+  @override
+  String swapPanelRecipientTo(String recipient) {
+    return '收款方：$recipient';
+  }
+
+  @override
+  String get swapPayStatusConvertedFrom => '兑换自';
+
+  @override
+  String get swapPayStatusNewAddress => '新地址';
+
+  @override
+  String get swapPayStatusProgressTab => '支付进度';
+
+  @override
+  String get swapPayStatusRefundFee => '退款手续费';
+
+  @override
+  String get swapPayStatusRefundTo => '退款至';
+
+  @override
+  String get swapPayStatusRefundedAmount => '退款金额';
+
+  @override
+  String get swapPayStatusShowFullAddress => '显示完整地址';
+
+  @override
+  String get swapPayStatusSourceAmount => '原始金额';
+
+  @override
+  String get swapPayStatusTimestamp => '时间';
+
+  @override
+  String get swapPayStatusTo => '收款方';
+
+  @override
+  String get swapPayStatusTxFee => '交易手续费';
+
+  @override
+  String get swapPayStatusTxId => '交易 ID';
+
+  @override
+  String get swapPoweredByLabel => '由以下提供支持';
+
+  @override
+  String get swapReviewBackPay => '支付';
+
+  @override
+  String get swapReviewConfirmAndSwap => '确认并兑换';
+
+  @override
+  String get swapReviewConfirmPaymentTitle => '确认支付';
+
+  @override
+  String get swapReviewConfirmSwap => '确认兑换';
+
+  @override
+  String swapReviewFromAddress(String address) {
+    return '来自：$address';
+  }
+
+  @override
+  String get swapReviewGuaranteedMinimum => '保证最低收到数额';
+
+  @override
+  String get swapReviewInsufficientZecPay => '您的 ZEC 不足以完成此次支付。请尝试较小的金额。';
+
+  @override
+  String get swapReviewInsufficientZecSwap => '您的 ZEC 不足以完成此次兑换。请尝试较小的金额。';
+
+  @override
+  String get swapReviewNetworkFees => '网络与兑换手续费';
+
+  @override
+  String swapReviewPayAmount(String amount) {
+    return '支付 $amount';
+  }
+
+  @override
+  String get swapReviewPrivately => '从隐私余额中私密支付';
+
+  @override
+  String get swapReviewQuoteExpired => '报价已过期。请重新查看以获取最新汇率。';
+
+  @override
+  String get swapReviewQuoteHolds => '报价有效期';
+
+  @override
+  String get swapReviewQuoteInactive => '此报价已失效。';
+
+  @override
+  String get swapReviewRate => '汇率';
+
+  @override
+  String get swapReviewRecipientGets => '收款方将收到';
+
+  @override
+  String swapReviewRefundToAddress(String address) {
+    return '退款至：$address';
+  }
+
+  @override
+  String get swapReviewReturnToSwap => '返回兑换';
+
+  @override
+  String get swapReviewReviewAgain => '重新查看';
+
+  @override
+  String get swapReviewSlippageTolerance => '滑点容差';
+
+  @override
+  String get swapReviewStartingLockingQuote => '正在锁定报价';
+
+  @override
+  String get swapReviewStartingPaying => '支付中';
+
+  @override
+  String get swapReviewStartingSending => '发送中';
+
+  @override
+  String get swapReviewSwapFee => '兑换手续费';
+
+  @override
+  String get swapReviewSwapTitle => '查看兑换';
+
+  @override
+  String get swapReviewTitlePay => '查看支付';
+
+  @override
+  String get swapReviewTitleSwap => '查看报价';
+
+  @override
+  String swapReviewToAddress(String address) {
+    return '收款至：$address';
+  }
+
+  @override
+  String swapReviewToAddressOnChain(String address, String chain) {
+    return '收款至：$chain 上的 $address';
+  }
+
+  @override
+  String get swapReviewYouPay => '您支付';
+
+  @override
+  String get swapScanNoAddress => '二维码中不包含地址。';
+
+  @override
+  String get swapSignPayment => '签署支付';
+
+  @override
+  String get swapSignZecDeposit => '签署 ZEC 充值';
+
+  @override
+  String get swapSlippageCustom => '自定义';
+
+  @override
+  String get swapSlippageDescriptionPay =>
+      '在执行失败之前，允许报价波动所需的额外 ZEC 数额。网络手续费另计。';
+
+  @override
+  String get swapSlippageDescriptionSwap => '设置您可接受的最大汇率变动。网络手续费另计。';
+
+  @override
+  String get swapSlippageRangeError => '滑点必须在 0.1 - 5% 之间';
+
+  @override
+  String get swapSlippageTitle => '滑点';
+
+  @override
+  String get swapStatusBadgeCompleted => '已完成';
+
+  @override
+  String get swapStatusBadgeFailed => '失败';
+
+  @override
+  String get swapStatusBadgeInProgress => '进行中';
+
+  @override
+  String get swapStatusBadgeNeedsAttention => '需要处理';
+
+  @override
+  String get swapStatusBadgeRefunded => '已退款';
+
+  @override
+  String get swapStatusDetailsTab => '交易详情';
+
+  @override
+  String get swapStatusPayLabel => '您正在支付';
+
+  @override
+  String get swapStatusProgressTab => '兑换进度';
+
+  @override
+  String get swapStatusReceiveLabel => '您将收到';
+
+  @override
+  String get swapStatusRowLabel => '状态';
+
+  @override
+  String get swapTimeoutBody => '请重新发起一笔兑换。';
+
+  @override
+  String get swapTimeoutHeadline => '此充值地址已失效';
+
+  @override
+  String get swapTimeoutRestart => '重新开始兑换';
+
+  @override
+  String get swapTimeoutTitle => '时间到了';
+
+  @override
+  String get swapViewOnNearIntents => '在 NEAR Intents 中查看';
+
+  @override
+  String get swapZcashAddressTitle => 'Zcash 地址';
 
   @override
   String syncCheckingPercentSemantics(String percent) {

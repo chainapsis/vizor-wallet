@@ -55,7 +55,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     copyTextWithToast(
       toastContext,
       text: address,
-      toastMessage: 'Address copied',
+      toastMessage: toastContext.l10n.commonAddressCopied,
     );
   }
 
@@ -139,8 +139,8 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
         ? widget.payMode
-              ? "You don't have enough ZEC for this payment. Try a smaller amount."
-              : "You don't have enough ZEC for this swap. Try a smaller amount."
+              ? context.l10n.swapReviewInsufficientZecPay
+              : context.l10n.swapReviewInsufficientZecSwap
         : null;
 
     return AppDesktopShell(
@@ -153,7 +153,9 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
             AppPaneScrollScaffold(
               toolbar: AppPaneToolbar(
                 leading: AppBackLink(
-                  label: widget.payMode ? 'Pay' : 'Swap',
+                  label: widget.payMode
+                      ? context.l10n.swapReviewBackPay
+                      : context.l10n.swapPageTitle,
                   minWidth: 60,
                   onTap: _returnToSwap,
                 ),

@@ -6542,6 +6542,30 @@
   "@sidebarShowBalance": {
     "description": "Screen-reader label of the sidebar button that shows hidden amounts."
   },
+  "swapActionAddRecipientAddress": "Add recipient address",
+  "@swapActionAddRecipientAddress": {
+    "description": "Primary button label on the swap screen that opens the recipient address editor."
+  },
+  "swapActionAddRefundAddress": "Add refund address",
+  "@swapActionAddRefundAddress": {
+    "description": "Primary button label on the swap screen that opens the refund address editor."
+  },
+  "swapActionContinueToReview": "Continue to review",
+  "@swapActionContinueToReview": {
+    "description": "Primary button label on the mobile swap screen that opens the review."
+  },
+  "swapActionGettingQuote": "Getting quote",
+  "@swapActionGettingQuote": {
+    "description": "Primary button label on the swap screen while a quote is loading."
+  },
+  "swapActionNotEnoughZec": "Not enough ZEC",
+  "@swapActionNotEnoughZec": {
+    "description": "Disabled primary button label on the swap screen when the ZEC balance does not cover the amount."
+  },
+  "swapActionReview": "Review swap",
+  "@swapActionReview": {
+    "description": "Primary button label on the swap screen that opens the swap review."
+  },
   "swapActivityAddressBookRecipient": "{symbol} recipient",
   "@swapActivityAddressBookRecipient": {
     "description": "Default contact label suggestion when saving a swap recipient to the address book.",
@@ -7306,6 +7330,761 @@
   "swapActivityYoureReceiving": "You're receiving",
   "@swapActivityYoureReceiving": {
     "description": "Label of the amount being received while a swap is in progress."
+  },
+  "swapAddressRecipientDescription": "Your {symbol} will be delivered to this address.",
+  "@swapAddressRecipientDescription": {
+    "description": "Helper text in the swap address editor explaining where the swapped asset is sent; {symbol} is the asset ticker.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapAddressRecipientFieldLabel": "Recipient",
+  "@swapAddressRecipientFieldLabel": {
+    "description": "Field label above the recipient address input in the swap address editor."
+  },
+  "swapAddressRecipientTitle": "{symbol} recipient address",
+  "@swapAddressRecipientTitle": {
+    "description": "Title of the swap address editor when the user receives an external asset; {symbol} is the asset ticker.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapAddressRefundDescription": "If the swap fails or the rate moves, you'll be refunded in {symbol} on {chain}, minus the fee.",
+  "@swapAddressRefundDescription": {
+    "description": "Helper text in the swap address editor explaining where a refund is sent; {symbol} is the asset ticker and {chain} the chain name.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      },
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "swapAddressRefundFieldLabel": "Refund to",
+  "@swapAddressRefundFieldLabel": {
+    "description": "Field label above the refund address input in the swap address editor."
+  },
+  "swapAddressRefundTitle": "{symbol} refund address",
+  "@swapAddressRefundTitle": {
+    "description": "Title of the swap address editor when the user edits the address a failed swap refunds to; {symbol} is the asset ticker.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapAddressRememberRecipient": "Remember this address for recipients",
+  "@swapAddressRememberRecipient": {
+    "description": "Toggle label in the swap address editor that saves the address for future recipients."
+  },
+  "swapAddressRememberRefund": "Remember this address for refunds",
+  "@swapAddressRememberRefund": {
+    "description": "Toggle label in the swap address editor that saves the address for future refunds."
+  },
+  "swapAssetSelectorEmpty": "No tokens or chains found",
+  "@swapAssetSelectorEmpty": {
+    "description": "Empty-state text in the swap asset picker when the search has no match."
+  },
+  "swapAssetSelectorSearchHint": "Search token or chain",
+  "@swapAssetSelectorSearchHint": {
+    "description": "Placeholder of the search field in the swap asset picker."
+  },
+  "swapAssetSelectorTitle": "Select asset",
+  "@swapAssetSelectorTitle": {
+    "description": "Title of the modal that lists assets to swap."
+  },
+  "swapChainAddressTitle": "{chain} address",
+  "@swapChainAddressTitle": {
+    "description": "Title of the address verification sheet for the external chain side of a swap; {chain} is the chain name.",
+    "placeholders": {
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "swapComposerAddRecipientAddressEllipsis": "Add recipient address...",
+  "@swapComposerAddRecipientAddressEllipsis": {
+    "description": "Placeholder in the swap composer address row when no recipient address is set; tapping opens the editor."
+  },
+  "swapComposerAddRefundAddressEllipsis": "Add refund address...",
+  "@swapComposerAddRefundAddressEllipsis": {
+    "description": "Placeholder in the swap composer address row when no refund address is set; tapping opens the editor."
+  },
+  "swapComposerMaxAmount": "Max: {amount}",
+  "@swapComposerMaxAmount": {
+    "description": "Button text in the swap composer showing the maximum amount available to swap; {amount} is a formatted amount with its ticker.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "swapComposerYouPay": "You pay",
+  "@swapComposerYouPay": {
+    "description": "Label above the amount the user sends in the swap composer."
+  },
+  "swapComposerYouReceive": "You receive",
+  "@swapComposerYouReceive": {
+    "description": "Label above the amount the user gets in the swap composer."
+  },
+  "swapContactAlreadyInAddressBook": "Already in your address book",
+  "@swapContactAlreadyInAddressBook": {
+    "description": "Toast on mobile after the user tries to save a swap address that is already in the address book."
+  },
+  "swapContactAlreadySaved": "Already in your contacts",
+  "@swapContactAlreadySaved": {
+    "description": "Toast shown after the user tries to save a swap address that is already in the address book."
+  },
+  "swapDepositAmount": "Amount",
+  "@swapDepositAmount": {
+    "description": "Row label for the amount to send on the desktop deposit screen."
+  },
+  "swapDepositAmountCopiedDesktop": "Amount Copied",
+  "@swapDepositAmountCopiedDesktop": {
+    "description": "Toast after the user copies the deposit amount on desktop."
+  },
+  "swapDepositAmountCopiedMobile": "Amount copied",
+  "@swapDepositAmountCopiedMobile": {
+    "description": "Toast after the user copies the deposit amount on mobile."
+  },
+  "swapDepositAmountToDeposit": "Amount to deposit",
+  "@swapDepositAmountToDeposit": {
+    "description": "Row label for the amount to send on the mobile deposit screen."
+  },
+  "swapDepositChecking": "Checking",
+  "@swapDepositChecking": {
+    "description": "Button text while the wallet checks whether the user’s deposit arrived."
+  },
+  "swapDepositDoneDesktop": "I've deposited",
+  "@swapDepositDoneDesktop": {
+    "description": "Button on the desktop deposit screen the user taps after sending funds to the one-time deposit address."
+  },
+  "swapDepositDoneMobile": "I’ve deposited tokens",
+  "@swapDepositDoneMobile": {
+    "description": "Button on the mobile deposit screen the user taps after sending funds to the one-time deposit address."
+  },
+  "swapDepositHourOne": "1hr",
+  "@swapDepositHourOne": {
+    "description": "Deposit deadline label for exactly one hour remaining."
+  },
+  "swapDepositHoursMany": "{count}hrs",
+  "@swapDepositHoursMany": {
+    "description": "Deposit deadline label for several hours remaining; {count} is the number of hours.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "swapDepositMemo": "Memo",
+  "@swapDepositMemo": {
+    "description": "[security] Row label for the memo that must be included with the deposit."
+  },
+  "swapDepositMemoCopied": "Memo copied",
+  "@swapDepositMemoCopied": {
+    "description": "Toast after the user copies the deposit memo."
+  },
+  "swapDepositMinuteOne": "1min",
+  "@swapDepositMinuteOne": {
+    "description": "Deposit deadline label for exactly one minute remaining."
+  },
+  "swapDepositMinutesMany": "{count}mins",
+  "@swapDepositMinutesMany": {
+    "description": "Deposit deadline label for several minutes remaining; {count} is the number of minutes.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "swapDepositOneTimeAddress": "One-time address",
+  "@swapDepositOneTimeAddress": {
+    "description": "[security] Row label for the one-time deposit address; it must not be reused."
+  },
+  "swapDepositSendOnly": "Send only {symbol} on {chain}",
+  "@swapDepositSendOnly": {
+    "description": "[security] Warning under the deposit address telling the user to send only this asset on this chain, otherwise funds may be lost; {symbol} is the ticker and {chain} the chain name.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      },
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "swapDepositTimeoutBody": "This deposit address is no longer valid.\nPlease, start another swap transaction.",
+  "@swapDepositTimeoutBody": {
+    "description": "[security] Body on the desktop deposit screen after the deposit window ended; the deposit address must not be used any more. Contains a line break."
+  },
+  "swapDepositTimeoutTitle": "Swap failed",
+  "@swapDepositTimeoutTitle": {
+    "description": "Title on the desktop deposit screen after the deposit window ended."
+  },
+  "swapDepositTitle": "Deposit tokens",
+  "@swapDepositTitle": {
+    "description": "Title of the desktop screen showing the one-time deposit address for a swap."
+  },
+  "swapDepositWithin": "Deposit within",
+  "@swapDepositWithin": {
+    "description": "Label before the countdown showing how long the user has to deposit."
+  },
+  "swapDepositZecButton": "Deposit ZEC",
+  "@swapDepositZecButton": {
+    "description": "Button on the deposit screen that sends the ZEC deposit from the wallet."
+  },
+  "swapDismissBarrierLabel": "Dismiss",
+  "@swapDismissBarrierLabel": {
+    "description": "Accessibility label of the tappable backdrop behind swap modals on mobile."
+  },
+  "swapFullAddress": "Full address",
+  "@swapFullAddress": {
+    "description": "Link on a swap review row that opens a sheet showing the whole address."
+  },
+  "swapKeystoneAfterScan": "After you scanned, click Get signature.",
+  "@swapKeystoneAfterScan": {
+    "description": "[security] Instruction in the swap Keystone signing overlay telling the user what to do after scanning."
+  },
+  "swapKeystoneBroadcastFailed": "Transaction could not be broadcast.",
+  "@swapKeystoneBroadcastFailed": {
+    "description": "[security] Error in swap Keystone signing when broadcasting failed."
+  },
+  "swapKeystoneBroadcastingTitle": "Broadcasting ZEC deposit",
+  "@swapKeystoneBroadcastingTitle": {
+    "description": "[security] Title of the swap Keystone signing overlay while the signed ZEC deposit is being broadcast."
+  },
+  "swapKeystoneCancelFailed": "Could not finish cancelling. Please try again.",
+  "@swapKeystoneCancelFailed": {
+    "description": "Error in the swap Keystone signing flow when cancelling the signing request failed."
+  },
+  "swapKeystoneCancelledBeforeParams": "Signing was cancelled before proving parameters were downloaded.",
+  "@swapKeystoneCancelledBeforeParams": {
+    "description": "[security] Error in the swap Keystone signing overlay when the user declined the proving parameter download."
+  },
+  "swapKeystoneCancelling": "Cancelling…",
+  "@swapKeystoneCancelling": {
+    "description": "Secondary button text and mobile title while a swap signing request is being cancelled."
+  },
+  "swapKeystoneExpired": "Transaction expired before it could be signed.",
+  "@swapKeystoneExpired": {
+    "description": "[security] Error in swap Keystone signing when the proposal expired before signing."
+  },
+  "swapKeystoneFailedTitle": "Keystone signing failed",
+  "@swapKeystoneFailedTitle": {
+    "description": "[security] Title of the mobile swap Keystone screen when signing failed."
+  },
+  "swapKeystoneFinalizing": "Broadcasting ZEC deposit...",
+  "@swapKeystoneFinalizing": {
+    "description": "[security] Label on the mobile swap Keystone screen while the signed deposit is broadcast."
+  },
+  "swapKeystoneGetSignature": "Get signature",
+  "@swapKeystoneGetSignature": {
+    "description": "[security] Button in the swap Keystone signing overlay that opens the signature scanner."
+  },
+  "swapKeystoneIncomplete": "ZEC deposit signing could not be completed.",
+  "@swapKeystoneIncomplete": {
+    "description": "[security] Generic error in swap Keystone signing when signing the ZEC deposit fails."
+  },
+  "swapKeystoneNoTex": "Keystone does not support TEX sends yet.",
+  "@swapKeystoneNoTex": {
+    "description": "[security] Error in swap Keystone signing when the transaction is a TEX send."
+  },
+  "swapKeystoneQrMismatch": "This QR code does not match the current Keystone request.",
+  "@swapKeystoneQrMismatch": {
+    "description": "[security] Error in the swap Keystone signing overlay when the scanned signature QR belongs to another request."
+  },
+  "swapKeystoneScanCaption": "Scan the QR code on your Keystone to finish the ZEC deposit",
+  "@swapKeystoneScanCaption": {
+    "description": "[security] Caption under the signature scanner on the mobile swap Keystone screen."
+  },
+  "swapKeystoneScanDescription": "Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.",
+  "@swapKeystoneScanDescription": {
+    "description": "[security] Description on the mobile swap Keystone screen above the transaction QR code."
+  },
+  "swapKeystoneScanToSign": "Scan to sign",
+  "@swapKeystoneScanToSign": {
+    "description": "[security] Subtitle of the swap Keystone signing overlay above the QR code."
+  },
+  "swapKeystoneSignTitle": "Sign ZEC deposit on Keystone",
+  "@swapKeystoneSignTitle": {
+    "description": "[security] Title of the swap Keystone signing overlay asking the user to scan and sign the ZEC deposit."
+  },
+  "swapKeystoneStatusUncertain": "The transaction status is uncertain. Refresh activity before trying again.",
+  "@swapKeystoneStatusUncertain": {
+    "description": "[security] Error in the swap Keystone signing overlay when the broadcast outcome is unknown."
+  },
+  "swapKeystoneUnexpectedUr": "Open the signature result QR on Keystone, then scan again.",
+  "@swapKeystoneUnexpectedUr": {
+    "description": "[security] Message on the mobile swap Keystone screen when the scanned QR is not the signature result."
+  },
+  "swapLedgerBackToActivity": "Back to activity",
+  "@swapLedgerBackToActivity": {
+    "description": "Button in the swap Ledger signing modal that leaves the modal and returns to the activity list."
+  },
+  "swapLedgerBroadcastFailed": "The ZEC deposit could not be broadcast.",
+  "@swapLedgerBroadcastFailed": {
+    "description": "[security] Error in the swap Ledger signing modal when broadcasting the signed ZEC deposit failed."
+  },
+  "swapLedgerDeclined": "The ZEC deposit was rejected on your Ledger.",
+  "@swapLedgerDeclined": {
+    "description": "[security] Error in the swap Ledger signing modal when the user rejected the ZEC deposit on the device."
+  },
+  "swapLedgerMessageBackground": "Vizor is already finishing this transaction in the background.",
+  "@swapLedgerMessageBackground": {
+    "description": "[security] Body of the swap Ledger modal when a background operation already owns the transaction."
+  },
+  "swapLedgerMessageExpired": "The transaction expired before it was sent. Vizor still needs to release its reserved funds.",
+  "@swapLedgerMessageExpired": {
+    "description": "[security] Body of the swap Ledger recovery modal when the transaction expired and funds are still reserved."
+  },
+  "swapLedgerMessageSentNotSaved": "The transaction was sent, but Vizor could not finish saving it.",
+  "@swapLedgerMessageSentNotSaved": {
+    "description": "[security] Body of the swap Ledger recovery modal when the transaction was sent but local saving failed."
+  },
+  "swapLedgerMessageUncertain": "Vizor could not confirm whether the transaction was sent, and still needs to save its status.",
+  "@swapLedgerMessageUncertain": {
+    "description": "[security] Body of the swap Ledger recovery modal when it is unknown whether the transaction was sent."
+  },
+  "swapLedgerRetryCleanup": "Retry cleanup",
+  "@swapLedgerRetryCleanup": {
+    "description": "[security] Button in the swap Ledger recovery modal that retries releasing reserved funds."
+  },
+  "swapLedgerRetrySaving": "Retry saving",
+  "@swapLedgerRetrySaving": {
+    "description": "[security] Button in the swap Ledger recovery modal that retries saving the sent transaction."
+  },
+  "swapLedgerSigningIncomplete": "Ledger signing could not be completed.",
+  "@swapLedgerSigningIncomplete": {
+    "description": "[security] Generic error in the swap Ledger signing modal when signing fails for an unknown reason."
+  },
+  "swapLedgerStatusCleanup": "Cleanup needed",
+  "@swapLedgerStatusCleanup": {
+    "description": "[security] Status chip in the swap Ledger recovery modal when reserved funds still need to be released."
+  },
+  "swapLedgerStatusSaving": "Saving transaction",
+  "@swapLedgerStatusSaving": {
+    "description": "[security] Status chip in the swap Ledger recovery modal while the sent transaction is saved locally."
+  },
+  "swapLedgerStatusWait": "Please wait",
+  "@swapLedgerStatusWait": {
+    "description": "[security] Status chip in the swap Ledger modal while another operation finishes the transaction."
+  },
+  "swapLedgerTitleExpired": "Transaction expired",
+  "@swapLedgerTitleExpired": {
+    "description": "[security] Title of the swap Ledger recovery modal when the signed transaction expired before it was sent."
+  },
+  "swapLedgerTitlePending": "Transaction status pending",
+  "@swapLedgerTitlePending": {
+    "description": "[security] Title of the swap Ledger recovery modal when it is unknown whether the transaction was sent."
+  },
+  "swapLedgerTitleRecovery": "Transaction recovery in progress",
+  "@swapLedgerTitleRecovery": {
+    "description": "[security] Title of the swap Ledger modal when another background operation is already finishing the transaction."
+  },
+  "swapLedgerTitleSent": "Transaction sent",
+  "@swapLedgerTitleSent": {
+    "description": "[security] Title of the swap Ledger recovery modal when the transaction was sent but could not be saved locally."
+  },
+  "swapNoticeAffectedNetworks": "Affected networks",
+  "@swapNoticeAffectedNetworks": {
+    "description": "Heading of the list of networks affected by an incident."
+  },
+  "swapNoticeAllChains": "All chains",
+  "@swapNoticeAllChains": {
+    "description": "Network list text meaning the notice applies to every chain."
+  },
+  "swapNoticeCloseLabel": "Close service notice",
+  "@swapNoticeCloseLabel": {
+    "description": "Accessibility label of the close button on the NEAR Intents service notice."
+  },
+  "swapNoticeExpectedEnd": "Expected end: {time}",
+  "@swapNoticeExpectedEnd": {
+    "description": "Service notice line with the expected end time of a maintenance window; {time} is a formatted local date and UTC offset.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "swapNoticeListOfMaintenance": "List of maintenance",
+  "@swapNoticeListOfMaintenance": {
+    "description": "Heading of the list of affected networks when the notice is maintenance only."
+  },
+  "swapNoticeMaintenanceIntro": "NEAR Intents is under maintenance.",
+  "@swapNoticeMaintenanceIntro": {
+    "description": "First line of the service notice when scheduled maintenance is under way."
+  },
+  "swapNoticeMaintenanceTitle": "Maintenance notice",
+  "@swapNoticeMaintenanceTitle": {
+    "description": "Title of the NEAR Intents service banner when only scheduled maintenance is reported."
+  },
+  "swapNoticeMaintenanceWindow": "Maintenance window: {networks}",
+  "@swapNoticeMaintenanceWindow": {
+    "description": "Service notice line naming the networks covered by one maintenance window; {networks} is a comma-separated list of chain names.",
+    "placeholders": {
+      "networks": {
+        "type": "String"
+      }
+    }
+  },
+  "swapNoticeOk": "Ok",
+  "@swapNoticeOk": {
+    "description": "Button that dismisses the NEAR Intents service notice."
+  },
+  "swapNoticePaymentsMayFail": "Payments may not work right now.",
+  "@swapNoticePaymentsMayFail": {
+    "description": "Service notice line shown in pay mode explaining that payments may fail."
+  },
+  "swapNoticeServiceTitle": "Service notice",
+  "@swapNoticeServiceTitle": {
+    "description": "Title of the NEAR Intents service banner when an incident affects swaps."
+  },
+  "swapNoticeStart": "Start: {time}",
+  "@swapNoticeStart": {
+    "description": "Service notice line with the start time of a maintenance window; {time} is a formatted local date and UTC offset.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "swapNoticeStatusPage": "NEAR Intents status page",
+  "@swapNoticeStatusPage": {
+    "description": "Button that opens the NEAR Intents status web page."
+  },
+  "swapNoticeSwapsMayFail": "Swaps may not work right now.",
+  "@swapNoticeSwapsMayFail": {
+    "description": "Service notice line shown in swap mode explaining that swaps may fail."
+  },
+  "swapPageTitle": "Swap",
+  "@swapPageTitle": {
+    "description": "Page title on the desktop swap screen."
+  },
+  "swapPanelDepositChecking": "Checking ZEC deposit",
+  "@swapPanelDepositChecking": {
+    "description": "Toast after the ZEC deposit broadcast result is uncertain and the wallet is checking it."
+  },
+  "swapPanelDepositSent": "ZEC deposit sent",
+  "@swapPanelDepositSent": {
+    "description": "Toast after the ZEC deposit for a swap was broadcast and its arrival is certain."
+  },
+  "swapPanelLoadFailedBody": "Return to Activity and select a saved swap.",
+  "@swapPanelLoadFailedBody": {
+    "description": "Body text under the load failure heading in the swap activity detail."
+  },
+  "swapPanelLoadFailedTitle": "Couldn't load this swap. Try again or pull to refresh.",
+  "@swapPanelLoadFailedTitle": {
+    "description": "Heading shown when a saved swap cannot be loaded in the activity detail."
+  },
+  "swapPanelRecipientTo": "To: {recipient}",
+  "@swapPanelRecipientTo": {
+    "description": "Subtitle under the receive amount in the swap status header; {recipient} is a contact name or shortened address.",
+    "placeholders": {
+      "recipient": {
+        "type": "String"
+      }
+    }
+  },
+  "swapPayStatusConvertedFrom": "Converted from",
+  "@swapPayStatusConvertedFrom": {
+    "description": "Row label for the ZEC amount a payment was converted from."
+  },
+  "swapPayStatusNewAddress": "New address",
+  "@swapPayStatusNewAddress": {
+    "description": "Subtext under the recipient on the pay status screen when the address is not a saved contact."
+  },
+  "swapPayStatusProgressTab": "Payment progress",
+  "@swapPayStatusProgressTab": {
+    "description": "Label of the progress tab on the pay status screen."
+  },
+  "swapPayStatusRefundFee": "Refund fee",
+  "@swapPayStatusRefundFee": {
+    "description": "Row label for the fee charged on a refund."
+  },
+  "swapPayStatusRefundTo": "Refund to",
+  "@swapPayStatusRefundTo": {
+    "description": "Row label for the address a refund was sent to."
+  },
+  "swapPayStatusRefundedAmount": "Refunded amount",
+  "@swapPayStatusRefundedAmount": {
+    "description": "Row label for the amount refunded after a failed payment."
+  },
+  "swapPayStatusShowFullAddress": "Show full address",
+  "@swapPayStatusShowFullAddress": {
+    "description": "Link on the pay status recipient row that reveals the full address."
+  },
+  "swapPayStatusSourceAmount": "Source amount",
+  "@swapPayStatusSourceAmount": {
+    "description": "Row label for the original ZEC amount of a failed payment."
+  },
+  "swapPayStatusTimestamp": "Timestamp",
+  "@swapPayStatusTimestamp": {
+    "description": "Row label for the payment time on the pay status screen."
+  },
+  "swapPayStatusTo": "To",
+  "@swapPayStatusTo": {
+    "description": "Row label for the payment recipient on the pay status screen."
+  },
+  "swapPayStatusTxFee": "Tx fee",
+  "@swapPayStatusTxFee": {
+    "description": "Row label for the network fee of a payment, with a help icon."
+  },
+  "swapPayStatusTxId": "Tx ID",
+  "@swapPayStatusTxId": {
+    "description": "Row label for the transaction ID on the pay status screen."
+  },
+  "swapPoweredByLabel": "Powered by",
+  "@swapPoweredByLabel": {
+    "description": "Accessibility label of the \"Powered by\" artwork in the NEAR Intents attribution."
+  },
+  "swapReviewBackPay": "Pay",
+  "@swapReviewBackPay": {
+    "description": "Back link label on the review screen that returns to the Pay composer."
+  },
+  "swapReviewConfirmAndSwap": "Confirm & swap",
+  "@swapReviewConfirmAndSwap": {
+    "description": "Primary button on the mobile swap review that starts the swap."
+  },
+  "swapReviewConfirmPaymentTitle": "Confirm payment",
+  "@swapReviewConfirmPaymentTitle": {
+    "description": "Title and fallback button label on the desktop pay review screen."
+  },
+  "swapReviewConfirmSwap": "Confirm swap",
+  "@swapReviewConfirmSwap": {
+    "description": "Primary button on the desktop swap review that starts the swap."
+  },
+  "swapReviewFromAddress": "From: {address}",
+  "@swapReviewFromAddress": {
+    "description": "Subtitle under the pay amount on the mobile swap review when the user pays from an external chain; {address} is a contact name or shortened address.",
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "swapReviewGuaranteedMinimum": "Guaranteed minimum",
+  "@swapReviewGuaranteedMinimum": {
+    "description": "Row label for the guaranteed minimum receive amount on the swap review summary."
+  },
+  "swapReviewInsufficientZecPay": "You don't have enough ZEC for this payment. Try a smaller amount.",
+  "@swapReviewInsufficientZecPay": {
+    "description": "Warning on the pay review screen when the ZEC balance cannot cover the payment amount."
+  },
+  "swapReviewInsufficientZecSwap": "You don't have enough ZEC for this swap. Try a smaller amount.",
+  "@swapReviewInsufficientZecSwap": {
+    "description": "Warning on the swap review screen when the ZEC balance cannot cover the swap amount."
+  },
+  "swapReviewNetworkFees": "Network + conversion fees",
+  "@swapReviewNetworkFees": {
+    "description": "Row label for combined network and conversion fees on the pay review summary."
+  },
+  "swapReviewPayAmount": "Pay {amount}",
+  "@swapReviewPayAmount": {
+    "description": "Primary button on the pay review; {amount} is the formatted amount the recipient gets.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "swapReviewPrivately": "Privately, from shielded balance",
+  "@swapReviewPrivately": {
+    "description": "Detail line on the pay review screen stating the payment is made from the shielded balance."
+  },
+  "swapReviewQuoteExpired": "Quote expired. Review again for an updated rate.",
+  "@swapReviewQuoteExpired": {
+    "description": "Notice on the review screens when the quote expired."
+  },
+  "swapReviewQuoteHolds": "Quote holds",
+  "@swapReviewQuoteHolds": {
+    "description": "Row label for how long the quote stays valid on the pay review summary."
+  },
+  "swapReviewQuoteInactive": "This quote is no longer active.",
+  "@swapReviewQuoteInactive": {
+    "description": "Warning on the mobile swap review screen when the quote has expired or been replaced."
+  },
+  "swapReviewRate": "Rate",
+  "@swapReviewRate": {
+    "description": "Row label for the exchange rate on the pay review summary."
+  },
+  "swapReviewRecipientGets": "Recipient gets",
+  "@swapReviewRecipientGets": {
+    "description": "Label above the amount the payment recipient receives on the pay review screen."
+  },
+  "swapReviewRefundToAddress": "Refund to: {address}",
+  "@swapReviewRefundToAddress": {
+    "description": "Detail line under the pay amount on the swap review when the user pays from an external chain; {address} is a contact name or shortened address.",
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "swapReviewReturnToSwap": "Return to swap",
+  "@swapReviewReturnToSwap": {
+    "description": "Primary button on the mobile swap review when the quote is no longer active."
+  },
+  "swapReviewReviewAgain": "Review again",
+  "@swapReviewReviewAgain": {
+    "description": "Primary button on the swap review that fetches a new quote after the old one expired."
+  },
+  "swapReviewSlippageTolerance": "Slippage tolerance",
+  "@swapReviewSlippageTolerance": {
+    "description": "Row label for the slippage tolerance on the swap review summary."
+  },
+  "swapReviewStartingLockingQuote": "Locking quote",
+  "@swapReviewStartingLockingQuote": {
+    "description": "Disabled primary button label on the swap review while the quote is being locked."
+  },
+  "swapReviewStartingPaying": "Paying",
+  "@swapReviewStartingPaying": {
+    "description": "Disabled primary button label on the pay review while the payment is being started."
+  },
+  "swapReviewStartingSending": "Sending",
+  "@swapReviewStartingSending": {
+    "description": "Disabled primary button label on the swap review while the ZEC deposit is being sent."
+  },
+  "swapReviewSwapFee": "Swap fee",
+  "@swapReviewSwapFee": {
+    "description": "Row label for the swap fee on the swap review summary."
+  },
+  "swapReviewSwapTitle": "Review swap",
+  "@swapReviewSwapTitle": {
+    "description": "Title of the desktop swap review screen."
+  },
+  "swapReviewTitlePay": "Review Payment",
+  "@swapReviewTitlePay": {
+    "description": "Top bar title of the mobile pay review screen."
+  },
+  "swapReviewTitleSwap": "Review quote",
+  "@swapReviewTitleSwap": {
+    "description": "Top bar title of the mobile swap review screen."
+  },
+  "swapReviewToAddress": "To: {address}",
+  "@swapReviewToAddress": {
+    "description": "Subtitle under the receive amount on the mobile swap review when the user sends ZEC; {address} is a contact name or shortened address.",
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "swapReviewToAddressOnChain": "To: {address} on {chain}",
+  "@swapReviewToAddressOnChain": {
+    "description": "Detail line under the receive amount on the swap review; {address} is a contact name or shortened address and {chain} the chain name.",
+    "placeholders": {
+      "address": {
+        "type": "String"
+      },
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "swapReviewYouPay": "You pay",
+  "@swapReviewYouPay": {
+    "description": "Label above the payment amount on the pay review screen."
+  },
+  "swapScanNoAddress": "QR code did not include an address.",
+  "@swapScanNoAddress": {
+    "description": "Error shown by the mobile address scanner when the scanned QR code holds no address."
+  },
+  "swapSignPayment": "Sign payment",
+  "@swapSignPayment": {
+    "description": "Mobile Ledger signing screen title when the operation is a payment."
+  },
+  "swapSignZecDeposit": "Sign ZEC deposit",
+  "@swapSignZecDeposit": {
+    "description": "Title of the mobile signing screens for the ZEC deposit of a swap."
+  },
+  "swapSlippageCustom": "Custom",
+  "@swapSlippageCustom": {
+    "description": "Label of the custom slippage input option in the slippage modal."
+  },
+  "swapSlippageDescriptionPay": "Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.",
+  "@swapSlippageDescriptionPay": {
+    "description": "Slippage modal explanation shown in pay mode: extra ZEC allowed when the quote moves."
+  },
+  "swapSlippageDescriptionSwap": "Sets the maximum rate change you'll accept. Network fees are separate.",
+  "@swapSlippageDescriptionSwap": {
+    "description": "Slippage modal explanation shown in swap mode: maximum rate change accepted."
+  },
+  "swapSlippageRangeError": "Slippage must be 0.1 - 5%",
+  "@swapSlippageRangeError": {
+    "description": "Validation error in the slippage modal when the custom value is outside 0.1 to 5 percent."
+  },
+  "swapSlippageTitle": "Slippage",
+  "@swapSlippageTitle": {
+    "description": "Title of the slippage settings modal and field label for the allowed price movement."
+  },
+  "swapStatusBadgeCompleted": "Completed",
+  "@swapStatusBadgeCompleted": {
+    "description": "Status text on the mobile swap and pay status screen when the operation finished successfully."
+  },
+  "swapStatusBadgeFailed": "Failed",
+  "@swapStatusBadgeFailed": {
+    "description": "Status text on the mobile status screen when the operation failed."
+  },
+  "swapStatusBadgeInProgress": "In progress",
+  "@swapStatusBadgeInProgress": {
+    "description": "Status text on the mobile status screen while the operation is still running."
+  },
+  "swapStatusBadgeNeedsAttention": "Needs attention",
+  "@swapStatusBadgeNeedsAttention": {
+    "description": "Status text on the mobile status screen when the operation needs user action."
+  },
+  "swapStatusBadgeRefunded": "Refunded",
+  "@swapStatusBadgeRefunded": {
+    "description": "Status text on the mobile status screen when the funds were refunded."
+  },
+  "swapStatusDetailsTab": "Transaction details",
+  "@swapStatusDetailsTab": {
+    "description": "Label of the details tab on the swap status screen."
+  },
+  "swapStatusPayLabel": "You're paying",
+  "@swapStatusPayLabel": {
+    "description": "Default label above the amount the user sends on the swap status screen."
+  },
+  "swapStatusProgressTab": "Swap progress",
+  "@swapStatusProgressTab": {
+    "description": "Default label of the progress tab on the swap status screen."
+  },
+  "swapStatusReceiveLabel": "You're receiving",
+  "@swapStatusReceiveLabel": {
+    "description": "Default label above the amount the user gets on the swap status screen."
+  },
+  "swapStatusRowLabel": "Status",
+  "@swapStatusRowLabel": {
+    "description": "Row label next to the final swap status on the swap status screen."
+  },
+  "swapTimeoutBody": "Please, start another swap transaction.",
+  "@swapTimeoutBody": {
+    "description": "Body text on the swap timeout screen asking the user to start a new swap."
+  },
+  "swapTimeoutHeadline": "This deposit address is no longer valid",
+  "@swapTimeoutHeadline": {
+    "description": "Headline on the swap timeout screen explaining the one-time deposit address has expired."
+  },
+  "swapTimeoutRestart": "Restart swap",
+  "@swapTimeoutRestart": {
+    "description": "Button on the swap timeout screen that returns to the swap composer."
+  },
+  "swapTimeoutTitle": "Time’s up",
+  "@swapTimeoutTitle": {
+    "description": "Heading on the swap timeout screen shown when the quote deposit window has expired."
+  },
+  "swapViewOnNearIntents": "View on NEAR Intents",
+  "@swapViewOnNearIntents": {
+    "description": "Button label on the swap progress footer that opens the swap in the NEAR Intents explorer."
+  },
+  "swapZcashAddressTitle": "Zcash address",
+  "@swapZcashAddressTitle": {
+    "description": "Title of the address verification sheet for the Zcash side of a swap."
   },
   "syncCheckingPercentSemantics": "Checking {percent} percent",
   "@syncCheckingPercentSemantics": {

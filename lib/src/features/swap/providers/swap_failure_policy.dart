@@ -1,3 +1,4 @@
+// l10n-ignore-file: messages are stored in provider state and persisted swap intents (statusError), built without a BuildContext
 import 'dart:async';
 
 import '../integrations/near_intents/near_intents_one_click_swap_adapter.dart';
@@ -194,8 +195,8 @@ String _unsupportedAssetMessage(SwapFailureOperation operation) {
 
 String _serviceUnavailableMessage(SwapFailureOperation operation) {
   return switch (operation) {
-    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
-      _statusAutoRefreshMessage,
+    SwapFailureOperation.refreshStatus ||
+    SwapFailureOperation.submitDeposit => _statusAutoRefreshMessage,
     _ => 'Swap service is temporarily unavailable.\nTry again later.',
   };
 }
@@ -204,16 +205,16 @@ String _timeoutMessage(SwapFailureOperation operation) {
   return switch (operation) {
     SwapFailureOperation.quote =>
       'Quote request timed out.\nCheck your connection and try again.',
-    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
-      _statusAutoRefreshMessage,
+    SwapFailureOperation.refreshStatus ||
+    SwapFailureOperation.submitDeposit => _statusAutoRefreshMessage,
     _ => 'Request timed out.\nCheck your connection and try again.',
   };
 }
 
 String _retryLaterMessage(SwapFailureOperation operation) {
   return switch (operation) {
-    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
-      _statusAutoRefreshMessage,
+    SwapFailureOperation.refreshStatus ||
+    SwapFailureOperation.submitDeposit => _statusAutoRefreshMessage,
     _ => 'Swap service is still processing.\nWait a moment and try again.',
   };
 }

@@ -93,7 +93,7 @@ class PayActivityStatusContent extends StatelessWidget {
           if (showTabs && progress != null) ...[
             SwapStatusTabs(
               activeTab: activeTab,
-              progressLabel: 'Payment progress',
+              progressLabel: context.l10n.swapPayStatusProgressTab,
               onChanged: onTabChanged,
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -158,7 +158,7 @@ class PayActivityStatusContent extends StatelessWidget {
             ),
             ReviewInfoRow(
               key: const ValueKey('pay_status_recipient_row'),
-              label: 'To',
+              label: context.l10n.swapPayStatusTo,
               value: contact?.label ?? compactRecipient,
               leading: contact == null
                   ? const ReviewInfoIconCircle(iconName: AppIcons.wallet)
@@ -167,9 +167,9 @@ class PayActivityStatusContent extends StatelessWidget {
                       size: AppProfilePictureSize.large,
                     ),
               bottomLeftText: contact == null
-                  ? 'New address'
+                  ? context.l10n.swapPayStatusNewAddress
                   : compactRecipient,
-              trailingActionLabel: 'Show full address',
+              trailingActionLabel: context.l10n.swapPayStatusShowFullAddress,
               trailingActionKey: const ValueKey('pay_status_show_full_address'),
               onTrailingAction: onShowFullAddress,
             ),
@@ -211,7 +211,7 @@ class PayActivityStatusContent extends StatelessWidget {
             enabled: !animationsDisabled,
             child: ReviewListRow(
               key: const ValueKey('pay_status_status_row'),
-              label: 'Status',
+              label: context.l10n.swapStatusRowLabel,
               value: status.statusLabel(context.l10n),
               valueColor: statusColor,
               leadingIconName: statusIcon,
@@ -220,9 +220,12 @@ class PayActivityStatusContent extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              ReviewListRow(label: 'Timestamp', value: status.timestampText),
               ReviewListRow(
-                label: 'Tx ID',
+                label: context.l10n.swapPayStatusTimestamp,
+                value: status.timestampText,
+              ),
+              ReviewListRow(
+                label: context.l10n.swapPayStatusTxId,
                 value: status.txIdText,
                 trailingIconName: onOpenExplorer == null
                     ? null
@@ -238,20 +241,20 @@ class PayActivityStatusContent extends StatelessWidget {
             children: [
               if (status.phase == PayActivityStatusPhase.failed)
                 ReviewListRow(
-                  label: 'Source amount',
+                  label: context.l10n.swapPayStatusSourceAmount,
                   value: status.convertedFromText,
                 ),
               if (status.phase == PayActivityStatusPhase.refunded &&
                   status.refundedAmountText?.isNotEmpty == true)
                 ReviewListRow(
-                  label: 'Refunded amount',
+                  label: context.l10n.swapPayStatusRefundedAmount,
                   value: status.refundedAmountText!,
                 ),
               if ((status.phase == PayActivityStatusPhase.failed ||
                       status.phase == PayActivityStatusPhase.refunded) &&
                   status.refundAddress?.isNotEmpty == true)
                 ReviewListRow(
-                  label: 'Refund to',
+                  label: context.l10n.swapPayStatusRefundTo,
                   value: compactSwapAddress(status.refundAddress!),
                   copyText: status.refundAddress,
                   scaleValueToFit: true,
@@ -259,18 +262,18 @@ class PayActivityStatusContent extends StatelessWidget {
               if (status.phase == PayActivityStatusPhase.refunded &&
                   status.refundFeeText?.isNotEmpty == true)
                 ReviewListRow(
-                  label: 'Refund fee',
+                  label: context.l10n.swapPayStatusRefundFee,
                   value: status.refundFeeText!,
                 ),
               if (status.phase == PayActivityStatusPhase.inProgress ||
                   status.phase == PayActivityStatusPhase.completed) ...[
                 ReviewListRow(
-                  label: 'Converted from',
+                  label: context.l10n.swapPayStatusConvertedFrom,
                   value: status.convertedFromText,
                   trailingIconName: AppIcons.shieldKeyhole,
                 ),
                 ReviewListRow(
-                  label: 'Tx fee',
+                  label: context.l10n.swapPayStatusTxFee,
                   value: status.transactionFeeText,
                   trailingIconName: AppIcons.help,
                   trailingIconColor: colors.text.secondary,

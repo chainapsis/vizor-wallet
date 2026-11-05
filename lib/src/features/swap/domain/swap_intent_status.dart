@@ -1,3 +1,4 @@
+// l10n-ignore-file: label feeds persisted intent statusLabel; callers live in swap/models
 enum SwapIntentStatus {
   awaitingDeposit,
   awaitingExternalDeposit,

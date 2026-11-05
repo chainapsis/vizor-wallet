@@ -134,7 +134,7 @@ class MobilePayStatusHeader extends StatelessWidget {
     required this.amountText,
     required this.fiatText,
     required this.recipientAddress,
-    this.label = "You're paying",
+    this.label,
     this.recipientName,
     this.recipientProfilePictureId,
     super.key,
@@ -144,7 +144,7 @@ class MobilePayStatusHeader extends StatelessWidget {
   final String amountText;
   final String fiatText;
   final String recipientAddress;
-  final String label;
+  final String? label;
   final String? recipientName;
   final String? recipientProfilePictureId;
 
@@ -173,7 +173,7 @@ class MobilePayStatusHeader extends StatelessWidget {
                 size: 40,
                 showChainBadge: !asset.isNativeZec,
               ),
-              label: label,
+              label: label ?? context.l10n.swapStatusPayLabel,
               value: amountText,
               valueFit: BoxFit.scaleDown,
               bottomLeftText: fiatText,
@@ -186,18 +186,18 @@ class MobilePayStatusHeader extends StatelessWidget {
                       size: AppProfilePictureSize.navLarge,
                     )
                   : _MobilePayRecipientPlaceholder(),
-              label: 'To',
+              label: context.l10n.swapPayStatusTo,
               value: name == null || name.isEmpty ? compactAddress : name,
               bottomLeftText: name == null || name.isEmpty
                   ? null
                   : compactAddress,
-              trailingActionLabel: 'Full address',
+              trailingActionLabel: context.l10n.swapFullAddress,
               trailingActionKey: const ValueKey(
                 'mobile_pay_status_full_address',
               ),
               onTrailingAction: () => showMobileAddressVerifySheet(
                 context,
-                title: '${asset.chainLabel} address',
+                title: context.l10n.swapChainAddressTitle(asset.chainLabel),
                 address: recipientAddress,
                 leading: SwapAssetIcon(
                   asset: asset,
@@ -290,7 +290,7 @@ class _MobileStatusTabs extends StatelessWidget {
             const SizedBox(width: AppSpacing.sm),
             _MobileStatusTabLabel(
               key: const ValueKey('mobile_swap_status_tab_details'),
-              label: 'Transaction details',
+              label: context.l10n.swapStatusDetailsTab,
               selected: activeTab == SwapStatusTab.details,
               onTap: () => onChanged(SwapStatusTab.details),
             ),
@@ -353,27 +353,27 @@ class _MobileStatusChipRow extends StatelessWidget {
     final (iconName, defaultText, defaultColor) = switch (badgeKind) {
       SwapStatusBadgeKind.completed => (
         AppIcons.checkCircle,
-        'Completed',
+        context.l10n.swapStatusBadgeCompleted,
         colors.text.positiveStrong,
       ),
       SwapStatusBadgeKind.refunded => (
         AppIcons.uturnUp,
-        'Refunded',
+        context.l10n.swapStatusBadgeRefunded,
         colors.text.positiveStrong,
       ),
       SwapStatusBadgeKind.failed => (
         AppIcons.cross,
-        'Failed',
+        context.l10n.swapStatusBadgeFailed,
         colors.text.destructive,
       ),
       SwapStatusBadgeKind.warning => (
         AppIcons.warning,
-        'Needs attention',
+        context.l10n.swapStatusBadgeNeedsAttention,
         colors.text.warning,
       ),
       SwapStatusBadgeKind.liveQuote => (
         AppIcons.loader,
-        'In progress',
+        context.l10n.swapStatusBadgeInProgress,
         colors.text.secondary,
       ),
     };
@@ -393,7 +393,7 @@ class _MobileStatusChipRow extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              'Status',
+              context.l10n.swapStatusRowLabel,
               style: labelStyle.copyWith(
                 color: badgeKind == SwapStatusBadgeKind.failed
                     ? colors.text.destructive
@@ -452,26 +452,29 @@ class _MobilePaymentDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final payStatus = presentation.payStatus;
     final timestamp = payStatus == null
-        ? _paymentDetailRow(presentation.details, 'Timestamp')
+        ? _paymentDetailRow(
+            presentation.details,
+            'Timestamp', // l10n-ignore: matched by English label
+          )
         : SwapStatusDetailRowData(
-            label: 'Timestamp',
+            label: 'Timestamp', // l10n-ignore: matched by English label
             value: payStatus.timestampText,
           );
     final txId = payStatus == null
         ? _paymentDetailRow(presentation.details, 'Tx ID')
         : SwapStatusDetailRowData(
-            label: 'Tx ID',
+            label: 'Tx ID', // l10n-ignore: matched by English label
             value: payStatus.txIdText,
             linkUri: payStatus.txIdUri,
           );
     final convertedFrom = SwapStatusDetailRowData(
-      label: 'Converted from',
+      label: 'Converted from', // l10n-ignore: matched by English label
       value: payStatus?.convertedFromText ?? presentation.payAmountText,
     );
     final displayFee = payStatus == null
         ? null
         : SwapStatusDetailRowData(
-            label: 'Tx fee',
+            label: 'Tx fee', // l10n-ignore: matched by English label
             value: payStatus.transactionFeeText,
             help: true,
             helpTooltip: context.l10n.txFeeHelpTooltip,
@@ -482,18 +485,18 @@ class _MobilePaymentDetails extends StatelessWidget {
     final outcomeRows = <SwapStatusDetailRowData>[
       if (payStatus?.phase == PayActivityStatusPhase.failed)
         SwapStatusDetailRowData(
-          label: 'Source amount',
+          label: 'Source amount', // l10n-ignore: matched by English label
           value: payStatus!.convertedFromText,
         ),
       if (payStatus?.phase == PayActivityStatusPhase.refunded &&
           payStatus?.refundedAmountText?.isNotEmpty == true)
         SwapStatusDetailRowData(
-          label: 'Refunded amount',
+          label: 'Refunded amount', // l10n-ignore: matched by English label
           value: payStatus!.refundedAmountText!,
         ),
       if (terminalOutcome && payStatus?.refundAddress?.isNotEmpty == true)
         SwapStatusDetailRowData(
-          label: 'Refund to',
+          label: 'Refund to', // l10n-ignore: matched by English label
           value: compactSwapAddress(payStatus!.refundAddress!),
           copyable: true,
           copyText: payStatus.refundAddress,
@@ -501,7 +504,7 @@ class _MobilePaymentDetails extends StatelessWidget {
       if (payStatus?.phase == PayActivityStatusPhase.refunded &&
           payStatus?.refundFeeText?.isNotEmpty == true)
         SwapStatusDetailRowData(
-          label: 'Refund fee',
+          label: 'Refund fee', // l10n-ignore: matched by English label
           value: payStatus!.refundFeeText!,
         ),
     ];
@@ -736,7 +739,7 @@ class _MobileFinalDetailRow extends StatelessWidget {
                   copyTextWithToast(
                     context,
                     text: row.copyText ?? row.value,
-                    toastMessage: 'Copied',
+                    toastMessage: context.l10n.commonCopied,
                   );
                 }
               }
@@ -849,7 +852,9 @@ Future<void> _launchExternalUri(Uri uri) async {
 
 String _mobileStatusDetailLabel(SwapStatusDetailRowData row) {
   final label = row.label;
-  if (label == 'Total fees') return 'Swap fee';
+  if (label == 'Total fees') {
+    return 'Swap fee'; // l10n-ignore: matched by English label
+  }
   return label;
 }
 

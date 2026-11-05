@@ -8987,6 +8987,42 @@ abstract class AppLocalizations {
   /// **'Show balance'**
   String get sidebarShowBalance;
 
+  /// Primary button label on the swap screen that opens the recipient address editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Add recipient address'**
+  String get swapActionAddRecipientAddress;
+
+  /// Primary button label on the swap screen that opens the refund address editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Add refund address'**
+  String get swapActionAddRefundAddress;
+
+  /// Primary button label on the mobile swap screen that opens the review.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue to review'**
+  String get swapActionContinueToReview;
+
+  /// Primary button label on the swap screen while a quote is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Getting quote'**
+  String get swapActionGettingQuote;
+
+  /// Disabled primary button label on the swap screen when the ZEC balance does not cover the amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Not enough ZEC'**
+  String get swapActionNotEnoughZec;
+
+  /// Primary button label on the swap screen that opens the swap review.
+  ///
+  /// In en, this message translates to:
+  /// **'Review swap'**
+  String get swapActionReview;
+
   /// Default contact label suggestion when saving a swap recipient to the address book.
   ///
   /// In en, this message translates to:
@@ -9770,6 +9806,990 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You\'re receiving'**
   String get swapActivityYoureReceiving;
+
+  /// Helper text in the swap address editor explaining where the swapped asset is sent; {symbol} is the asset ticker.
+  ///
+  /// In en, this message translates to:
+  /// **'Your {symbol} will be delivered to this address.'**
+  String swapAddressRecipientDescription(String symbol);
+
+  /// Field label above the recipient address input in the swap address editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient'**
+  String get swapAddressRecipientFieldLabel;
+
+  /// Title of the swap address editor when the user receives an external asset; {symbol} is the asset ticker.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} recipient address'**
+  String swapAddressRecipientTitle(String symbol);
+
+  /// Helper text in the swap address editor explaining where a refund is sent; {symbol} is the asset ticker and {chain} the chain name.
+  ///
+  /// In en, this message translates to:
+  /// **'If the swap fails or the rate moves, you\'ll be refunded in {symbol} on {chain}, minus the fee.'**
+  String swapAddressRefundDescription(String symbol, String chain);
+
+  /// Field label above the refund address input in the swap address editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Refund to'**
+  String get swapAddressRefundFieldLabel;
+
+  /// Title of the swap address editor when the user edits the address a failed swap refunds to; {symbol} is the asset ticker.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} refund address'**
+  String swapAddressRefundTitle(String symbol);
+
+  /// Toggle label in the swap address editor that saves the address for future recipients.
+  ///
+  /// In en, this message translates to:
+  /// **'Remember this address for recipients'**
+  String get swapAddressRememberRecipient;
+
+  /// Toggle label in the swap address editor that saves the address for future refunds.
+  ///
+  /// In en, this message translates to:
+  /// **'Remember this address for refunds'**
+  String get swapAddressRememberRefund;
+
+  /// Empty-state text in the swap asset picker when the search has no match.
+  ///
+  /// In en, this message translates to:
+  /// **'No tokens or chains found'**
+  String get swapAssetSelectorEmpty;
+
+  /// Placeholder of the search field in the swap asset picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Search token or chain'**
+  String get swapAssetSelectorSearchHint;
+
+  /// Title of the modal that lists assets to swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Select asset'**
+  String get swapAssetSelectorTitle;
+
+  /// Title of the address verification sheet for the external chain side of a swap; {chain} is the chain name.
+  ///
+  /// In en, this message translates to:
+  /// **'{chain} address'**
+  String swapChainAddressTitle(String chain);
+
+  /// Placeholder in the swap composer address row when no recipient address is set; tapping opens the editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Add recipient address...'**
+  String get swapComposerAddRecipientAddressEllipsis;
+
+  /// Placeholder in the swap composer address row when no refund address is set; tapping opens the editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Add refund address...'**
+  String get swapComposerAddRefundAddressEllipsis;
+
+  /// Button text in the swap composer showing the maximum amount available to swap; {amount} is a formatted amount with its ticker.
+  ///
+  /// In en, this message translates to:
+  /// **'Max: {amount}'**
+  String swapComposerMaxAmount(String amount);
+
+  /// Label above the amount the user sends in the swap composer.
+  ///
+  /// In en, this message translates to:
+  /// **'You pay'**
+  String get swapComposerYouPay;
+
+  /// Label above the amount the user gets in the swap composer.
+  ///
+  /// In en, this message translates to:
+  /// **'You receive'**
+  String get swapComposerYouReceive;
+
+  /// Toast on mobile after the user tries to save a swap address that is already in the address book.
+  ///
+  /// In en, this message translates to:
+  /// **'Already in your address book'**
+  String get swapContactAlreadyInAddressBook;
+
+  /// Toast shown after the user tries to save a swap address that is already in the address book.
+  ///
+  /// In en, this message translates to:
+  /// **'Already in your contacts'**
+  String get swapContactAlreadySaved;
+
+  /// Row label for the amount to send on the desktop deposit screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount'**
+  String get swapDepositAmount;
+
+  /// Toast after the user copies the deposit amount on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount Copied'**
+  String get swapDepositAmountCopiedDesktop;
+
+  /// Toast after the user copies the deposit amount on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount copied'**
+  String get swapDepositAmountCopiedMobile;
+
+  /// Row label for the amount to send on the mobile deposit screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount to deposit'**
+  String get swapDepositAmountToDeposit;
+
+  /// Button text while the wallet checks whether the user’s deposit arrived.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking'**
+  String get swapDepositChecking;
+
+  /// Button on the desktop deposit screen the user taps after sending funds to the one-time deposit address.
+  ///
+  /// In en, this message translates to:
+  /// **'I\'ve deposited'**
+  String get swapDepositDoneDesktop;
+
+  /// Button on the mobile deposit screen the user taps after sending funds to the one-time deposit address.
+  ///
+  /// In en, this message translates to:
+  /// **'I’ve deposited tokens'**
+  String get swapDepositDoneMobile;
+
+  /// Deposit deadline label for exactly one hour remaining.
+  ///
+  /// In en, this message translates to:
+  /// **'1hr'**
+  String get swapDepositHourOne;
+
+  /// Deposit deadline label for several hours remaining; {count} is the number of hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}hrs'**
+  String swapDepositHoursMany(int count);
+
+  /// [security] Row label for the memo that must be included with the deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'Memo'**
+  String get swapDepositMemo;
+
+  /// Toast after the user copies the deposit memo.
+  ///
+  /// In en, this message translates to:
+  /// **'Memo copied'**
+  String get swapDepositMemoCopied;
+
+  /// Deposit deadline label for exactly one minute remaining.
+  ///
+  /// In en, this message translates to:
+  /// **'1min'**
+  String get swapDepositMinuteOne;
+
+  /// Deposit deadline label for several minutes remaining; {count} is the number of minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}mins'**
+  String swapDepositMinutesMany(int count);
+
+  /// [security] Row label for the one-time deposit address; it must not be reused.
+  ///
+  /// In en, this message translates to:
+  /// **'One-time address'**
+  String get swapDepositOneTimeAddress;
+
+  /// [security] Warning under the deposit address telling the user to send only this asset on this chain, otherwise funds may be lost; {symbol} is the ticker and {chain} the chain name.
+  ///
+  /// In en, this message translates to:
+  /// **'Send only {symbol} on {chain}'**
+  String swapDepositSendOnly(String symbol, String chain);
+
+  /// [security] Body on the desktop deposit screen after the deposit window ended; the deposit address must not be used any more. Contains a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'This deposit address is no longer valid.\nPlease, start another swap transaction.'**
+  String get swapDepositTimeoutBody;
+
+  /// Title on the desktop deposit screen after the deposit window ended.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap failed'**
+  String get swapDepositTimeoutTitle;
+
+  /// Title of the desktop screen showing the one-time deposit address for a swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit tokens'**
+  String get swapDepositTitle;
+
+  /// Label before the countdown showing how long the user has to deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit within'**
+  String get swapDepositWithin;
+
+  /// Button on the deposit screen that sends the ZEC deposit from the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit ZEC'**
+  String get swapDepositZecButton;
+
+  /// Accessibility label of the tappable backdrop behind swap modals on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get swapDismissBarrierLabel;
+
+  /// Link on a swap review row that opens a sheet showing the whole address.
+  ///
+  /// In en, this message translates to:
+  /// **'Full address'**
+  String get swapFullAddress;
+
+  /// [security] Instruction in the swap Keystone signing overlay telling the user what to do after scanning.
+  ///
+  /// In en, this message translates to:
+  /// **'After you scanned, click Get signature.'**
+  String get swapKeystoneAfterScan;
+
+  /// [security] Error in swap Keystone signing when broadcasting failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction could not be broadcast.'**
+  String get swapKeystoneBroadcastFailed;
+
+  /// [security] Title of the swap Keystone signing overlay while the signed ZEC deposit is being broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasting ZEC deposit'**
+  String get swapKeystoneBroadcastingTitle;
+
+  /// Error in the swap Keystone signing flow when cancelling the signing request failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not finish cancelling. Please try again.'**
+  String get swapKeystoneCancelFailed;
+
+  /// [security] Error in the swap Keystone signing overlay when the user declined the proving parameter download.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing was cancelled before proving parameters were downloaded.'**
+  String get swapKeystoneCancelledBeforeParams;
+
+  /// Secondary button text and mobile title while a swap signing request is being cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelling…'**
+  String get swapKeystoneCancelling;
+
+  /// [security] Error in swap Keystone signing when the proposal expired before signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction expired before it could be signed.'**
+  String get swapKeystoneExpired;
+
+  /// [security] Title of the mobile swap Keystone screen when signing failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing failed'**
+  String get swapKeystoneFailedTitle;
+
+  /// [security] Label on the mobile swap Keystone screen while the signed deposit is broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasting ZEC deposit...'**
+  String get swapKeystoneFinalizing;
+
+  /// [security] Button in the swap Keystone signing overlay that opens the signature scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Get signature'**
+  String get swapKeystoneGetSignature;
+
+  /// [security] Generic error in swap Keystone signing when signing the ZEC deposit fails.
+  ///
+  /// In en, this message translates to:
+  /// **'ZEC deposit signing could not be completed.'**
+  String get swapKeystoneIncomplete;
+
+  /// [security] Error in swap Keystone signing when the transaction is a TEX send.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone does not support TEX sends yet.'**
+  String get swapKeystoneNoTex;
+
+  /// [security] Error in the swap Keystone signing overlay when the scanned signature QR belongs to another request.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code does not match the current Keystone request.'**
+  String get swapKeystoneQrMismatch;
+
+  /// [security] Caption under the signature scanner on the mobile swap Keystone screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code on your Keystone to finish the ZEC deposit'**
+  String get swapKeystoneScanCaption;
+
+  /// [security] Description on the mobile swap Keystone screen above the transaction QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.'**
+  String get swapKeystoneScanDescription;
+
+  /// [security] Subtitle of the swap Keystone signing overlay above the QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan to sign'**
+  String get swapKeystoneScanToSign;
+
+  /// [security] Title of the swap Keystone signing overlay asking the user to scan and sign the ZEC deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign ZEC deposit on Keystone'**
+  String get swapKeystoneSignTitle;
+
+  /// [security] Error in the swap Keystone signing overlay when the broadcast outcome is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction status is uncertain. Refresh activity before trying again.'**
+  String get swapKeystoneStatusUncertain;
+
+  /// [security] Message on the mobile swap Keystone screen when the scanned QR is not the signature result.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the signature result QR on Keystone, then scan again.'**
+  String get swapKeystoneUnexpectedUr;
+
+  /// Button in the swap Ledger signing modal that leaves the modal and returns to the activity list.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to activity'**
+  String get swapLedgerBackToActivity;
+
+  /// [security] Error in the swap Ledger signing modal when broadcasting the signed ZEC deposit failed.
+  ///
+  /// In en, this message translates to:
+  /// **'The ZEC deposit could not be broadcast.'**
+  String get swapLedgerBroadcastFailed;
+
+  /// [security] Error in the swap Ledger signing modal when the user rejected the ZEC deposit on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'The ZEC deposit was rejected on your Ledger.'**
+  String get swapLedgerDeclined;
+
+  /// [security] Body of the swap Ledger modal when a background operation already owns the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is already finishing this transaction in the background.'**
+  String get swapLedgerMessageBackground;
+
+  /// [security] Body of the swap Ledger recovery modal when the transaction expired and funds are still reserved.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction expired before it was sent. Vizor still needs to release its reserved funds.'**
+  String get swapLedgerMessageExpired;
+
+  /// [security] Body of the swap Ledger recovery modal when the transaction was sent but local saving failed.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction was sent, but Vizor could not finish saving it.'**
+  String get swapLedgerMessageSentNotSaved;
+
+  /// [security] Body of the swap Ledger recovery modal when it is unknown whether the transaction was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not confirm whether the transaction was sent, and still needs to save its status.'**
+  String get swapLedgerMessageUncertain;
+
+  /// [security] Button in the swap Ledger recovery modal that retries releasing reserved funds.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry cleanup'**
+  String get swapLedgerRetryCleanup;
+
+  /// [security] Button in the swap Ledger recovery modal that retries saving the sent transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry saving'**
+  String get swapLedgerRetrySaving;
+
+  /// [security] Generic error in the swap Ledger signing modal when signing fails for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger signing could not be completed.'**
+  String get swapLedgerSigningIncomplete;
+
+  /// [security] Status chip in the swap Ledger recovery modal when reserved funds still need to be released.
+  ///
+  /// In en, this message translates to:
+  /// **'Cleanup needed'**
+  String get swapLedgerStatusCleanup;
+
+  /// [security] Status chip in the swap Ledger recovery modal while the sent transaction is saved locally.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving transaction'**
+  String get swapLedgerStatusSaving;
+
+  /// [security] Status chip in the swap Ledger modal while another operation finishes the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait'**
+  String get swapLedgerStatusWait;
+
+  /// [security] Title of the swap Ledger recovery modal when the signed transaction expired before it was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction expired'**
+  String get swapLedgerTitleExpired;
+
+  /// [security] Title of the swap Ledger recovery modal when it is unknown whether the transaction was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction status pending'**
+  String get swapLedgerTitlePending;
+
+  /// [security] Title of the swap Ledger modal when another background operation is already finishing the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction recovery in progress'**
+  String get swapLedgerTitleRecovery;
+
+  /// [security] Title of the swap Ledger recovery modal when the transaction was sent but could not be saved locally.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction sent'**
+  String get swapLedgerTitleSent;
+
+  /// Heading of the list of networks affected by an incident.
+  ///
+  /// In en, this message translates to:
+  /// **'Affected networks'**
+  String get swapNoticeAffectedNetworks;
+
+  /// Network list text meaning the notice applies to every chain.
+  ///
+  /// In en, this message translates to:
+  /// **'All chains'**
+  String get swapNoticeAllChains;
+
+  /// Accessibility label of the close button on the NEAR Intents service notice.
+  ///
+  /// In en, this message translates to:
+  /// **'Close service notice'**
+  String get swapNoticeCloseLabel;
+
+  /// Service notice line with the expected end time of a maintenance window; {time} is a formatted local date and UTC offset.
+  ///
+  /// In en, this message translates to:
+  /// **'Expected end: {time}'**
+  String swapNoticeExpectedEnd(String time);
+
+  /// Heading of the list of affected networks when the notice is maintenance only.
+  ///
+  /// In en, this message translates to:
+  /// **'List of maintenance'**
+  String get swapNoticeListOfMaintenance;
+
+  /// First line of the service notice when scheduled maintenance is under way.
+  ///
+  /// In en, this message translates to:
+  /// **'NEAR Intents is under maintenance.'**
+  String get swapNoticeMaintenanceIntro;
+
+  /// Title of the NEAR Intents service banner when only scheduled maintenance is reported.
+  ///
+  /// In en, this message translates to:
+  /// **'Maintenance notice'**
+  String get swapNoticeMaintenanceTitle;
+
+  /// Service notice line naming the networks covered by one maintenance window; {networks} is a comma-separated list of chain names.
+  ///
+  /// In en, this message translates to:
+  /// **'Maintenance window: {networks}'**
+  String swapNoticeMaintenanceWindow(String networks);
+
+  /// Button that dismisses the NEAR Intents service notice.
+  ///
+  /// In en, this message translates to:
+  /// **'Ok'**
+  String get swapNoticeOk;
+
+  /// Service notice line shown in pay mode explaining that payments may fail.
+  ///
+  /// In en, this message translates to:
+  /// **'Payments may not work right now.'**
+  String get swapNoticePaymentsMayFail;
+
+  /// Title of the NEAR Intents service banner when an incident affects swaps.
+  ///
+  /// In en, this message translates to:
+  /// **'Service notice'**
+  String get swapNoticeServiceTitle;
+
+  /// Service notice line with the start time of a maintenance window; {time} is a formatted local date and UTC offset.
+  ///
+  /// In en, this message translates to:
+  /// **'Start: {time}'**
+  String swapNoticeStart(String time);
+
+  /// Button that opens the NEAR Intents status web page.
+  ///
+  /// In en, this message translates to:
+  /// **'NEAR Intents status page'**
+  String get swapNoticeStatusPage;
+
+  /// Service notice line shown in swap mode explaining that swaps may fail.
+  ///
+  /// In en, this message translates to:
+  /// **'Swaps may not work right now.'**
+  String get swapNoticeSwapsMayFail;
+
+  /// Page title on the desktop swap screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap'**
+  String get swapPageTitle;
+
+  /// Toast after the ZEC deposit broadcast result is uncertain and the wallet is checking it.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking ZEC deposit'**
+  String get swapPanelDepositChecking;
+
+  /// Toast after the ZEC deposit for a swap was broadcast and its arrival is certain.
+  ///
+  /// In en, this message translates to:
+  /// **'ZEC deposit sent'**
+  String get swapPanelDepositSent;
+
+  /// Body text under the load failure heading in the swap activity detail.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to Activity and select a saved swap.'**
+  String get swapPanelLoadFailedBody;
+
+  /// Heading shown when a saved swap cannot be loaded in the activity detail.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load this swap. Try again or pull to refresh.'**
+  String get swapPanelLoadFailedTitle;
+
+  /// Subtitle under the receive amount in the swap status header; {recipient} is a contact name or shortened address.
+  ///
+  /// In en, this message translates to:
+  /// **'To: {recipient}'**
+  String swapPanelRecipientTo(String recipient);
+
+  /// Row label for the ZEC amount a payment was converted from.
+  ///
+  /// In en, this message translates to:
+  /// **'Converted from'**
+  String get swapPayStatusConvertedFrom;
+
+  /// Subtext under the recipient on the pay status screen when the address is not a saved contact.
+  ///
+  /// In en, this message translates to:
+  /// **'New address'**
+  String get swapPayStatusNewAddress;
+
+  /// Label of the progress tab on the pay status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment progress'**
+  String get swapPayStatusProgressTab;
+
+  /// Row label for the fee charged on a refund.
+  ///
+  /// In en, this message translates to:
+  /// **'Refund fee'**
+  String get swapPayStatusRefundFee;
+
+  /// Row label for the address a refund was sent to.
+  ///
+  /// In en, this message translates to:
+  /// **'Refund to'**
+  String get swapPayStatusRefundTo;
+
+  /// Row label for the amount refunded after a failed payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Refunded amount'**
+  String get swapPayStatusRefundedAmount;
+
+  /// Link on the pay status recipient row that reveals the full address.
+  ///
+  /// In en, this message translates to:
+  /// **'Show full address'**
+  String get swapPayStatusShowFullAddress;
+
+  /// Row label for the original ZEC amount of a failed payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Source amount'**
+  String get swapPayStatusSourceAmount;
+
+  /// Row label for the payment time on the pay status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Timestamp'**
+  String get swapPayStatusTimestamp;
+
+  /// Row label for the payment recipient on the pay status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'To'**
+  String get swapPayStatusTo;
+
+  /// Row label for the network fee of a payment, with a help icon.
+  ///
+  /// In en, this message translates to:
+  /// **'Tx fee'**
+  String get swapPayStatusTxFee;
+
+  /// Row label for the transaction ID on the pay status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Tx ID'**
+  String get swapPayStatusTxId;
+
+  /// Accessibility label of the "Powered by" artwork in the NEAR Intents attribution.
+  ///
+  /// In en, this message translates to:
+  /// **'Powered by'**
+  String get swapPoweredByLabel;
+
+  /// Back link label on the review screen that returns to the Pay composer.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay'**
+  String get swapReviewBackPay;
+
+  /// Primary button on the mobile swap review that starts the swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm & swap'**
+  String get swapReviewConfirmAndSwap;
+
+  /// Title and fallback button label on the desktop pay review screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm payment'**
+  String get swapReviewConfirmPaymentTitle;
+
+  /// Primary button on the desktop swap review that starts the swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm swap'**
+  String get swapReviewConfirmSwap;
+
+  /// Subtitle under the pay amount on the mobile swap review when the user pays from an external chain; {address} is a contact name or shortened address.
+  ///
+  /// In en, this message translates to:
+  /// **'From: {address}'**
+  String swapReviewFromAddress(String address);
+
+  /// Row label for the guaranteed minimum receive amount on the swap review summary.
+  ///
+  /// In en, this message translates to:
+  /// **'Guaranteed minimum'**
+  String get swapReviewGuaranteedMinimum;
+
+  /// Warning on the pay review screen when the ZEC balance cannot cover the payment amount.
+  ///
+  /// In en, this message translates to:
+  /// **'You don\'t have enough ZEC for this payment. Try a smaller amount.'**
+  String get swapReviewInsufficientZecPay;
+
+  /// Warning on the swap review screen when the ZEC balance cannot cover the swap amount.
+  ///
+  /// In en, this message translates to:
+  /// **'You don\'t have enough ZEC for this swap. Try a smaller amount.'**
+  String get swapReviewInsufficientZecSwap;
+
+  /// Row label for combined network and conversion fees on the pay review summary.
+  ///
+  /// In en, this message translates to:
+  /// **'Network + conversion fees'**
+  String get swapReviewNetworkFees;
+
+  /// Primary button on the pay review; {amount} is the formatted amount the recipient gets.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay {amount}'**
+  String swapReviewPayAmount(String amount);
+
+  /// Detail line on the pay review screen stating the payment is made from the shielded balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Privately, from shielded balance'**
+  String get swapReviewPrivately;
+
+  /// Notice on the review screens when the quote expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote expired. Review again for an updated rate.'**
+  String get swapReviewQuoteExpired;
+
+  /// Row label for how long the quote stays valid on the pay review summary.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote holds'**
+  String get swapReviewQuoteHolds;
+
+  /// Warning on the mobile swap review screen when the quote has expired or been replaced.
+  ///
+  /// In en, this message translates to:
+  /// **'This quote is no longer active.'**
+  String get swapReviewQuoteInactive;
+
+  /// Row label for the exchange rate on the pay review summary.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate'**
+  String get swapReviewRate;
+
+  /// Label above the amount the payment recipient receives on the pay review screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient gets'**
+  String get swapReviewRecipientGets;
+
+  /// Detail line under the pay amount on the swap review when the user pays from an external chain; {address} is a contact name or shortened address.
+  ///
+  /// In en, this message translates to:
+  /// **'Refund to: {address}'**
+  String swapReviewRefundToAddress(String address);
+
+  /// Primary button on the mobile swap review when the quote is no longer active.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to swap'**
+  String get swapReviewReturnToSwap;
+
+  /// Primary button on the swap review that fetches a new quote after the old one expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Review again'**
+  String get swapReviewReviewAgain;
+
+  /// Row label for the slippage tolerance on the swap review summary.
+  ///
+  /// In en, this message translates to:
+  /// **'Slippage tolerance'**
+  String get swapReviewSlippageTolerance;
+
+  /// Disabled primary button label on the swap review while the quote is being locked.
+  ///
+  /// In en, this message translates to:
+  /// **'Locking quote'**
+  String get swapReviewStartingLockingQuote;
+
+  /// Disabled primary button label on the pay review while the payment is being started.
+  ///
+  /// In en, this message translates to:
+  /// **'Paying'**
+  String get swapReviewStartingPaying;
+
+  /// Disabled primary button label on the swap review while the ZEC deposit is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending'**
+  String get swapReviewStartingSending;
+
+  /// Row label for the swap fee on the swap review summary.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap fee'**
+  String get swapReviewSwapFee;
+
+  /// Title of the desktop swap review screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Review swap'**
+  String get swapReviewSwapTitle;
+
+  /// Top bar title of the mobile pay review screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Review Payment'**
+  String get swapReviewTitlePay;
+
+  /// Top bar title of the mobile swap review screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Review quote'**
+  String get swapReviewTitleSwap;
+
+  /// Subtitle under the receive amount on the mobile swap review when the user sends ZEC; {address} is a contact name or shortened address.
+  ///
+  /// In en, this message translates to:
+  /// **'To: {address}'**
+  String swapReviewToAddress(String address);
+
+  /// Detail line under the receive amount on the swap review; {address} is a contact name or shortened address and {chain} the chain name.
+  ///
+  /// In en, this message translates to:
+  /// **'To: {address} on {chain}'**
+  String swapReviewToAddressOnChain(String address, String chain);
+
+  /// Label above the payment amount on the pay review screen.
+  ///
+  /// In en, this message translates to:
+  /// **'You pay'**
+  String get swapReviewYouPay;
+
+  /// Error shown by the mobile address scanner when the scanned QR code holds no address.
+  ///
+  /// In en, this message translates to:
+  /// **'QR code did not include an address.'**
+  String get swapScanNoAddress;
+
+  /// Mobile Ledger signing screen title when the operation is a payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign payment'**
+  String get swapSignPayment;
+
+  /// Title of the mobile signing screens for the ZEC deposit of a swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign ZEC deposit'**
+  String get swapSignZecDeposit;
+
+  /// Label of the custom slippage input option in the slippage modal.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get swapSlippageCustom;
+
+  /// Slippage modal explanation shown in pay mode: extra ZEC allowed when the quote moves.
+  ///
+  /// In en, this message translates to:
+  /// **'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.'**
+  String get swapSlippageDescriptionPay;
+
+  /// Slippage modal explanation shown in swap mode: maximum rate change accepted.
+  ///
+  /// In en, this message translates to:
+  /// **'Sets the maximum rate change you\'ll accept. Network fees are separate.'**
+  String get swapSlippageDescriptionSwap;
+
+  /// Validation error in the slippage modal when the custom value is outside 0.1 to 5 percent.
+  ///
+  /// In en, this message translates to:
+  /// **'Slippage must be 0.1 - 5%'**
+  String get swapSlippageRangeError;
+
+  /// Title of the slippage settings modal and field label for the allowed price movement.
+  ///
+  /// In en, this message translates to:
+  /// **'Slippage'**
+  String get swapSlippageTitle;
+
+  /// Status text on the mobile swap and pay status screen when the operation finished successfully.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get swapStatusBadgeCompleted;
+
+  /// Status text on the mobile status screen when the operation failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get swapStatusBadgeFailed;
+
+  /// Status text on the mobile status screen while the operation is still running.
+  ///
+  /// In en, this message translates to:
+  /// **'In progress'**
+  String get swapStatusBadgeInProgress;
+
+  /// Status text on the mobile status screen when the operation needs user action.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs attention'**
+  String get swapStatusBadgeNeedsAttention;
+
+  /// Status text on the mobile status screen when the funds were refunded.
+  ///
+  /// In en, this message translates to:
+  /// **'Refunded'**
+  String get swapStatusBadgeRefunded;
+
+  /// Label of the details tab on the swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction details'**
+  String get swapStatusDetailsTab;
+
+  /// Default label above the amount the user sends on the swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re paying'**
+  String get swapStatusPayLabel;
+
+  /// Default label of the progress tab on the swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap progress'**
+  String get swapStatusProgressTab;
+
+  /// Default label above the amount the user gets on the swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re receiving'**
+  String get swapStatusReceiveLabel;
+
+  /// Row label next to the final swap status on the swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get swapStatusRowLabel;
+
+  /// Body text on the swap timeout screen asking the user to start a new swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Please, start another swap transaction.'**
+  String get swapTimeoutBody;
+
+  /// Headline on the swap timeout screen explaining the one-time deposit address has expired.
+  ///
+  /// In en, this message translates to:
+  /// **'This deposit address is no longer valid'**
+  String get swapTimeoutHeadline;
+
+  /// Button on the swap timeout screen that returns to the swap composer.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart swap'**
+  String get swapTimeoutRestart;
+
+  /// Heading on the swap timeout screen shown when the quote deposit window has expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Time’s up'**
+  String get swapTimeoutTitle;
+
+  /// Button label on the swap progress footer that opens the swap in the NEAR Intents explorer.
+  ///
+  /// In en, this message translates to:
+  /// **'View on NEAR Intents'**
+  String get swapViewOnNearIntents;
+
+  /// Title of the address verification sheet for the Zcash side of a swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash address'**
+  String get swapZcashAddressTitle;
 
   /// Screen-reader sync status while Vizor re-checks the wallet.
   ///
