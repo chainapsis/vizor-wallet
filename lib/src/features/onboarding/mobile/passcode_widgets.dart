@@ -466,7 +466,12 @@ class PasscodeBiometricButton extends StatelessWidget {
                           child: Text(
                             label,
                             maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            // At its measured width the label fits; a break or
+                            // an ellipsis there would only come from rounding.
+                            softWrap: width < idealWidth,
+                            overflow: width < idealWidth
+                                ? TextOverflow.ellipsis
+                                : TextOverflow.visible,
                             style: labelStyle,
                           ),
                         ),
