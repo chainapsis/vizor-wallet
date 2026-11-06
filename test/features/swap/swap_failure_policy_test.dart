@@ -421,7 +421,7 @@ void main() {
         SwapFailureOperation.sendZecDeposit,
         error,
       ).text(testL10n),
-      kNetworkUpgradeHoldMessage,
+      networkUpgradeHoldText(testL10n),
     );
   });
 

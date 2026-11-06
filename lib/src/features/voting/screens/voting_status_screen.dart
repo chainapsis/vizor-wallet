@@ -28,6 +28,7 @@ import '../../ledger/services/ledger_app_readiness_service.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
+import '../voting_message.dart';
 import '../voting_progress_presentation.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
@@ -185,7 +186,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   /// Held for the same reason as the ratchet: the session provider refreshes
   /// through its loading state, and a warning that blinks out and back is the
   /// flicker this screen exists to avoid.
-  String? _heldTerminalNotice;
+  VotingMessage? _heldTerminalNotice;
 
   @override
   void initState() {
@@ -282,7 +283,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     if (!mounted || _selectedJobKey() != key) return;
     final session = ref.read(votingSubmissionJobSessionProvider(key)).value;
     final scanError = session?.keystoneScanError;
-    if (scanError != null) throw StateError(scanError);
+    if (scanError != null) throw StateError(scanError.text(context.l10n));
   }
 
   Future<void> _skipRemainingKeystoneBundles() async {
@@ -307,7 +308,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   /// reads the projection it owns.
   VotingSubmissionProgressPresentation _submissionPresentation(
     VotingProgressView progress, {
-    String? warning,
+    VotingMessage? warning,
   }) {
     // Null until the delegation step has bundles to count.
     final authority = progress.authorityOrNull;
@@ -327,7 +328,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         ),
         VotingSubmissionProgressStep.finalizing => null,
       },
-      warning: warning,
+      warning: warning?.text(context.l10n),
     );
   }
 
@@ -400,7 +401,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           return VotingStatusContent(
             phase: VotingSessionPhase.error,
             horizontalPadding: widget.contentHorizontalPadding,
-            errorMessage: startError,
+            errorMessage: startError.text(context.l10n),
             onRetry: _retry,
           );
         }
@@ -409,7 +410,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           return VotingStatusContent(
             phase: VotingSessionPhase.error,
             horizontalPadding: widget.contentHorizontalPadding,
-            errorMessage: job?.errorMessage,
+            errorMessage: job?.errorMessage?.text(context.l10n),
             onRetry: _jobRetry(job),
             onClear: _clearError,
           );
@@ -436,14 +437,15 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
       error: (error, _) => VotingStatusContent(
         phase: VotingSessionPhase.error,
         horizontalPadding: widget.contentHorizontalPadding,
-        errorMessage: job?.errorMessage ?? _messageFromError(error),
+        errorMessage:
+            job?.errorMessage?.text(context.l10n) ?? _messageFromError(error),
         onRetry: _jobRetry(job),
         onClear: job?.status == VotingSubmissionJobStatus.error
             ? _clearError
             : null,
       ),
       data: (state) {
-        final localError = job?.errorMessage;
+        final localError = job?.errorMessage?.text(context.l10n);
         final submissionJobComplete =
             job?.status == VotingSubmissionJobStatus.complete;
         final submissionJobInFlight = job?.isInFlight ?? false;
@@ -478,7 +480,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
               batchMemos: job?.keystoneBatchMemos ?? const [],
               batchMessageCount: job?.keystoneBatchMessageCount ?? 0,
               batchTotalCount: job?.keystoneBatchTotalCount ?? 0,
-              scanError: state.keystoneScanError,
+              scanError: state.keystoneScanError?.text(context.l10n),
               canSkipRemainingBundles: state.canSkipRemainingKeystoneBundles,
               onSigned: _handleInlineKeystoneSignature,
               onSkipRemainingBundles: _skipRemainingKeystoneBundles,
@@ -578,7 +580,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           keystoneBatchMessageCount: job?.keystoneBatchMessageCount ?? 0,
           keystoneBatchTotalCount: job?.keystoneBatchTotalCount ?? 0,
           keystoneQrError: job?.keystoneQrError,
-          keystoneScanError: state.keystoneScanError,
+          keystoneScanError: state.keystoneScanError?.text(context.l10n),
           ledgerAccountUuid: job?.key?.accountUuid,
           ledgerDisplayMemo: job?.ledgerDisplayMemo,
           ledgerSigningBundleIndex: job?.ledgerBundleIndex,
@@ -587,7 +589,9 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           walletSnapshotHeight: state.walletSnapshotHeight,
           walletChainTipHeight: state.walletChainTipHeight,
           errorMessage: _sessionErrorMessage(state, localError),
-          terminalDelegationNotice: state.terminalDelegationNotice,
+          terminalDelegationNotice: state.terminalDelegationNotice?.text(
+            context.l10n,
+          ),
           onRetry: _jobRetry(job),
           onClear: job?.status == VotingSubmissionJobStatus.error
               ? _clearError
@@ -657,7 +661,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   }) {
     final error = state.error;
     if (error != null) {
-      return friendlyVotingErrorText(context.l10n, error.message);
+      return normalizedVotingMessage(error.message).text(context.l10n);
     }
     final round = state.round;
     if (round != null && state.pirDiagnostics.isNotEmpty) {

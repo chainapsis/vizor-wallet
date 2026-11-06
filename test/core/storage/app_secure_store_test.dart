@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import '../../support/test_l10n.dart';
 
 const _oldPassword = 'Oldpass1!';
 const _newPassword = 'Newpass1!';
@@ -107,75 +108,69 @@ void main() {
     expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
   });
 
-  test(
-    'payment-link secrets stay encrypted across password rotation',
-    () async {
-      const recoveryPayload =
-          '{"link":"https://example.test/payment-links/open#v1=secret-mnemonic-payload"}';
-      const receivedPayload =
-          '{"claimLink":"https://example.test/payment-links/open#v1=received-secret-payload"}';
-      const pendingPayload = '{"mnemonic":"pending-gift-secret"}';
-      await store.configurePassword(_oldPassword);
-      await store.writeSecretString(
+  test('payment-link secrets stay encrypted across password rotation', () async {
+    const recoveryPayload =
+        '{"link":"https://example.test/payment-links/open#v1=secret-mnemonic-payload"}';
+    const receivedPayload =
+        '{"claimLink":"https://example.test/payment-links/open#v1=received-secret-payload"}';
+    const pendingPayload = '{"mnemonic":"pending-gift-secret"}';
+    await store.configurePassword(_oldPassword);
+    await store.writeSecretString(
+      kPendingAccountMnemonicStorageKey,
+      pendingPayload,
+    );
+    expect(
+      await store.readPlain(kPendingAccountMnemonicStorageKey),
+      isNot(contains('pending-gift-secret')),
+    );
+    await store.writeSecretString(
+      kPaymentLinkRecoveryStorageKey,
+      recoveryPayload,
+    );
+    await store.writeSecretString(
+      kPaymentLinkReceivedStorageKey,
+      receivedPayload,
+    );
+
+    final storedBeforeRotation = await store.readPlain(
+      kPaymentLinkRecoveryStorageKey,
+    );
+    expect(storedBeforeRotation, isNot(contains('secret-mnemonic-payload')));
+    final receivedBeforeRotation = await store.readPlain(
+      kPaymentLinkReceivedStorageKey,
+    );
+    expect(receivedBeforeRotation, isNot(contains('received-secret-payload')));
+
+    final didChange = await store.changePassword(
+      currentPassword: _oldPassword,
+      newPassword: _newPassword,
+    );
+
+    expect(didChange, isTrue);
+    store.clearSessionPassword();
+    expect(await store.verifyPassword(_newPassword), isTrue);
+    expect(
+      await store.readSecretStringWithOptions(
+        kPaymentLinkRecoveryStorageKey,
+        requireUnlockedSession: true,
+      ),
+      recoveryPayload,
+    );
+    expect(
+      await store.readSecretStringWithOptions(
+        kPaymentLinkReceivedStorageKey,
+        requireUnlockedSession: true,
+      ),
+      receivedPayload,
+    );
+    expect(
+      await store.readSecretStringWithOptions(
         kPendingAccountMnemonicStorageKey,
-        pendingPayload,
-      );
-      expect(
-        await store.readPlain(kPendingAccountMnemonicStorageKey),
-        isNot(contains('pending-gift-secret')),
-      );
-      await store.writeSecretString(
-        kPaymentLinkRecoveryStorageKey,
-        recoveryPayload,
-      );
-      await store.writeSecretString(
-        kPaymentLinkReceivedStorageKey,
-        receivedPayload,
-      );
-
-      final storedBeforeRotation = await store.readPlain(
-        kPaymentLinkRecoveryStorageKey,
-      );
-      expect(storedBeforeRotation, isNot(contains('secret-mnemonic-payload')));
-      final receivedBeforeRotation = await store.readPlain(
-        kPaymentLinkReceivedStorageKey,
-      );
-      expect(
-        receivedBeforeRotation,
-        isNot(contains('received-secret-payload')),
-      );
-
-      final didChange = await store.changePassword(
-        currentPassword: _oldPassword,
-        newPassword: _newPassword,
-      );
-
-      expect(didChange, isTrue);
-      store.clearSessionPassword();
-      expect(await store.verifyPassword(_newPassword), isTrue);
-      expect(
-        await store.readSecretStringWithOptions(
-          kPaymentLinkRecoveryStorageKey,
-          requireUnlockedSession: true,
-        ),
-        recoveryPayload,
-      );
-      expect(
-        await store.readSecretStringWithOptions(
-          kPaymentLinkReceivedStorageKey,
-          requireUnlockedSession: true,
-        ),
-        receivedPayload,
-      );
-      expect(
-        await store.readSecretStringWithOptions(
-          kPendingAccountMnemonicStorageKey,
-          requireUnlockedSession: true,
-        ),
-        pendingPayload,
-      );
-    },
-  );
+        requireUnlockedSession: true,
+      ),
+      pendingPayload,
+    );
+  });
 
   test('readAccountMnemonicBytes returns mutable mnemonic bytes', () async {
     await store.configurePassword(_oldPassword);
@@ -546,7 +541,10 @@ void main() {
       ),
       throwsA(isA<ArgumentError>()),
     );
-    expect(validateRequiredWalletPassword(''), kWalletPasswordMinLengthMessage);
+    expect(
+      validateRequiredWalletPassword(testL10n, ''),
+      testL10n.passwordPolicyMinLength(kWalletPasswordMinLength),
+    );
   });
 
   test('changePassword only rotates app-managed secret payloads', () async {

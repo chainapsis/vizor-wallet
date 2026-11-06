@@ -172,32 +172,28 @@ void main() {
     expect(cta.onPressed, isNotNull);
     expect(find.text('Approve & create'), findsOneWidget);
   });
-  testWidgets(
-    'iOS swipe cancels only signing and releases its PCZT',
-    (tester) async {
-      final hardwareSigning = _FakePaymentLinkHardwareSigningService();
-      await _pumpMobilePaymentLinks(tester, hardwareSigning: hardwareSigning);
-      await _walkToApproveAndCreate(tester);
-      final route =
-          ModalRoute.of(
-                tester.element(find.byType(MobileKeystonePcztSigningFlow)),
-              )!
-              as PageRoute;
-      expect(route.popGestureEnabled, isTrue);
-      await tester.dragFrom(const Offset(1, 150), const Offset(1000, 0));
-      await tester.pumpAndSettle();
-      expect(find.byType(MobileKeystonePcztSigningFlow), findsNothing);
-      expect(hardwareSigning.discardedDrafts, [BigInt.one]);
-      expect(find.text('Approve & create'), findsOneWidget);
-      final cta = tester.widget<AppButton>(
-        find.byKey(
-          const ValueKey('payment_link_mobile_review_continue_button'),
-        ),
-      );
-      expect(cta.onPressed, isNotNull);
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
-  );
+  testWidgets('iOS swipe cancels only signing and releases its PCZT', (
+    tester,
+  ) async {
+    final hardwareSigning = _FakePaymentLinkHardwareSigningService();
+    await _pumpMobilePaymentLinks(tester, hardwareSigning: hardwareSigning);
+    await _walkToApproveAndCreate(tester);
+    final route =
+        ModalRoute.of(
+              tester.element(find.byType(MobileKeystonePcztSigningFlow)),
+            )!
+            as PageRoute;
+    expect(route.popGestureEnabled, isTrue);
+    await tester.dragFrom(const Offset(1, 150), const Offset(1000, 0));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileKeystonePcztSigningFlow), findsNothing);
+    expect(hardwareSigning.discardedDrafts, [BigInt.one]);
+    expect(find.text('Approve & create'), findsOneWidget);
+    final cta = tester.widget<AppButton>(
+      find.byKey(const ValueKey('payment_link_mobile_review_continue_button')),
+    );
+    expect(cta.onPressed, isNotNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 }
 
 Future<void> _walkToApproveAndCreate(

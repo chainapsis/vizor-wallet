@@ -324,7 +324,7 @@ class _VotingConfigSettingsPanelState
     final guards = ref.read(votingSubmissionGuardProvider);
     if (guards.isEmpty) return false;
     setState(() {
-      _submitError = guards.first.message;
+      _submitError = guards.first.message.text(context.l10n);
       _validationField = null;
       _isSubmitting = false;
       _isSavingSelection = false;

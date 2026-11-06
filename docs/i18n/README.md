@@ -29,6 +29,38 @@ adds invisible word joiners so lines break between words.
 Unreleased languages stay hidden behind `--dart-define=VIZOR_I18N_PREVIEW=true`
 until every message is translated and reviewed.
 
+## Checking a language on screen
+
+Flutter tests cannot read system fonts. Fetch the Korean and Chinese capture
+fonts once with `scripts/fetch-capture-fonts.sh`; it stores them in
+`~/.cache/vizor/capture-fonts`, outside the repository.
+
+- One screen: `scripts/figma-compare.sh widget --scenario <id> --locale ko`
+  (add `--form-factor mobile` for a mobile scenario).
+- Every registered screen, in every language:
+
+  ```bash
+  fvm flutter test --no-pub --tags figma-capture --run-skipped \
+    --dart-define=LOCALE_SCAN_REPORT=/absolute/path/desktop.jsonl \
+    test/figma_compare/locale_layout_scan_desktop_test.dart
+  fvm flutter test --no-pub --tags figma-capture --run-skipped \
+    --dart-define=VIZOR_FORM_FACTOR=mobile \
+    --dart-define=LOCALE_SCAN_REPORT=/absolute/path/mobile.jsonl \
+    test/figma_compare/locale_layout_scan_mobile_test.dart
+  ```
+
+  Each line records one scenario in one language: the first layout exception,
+  the texts cut off by `maxLines` or a single line, and the Rows and Columns
+  whose children do not fit. A translation that adds an exception or cut-off
+  text that English does not have breaks that screen. Add
+  `--dart-define=LOCALE_SCAN_SCENARIOS=<id prefixes>` to rerun a few, and
+  `--update-goldens --dart-define=LOCALE_SCAN_OUTPUT=<directory>` for PNGs.
+
+Fix a break by shortening the translation or by letting the layout grow (a
+minimum height instead of a fixed one); English must render exactly as before.
+Lines that mix Latin and CJK in the serif display fonts run about 1px taller
+per line, so fixed-height boxes with no slack overflow by a few pixels.
+
 ## What the tests enforce
 
 `test/l10n/l10n_gates_test.dart` runs with `fvm flutter test` and fails when a

@@ -269,11 +269,12 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
             ),
           ),
           if (!usesLargeText) ...[
+            // No fixed height: a longer translation runs into the gap above
+            // the button instead of overflowing.
             Positioned(
               left: 65,
               top: 343.5,
               width: 290,
-              height: 153,
               child: SizedBox(
                 key: const ValueKey('ironwood_migration_complete_copy'),
                 child: copy,
@@ -2299,7 +2300,7 @@ int _currentMigrationHeight(SyncState? syncState) {
 }
 
 String _privateMigrationStartErrorMessage(AppLocalizations l10n, Object error) {
-  final upgradeHold = networkUpgradeHoldMessage(error);
+  final upgradeHold = networkUpgradeHoldMessage(l10n, error);
   if (upgradeHold != null) return upgradeHold;
   final message = error.toString();
   final lower = message.toLowerCase();

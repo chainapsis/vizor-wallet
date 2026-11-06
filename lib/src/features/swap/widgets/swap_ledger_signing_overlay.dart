@@ -460,7 +460,10 @@ class _SwapLedgerSigningOverlayState
     _releaseOperationClaim();
     if (!mounted) return;
     // Explain an upgrade hold instead of closing without a word.
-    final upgradeHold = networkUpgradeHoldMessage(result.message ?? '');
+    final upgradeHold = networkUpgradeHoldMessage(
+      context.l10n,
+      result.message ?? '',
+    );
     if (upgradeHold != null) {
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
@@ -672,7 +675,7 @@ class _SwapLedgerSigningOverlayState
           ? LedgerRequestKind.payment
           : LedgerRequestKind.swap,
     );
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
@@ -702,7 +705,7 @@ class _SwapLedgerSigningOverlayState
   @override
   Widget build(BuildContext context) {
     final canLeave = !_isBroadcasting;
-    final upgradeHold = _error == kNetworkUpgradeHoldMessage;
+    final upgradeHold = _error == networkUpgradeHoldText(context.l10n);
     final pendingBroadcastResult = _pendingBroadcastResult;
     final postBroadcastRecovery = pendingBroadcastResult != null;
     // Retrying the same request fails the same way on the device.
@@ -745,7 +748,7 @@ class _SwapLedgerSigningOverlayState
                   : _operationClaimUnavailable
                   ? context.l10n.swapLedgerTitleRecovery
                   : upgradeHold
-                  ? kNetworkUpgradeHoldActionLabel
+                  ? networkUpgradeHoldActionLabel(context.l10n)
                   : context.l10n.commonLedgerSigningFailed,
               statusLabel: postBroadcastRecovery
                   ? expiredRecovery
@@ -754,6 +757,8 @@ class _SwapLedgerSigningOverlayState
                   : _operationClaimUnavailable
                   ? context.l10n.commonPleaseWait
                   : context.l10n.commonActionNeeded,
+              actionNeeded:
+                  !postBroadcastRecovery && !_operationClaimUnavailable,
               message: postBroadcastRecovery
                   ? expiredRecovery
                         ? context.l10n.swapLedgerMessageExpired

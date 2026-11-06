@@ -261,7 +261,7 @@ class _SwapKeystoneSigningOverlayState
         setState(() {
           _phase = _SwapKeystonePhase.failed;
           _error =
-              networkUpgradeHoldMessage(result.message ?? '') ??
+              networkUpgradeHoldMessage(context.l10n, result.message ?? '') ??
               result.message ??
               context.l10n.swapKeystoneStatusUncertain;
         });
@@ -396,7 +396,7 @@ class _SwapKeystoneSigningOverlayState
   }
 
   String _friendlyError(Object error) {
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('does not support tex')) {

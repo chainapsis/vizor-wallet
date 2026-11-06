@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'network_privacy_control.dart';
 import 'wallet_pir_server_popup.dart';
+import '../../../providers/enhance_pir_provider.dart';
 
 class EnhancePirPrivacyControl extends StatelessWidget {
   const EnhancePirPrivacyControl({
@@ -22,7 +23,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
   /// deliberately not surfaced here: they are dominated by obligations that
   /// can never complete (dummy actions, outputs the wallet cannot open), so
   /// they read as failures the user is expected to act on.
-  final String? transition;
+  final EnhancePirTransition? transition;
 
   /// Whether this build's private queries also recover transparent funds.
 
@@ -105,7 +106,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
         if (transition != null) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(
-            transition!,
+            transition!.message(context.l10n),
             key: const ValueKey('settings_enhance_pir_transition'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -116,7 +117,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            kPrivateQueriesSettingsCopy,
+            privateQueriesSettingsCopy(context.l10n),
             key: const ValueKey('settings_enhance_pir_description'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,

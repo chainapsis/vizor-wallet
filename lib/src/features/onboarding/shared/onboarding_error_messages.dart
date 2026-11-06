@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show immutable;
 
 import '../../../core/l10n/l10n.dart';
+import '../../../core/security/password_policy.dart';
 import '../../../providers/account_provider.dart';
 
 /// A submit error shown on an onboarding step: either already-produced text
@@ -29,7 +30,9 @@ class OnboardingSubmitError {
     required bool requiresRecovery,
   }) => requiresRecovery
       ? OnboardingSubmitError.setupInterrupted()
-      : OnboardingSubmitError.text(onboardingSubmitErrorMessage(error));
+      : OnboardingSubmitError.localized(
+          (l10n) => onboardingSubmitErrorMessage(l10n, error),
+        );
 
   final String? _text;
   final String Function(AppLocalizations l10n)? _localize;
@@ -44,10 +47,11 @@ const kDuplicateKeystoneAccountImportErrorMessage =
 const kDuplicateAccountImportErrorMessage =
     'This account is already in your wallet.'; // l10n-ignore: context-free producer
 
-String onboardingSubmitErrorMessage(Object error) {
+String onboardingSubmitErrorMessage(AppLocalizations l10n, Object error) {
   if (error is WalletCreationCurrentBlockHeightException) {
-    return kWalletCreationCurrentBlockHeightErrorMessage;
+    return l10n.onboardingBlockHeightRequired;
   }
+  if (error is PasswordPolicyViolation) return error.issue.message(l10n);
 
   const exceptionPrefix = 'Exception: ';
   var message = error.toString();
@@ -58,8 +62,13 @@ String onboardingSubmitErrorMessage(Object error) {
   if (anyhowMatch != null) {
     message = anyhowMatch.group(1)!;
   }
-  if (_isAccountCollisionMessage(message)) {
-    return kDuplicateAccountImportErrorMessage;
+  // Rust words these two duplicates; the matching keeps their English.
+  if (message == kDuplicateSecretPassphraseImportErrorMessage ||
+      _isAccountCollisionMessage(message)) {
+    return l10n.onboardingDuplicateAccount;
+  }
+  if (message == kDuplicateKeystoneAccountImportErrorMessage) {
+    return l10n.onboardingDuplicateKeystoneAccount;
   }
   return message;
 }

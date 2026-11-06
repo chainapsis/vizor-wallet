@@ -10,6 +10,7 @@ import 'payment_link_card_motion.dart';
 import 'payment_link_claim_checking_content.dart';
 import 'payment_link_wizard_chrome.dart';
 import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/locale_typography.dart';
 
 enum PaymentLinkClaimDesktopState { loading, checking, waiting, ready, outcome }
 
@@ -101,7 +102,10 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
               final width = constraints.maxWidth;
               double textHeight(String text, TextStyle style, double maxWidth) {
                 final painter = TextPainter(
-                  text: TextSpan(text: text, style: style),
+                  text: TextSpan(
+                    text: text,
+                    style: withLocaleFontFallback(context, style),
+                  ),
                   textDirection: Directionality.of(context),
                   textScaler: MediaQuery.textScalerOf(context),
                   locale: Localizations.maybeLocaleOf(context),

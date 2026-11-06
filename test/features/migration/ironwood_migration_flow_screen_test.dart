@@ -1155,7 +1155,7 @@ void main() {
       ),
     );
 
-    expect(message, kNetworkUpgradeHoldMessage);
+    expect(message, networkUpgradeHoldText(testL10n));
   });
 
   testWidgets(
@@ -1637,14 +1637,14 @@ void main() {
       error:
           "Migrations can't start this close to the network upgrade. Try "
           'again after it activates.',
-      copy: kNetworkUpgradeHoldMessage,
+      copy: networkUpgradeHoldText(testL10n),
       redraws: false,
     ),
     (
       error:
           'Migration schedule was drawn before the network upgrade; review '
           'the plan again',
-      copy: kNetworkUpgradeScheduleChangedMessage,
+      copy: testL10n.sendPaymentRequestCheckUpgradeScheduleChanged,
       redraws: true,
     ),
   ]) {

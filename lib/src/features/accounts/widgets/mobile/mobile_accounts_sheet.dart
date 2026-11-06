@@ -95,8 +95,8 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
     try {
       await accountNotifier.switchAccount(uuid);
       unawaited(AppHaptics.selection());
-    } on WalletMutationBusyException catch (error) {
-      if (mounted) showAppToast(context, error.toString());
+    } on WalletMutationBusyException {
+      if (mounted) showAppToast(context, context.l10n.walletMutationBusy);
       return;
     }
     if (mounted) Navigator.of(context).pop();

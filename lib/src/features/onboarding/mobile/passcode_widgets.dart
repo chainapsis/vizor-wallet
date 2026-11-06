@@ -9,6 +9,7 @@ import '../../../core/feedback/app_haptics.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/l10n/locale_typography.dart';
 
 /// Layout box of a single diamond dot (a rotated square → ~20 px diamond,
 /// matching the Figma index). [PasscodePromptField] uses it to centre the
@@ -402,7 +403,10 @@ class PasscodeBiometricButton extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final textPainter = TextPainter(
-          text: TextSpan(text: label, style: labelStyle),
+          text: TextSpan(
+            text: label,
+            style: withLocaleFontFallback(context, labelStyle),
+          ),
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
           maxLines: 1,
@@ -462,7 +466,12 @@ class PasscodeBiometricButton extends StatelessWidget {
                           child: Text(
                             label,
                             maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            // At its measured width the label fits; a break or
+                            // an ellipsis there would only come from rounding.
+                            softWrap: width < idealWidth,
+                            overflow: width < idealWidth
+                                ? TextOverflow.ellipsis
+                                : TextOverflow.visible,
                             style: labelStyle,
                           ),
                         ),

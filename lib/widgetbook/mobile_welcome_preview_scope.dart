@@ -20,7 +20,7 @@ Widget mobileWelcomePreviewScope({
   required NetworkPrivacyState state,
   required Widget child,
   bool privateQueriesEnabled = false,
-  String? privateQueriesTransition,
+  EnhancePirTransition? privateQueriesTransition,
 }) => ProviderScope(
   overrides: [
     appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
@@ -48,9 +48,9 @@ class _PreviewPrivateQueries extends EnhancePirNotifier {
 
 class _PreviewPrivateQueriesTransition extends EnhancePirTransitionNotifier {
   _PreviewPrivateQueriesTransition(this.initial);
-  final String? initial;
+  final EnhancePirTransition? initial;
   @override
-  String? build() => initial;
+  EnhancePirTransition? build() => initial;
 }
 
 class _PreviewPresented extends WelcomeNetworkSettingsNotifier {

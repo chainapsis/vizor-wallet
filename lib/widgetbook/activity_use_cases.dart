@@ -181,9 +181,7 @@ Widget _buildGiftCardActivityDetailUseCase(
             message: 'Hope this makes your day a little brighter!',
             timestampText: '25 May, 13:30',
             txIdText: 'f154...8143',
-            feeText: kind == GiftCardActivityKind.created
-                ? '0.0002 ZEC'
-                : null,
+            feeText: kind == GiftCardActivityKind.created ? '0.0002 ZEC' : null,
             onTxIdPressed: _noop,
             onToggleMessage: _noop,
           ),

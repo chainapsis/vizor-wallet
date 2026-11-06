@@ -1152,7 +1152,7 @@ void main() {
     await _flushBroadcast(tester);
 
     expect(find.text('Send failed'), findsOneWidget);
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
     expect(find.textContaining('expired before broadcast'), findsNothing);
   });
 }

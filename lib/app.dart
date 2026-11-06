@@ -149,6 +149,7 @@ import 'src/providers/app_language_provider.dart';
 import 'src/core/l10n/app_language.dart';
 import 'src/core/l10n/l10n.dart';
 import 'src/core/l10n/locale_typography.dart';
+import 'src/core/l10n/native_language.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/sync_keep_awake_provider.dart';
 import 'src/providers/enhance_pir_provider.dart';
@@ -1961,7 +1962,9 @@ class ZcashWalletApp extends ConsumerWidget {
         // Root sheets and overlays sit outside the wallet pane's Navigator.
         // Share the full-window decision before SafeArea or a keyboard can
         // change their local metrics, including while a modal is already open.
-        final localized = LocaleTypography(child: app);
+        final localized = NativeLanguageSync(
+          child: LocaleTypography(child: app),
+        );
         return kAppFormFactor == AppFormFactor.mobile
             ? MobileWindowPolicyScope(
                 policy: MobileWindowPolicy.resolve(MediaQuery.of(context)),
@@ -2946,10 +2949,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
       ),
       WindowsUpdateStatus.ready => l10n.appUpdateReadyMessage,
       WindowsUpdateStatus.applying => l10n.appUpdateApplyingMessage,
-      WindowsUpdateStatus.failed =>
-        state.message.trim().isEmpty
-            ? l10n.updateFailedMessage
-            : state.message.trim(),
+      WindowsUpdateStatus.failed => state.failureMessage(l10n),
       _ => '',
     };
   }
@@ -3148,7 +3148,7 @@ class _NetworkPrivacyStartupToastBridgeState
   @override
   void initState() {
     super.initState();
-    ref.listenManual<String?>(
+    ref.listenManual<NetworkPrivacyNotice?>(
       networkPrivacyProvider.select((state) => state.startupNotice),
       (previous, next) {
         if (next == null || next == previous) return;
@@ -3158,7 +3158,7 @@ class _NetworkPrivacyStartupToastBridgeState
           // sheet, including on the first frame before the modal is pushed.
           // Keep the existing startup toast for locked/existing wallets.
           if (kAppFormFactor == AppFormFactor.mobile &&
-              next == kTorStartupFailureNotice &&
+              next == NetworkPrivacyNotice.torStartupFailure &&
               ref.read(_routerProvider).router.state.matchedLocation ==
                   '/welcome' &&
               !(ref.read(walletProvider).value?.hasWallet ??
@@ -3168,7 +3168,7 @@ class _NetworkPrivacyStartupToastBridgeState
           }
           showNetworkFallbackToast(
             context,
-            next,
+            next.message(context.l10n),
             duration: const Duration(seconds: 4),
           );
           ref.read(networkPrivacyProvider.notifier).clearStartupNotice();
@@ -3197,11 +3197,12 @@ class _RpcEndpointFailoverToastBridge extends ConsumerWidget {
         if (next == null || next.sequence == previous?.sequence) return;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!context.mounted) return;
-          showNetworkFallbackToast(
-            context,
-            next.message,
-            duration: const Duration(seconds: 4),
-          );
+          showNetworkFallbackToast(context, switch (next.kind) {
+            RpcEndpointFailoverEventKind.switchedToFallback =>
+              context.l10n.endpointFailoverSwitchedToFallback,
+            RpcEndpointFailoverEventKind.switchedToPrimary =>
+              context.l10n.endpointFailoverSwitchedBack,
+          }, duration: const Duration(seconds: 4));
         });
       },
     );

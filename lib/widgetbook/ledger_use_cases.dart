@@ -614,6 +614,7 @@ LedgerSigningFailurePresentation _failurePresentation(
       const LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Signature not received',
+        actionNeeded: false,
         message: 'Check your Ledger, then try signing again.',
         showDeviceAppPrompt: false,
         actionLabel: 'Try again',
@@ -622,6 +623,7 @@ LedgerSigningFailurePresentation _failurePresentation(
       const LedgerSigningFailurePresentation(
         title: 'Open the Zcash app',
         statusLabel: 'Zcash app is not ready',
+        actionNeeded: false,
         message: 'Open the Zcash app on your Ledger, then try again.',
         showDeviceAppPrompt: true,
         actionLabel: 'Try again',
@@ -635,6 +637,7 @@ LedgerSigningFailurePresentation _failurePresentation(
       const LedgerSigningFailurePresentation(
         title: 'Ledger needs attention',
         statusLabel: 'Action needed',
+        actionNeeded: true,
         message: 'Reconnect your Ledger and open the Zcash app.',
         showDeviceAppPrompt: false,
         actionLabel: 'Reconnect',

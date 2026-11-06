@@ -9,6 +9,7 @@ import 'package:yaml/yaml.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../tool/l10n/korean_arb.dart';
+import '../../tool/l10n/native_strings.dart';
 import '../../tool/l10n/strings.dart';
 
 /// The file translators edit: `lib/l10n/source/` when a locale has a
@@ -69,6 +70,22 @@ void main() {
     );
   });
 
+  test('native string tables are generated from the ARB files', () {
+    expect(nativeLanguageSources.keys, [
+      for (final language in AppLanguage.values) language.tag,
+    ], reason: 'Every app language needs a native string table.');
+    for (final MapEntry(key: path, value: expected)
+        in buildNativeStringFiles().entries) {
+      expect(
+        File(path).readAsStringSync(),
+        expected,
+        reason:
+            'Edit the native* keys in lib/l10n, then run '
+            '`fvm dart run tool/l10n/native_strings.dart`.',
+      );
+    }
+  });
+
   test('message keys are sorted so parallel changes rarely conflict', () {
     expect(keys, [...keys]..sort());
     for (final arb in translations.values) {
@@ -88,6 +105,16 @@ void main() {
           expect(keys.toSet().difference(_messageKeys(arb).toSet()), isEmpty);
         });
       }
+
+      test('copies no description tag into a message', () {
+        for (final key in _messageKeys(arb)) {
+          expect(
+            arb[key]! as String,
+            isNot(contains('[security]')),
+            reason: '$key: `[security]` belongs in the @key description',
+          );
+        }
+      });
 
       test('keeps placeholders, URLs and numbers of the source', () {
         for (final key in _messageKeys(arb)) {

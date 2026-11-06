@@ -7,6 +7,7 @@ import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
 import 'app_tooltip.dart';
+import '../l10n/locale_typography.dart';
 
 enum AppTextFieldTone { neutral, destructive, success, brandCrimson }
 
@@ -259,7 +260,10 @@ class _AppTextFieldState extends State<AppTextField> {
     );
 
     final textPainter = TextPainter(
-      text: TextSpan(text: _controller.text, style: valueStyle),
+      text: TextSpan(
+        text: _controller.text,
+        style: withLocaleFontFallback(context, valueStyle),
+      ),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
       strutStyle: textStrutStyle,
@@ -357,7 +361,10 @@ class _AppTextFieldState extends State<AppTextField> {
     double measureInlineText(String text, TextStyle style) {
       if (text.isEmpty) return 0;
       final painter = TextPainter(
-        text: TextSpan(text: text, style: style),
+        text: TextSpan(
+          text: text,
+          style: withLocaleFontFallback(context, style),
+        ),
         textDirection: textDirection,
         textScaler: MediaQuery.textScalerOf(context),
         strutStyle: textStrutStyle,
@@ -932,7 +939,10 @@ class _AppTextFieldMessage extends StatelessWidget {
         }
 
         final textPainter = TextPainter(
-          text: TextSpan(text: text, style: style),
+          text: TextSpan(
+            text: text,
+            style: withLocaleFontFallback(context, style),
+          ),
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
           ellipsis: '...',

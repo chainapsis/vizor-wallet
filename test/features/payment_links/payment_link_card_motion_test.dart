@@ -32,12 +32,11 @@ void main() {
       ),
     );
 
-    Matrix4 revealMatrix() =>
-        tester
-            .widget<Transform>(
-              find.byKey(const ValueKey('payment_link_reveal_transform')),
-            )
-            .transform;
+    Matrix4 revealMatrix() => tester
+        .widget<Transform>(
+          find.byKey(const ValueKey('payment_link_reveal_transform')),
+        )
+        .transform;
 
     expect(revealMatrix().entry(0, 0), closeTo(1, 1e-6));
 
@@ -64,12 +63,11 @@ void main() {
       ),
     );
 
-    Matrix4 tiltMatrix() =>
-        tester
-            .widget<Transform>(
-              find.byKey(const ValueKey('payment_link_tilt_transform')),
-            )
-            .transform;
+    Matrix4 tiltMatrix() => tester
+        .widget<Transform>(
+          find.byKey(const ValueKey('payment_link_tilt_transform')),
+        )
+        .transform;
     final rest = tiltMatrix().clone();
     final region = tester.widget<MouseRegion>(
       find.byKey(const ValueKey('payment_link_tilt_mouse_region')),
@@ -212,13 +210,12 @@ Future<void> _pump(
   await tester.pumpWidget(
     MaterialApp(
       localizationsDelegates: appLocalizationsDelegates,
-      builder:
-          (context, appChild) => MediaQuery(
-            data: MediaQuery.of(
-              context,
-            ).copyWith(disableAnimations: disableAnimations),
-            child: AppTheme(data: AppThemeData.dark, child: appChild!),
-          ),
+      builder: (context, appChild) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(disableAnimations: disableAnimations),
+        child: AppTheme(data: AppThemeData.dark, child: appChild!),
+      ),
       home: Scaffold(body: Center(child: child)),
     ),
   );

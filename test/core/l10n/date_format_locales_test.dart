@@ -31,6 +31,8 @@ void main() {
                 formatMonthDay(day, name),
                 formatMonthDayYear(day, name),
                 formatDayMonthTime(day, name),
+                formatNumericDate(DateTime(2026, 5, 7), name),
+                formatNumericMonthYear(DateTime(2026, 5, 7), name),
               ];
               return const SizedBox();
             },
@@ -49,9 +51,27 @@ void main() {
         AppLanguage.zh => '周日',
       });
       expect(shared, switch (language) {
-        AppLanguage.en => ['May 25', 'May 25, 2026', '25 May, 13:30'],
-        AppLanguage.ko => ['5월 25일', '2026년 5월 25일', '5월 25일 13:30'],
-        AppLanguage.zh => ['5月25日', '2026年5月25日', '5月25日 13:30'],
+        AppLanguage.en => [
+          'May 25',
+          'May 25, 2026',
+          '25 May, 13:30',
+          '05/07/2026',
+          '05/2026',
+        ],
+        AppLanguage.ko => [
+          '5월 25일',
+          '2026년 5월 25일',
+          '5월 25일 13:30',
+          '2026. 05. 07.',
+          '2026. 05.',
+        ],
+        AppLanguage.zh => [
+          '5月25日',
+          '2026年5月25日',
+          '5月25日 13:30',
+          '2026/05/07',
+          '2026/05',
+        ],
       });
     });
   }

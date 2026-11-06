@@ -123,5 +123,5 @@ class VotingHotkeyUnavailable implements Exception {
   final String message;
 
   @override
-  String toString() => 'VotingHotkeyUnavailable: $message';
+  String toString() => 'VotingHotkeyUnavailable: $message'; // l10n-ignore: exception text for logs
 }

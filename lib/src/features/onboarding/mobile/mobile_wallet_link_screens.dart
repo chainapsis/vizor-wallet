@@ -823,7 +823,9 @@ Future<void> _continueToPasscodeOrImport(
     controller.endSubmit();
     if (!context.mounted) return;
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(onboardingSubmitErrorMessage(error))),
+      SnackBar(
+        content: Text(onboardingSubmitErrorMessage(context.l10n, error)),
+      ),
     );
     return;
   }

@@ -208,6 +208,7 @@ void main() {
         failure: const LedgerSigningFailurePresentation(
           title: 'Ledger signing failed',
           statusLabel: 'Action needed',
+          actionNeeded: true,
           message: 'Reconnect your Ledger and try again.',
           showDeviceAppPrompt: true,
           actionLabel: 'Try again',
@@ -252,6 +253,7 @@ void main() {
           requestFailure: LedgerRequestFailure.appUpdateRequired,
           title: 'Ledger signing failed',
           statusLabel: 'Action needed',
+          actionNeeded: true,
           message: ledgerAppUpdateRequiredError,
           showDeviceAppPrompt: false,
           actionLabel: 'Try again',
@@ -290,6 +292,7 @@ void main() {
         failure: const LedgerSigningFailurePresentation(
           title: 'Ledger signing failed',
           statusLabel: 'Action needed',
+          actionNeeded: true,
           message: 'Open the Zcash app, then try again.',
           showDeviceAppPrompt: true,
           actionLabel: 'Try again',
@@ -333,6 +336,7 @@ void main() {
         failure: const LedgerSigningFailurePresentation(
           title: 'Could not save signed transaction',
           statusLabel: 'Signature preserved',
+          actionNeeded: false,
           message: 'Retry saving without approving another transaction.',
           showDeviceAppPrompt: false,
           actionLabel: 'Retry saving',
@@ -475,6 +479,7 @@ void main() {
           failure: const LedgerSigningFailurePresentation(
             title: 'Ledger signing failed',
             statusLabel: 'Action needed',
+            actionNeeded: true,
             message: 'Reconnect your Ledger and try again.',
             showDeviceAppPrompt: true,
             actionLabel: 'Try again',
@@ -619,6 +624,7 @@ const _bluetoothAccount = AccountInfo(
 const _usbConnectionFailure = LedgerSigningFailurePresentation(
   title: 'Ledger signing failed',
   statusLabel: 'Action needed',
+  actionNeeded: true,
   message: 'Connect and unlock your Ledger with USB, then try again.',
   showDeviceAppPrompt: false,
   actionLabel: 'Try again',

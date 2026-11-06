@@ -150,7 +150,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         // The escrow was invalidated (biometric data changed) — explain
         // why the prompt stopped appearing.
         nextError = OnboardingSubmitError.text(
-          biometric.availability.kind.changedMessage,
+          biometric.availability.kind.changedMessage(context.l10n),
         );
       }
       setState(() {
@@ -348,7 +348,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       showAppToast(
         context,
         context.l10n.onboardingBiometricEnableFailed(
-          biometric.availability.kind.inlineLabel,
+          biometric.availability.kind.inlineLabel(context.l10n),
         ),
       );
     }
@@ -373,7 +373,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     setState(() => _submitting = true);
     final router = GoRouter.of(context);
     try {
-      final didReset = await resetWalletForForgottenPasscode(ref);
+      final didReset = await resetWalletForForgottenPasscode(ref, context.l10n);
       if (!mounted) return;
       if (!didReset) {
         setState(() {
@@ -423,7 +423,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     if (biometric.availability.usable && !biometric.enabled) {
       return PasscodeBiometricOptIn(
         key: const ValueKey('mobile_unlock_biometric_opt_in'),
-        label: biometric.availability.kind.useNextTimeLabel,
+        label: biometric.availability.kind.useNextTimeLabel(context.l10n),
         selected: _enableBiometricOnUnlock,
         onChanged: _submitting
             ? null
@@ -434,7 +434,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     return SizedBox(
       height: 36,
       child: PasscodeBiometricButton(
-        label: biometric.availability.kind.signInLabel,
+        label: biometric.availability.kind.signInLabel(context.l10n),
         icon: Center(
           child: BiometricIcon(
             kind: biometric.availability.kind,

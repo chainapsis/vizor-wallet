@@ -733,8 +733,8 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     if (syncFailure != null) {
       return _HomeNoticeData(
         iconName: AppIcons.warning,
-        message: syncFailure.userMessage,
-        actionLabel: syncFailure.actionLabel,
+        message: syncFailure.userMessage(context.l10n),
+        actionLabel: syncFailure.actionLabel(context.l10n),
         onTap: syncFailure.showSettingsAction
             ? () => context.push(syncFailure.settingsRoute!)
             : syncFailure.retriesTorRoute &&

@@ -144,7 +144,7 @@ class _LedgerImmediateMigrationSigningOverlayState
       requestKind: LedgerRequestKind.migration,
     );
     if (_deviceGuidance != null) return _deviceGuidance!.message;
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(l10n, error);
     if (upgradeHold != null) return upgradeHold;
     final message = error.toString().toLowerCase();
     if (LedgerRequestFailure.fromError(error) ==
@@ -181,6 +181,7 @@ class _LedgerImmediateMigrationSigningOverlayState
               pairingRecovery: _deviceGuidance?.pairingRecovery ?? false,
               title: context.l10n.migrationLedgerFailedTitle,
               statusLabel: context.l10n.commonActionNeeded,
+              actionNeeded: true,
               message: _error ?? context.l10n.migrationLedgerFailed,
               showDeviceAppPrompt:
                   _deviceGuidance?.showDeviceAppPrompt ?? false,

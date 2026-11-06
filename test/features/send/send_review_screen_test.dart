@@ -1238,6 +1238,7 @@ void main() {
               if (attempts == 1) {
                 throw LedgerConnectionRequiredException(
                   'connection failed',
+                  reason: LedgerConnectionRequiredReason.usb,
                   cause: original,
                 );
               }
@@ -2321,7 +2322,7 @@ void main() {
     await _flushRealAsync(tester);
 
     expect(find.text('Paused for network upgrade'), findsOneWidget);
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
     expect(find.textContaining('Check your device'), findsNothing);
     expect(find.text('Ledger signing failed'), findsNothing);
     expect(find.text('Create new transaction'), findsNothing);

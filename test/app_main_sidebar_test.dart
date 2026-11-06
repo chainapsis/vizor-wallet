@@ -258,7 +258,6 @@ void main() {
         failure: const SyncFailure(
           kind: SyncFailureKind.endpoint,
           rawMessage: 'offline',
-          userMessage: 'Endpoint unavailable.',
         ),
       ),
       '— ZEC',
@@ -1234,7 +1233,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
       ),
@@ -1347,7 +1345,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
         themeData: AppThemeData.dark,
@@ -1363,11 +1360,7 @@ void main() {
       await tester.pumpWidget(
         _sidebarHarness(
           SyncState(
-            failure: SyncFailure(
-              kind: entry.key,
-              rawMessage: 'failure',
-              userMessage: 'Sync failed.',
-            ),
+            failure: SyncFailure(kind: entry.key, rawMessage: 'failure'),
           ),
         ),
       );
@@ -1618,7 +1611,6 @@ SyncState _networkFailureSyncState() {
     failure: const SyncFailure(
       kind: SyncFailureKind.network,
       rawMessage: 'network failed',
-      userMessage: 'Network connection lost.',
     ),
   );
 }

@@ -377,7 +377,7 @@ class _ProfilePictureGrid extends StatelessWidget {
                     height: itemSize.dimension,
                     child: Semantics(
                       button: true,
-                      label: option.label,
+                      label: option.label(context.l10n),
                       selected: option.id == selected,
                       excludeSemantics: true,
                       child: GestureDetector(

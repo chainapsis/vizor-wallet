@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/l10n/inline_spans.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -214,31 +215,41 @@ class _KeystoneScanHelpTooltip extends StatelessWidget {
                       color: colors.text.inverse.withValues(alpha: 0.6),
                     ),
                     children: [
-                      TextSpan(text: context.l10n.keystoneFirmwareUpdatePrefix),
-                      WidgetSpan(
-                        alignment: PlaceholderAlignment.baseline,
-                        baseline: TextBaseline.alphabetic,
-                        child: _KeystoneTooltipAction(
-                          key: const ValueKey('keystone_firmware_link'),
-                          semanticLabel: context.l10n.keystoneFirmwareOpenPage,
-                          link: true,
-                          onActivate: () => unawaited(_openKeystoneFirmware()),
-                          builder: (context, focused) => Text(
-                            'keyst.one/firmware', // l10n-ignore: URL
-                            style: AppTypography.bodyMediumStrong.copyWith(
-                              color: colors.text.inverse.withValues(alpha: 0.6),
-                              decoration: focused
-                                  ? TextDecoration.underline
-                                  : null,
-                              decorationColor: focused
-                                  ? colors.text.inverse.withValues(alpha: 0.6)
-                                  : null,
-                              decorationStyle: focused
-                                  ? TextDecorationStyle.solid
-                                  : null,
+                      ...inlineSlotSpans(
+                        context.l10n.keystoneFirmwareUpdate(kInlineSlot),
+                        {
+                          kInlineSlot: WidgetSpan(
+                            alignment: PlaceholderAlignment.baseline,
+                            baseline: TextBaseline.alphabetic,
+                            child: _KeystoneTooltipAction(
+                              key: const ValueKey('keystone_firmware_link'),
+                              semanticLabel:
+                                  context.l10n.keystoneFirmwareOpenPage,
+                              link: true,
+                              onActivate: () =>
+                                  unawaited(_openKeystoneFirmware()),
+                              builder: (context, focused) => Text(
+                                'keyst.one/firmware', // l10n-ignore: URL
+                                style: AppTypography.bodyMediumStrong.copyWith(
+                                  color: colors.text.inverse.withValues(
+                                    alpha: 0.6,
+                                  ),
+                                  decoration: focused
+                                      ? TextDecoration.underline
+                                      : null,
+                                  decorationColor: focused
+                                      ? colors.text.inverse.withValues(
+                                          alpha: 0.6,
+                                        )
+                                      : null,
+                                  decorationStyle: focused
+                                      ? TextDecorationStyle.solid
+                                      : null,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                        },
                       ),
                     ],
                   ),

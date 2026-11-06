@@ -303,7 +303,7 @@ class _PaymentLinkKeystoneSigningOverlayState
       if (result.status == 'expired') {
         // Refused before submission; the service removed the draft.
         throw _PaymentLinkFundingExpiredException(
-          networkUpgradeHoldMessage(result.message ?? '') ??
+          networkUpgradeHoldMessage(l10n, result.message ?? '') ??
               l10n.paymentLinkLedgerFundingExpired,
         );
       }
@@ -599,7 +599,7 @@ class _PaymentLinkKeystoneSigningOverlayState
   String _friendlyError(Object error) {
     if (error is _PaymentLinkFundingUncertainException) return error.message;
     if (error is _PaymentLinkFundingExpiredException) return error.message;
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('sapling') || lower.contains('download')) {

@@ -30,7 +30,7 @@ Future<void> showMobileWelcomeNetworkSettings(
   presentation.setPresented(true);
   final dismissal = ValueNotifier(
     welcomeNetworkReady(ref.read(networkPrivacyProvider)) &&
-        ref.read(enhancePirTransitionProvider) != kEnhancePirChangingMessage,
+        ref.read(enhancePirTransitionProvider) != EnhancePirTransition.changing,
   );
   try {
     await showAppMobileSheet<void>(
@@ -111,7 +111,7 @@ class _MobileNetworkSettingsSheetState
   }
 
   bool get _changingPrivateQueries =>
-      ref.read(enhancePirTransitionProvider) == kEnhancePirChangingMessage;
+      ref.read(enhancePirTransitionProvider) == EnhancePirTransition.changing;
 
   Future<void> _requestPrivateQueries() async {
     if (_submitting ||
@@ -228,7 +228,8 @@ class _MobileNetworkSettingsSheetState
     final state = ref.watch(networkPrivacyProvider);
     final current = ref.watch(rpcEndpointProvider);
     final changingPrivateQueries =
-        ref.watch(enhancePirTransitionProvider) == kEnhancePirChangingMessage;
+        ref.watch(enhancePirTransitionProvider) ==
+        EnhancePirTransition.changing;
     return ValueListenableBuilder<bool>(
       valueListenable: widget.dismissal,
       builder: (context, canDismiss, _) => MobileNetworkSettingsContent(

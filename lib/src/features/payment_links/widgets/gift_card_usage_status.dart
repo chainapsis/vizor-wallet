@@ -10,6 +10,7 @@ import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/app_security_provider.dart';
 import '../models/gift_card_usage.dart';
 import '../providers/gift_card_tracking_provider.dart';
+import '../../../core/l10n/locale_typography.dart';
 
 /// Keeps observation demand attached to visible product surfaces, not to the
 /// lifetime of a global provider or each card row.
@@ -182,7 +183,10 @@ class GiftCardUsageStatusView extends ConsumerWidget {
         builder: (context, constraints) {
           double widthOf(String text) {
             final painter = TextPainter(
-              text: TextSpan(text: text, style: style),
+              text: TextSpan(
+                text: text,
+                style: withLocaleFontFallback(context, style),
+              ),
               textDirection: Directionality.of(context),
               textScaler: MediaQuery.textScalerOf(context),
               locale: Localizations.maybeLocaleOf(context),

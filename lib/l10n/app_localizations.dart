@@ -196,6 +196,12 @@ abstract class AppLocalizations {
   /// **'Account name'**
   String get accountNameLabel;
 
+  /// Validation message when an account name is longer than 20 characters.
+  ///
+  /// In en, this message translates to:
+  /// **'Name can be up to 20 characters.'**
+  String get accountNameTooLong;
+
   /// Screen-reader label of the button that opens an account's action menu on desktop.
   ///
   /// In en, this message translates to:
@@ -327,6 +333,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t check this account for incoming gift cards. Try again before removing it.'**
   String get accountsRemoveGiftCardsCheckFailed;
+
+  /// Error in the remove-account dialog when more gift card links were funded while the removal was pending.
+  ///
+  /// In en, this message translates to:
+  /// **'More gift card links were funded. Review the warning and confirm again.'**
+  String get accountsRemoveGiftCardsMoreFunded;
+
+  /// Error in the remove-account dialog when the gift card links could not be rechecked before removal.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t recheck gift card links. Review the warning and confirm again.'**
+  String get accountsRemoveGiftCardsRecheckFailed;
 
   /// [security] Body of the mobile remove-account sheet when that account has an active Ironwood migration. Removal deletes the account's local data.
   ///
@@ -1605,6 +1623,60 @@ abstract class AppLocalizations {
   /// **'Restarting Vizor'**
   String get appUpdateRestartingTitle;
 
+  /// [security] Message on the unlock screen after the device's biometrics changed, so the passcode is required. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Face ID changed. Enter your passcode.} touchId{Touch ID changed. Enter your passcode.} fingerprint{Fingerprint changed. Enter your passcode.} other{Biometric unlock changed. Enter your passcode.}}'**
+  String biometricChangedMessage(String kind);
+
+  /// Button label that turns on biometric unlock. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Enable Face ID} touchId{Enable Touch ID} fingerprint{Enable fingerprint} other{Enable biometrics}}'**
+  String biometricEnableLabel(String kind);
+
+  /// Biometric method name used inside a sentence. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Face ID} touchId{Touch ID} fingerprint{fingerprint} other{biometrics}}'**
+  String biometricNameInline(String kind);
+
+  /// Biometric method name as the object of the heading 'Unlock your wallet with ...'. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Face ID} touchId{Touch ID} fingerprint{your fingerprint} other{biometrics}}'**
+  String biometricNameOnboardingTitle(String kind);
+
+  /// Biometric method name used as a standalone label or row title. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Face ID} touchId{Touch ID} fingerprint{Fingerprint} other{Biometrics}}'**
+  String biometricNameStandalone(String kind);
+
+  /// Button label that unlocks the wallet with biometrics. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Sign in with Face ID} touchId{Sign in with Touch ID} fingerprint{Sign in with fingerprint} other{Sign in with biometrics}}'**
+  String biometricSignInLabel(String kind);
+
+  /// Name of the biometric unlock feature used inside a sentence. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Face ID unlock} touchId{Touch ID unlock} fingerprint{fingerprint unlock} other{biometric unlock}}'**
+  String biometricUnlockFeatureInline(String kind);
+
+  /// Name of the biometric unlock feature as a capitalized label. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Face ID unlock} touchId{Touch ID unlock} fingerprint{Fingerprint unlock} other{Biometric unlock}}'**
+  String biometricUnlockFeatureLabel(String kind);
+
+  /// Checkbox label on the unlock screen that remembers biometrics for the next unlock. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Use Face ID next time} touchId{Use Touch ID next time} fingerprint{Use fingerprint next time} other{Use biometrics next time}}'**
+  String biometricUseNextTimeLabel(String kind);
+
   /// [security] Name of the optional BIP39 passphrase (25th word), not the seed phrase.
   ///
   /// In en, this message translates to:
@@ -1616,6 +1688,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'BIP39 Passphrase: {passphrase}'**
   String bip39PassphraseValue(String passphrase);
+
+  /// Tooltip on a password field warning that Caps Lock is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Caps Lock is on'**
+  String get capsLockWarning;
 
   /// Screen-reader label of a carousel card. {name} is the carousel name, e.g. Information.
   ///
@@ -2156,6 +2234,12 @@ abstract class AppLocalizations {
   /// **'After you scanned, click Get signature.'**
   String get commonKeystoneAfterScan;
 
+  /// Two-line instruction under a QR code. {icon} is replaced by the small button icon the user taps on the Keystone device, so move it wherever the grammar needs it. The line break between the two halves is intentional. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap {icon} on your Keystone,\nthen scan this QR code'**
+  String commonKeystoneScanPrompt(String icon);
+
   /// Hint when the scanned QR code is of the wrong type; asks to open the signature result QR code on the Keystone device. Shared by: send, swap.
   ///
   /// In en, this message translates to:
@@ -2377,6 +2461,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open the signed transaction QR on Keystone, then scan again.'**
   String get commonOpenTheSignedTransactionQROn;
+
+  /// Label of the disabled action while an operation is held until the Zcash network upgrade activates.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused for network upgrade'**
+  String get commonPausedForNetworkUpgrade;
 
   /// Error on the Pay recipient step when the quote costs more ZEC than is spendable. Shared by: pay, swap.
   ///
@@ -3092,6 +3182,36 @@ abstract class AppLocalizations {
   /// **'Custom endpoint'**
   String get endpointCustom;
 
+  /// Toast when the wallet switched back to the selected server endpoint after it recovered.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected endpoint recovered. Switched back.'**
+  String get endpointFailoverSwitchedBack;
+
+  /// Toast when the wallet switched from an unstable server endpoint to a fallback endpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected endpoint is unstable. Switched to fallback endpoint.'**
+  String get endpointFailoverSwitchedToFallback;
+
+  /// Latency label of a server endpoint that could not be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get endpointLatencyUnavailable;
+
+  /// Latency label of a server endpoint that serves a different Zcash network than the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong network'**
+  String get endpointLatencyWrongNetwork;
+
+  /// Group heading in the server endpoint list. Regtest is a developer network name and stays in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{region, select, standard{Default} europe{Europe} global{Global} americas{Americas} asiaPacific{Asia Pacific} community{Community} testnet{Testnet} regtest{Regtest} other{Other}}'**
+  String endpointRegionName(String region);
+
   /// Button that saves a new lightwalletd endpoint.
   ///
   /// In en, this message translates to:
@@ -3103,6 +3223,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Endpoint updated'**
   String get endpointUpdated;
+
+  /// Status line under the Private queries switch while the setting is being changed.
+  ///
+  /// In en, this message translates to:
+  /// **'Changing setting…'**
+  String get enhancePirChanging;
+
+  /// Status line under the Private queries switch: turning it off did not finish, so it is still on.
+  ///
+  /// In en, this message translates to:
+  /// **'Private queries are still on. Try turning them off again.'**
+  String get enhancePirOptOutPending;
+
+  /// Status line under the Private queries switch: the setting is on but private recovery of transparent funds could not start yet and will be retried.
+  ///
+  /// In en, this message translates to:
+  /// **'Private queries are on. Private transparent recovery could not start yet and will be retried.'**
+  String get enhancePirRaisePending;
+
+  /// Status line under the Private queries switch when the setting could not be changed at all.
+  ///
+  /// In en, this message translates to:
+  /// **'Setting unchanged. Try again.'**
+  String get enhancePirUnchanged;
 
   /// Empty-state title on Home when the wallet has no transactions.
   ///
@@ -4016,6 +4160,12 @@ abstract class AppLocalizations {
   /// **'Check Keystone firmware'**
   String get keystoneFirmwareTitle;
 
+  /// Line in the Keystone scanning help. {link} is the keyst.one/firmware link, which is a URL and is not translated; place it where the grammar needs it.
+  ///
+  /// In en, this message translates to:
+  /// **'Update to the latest Keystone firmware at {link}'**
+  String keystoneFirmwareUpdate(String link);
+
   /// Text before the keyst.one/firmware link in the scanning help. Keep the trailing space; the link follows directly.
   ///
   /// In en, this message translates to:
@@ -4718,6 +4868,18 @@ abstract class AppLocalizations {
   /// **'Connection help'**
   String get ledgerConnectionHelp;
 
+  /// Guidance shown when the Ledger could not be reached over Bluetooth and the user has to reconnect it.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on and unlock your Ledger, then reconnect with Bluetooth.'**
+  String get ledgerConnectionRequiredBluetooth;
+
+  /// Guidance shown when the Ledger could not be reached over USB and the user has to reconnect it.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect and unlock your Ledger with USB, then try again.'**
+  String get ledgerConnectionRequiredUsb;
+
   /// Button label to continue signing after the Ledger is connected.
   ///
   /// In en, this message translates to:
@@ -5360,11 +5522,29 @@ abstract class AppLocalizations {
   /// **'Check Bluetooth access below, then try connecting to your Ledger again.'**
   String get ledgerMobileCheckBluetoothBelow;
 
+  /// Error on the Ledger sheet when the Bluetooth connection failed without a reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger mobile connection failed.'**
+  String get ledgerMobileConnectionFailed;
+
   /// Guidance when the Bluetooth connection failed or dropped.
   ///
   /// In en, this message translates to:
   /// **'The Bluetooth connection to your Ledger was lost or could not be established. Turn on and unlock your Ledger, keep it nearby, then try again.'**
   String get ledgerMobileConnectionLost;
+
+  /// Error on the Ledger connection sheet when the Bluetooth device search failed without a reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger discovery failed.'**
+  String get ledgerMobileDiscoveryFailed;
+
+  /// Error on the Ledger signing sheet when the Bluetooth connection answered with nothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger returned an empty response.'**
+  String get ledgerMobileEmptyResponse;
 
   /// Guidance when the stored Bluetooth pairing with the Ledger is stale and must be removed in system settings.
   ///
@@ -5401,6 +5581,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Turn on location services to find your Ledger on this Android version, then try again.'**
   String get ledgerMobileTurnOnLocation;
+
+  /// Fallback guidance when the Bluetooth connection to the Ledger failed for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not reach your Ledger. Make sure it is on, unlocked and nearby, then try again.'**
+  String get ledgerMobileUnavailable;
+
+  /// Error on the Ledger connection sheet when the Bluetooth device search reported something Vizor does not recognize.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger discovery returned an unknown event.'**
+  String get ledgerMobileUnknownDiscoveryEvent;
 
   /// Title of the status block when the search found no Ledger device.
   ///
@@ -6655,11 +6847,23 @@ abstract class AppLocalizations {
   /// **'Review Migration Plan'**
   String get migrationImmediateReviewTitle;
 
+  /// [security] Sentence of the privacy notice for the one-step migration. {amount} is the ZEC amount; {highlight} is the emphasized phrase 'easier to associate with your wallet' and can be moved anywhere in the sentence.
+  ///
+  /// In en, this message translates to:
+  /// **'Crosses in one visible step — your {amount} and timing are {highlight}.'**
+  String migrationImmediateTradeoffBody(String amount, String highlight);
+
   /// [security] Highlighted second part of the privacy notice, continuing the previous message.
   ///
   /// In en, this message translates to:
   /// **'easier to associate with your wallet.'**
   String get migrationImmediateTradeoffEmphasis;
+
+  /// [security] Emphasized phrase inserted into the privacy notice sentence as its highlight; it completes 'your amount and timing are …'.
+  ///
+  /// In en, this message translates to:
+  /// **'easier to associate with your wallet'**
+  String get migrationImmediateTradeoffHighlight;
 
   /// [security] First part of the privacy notice; {amount} is the ZEC amount. The sentence continues in the next message, so it must end with a space.
   ///
@@ -8257,6 +8461,12 @@ abstract class AppLocalizations {
   /// **'Migration '**
   String get migrationMobileStatusNotesLead;
 
+  /// Heading row above the migration parts. {notes} is the muted note count such as '3 notes' and can be moved anywhere.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration {notes}'**
+  String migrationMobileStatusNotesTitle(String notes);
+
   /// Message under the loading indicator while the migration progress is syncing.
   ///
   /// In en, this message translates to:
@@ -8317,17 +8527,29 @@ abstract class AppLocalizations {
   /// **' for the window'**
   String get migrationMobileWaitLoopForWindow;
 
-  /// Highlighted first word of the bottom text on the animated loop; followed by the next fragment to read 'Sign the batch of transactions'.
+  /// Highlighted verb inserted into the bottom text of the animated loop, which reads 'Sign the batch of transactions'.
   ///
   /// In en, this message translates to:
   /// **'Sign'**
   String get migrationMobileWaitLoopSign;
 
-  /// Highlighted first word of the top text on the animated loop; followed by the next fragment to read 'Wait for the window'.
+  /// Text along the bottom of the animated loop on the migration screen: the user signs the next batch. {highlight} is the highlighted verb 'Sign' and can be moved anywhere.
+  ///
+  /// In en, this message translates to:
+  /// **'{highlight} the batch of transactions'**
+  String migrationMobileWaitLoopSignLine(String highlight);
+
+  /// Highlighted verb inserted into the top text of the animated loop, which reads 'Wait for the window'.
   ///
   /// In en, this message translates to:
   /// **'Wait'**
   String get migrationMobileWaitLoopWait;
+
+  /// Text along the top of the animated loop on the migration screen: the user waits for the next signing window. {highlight} is the highlighted verb 'Wait' and can be moved anywhere.
+  ///
+  /// In en, this message translates to:
+  /// **'{highlight} for the window'**
+  String migrationMobileWaitLoopWaitLine(String highlight);
 
   /// Title-case heading of the card on the preparation screen that shows the note split steps.
   ///
@@ -9383,6 +9605,252 @@ abstract class AppLocalizations {
   /// **'View Schedule'**
   String get migrationViewSchedule;
 
+  /// Title of the Android system fingerprint prompt shown by the OS when the user turns on fingerprint unlock for the app passcode.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable fingerprint unlock'**
+  String get nativeBiometricEnableTitle;
+
+  /// Button in the Android system fingerprint prompt that dismisses it so the user can type the 6-digit app passcode instead.
+  ///
+  /// In en, this message translates to:
+  /// **'Use passcode'**
+  String get nativeBiometricUsePasscode;
+
+  /// Body of the iOS notification posted by background work when the next Ironwood migration transfer can be prepared in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to prepare the next migration transfer.'**
+  String get nativeIronwoodContinueBody;
+
+  /// Title of the iOS notification posted by background work when the next Ironwood migration transfer can be prepared in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue your Ironwood migration'**
+  String get nativeIronwoodContinueTitle;
+
+  /// Body of the iOS notification posted by background work when the Ironwood migration stopped and needs the user in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to review and continue your migration.'**
+  String get nativeIronwoodNeedsAttentionBody;
+
+  /// Title of the iOS notification posted by background work when the Ironwood migration stopped and needs the user in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood migration needs attention'**
+  String get nativeIronwoodNeedsAttentionTitle;
+
+  /// Error the iOS and Android Ledger Bluetooth layer returns when the app sent the Ledger a malformed command; shown in the Ledger error message.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger APDU arguments are invalid.'**
+  String get nativeLedgerApduArgumentsInvalid;
+
+  /// Error the iOS and Android Ledger Bluetooth layer returns when the signing command list the app built is empty or malformed; shown in the Ledger error message.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger signing APDU list is empty or invalid.'**
+  String get nativeLedgerApduListInvalid;
+
+  /// Error the iOS Ledger Bluetooth layer returns when the app timed out waiting for the Ledger to finish opening its Zcash app.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not resume after opening the Zcash app. Try again.'**
+  String get nativeLedgerAppSwitchTimedOut;
+
+  /// Error the iOS Ledger Bluetooth layer returns when the phone has no Bluetooth Low Energy support, so it cannot reach a Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'This device does not support Bluetooth LE.'**
+  String get nativeLedgerBleUnsupported;
+
+  /// Error the Android Ledger Bluetooth layer returns when the phone has no Bluetooth Low Energy support, so it cannot reach a Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'This Android device does not support Bluetooth LE.'**
+  String get nativeLedgerBleUnsupportedAndroid;
+
+  /// Error the iOS Ledger Bluetooth layer returns when iOS reports an unknown Bluetooth state.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth is unavailable.'**
+  String get nativeLedgerBluetoothUnavailable;
+
+  /// Error the Android Ledger Bluetooth layer returns when a command to the Ledger failed for an unexpected reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not communicate with Ledger. Try again.'**
+  String get nativeLedgerCommunicationFailed;
+
+  /// Error the Android Ledger Bluetooth layer returns when searching for nearby Ledger devices failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not discover Ledger devices. Try again.'**
+  String get nativeLedgerDiscoveryFailed;
+
+  /// Error the iOS Ledger Bluetooth layer returns when the Ledger answered with data the app could not read.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger returned an invalid response.'**
+  String get nativeLedgerInvalidResponse;
+
+  /// Error the Android Ledger Bluetooth layer returns for an unexpected Ledger failure; {reason} is an untranslated technical code from the Ledger SDK.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger operation failed: {reason}'**
+  String nativeLedgerOperationFailed(String reason);
+
+  /// Error the Android Ledger Bluetooth layer returns when the app asked for Bluetooth permission while an earlier request is still on screen.
+  ///
+  /// In en, this message translates to:
+  /// **'A Ledger permission request is already active.'**
+  String get nativeLedgerPermissionRequestActive;
+
+  /// Error the iOS Ledger Bluetooth layer returns when the connected Ledger has no Zcash app installed.
+  ///
+  /// In en, this message translates to:
+  /// **'The Zcash app is not installed on this Ledger.'**
+  String get nativeLedgerZcashAppNotInstalled;
+
+  /// Body of the iOS notification shown by the OS when the migration of several accounts stopped; {count} is always 2 or more.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} accounts need attention. Open Vizor to continue.'**
+  String nativeMigrationAccountsNeedAttentionBody(String count);
+
+  /// Title of the iOS notification shown by the OS when the migration preparation of one account stopped and needs the user in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration needs attention'**
+  String get nativeMigrationNeedsAttentionTitle;
+
+  /// Body of the iOS notification posted by background work when a network upgrade stopped the migration before the whole balance moved.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to move the rest of your balance.'**
+  String get nativeMigrationStoppedByUpgradeBody;
+
+  /// Title of the iOS notification posted by background work when a network upgrade stopped the migration before the whole balance moved.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration stopped by network upgrade'**
+  String get nativeMigrationStoppedByUpgradeTitle;
+
+  /// Body of the iOS notification posted by background work after it broadcast every scheduled migration transfer.
+  ///
+  /// In en, this message translates to:
+  /// **'All scheduled transfers were submitted. Open Vizor to check the status.'**
+  String get nativeMigrationTransfersSentBody;
+
+  /// Title of the iOS notification posted by background work after it broadcast every scheduled migration transfer.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration transfers sent'**
+  String get nativeMigrationTransfersSentTitle;
+
+  /// Title of the iOS notification shown by the OS when the migration of several accounts stopped and needs the user in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration updates'**
+  String get nativeMigrationUpdatesTitle;
+
+  /// Body of the iOS notification shown by the OS when the migration preparation of one account stopped and needs the user in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to continue.'**
+  String get nativeOpenToContinue;
+
+  /// Subtitle of the iOS system background-task progress item when tracking stopped because the user added or removed an account; no trailing period.
+  ///
+  /// In en, this message translates to:
+  /// **'Your wallet accounts changed'**
+  String get nativePrepAccountsChanged;
+
+  /// Body of the iOS notification shown by the OS when the preparation transactions of several accounts confirmed; {count} is always 2 or more.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} accounts are ready for the next step. Open Vizor to continue.'**
+  String nativePrepAccountsReadyBody(String count);
+
+  /// Subtitle of the iOS system background-task progress item while it waits for migration preparation transactions to confirm; no trailing period.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking transaction confirmations'**
+  String get nativePrepCheckingConfirmations;
+
+  /// Title of the iOS system background-task progress item when every migration preparation transaction confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration preparation complete'**
+  String get nativePrepCompleteTitle;
+
+  /// Title of the iOS notification and system background-task item when the current wave of migration preparation transactions confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation transactions confirmed'**
+  String get nativePrepConfirmedTitle;
+
+  /// Subtitle of the iOS system background-task progress item when every migration preparation transaction confirmed; no trailing period.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to continue your migration'**
+  String get nativePrepOpenToContinueMigration;
+
+  /// Subtitle of the iOS system background-task progress item when iOS paused confirmation tracking; no trailing period.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to resume'**
+  String get nativePrepOpenToResume;
+
+  /// Subtitle of the iOS system background-task progress item when the current wave of migration preparation transactions confirmed; no trailing period.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to start the next step'**
+  String get nativePrepOpenToStartNextStep;
+
+  /// Body of the iOS notification shown by the OS when the migration preparation transactions of one account confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to start the next step.'**
+  String get nativePrepOpenToStartNextStepBody;
+
+  /// Progress line of the iOS system background-task item while migration preparation transactions confirm, used as title or subtitle; no trailing period.
+  ///
+  /// In en, this message translates to:
+  /// **'{completed} of {total} preparation transactions confirmed'**
+  String nativePrepProgress(String completed, String total);
+
+  /// Title of the iOS system background-task progress item when tracking stopped because the user added or removed an account.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation stopped'**
+  String get nativePrepStoppedTitle;
+
+  /// Title of the iOS system background-task progress item while it waits for migration preparation transactions to confirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing your migration'**
+  String get nativePrepTaskTitle;
+
+  /// Body of the iOS notification shown by the OS when iOS stopped confirmation tracking for migration preparation before it finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor to resume migration preparation.'**
+  String get nativePrepTrackingPausedBody;
+
+  /// Title of the iOS notification and system background-task item when iOS stopped confirmation tracking for migration preparation before it finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation tracking paused'**
+  String get nativePrepTrackingPausedTitle;
+
+  /// Title of the iOS notification shown by the OS when the preparation transactions of several accounts confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration preparation updates'**
+  String get nativePrepUpdatesTitle;
+
   /// Sidebar and tab bar destination: transaction history. Shared by: activity, nav.
   ///
   /// In en, this message translates to:
@@ -9424,6 +9892,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Vote'**
   String get navVote;
+
+  /// Toast when the user turns off Tor while a software update is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish the current software update before turning off Tor.'**
+  String get networkPrivacyFinishUpdateBeforeTorOff;
+
+  /// Toast when the user turns on Tor while a software update is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish the current software update before turning on Tor.'**
+  String get networkPrivacyFinishUpdateBeforeTorOn;
+
+  /// Toast at launch when Tor is on but could not connect, so network requests are paused.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t connect to Tor. Network requests are paused.'**
+  String get networkPrivacyTorStartupFailed;
+
+  /// Toast when Tor is connected but the software updater cannot use it.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor is connected, but software updates are unavailable. Turn off Tor to update directly.'**
+  String get networkPrivacyTorUpdatesUnavailable;
+
+  /// Toast when software updates are unavailable while other network requests use a direct connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Software updates are unavailable. Other network requests still use a direct connection.'**
+  String get networkPrivacyUpdatesUnavailable;
 
   /// Title of the network settings (endpoint) screen or sheet.
   ///
@@ -9560,7 +10058,7 @@ abstract class AppLocalizations {
   /// **'I can’t remember'**
   String get onboardingBirthdayCantRemember;
 
-  /// Placeholder of the date field (month/day/year order).
+  /// Placeholder of the birthday date field. The picked date replaces it, written in your language's numeric order with two-digit month and day (Korean 2026. 05. 25., Chinese 2026/05/25), so write the same order and separators with letter placeholders.
   ///
   /// In en, this message translates to:
   /// **'mm/dd/yyyy'**
@@ -9626,7 +10124,7 @@ abstract class AppLocalizations {
   /// **'Couldn\'t estimate a height for that date. Enter a block height instead.'**
   String get onboardingBirthdayMobileEstimateFailed;
 
-  /// Placeholder of the iOS birthday field; shows the expected month/year order.
+  /// Placeholder of the iOS birthday month field. The picked month replaces it in your language's numeric order (Korean 2026. 05., Chinese 2026/05), so write the same order and separators with letter placeholders.
   ///
   /// In en, this message translates to:
   /// **'mm/yyyy'**
@@ -9691,6 +10189,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Block height'**
   String get onboardingBlockHeight;
+
+  /// Error shown when creating a wallet fails because the current Zcash block height could not be fetched.
+  ///
+  /// In en, this message translates to:
+  /// **'We need the current Zcash block height to create your wallet. Check your network connection and try again.'**
+  String get onboardingBlockHeightRequired;
 
   /// Disabled primary button label while the import looks for additional accounts of the same secret passphrase.
   ///
@@ -9757,6 +10261,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Additional accounts found'**
   String get onboardingDiscoveryTitle;
+
+  /// Error under the import form when the imported account is already in this wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'This account is already in your wallet.'**
+  String get onboardingDuplicateAccount;
+
+  /// Error on the Keystone import screen when that hardware account is already in this wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'This Keystone account is already in your wallet.'**
+  String get onboardingDuplicateKeystoneAccount;
 
   /// [security] Accessibility label of the bar that reopens the BIP39 passphrase dialog for editing.
   ///
@@ -10406,6 +10922,12 @@ abstract class AppLocalizations {
   /// **'Vizor could not load the local startup state. Try again, or quit and restart Vizor.'**
   String get onboardingStorageStartupFailureBody;
 
+  /// Detail line on the startup failure screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not load its startup state.'**
+  String get onboardingStorageStartupFailureDetail;
+
   /// Primary button on the Zcash education steps that continues to the next explanation.
   ///
   /// In en, this message translates to:
@@ -10579,6 +11101,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Password'**
   String get passwordLabel;
+
+  /// Validation message when a wallet password contains characters other than printable English letters, numbers and symbols.
+  ///
+  /// In en, this message translates to:
+  /// **'Use only English letters, numbers, and symbols.'**
+  String get passwordPolicyAscii;
+
+  /// Validation message when a wallet password is shorter than the minimum; {min} is the minimum length.
+  ///
+  /// In en, this message translates to:
+  /// **'Password must be at least {min} characters.'**
+  String passwordPolicyMinLength(int min);
+
+  /// Validation message when the new wallet password equals the current one.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a different password.'**
+  String get passwordPolicyMustDiffer;
 
   /// [security] Error when the two new password entries differ.
   ///
@@ -12968,11 +13508,23 @@ abstract class AppLocalizations {
   /// **'Transparent'**
   String get poolTransparent;
 
+  /// [security] Error shown when the wallet still requires private recovery because turning off Private queries did not finish.
+  ///
+  /// In en, this message translates to:
+  /// **'Turning off Private queries didn\'t finish. Turn it off again in Settings to use transparent funds.'**
+  String get privateQueriesOptOutUnfinished;
+
   /// Button or label that opens the profile picture picker.
   ///
   /// In en, this message translates to:
   /// **'Change profile picture'**
   String get profilePictureChange;
+
+  /// Name of a built-in profile picture character, shown in the profile picture picker; {id} is the picture number such as p01.
+  ///
+  /// In en, this message translates to:
+  /// **'{id, select, p01{Knight} p02{Viking} p03{Samurai} p04{Monarch} p05{Iron helm} p06{Ronin} p07{Skull knight} p08{Seer} p09{Berserker} p10{Rogue} p11{Mage} p12{Masked cat} p13{Warden} p14{Bronze helm} p15{Fish knight} other{}}'**
+  String profilePictureName(String id);
 
   /// Title of the profile picture picker.
   ///
@@ -14750,11 +15302,23 @@ abstract class AppLocalizations {
   /// **'Any explorer you prefer'**
   String get settingsExplorerCustomSubtitle;
 
+  /// [security] Privacy note under the block explorer setting: opening a public explorer can link the user's IP address to a transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction links open in this explorer. Use ZecBlock or another site you prefer. Opening a public explorer after you send can link your IP address to that transaction.'**
+  String get settingsExplorerPrivacyCopy;
+
   /// Error shown under the custom explorer URL field when saving it failed.
   ///
   /// In en, this message translates to:
   /// **'Couldn\'t save that explorer URL.'**
   String get settingsExplorerSaveFailed;
+
+  /// Hint under the custom block explorer field; {txid} and {txHash} are the literal URL placeholders the user types, passed in as arguments, and must stay unchanged in translation.
+  ///
+  /// In en, this message translates to:
+  /// **'Use {txid} or {txHash} in the path, or enter just the origin.'**
+  String settingsExplorerTemplateHint(String txid, String txHash);
 
   /// Title of the block explorer setting, used as the Settings row label and the screen heading; the explorer is the website used to look up transactions.
   ///
@@ -15032,6 +15596,18 @@ abstract class AppLocalizations {
   /// **'Privacy'**
   String get settingsPrivacyTitle;
 
+  /// [security] Description under the Private queries setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Experimental. Recovers transparent funds privately, preventing the server from learning your transparent addresses. Looks up supported transactions without revealing their IDs to servers.'**
+  String get settingsPrivateQueriesCopy;
+
+  /// Extra sentence on iOS under the Private queries description: migration confirmations are not checked in the background while it is on.
+  ///
+  /// In en, this message translates to:
+  /// **'While on, migration confirmations are checked only when Vizor is open.'**
+  String get settingsPrivateQueriesIosNote;
+
   /// Label of the Settings toggle row and its accessibility label for the private queries feature, which sends wallet lookups to a privacy-preserving server.
   ///
   /// In en, this message translates to:
@@ -15212,7 +15788,13 @@ abstract class AppLocalizations {
   /// **'I understand'**
   String get settingsSeedScreenshotAck;
 
-  /// [security] Bold first words of the screenshot warning body; the next string continues the same sentence.
+  /// [security] Body of the warning about screenshots of the Secret Passphrase. {highlight} is the bold phrase 'Screenshots are not reliable' and can be moved anywhere in the first sentence.
+  ///
+  /// In en, this message translates to:
+  /// **'{highlight}. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.'**
+  String settingsSeedScreenshotBody(String highlight);
+
+  /// [security] Bold phrase inserted into the screenshot warning body, where it starts the first sentence.
   ///
   /// In en, this message translates to:
   /// **'Screenshots are not reliable'**
@@ -17502,6 +18084,60 @@ abstract class AppLocalizations {
   /// **'Syncing failed. {reason}'**
   String syncFailedSemantics(String reason);
 
+  /// Sync failure notice on Home: a chain reorganization happened during sync and the wallet is recovering.
+  ///
+  /// In en, this message translates to:
+  /// **'The chain changed while syncing. We\'ll keep trying to recover.'**
+  String get syncFailureChainRecovery;
+
+  /// Sync failure notice on Home: the wallet database is locked and sync retries by itself.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet data is busy. We\'ll try syncing again automatically.'**
+  String get syncFailureDatabaseBusy;
+
+  /// Sync failure notice on Home: the wallet database could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet data could not be read. Restart the app and retry sync.'**
+  String get syncFailureDatabaseFatal;
+
+  /// Sync failure notice on Home: the configured lightwalletd endpoint is unreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'Cannot reach the configured Zcash endpoint. Check your endpoint settings.'**
+  String get syncFailureEndpoint;
+
+  /// Sync failure notice on Home: the network connection dropped and sync retries by itself.
+  ///
+  /// In en, this message translates to:
+  /// **'Network connection lost. We\'ll keep trying automatically.'**
+  String get syncFailureNetwork;
+
+  /// Sync failure notice on Home: data from the server could not be parsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync data could not be processed. Retry sync or check your endpoint.'**
+  String get syncFailureParse;
+
+  /// Sync failure notice on Home: experimental private queries could not determine a transaction's status and block syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Private transaction lookup couldn\'t determine a transaction\'s status. Turn off experimental private queries in Settings to continue syncing.'**
+  String get syncFailurePrivateStatus;
+
+  /// Sync failure notice on Home: the Tor connection failed and the user can retry or turn Tor off.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor couldn\'t connect. Retry, or turn Tor off in Settings.'**
+  String get syncFailureTor;
+
+  /// Sync failure notice on Home: sync failed for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync failed. Retry sync to continue.'**
+  String get syncFailureUnknown;
+
   /// Sync status when the wallet is up to date.
   ///
   /// In en, this message translates to:
@@ -17543,6 +18179,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Vizor is synced'**
   String get syncVizorSynced;
+
+  /// Error shown when this build of the app cannot operate on the wallet's transparent funds and the user must update Vizor.
+  ///
+  /// In en, this message translates to:
+  /// **'This wallet needs a newer version of Vizor to use its transparent funds.'**
+  String get transparentLedgerNeedsNewerBuild;
+
+  /// Error shown when transparent funds cannot be used yet because private recovery of the transparent history has not finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Transparent funds are unavailable until private recovery completes.'**
+  String get transparentRecoveryIncomplete;
 
   /// Tooltip on the fee row of transaction review and receipt screens.
   ///
@@ -17946,6 +18594,120 @@ abstract class AppLocalizations {
   /// **'Ends {date}'**
   String votingEnds(String date);
 
+  /// Error shown when a vote submission to the voting chain was cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain submission was cancelled.'**
+  String get votingErrorChainCancelled;
+
+  /// Error shown when a vote submission to the voting chain ended without producing a usable transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain submission ended without a usable transaction.'**
+  String get votingErrorChainNoUsableTransaction;
+
+  /// Error shown when the wallet is still checking the outcome of an earlier vote submission to the voting chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain submission recovery is still pending.'**
+  String get votingErrorChainRecoveryPending;
+
+  /// Error shown when the voting chain rejected a submitted vote or delegation.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain submission was rejected.'**
+  String get votingErrorChainRejected;
+
+  /// Error shown when a vote submission may already be on the voting chain but its transaction hash is unknown; retrying could submit it twice.
+  ///
+  /// In en, this message translates to:
+  /// **'Submission may have reached the chain, but no transaction hash was returned. Do not retry it.'**
+  String get votingErrorChainSubmittedWithoutHash;
+
+  /// Error shown when delegating voting power failed; {details} lists the failed bundles and their error text.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegation bundle processing failed: {details}'**
+  String votingErrorDelegationFailed(String details);
+
+  /// Error shown when votes cannot be cast because the key created during delegation is missing.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting hotkey is missing. Delegate this round before casting votes.'**
+  String get votingErrorHotkeyMissing;
+
+  /// Error shown when the voting round closed before a helper server confirmed receiving the user's vote share.
+  ///
+  /// In en, this message translates to:
+  /// **'The voting round ended before a helper confirmed the immediate share. Check the voting status before retrying.'**
+  String get votingErrorImmediateShareExpired;
+
+  /// Error shown when Keystone vote signing is started for an account that is not a Keystone account.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone voting is only available for Keystone accounts.'**
+  String get votingErrorKeystoneAccountOnly;
+
+  /// Error shown when Keystone vote signing is started for an account that is not a hardware wallet account.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone voting is only available for hardware accounts.'**
+  String get votingErrorKeystoneHardwareOnly;
+
+  /// Error shown under the Keystone voting QR when a scanned signature is malformed.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone returned an invalid voting signature. Scan the result for the QR shown here.'**
+  String get votingErrorKeystoneInvalidSignature;
+
+  /// Error shown under the Keystone voting QR when the scanned result contains no signatures.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone returned no voting signatures. Scan the result again.'**
+  String get votingErrorKeystoneNoSignatures;
+
+  /// Error shown when a Keystone voting signature is scanned but no signing request is open.
+  ///
+  /// In en, this message translates to:
+  /// **'No Keystone signing request is waiting for a signature.'**
+  String get votingErrorKeystoneNoSigningRequest;
+
+  /// Error shown when the QR code for signing a vote on Keystone could not be built; {reason} is the underlying error text.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to prepare Keystone voting QR: {reason}'**
+  String votingErrorKeystoneQrPrepareFailed(String reason);
+
+  /// Error shown under the Keystone voting QR when the scanned result cannot be read as a response to it.
+  ///
+  /// In en, this message translates to:
+  /// **'This Keystone result does not match the voting QR shown here. Scan the matching result and try again.'**
+  String get votingErrorKeystoneResultMismatch;
+
+  /// Error shown under the Keystone voting QR when the scanned signature differs from one already saved.
+  ///
+  /// In en, this message translates to:
+  /// **'This Keystone result conflicts with a signature already saved for this voting request. Restart Keystone signing and scan the newly generated result.'**
+  String get votingErrorKeystoneSignatureConflict;
+
+  /// Error shown under the Keystone voting QR when the scanned signatures belong to a different request.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone returned signatures that do not match this voting request. Scan the result for the QR shown here.'**
+  String get votingErrorKeystoneSignatureMismatch;
+
+  /// Error shown under the Keystone voting QR when the scanned signatures could not be stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the Keystone signatures. Scan the same Keystone result again.'**
+  String get votingErrorKeystoneSignatureSaveFailed;
+
+  /// Error shown when the user skips the remaining Keystone voting bundles before signing any.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign at least one Keystone bundle before skipping the rest.'**
+  String get votingErrorKeystoneSkipNeedsSignature;
+
   /// Error shown when the user cancelled approving a vote on their Ledger.
   ///
   /// In en, this message translates to:
@@ -17958,11 +18720,29 @@ abstract class AppLocalizations {
   /// **'Unlock your Ledger. {instruction}'**
   String votingErrorLedgerLocked(String instruction);
 
+  /// Error shown when a Ledger voting signature arrives but no bundle is waiting for approval.
+  ///
+  /// In en, this message translates to:
+  /// **'No Ledger voting bundle is waiting for approval.'**
+  String get votingErrorLedgerNoPendingBundle;
+
   /// Error shown when the user rejected the vote signature on their Ledger.
   ///
   /// In en, this message translates to:
   /// **'The vote signature was rejected on your Ledger. Retry to sign again.'**
   String get votingErrorLedgerRejected;
+
+  /// Error shown when the Ledger signature differs from one already saved for the same voting bundle.
+  ///
+  /// In en, this message translates to:
+  /// **'This Ledger signature conflicts with the signature already saved for this voting bundle.'**
+  String get votingErrorLedgerSignatureConflict;
+
+  /// Error shown when the Ledger voting signature could not be stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the Ledger voting signature. Retry this bundle.'**
+  String get votingErrorLedgerSignatureSaveFailed;
 
   /// Error shown when the wrong app is open on the Ledger during voting; {instruction} is a sentence telling the user to open the Zcash app.
   ///
@@ -17976,17 +18756,105 @@ abstract class AppLocalizations {
   /// **'Voting requires at least one eligible shielded note bundle with {amount} at {snapshot}. Switch to an eligible account to vote.'**
   String votingErrorMinimumWeight(String amount, String snapshot);
 
+  /// Reason shown in the mobile not-eligible dialog above the separate switch-account guidance, without a final period; {amount} is a ZEC amount and {snapshot} names the snapshot block.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting requires at least one eligible shielded note bundle with {amount} at {snapshot}'**
+  String votingErrorMinimumWeightReason(String amount, String snapshot);
+
+  /// Error shown on the voting status screen when a vote submission starts while no account is active.
+  ///
+  /// In en, this message translates to:
+  /// **'No active account for voting session.'**
+  String get votingErrorNoActiveAccount;
+
   /// Error shown when the account had no shielded funds at the snapshot; {snapshot} is a phrase naming the snapshot block.
   ///
   /// In en, this message translates to:
   /// **'This account is not eligible for this voting round. It had no eligible shielded funds at {snapshot}. Switch to an eligible account to vote.'**
   String votingErrorNoSpendableNotes(String snapshot);
 
+  /// Reason shown in the mobile not-eligible dialog above the separate switch-account guidance, without a final period; {snapshot} is a phrase naming the snapshot block.
+  ///
+  /// In en, this message translates to:
+  /// **'This account is not eligible for this voting round. It had no eligible shielded funds at {snapshot}'**
+  String votingErrorNoSpendableNotesReason(String snapshot);
+
+  /// Error shown when the user submits a ballot without choosing an answer to any question.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose at least one vote before submitting.'**
+  String get votingErrorNoVoteChosen;
+
+  /// Error shown when the wallet could not choose a PIR server for the voting round.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to resolve PIR endpoint.'**
+  String get votingErrorPirEndpointResolveFailed;
+
+  /// Error shown when delegation needs a PIR server but none has been selected yet.
+  ///
+  /// In en, this message translates to:
+  /// **'PIR endpoint has not been resolved.'**
+  String get votingErrorPirEndpointUnresolved;
+
+  /// Error shown when a vote submission starts before the voting round's details have loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting round details are not available yet. Retry in a moment.'**
+  String get votingErrorRoundDetailsUnavailable;
+
+  /// Error shown when a vote submission starts but the voting round's end time is not known yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting round end time is unavailable. Retry in a moment.'**
+  String get votingErrorRoundEndTimeUnavailable;
+
   /// Generic error shown when a voting action failed without a more specific message.
   ///
   /// In en, this message translates to:
   /// **'Voting session action failed.'**
   String get votingErrorSessionFailed;
+
+  /// Error shown when one delegation bundle still needs the hardware wallet's signature; {bundle} is the bundle number and {signer} is a hardware wallet name such as Keystone or Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign delegation bundle {bundle} with {signer} before submitting.'**
+  String votingErrorSignBundleFirst(int bundle, String signer);
+
+  /// Error shown when delegation is submitted before the hardware wallet signed it; {signer} is a hardware wallet name such as Keystone or Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign delegation bundles with {signer} before submitting.'**
+  String votingErrorSignBundlesFirst(String signer);
+
+  /// Error shown when hardware vote signing is started for an account of a different hardware wallet; {signer} is a hardware wallet name such as Keystone or Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'{signer} voting is only available for matching hardware accounts.'**
+  String votingErrorSignerAccountOnly(String signer);
+
+  /// [security] Error shown when delegating voting power with a software account whose seed phrase cannot be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Software delegation requires this account mnemonic. Unlock this account or switch to one with mnemonic access.'**
+  String get votingErrorSoftwareMnemonicRequired;
+
+  /// Error shown when casting votes failed; {details} lists the failed bundles and their error text.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote casting failed: {details}'**
+  String votingErrorVoteCastingFailed(String details);
+
+  /// Error shown when the wallet did not sync up to the voting round's snapshot block in time; {duration} is an elapsed time, {scanned} and {snapshot} are block heights.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet sync did not reach this voting round snapshot within {duration}. Scanned block {scanned} of {snapshot}. Let wallet sync catch up and retry.'**
+  String votingErrorWalletSyncTimeout(
+    String duration,
+    String scanned,
+    String snapshot,
+  );
 
   /// Label of the link button that opens the forum discussion of a voting round or proposal.
   ///
@@ -18732,6 +19600,12 @@ abstract class AppLocalizations {
   /// **'Signing with Ledger'**
   String get votingStepSigningLedger;
 
+  /// [security] Toast shown when the user tries to remove an account or reset the wallet while a vote is still being submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote submission is still running. Wait for it to finish before removing an account or resetting the wallet.'**
+  String get votingSubmissionInProgress;
+
   /// Dialog button that opens the account switcher so the user can pick an eligible account.
   ///
   /// In en, this message translates to:
@@ -19146,11 +20020,23 @@ abstract class AppLocalizations {
   /// **'Open & unlock your Vizor desktop app'**
   String get walletLinkStepUnlockDesktop;
 
+  /// Toast shown when another wallet change, such as switching an account or toggling Private queries, is still running.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish the current wallet operation before starting another.'**
+  String get walletMutationBusy;
+
   /// [security] Error when the device passcode check before a wallet reset failed.
   ///
   /// In en, this message translates to:
   /// **'Couldn\'t verify device ownership. Please try again.'**
   String get walletResetDeviceAuthFailed;
+
+  /// Reason line in the operating system's device-authentication prompt when the user resets the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm reset Vizor'**
+  String get walletResetDeviceAuthReason;
 
   /// [security] Error when the user skipped the device passcode check before resetting the wallet.
   ///
@@ -19175,6 +20061,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'A gift card is still being received. Resetting loses it.'**
   String get walletResetGiftCardWarning;
+
+  /// Error shown when the user starts a software update download that is no longer available.
+  ///
+  /// In en, this message translates to:
+  /// **'This update is no longer ready to download. Check for updates again.'**
+  String get windowsUpdateNotReady;
+
+  /// Error shown when a software update cannot start because the updater has no Tor connection.
+  ///
+  /// In en, this message translates to:
+  /// **'The software updater is not connected to Tor. Retry updates in Settings, or turn off Tor and try again.'**
+  String get windowsUpdateTorRouteUnavailable;
 }
 
 class _AppLocalizationsDelegate

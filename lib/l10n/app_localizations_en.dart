@@ -66,6 +66,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountNameLabel => 'Account name';
 
   @override
+  String get accountNameTooLong => 'Name can be up to 20 characters.';
+
+  @override
   String get accountsActionsLabel => 'Account actions';
 
   @override
@@ -157,6 +160,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get accountsRemoveGiftCardsCheckFailed =>
       'Couldn\'t check this account for incoming gift cards. Try again before removing it.';
+
+  @override
+  String get accountsRemoveGiftCardsMoreFunded =>
+      'More gift card links were funded. Review the warning and confirm again.';
+
+  @override
+  String get accountsRemoveGiftCardsRecheckFailed =>
+      'Couldn\'t recheck gift card links. Review the warning and confirm again.';
 
   @override
   String get accountsRemoveMigrationBody =>
@@ -873,12 +884,114 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appUpdateRestartingTitle => 'Restarting Vizor';
 
   @override
+  String biometricChangedMessage(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID changed. Enter your passcode.',
+      'touchId': 'Touch ID changed. Enter your passcode.',
+      'fingerprint': 'Fingerprint changed. Enter your passcode.',
+      'other': 'Biometric unlock changed. Enter your passcode.',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricEnableLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Enable Face ID',
+      'touchId': 'Enable Touch ID',
+      'fingerprint': 'Enable fingerprint',
+      'other': 'Enable biometrics',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameInline(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': 'fingerprint',
+      'other': 'biometrics',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameOnboardingTitle(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': 'your fingerprint',
+      'other': 'biometrics',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameStandalone(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': 'Fingerprint',
+      'other': 'Biometrics',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricSignInLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Sign in with Face ID',
+      'touchId': 'Sign in with Touch ID',
+      'fingerprint': 'Sign in with fingerprint',
+      'other': 'Sign in with biometrics',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUnlockFeatureInline(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID unlock',
+      'touchId': 'Touch ID unlock',
+      'fingerprint': 'fingerprint unlock',
+      'other': 'biometric unlock',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUnlockFeatureLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID unlock',
+      'touchId': 'Touch ID unlock',
+      'fingerprint': 'Fingerprint unlock',
+      'other': 'Biometric unlock',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUseNextTimeLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Use Face ID next time',
+      'touchId': 'Use Touch ID next time',
+      'fingerprint': 'Use fingerprint next time',
+      'other': 'Use biometrics next time',
+    });
+    return '$_temp0';
+  }
+
+  @override
   String get bip39PassphraseTitle => 'BIP39 Passphrase';
 
   @override
   String bip39PassphraseValue(String passphrase) {
     return 'BIP39 Passphrase: $passphrase';
   }
+
+  @override
+  String get capsLockWarning => 'Caps Lock is on';
 
   @override
   String carouselPageSemantics(
@@ -1171,6 +1284,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'After you scanned, click Get signature.';
 
   @override
+  String commonKeystoneScanPrompt(String icon) {
+    return 'Tap $icon on your Keystone,\nthen scan this QR code';
+  }
+
+  @override
   String get commonKeystoneScanSignatureResult =>
       'Open the signature result QR on Keystone, then scan again.';
 
@@ -1291,6 +1409,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get commonOpenTheSignedTransactionQROn =>
       'Open the signed transaction QR on Keystone, then scan again.';
+
+  @override
+  String get commonPausedForNetworkUpgrade => 'Paused for network upgrade';
 
   @override
   String get commonPayInsufficientZec =>
@@ -1669,10 +1790,54 @@ class AppLocalizationsEn extends AppLocalizations {
   String get endpointCustom => 'Custom endpoint';
 
   @override
+  String get endpointFailoverSwitchedBack =>
+      'Selected endpoint recovered. Switched back.';
+
+  @override
+  String get endpointFailoverSwitchedToFallback =>
+      'Selected endpoint is unstable. Switched to fallback endpoint.';
+
+  @override
+  String get endpointLatencyUnavailable => 'Unavailable';
+
+  @override
+  String get endpointLatencyWrongNetwork => 'Wrong network';
+
+  @override
+  String endpointRegionName(String region) {
+    String _temp0 = intl.Intl.selectLogic(region, {
+      'standard': 'Default',
+      'europe': 'Europe',
+      'global': 'Global',
+      'americas': 'Americas',
+      'asiaPacific': 'Asia Pacific',
+      'community': 'Community',
+      'testnet': 'Testnet',
+      'regtest': 'Regtest',
+      'other': 'Other',
+    });
+    return '$_temp0';
+  }
+
+  @override
   String get endpointUpdate => 'Update endpoint';
 
   @override
   String get endpointUpdated => 'Endpoint updated';
+
+  @override
+  String get enhancePirChanging => 'Changing setting…';
+
+  @override
+  String get enhancePirOptOutPending =>
+      'Private queries are still on. Try turning them off again.';
+
+  @override
+  String get enhancePirRaisePending =>
+      'Private queries are on. Private transparent recovery could not start yet and will be retried.';
+
+  @override
+  String get enhancePirUnchanged => 'Setting unchanged. Try again.';
 
   @override
   String get homeActivityEmpty => 'No activity, yet...';
@@ -2227,6 +2392,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneFirmwareTitle => 'Check Keystone firmware';
 
   @override
+  String keystoneFirmwareUpdate(String link) {
+    return 'Update to the latest Keystone firmware at $link';
+  }
+
+  @override
   String get keystoneFirmwareUpdatePrefix =>
       'Update to the latest Keystone firmware at ';
 
@@ -2647,6 +2817,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ledgerConnectionHelp => 'Connection help';
 
   @override
+  String get ledgerConnectionRequiredBluetooth =>
+      'Turn on and unlock your Ledger, then reconnect with Bluetooth.';
+
+  @override
+  String get ledgerConnectionRequiredUsb =>
+      'Connect and unlock your Ledger with USB, then try again.';
+
+  @override
   String get ledgerContinueSigning => 'Continue signing';
 
   @override
@@ -3050,8 +3228,17 @@ class AppLocalizationsEn extends AppLocalizations {
       'Check Bluetooth access below, then try connecting to your Ledger again.';
 
   @override
+  String get ledgerMobileConnectionFailed => 'Ledger mobile connection failed.';
+
+  @override
   String get ledgerMobileConnectionLost =>
       'The Bluetooth connection to your Ledger was lost or could not be established. Turn on and unlock your Ledger, keep it nearby, then try again.';
+
+  @override
+  String get ledgerMobileDiscoveryFailed => 'Ledger discovery failed.';
+
+  @override
+  String get ledgerMobileEmptyResponse => 'Ledger returned an empty response.';
 
   @override
   String get ledgerMobilePairingInvalid =>
@@ -3076,6 +3263,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get ledgerMobileTurnOnLocation =>
       'Turn on location services to find your Ledger on this Android version, then try again.';
+
+  @override
+  String get ledgerMobileUnavailable =>
+      'Vizor could not reach your Ledger. Make sure it is on, unlocked and nearby, then try again.';
+
+  @override
+  String get ledgerMobileUnknownDiscoveryEvent =>
+      'Ledger discovery returned an unknown event.';
 
   @override
   String get ledgerNoDevicesFound => 'No Ledger devices found';
@@ -3884,8 +4079,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationImmediateReviewTitle => 'Review Migration Plan';
 
   @override
+  String migrationImmediateTradeoffBody(String amount, String highlight) {
+    return 'Crosses in one visible step — your $amount and timing are $highlight.';
+  }
+
+  @override
   String get migrationImmediateTradeoffEmphasis =>
       'easier to associate with your wallet.';
+
+  @override
+  String get migrationImmediateTradeoffHighlight =>
+      'easier to associate with your wallet';
 
   @override
   String migrationImmediateTradeoffLead(String amount) {
@@ -4924,6 +5128,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationMobileStatusNotesLead => 'Migration ';
 
   @override
+  String migrationMobileStatusNotesTitle(String notes) {
+    return 'Migration $notes';
+  }
+
+  @override
   String get migrationMobileSyncingProgress =>
       'Syncing the migration progress.';
 
@@ -4963,7 +5172,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationMobileWaitLoopSign => 'Sign';
 
   @override
+  String migrationMobileWaitLoopSignLine(String highlight) {
+    return '$highlight the batch of transactions';
+  }
+
+  @override
   String get migrationMobileWaitLoopWait => 'Wait';
+
+  @override
+  String migrationMobileWaitLoopWaitLine(String highlight) {
+    return '$highlight for the window';
+  }
 
   @override
   String get migrationMobileWaitNoteSplit => 'Note Split';
@@ -5641,6 +5860,158 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationViewSchedule => 'View Schedule';
 
   @override
+  String get nativeBiometricEnableTitle => 'Enable fingerprint unlock';
+
+  @override
+  String get nativeBiometricUsePasscode => 'Use passcode';
+
+  @override
+  String get nativeIronwoodContinueBody =>
+      'Open Vizor to prepare the next migration transfer.';
+
+  @override
+  String get nativeIronwoodContinueTitle => 'Continue your Ironwood migration';
+
+  @override
+  String get nativeIronwoodNeedsAttentionBody =>
+      'Open Vizor to review and continue your migration.';
+
+  @override
+  String get nativeIronwoodNeedsAttentionTitle =>
+      'Ironwood migration needs attention';
+
+  @override
+  String get nativeLedgerApduArgumentsInvalid =>
+      'Ledger APDU arguments are invalid.';
+
+  @override
+  String get nativeLedgerApduListInvalid =>
+      'Ledger signing APDU list is empty or invalid.';
+
+  @override
+  String get nativeLedgerAppSwitchTimedOut =>
+      'Vizor could not resume after opening the Zcash app. Try again.';
+
+  @override
+  String get nativeLedgerBleUnsupported =>
+      'This device does not support Bluetooth LE.';
+
+  @override
+  String get nativeLedgerBleUnsupportedAndroid =>
+      'This Android device does not support Bluetooth LE.';
+
+  @override
+  String get nativeLedgerBluetoothUnavailable => 'Bluetooth is unavailable.';
+
+  @override
+  String get nativeLedgerCommunicationFailed =>
+      'Could not communicate with Ledger. Try again.';
+
+  @override
+  String get nativeLedgerDiscoveryFailed =>
+      'Could not discover Ledger devices. Try again.';
+
+  @override
+  String get nativeLedgerInvalidResponse =>
+      'Ledger returned an invalid response.';
+
+  @override
+  String nativeLedgerOperationFailed(String reason) {
+    return 'Ledger operation failed: $reason';
+  }
+
+  @override
+  String get nativeLedgerPermissionRequestActive =>
+      'A Ledger permission request is already active.';
+
+  @override
+  String get nativeLedgerZcashAppNotInstalled =>
+      'The Zcash app is not installed on this Ledger.';
+
+  @override
+  String nativeMigrationAccountsNeedAttentionBody(String count) {
+    return '$count accounts need attention. Open Vizor to continue.';
+  }
+
+  @override
+  String get nativeMigrationNeedsAttentionTitle => 'Migration needs attention';
+
+  @override
+  String get nativeMigrationStoppedByUpgradeBody =>
+      'Open Vizor to move the rest of your balance.';
+
+  @override
+  String get nativeMigrationStoppedByUpgradeTitle =>
+      'Migration stopped by network upgrade';
+
+  @override
+  String get nativeMigrationTransfersSentBody =>
+      'All scheduled transfers were submitted. Open Vizor to check the status.';
+
+  @override
+  String get nativeMigrationTransfersSentTitle => 'Migration transfers sent';
+
+  @override
+  String get nativeMigrationUpdatesTitle => 'Migration updates';
+
+  @override
+  String get nativeOpenToContinue => 'Open Vizor to continue.';
+
+  @override
+  String get nativePrepAccountsChanged => 'Your wallet accounts changed';
+
+  @override
+  String nativePrepAccountsReadyBody(String count) {
+    return '$count accounts are ready for the next step. Open Vizor to continue.';
+  }
+
+  @override
+  String get nativePrepCheckingConfirmations =>
+      'Checking transaction confirmations';
+
+  @override
+  String get nativePrepCompleteTitle => 'Migration preparation complete';
+
+  @override
+  String get nativePrepConfirmedTitle => 'Preparation transactions confirmed';
+
+  @override
+  String get nativePrepOpenToContinueMigration =>
+      'Open Vizor to continue your migration';
+
+  @override
+  String get nativePrepOpenToResume => 'Open Vizor to resume';
+
+  @override
+  String get nativePrepOpenToStartNextStep =>
+      'Open Vizor to start the next step';
+
+  @override
+  String get nativePrepOpenToStartNextStepBody =>
+      'Open Vizor to start the next step.';
+
+  @override
+  String nativePrepProgress(String completed, String total) {
+    return '$completed of $total preparation transactions confirmed';
+  }
+
+  @override
+  String get nativePrepStoppedTitle => 'Preparation stopped';
+
+  @override
+  String get nativePrepTaskTitle => 'Preparing your migration';
+
+  @override
+  String get nativePrepTrackingPausedBody =>
+      'Open Vizor to resume migration preparation.';
+
+  @override
+  String get nativePrepTrackingPausedTitle => 'Preparation tracking paused';
+
+  @override
+  String get nativePrepUpdatesTitle => 'Migration preparation updates';
+
+  @override
   String get navActivity => 'Activity';
 
   @override
@@ -5660,6 +6031,26 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get navVote => 'Vote';
+
+  @override
+  String get networkPrivacyFinishUpdateBeforeTorOff =>
+      'Finish the current software update before turning off Tor.';
+
+  @override
+  String get networkPrivacyFinishUpdateBeforeTorOn =>
+      'Finish the current software update before turning on Tor.';
+
+  @override
+  String get networkPrivacyTorStartupFailed =>
+      'Couldn\'t connect to Tor. Network requests are paused.';
+
+  @override
+  String get networkPrivacyTorUpdatesUnavailable =>
+      'Tor is connected, but software updates are unavailable. Turn off Tor to update directly.';
+
+  @override
+  String get networkPrivacyUpdatesUnavailable =>
+      'Software updates are unavailable. Other network requests still use a direct connection.';
 
   @override
   String get networkSettingsTitle => 'Network settings';
@@ -5823,6 +6214,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingBlockHeight => 'Block height';
 
   @override
+  String get onboardingBlockHeightRequired =>
+      'We need the current Zcash block height to create your wallet. Check your network connection and try again.';
+
+  @override
   String get onboardingCheckingAccounts => 'Checking accounts...';
 
   @override
@@ -5858,6 +6253,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingDiscoveryTitle => 'Additional accounts found';
+
+  @override
+  String get onboardingDuplicateAccount =>
+      'This account is already in your wallet.';
+
+  @override
+  String get onboardingDuplicateKeystoneAccount =>
+      'This Keystone account is already in your wallet.';
 
   @override
   String get onboardingEditBip39Passphrase => 'Edit BIP39 passphrase';
@@ -6235,6 +6638,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Vizor could not load the local startup state. Try again, or quit and restart Vizor.';
 
   @override
+  String get onboardingStorageStartupFailureDetail =>
+      'Vizor could not load its startup state.';
+
+  @override
   String get onboardingTellMeHowZcashWorks => 'Tell me how Zcash works';
 
   @override
@@ -6329,6 +6736,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get passwordLabel => 'Password';
+
+  @override
+  String get passwordPolicyAscii =>
+      'Use only English letters, numbers, and symbols.';
+
+  @override
+  String passwordPolicyMinLength(int min) {
+    return 'Password must be at least $min characters.';
+  }
+
+  @override
+  String get passwordPolicyMustDiffer => 'Use a different password.';
 
   @override
   String get passwordsDoNotMatch => 'Passwords do not match.';
@@ -7810,7 +8229,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get poolTransparent => 'Transparent';
 
   @override
+  String get privateQueriesOptOutUnfinished =>
+      'Turning off Private queries didn\'t finish. Turn it off again in Settings to use transparent funds.';
+
+  @override
   String get profilePictureChange => 'Change profile picture';
+
+  @override
+  String profilePictureName(String id) {
+    String _temp0 = intl.Intl.selectLogic(id, {
+      'p01': 'Knight',
+      'p02': 'Viking',
+      'p03': 'Samurai',
+      'p04': 'Monarch',
+      'p05': 'Iron helm',
+      'p06': 'Ronin',
+      'p07': 'Skull knight',
+      'p08': 'Seer',
+      'p09': 'Berserker',
+      'p10': 'Rogue',
+      'p11': 'Mage',
+      'p12': 'Masked cat',
+      'p13': 'Warden',
+      'p14': 'Bronze helm',
+      'p15': 'Fish knight',
+      'other': '',
+    });
+    return '$_temp0';
+  }
 
   @override
   String get profilePictureSelect => 'Select profile picture';
@@ -8900,7 +9346,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsExplorerCustomSubtitle => 'Any explorer you prefer';
 
   @override
+  String get settingsExplorerPrivacyCopy =>
+      'Transaction links open in this explorer. Use ZecBlock or another site you prefer. Opening a public explorer after you send can link your IP address to that transaction.';
+
+  @override
   String get settingsExplorerSaveFailed => 'Couldn\'t save that explorer URL.';
+
+  @override
+  String settingsExplorerTemplateHint(String txid, String txHash) {
+    return 'Use $txid or $txHash in the path, or enter just the origin.';
+  }
 
   @override
   String get settingsExplorerTitle => 'Explorer';
@@ -9063,6 +9518,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsPrivacyTitle => 'Privacy';
 
   @override
+  String get settingsPrivateQueriesCopy =>
+      'Experimental. Recovers transparent funds privately, preventing the server from learning your transparent addresses. Looks up supported transactions without revealing their IDs to servers.';
+
+  @override
+  String get settingsPrivateQueriesIosNote =>
+      'While on, migration confirmations are checked only when Vizor is open.';
+
+  @override
   String get settingsPrivateQueriesLabel => 'Private queries';
 
   @override
@@ -9156,6 +9619,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsSeedScreenshotAck => 'I understand';
+
+  @override
+  String settingsSeedScreenshotBody(String highlight) {
+    return '$highlight. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
+  }
 
   @override
   String get settingsSeedScreenshotBodyLead => 'Screenshots are not reliable';
@@ -10556,6 +11024,41 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get syncFailureChainRecovery =>
+      'The chain changed while syncing. We\'ll keep trying to recover.';
+
+  @override
+  String get syncFailureDatabaseBusy =>
+      'Wallet data is busy. We\'ll try syncing again automatically.';
+
+  @override
+  String get syncFailureDatabaseFatal =>
+      'Wallet data could not be read. Restart the app and retry sync.';
+
+  @override
+  String get syncFailureEndpoint =>
+      'Cannot reach the configured Zcash endpoint. Check your endpoint settings.';
+
+  @override
+  String get syncFailureNetwork =>
+      'Network connection lost. We\'ll keep trying automatically.';
+
+  @override
+  String get syncFailureParse =>
+      'Sync data could not be processed. Retry sync or check your endpoint.';
+
+  @override
+  String get syncFailurePrivateStatus =>
+      'Private transaction lookup couldn\'t determine a transaction\'s status. Turn off experimental private queries in Settings to continue syncing.';
+
+  @override
+  String get syncFailureTor =>
+      'Tor couldn\'t connect. Retry, or turn Tor off in Settings.';
+
+  @override
+  String get syncFailureUnknown => 'Sync failed. Retry sync to continue.';
+
+  @override
   String get syncSynced => 'Synced';
 
   @override
@@ -10581,6 +11084,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncVizorSynced => 'Vizor is synced';
+
+  @override
+  String get transparentLedgerNeedsNewerBuild =>
+      'This wallet needs a newer version of Vizor to use its transparent funds.';
+
+  @override
+  String get transparentRecoveryIncomplete =>
+      'Transparent funds are unavailable until private recovery completes.';
 
   @override
   String get txFeeHelpTooltip =>
@@ -10831,6 +11342,82 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get votingErrorChainCancelled => 'Chain submission was cancelled.';
+
+  @override
+  String get votingErrorChainNoUsableTransaction =>
+      'Chain submission ended without a usable transaction.';
+
+  @override
+  String get votingErrorChainRecoveryPending =>
+      'Chain submission recovery is still pending.';
+
+  @override
+  String get votingErrorChainRejected => 'Chain submission was rejected.';
+
+  @override
+  String get votingErrorChainSubmittedWithoutHash =>
+      'Submission may have reached the chain, but no transaction hash was returned. Do not retry it.';
+
+  @override
+  String votingErrorDelegationFailed(String details) {
+    return 'Delegation bundle processing failed: $details';
+  }
+
+  @override
+  String get votingErrorHotkeyMissing =>
+      'Voting hotkey is missing. Delegate this round before casting votes.';
+
+  @override
+  String get votingErrorImmediateShareExpired =>
+      'The voting round ended before a helper confirmed the immediate share. Check the voting status before retrying.';
+
+  @override
+  String get votingErrorKeystoneAccountOnly =>
+      'Keystone voting is only available for Keystone accounts.';
+
+  @override
+  String get votingErrorKeystoneHardwareOnly =>
+      'Keystone voting is only available for hardware accounts.';
+
+  @override
+  String get votingErrorKeystoneInvalidSignature =>
+      'Keystone returned an invalid voting signature. Scan the result for the QR shown here.';
+
+  @override
+  String get votingErrorKeystoneNoSignatures =>
+      'Keystone returned no voting signatures. Scan the result again.';
+
+  @override
+  String get votingErrorKeystoneNoSigningRequest =>
+      'No Keystone signing request is waiting for a signature.';
+
+  @override
+  String votingErrorKeystoneQrPrepareFailed(String reason) {
+    return 'Failed to prepare Keystone voting QR: $reason';
+  }
+
+  @override
+  String get votingErrorKeystoneResultMismatch =>
+      'This Keystone result does not match the voting QR shown here. Scan the matching result and try again.';
+
+  @override
+  String get votingErrorKeystoneSignatureConflict =>
+      'This Keystone result conflicts with a signature already saved for this voting request. Restart Keystone signing and scan the newly generated result.';
+
+  @override
+  String get votingErrorKeystoneSignatureMismatch =>
+      'Keystone returned signatures that do not match this voting request. Scan the result for the QR shown here.';
+
+  @override
+  String get votingErrorKeystoneSignatureSaveFailed =>
+      'Could not save the Keystone signatures. Scan the same Keystone result again.';
+
+  @override
+  String get votingErrorKeystoneSkipNeedsSignature =>
+      'Sign at least one Keystone bundle before skipping the rest.';
+
+  @override
   String get votingErrorLedgerCancelled =>
       'Ledger voting approval was cancelled.';
 
@@ -10840,8 +11427,20 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get votingErrorLedgerNoPendingBundle =>
+      'No Ledger voting bundle is waiting for approval.';
+
+  @override
   String get votingErrorLedgerRejected =>
       'The vote signature was rejected on your Ledger. Retry to sign again.';
+
+  @override
+  String get votingErrorLedgerSignatureConflict =>
+      'This Ledger signature conflicts with the signature already saved for this voting bundle.';
+
+  @override
+  String get votingErrorLedgerSignatureSaveFailed =>
+      'Could not save the Ledger voting signature. Retry this bundle.';
 
   @override
   String votingErrorLedgerWrongApp(String instruction) {
@@ -10854,12 +11453,79 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String votingErrorMinimumWeightReason(String amount, String snapshot) {
+    return 'Voting requires at least one eligible shielded note bundle with $amount at $snapshot';
+  }
+
+  @override
+  String get votingErrorNoActiveAccount =>
+      'No active account for voting session.';
+
+  @override
   String votingErrorNoSpendableNotes(String snapshot) {
     return 'This account is not eligible for this voting round. It had no eligible shielded funds at $snapshot. Switch to an eligible account to vote.';
   }
 
   @override
+  String votingErrorNoSpendableNotesReason(String snapshot) {
+    return 'This account is not eligible for this voting round. It had no eligible shielded funds at $snapshot';
+  }
+
+  @override
+  String get votingErrorNoVoteChosen =>
+      'Choose at least one vote before submitting.';
+
+  @override
+  String get votingErrorPirEndpointResolveFailed =>
+      'Failed to resolve PIR endpoint.';
+
+  @override
+  String get votingErrorPirEndpointUnresolved =>
+      'PIR endpoint has not been resolved.';
+
+  @override
+  String get votingErrorRoundDetailsUnavailable =>
+      'Voting round details are not available yet. Retry in a moment.';
+
+  @override
+  String get votingErrorRoundEndTimeUnavailable =>
+      'Voting round end time is unavailable. Retry in a moment.';
+
+  @override
   String get votingErrorSessionFailed => 'Voting session action failed.';
+
+  @override
+  String votingErrorSignBundleFirst(int bundle, String signer) {
+    return 'Sign delegation bundle $bundle with $signer before submitting.';
+  }
+
+  @override
+  String votingErrorSignBundlesFirst(String signer) {
+    return 'Sign delegation bundles with $signer before submitting.';
+  }
+
+  @override
+  String votingErrorSignerAccountOnly(String signer) {
+    return '$signer voting is only available for matching hardware accounts.';
+  }
+
+  @override
+  String get votingErrorSoftwareMnemonicRequired =>
+      'Software delegation requires this account mnemonic. Unlock this account or switch to one with mnemonic access.';
+
+  @override
+  String votingErrorVoteCastingFailed(String details) {
+    return 'Vote casting failed: $details';
+  }
+
+  @override
+  String votingErrorWalletSyncTimeout(
+    String duration,
+    String scanned,
+    String snapshot,
+  ) {
+    return 'Wallet sync did not reach this voting round snapshot within $duration. Scanned block $scanned of $snapshot. Let wallet sync catch up and retry.';
+  }
 
   @override
   String get votingForumDiscussion => 'Forum discussion';
@@ -11318,6 +11984,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingStepSigningLedger => 'Signing with Ledger';
 
   @override
+  String get votingSubmissionInProgress =>
+      'Vote submission is still running. Wait for it to finish before removing an account or resetting the wallet.';
+
+  @override
   String get votingSwitchAccount => 'Switch account';
 
   @override
@@ -11631,8 +12301,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'Open & unlock your Vizor desktop app';
 
   @override
+  String get walletMutationBusy =>
+      'Finish the current wallet operation before starting another.';
+
+  @override
   String get walletResetDeviceAuthFailed =>
       'Couldn\'t verify device ownership. Please try again.';
+
+  @override
+  String get walletResetDeviceAuthReason => 'Confirm reset Vizor';
 
   @override
   String get walletResetDeviceAuthRequired =>
@@ -11648,4 +12325,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get walletResetGiftCardWarning =>
       'A gift card is still being received. Resetting loses it.';
+
+  @override
+  String get windowsUpdateNotReady =>
+      'This update is no longer ready to download. Check for updates again.';
+
+  @override
+  String get windowsUpdateTorRouteUnavailable =>
+      'The software updater is not connected to Tor. Retry updates in Settings, or turn off Tor and try again.';
 }

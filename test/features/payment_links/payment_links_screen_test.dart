@@ -1621,7 +1621,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(operations.createdAmounts, isEmpty);
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
   });
 
   testWidgets(
@@ -4324,7 +4324,7 @@ void main() {
     final operations = FakePaymentLinkOperations();
     final batch = _FakeDesktopBatchOperations(operations)
       ..fundError = const PaymentLinkBatchPreSubmissionFailure(
-        kNetworkUpgradeHoldMessage,
+        NetworkUpgradeHold.hold,
       );
     await pumpPaymentLinksScreen(
       tester,
@@ -4336,7 +4336,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(batch.fundCalls, 1);
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
     expect(find.textContaining('couldn’t confirm the payment'), findsNothing);
     expect(
       find.text('No cards were funded. Review the amount and try again.'),

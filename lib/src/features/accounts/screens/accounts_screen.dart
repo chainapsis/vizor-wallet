@@ -159,10 +159,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       if (draftPicture != null && draftPicture != account.profilePictureId) {
         await notifier.updateProfilePicture(account.uuid, draftPicture);
       }
-    } on WalletMutationBusyException catch (error) {
+    } on WalletMutationBusyException {
       // Another wallet mutation, such as the private queries toggle, holds
       // the wallet. The modal stays open with its drafts for a retry.
-      if (mounted) showAppToast(context, error.toString());
+      if (mounted) showAppToast(context, context.l10n.walletMutationBusy);
       return;
     }
     if (!mounted) return;
@@ -177,8 +177,8 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       await ref
           .read(accountProvider.notifier)
           .updateProfilePicture(uuid, profilePictureId);
-    } on WalletMutationBusyException catch (error) {
-      if (mounted) showAppToast(context, error.toString());
+    } on WalletMutationBusyException {
+      if (mounted) showAppToast(context, context.l10n.walletMutationBusy);
       return;
     }
     if (!mounted) return;
@@ -464,8 +464,8 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
 
     try {
       await accountNotifier.switchAccount(uuid);
-    } on WalletMutationBusyException catch (error) {
-      if (mounted) showAppToast(context, error.toString());
+    } on WalletMutationBusyException {
+      if (mounted) showAppToast(context, context.l10n.walletMutationBusy);
       return;
     }
     if (mounted) {
@@ -576,7 +576,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   bool _blockDestructiveWalletChangeIfVotingSubmissionInProgress() {
     final guards = ref.read(votingSubmissionGuardProvider);
     if (guards.isEmpty) return false;
-    showAppToast(context, guards.first.message);
+    showAppToast(context, guards.first.message.text(context.l10n));
     return true;
   }
 

@@ -211,9 +211,9 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
   (`required-resource-attributes`). Never translate Rust error strings or
   strings that code matches with `.contains` or uses as keys.
 - `test/l10n/l10n_gates_test.dart` checks sorted keys, placeholders, URLs,
-  numbers and `lib/l10n/glossary.yaml`, and fails when a directory listed in
-  `tool/l10n/migrated_dirs.txt` gains a hardcoded string.
-  `fvm dart run tool/l10n/strings.dart list <dir>` lists what is left to move;
+  numbers and `lib/l10n/glossary.yaml`, and fails when a path listed in
+  `tool/l10n/migrated_dirs.txt` (all of `lib/src`) gains a hardcoded string.
+  `fvm dart run tool/l10n/strings.dart list <dir>` lists offending literals;
   `docs/i18n/extracting-strings.md` has the key naming, what stays a literal
   (`// l10n-ignore:`), and the finishing steps. Translation rules live in
   `docs/i18n/`.
@@ -222,6 +222,15 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
   invisible word joiners so Flutter breaks Korean lines between words, not
   inside them. Compare shipped Korean strings in tests with the joiners
   removed.
+- Copy that Swift or Kotlin draws (notifications, background-task captions,
+  system prompts, native error messages Dart shows) uses `native*` ARB keys.
+  `fvm dart run tool/l10n/native_strings.dart` regenerates
+  `ios/Runner/NativeStrings.swift` and `android/.../NativeStrings.kt`; never
+  edit them by hand. `NativeLanguageSync` in the app root sends the shown
+  language over `com.zcash.wallet/native_strings`, and native code stores it
+  for background work (English until it arrives). Do not add `.lproj`,
+  `values-<lang>` or `localeConfig` before a language ships; the release
+  steps are in `docs/i18n/adding-a-language.md`.
 - `LocaleTypography` (applied in every app root's `builder`) gives Korean and
   Chinese UI their own CJK font fallback. Without it the engine picks Han
   glyphs by the OS language. A `TextPainter` built from a token style misses

@@ -74,6 +74,10 @@
   "@accountNameLabel": {
     "description": "Label of the account name field or row."
   },
+  "accountNameTooLong": "Name can be up to 20 characters.",
+  "@accountNameTooLong": {
+    "description": "Validation message when an account name is longer than 20 characters."
+  },
   "accountsActionsLabel": "Account actions",
   "@accountsActionsLabel": {
     "description": "Screen-reader label of the button that opens an account's action menu on desktop."
@@ -179,6 +183,14 @@
   "accountsRemoveGiftCardsCheckFailed": "Couldn't check this account for incoming gift cards. Try again before removing it.",
   "@accountsRemoveGiftCardsCheckFailed": {
     "description": "Message in the desktop remove-account dialog when the incoming gift card check failed."
+  },
+  "accountsRemoveGiftCardsMoreFunded": "More gift card links were funded. Review the warning and confirm again.",
+  "@accountsRemoveGiftCardsMoreFunded": {
+    "description": "Error in the remove-account dialog when more gift card links were funded while the removal was pending."
+  },
+  "accountsRemoveGiftCardsRecheckFailed": "Couldn't recheck gift card links. Review the warning and confirm again.",
+  "@accountsRemoveGiftCardsRecheckFailed": {
+    "description": "Error in the remove-account dialog when the gift card links could not be rechecked before removal."
   },
   "accountsRemoveMigrationBody": "This account's migration will no longer continue in Vizor. Transactions already submitted to the Zcash network may still complete. After re-importing, let the account fully sync before starting migration again.",
   "@accountsRemoveMigrationBody": {
@@ -1165,6 +1177,87 @@
   "@appUpdateRestartingTitle": {
     "description": "Title of the in-app update prompt while the app restarts to apply the update."
   },
+  "biometricChangedMessage": "{kind, select, face{Face ID changed. Enter your passcode.} touchId{Touch ID changed. Enter your passcode.} fingerprint{Fingerprint changed. Enter your passcode.} other{Biometric unlock changed. Enter your passcode.}}",
+  "@biometricChangedMessage": {
+    "description": "[security] Message on the unlock screen after the device's biometrics changed, so the passcode is required. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricEnableLabel": "{kind, select, face{Enable Face ID} touchId{Enable Touch ID} fingerprint{Enable fingerprint} other{Enable biometrics}}",
+  "@biometricEnableLabel": {
+    "description": "Button label that turns on biometric unlock. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricNameInline": "{kind, select, face{Face ID} touchId{Touch ID} fingerprint{fingerprint} other{biometrics}}",
+  "@biometricNameInline": {
+    "description": "Biometric method name used inside a sentence. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricNameOnboardingTitle": "{kind, select, face{Face ID} touchId{Touch ID} fingerprint{your fingerprint} other{biometrics}}",
+  "@biometricNameOnboardingTitle": {
+    "description": "Biometric method name as the object of the heading 'Unlock your wallet with ...'. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricNameStandalone": "{kind, select, face{Face ID} touchId{Touch ID} fingerprint{Fingerprint} other{Biometrics}}",
+  "@biometricNameStandalone": {
+    "description": "Biometric method name used as a standalone label or row title. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricSignInLabel": "{kind, select, face{Sign in with Face ID} touchId{Sign in with Touch ID} fingerprint{Sign in with fingerprint} other{Sign in with biometrics}}",
+  "@biometricSignInLabel": {
+    "description": "Button label that unlocks the wallet with biometrics. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricUnlockFeatureInline": "{kind, select, face{Face ID unlock} touchId{Touch ID unlock} fingerprint{fingerprint unlock} other{biometric unlock}}",
+  "@biometricUnlockFeatureInline": {
+    "description": "Name of the biometric unlock feature used inside a sentence. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricUnlockFeatureLabel": "{kind, select, face{Face ID unlock} touchId{Touch ID unlock} fingerprint{Fingerprint unlock} other{Biometric unlock}}",
+  "@biometricUnlockFeatureLabel": {
+    "description": "Name of the biometric unlock feature as a capitalized label. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricUseNextTimeLabel": "{kind, select, face{Use Face ID next time} touchId{Use Touch ID next time} fingerprint{Use fingerprint next time} other{Use biometrics next time}}",
+  "@biometricUseNextTimeLabel": {
+    "description": "Checkbox label on the unlock screen that remembers biometrics for the next unlock. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
   "bip39PassphraseTitle": "BIP39 Passphrase",
   "@bip39PassphraseTitle": {
     "description": "[security] Name of the optional BIP39 passphrase (25th word), not the seed phrase."
@@ -1177,6 +1270,10 @@
         "type": "String"
       }
     }
+  },
+  "capsLockWarning": "Caps Lock is on",
+  "@capsLockWarning": {
+    "description": "Tooltip on a password field warning that Caps Lock is on."
   },
   "carouselPageSemantics": "{name} {page} of {count}. {message}",
   "@carouselPageSemantics": {
@@ -1582,6 +1679,15 @@
   "@commonKeystoneAfterScan": {
     "description": "[security] Instruction in the desktop Keystone modal after proofs are ready. Shared by: send, swap. Shared by: common, migration."
   },
+  "commonKeystoneScanPrompt": "Tap {icon} on your Keystone,\nthen scan this QR code",
+  "@commonKeystoneScanPrompt": {
+    "description": "Two-line instruction under a QR code. {icon} is replaced by the small button icon the user taps on the Keystone device, so move it wherever the grammar needs it. The line break between the two halves is intentional. Shared by: keystone, migration.",
+    "placeholders": {
+      "icon": {
+        "type": "String"
+      }
+    }
+  },
   "commonKeystoneScanSignatureResult": "Open the signature result QR on Keystone, then scan again.",
   "@commonKeystoneScanSignatureResult": {
     "description": "Hint when the scanned QR code is of the wrong type; asks to open the signature result QR code on the Keystone device. Shared by: send, swap."
@@ -1729,6 +1835,10 @@
   "commonOpenTheSignedTransactionQROn": "Open the signed transaction QR on Keystone, then scan again.",
   "@commonOpenTheSignedTransactionQROn": {
     "description": "Hint when the scanned QR code is not the signed transaction. Shared by: keystone, send."
+  },
+  "commonPausedForNetworkUpgrade": "Paused for network upgrade",
+  "@commonPausedForNetworkUpgrade": {
+    "description": "Label of the disabled action while an operation is held until the Zcash network upgrade activates."
   },
   "commonPayInsufficientZec": "You don't have enough ZEC for this payment. Try a smaller amount.",
   "@commonPayInsufficientZec": {
@@ -2234,6 +2344,31 @@
   "@endpointCustom": {
     "description": "Option to enter a custom lightwalletd endpoint."
   },
+  "endpointFailoverSwitchedBack": "Selected endpoint recovered. Switched back.",
+  "@endpointFailoverSwitchedBack": {
+    "description": "Toast when the wallet switched back to the selected server endpoint after it recovered."
+  },
+  "endpointFailoverSwitchedToFallback": "Selected endpoint is unstable. Switched to fallback endpoint.",
+  "@endpointFailoverSwitchedToFallback": {
+    "description": "Toast when the wallet switched from an unstable server endpoint to a fallback endpoint."
+  },
+  "endpointLatencyUnavailable": "Unavailable",
+  "@endpointLatencyUnavailable": {
+    "description": "Latency label of a server endpoint that could not be reached."
+  },
+  "endpointLatencyWrongNetwork": "Wrong network",
+  "@endpointLatencyWrongNetwork": {
+    "description": "Latency label of a server endpoint that serves a different Zcash network than the wallet."
+  },
+  "endpointRegionName": "{region, select, standard{Default} europe{Europe} global{Global} americas{Americas} asiaPacific{Asia Pacific} community{Community} testnet{Testnet} regtest{Regtest} other{Other}}",
+  "@endpointRegionName": {
+    "description": "Group heading in the server endpoint list. Regtest is a developer network name and stays in English.",
+    "placeholders": {
+      "region": {
+        "type": "String"
+      }
+    }
+  },
   "endpointUpdate": "Update endpoint",
   "@endpointUpdate": {
     "description": "Button that saves a new lightwalletd endpoint."
@@ -2241,6 +2376,22 @@
   "endpointUpdated": "Endpoint updated",
   "@endpointUpdated": {
     "description": "Toast after the lightwalletd endpoint changed."
+  },
+  "enhancePirChanging": "Changing setting…",
+  "@enhancePirChanging": {
+    "description": "Status line under the Private queries switch while the setting is being changed."
+  },
+  "enhancePirOptOutPending": "Private queries are still on. Try turning them off again.",
+  "@enhancePirOptOutPending": {
+    "description": "Status line under the Private queries switch: turning it off did not finish, so it is still on."
+  },
+  "enhancePirRaisePending": "Private queries are on. Private transparent recovery could not start yet and will be retried.",
+  "@enhancePirRaisePending": {
+    "description": "Status line under the Private queries switch: the setting is on but private recovery of transparent funds could not start yet and will be retried."
+  },
+  "enhancePirUnchanged": "Setting unchanged. Try again.",
+  "@enhancePirUnchanged": {
+    "description": "Status line under the Private queries switch when the setting could not be changed at all."
   },
   "homeActivityEmpty": "No activity, yet...",
   "@homeActivityEmpty": {
@@ -2922,6 +3073,15 @@
   "@keystoneFirmwareTitle": {
     "description": "Title of instruction step 1 on the Keystone how-to-connect screen. The step number is added by the app before this text."
   },
+  "keystoneFirmwareUpdate": "Update to the latest Keystone firmware at {link}",
+  "@keystoneFirmwareUpdate": {
+    "description": "Line in the Keystone scanning help. {link} is the keyst.one/firmware link, which is a URL and is not translated; place it where the grammar needs it.",
+    "placeholders": {
+      "link": {
+        "type": "String"
+      }
+    }
+  },
   "keystoneFirmwareUpdatePrefix": "Update to the latest Keystone firmware at ",
   "@keystoneFirmwareUpdatePrefix": {
     "description": "Text before the keyst.one/firmware link in the scanning help. Keep the trailing space; the link follows directly."
@@ -3427,6 +3587,14 @@
   "@ledgerConnectionHelp": {
     "description": "Button in the mobile device sheet that opens help for connecting a Ledger."
   },
+  "ledgerConnectionRequiredBluetooth": "Turn on and unlock your Ledger, then reconnect with Bluetooth.",
+  "@ledgerConnectionRequiredBluetooth": {
+    "description": "Guidance shown when the Ledger could not be reached over Bluetooth and the user has to reconnect it."
+  },
+  "ledgerConnectionRequiredUsb": "Connect and unlock your Ledger with USB, then try again.",
+  "@ledgerConnectionRequiredUsb": {
+    "description": "Guidance shown when the Ledger could not be reached over USB and the user has to reconnect it."
+  },
   "ledgerContinueSigning": "Continue signing",
   "@ledgerContinueSigning": {
     "description": "Button label to continue signing after the Ledger is connected."
@@ -3921,9 +4089,21 @@
   "@ledgerMobileCheckBluetoothBelow": {
     "description": "Guidance when Bluetooth permission was denied; a Bluetooth access checker is shown below."
   },
+  "ledgerMobileConnectionFailed": "Ledger mobile connection failed.",
+  "@ledgerMobileConnectionFailed": {
+    "description": "Error on the Ledger sheet when the Bluetooth connection failed without a reason."
+  },
   "ledgerMobileConnectionLost": "The Bluetooth connection to your Ledger was lost or could not be established. Turn on and unlock your Ledger, keep it nearby, then try again.",
   "@ledgerMobileConnectionLost": {
     "description": "Guidance when the Bluetooth connection failed or dropped."
+  },
+  "ledgerMobileDiscoveryFailed": "Ledger discovery failed.",
+  "@ledgerMobileDiscoveryFailed": {
+    "description": "Error on the Ledger connection sheet when the Bluetooth device search failed without a reason."
+  },
+  "ledgerMobileEmptyResponse": "Ledger returned an empty response.",
+  "@ledgerMobileEmptyResponse": {
+    "description": "Error on the Ledger signing sheet when the Bluetooth connection answered with nothing."
   },
   "ledgerMobilePairingInvalid": "Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.",
   "@ledgerMobilePairingInvalid": {
@@ -3948,6 +4128,14 @@
   "ledgerMobileTurnOnLocation": "Turn on location services to find your Ledger on this Android version, then try again.",
   "@ledgerMobileTurnOnLocation": {
     "description": "Guidance on Android when location services are off, which this Android version needs to find Bluetooth devices."
+  },
+  "ledgerMobileUnavailable": "Vizor could not reach your Ledger. Make sure it is on, unlocked and nearby, then try again.",
+  "@ledgerMobileUnavailable": {
+    "description": "Fallback guidance when the Bluetooth connection to the Ledger failed for an unknown reason."
+  },
+  "ledgerMobileUnknownDiscoveryEvent": "Ledger discovery returned an unknown event.",
+  "@ledgerMobileUnknownDiscoveryEvent": {
+    "description": "Error on the Ledger connection sheet when the Bluetooth device search reported something Vizor does not recognize."
   },
   "ledgerNoDevicesFound": "No Ledger devices found",
   "@ledgerNoDevicesFound": {
@@ -4968,9 +5156,25 @@
   "@migrationImmediateReviewTitle": {
     "description": "Title of the review screen for the one-step (\"Immediate\") migration."
   },
+  "migrationImmediateTradeoffBody": "Crosses in one visible step — your {amount} and timing are {highlight}.",
+  "@migrationImmediateTradeoffBody": {
+    "description": "[security] Sentence of the privacy notice for the one-step migration. {amount} is the ZEC amount; {highlight} is the emphasized phrase 'easier to associate with your wallet' and can be moved anywhere in the sentence.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "highlight": {
+        "type": "String"
+      }
+    }
+  },
   "migrationImmediateTradeoffEmphasis": "easier to associate with your wallet.",
   "@migrationImmediateTradeoffEmphasis": {
     "description": "[security] Highlighted second part of the privacy notice, continuing the previous message."
+  },
+  "migrationImmediateTradeoffHighlight": "easier to associate with your wallet",
+  "@migrationImmediateTradeoffHighlight": {
+    "description": "[security] Emphasized phrase inserted into the privacy notice sentence as its highlight; it completes 'your amount and timing are …'."
   },
   "migrationImmediateTradeoffLead": "Crosses in one visible step — your {amount} and timing are ",
   "@migrationImmediateTradeoffLead": {
@@ -6261,6 +6465,15 @@
   "@migrationMobileStatusNotesLead": {
     "description": "Bold first words of the heading row above the migration parts; followed by the note count such as 3 notes. Keep the trailing space."
   },
+  "migrationMobileStatusNotesTitle": "Migration {notes}",
+  "@migrationMobileStatusNotesTitle": {
+    "description": "Heading row above the migration parts. {notes} is the muted note count such as '3 notes' and can be moved anywhere.",
+    "placeholders": {
+      "notes": {
+        "type": "String"
+      }
+    }
+  },
   "migrationMobileSyncingProgress": "Syncing the migration progress.",
   "@migrationMobileSyncingProgress": {
     "description": "Message under the loading indicator while the migration progress is syncing."
@@ -6311,11 +6524,29 @@
   },
   "migrationMobileWaitLoopSign": "Sign",
   "@migrationMobileWaitLoopSign": {
-    "description": "Highlighted first word of the bottom text on the animated loop; followed by the next fragment to read 'Sign the batch of transactions'."
+    "description": "Highlighted verb inserted into the bottom text of the animated loop, which reads 'Sign the batch of transactions'."
+  },
+  "migrationMobileWaitLoopSignLine": "{highlight} the batch of transactions",
+  "@migrationMobileWaitLoopSignLine": {
+    "description": "Text along the bottom of the animated loop on the migration screen: the user signs the next batch. {highlight} is the highlighted verb 'Sign' and can be moved anywhere.",
+    "placeholders": {
+      "highlight": {
+        "type": "String"
+      }
+    }
   },
   "migrationMobileWaitLoopWait": "Wait",
   "@migrationMobileWaitLoopWait": {
-    "description": "Highlighted first word of the top text on the animated loop; followed by the next fragment to read 'Wait for the window'."
+    "description": "Highlighted verb inserted into the top text of the animated loop, which reads 'Wait for the window'."
+  },
+  "migrationMobileWaitLoopWaitLine": "{highlight} for the window",
+  "@migrationMobileWaitLoopWaitLine": {
+    "description": "Text along the top of the animated loop on the migration screen: the user waits for the next signing window. {highlight} is the highlighted verb 'Wait' and can be moved anywhere.",
+    "placeholders": {
+      "highlight": {
+        "type": "String"
+      }
+    }
   },
   "migrationMobileWaitNoteSplit": "Note Split",
   "@migrationMobileWaitNoteSplit": {
@@ -7259,6 +7490,198 @@
   "@migrationViewSchedule": {
     "description": "Button that opens the schedule of migration transfers."
   },
+  "nativeBiometricEnableTitle": "Enable fingerprint unlock",
+  "@nativeBiometricEnableTitle": {
+    "description": "Title of the Android system fingerprint prompt shown by the OS when the user turns on fingerprint unlock for the app passcode."
+  },
+  "nativeBiometricUsePasscode": "Use passcode",
+  "@nativeBiometricUsePasscode": {
+    "description": "Button in the Android system fingerprint prompt that dismisses it so the user can type the 6-digit app passcode instead."
+  },
+  "nativeIronwoodContinueBody": "Open Vizor to prepare the next migration transfer.",
+  "@nativeIronwoodContinueBody": {
+    "description": "Body of the iOS notification posted by background work when the next Ironwood migration transfer can be prepared in the app."
+  },
+  "nativeIronwoodContinueTitle": "Continue your Ironwood migration",
+  "@nativeIronwoodContinueTitle": {
+    "description": "Title of the iOS notification posted by background work when the next Ironwood migration transfer can be prepared in the app."
+  },
+  "nativeIronwoodNeedsAttentionBody": "Open Vizor to review and continue your migration.",
+  "@nativeIronwoodNeedsAttentionBody": {
+    "description": "Body of the iOS notification posted by background work when the Ironwood migration stopped and needs the user in the app."
+  },
+  "nativeIronwoodNeedsAttentionTitle": "Ironwood migration needs attention",
+  "@nativeIronwoodNeedsAttentionTitle": {
+    "description": "Title of the iOS notification posted by background work when the Ironwood migration stopped and needs the user in the app."
+  },
+  "nativeLedgerApduArgumentsInvalid": "Ledger APDU arguments are invalid.",
+  "@nativeLedgerApduArgumentsInvalid": {
+    "description": "Error the iOS and Android Ledger Bluetooth layer returns when the app sent the Ledger a malformed command; shown in the Ledger error message."
+  },
+  "nativeLedgerApduListInvalid": "Ledger signing APDU list is empty or invalid.",
+  "@nativeLedgerApduListInvalid": {
+    "description": "Error the iOS and Android Ledger Bluetooth layer returns when the signing command list the app built is empty or malformed; shown in the Ledger error message."
+  },
+  "nativeLedgerAppSwitchTimedOut": "Vizor could not resume after opening the Zcash app. Try again.",
+  "@nativeLedgerAppSwitchTimedOut": {
+    "description": "Error the iOS Ledger Bluetooth layer returns when the app timed out waiting for the Ledger to finish opening its Zcash app."
+  },
+  "nativeLedgerBleUnsupported": "This device does not support Bluetooth LE.",
+  "@nativeLedgerBleUnsupported": {
+    "description": "Error the iOS Ledger Bluetooth layer returns when the phone has no Bluetooth Low Energy support, so it cannot reach a Ledger."
+  },
+  "nativeLedgerBleUnsupportedAndroid": "This Android device does not support Bluetooth LE.",
+  "@nativeLedgerBleUnsupportedAndroid": {
+    "description": "Error the Android Ledger Bluetooth layer returns when the phone has no Bluetooth Low Energy support, so it cannot reach a Ledger."
+  },
+  "nativeLedgerBluetoothUnavailable": "Bluetooth is unavailable.",
+  "@nativeLedgerBluetoothUnavailable": {
+    "description": "Error the iOS Ledger Bluetooth layer returns when iOS reports an unknown Bluetooth state."
+  },
+  "nativeLedgerCommunicationFailed": "Could not communicate with Ledger. Try again.",
+  "@nativeLedgerCommunicationFailed": {
+    "description": "Error the Android Ledger Bluetooth layer returns when a command to the Ledger failed for an unexpected reason."
+  },
+  "nativeLedgerDiscoveryFailed": "Could not discover Ledger devices. Try again.",
+  "@nativeLedgerDiscoveryFailed": {
+    "description": "Error the Android Ledger Bluetooth layer returns when searching for nearby Ledger devices failed."
+  },
+  "nativeLedgerInvalidResponse": "Ledger returned an invalid response.",
+  "@nativeLedgerInvalidResponse": {
+    "description": "Error the iOS Ledger Bluetooth layer returns when the Ledger answered with data the app could not read."
+  },
+  "nativeLedgerOperationFailed": "Ledger operation failed: {reason}",
+  "@nativeLedgerOperationFailed": {
+    "description": "Error the Android Ledger Bluetooth layer returns for an unexpected Ledger failure; {reason} is an untranslated technical code from the Ledger SDK.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "Unknown"
+      }
+    }
+  },
+  "nativeLedgerPermissionRequestActive": "A Ledger permission request is already active.",
+  "@nativeLedgerPermissionRequestActive": {
+    "description": "Error the Android Ledger Bluetooth layer returns when the app asked for Bluetooth permission while an earlier request is still on screen."
+  },
+  "nativeLedgerZcashAppNotInstalled": "The Zcash app is not installed on this Ledger.",
+  "@nativeLedgerZcashAppNotInstalled": {
+    "description": "Error the iOS Ledger Bluetooth layer returns when the connected Ledger has no Zcash app installed."
+  },
+  "nativeMigrationAccountsNeedAttentionBody": "{count} accounts need attention. Open Vizor to continue.",
+  "@nativeMigrationAccountsNeedAttentionBody": {
+    "description": "Body of the iOS notification shown by the OS when the migration of several accounts stopped; {count} is always 2 or more.",
+    "placeholders": {
+      "count": {
+        "type": "String",
+        "example": "2"
+      }
+    }
+  },
+  "nativeMigrationNeedsAttentionTitle": "Migration needs attention",
+  "@nativeMigrationNeedsAttentionTitle": {
+    "description": "Title of the iOS notification shown by the OS when the migration preparation of one account stopped and needs the user in the app."
+  },
+  "nativeMigrationStoppedByUpgradeBody": "Open Vizor to move the rest of your balance.",
+  "@nativeMigrationStoppedByUpgradeBody": {
+    "description": "Body of the iOS notification posted by background work when a network upgrade stopped the migration before the whole balance moved."
+  },
+  "nativeMigrationStoppedByUpgradeTitle": "Migration stopped by network upgrade",
+  "@nativeMigrationStoppedByUpgradeTitle": {
+    "description": "Title of the iOS notification posted by background work when a network upgrade stopped the migration before the whole balance moved."
+  },
+  "nativeMigrationTransfersSentBody": "All scheduled transfers were submitted. Open Vizor to check the status.",
+  "@nativeMigrationTransfersSentBody": {
+    "description": "Body of the iOS notification posted by background work after it broadcast every scheduled migration transfer."
+  },
+  "nativeMigrationTransfersSentTitle": "Migration transfers sent",
+  "@nativeMigrationTransfersSentTitle": {
+    "description": "Title of the iOS notification posted by background work after it broadcast every scheduled migration transfer."
+  },
+  "nativeMigrationUpdatesTitle": "Migration updates",
+  "@nativeMigrationUpdatesTitle": {
+    "description": "Title of the iOS notification shown by the OS when the migration of several accounts stopped and needs the user in the app."
+  },
+  "nativeOpenToContinue": "Open Vizor to continue.",
+  "@nativeOpenToContinue": {
+    "description": "Body of the iOS notification shown by the OS when the migration preparation of one account stopped and needs the user in the app."
+  },
+  "nativePrepAccountsChanged": "Your wallet accounts changed",
+  "@nativePrepAccountsChanged": {
+    "description": "Subtitle of the iOS system background-task progress item when tracking stopped because the user added or removed an account; no trailing period."
+  },
+  "nativePrepAccountsReadyBody": "{count} accounts are ready for the next step. Open Vizor to continue.",
+  "@nativePrepAccountsReadyBody": {
+    "description": "Body of the iOS notification shown by the OS when the preparation transactions of several accounts confirmed; {count} is always 2 or more.",
+    "placeholders": {
+      "count": {
+        "type": "String",
+        "example": "2"
+      }
+    }
+  },
+  "nativePrepCheckingConfirmations": "Checking transaction confirmations",
+  "@nativePrepCheckingConfirmations": {
+    "description": "Subtitle of the iOS system background-task progress item while it waits for migration preparation transactions to confirm; no trailing period."
+  },
+  "nativePrepCompleteTitle": "Migration preparation complete",
+  "@nativePrepCompleteTitle": {
+    "description": "Title of the iOS system background-task progress item when every migration preparation transaction confirmed."
+  },
+  "nativePrepConfirmedTitle": "Preparation transactions confirmed",
+  "@nativePrepConfirmedTitle": {
+    "description": "Title of the iOS notification and system background-task item when the current wave of migration preparation transactions confirmed."
+  },
+  "nativePrepOpenToContinueMigration": "Open Vizor to continue your migration",
+  "@nativePrepOpenToContinueMigration": {
+    "description": "Subtitle of the iOS system background-task progress item when every migration preparation transaction confirmed; no trailing period."
+  },
+  "nativePrepOpenToResume": "Open Vizor to resume",
+  "@nativePrepOpenToResume": {
+    "description": "Subtitle of the iOS system background-task progress item when iOS paused confirmation tracking; no trailing period."
+  },
+  "nativePrepOpenToStartNextStep": "Open Vizor to start the next step",
+  "@nativePrepOpenToStartNextStep": {
+    "description": "Subtitle of the iOS system background-task progress item when the current wave of migration preparation transactions confirmed; no trailing period."
+  },
+  "nativePrepOpenToStartNextStepBody": "Open Vizor to start the next step.",
+  "@nativePrepOpenToStartNextStepBody": {
+    "description": "Body of the iOS notification shown by the OS when the migration preparation transactions of one account confirmed."
+  },
+  "nativePrepProgress": "{completed} of {total} preparation transactions confirmed",
+  "@nativePrepProgress": {
+    "description": "Progress line of the iOS system background-task item while migration preparation transactions confirm, used as title or subtitle; no trailing period.",
+    "placeholders": {
+      "completed": {
+        "type": "String",
+        "example": "1"
+      },
+      "total": {
+        "type": "String",
+        "example": "3"
+      }
+    }
+  },
+  "nativePrepStoppedTitle": "Preparation stopped",
+  "@nativePrepStoppedTitle": {
+    "description": "Title of the iOS system background-task progress item when tracking stopped because the user added or removed an account."
+  },
+  "nativePrepTaskTitle": "Preparing your migration",
+  "@nativePrepTaskTitle": {
+    "description": "Title of the iOS system background-task progress item while it waits for migration preparation transactions to confirm."
+  },
+  "nativePrepTrackingPausedBody": "Open Vizor to resume migration preparation.",
+  "@nativePrepTrackingPausedBody": {
+    "description": "Body of the iOS notification shown by the OS when iOS stopped confirmation tracking for migration preparation before it finished."
+  },
+  "nativePrepTrackingPausedTitle": "Preparation tracking paused",
+  "@nativePrepTrackingPausedTitle": {
+    "description": "Title of the iOS notification and system background-task item when iOS stopped confirmation tracking for migration preparation before it finished."
+  },
+  "nativePrepUpdatesTitle": "Migration preparation updates",
+  "@nativePrepUpdatesTitle": {
+    "description": "Title of the iOS notification shown by the OS when the preparation transactions of several accounts confirmed."
+  },
   "navActivity": "Activity",
   "@navActivity": {
     "description": "Sidebar and tab bar destination: transaction history. Shared by: activity, nav."
@@ -7286,6 +7709,26 @@
   "navVote": "Vote",
   "@navVote": {
     "description": "Sidebar destination: coinholder voting."
+  },
+  "networkPrivacyFinishUpdateBeforeTorOff": "Finish the current software update before turning off Tor.",
+  "@networkPrivacyFinishUpdateBeforeTorOff": {
+    "description": "Toast when the user turns off Tor while a software update is in progress."
+  },
+  "networkPrivacyFinishUpdateBeforeTorOn": "Finish the current software update before turning on Tor.",
+  "@networkPrivacyFinishUpdateBeforeTorOn": {
+    "description": "Toast when the user turns on Tor while a software update is in progress."
+  },
+  "networkPrivacyTorStartupFailed": "Couldn't connect to Tor. Network requests are paused.",
+  "@networkPrivacyTorStartupFailed": {
+    "description": "Toast at launch when Tor is on but could not connect, so network requests are paused."
+  },
+  "networkPrivacyTorUpdatesUnavailable": "Tor is connected, but software updates are unavailable. Turn off Tor to update directly.",
+  "@networkPrivacyTorUpdatesUnavailable": {
+    "description": "Toast when Tor is connected but the software updater cannot use it."
+  },
+  "networkPrivacyUpdatesUnavailable": "Software updates are unavailable. Other network requests still use a direct connection.",
+  "@networkPrivacyUpdatesUnavailable": {
+    "description": "Toast when software updates are unavailable while other network requests use a direct connection."
   },
   "networkSettingsTitle": "Network settings",
   "@networkSettingsTitle": {
@@ -7400,7 +7843,7 @@
   },
   "onboardingBirthdayDateHint": "mm/dd/yyyy",
   "@onboardingBirthdayDateHint": {
-    "description": "Placeholder of the date field (month/day/year order)."
+    "description": "Placeholder of the birthday date field. The picked date replaces it, written in your language's numeric order with two-digit month and day (Korean 2026. 05. 25., Chinese 2026/05/25), so write the same order and separators with letter placeholders."
   },
   "onboardingBirthdayDontRemember": "I don’t remember",
   "@onboardingBirthdayDontRemember": {
@@ -7457,7 +7900,7 @@
   },
   "onboardingBirthdayMonthHint": "mm/yyyy",
   "@onboardingBirthdayMonthHint": {
-    "description": "Placeholder of the iOS birthday field; shows the expected month/year order."
+    "description": "Placeholder of the iOS birthday month field. The picked month replaces it in your language's numeric order (Korean 2026. 05., Chinese 2026/05), so write the same order and separators with letter placeholders."
   },
   "onboardingBirthdayPickDate": "Pick a date",
   "@onboardingBirthdayPickDate": {
@@ -7498,6 +7941,10 @@
   "onboardingBlockHeight": "Block height",
   "@onboardingBlockHeight": {
     "description": "Placeholder of the block height field."
+  },
+  "onboardingBlockHeightRequired": "We need the current Zcash block height to create your wallet. Check your network connection and try again.",
+  "@onboardingBlockHeightRequired": {
+    "description": "Error shown when creating a wallet fails because the current Zcash block height could not be fetched."
   },
   "onboardingCheckingAccounts": "Checking accounts...",
   "@onboardingCheckingAccounts": {
@@ -7542,6 +7989,14 @@
   "onboardingDiscoveryTitle": "Additional accounts found",
   "@onboardingDiscoveryTitle": {
     "description": "Title of the dialog shown when the secret passphrase has more accounts with activity than the first one."
+  },
+  "onboardingDuplicateAccount": "This account is already in your wallet.",
+  "@onboardingDuplicateAccount": {
+    "description": "Error under the import form when the imported account is already in this wallet."
+  },
+  "onboardingDuplicateKeystoneAccount": "This Keystone account is already in your wallet.",
+  "@onboardingDuplicateKeystoneAccount": {
+    "description": "Error on the Keystone import screen when that hardware account is already in this wallet."
   },
   "onboardingEditBip39Passphrase": "Edit BIP39 passphrase",
   "@onboardingEditBip39Passphrase": {
@@ -7998,6 +8453,10 @@
   "@onboardingStorageStartupFailureBody": {
     "description": "Body of the startup failure screen when the app's local startup state could not be loaded."
   },
+  "onboardingStorageStartupFailureDetail": "Vizor could not load its startup state.",
+  "@onboardingStorageStartupFailureDetail": {
+    "description": "Detail line on the startup failure screen."
+  },
   "onboardingTellMeHowZcashWorks": "Tell me how Zcash works",
   "@onboardingTellMeHowZcashWorks": {
     "description": "Primary button on the Zcash education steps that continues to the next explanation."
@@ -8113,6 +8572,23 @@
   "passwordLabel": "Password",
   "@passwordLabel": {
     "description": "[security] Label of a wallet password field."
+  },
+  "passwordPolicyAscii": "Use only English letters, numbers, and symbols.",
+  "@passwordPolicyAscii": {
+    "description": "Validation message when a wallet password contains characters other than printable English letters, numbers and symbols."
+  },
+  "passwordPolicyMinLength": "Password must be at least {min} characters.",
+  "@passwordPolicyMinLength": {
+    "description": "Validation message when a wallet password is shorter than the minimum; {min} is the minimum length.",
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "passwordPolicyMustDiffer": "Use a different password.",
+  "@passwordPolicyMustDiffer": {
+    "description": "Validation message when the new wallet password equals the current one."
   },
   "passwordsDoNotMatch": "Passwords do not match.",
   "@passwordsDoNotMatch": {
@@ -9981,9 +10457,22 @@
   "@poolTransparent": {
     "description": "Badge naming a transparent pool or address."
   },
+  "privateQueriesOptOutUnfinished": "Turning off Private queries didn't finish. Turn it off again in Settings to use transparent funds.",
+  "@privateQueriesOptOutUnfinished": {
+    "description": "[security] Error shown when the wallet still requires private recovery because turning off Private queries did not finish."
+  },
   "profilePictureChange": "Change profile picture",
   "@profilePictureChange": {
     "description": "Button or label that opens the profile picture picker."
+  },
+  "profilePictureName": "{id, select, p01{Knight} p02{Viking} p03{Samurai} p04{Monarch} p05{Iron helm} p06{Ronin} p07{Skull knight} p08{Seer} p09{Berserker} p10{Rogue} p11{Mage} p12{Masked cat} p13{Warden} p14{Bronze helm} p15{Fish knight} other{}}",
+  "@profilePictureName": {
+    "description": "Name of a built-in profile picture character, shown in the profile picture picker; {id} is the picture number such as p01.",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
   },
   "profilePictureSelect": "Select profile picture",
   "@profilePictureSelect": {
@@ -11343,9 +11832,25 @@
   "@settingsExplorerCustomSubtitle": {
     "description": "Subtitle of the custom block explorer option card."
   },
+  "settingsExplorerPrivacyCopy": "Transaction links open in this explorer. Use ZecBlock or another site you prefer. Opening a public explorer after you send can link your IP address to that transaction.",
+  "@settingsExplorerPrivacyCopy": {
+    "description": "[security] Privacy note under the block explorer setting: opening a public explorer can link the user's IP address to a transaction."
+  },
   "settingsExplorerSaveFailed": "Couldn't save that explorer URL.",
   "@settingsExplorerSaveFailed": {
     "description": "Error shown under the custom explorer URL field when saving it failed."
+  },
+  "settingsExplorerTemplateHint": "Use {txid} or {txHash} in the path, or enter just the origin.",
+  "@settingsExplorerTemplateHint": {
+    "description": "Hint under the custom block explorer field; {txid} and {txHash} are the literal URL placeholders the user types, passed in as arguments, and must stay unchanged in translation.",
+    "placeholders": {
+      "txid": {
+        "type": "String"
+      },
+      "txHash": {
+        "type": "String"
+      }
+    }
   },
   "settingsExplorerTitle": "Explorer",
   "@settingsExplorerTitle": {
@@ -11531,6 +12036,14 @@
   "@settingsPrivacyTitle": {
     "description": "Title of the Settings card or section that holds network privacy options such as Tor and private queries."
   },
+  "settingsPrivateQueriesCopy": "Experimental. Recovers transparent funds privately, preventing the server from learning your transparent addresses. Looks up supported transactions without revealing their IDs to servers.",
+  "@settingsPrivateQueriesCopy": {
+    "description": "[security] Description under the Private queries setting."
+  },
+  "settingsPrivateQueriesIosNote": "While on, migration confirmations are checked only when Vizor is open.",
+  "@settingsPrivateQueriesIosNote": {
+    "description": "Extra sentence on iOS under the Private queries description: migration confirmations are not checked in the background while it is on."
+  },
   "settingsPrivateQueriesLabel": "Private queries",
   "@settingsPrivateQueriesLabel": {
     "description": "Label of the Settings toggle row and its accessibility label for the private queries feature, which sends wallet lookups to a privacy-preserving server."
@@ -11651,9 +12164,18 @@
   "@settingsSeedScreenshotAck": {
     "description": "Button that dismisses the screenshot warning sheet."
   },
+  "settingsSeedScreenshotBody": "{highlight}. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.",
+  "@settingsSeedScreenshotBody": {
+    "description": "[security] Body of the warning about screenshots of the Secret Passphrase. {highlight} is the bold phrase 'Screenshots are not reliable' and can be moved anywhere in the first sentence.",
+    "placeholders": {
+      "highlight": {
+        "type": "String"
+      }
+    }
+  },
   "settingsSeedScreenshotBodyLead": "Screenshots are not reliable",
   "@settingsSeedScreenshotBodyLead": {
-    "description": "[security] Bold first words of the screenshot warning body; the next string continues the same sentence."
+    "description": "[security] Bold phrase inserted into the screenshot warning body, where it starts the first sentence."
   },
   "settingsSeedScreenshotBodyRest": ". Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.",
   "@settingsSeedScreenshotBodyRest": {
@@ -13518,6 +14040,42 @@
       }
     }
   },
+  "syncFailureChainRecovery": "The chain changed while syncing. We'll keep trying to recover.",
+  "@syncFailureChainRecovery": {
+    "description": "Sync failure notice on Home: a chain reorganization happened during sync and the wallet is recovering."
+  },
+  "syncFailureDatabaseBusy": "Wallet data is busy. We'll try syncing again automatically.",
+  "@syncFailureDatabaseBusy": {
+    "description": "Sync failure notice on Home: the wallet database is locked and sync retries by itself."
+  },
+  "syncFailureDatabaseFatal": "Wallet data could not be read. Restart the app and retry sync.",
+  "@syncFailureDatabaseFatal": {
+    "description": "Sync failure notice on Home: the wallet database could not be read."
+  },
+  "syncFailureEndpoint": "Cannot reach the configured Zcash endpoint. Check your endpoint settings.",
+  "@syncFailureEndpoint": {
+    "description": "Sync failure notice on Home: the configured lightwalletd endpoint is unreachable."
+  },
+  "syncFailureNetwork": "Network connection lost. We'll keep trying automatically.",
+  "@syncFailureNetwork": {
+    "description": "Sync failure notice on Home: the network connection dropped and sync retries by itself."
+  },
+  "syncFailureParse": "Sync data could not be processed. Retry sync or check your endpoint.",
+  "@syncFailureParse": {
+    "description": "Sync failure notice on Home: data from the server could not be parsed."
+  },
+  "syncFailurePrivateStatus": "Private transaction lookup couldn't determine a transaction's status. Turn off experimental private queries in Settings to continue syncing.",
+  "@syncFailurePrivateStatus": {
+    "description": "Sync failure notice on Home: experimental private queries could not determine a transaction's status and block syncing."
+  },
+  "syncFailureTor": "Tor couldn't connect. Retry, or turn Tor off in Settings.",
+  "@syncFailureTor": {
+    "description": "Sync failure notice on Home: the Tor connection failed and the user can retry or turn Tor off."
+  },
+  "syncFailureUnknown": "Sync failed. Retry sync to continue.",
+  "@syncFailureUnknown": {
+    "description": "Sync failure notice on Home: sync failed for an unknown reason."
+  },
   "syncSynced": "Synced",
   "@syncSynced": {
     "description": "Sync status when the wallet is up to date."
@@ -13563,6 +14121,14 @@
   "syncVizorSynced": "Vizor is synced",
   "@syncVizorSynced": {
     "description": "Sync status, and screen-reader label, when the wallet is up to date. Shared by: lock, sync."
+  },
+  "transparentLedgerNeedsNewerBuild": "This wallet needs a newer version of Vizor to use its transparent funds.",
+  "@transparentLedgerNeedsNewerBuild": {
+    "description": "Error shown when this build of the app cannot operate on the wallet's transparent funds and the user must update Vizor."
+  },
+  "transparentRecoveryIncomplete": "Transparent funds are unavailable until private recovery completes.",
+  "@transparentRecoveryIncomplete": {
+    "description": "Error shown when transparent funds cannot be used yet because private recovery of the transparent history has not finished."
   },
   "txFeeHelpTooltip": "Fee paid to the Zcash network to process this transaction.",
   "@txFeeHelpTooltip": {
@@ -13880,6 +14446,94 @@
       }
     }
   },
+  "votingErrorChainCancelled": "Chain submission was cancelled.",
+  "@votingErrorChainCancelled": {
+    "description": "Error shown when a vote submission to the voting chain was cancelled."
+  },
+  "votingErrorChainNoUsableTransaction": "Chain submission ended without a usable transaction.",
+  "@votingErrorChainNoUsableTransaction": {
+    "description": "Error shown when a vote submission to the voting chain ended without producing a usable transaction."
+  },
+  "votingErrorChainRecoveryPending": "Chain submission recovery is still pending.",
+  "@votingErrorChainRecoveryPending": {
+    "description": "Error shown when the wallet is still checking the outcome of an earlier vote submission to the voting chain."
+  },
+  "votingErrorChainRejected": "Chain submission was rejected.",
+  "@votingErrorChainRejected": {
+    "description": "Error shown when the voting chain rejected a submitted vote or delegation."
+  },
+  "votingErrorChainSubmittedWithoutHash": "Submission may have reached the chain, but no transaction hash was returned. Do not retry it.",
+  "@votingErrorChainSubmittedWithoutHash": {
+    "description": "Error shown when a vote submission may already be on the voting chain but its transaction hash is unknown; retrying could submit it twice."
+  },
+  "votingErrorDelegationFailed": "Delegation bundle processing failed: {details}",
+  "@votingErrorDelegationFailed": {
+    "description": "Error shown when delegating voting power failed; {details} lists the failed bundles and their error text.",
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "bundle 1 step: delegation rejected by chain"
+      }
+    }
+  },
+  "votingErrorHotkeyMissing": "Voting hotkey is missing. Delegate this round before casting votes.",
+  "@votingErrorHotkeyMissing": {
+    "description": "Error shown when votes cannot be cast because the key created during delegation is missing."
+  },
+  "votingErrorImmediateShareExpired": "The voting round ended before a helper confirmed the immediate share. Check the voting status before retrying.",
+  "@votingErrorImmediateShareExpired": {
+    "description": "Error shown when the voting round closed before a helper server confirmed receiving the user's vote share."
+  },
+  "votingErrorKeystoneAccountOnly": "Keystone voting is only available for Keystone accounts.",
+  "@votingErrorKeystoneAccountOnly": {
+    "description": "Error shown when Keystone vote signing is started for an account that is not a Keystone account."
+  },
+  "votingErrorKeystoneHardwareOnly": "Keystone voting is only available for hardware accounts.",
+  "@votingErrorKeystoneHardwareOnly": {
+    "description": "Error shown when Keystone vote signing is started for an account that is not a hardware wallet account."
+  },
+  "votingErrorKeystoneInvalidSignature": "Keystone returned an invalid voting signature. Scan the result for the QR shown here.",
+  "@votingErrorKeystoneInvalidSignature": {
+    "description": "Error shown under the Keystone voting QR when a scanned signature is malformed."
+  },
+  "votingErrorKeystoneNoSignatures": "Keystone returned no voting signatures. Scan the result again.",
+  "@votingErrorKeystoneNoSignatures": {
+    "description": "Error shown under the Keystone voting QR when the scanned result contains no signatures."
+  },
+  "votingErrorKeystoneNoSigningRequest": "No Keystone signing request is waiting for a signature.",
+  "@votingErrorKeystoneNoSigningRequest": {
+    "description": "Error shown when a Keystone voting signature is scanned but no signing request is open."
+  },
+  "votingErrorKeystoneQrPrepareFailed": "Failed to prepare Keystone voting QR: {reason}",
+  "@votingErrorKeystoneQrPrepareFailed": {
+    "description": "Error shown when the QR code for signing a vote on Keystone could not be built; {reason} is the underlying error text.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "No Keystone voting requests are ready to encode."
+      }
+    }
+  },
+  "votingErrorKeystoneResultMismatch": "This Keystone result does not match the voting QR shown here. Scan the matching result and try again.",
+  "@votingErrorKeystoneResultMismatch": {
+    "description": "Error shown under the Keystone voting QR when the scanned result cannot be read as a response to it."
+  },
+  "votingErrorKeystoneSignatureConflict": "This Keystone result conflicts with a signature already saved for this voting request. Restart Keystone signing and scan the newly generated result.",
+  "@votingErrorKeystoneSignatureConflict": {
+    "description": "Error shown under the Keystone voting QR when the scanned signature differs from one already saved."
+  },
+  "votingErrorKeystoneSignatureMismatch": "Keystone returned signatures that do not match this voting request. Scan the result for the QR shown here.",
+  "@votingErrorKeystoneSignatureMismatch": {
+    "description": "Error shown under the Keystone voting QR when the scanned signatures belong to a different request."
+  },
+  "votingErrorKeystoneSignatureSaveFailed": "Could not save the Keystone signatures. Scan the same Keystone result again.",
+  "@votingErrorKeystoneSignatureSaveFailed": {
+    "description": "Error shown under the Keystone voting QR when the scanned signatures could not be stored."
+  },
+  "votingErrorKeystoneSkipNeedsSignature": "Sign at least one Keystone bundle before skipping the rest.",
+  "@votingErrorKeystoneSkipNeedsSignature": {
+    "description": "Error shown when the user skips the remaining Keystone voting bundles before signing any."
+  },
   "votingErrorLedgerCancelled": "Ledger voting approval was cancelled.",
   "@votingErrorLedgerCancelled": {
     "description": "Error shown when the user cancelled approving a vote on their Ledger."
@@ -13893,9 +14547,21 @@
       }
     }
   },
+  "votingErrorLedgerNoPendingBundle": "No Ledger voting bundle is waiting for approval.",
+  "@votingErrorLedgerNoPendingBundle": {
+    "description": "Error shown when a Ledger voting signature arrives but no bundle is waiting for approval."
+  },
   "votingErrorLedgerRejected": "The vote signature was rejected on your Ledger. Retry to sign again.",
   "@votingErrorLedgerRejected": {
     "description": "Error shown when the user rejected the vote signature on their Ledger."
+  },
+  "votingErrorLedgerSignatureConflict": "This Ledger signature conflicts with the signature already saved for this voting bundle.",
+  "@votingErrorLedgerSignatureConflict": {
+    "description": "Error shown when the Ledger signature differs from one already saved for the same voting bundle."
+  },
+  "votingErrorLedgerSignatureSaveFailed": "Could not save the Ledger voting signature. Retry this bundle.",
+  "@votingErrorLedgerSignatureSaveFailed": {
+    "description": "Error shown when the Ledger voting signature could not be stored."
   },
   "votingErrorLedgerWrongApp": "{instruction} Then retry.",
   "@votingErrorLedgerWrongApp": {
@@ -13918,6 +14584,24 @@
       }
     }
   },
+  "votingErrorMinimumWeightReason": "Voting requires at least one eligible shielded note bundle with {amount} at {snapshot}",
+  "@votingErrorMinimumWeightReason": {
+    "description": "Reason shown in the mobile not-eligible dialog above the separate switch-account guidance, without a final period; {amount} is a ZEC amount and {snapshot} names the snapshot block.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "0.125 ZEC"
+      },
+      "snapshot": {
+        "type": "String",
+        "example": "snapshot block 3,459,350"
+      }
+    }
+  },
+  "votingErrorNoActiveAccount": "No active account for voting session.",
+  "@votingErrorNoActiveAccount": {
+    "description": "Error shown on the voting status screen when a vote submission starts while no account is active."
+  },
   "votingErrorNoSpendableNotes": "This account is not eligible for this voting round. It had no eligible shielded funds at {snapshot}. Switch to an eligible account to vote.",
   "@votingErrorNoSpendableNotes": {
     "description": "Error shown when the account had no shielded funds at the snapshot; {snapshot} is a phrase naming the snapshot block.",
@@ -13927,9 +14611,105 @@
       }
     }
   },
+  "votingErrorNoSpendableNotesReason": "This account is not eligible for this voting round. It had no eligible shielded funds at {snapshot}",
+  "@votingErrorNoSpendableNotesReason": {
+    "description": "Reason shown in the mobile not-eligible dialog above the separate switch-account guidance, without a final period; {snapshot} is a phrase naming the snapshot block.",
+    "placeholders": {
+      "snapshot": {
+        "type": "String",
+        "example": "snapshot block 3,459,350"
+      }
+    }
+  },
+  "votingErrorNoVoteChosen": "Choose at least one vote before submitting.",
+  "@votingErrorNoVoteChosen": {
+    "description": "Error shown when the user submits a ballot without choosing an answer to any question."
+  },
+  "votingErrorPirEndpointResolveFailed": "Failed to resolve PIR endpoint.",
+  "@votingErrorPirEndpointResolveFailed": {
+    "description": "Error shown when the wallet could not choose a PIR server for the voting round."
+  },
+  "votingErrorPirEndpointUnresolved": "PIR endpoint has not been resolved.",
+  "@votingErrorPirEndpointUnresolved": {
+    "description": "Error shown when delegation needs a PIR server but none has been selected yet."
+  },
+  "votingErrorRoundDetailsUnavailable": "Voting round details are not available yet. Retry in a moment.",
+  "@votingErrorRoundDetailsUnavailable": {
+    "description": "Error shown when a vote submission starts before the voting round's details have loaded."
+  },
+  "votingErrorRoundEndTimeUnavailable": "Voting round end time is unavailable. Retry in a moment.",
+  "@votingErrorRoundEndTimeUnavailable": {
+    "description": "Error shown when a vote submission starts but the voting round's end time is not known yet."
+  },
   "votingErrorSessionFailed": "Voting session action failed.",
   "@votingErrorSessionFailed": {
     "description": "Generic error shown when a voting action failed without a more specific message."
+  },
+  "votingErrorSignBundleFirst": "Sign delegation bundle {bundle} with {signer} before submitting.",
+  "@votingErrorSignBundleFirst": {
+    "description": "Error shown when one delegation bundle still needs the hardware wallet's signature; {bundle} is the bundle number and {signer} is a hardware wallet name such as Keystone or Ledger.",
+    "placeholders": {
+      "bundle": {
+        "type": "int",
+        "example": "2"
+      },
+      "signer": {
+        "type": "String",
+        "example": "Keystone"
+      }
+    }
+  },
+  "votingErrorSignBundlesFirst": "Sign delegation bundles with {signer} before submitting.",
+  "@votingErrorSignBundlesFirst": {
+    "description": "Error shown when delegation is submitted before the hardware wallet signed it; {signer} is a hardware wallet name such as Keystone or Ledger.",
+    "placeholders": {
+      "signer": {
+        "type": "String",
+        "example": "Keystone"
+      }
+    }
+  },
+  "votingErrorSignerAccountOnly": "{signer} voting is only available for matching hardware accounts.",
+  "@votingErrorSignerAccountOnly": {
+    "description": "Error shown when hardware vote signing is started for an account of a different hardware wallet; {signer} is a hardware wallet name such as Keystone or Ledger.",
+    "placeholders": {
+      "signer": {
+        "type": "String",
+        "example": "Ledger"
+      }
+    }
+  },
+  "votingErrorSoftwareMnemonicRequired": "Software delegation requires this account mnemonic. Unlock this account or switch to one with mnemonic access.",
+  "@votingErrorSoftwareMnemonicRequired": {
+    "description": "[security] Error shown when delegating voting power with a software account whose seed phrase cannot be read."
+  },
+  "votingErrorVoteCastingFailed": "Vote casting failed: {details}",
+  "@votingErrorVoteCastingFailed": {
+    "description": "Error shown when casting votes failed; {details} lists the failed bundles and their error text.",
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "bundle 1 proposal 2: nullifier already spent"
+      }
+    }
+  },
+  "votingErrorWalletSyncTimeout": "Wallet sync did not reach this voting round snapshot within {duration}. Scanned block {scanned} of {snapshot}. Let wallet sync catch up and retry.",
+  "@votingErrorWalletSyncTimeout": {
+    "description": "Error shown when the wallet did not sync up to the voting round's snapshot block in time; {duration} is an elapsed time, {scanned} and {snapshot} are block heights.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "120.00s"
+      },
+      "scanned": {
+        "type": "String",
+        "example": "3,459,100"
+      },
+      "snapshot": {
+        "type": "String",
+        "example": "3,459,350"
+      }
+    }
   },
   "votingForumDiscussion": "Forum discussion",
   "@votingForumDiscussion": {
@@ -14589,6 +15369,10 @@
   "@votingStepSigningLedger": {
     "description": "Step label of the voting progress list while signing on a Ledger."
   },
+  "votingSubmissionInProgress": "Vote submission is still running. Wait for it to finish before removing an account or resetting the wallet.",
+  "@votingSubmissionInProgress": {
+    "description": "[security] Toast shown when the user tries to remove an account or reset the wallet while a vote is still being submitted."
+  },
   "votingSwitchAccount": "Switch account",
   "@votingSwitchAccount": {
     "description": "Dialog button that opens the account switcher so the user can pick an eligible account."
@@ -14966,9 +15750,17 @@
   "@walletLinkStepUnlockDesktop": {
     "description": "Step 1 of the desktop link instructions (the number is added by the app)."
   },
+  "walletMutationBusy": "Finish the current wallet operation before starting another.",
+  "@walletMutationBusy": {
+    "description": "Toast shown when another wallet change, such as switching an account or toggling Private queries, is still running."
+  },
   "walletResetDeviceAuthFailed": "Couldn't verify device ownership. Please try again.",
   "@walletResetDeviceAuthFailed": {
     "description": "[security] Error when the device passcode check before a wallet reset failed."
+  },
+  "walletResetDeviceAuthReason": "Confirm reset Vizor",
+  "@walletResetDeviceAuthReason": {
+    "description": "Reason line in the operating system's device-authentication prompt when the user resets the wallet."
   },
   "walletResetDeviceAuthRequired": "Device authentication is required to reset Vizor.",
   "@walletResetDeviceAuthRequired": {
@@ -14985,5 +15777,13 @@
   "walletResetGiftCardWarning": "A gift card is still being received. Resetting loses it.",
   "@walletResetGiftCardWarning": {
     "description": "[security] Warning on the locked reset screens while a gift card claim is in progress; reset is still allowed."
+  },
+  "windowsUpdateNotReady": "This update is no longer ready to download. Check for updates again.",
+  "@windowsUpdateNotReady": {
+    "description": "Error shown when the user starts a software update download that is no longer available."
+  },
+  "windowsUpdateTorRouteUnavailable": "The software updater is not connected to Tor. Retry updates in Settings, or turn off Tor and try again.",
+  "@windowsUpdateTorRouteUnavailable": {
+    "description": "Error shown when a software update cannot start because the updater has no Tor connection."
   }
 }

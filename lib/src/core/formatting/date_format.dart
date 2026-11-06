@@ -23,6 +23,28 @@ String formatDayMonthTime(DateTime date, String localeName) {
   return format.format(local);
 }
 
+/// Formats a date field value as `05/25/2026` (English), `2026. 05. 25.`
+/// (Korean) or `2026/05/25` (Chinese): the CLDR numeric order with month and
+/// day padded to two digits, as the `onboardingBirthdayDateHint` placeholder
+/// shows. The date's own fields are used, without a time-zone conversion.
+String formatNumericDate(DateTime date, String localeName) =>
+    _padMonthAndDay(DateFormat.yMd(localeName), localeName).format(date);
+
+/// Month-and-year counterpart of [formatNumericDate]: `05/2026` (English),
+/// `2026. 05.` (Korean), `2026/05` (Chinese).
+String formatNumericMonthYear(DateTime date, String localeName) =>
+    _padMonthAndDay(DateFormat.yM(localeName), localeName).format(date);
+
+DateFormat _padMonthAndDay(DateFormat format, String localeName) {
+  final padded = format.pattern!.replaceAllMapped(
+    _singleMonthOrDay,
+    (match) => '${match[1]}${match[1]}',
+  );
+  return DateFormat(padded, localeName);
+}
+
+final _singleMonthOrDay = RegExp('(?<![Md])([Md])(?![Md])');
+
 /// Parses a flexible date value into a local-zone [DateTime].
 ///
 /// Accepts a [DateTime] (returned as-is), a numeric epoch (values above

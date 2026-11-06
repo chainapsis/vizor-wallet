@@ -1,11 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_error_messages.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   test('preserves Ledger duplicate account copy from Rust', () {
     expect(
       onboardingSubmitErrorMessage(
+        testL10n,
         const _FakeAnyhowException(
           'This Ledger account is already in your wallet.',
         ),
@@ -17,18 +19,22 @@ void main() {
     const error = WalletCreationCurrentBlockHeightException('network down');
 
     expect(
-      onboardingSubmitErrorMessage(error),
-      kWalletCreationCurrentBlockHeightErrorMessage,
+      onboardingSubmitErrorMessage(testL10n, error),
+      testL10n.onboardingBlockHeightRequired,
     );
   });
 
   test('strips default Exception prefix from onboarding submit errors', () {
-    expect(onboardingSubmitErrorMessage(Exception('bad input')), 'bad input');
+    expect(
+      onboardingSubmitErrorMessage(testL10n, Exception('bad input')),
+      'bad input',
+    );
   });
 
   test('strips rust wrapper from duplicate Secret Passphrase import error', () {
     expect(
       onboardingSubmitErrorMessage(
+        testL10n,
         _FakeAnyhowException(kDuplicateSecretPassphraseImportErrorMessage),
       ),
       kDuplicateSecretPassphraseImportErrorMessage,
@@ -38,6 +44,7 @@ void main() {
   test('strips flutter rust bridge anyhow wrapper from submit errors', () {
     expect(
       onboardingSubmitErrorMessage(
+        testL10n,
         _FakeAnyhowException(kDuplicateKeystoneAccountImportErrorMessage),
       ),
       kDuplicateKeystoneAccountImportErrorMessage,
@@ -47,6 +54,7 @@ void main() {
   test('maps raw account collision errors to generic duplicate account copy', () {
     expect(
       onboardingSubmitErrorMessage(
+        testL10n,
         const _FakeAnyhowException(
           'Failed to import account: An account corresponding to the data '
           'provided already exists in the wallet with UUID 00000000-0000-0000-0000-000000000000.',

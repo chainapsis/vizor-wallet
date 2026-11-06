@@ -33,20 +33,20 @@ String? shieldBalanceBroadcastStatusMessage(
 String friendlyShieldBalanceError(AppLocalizations l10n, Object error) {
   switch (walletErrorCode(error)) {
     case rust_sync.ApiWalletErrorCode.optOutUnfinished:
-      return privateQueriesOptOutUnfinishedMessage;
+      return privateQueriesOptOutUnfinishedMessage(l10n);
     case rust_sync.ApiWalletErrorCode.recoveryIncomplete:
-      return transparentRecoveryIncompleteMessage;
+      return transparentRecoveryIncompleteMessage(l10n);
     default:
       break;
   }
-  final upgradeHold = networkUpgradeHoldMessage(error);
+  final upgradeHold = networkUpgradeHoldMessage(l10n, error);
   if (upgradeHold != null) return upgradeHold;
   final message = error.toString();
   if (isTransparentLedgerNeedsNewerBuildError(message)) {
-    return transparentLedgerNeedsNewerBuildMessage;
+    return transparentLedgerNeedsNewerBuildMessage(l10n);
   }
   if (isTransparentRecoveryIncompleteError(message)) {
-    return transparentRecoveryIncompleteMessage;
+    return transparentRecoveryIncompleteMessage(l10n);
   }
   final lower = message.toLowerCase();
   if (lower.contains('mnemonic')) {
@@ -240,7 +240,7 @@ String shieldPcztBroadcastStatusMessage(
   AppLocalizations l10n,
   rust_sync.ExtractAndBroadcastPcztResult result,
 ) {
-  final upgradeHold = networkUpgradeHoldMessage(result.message ?? '');
+  final upgradeHold = networkUpgradeHoldMessage(l10n, result.message ?? '');
   if (upgradeHold != null) return upgradeHold;
   if (result.status == 'broadcast_unknown') {
     return result.message ?? l10n.homeShieldBroadcastUnknown;

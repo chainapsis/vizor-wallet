@@ -42,6 +42,7 @@ import '../widgets/app_tooltip.dart';
 import '../widgets/app_toast.dart';
 import 'app_desktop_shell.dart';
 import 'desktop_sidebar_spacing.dart';
+import '../l10n/locale_typography.dart';
 
 final _sidebarThousandZatoshi = zatoshiPerZec * BigInt.from(1000);
 final _sidebarMillionZatoshi = zatoshiPerZec * BigInt.from(1000000);
@@ -143,7 +144,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   bool _blockIfVotingSubmissionInProgress() {
     final guards = ref.read(votingSubmissionGuardProvider);
     if (guards.isEmpty) return false;
-    showAppToast(context, guards.first.message);
+    showAppToast(context, guards.first.message.text(context.l10n));
     return true;
   }
 
@@ -312,10 +313,10 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     await _trackPendingNavigation(() async {
       try {
         await accountNotifier.switchAccount(uuid);
-      } on WalletMutationBusyException catch (error) {
+      } on WalletMutationBusyException {
         // Another wallet mutation, such as the private queries toggle, holds
         // the wallet: stay on this screen and say why nothing happened.
-        if (mounted) showAppToast(context, error.toString());
+        if (mounted) showAppToast(context, context.l10n.walletMutationBusy);
         return;
       }
       if (mounted) {
@@ -1814,7 +1815,10 @@ class _SidebarSyncStaticLabel extends StatelessWidget {
         if (!constraints.maxWidth.isFinite) return labelText();
 
         final painter = TextPainter(
-          text: TextSpan(text: label, style: style),
+          text: TextSpan(
+            text: label,
+            style: withLocaleFontFallback(context, style),
+          ),
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
           ellipsis: '...',

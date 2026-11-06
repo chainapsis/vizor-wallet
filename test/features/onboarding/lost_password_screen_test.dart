@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/providers/device_owner_auth_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/device_owner_auth.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 class _FakeDeviceOwnerAuth extends DeviceOwnerAuth {
   _FakeDeviceOwnerAuth({required this.result, bool hasOsResetGate = true})
@@ -146,7 +147,7 @@ void main() {
     await tester.pump();
 
     expect(auth.calls, 1);
-    expect(find.text(kWalletResetDeviceAuthRequiredMessage), findsNothing);
+    expect(find.text(testL10n.walletResetDeviceAuthRequired), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -181,7 +182,7 @@ void main() {
     await tester.pump();
 
     expect(auth.calls, 1);
-    expect(find.text(kWalletResetDeviceAuthRequiredMessage), findsOneWidget);
+    expect(find.text(testL10n.walletResetDeviceAuthRequired), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -258,7 +259,7 @@ void main() {
 
     expect(auth.calls, 1);
     expect(resetCalls, 1);
-    expect(find.text(kWalletResetDeviceAuthRequiredMessage), findsNothing);
+    expect(find.text(testL10n.walletResetDeviceAuthRequired), findsNothing);
   });
 
   testWidgets('lost-password warns about an in-flight Gift Card, unblocked', (
@@ -293,10 +294,7 @@ void main() {
 
     // Warned, never blocked: reset is the only way back into this wallet, and
     // the claim cannot finish while it stays locked.
-    expect(
-      find.text(kWalletResetInFlightGiftCardWarningMessage),
-      findsOneWidget,
-    );
+    expect(find.text(testL10n.walletResetGiftCardWarning), findsOneWidget);
     expect(find.text('This cannot be undone.'), findsNothing);
     final resetButton = tester.widget<AppButton>(
       find.widgetWithText(AppButton, 'Reset Vizor'),
@@ -335,7 +333,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(kWalletResetInFlightGiftCardWarningMessage), findsNothing);
+    expect(find.text(testL10n.walletResetGiftCardWarning), findsNothing);
     expect(find.text('This cannot be undone.'), findsOneWidget);
   });
 
@@ -377,7 +375,7 @@ void main() {
     // to do. The card is a fixed 520px box, so a second line overflows it --
     // the copy has to fit the 348px status line instead.
     final status = tester.renderObject<RenderParagraph>(
-      find.text(kWalletResetInFlightGiftCardClaimsMessage),
+      find.text(testL10n.walletResetGiftCardInFlight),
     );
     expect(status.didExceedMaxLines, isFalse);
     expect(tester.takeException(), isNull);
@@ -401,7 +399,10 @@ void main() {
       ),
     );
 
-    final didReset = await resetWalletForForgottenPasscode(capturedRef);
+    final didReset = await resetWalletForForgottenPasscode(
+      capturedRef,
+      testL10n,
+    );
 
     expect(didReset, isFalse);
     expect(auth.calls, 1);
@@ -442,7 +443,10 @@ void main() {
       ),
     );
 
-    final didReset = await resetWalletForForgottenPasscode(capturedRef);
+    final didReset = await resetWalletForForgottenPasscode(
+      capturedRef,
+      testL10n,
+    );
 
     expect(didReset, isTrue);
     expect(auth.calls, 1);
@@ -484,7 +488,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(auth.calls, 1);
-    expect(auth.lastReason, kWalletResetDeviceAuthReason);
+    expect(auth.lastReason, testL10n.walletResetDeviceAuthReason);
     expect(find.text('Confirm reset Vizor'), findsNothing);
     expect(resetCalls, 1);
   });

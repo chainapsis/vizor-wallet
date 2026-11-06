@@ -58,17 +58,15 @@ class _MobileBiometricsScreenState
   Future<void> _enable() async {
     if (_enabling) return;
     setState(() => _enabling = true);
-    var method = BiometricKind.none.inlineLabel;
+    final l10n = context.l10n;
+    var method = BiometricKind.none.inlineLabel(l10n);
     try {
       final state = await ref.read(biometricUnlockProvider.future);
-      method = state.availability.kind.inlineLabel;
+      method = state.availability.kind.inlineLabel(l10n);
       if (!state.availability.usable) {
         if (!mounted) return;
         setState(() => _enabling = false);
-        showAppToast(
-          context,
-          context.l10n.onboardingBiometricSetUpFirst(method),
-        );
+        showAppToast(context, l10n.onboardingBiometricSetUpFirst(method));
         return;
       }
       final passcode = ref
@@ -99,7 +97,9 @@ class _MobileBiometricsScreenState
       showBackButton: false,
       aboveTitle: _BiometricHero(kind: kind),
       // Line breaks match the Figma title/subtitle wraps.
-      title: context.l10n.onboardingBiometricTitle(kind.onboardingTitleSuffix),
+      title: context.l10n.onboardingBiometricTitle(
+        kind.onboardingTitleSuffix(context.l10n),
+      ),
       subtitle: context.l10n.onboardingBiometricSubtitle,
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
@@ -112,7 +112,7 @@ class _MobileBiometricsScreenState
                 ? null
                 : () => unawaited(_enable()),
             leading: BiometricIcon(kind: kind),
-            child: Text(kind.enableLabel),
+            child: Text(kind.enableLabel(context.l10n)),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(

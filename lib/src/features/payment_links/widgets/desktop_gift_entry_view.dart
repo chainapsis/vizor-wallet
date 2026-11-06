@@ -80,31 +80,47 @@ class DesktopGiftEntryView extends StatelessWidget {
                               ),
                               const SizedBox(height: AppSpacing.s),
                             ],
-                            SizedBox(
-                              width: 156,
-                              child: AppButton(
-                                key: const ValueKey(
-                                  'gift_desktop_paste_button',
+                            // Both buttons share the Figma 156 width, and
+                            // grow together when a translation needs more.
+                            IntrinsicWidth(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  minWidth: 156,
                                 ),
-                                onPressed: onPaste,
-                                size: AppButtonSize.mediumLarge,
-                                expand: true,
-                                leading: const AppIcon(AppIcons.paste),
-                                child: Text(context.l10n.paymentLinkPasteLabel),
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.s),
-                            SizedBox(
-                              width: 156,
-                              child: AppButton(
-                                key: const ValueKey('gift_desktop_scan_button'),
-                                onPressed: onScan,
-                                size: AppButtonSize.mediumLarge,
-                                expand: true,
-                                variant: AppButtonVariant.secondary,
-                                leading: const AppIcon(AppIcons.qr),
-                                child: Text(
-                                  context.l10n.commonScanQrCodeSentenceCase,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    AppButton(
+                                      key: const ValueKey(
+                                        'gift_desktop_paste_button',
+                                      ),
+                                      onPressed: onPaste,
+                                      size: AppButtonSize.mediumLarge,
+                                      expand: true,
+                                      leading: const AppIcon(AppIcons.paste),
+                                      child: Text(
+                                        context.l10n.paymentLinkPasteLabel,
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.s),
+                                    AppButton(
+                                      key: const ValueKey(
+                                        'gift_desktop_scan_button',
+                                      ),
+                                      onPressed: onScan,
+                                      size: AppButtonSize.mediumLarge,
+                                      expand: true,
+                                      variant: AppButtonVariant.secondary,
+                                      leading: const AppIcon(AppIcons.qr),
+                                      child: Text(
+                                        context
+                                            .l10n
+                                            .commonScanQrCodeSentenceCase,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),

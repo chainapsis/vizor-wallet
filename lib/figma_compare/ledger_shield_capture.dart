@@ -110,6 +110,7 @@ class _LedgerShieldMotionPreviewState extends State<LedgerShieldMotionPreview> {
                     : stage.status(l10n),
                 active: true,
                 failed: false,
+                showFailureStatus: false,
                 stage: stage,
                 readiness: LedgerAppReadinessPhase.ready,
                 saving: _stage == _Stage.saving,

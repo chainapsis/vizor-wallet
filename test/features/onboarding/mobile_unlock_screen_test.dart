@@ -31,6 +31,7 @@ import 'package:zcash_wallet/src/providers/device_owner_auth_provider.dart';
 import 'package:zcash_wallet/src/services/device_owner_auth.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 /// Just enough of the Rust secret API for password verifier checks.
 class _RustSecretApiFake implements RustLibApi {
@@ -413,10 +414,7 @@ void main() {
 
     // Warned, never blocked: the claim cannot finish while the wallet stays
     // locked, and this reset is the only way back in.
-    expect(
-      find.text(kWalletResetInFlightGiftCardWarningMessage),
-      findsOneWidget,
-    );
+    expect(find.text(testL10n.walletResetGiftCardWarning), findsOneWidget);
     expect(find.text('Continue to reset Vizor'), findsOneWidget);
   });
 
@@ -484,10 +482,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(accountNotifier.resets, 1);
-    expect(
-      find.text(kWalletResetInFlightGiftCardClaimsMessage),
-      findsOneWidget,
-    );
+    expect(find.text(testL10n.walletResetGiftCardInFlight), findsOneWidget);
     expect(
       find.text("Couldn't reset the app. Please try again."),
       findsNothing,
@@ -647,7 +642,7 @@ void main() {
       BiometricKind.touchId,
       BiometricKind.fingerprint,
     ]) {
-      testWidgets('offers ${kind.inlineLabel} only as an unchecked option', (
+      testWidgets('offers ${kind.name} only as an unchecked option', (
         tester,
       ) async {
         final biometric = FakeBiometricUnlock(
@@ -663,7 +658,10 @@ void main() {
         final option = find.byType(PasscodeBiometricOptIn);
         expect(option, findsOneWidget);
         expect(tester.widget<PasscodeBiometricOptIn>(option).selected, isFalse);
-        expect(find.bySemanticsLabel(kind.useNextTimeLabel), findsOneWidget);
+        expect(
+          find.bySemanticsLabel(kind.useNextTimeLabel(testL10n)),
+          findsOneWidget,
+        );
         expect(find.byType(PasscodeBiometricButton), findsNothing);
         expect(biometric.enables, 0);
         expect(biometric.reads, 0);

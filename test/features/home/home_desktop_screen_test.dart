@@ -50,6 +50,7 @@ import '../../fakes/fake_sync_notifier.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   // Render with the real app fonts instead of the square-glyph test font.
@@ -1679,7 +1680,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
       ),
@@ -1687,7 +1687,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('home_notice_card')), findsOneWidget);
-    expect(find.text('Network connection lost.'), findsOneWidget);
+    expect(find.text(testL10n.syncFailureNetwork), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
   });
 

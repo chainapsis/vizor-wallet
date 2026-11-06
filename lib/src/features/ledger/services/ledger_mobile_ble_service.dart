@@ -30,12 +30,22 @@ enum LedgerMobileFailure {
   unavailable,
 }
 
+/// A message Vizor writes itself when the platform supplies none.
+enum LedgerMobileFallback {
+  emptyResponse,
+  unknownDiscoveryEvent,
+  discoveryFailed,
+  connectionFailed,
+}
+
 class LedgerMobileException implements Exception {
   const LedgerMobileException(
     this.failure,
     this.message, {
     this.nativeDomain,
     this.nativeCode,
+    this.platformText = false,
+    this.fallback,
   });
 
   final String? nativeDomain;
@@ -43,6 +53,13 @@ class LedgerMobileException implements Exception {
 
   final LedgerMobileFailure failure;
   final String message;
+
+  /// [message] was written by the platform (possibly with device-specific
+  /// instructions) rather than by Vizor, so it is not translated.
+  final bool platformText;
+
+  /// Which Vizor-written [message] this is, so screens can translate it.
+  final LedgerMobileFallback? fallback;
 
   @override
   String toString() => message;
@@ -488,7 +505,8 @@ class MethodChannelLedgerMobileBleService
       if (result == null) {
         throw const LedgerMobileException(
           LedgerMobileFailure.unavailable,
-          'Ledger returned an empty response.',
+          'Ledger returned an empty response.', // l10n-ignore: exception text
+          fallback: LedgerMobileFallback.emptyResponse,
         );
       }
       return result;
@@ -554,8 +572,13 @@ class MethodChannelLedgerMobileBleService
         return LedgerDiscoveryFailed(
           _errorFromCode(
             value['code'] as String? ?? 'unavailable',
-            value['message'] as String? ?? 'Ledger discovery failed.',
+            value['message'] as String? ??
+                'Ledger discovery failed.', // l10n-ignore: exception text
             details: value['details'],
+            platformText: value['message'] is String,
+            fallback: value['message'] is String
+                ? null
+                : LedgerMobileFallback.discoveryFailed,
           ),
         );
       default:
@@ -563,6 +586,7 @@ class MethodChannelLedgerMobileBleService
           LedgerMobileException(
             LedgerMobileFailure.unavailable,
             'Ledger discovery returned an unknown event.', // l10n-ignore: exception text
+            fallback: LedgerMobileFallback.unknownDiscoveryEvent,
           ),
         );
     }
@@ -576,6 +600,10 @@ class MethodChannelLedgerMobileBleService
           : error.message ??
                 'Ledger mobile connection failed.', // l10n-ignore: exception text
       details: error.details,
+      platformText: error.code != 'pairing_invalid' && error.message != null,
+      fallback: error.code != 'pairing_invalid' && error.message == null
+          ? LedgerMobileFallback.connectionFailed
+          : null,
     );
     if (ledgerFailureInvalidatesConnection(mapped.failure)) {
       _connectedDeviceId = null;
@@ -587,6 +615,8 @@ class MethodChannelLedgerMobileBleService
     String code,
     String message, {
     Object? details,
+    bool platformText = false,
+    LedgerMobileFallback? fallback,
   }) {
     final failure = switch (code) {
       'busy' => LedgerMobileFailure.busy,
@@ -611,6 +641,8 @@ class MethodChannelLedgerMobileBleService
       nativeCode: details is Map && details['nativeCode'] is int
           ? details['nativeCode'] as int
           : null,
+      platformText: platformText,
+      fallback: fallback,
     );
   }
 }

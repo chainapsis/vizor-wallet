@@ -12,6 +12,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'generated_output.dart';
+
 const koreanSourcePath = 'lib/l10n/source/app_ko.arb';
 const koreanOutputPath = 'lib/l10n/app_ko.arb';
 const wordJoiner = '⁠';
@@ -54,6 +56,7 @@ String buildKoreanArb(String sourceJson) {
 
 void main(List<String> args) {
   final expected = buildKoreanArb(File(koreanSourcePath).readAsStringSync());
+  if (!checkGeneratedOutputPath(koreanOutputPath)) return;
   final output = File(koreanOutputPath);
   if (args.contains('--check')) {
     if (!output.existsSync() || output.readAsStringSync() != expected) {

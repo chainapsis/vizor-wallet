@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
-import 'package:zcash_wallet/src/core/config/private_transparent_recovery_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -32,6 +31,7 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../fakes/fake_app_language_notifier.dart';
 import 'package:zcash_wallet/l10n/app_localizations.dart';
+import '../../support/test_l10n.dart';
 
 final _en = lookupAppLocalizations(const Locale('en'));
 
@@ -72,7 +72,7 @@ void main() {
     }
 
     final defaultCopy = await description();
-    expect(defaultCopy, kPrivateQueriesSettingsCopy);
+    expect(defaultCopy, testL10n.settingsPrivateQueriesCopy);
   });
 
   test('uninstall setting is supported only on macOS and Linux', () {

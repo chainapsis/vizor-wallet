@@ -477,7 +477,8 @@ class _ServerRow extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          ping?.label ?? context.l10n.commonChecking,
+                          ping?.label(context.l10n) ??
+                              context.l10n.commonChecking,
                           key: ValueKey(
                             'wallet_pir_server_ping_${server.baseUrl}',
                           ),

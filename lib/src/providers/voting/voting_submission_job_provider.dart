@@ -1,6 +1,3 @@
-import 'dart:ui' show Locale;
-
-import '../../core/l10n/l10n.dart';
 import '../../features/ledger/services/ledger_device_selection.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -12,10 +9,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/storage/linux_keyring_coordinator.dart';
 import '../../core/storage/linux_secret_operation_guard.dart';
 import '../../features/keystone/services/keystone_batch_signing.dart';
-import '../../features/voting/voting_error_messages.dart';
+import '../../features/voting/voting_message.dart';
 import '../../features/ledger/services/ledger_failure_guidance.dart';
 import '../../features/ledger/services/ledger_signing_service.dart';
-import '../../features/ledger/widgets/ledger_device_app_prompt.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/keystone.dart' as rust_keystone;
@@ -76,7 +72,7 @@ class VotingSubmissionJobState {
   final VotingSessionKey? key;
   final VotingSubmissionJobStatus status;
   final int generation;
-  final String? errorMessage;
+  final VotingMessage? errorMessage;
 
   /// False when retrying would resend a request the signer already refused.
   final bool retryable;
@@ -105,7 +101,7 @@ class VotingSubmissionJobState {
     VotingSessionKey? key,
     VotingSubmissionJobStatus? status,
     int? generation,
-    String? errorMessage,
+    VotingMessage? errorMessage,
     bool clearErrorMessage = false,
     bool? retryable,
     bool? softwareAccountRequired,
@@ -169,15 +165,16 @@ class VotingSubmissionJobsState {
   });
 
   final List<VotingSessionKey> jobKeys;
-  final Map<String, String> startErrorsByRoundId;
+  final Map<String, VotingMessage> startErrorsByRoundId;
 
   bool get hasJobs => jobKeys.isNotEmpty;
 
-  String? startErrorForRound(String roundId) => startErrorsByRoundId[roundId];
+  VotingMessage? startErrorForRound(String roundId) =>
+      startErrorsByRoundId[roundId];
 
   VotingSubmissionJobsState copyWith({
     List<VotingSessionKey>? jobKeys,
-    Map<String, String>? startErrorsByRoundId,
+    Map<String, VotingMessage>? startErrorsByRoundId,
   }) {
     return VotingSubmissionJobsState(
       jobKeys: jobKeys ?? this.jobKeys,
@@ -195,7 +192,10 @@ class VotingSubmissionJobsState {
     );
   }
 
-  VotingSubmissionJobsState setStartError(String roundId, String message) {
+  VotingSubmissionJobsState setStartError(
+    String roundId,
+    VotingMessage message,
+  ) {
     return copyWith(
       startErrorsByRoundId: {...startErrorsByRoundId, roundId: message},
     );
@@ -216,7 +216,7 @@ class VotingSubmissionJobsState {
     );
   }
 
-  Map<String, String> _withoutStartError(String roundId) {
+  Map<String, VotingMessage> _withoutStartError(String roundId) {
     return {
       for (final entry in startErrorsByRoundId.entries)
         if (entry.key != roundId) entry.key: entry.value,
@@ -233,16 +233,13 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
     try {
       resolvedAccountUuid = accountUuid ?? await _activeAccountUuid();
     } catch (error) {
-      state = state.setStartError(
-        roundId,
-        friendlyVotingErrorMessage(votingProviderL10n, error),
-      );
+      state = state.setStartError(roundId, votingMessageForError(error));
       return null;
     }
     if (resolvedAccountUuid == null) {
       state = state.setStartError(
         roundId,
-        'No active account for voting session.',
+        const VotingNotice(VotingNoticeKind.noActiveAccount),
       );
       return null;
     }
@@ -364,7 +361,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       key: key,
       status: VotingSubmissionJobStatus.error,
       generation: generation,
-      errorMessage: kLedgerVotingCancelledMessage,
+      errorMessage: const VotingNotice(VotingNoticeKind.ledgerCancelled),
     );
     try {
       await ref.read(ledgerOperationCancellerProvider)();
@@ -450,7 +447,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     } catch (error) {
       if (!_isCurrentJob(key: key, generation: generation)) return;
       await sessionNotifier.reportKeystoneScanError(
-        'This Keystone result does not match the voting QR shown here. Scan the matching result and try again.',
+        const VotingNotice(VotingNoticeKind.keystoneResultMismatch),
       );
       return;
     }
@@ -538,8 +535,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _failJob(
           key: key,
           generation: generation,
-          message:
-              'Voting round details are not available yet. Retry in a moment.',
+          message: const VotingNotice(VotingNoticeKind.roundDetailsUnavailable),
         );
         return;
       }
@@ -574,7 +570,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _failJob(
           key: key,
           generation: generation,
-          message: 'Voting round end time is unavailable. Retry in a moment.',
+          message: const VotingNotice(VotingNoticeKind.roundEndTimeUnavailable),
         );
         return;
       }
@@ -667,7 +663,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _failJob(
           key: key,
           generation: generation,
-          message: 'Choose at least one vote before submitting.',
+          message: const VotingNotice(VotingNoticeKind.noVoteChosen),
         );
         return;
       }
@@ -792,8 +788,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           _failJob(
             key: key,
             generation: generation,
-            message:
-                'Token holder voting requires a software account. Switch to a software account to vote in this round.',
+            message: const VotingNotice(
+              VotingNoticeKind.softwareAccountRequired,
+            ),
             softwareAccountRequired: true,
           );
           return;
@@ -917,14 +914,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _failJob(
           key: key,
           generation: generation,
-          // The job state keeps display text and has no widget context.
-          message: ledgerVotingErrorMessage(
-            votingProviderL10n,
+          message: VotingLedgerFailure(
             error,
-            appInstruction: ledgerZcashAppOpenErrorInstruction(
-              lookupAppLocalizations(const Locale('en')),
-              ref.read(rpcEndpointProvider).networkName,
-            ),
+            networkName: ref.read(rpcEndpointProvider).networkName,
           ),
           retryable: LedgerRequestFailure.fromError(error).retryable,
         );
@@ -1010,8 +1002,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _failJob(
         key: key,
         generation: generation,
-        message:
-            'Failed to prepare Keystone voting QR: ${_messageFromError(error)}',
+        message: VotingKeystoneQrFailure(_messageFromError(error)),
       );
     }
   }
@@ -1029,7 +1020,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _failJob(
         key: key,
         generation: generation,
-        message: 'Choose at least one vote before submitting.',
+        message: const VotingNotice(VotingNoticeKind.noVoteChosen),
       );
       return;
     }
@@ -1099,7 +1090,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _failJob(
         key: key,
         generation: generation,
-        message: 'Choose at least one vote before submitting.',
+        message: const VotingNotice(VotingNoticeKind.noVoteChosen),
       );
       return;
     }
@@ -1255,14 +1246,16 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _failJob(
       key: key,
       generation: generation,
-      message: _statusErrorMessage(session) ?? _genericVotingStatusErrorMessage,
+      message:
+          _statusErrorMessage(session) ??
+          const VotingNotice(VotingNoticeKind.statusGeneric),
     );
   }
 
   void _failJob({
     required VotingSessionKey key,
     required int generation,
-    required String message,
+    required VotingMessage message,
     bool retryable = true,
     bool softwareAccountRequired = false,
   }) {
@@ -1500,9 +1493,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _failJob(
       key: key,
       generation: generation,
-      message:
-          'The voting round ended before a helper confirmed the immediate '
-          'share. Check the voting status before retrying.',
+      message: const VotingNotice(VotingNoticeKind.immediateShareExpired),
     );
   }
 
@@ -1599,21 +1590,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     ];
   }
 
-  String _messageFromError(Object error) =>
-      friendlyVotingErrorMessage(votingProviderL10n, error);
+  VotingMessage _messageFromError(Object error) => votingMessageForError(error);
 
-  String? _statusErrorMessage(VotingSessionState state) {
+  VotingMessage? _statusErrorMessage(VotingSessionState state) {
     final error = state.error;
-    if (error != null) {
-      return friendlyVotingErrorText(votingProviderL10n, error.message);
-    }
+    if (error != null) return normalizedVotingMessage(error.message);
     if (state.phase != VotingSessionPhase.error) return null;
-    return _genericVotingStatusErrorMessage;
+    return const VotingNotice(VotingNoticeKind.statusGeneric);
   }
-
-  static const _genericVotingStatusErrorMessage =
-      'Voting could not continue for this account. Retry, or switch to an '
-      'eligible account if this account cannot vote in this voting round.';
 
   bool _canRecoverWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;

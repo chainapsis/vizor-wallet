@@ -13,6 +13,7 @@ import 'payment_link_action.dart';
 import 'payment_link_card_motion.dart';
 import 'payment_link_skeleton.dart';
 import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/locale_typography.dart';
 
 const _amountCaretWidth = 2.0;
 const _amountCaretHeight = 34.0;
@@ -870,7 +871,10 @@ class _PaymentLinkAmountTextField extends StatelessWidget {
     final cursorGap = focused && value.isNotEmpty ? _amountElementGap : 0.0;
     final measuredText = value.isEmpty && !focused ? emptyAmountLabel : value;
     final painter = TextPainter(
-      text: TextSpan(text: measuredText, style: style),
+      text: TextSpan(
+        text: measuredText,
+        style: withLocaleFontFallback(context, style),
+      ),
       maxLines: 1,
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),

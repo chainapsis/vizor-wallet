@@ -68,7 +68,7 @@ Future<void> startWindowsUpdateDownload({
   await _showUpdateError(
     context,
     title: context.l10n.settingsWinUpdateStartFailedTitle,
-    message: result.message,
+    message: result.message(context.l10n),
   );
 }
 

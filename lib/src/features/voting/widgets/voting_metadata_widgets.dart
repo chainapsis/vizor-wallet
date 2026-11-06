@@ -11,6 +11,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import 'voting_auto_advance_indicator.dart';
+import '../../../core/l10n/locale_typography.dart';
 
 class VotingMetadataBadge extends StatelessWidget {
   const VotingMetadataBadge(this.label, {super.key});
@@ -673,7 +674,7 @@ class _VotingProposalOptionRow extends StatelessWidget {
               const SizedBox(width: AppSpacing.sm),
               Text(
                 trailingLabel,
-                key: trailingLabel == 'Selected'
+                key: selected
                     ? const ValueKey('voting_selected_choice_indicator')
                     : null,
                 style: AppTypography.bodySmall.copyWith(
@@ -792,7 +793,7 @@ bool _textExceedsMaxLines({
 }) {
   if (!maxWidth.isFinite || maxWidth <= 0) return false;
   final textPainter = TextPainter(
-    text: TextSpan(text: text, style: style),
+    text: TextSpan(text: text, style: withLocaleFontFallback(context, style)),
     textDirection: Directionality.of(context),
     textScaler: MediaQuery.textScalerOf(context),
     maxLines: maxLines,

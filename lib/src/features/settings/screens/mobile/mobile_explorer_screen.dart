@@ -154,6 +154,7 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                           )
                         : context.l10n.settingsExplorerCurrent(
                             explorerSettingsLabel(
+                              context.l10n,
                               current,
                               networkName: networkName,
                             ),
@@ -222,7 +223,10 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                     ],
                     const SizedBox(height: AppSpacing.xs),
                     Text(
-                      kZcashExplorerTemplateHint,
+                      context.l10n.settingsExplorerTemplateHint(
+                        '{txid}', // l10n-ignore: URL placeholder token
+                        '{txHash}', // l10n-ignore: URL placeholder token
+                      ),
                       style: AppTypography.bodySmall.copyWith(
                         color: colors.text.secondary,
                       ),
@@ -232,7 +236,7 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                   AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    kZcashExplorerPrivacyCopy,
+                    context.l10n.settingsExplorerPrivacyCopy,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
                     ),

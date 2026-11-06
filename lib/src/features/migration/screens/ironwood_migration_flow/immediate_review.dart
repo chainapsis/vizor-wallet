@@ -227,17 +227,8 @@ class _IronwoodMigrationImmediateReviewContentState
                               const SizedBox(height: 8),
                               Text.rich(
                                 TextSpan(
-                                  text: context.l10n
-                                      .migrationImmediateTradeoffLead(amount),
                                   children: [
-                                    TextSpan(
-                                      text: context
-                                          .l10n
-                                          .migrationImmediateTradeoffEmphasis,
-                                      style: const TextStyle(
-                                        color: Color(0xFFCA4ADC),
-                                      ),
-                                    ),
+                                    ..._tradeoffSpans(context, amount),
                                     TextSpan(
                                       text: isLedgerAccount
                                           ? context
@@ -381,7 +372,7 @@ String _immediateMigrationStartErrorMessage(
   AppLocalizations l10n,
   Object error,
 ) {
-  final upgradeHold = networkUpgradeHoldMessage(error);
+  final upgradeHold = networkUpgradeHoldMessage(l10n, error);
   if (upgradeHold != null) return upgradeHold;
   final message = error.toString().toLowerCase();
   if (message.contains('plan changed')) {
@@ -395,4 +386,20 @@ String _immediateMigrationStartErrorMessage(
     return l10n.migrationErrorWaitForSync;
   }
   return l10n.migrationErrorStart;
+}
+
+/// The desktop design tints the sentence's closing period with the highlight.
+List<InlineSpan> _tradeoffSpans(BuildContext context, String amount) {
+  final highlight = context.l10n.migrationImmediateTradeoffHighlight;
+  final body = context.l10n.migrationImmediateTradeoffBody(amount, highlight);
+  final end = body.indexOf(highlight) + highlight.length;
+  final emphasized =
+      end > highlight.length - 1 &&
+          end < body.length &&
+          '.。'.contains(body[end])
+      ? '$highlight${body[end]}'
+      : highlight;
+  return emphasisSpans(body, [
+    emphasized,
+  ], const TextStyle(color: Color(0xFFCA4ADC)));
 }

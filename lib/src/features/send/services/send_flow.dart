@@ -536,12 +536,13 @@ Future<void> retainSendProposalLockUntilExpiry({
 
 /// Classifies a propose-time failure for the payment-request card.
 PaymentRequestCheckIssue paymentRequestCheckIssueFor(String raw) {
-  final upgradeHold = networkUpgradeHoldMessage(raw);
-  if (upgradeHold == kNetworkUpgradeHoldMessage) {
-    return PaymentRequestCheckIssue.networkUpgradeHold;
-  }
-  if (upgradeHold != null) {
-    return PaymentRequestCheckIssue.networkUpgradeScheduleChanged;
+  switch (networkUpgradeHoldKind(raw)) {
+    case NetworkUpgradeHold.hold:
+      return PaymentRequestCheckIssue.networkUpgradeHold;
+    case NetworkUpgradeHold.scheduleChanged:
+      return PaymentRequestCheckIssue.networkUpgradeScheduleChanged;
+    case null:
+      break;
   }
   final lower = raw.toLowerCase();
   if (lower.contains('grpc connect failed') ||
@@ -558,13 +559,13 @@ String friendlyProposeSendError(
   String raw, {
   SendFlowKind flowKind = SendFlowKind.send,
 }) {
-  final upgradeHold = networkUpgradeHoldMessage(raw);
+  final upgradeHold = networkUpgradeHoldMessage(l10n, raw);
   if (upgradeHold != null) return upgradeHold;
   if (isTransparentLedgerNeedsNewerBuildError(raw)) {
-    return transparentLedgerNeedsNewerBuildMessage;
+    return transparentLedgerNeedsNewerBuildMessage(l10n);
   }
   if (isTransparentRecoveryIncompleteError(raw)) {
-    return transparentRecoveryIncompleteMessage;
+    return transparentRecoveryIncompleteMessage(l10n);
   }
   final lower = raw.toLowerCase();
   if (lower.contains('wallet sync is still finishing') ||
@@ -599,7 +600,7 @@ String friendlyProposeSendError(
 }
 
 String friendlyBroadcastError(AppLocalizations l10n, String raw) {
-  final upgradeHold = networkUpgradeHoldMessage(raw);
+  final upgradeHold = networkUpgradeHoldMessage(l10n, raw);
   if (upgradeHold != null) return upgradeHold;
   final lower = raw.toLowerCase();
   if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
@@ -1176,7 +1177,10 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
       txid: receiptTxid,
       statusMessage: pendingStatusMessage,
       error: broadcastExpired
-          ? networkUpgradeHoldMessage(broadcastMessageForFallback ?? '') ??
+          ? networkUpgradeHoldMessage(
+                  l10n,
+                  broadcastMessageForFallback ?? '',
+                ) ??
                 l10n.sendBroadcastHardwareExpired
           : null,
     );

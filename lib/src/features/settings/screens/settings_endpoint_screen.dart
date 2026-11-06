@@ -348,7 +348,7 @@ class _CurrentEndpointSubtitle extends StatelessWidget {
     );
     final text = [
       context.l10n.endpointCurrent(current.hostPort),
-      if (latency != null) latency.label,
+      if (latency != null) latency.label(context.l10n),
       if (preset?.isDefault ?? false)
         context.l10n.settingsEndpointDefaultMarker,
     ].join(' ');
@@ -470,7 +470,7 @@ class _PresetList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final groups = <String, List<RpcEndpointPreset>>{};
+    final groups = <RpcEndpointRegion, List<RpcEndpointPreset>>{};
     for (final preset in rpcEndpointPresetsForNetwork(networkName)) {
       groups.putIfAbsent(preset.region, () => []).add(preset);
     }
@@ -481,7 +481,7 @@ class _PresetList extends StatelessWidget {
       children: [
         for (var i = 0; i < entries.length; i++) ...[
           _PresetRegionSegment(
-            label: entries[i].key,
+            label: entries[i].key.label(context.l10n),
             presets: entries[i].value,
             latencyState: latencyState,
             currentPresetId: currentPresetId,
@@ -627,7 +627,7 @@ class _PresetCard extends StatelessWidget {
                       if (latency != null) ...[
                         const SizedBox(height: 2),
                         Text(
-                          latency!.label,
+                          latency!.label(context.l10n),
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelMedium.copyWith(
                             color: isCurrent

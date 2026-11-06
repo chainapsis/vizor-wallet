@@ -145,7 +145,7 @@ class _SettingsSeedPhraseScreenState
   Timer? _copyResetTimer;
 
   String? get _passwordPolicyMessage =>
-      validateWalletPassword(_passwordController.text);
+      validateWalletPassword(context.l10n, _passwordController.text);
 
   bool get _canSubmit =>
       !_isSubmitting && isWalletPasswordValid(_passwordController.text);

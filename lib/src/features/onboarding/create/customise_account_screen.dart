@@ -117,7 +117,7 @@ class _CustomiseAccountScreenState
   String? get _nameMessage {
     if (_submitError != null) return _submitError!.resolve(context.l10n);
     return _nameLength > kAccountNameMaxCharacters
-        ? kAccountNameLengthMessage
+        ? context.l10n.accountNameTooLong
         : null;
   }
 

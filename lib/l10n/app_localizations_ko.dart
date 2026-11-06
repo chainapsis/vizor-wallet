@@ -10,7 +10,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get aboutBuiltByBody =>
-      '저⁠희⁠는 Cosmos, Ethereum, Bitcoin⁠에⁠서 수⁠백⁠만 명⁠이 쓰⁠는 지⁠갑 Keplr⁠을 만⁠들⁠었⁠어⁠요. Vizor⁠는 Zcash 지⁠갑⁠이 어⁠떠⁠해⁠야 하⁠는⁠지⁠에 대⁠한 저⁠희⁠의 답⁠이⁠에⁠요.';
+      '저⁠희⁠는 Cosmos, Ethereum, Bitcoin⁠에⁠서 수⁠백⁠만 명⁠이 쓰⁠는 지⁠갑 Keplr⁠를 만⁠들⁠었⁠어⁠요. Vizor⁠는 Zcash 지⁠갑⁠이 어⁠떠⁠해⁠야 하⁠는⁠지⁠에 대⁠한 저⁠희⁠의 답⁠이⁠에⁠요.';
 
   @override
   String get aboutBuiltByHeading => 'Keplr 팀⁠이 만⁠들⁠었⁠어⁠요';
@@ -63,6 +63,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get accountNameLabel => '계⁠정 이⁠름';
+
+  @override
+  String get accountNameTooLong => '이⁠름⁠은 20⁠자⁠까⁠지 입⁠력⁠할 수 있⁠어⁠요.';
 
   @override
   String get accountsActionsLabel => '계⁠정 작⁠업';
@@ -140,6 +143,14 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get accountsRemoveGiftCardsCheckFailed =>
       '이 계⁠정⁠으⁠로 받⁠는 중⁠인 기⁠프⁠트 카⁠드⁠가 있⁠는⁠지 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 삭⁠제⁠하⁠기 전⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get accountsRemoveGiftCardsMoreFunded =>
+      '더 많⁠은 기⁠프⁠트 카⁠드 링⁠크⁠에 자⁠금⁠이 채⁠워⁠졌⁠어⁠요. 경⁠고⁠를 검⁠토⁠하⁠고 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get accountsRemoveGiftCardsRecheckFailed =>
+      '기⁠프⁠트 카⁠드 링⁠크⁠를 다⁠시 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 경⁠고⁠를 검⁠토⁠하⁠고 다⁠시 확⁠인⁠해 주⁠세⁠요.';
 
   @override
   String get accountsRemoveMigrationBody =>
@@ -224,7 +235,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityBalanceOrchard => 'Orchard 잔⁠액';
 
   @override
-  String get activityDetailsLoadFailed => '실⁠패⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요';
+  String get activityDetailsLoadFailed => '실⁠패, 다⁠시 시⁠도';
 
   @override
   String get activityDetailsLoadPublicly => '공⁠개⁠로 불⁠러⁠오⁠기';
@@ -282,7 +293,7 @@ class AppLocalizationsKo extends AppLocalizations {
     String feeLabel,
     String fee,
   ) {
-    return '카⁠드 $cards ZEC · 사⁠용 수⁠수⁠료 $fees ZEC · $feeLabel $fee';
+    return '카⁠드 $cards ZEC · 받⁠기 수⁠수⁠료 $fees ZEC · $feeLabel $fee';
   }
 
   @override
@@ -305,22 +316,22 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityGiftCreationFailed => '기⁠프⁠트 카⁠드 생⁠성 실⁠패';
 
   @override
-  String get activityGiftGroupFailed => '기⁠프⁠트 카⁠드 묶⁠음 실⁠패';
+  String get activityGiftGroupFailed => '기⁠프⁠트 카⁠드 그⁠룹 실⁠패';
 
   @override
-  String get activityGiftRedeemed => '기⁠프⁠트 카⁠드⁠를 사⁠용⁠했⁠어⁠요';
+  String get activityGiftRedeemed => '기⁠프⁠트 카⁠드⁠를 받⁠았⁠어⁠요';
 
   @override
-  String get activityGiftRedeeming => '카⁠드 사⁠용 중';
+  String get activityGiftRedeeming => '카⁠드 받⁠는 중';
 
   @override
-  String get activityGiftRedemptionFailed => '기⁠프⁠트 카⁠드 사⁠용 실⁠패';
+  String get activityGiftRedemptionFailed => '기⁠프⁠트 카⁠드 받⁠기 실⁠패';
 
   @override
-  String get activityGiftStatusRedeemed => '사⁠용⁠됨';
+  String get activityGiftStatusRedeemed => '받⁠음';
 
   @override
-  String get activityGiftStatusRedeeming => '사⁠용 중…';
+  String get activityGiftStatusRedeeming => '받⁠는 중…';
 
   @override
   String get activityGiftTotalPlanned => '예⁠정 합⁠계';
@@ -381,7 +392,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityPayPaid => '결⁠제 완⁠료';
 
   @override
-  String get activityPayPaying => '결⁠제 중 ...';
+  String get activityPayPaying => '결⁠제 중...';
 
   @override
   String get activityPoolMixed => '혼⁠합';
@@ -411,7 +422,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get activityReceiptDetailsIncompleteHelp =>
-      '이 거⁠래⁠의 수⁠신⁠자, 메⁠모, 수⁠수⁠료 같⁠은 일⁠부 정⁠보⁠를 아⁠직 알 수 없⁠어⁠요. 표⁠시⁠된 금⁠액⁠이 바⁠뀔 수 있⁠어⁠요.';
+      '이 거⁠래⁠의 받⁠는 사⁠람, 메⁠모, 수⁠수⁠료 같⁠은 일⁠부 정⁠보⁠를 아⁠직 알 수 없⁠어⁠요. 표⁠시⁠된 금⁠액⁠이 바⁠뀔 수 있⁠어⁠요.';
 
   @override
   String get activityReceiptEstimatedNetworkFee => '예⁠상 네⁠트⁠워⁠크 수⁠수⁠료';
@@ -420,7 +431,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityReceiptFrom => '보⁠낸 곳';
 
   @override
-  String get activityReceiptIncomplete => '불⁠완⁠전⁠해⁠요';
+  String get activityReceiptIncomplete => '불⁠완⁠전';
 
   @override
   String get activityReceiptLoadFailed => '거⁠래⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
@@ -470,10 +481,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activitySenderUnknown => '알 수 없⁠는 보⁠낸 사⁠람';
 
   @override
-  String get activityStatusFailedFundsReturned => '실⁠패, 자⁠금⁠이 반⁠환⁠됐⁠어⁠요';
+  String get activityStatusFailedFundsReturned => '실⁠패, 자⁠금 반⁠환⁠됨';
 
   @override
-  String get activityStatusIncompleteDeposit => '입⁠금⁠이 부⁠족⁠해⁠요';
+  String get activityStatusIncompleteDeposit => '입⁠금 부⁠족';
 
   @override
   String activitySwapAssetOnChain(String symbol, String chain) {
@@ -722,7 +733,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String addressScanCameraDefaultSuffix(String name) {
-    return '$name(기⁠본)';
+    return '$name (기⁠본)';
   }
 
   @override
@@ -856,12 +867,114 @@ class AppLocalizationsKo extends AppLocalizations {
   String get appUpdateRestartingTitle => 'Vizor 다⁠시 시⁠작 중';
 
   @override
+  String biometricChangedMessage(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID⁠가 변⁠경⁠되⁠었⁠어⁠요. 암⁠호⁠를 입⁠력⁠해 주⁠세⁠요.',
+      'touchId': 'Touch ID⁠가 변⁠경⁠되⁠었⁠어⁠요. 암⁠호⁠를 입⁠력⁠해 주⁠세⁠요.',
+      'fingerprint': '지⁠문⁠이 변⁠경⁠되⁠었⁠어⁠요. 암⁠호⁠를 입⁠력⁠해 주⁠세⁠요.',
+      'other': '생⁠체 인⁠식⁠이 변⁠경⁠되⁠었⁠어⁠요. 암⁠호⁠를 입⁠력⁠해 주⁠세⁠요.',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricEnableLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID 켜⁠기',
+      'touchId': 'Touch ID 켜⁠기',
+      'fingerprint': '지⁠문 켜⁠기',
+      'other': '생⁠체 인⁠식 켜⁠기',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameInline(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': '지⁠문',
+      'other': '생⁠체 인⁠식',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameOnboardingTitle(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': '지⁠문',
+      'other': '생⁠체 인⁠식',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameStandalone(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': '지⁠문',
+      'other': '생⁠체 인⁠식',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricSignInLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID⁠로 로⁠그⁠인',
+      'touchId': 'Touch ID⁠로 로⁠그⁠인',
+      'fingerprint': '지⁠문⁠으⁠로 로⁠그⁠인',
+      'other': '생⁠체 인⁠식⁠으⁠로 로⁠그⁠인',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUnlockFeatureInline(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID 잠⁠금 해⁠제',
+      'touchId': 'Touch ID 잠⁠금 해⁠제',
+      'fingerprint': '지⁠문 잠⁠금 해⁠제',
+      'other': '생⁠체 인⁠식 잠⁠금 해⁠제',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUnlockFeatureLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID 잠⁠금 해⁠제',
+      'touchId': 'Touch ID 잠⁠금 해⁠제',
+      'fingerprint': '지⁠문 잠⁠금 해⁠제',
+      'other': '생⁠체 인⁠식 잠⁠금 해⁠제',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUseNextTimeLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': '다⁠음⁠에 Face ID 사⁠용',
+      'touchId': '다⁠음⁠에 Touch ID 사⁠용',
+      'fingerprint': '다⁠음⁠에 지⁠문 사⁠용',
+      'other': '다⁠음⁠에 생⁠체 인⁠식 사⁠용',
+    });
+    return '$_temp0';
+  }
+
+  @override
   String get bip39PassphraseTitle => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈';
 
   @override
   String bip39PassphraseValue(String passphrase) {
     return 'BIP39 패⁠스⁠프⁠레⁠이⁠즈: $passphrase';
   }
+
+  @override
+  String get capsLockWarning => 'Caps Lock⁠이 켜⁠져 있⁠어⁠요';
 
   @override
   String carouselPageSemantics(
@@ -958,7 +1071,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonCancelling => '취⁠소⁠하⁠는 중…';
 
   @override
-  String get commonCannotBeUndone => '되⁠돌⁠릴 수 없⁠어⁠요.';
+  String get commonCannotBeUndone => '이 작⁠업⁠은 되⁠돌⁠릴 수 없⁠어⁠요.';
 
   @override
   String get commonCards => '카⁠드';
@@ -1151,6 +1264,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonKeystoneAfterScan => '스⁠캔⁠한 뒤 서⁠명 가⁠져⁠오⁠기⁠를 누⁠르⁠세⁠요.';
 
   @override
+  String commonKeystoneScanPrompt(String icon) {
+    return 'Keystone⁠에⁠서 $icon 버⁠튼⁠을 누⁠른 뒤\n이 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
+  }
+
+  @override
   String get commonKeystoneScanSignatureResult =>
       'Keystone⁠에⁠서 서⁠명 결⁠과 QR⁠을 연 다⁠음 다⁠시 스⁠캔⁠하⁠세⁠요.';
 
@@ -1192,7 +1310,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonLoadingDots => '불⁠러⁠오⁠는 중...';
 
   @override
-  String get commonLoadingQRCode => 'QR 코⁠드⁠를 불⁠러⁠오⁠는 중 ...';
+  String get commonLoadingQRCode => 'QR 코⁠드⁠를 불⁠러⁠오⁠는 중...';
 
   @override
   String get commonMakeSureTheRoomIsWell =>
@@ -1225,7 +1343,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonMoveTheQRCodeAFew =>
-      '카⁠메⁠라⁠가 초⁠점⁠을 맞⁠출 수 있⁠도⁠록 QR 코⁠드⁠를 카⁠메⁠라⁠에⁠서 몇 인⁠치 더 멀⁠리 떨⁠어⁠뜨⁠려 보⁠세⁠요.';
+      '카⁠메⁠라⁠가 초⁠점⁠을 맞⁠출 수 있⁠도⁠록 QR 코⁠드⁠를 카⁠메⁠라⁠에⁠서 조⁠금 더 멀⁠리 떨⁠어⁠뜨⁠려 보⁠세⁠요.';
 
   @override
   String get commonNetworkConversionFees => '네⁠트⁠워⁠크 + 변⁠환 수⁠수⁠료';
@@ -1240,7 +1358,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonNoActiveAccount => '선⁠택⁠된 계⁠정⁠이 없⁠어⁠요';
 
   @override
-  String get commonNoActiveAccountSentence => '활⁠성 계⁠정⁠이 없⁠어⁠요.';
+  String get commonNoActiveAccountSentence => '선⁠택⁠된 계⁠정⁠이 없⁠어⁠요.';
 
   @override
   String get commonNoCameraCouldBeOpenedCheck =>
@@ -1263,7 +1381,7 @@ class AppLocalizationsKo extends AppLocalizations {
       'Mac⁠에⁠서⁠는 연⁠속⁠성 카⁠메⁠라⁠를 사⁠용⁠해 iPhone⁠으⁠로 대⁠신 스⁠캔⁠할 수 있⁠어⁠요.';
 
   @override
-  String get commonOnYourKeystone => 'Keystone⁠에⁠서 누⁠른 뒤,';
+  String get commonOnYourKeystone => 'on your Keystone,';
 
   @override
   String get commonOpenSettings => '설⁠정 열⁠기';
@@ -1271,6 +1389,9 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get commonOpenTheSignedTransactionQROn =>
       'Keystone⁠에⁠서 서⁠명⁠된 거⁠래 QR⁠을 연 다⁠음 다⁠시 스⁠캔⁠해 주⁠세⁠요.';
+
+  @override
+  String get commonPausedForNetworkUpgrade => '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 일⁠시 중⁠지⁠됨';
 
   @override
   String get commonPayInsufficientZec =>
@@ -1295,7 +1416,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonPending => '대⁠기 중';
 
   @override
-  String get commonPleaseWait => '잠⁠시⁠만 기⁠다⁠려 주⁠세⁠요';
+  String get commonPleaseWait => '기⁠다⁠리⁠는 중';
 
   @override
   String get commonPrepareYourKeystoneWallet => 'Keystone 지⁠갑⁠을 준⁠비⁠해 주⁠세⁠요';
@@ -1335,7 +1456,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonReceived => '받⁠음';
 
   @override
-  String get commonRecipientGets => '수⁠신⁠자⁠가 받⁠을 금⁠액';
+  String get commonRecipientGets => '받⁠는 사⁠람 수⁠령 예⁠정⁠액';
 
   @override
   String get commonRefundFee => '환⁠불 수⁠수⁠료';
@@ -1501,7 +1622,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String commonSymbolRecipient(String symbol) {
-    return '$symbol 수⁠신⁠자';
+    return '$symbol 받⁠는 사⁠람';
   }
 
   @override
@@ -1513,10 +1634,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonSyncing => '동⁠기⁠화 중';
 
   @override
-  String get commonTap => '다⁠음 버⁠튼⁠을';
+  String get commonTap => 'Tap';
 
   @override
-  String get commonThenScanThisQRCode => '이 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
+  String get commonThenScanThisQRCode => 'then scan this QR code';
 
   @override
   String get commonThisQRCodeCouldNotBe =>
@@ -1537,7 +1658,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String commonToAddressOnChain(String address, String chain) {
-    return '받⁠는 주⁠소: $address ($chain)';
+    return '받⁠는 곳: $address ($chain)';
   }
 
   @override
@@ -1597,7 +1718,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonWaitingForWalletSync => '지⁠갑 동⁠기⁠화 대⁠기 중';
 
   @override
-  String get commonWelcomeBack => '다⁠시 오⁠신 것⁠을 환⁠영⁠해⁠요';
+  String get commonWelcomeBack => '다⁠시 오⁠셨⁠네⁠요';
 
   @override
   String get commonWizard => '마⁠법⁠사';
@@ -1615,7 +1736,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonZcashAddress => 'Zcash 주⁠소';
 
   @override
-  String get donationDonatingTo => '기⁠부 대⁠상';
+  String get donationDonatingTo => '후⁠원 대⁠상';
 
   @override
   String get donationEnterAmount => '금⁠액⁠을 입⁠력⁠하⁠세⁠요';
@@ -1647,10 +1768,54 @@ class AppLocalizationsKo extends AppLocalizations {
   String get endpointCustom => '사⁠용⁠자 지⁠정 엔⁠드⁠포⁠인⁠트';
 
   @override
+  String get endpointFailoverSwitchedBack =>
+      '선⁠택⁠한 엔⁠드⁠포⁠인⁠트⁠가 복⁠구⁠되⁠어 다⁠시 전⁠환⁠했⁠어⁠요.';
+
+  @override
+  String get endpointFailoverSwitchedToFallback =>
+      '선⁠택⁠한 엔⁠드⁠포⁠인⁠트⁠가 불⁠안⁠정⁠해⁠서 대⁠체 엔⁠드⁠포⁠인⁠트⁠로 전⁠환⁠했⁠어⁠요.';
+
+  @override
+  String get endpointLatencyUnavailable => '사⁠용 불⁠가';
+
+  @override
+  String get endpointLatencyWrongNetwork => '다⁠른 네⁠트⁠워⁠크';
+
+  @override
+  String endpointRegionName(String region) {
+    String _temp0 = intl.Intl.selectLogic(region, {
+      'standard': '기⁠본',
+      'europe': '유⁠럽',
+      'global': '글⁠로⁠벌',
+      'americas': '아⁠메⁠리⁠카',
+      'asiaPacific': '아⁠시⁠아 태⁠평⁠양',
+      'community': '커⁠뮤⁠니⁠티',
+      'testnet': '테⁠스⁠트⁠넷',
+      'regtest': 'Regtest',
+      'other': '기⁠타',
+    });
+    return '$_temp0';
+  }
+
+  @override
   String get endpointUpdate => '엔⁠드⁠포⁠인⁠트 업⁠데⁠이⁠트';
 
   @override
   String get endpointUpdated => '엔⁠드⁠포⁠인⁠트⁠를 업⁠데⁠이⁠트⁠했⁠어⁠요';
+
+  @override
+  String get enhancePirChanging => '설⁠정 변⁠경 중…';
+
+  @override
+  String get enhancePirOptOutPending =>
+      '비⁠공⁠개 조⁠회⁠가 아⁠직 켜⁠져 있⁠어⁠요. 다⁠시 꺼 보⁠세⁠요.';
+
+  @override
+  String get enhancePirRaisePending =>
+      '비⁠공⁠개 조⁠회⁠가 켜⁠졌⁠어⁠요. 투⁠명 자⁠금⁠의 비⁠공⁠개 복⁠구⁠를 아⁠직 시⁠작⁠하⁠지 못⁠했⁠고, 다⁠시 시⁠도⁠할 거⁠예⁠요.';
+
+  @override
+  String get enhancePirUnchanged => '설⁠정⁠이 바⁠뀌⁠지 않⁠았⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get homeActivityEmpty => '아⁠직 활⁠동⁠이 없⁠어⁠요...';
@@ -1799,16 +1964,17 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeNu7FasterBody =>
-      '첫 확⁠인⁠까⁠지 평⁠균 대⁠기 시⁠간⁠이 ~75⁠초⁠에⁠서 ~25⁠초⁠로 줄⁠어⁠요.';
+      '첫 확⁠인⁠까⁠지 평⁠균 대⁠기 시⁠간⁠이 약 75⁠초⁠에⁠서 약 25⁠초⁠로 줄⁠어⁠요.';
 
   @override
-  String get homeNu7FasterTitle => '블⁠록⁠이 ~3× 빨⁠라⁠져⁠요';
+  String get homeNu7FasterTitle => '블⁠록⁠이 약 3⁠배 빨⁠라⁠져⁠요';
 
   @override
-  String get homeNu7GotIt => '확⁠인⁠했⁠어⁠요';
+  String get homeNu7GotIt => '확⁠인';
 
   @override
-  String get homeNu7ThroughputBody => '블⁠록⁠당 처⁠리⁠할 수 있⁠는 차⁠폐 거⁠래⁠가 2.3x 늘⁠어⁠요.';
+  String get homeNu7ThroughputBody =>
+      '블⁠록⁠당 처⁠리⁠할 수 있⁠는 차⁠폐 거⁠래⁠가 2.3⁠배 늘⁠어⁠요.';
 
   @override
   String get homeNu7ThroughputTitle => '차⁠폐 거⁠래 처⁠리⁠량 증⁠가';
@@ -1872,7 +2038,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeShieldBroadcastNotStored =>
-      '차⁠폐 거⁠래⁠가 네⁠트⁠워⁠크⁠에 전⁠달⁠됐⁠지⁠만 Vizor⁠가 기⁠기⁠에 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠나 탐⁠색⁠기⁠에⁠서 최⁠신 상⁠태⁠를 확⁠인⁠하⁠기 전⁠에⁠는 다⁠시 시⁠도⁠하⁠지 마⁠세⁠요.';
+      '차⁠폐 거⁠래⁠가 네⁠트⁠워⁠크⁠에 전⁠달⁠됐⁠지⁠만 Vizor⁠가 기⁠기⁠에 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠나 블⁠록 탐⁠색⁠기⁠에⁠서 최⁠신 상⁠태⁠를 확⁠인⁠하⁠기 전⁠에⁠는 다⁠시 시⁠도⁠하⁠지 마⁠세⁠요.';
 
   @override
   String get homeShieldBroadcastUnknown =>
@@ -2187,11 +2353,16 @@ class AppLocalizationsKo extends AppLocalizations {
   String get keystoneFirmwareTitle => 'Keystone 펌⁠웨⁠어 확⁠인';
 
   @override
-  String get keystoneFirmwareUpdatePrefix =>
-      '최⁠신 Keystone 펌⁠웨⁠어⁠로 업⁠데⁠이⁠트⁠하⁠세⁠요: ';
+  String keystoneFirmwareUpdate(String link) {
+    return '최⁠신 Keystone 펌⁠웨⁠어⁠로 업⁠데⁠이⁠트⁠하⁠세⁠요: $link';
+  }
 
   @override
-  String get keystoneImReadyNow => '준⁠비⁠됐⁠어⁠요';
+  String get keystoneFirmwareUpdatePrefix =>
+      'Update to the latest Keystone firmware at ';
+
+  @override
+  String get keystoneImReadyNow => '준⁠비 완⁠료';
 
   @override
   String get keystoneOnVizor => 'Vizor⁠에⁠서';
@@ -2274,7 +2445,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get keystoneTipMoveKeystoneFurther =>
-      '카⁠메⁠라⁠가 초⁠점⁠을 맞⁠출 수 있⁠도⁠록 Keystone⁠을 카⁠메⁠라⁠에⁠서 몇 인⁠치 더 멀⁠리 떨⁠어⁠뜨⁠려 보⁠세⁠요.';
+      '카⁠메⁠라⁠가 초⁠점⁠을 맞⁠출 수 있⁠도⁠록 Keystone⁠을 카⁠메⁠라⁠에⁠서 조⁠금 더 멀⁠리 떨⁠어⁠뜨⁠려 보⁠세⁠요.';
 
   @override
   String get keystoneTipTapFullScreen =>
@@ -2353,14 +2524,14 @@ class AppLocalizationsKo extends AppLocalizations {
       'Vizor⁠에⁠서 이 Ledger 계⁠정⁠을 읽⁠지 못⁠했⁠어⁠요. USB 케⁠이⁠블⁠로 Ledger⁠를 다⁠시 연⁠결⁠하⁠고 PIN⁠으⁠로 잠⁠금⁠을 해⁠제⁠한 다⁠음 Zcash 앱⁠을 열⁠어 주⁠세⁠요. 그⁠런 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
-  String get ledgerBluetoothConnection => '블⁠루⁠투⁠스 연⁠결';
+  String get ledgerBluetoothConnection => 'Bluetooth 연⁠결';
 
   @override
   String get ledgerBluetoothModelsList => 'Nano X, Flex, Stax, Nano Gen5';
 
   @override
   String get ledgerBluetoothPermissionRequired =>
-      'Ledger⁠를 찾⁠으⁠려⁠면 블⁠루⁠투⁠스 권⁠한⁠이 필⁠요⁠해⁠요. 설⁠정⁠에⁠서 허⁠용⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      'Ledger⁠를 찾⁠으⁠려⁠면 Bluetooth 권⁠한⁠이 필⁠요⁠해⁠요. 설⁠정⁠에⁠서 허⁠용⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerBtAccessAllowed =>
@@ -2549,7 +2720,7 @@ class AppLocalizationsKo extends AppLocalizations {
       'Ledger⁠가 바⁠뀌⁠었⁠어⁠요. Ledger⁠를 하⁠나⁠만 연⁠결⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
-  String get ledgerCheckingBluetoothAccess => '블⁠루⁠투⁠스 접⁠근 권⁠한⁠을 확⁠인⁠하⁠는 중…';
+  String get ledgerCheckingBluetoothAccess => 'Bluetooth 접⁠근 권⁠한⁠을 확⁠인⁠하⁠는 중…';
 
   @override
   String get ledgerCheckingUsb => 'USB 연⁠결⁠을 확⁠인⁠하⁠는 중…';
@@ -2576,7 +2747,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerComeBackFindMyLedger =>
-      'Ledger⁠의 잠⁠금⁠을 해⁠제⁠해 둔 채⁠로 아⁠래⁠의 \'Ledger 찾⁠기\'를 선⁠택⁠해 주⁠세⁠요.';
+      'Ledger⁠의 잠⁠금⁠을 해⁠제⁠해 둔 채⁠로 아⁠래⁠의 \'내 Ledger 찾⁠기\'를 선⁠택⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerComeBackReconnect => '돌⁠아⁠와⁠서 다⁠시 연⁠결';
@@ -2606,6 +2777,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get ledgerConnectionHelp => '연⁠결 도⁠움⁠말';
 
   @override
+  String get ledgerConnectionRequiredBluetooth =>
+      'Ledger⁠를 켜⁠고 잠⁠금⁠을 해⁠제⁠한 다⁠음 Bluetooth⁠로 다⁠시 연⁠결⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerConnectionRequiredUsb =>
+      'Ledger⁠를 USB⁠로 연⁠결⁠하⁠고 잠⁠금⁠을 해⁠제⁠한 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
   String get ledgerContinueSigning => '서⁠명 이⁠어⁠가⁠기';
 
   @override
@@ -2630,7 +2809,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerEnableBluetoothNearby =>
-      '블⁠루⁠투⁠스⁠를 켜⁠고 Ledger⁠를 가⁠까⁠이⁠에 두⁠세⁠요.';
+      'Bluetooth⁠를 켜⁠고 Ledger⁠를 가⁠까⁠이⁠에 두⁠세⁠요.';
 
   @override
   String get ledgerErrorAlreadyAdded => '이 Ledger 계⁠정⁠은 이⁠미 Vizor⁠에 있⁠어⁠요.';
@@ -2656,7 +2835,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerErrorViewingKeyDeclined =>
-      '[security] Ledger⁠에⁠서 뷰⁠잉 키 요⁠청⁠을 거⁠부⁠했⁠어⁠요. 준⁠비⁠되⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      'Ledger⁠에⁠서 뷰⁠잉 키 요⁠청⁠을 거⁠부⁠했⁠어⁠요. 준⁠비⁠되⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerErrorViewingKeyRejected =>
@@ -2697,18 +2876,18 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerFailureMsgMemoHashUnsupported =>
-      '비⁠영⁠어 메⁠모⁠에 서⁠명⁠하⁠려⁠면 Ledger⁠의 Zcash 앱⁠을 업⁠데⁠이⁠트⁠해 주⁠세⁠요';
+      '영⁠어⁠가 아⁠닌 메⁠모⁠에 서⁠명⁠하⁠려⁠면 Ledger⁠의 Zcash 앱⁠을 업⁠데⁠이⁠트⁠해 주⁠세⁠요';
 
   @override
   String get ledgerFailureMsgMigrationTooLarge =>
-      '이 마⁠이⁠그⁠레⁠이⁠션 단⁠계⁠는 Ledger⁠가 서⁠명⁠하⁠기⁠엔 너⁠무 커⁠요. Vizor⁠는 아⁠직 나⁠눌 수 없⁠어⁠요.';
+      '이 이⁠전 단⁠계⁠는 Ledger⁠가 서⁠명⁠하⁠기⁠엔 너⁠무 커⁠요. Vizor⁠는 아⁠직 나⁠눌 수 없⁠어⁠요.';
 
   @override
   String get ledgerFailureMsgOpenZcash => 'Ledger⁠에⁠서 Zcash 앱⁠을 열⁠어 주⁠세⁠요.';
 
   @override
   String get ledgerFailureMsgOrchardChange =>
-      'Ledger⁠는 Orchard⁠에 잔⁠돈⁠이 남⁠는 거⁠래⁠에 서⁠명⁠할 수 없⁠어⁠요. 먼⁠저 Orchard 잔⁠액⁠을 Ironwood⁠로 마⁠이⁠그⁠레⁠이⁠션⁠해 주⁠세⁠요.';
+      'Ledger⁠는 Orchard⁠에 잔⁠돈⁠이 남⁠는 거⁠래⁠에 서⁠명⁠할 수 없⁠어⁠요. 먼⁠저 Orchard 잔⁠액⁠을 Ironwood⁠로 이⁠전⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerFailureMsgPaymentTooLarge =>
@@ -2751,7 +2930,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String ledgerFailureMsgUnexpectedWithCode(String code) {
-    return '예⁠상⁠치 못⁠한 Ledger 오⁠류⁠$code⁠가 발⁠생⁠했⁠어⁠요. Zcash 앱⁠을 다⁠시 열⁠고 시⁠도⁠해 주⁠세⁠요.';
+    return '예⁠상⁠치 못⁠한 Ledger 오⁠류⁠가 발⁠생⁠했⁠어⁠요⁠$code. Zcash 앱⁠을 다⁠시 열⁠고 시⁠도⁠해 주⁠세⁠요.';
   }
 
   @override
@@ -2974,7 +3153,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerKeepNearbyUnlocked =>
-      'Ledger⁠를 가⁠까⁠이⁠에 두⁠고 잠⁠금⁠을 해⁠제⁠한 상⁠태⁠로 블⁠루⁠투⁠스⁠를 켜 두⁠세⁠요.';
+      'Ledger⁠를 가⁠까⁠이⁠에 두⁠고 잠⁠금⁠을 해⁠제⁠한 상⁠태⁠로 Bluetooth⁠를 켜 두⁠세⁠요.';
 
   @override
   String get ledgerKeepNearbyUnlockedShort =>
@@ -2985,7 +3164,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerMacosBluetoothPrompt =>
-      'macOS⁠에⁠서 블⁠루⁠투⁠스 접⁠근 권⁠한⁠을 요⁠청⁠할 수 있⁠어⁠요. 요⁠청⁠이 나⁠타⁠나⁠면 Vizor⁠에 접⁠근⁠을 허⁠용⁠해 주⁠세⁠요.';
+      'macOS⁠에⁠서 Bluetooth 접⁠근 권⁠한⁠을 요⁠청⁠할 수 있⁠어⁠요. 요⁠청⁠이 나⁠타⁠나⁠면 Vizor⁠에 접⁠근⁠을 허⁠용⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerMismatchChooseHolder =>
@@ -3008,8 +3187,17 @@ class AppLocalizationsKo extends AppLocalizations {
       '아⁠래⁠에⁠서 Bluetooth 접⁠근 권⁠한⁠을 확⁠인⁠한 뒤 Ledger⁠에 다⁠시 연⁠결⁠해 보⁠세⁠요.';
 
   @override
+  String get ledgerMobileConnectionFailed => 'Ledger⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
   String get ledgerMobileConnectionLost =>
       'Ledger⁠와⁠의 Bluetooth 연⁠결⁠이 끊⁠겼⁠거⁠나 연⁠결⁠할 수 없⁠어⁠요. Ledger⁠를 켜⁠고 잠⁠금⁠을 해⁠제⁠한 뒤 가⁠까⁠이⁠에 두⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerMobileDiscoveryFailed => 'Ledger⁠를 찾⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get ledgerMobileEmptyResponse => 'Ledger⁠가 빈 응⁠답⁠을 보⁠냈⁠어⁠요.';
 
   @override
   String get ledgerMobilePairingInvalid =>
@@ -3035,6 +3223,14 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 Android 버⁠전⁠에⁠서 Ledger⁠를 찾⁠으⁠려⁠면 위⁠치 서⁠비⁠스⁠를 켠 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
+  String get ledgerMobileUnavailable =>
+      'Vizor⁠가 Ledger⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요. Ledger⁠가 켜⁠져 있⁠고 잠⁠금⁠이 해⁠제⁠되⁠어 있⁠으⁠며 가⁠까⁠이⁠에 있⁠는⁠지 확⁠인⁠한 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerMobileUnknownDiscoveryEvent =>
+      'Ledger 검⁠색 중 알 수 없⁠는 응⁠답⁠을 받⁠았⁠어⁠요.';
+
+  @override
   String get ledgerNoDevicesFound => 'Ledger 기⁠기⁠를 찾⁠지 못⁠했⁠어⁠요';
 
   @override
@@ -3043,7 +3239,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerNoneFoundDesktop =>
-      'Ledger⁠를 찾⁠지 못⁠했⁠어⁠요. Ledger⁠의 잠⁠금⁠을 해⁠제⁠하⁠고 블⁠루⁠투⁠스⁠를 켠 다⁠음 가⁠까⁠이⁠에 두⁠세⁠요. 그⁠런 다⁠음 다⁠시 검⁠색⁠해 주⁠세⁠요.';
+      'Ledger⁠를 찾⁠지 못⁠했⁠어⁠요. Ledger⁠의 잠⁠금⁠을 해⁠제⁠하⁠고 Bluetooth⁠를 켠 다⁠음 가⁠까⁠이⁠에 두⁠세⁠요. 그⁠런 다⁠음 다⁠시 검⁠색⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerOnYourLedger => 'Ledger⁠에⁠서';
@@ -3060,7 +3256,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerOpenBluetoothSettingsManually =>
-      '블⁠루⁠투⁠스 설⁠정⁠을 직⁠접 열⁠어 기⁠존 페⁠어⁠링⁠을 삭⁠제⁠해 주⁠세⁠요.';
+      'Bluetooth 설⁠정⁠을 직⁠접 열⁠어 기⁠존 페⁠어⁠링⁠을 삭⁠제⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerOpenZcashThenTryAgain => 'Zcash 앱⁠을 연 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.';
@@ -3120,7 +3316,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerReadyReviewOnLedger =>
-      '준⁠비⁠되⁠면 Ledger⁠에⁠서 거⁠래⁠를 검⁠토⁠하⁠도⁠록 계⁠속⁠해 주⁠세⁠요.';
+      'Ledger⁠에⁠서 거⁠래⁠를 검⁠토⁠할 준⁠비⁠가 되⁠면 계⁠속⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerReconnectTitle => 'Ledger 다⁠시 연⁠결';
@@ -3366,14 +3562,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get ledgerTitleSelectYourLedger => 'Ledger⁠를 선⁠택⁠해 주⁠세⁠요';
 
   @override
-  String get ledgerTransportBluetooth => '블⁠루⁠투⁠스';
+  String get ledgerTransportBluetooth => 'Bluetooth';
 
   @override
   String get ledgerTransportUsb => 'USB';
 
   @override
   String get ledgerUnlockBluetoothNearby =>
-      'Ledger⁠의 잠⁠금⁠을 해⁠제⁠하⁠고 블⁠루⁠투⁠스⁠를 켠 다⁠음 가⁠까⁠이⁠에 두⁠세⁠요.';
+      'Ledger⁠의 잠⁠금⁠을 해⁠제⁠하⁠고 Bluetooth⁠를 켠 다⁠음 가⁠까⁠이⁠에 두⁠세⁠요.';
 
   @override
   String get ledgerUnlockEnableBluetoothNearby =>
@@ -3406,7 +3602,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerUsbCouldNotStart =>
-      'Vizor⁠가 Ledger⁠의 USB 접⁠근⁠을 시⁠작⁠하⁠지 못⁠했⁠어⁠요. 장⁠치⁠를 다⁠시 연⁠결⁠한 뒤 시⁠도⁠해 주⁠세⁠요.';
+      'Vizor⁠가 Ledger⁠의 USB 접⁠근⁠을 시⁠작⁠하⁠지 못⁠했⁠어⁠요. 기⁠기⁠를 다⁠시 연⁠결⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String ledgerUsbInterrupted(String instruction) {
@@ -3447,7 +3643,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get lockCheckingPasscode => '암⁠호⁠를 확⁠인⁠하⁠는 중...';
 
   @override
-  String get lockConfirmPasscodeSemantics => '암⁠호⁠를 확⁠인⁠하⁠여 Vizor 잠⁠금 해⁠제';
+  String get lockConfirmPasscodeSemantics => '암⁠호⁠를 입⁠력⁠해 Vizor 잠⁠금 해⁠제';
 
   @override
   String lockNavSyncing(int percent) {
@@ -3504,7 +3700,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationAnnouncementBody =>
-      'Ironwood⁠는 Zcash⁠의 최⁠신 차⁠폐 풀⁠이⁠에⁠요.\n공⁠식⁠적⁠으⁠로 검⁠증⁠된 최⁠초⁠의 풀⁠로,\n최⁠첨⁠단 암⁠호 기⁠술⁠을 사⁠용⁠해⁠요.';
+      'Ironwood⁠는 Zcash⁠의 최⁠신 차⁠폐 풀⁠이⁠에⁠요.\n형⁠식 검⁠증⁠을 거⁠친 최⁠초⁠의 풀⁠로,\n최⁠첨⁠단 암⁠호 기⁠술⁠을 사⁠용⁠해⁠요.';
 
   @override
   String get migrationAnnouncementReleaseNote => '공⁠식 릴⁠리⁠스 노⁠트';
@@ -3519,7 +3715,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationBackHome => '홈⁠으⁠로 돌⁠아⁠가⁠기';
 
   @override
-  String get migrationBackHowItWorks => '이⁠전 방⁠식';
+  String get migrationBackHowItWorks => '이⁠전 진⁠행 방⁠식';
 
   @override
   String get migrationBackOptions => '이⁠전 옵⁠션';
@@ -3542,7 +3738,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationBlocksEstimate(String blocks) {
-    return '약 $blocks⁠블⁠록';
+    return '약 $blocks 블⁠록';
   }
 
   @override
@@ -3596,7 +3792,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationCompleteTitle(String amount) {
-    return '내\n$amount ZEC⁠가\nIronwood⁠에 있⁠어⁠요!';
+    return '$amount ZEC⁠가\nIronwood⁠에 있⁠어⁠요!';
   }
 
   @override
@@ -3648,10 +3844,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationErrorBroadcast =>
-      '이⁠전 거⁠래⁠를 전⁠송⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '이⁠전 거⁠래⁠를 전⁠송⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
-  String get migrationErrorContinue => '이⁠전⁠을 계⁠속⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+  String get migrationErrorContinue =>
+      '이⁠전⁠을 계⁠속⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationErrorKeystonePrepare => 'Keystone 서⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요.';
@@ -3665,7 +3862,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '금⁠액⁠이⁠나 수⁠수⁠료⁠가 바⁠뀌⁠었⁠어⁠요. 업⁠데⁠이⁠트⁠된 내⁠용⁠을 확⁠인⁠하⁠세⁠요.';
 
   @override
-  String get migrationErrorStart => '이⁠전⁠을 시⁠작⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+  String get migrationErrorStart => '이⁠전⁠을 시⁠작⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationErrorUnlockBeforeContinue =>
@@ -3677,7 +3874,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationErrorWaitForSync =>
-      '동⁠기⁠화⁠가 끝⁠날 때⁠까⁠지 기⁠다⁠린 뒤 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '동⁠기⁠화⁠가 끝⁠날 때⁠까⁠지 기⁠다⁠린 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationEstimateAfterSigning => '서⁠명 후';
@@ -3794,7 +3991,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationHowTitle => '이⁠전 방⁠식';
+  String get migrationHowTitle => '이⁠전 진⁠행 방⁠식';
 
   @override
   String get migrationImmediateAuthoriseAnyway => '그⁠래⁠도 승⁠인';
@@ -3817,7 +4014,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationImmediatePlanFailed =>
-      '즉⁠시 이⁠전 계⁠획⁠을 계⁠산⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠한 뒤 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '즉⁠시 이⁠전 계⁠획⁠을 계⁠산⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationImmediateRetryCalculation => '계⁠산 다⁠시 시⁠도';
@@ -3826,12 +4023,20 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationImmediateReviewTitle => '이⁠전 계⁠획 검⁠토';
 
   @override
+  String migrationImmediateTradeoffBody(String amount, String highlight) {
+    return '눈⁠에 보⁠이⁠는 한 번⁠의 단⁠계⁠로 넘⁠어⁠가⁠므⁠로 $amount⁠과(와) 시⁠점⁠이 $highlight.';
+  }
+
+  @override
   String get migrationImmediateTradeoffEmphasis =>
-      '내 지⁠갑⁠과 더 쉽⁠게 연⁠결⁠될 수 있⁠어⁠요.';
+      'easier to associate with your wallet.';
+
+  @override
+  String get migrationImmediateTradeoffHighlight => '내 지⁠갑⁠과 더 쉽⁠게 연⁠결⁠돼⁠요';
 
   @override
   String migrationImmediateTradeoffLead(String amount) {
-    return '눈⁠에 보⁠이⁠는 한 번⁠의 단⁠계⁠로 넘⁠어⁠가⁠므⁠로 $amount⁠과(와) 시⁠점⁠이 ';
+    return 'Crosses in one visible step — your $amount and timing are ';
   }
 
   @override
@@ -3895,11 +4100,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationKeystoneCameraOnly =>
-      'Keystone 이⁠전 서⁠명⁠은 카⁠메⁠라 QR 스⁠캔⁠만 지⁠원⁠해⁠요. 카⁠메⁠라⁠를 연⁠결⁠한 뒤 다⁠시 시⁠도⁠하⁠세⁠요.';
+      'Keystone 이⁠전 서⁠명⁠은 카⁠메⁠라 QR 스⁠캔⁠만 지⁠원⁠해⁠요. 카⁠메⁠라⁠를 연⁠결⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationKeystoneCancelFailed =>
-      '서⁠명 요⁠청⁠을 취⁠소⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '서⁠명 요⁠청⁠을 취⁠소⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationKeystoneClickToEnlarge => 'QR⁠을 클⁠릭⁠해 확⁠대';
@@ -3915,7 +4120,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationKeystoneFirmwareUpdate =>
-      'Ironwood 이⁠전⁠에 서⁠명⁠하⁠려⁠면 Keystone 펌⁠웨⁠어⁠를 업⁠데⁠이⁠트⁠한 뒤 다⁠시 시⁠도⁠하⁠세⁠요.';
+      'Ironwood 이⁠전⁠에 서⁠명⁠하⁠려⁠면 Keystone 펌⁠웨⁠어⁠를 업⁠데⁠이⁠트⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationKeystoneMobileTitle => 'Keystone 이⁠전';
@@ -3937,7 +4142,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationKeystonePrepareFailed =>
-      'Keystone 서⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+      'Keystone 서⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationKeystonePreparingQr => 'QR 코⁠드 준⁠비 중...';
@@ -3968,7 +4173,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationKeystoneQrBodyCombined =>
-      'Keystone⁠으⁠로 이 요⁠청⁠을 스⁠캔⁠해 준⁠비 거⁠래⁠와 이⁠전 배⁠치⁠를 함⁠께 서⁠명⁠하⁠세⁠요.';
+      'Keystone⁠으⁠로 이 요⁠청⁠을 스⁠캔⁠해 준⁠비 거⁠래⁠와 이⁠전 배⁠치⁠에 함⁠께 서⁠명⁠하⁠세⁠요.';
 
   @override
   String get migrationKeystoneQrBodyImmediate =>
@@ -4074,7 +4279,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationKeystoneTryAfterSync => '동⁠기⁠화⁠가 끝⁠난 후 다⁠시 시⁠도⁠하⁠세⁠요.';
+  String get migrationKeystoneTryAfterSync => '동⁠기⁠화⁠가 끝⁠난 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationKeystoneUnavailableTitle =>
@@ -4124,7 +4329,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationLeftToTransfer(String amount) {
-    return '남⁠은 전⁠송: $amount';
+    return '남⁠은 금⁠액: $amount';
   }
 
   @override
@@ -4174,7 +4379,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationManageUpdateFailed =>
-      '이⁠전⁠을 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '이⁠전⁠을 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationMobileActionAllTransactions => '모⁠든 거⁠래';
@@ -4314,7 +4519,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileFastPrivacyBodyHighlight =>
-      '내 지⁠갑⁠과 연⁠결⁠되⁠기 더 쉬⁠워⁠요';
+      'easier to associate with your wallet';
 
   @override
   String get migrationMobileFastPrivacyConsiderPrivate =>
@@ -4355,7 +4560,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileKeepRunning =>
-      '단, Vizor⁠는 열⁠어 두⁠고 실⁠행 상⁠태⁠로 유⁠지⁠하⁠세⁠요.';
+      '단, Vizor⁠는 열⁠어 둔 채 계⁠속 실⁠행⁠해 두⁠세⁠요.';
 
   @override
   String get migrationMobileKeystoneConfirmPrepSemantics =>
@@ -4454,7 +4659,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationMobileNextExpectedIn(String timing) {
-    return '다⁠음 이⁠전 단⁠계 예⁠상 시⁠점:\n$timing.';
+    return '다⁠음 이⁠전 단⁠계⁠는\n$timing 예⁠정⁠이⁠에⁠요.';
   }
 
   @override
@@ -4487,7 +4692,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationMobileNextTimingUntil(String timing) {
-    return '다⁠음 이⁠전 단⁠계⁠까⁠지 $timing.\n알⁠림⁠이 켜⁠져 있⁠어⁠요. Vizor⁠를 나⁠갔⁠다⁠가 나⁠중⁠에 다⁠시 확⁠인⁠해⁠도 돼⁠요.';
+    return '다⁠음 이⁠전 단⁠계⁠는 $timing 시⁠작⁠돼⁠요.\n알⁠림⁠이 켜⁠져 있⁠어⁠요. Vizor⁠를 나⁠갔⁠다⁠가 나⁠중⁠에 다⁠시 확⁠인⁠해⁠도 돼⁠요.';
   }
 
   @override
@@ -4576,7 +4781,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationMobilePartLabel(int number) {
-    return '$number⁠단⁠계';
+    return '파⁠트 $number';
   }
 
   @override
@@ -4589,7 +4794,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobilePartsPlaceholder =>
-      '거⁠래⁠가 준⁠비⁠되⁠면 이⁠전 단⁠계⁠가 여⁠기⁠에 표⁠시⁠돼⁠요.';
+      '거⁠래⁠가 준⁠비⁠되⁠면 이⁠전 파⁠트⁠가 여⁠기⁠에 표⁠시⁠돼⁠요.';
 
   @override
   String get migrationMobilePrepAdvancing =>
@@ -4632,7 +4837,8 @@ class AppLocalizationsKo extends AppLocalizations {
       '백⁠그⁠라⁠운⁠드⁠에⁠서 계⁠속⁠하⁠려⁠면 알⁠림⁠을 허⁠용⁠하⁠거⁠나 Vizor⁠를 열⁠어 두⁠세⁠요.';
 
   @override
-  String get migrationMobilePrepPausedLeft => '나⁠가⁠셔⁠서 준⁠비⁠가 일⁠시 중⁠지⁠됐⁠어⁠요.';
+  String get migrationMobilePrepPausedLeft =>
+      '앱⁠에⁠서 나⁠가⁠서 준⁠비⁠가 일⁠시 중⁠지⁠됐⁠어⁠요.';
 
   @override
   String get migrationMobilePrepSyncingWallet => '지⁠갑⁠을 동⁠기⁠화⁠하⁠는 중…';
@@ -4660,7 +4866,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileProcessPrepareBody =>
-      '이⁠전⁠을 시⁠작⁠하⁠기 전⁠에 Vizor⁠가 잔⁠액⁠을 흔⁠한 크⁠기⁠의 여⁠러 부⁠분⁠으⁠로 재⁠구⁠성⁠해⁠요.';
+      '이⁠전⁠을 시⁠작⁠하⁠기 전⁠에 Vizor⁠가 잔⁠액⁠을 많⁠이 쓰⁠이⁠는 크⁠기⁠의 여⁠러 부⁠분⁠으⁠로 재⁠구⁠성⁠해⁠요.';
 
   @override
   String get migrationMobileProcessPrepareTitle => '잔⁠액 준⁠비';
@@ -4677,12 +4883,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationMobileProgressAllClearBatch(int number) {
-    return '문⁠제⁠없⁠어⁠요. 배⁠치 #$number⁠를 처⁠리⁠하⁠는 중';
+    return '문⁠제⁠없⁠어⁠요. 배⁠치 #$number 처⁠리 중';
   }
 
   @override
   String migrationMobileProgressBatchReady(int number) {
-    return '배⁠치 #$number⁠가 준⁠비⁠됐⁠어⁠요.';
+    return '배⁠치 #$number 준⁠비⁠가 끝⁠났⁠어⁠요.';
   }
 
   @override
@@ -4738,7 +4944,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationMobileSavedTxError => '저⁠장⁠된 거⁠래 두 건⁠을 다⁠시 열⁠지 못⁠했⁠어⁠요.';
 
   @override
-  String get migrationMobileScheduleChange => '거⁠스⁠름⁠돈';
+  String get migrationMobileScheduleChange => '잔⁠돈';
 
   @override
   String migrationMobileScheduleConfirming(int count, int target) {
@@ -4762,7 +4968,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationMobileScheduleOf(int current, int total) {
-    return '$total⁠개 중 $current⁠개';
+    return '$total⁠회 중 $current⁠회';
   }
 
   @override
@@ -4818,7 +5024,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileStartReadyBody =>
-      '계⁠속⁠하⁠면 Keystone⁠으⁠로 준⁠비 거⁠래⁠와 이⁠전 배⁠치⁠를 함⁠께 서⁠명⁠해⁠요.';
+      '계⁠속⁠하⁠면 Keystone⁠으⁠로 준⁠비 거⁠래⁠와 이⁠전 배⁠치⁠에 함⁠께 서⁠명⁠해⁠요.';
 
   @override
   String migrationMobileStatusNotesCount(int count) {
@@ -4826,7 +5032,12 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileStatusNotesLead => '이⁠전 ';
+  String get migrationMobileStatusNotesLead => 'Migration ';
+
+  @override
+  String migrationMobileStatusNotesTitle(String notes) {
+    return '이⁠전 $notes';
+  }
 
   @override
   String get migrationMobileSyncingProgress =>
@@ -4855,20 +5066,30 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 확⁠인⁠이 끝⁠나⁠면 Keystone⁠에⁠서 한 번 더 승⁠인⁠해⁠야 해⁠요.';
 
   @override
-  String get migrationMobileWaitLoopBatch => ' 거⁠래 배⁠치';
+  String get migrationMobileWaitLoopBatch => ' the batch of transactions';
 
   @override
   String get migrationMobileWaitLoopCaption =>
       '여⁠러 번 반⁠복⁠되⁠며\n기⁠다⁠리⁠는 데 2~10⁠시⁠간\n걸⁠릴 수 있⁠어⁠요';
 
   @override
-  String get migrationMobileWaitLoopForWindow => ' 서⁠명 구⁠간⁠까⁠지';
+  String get migrationMobileWaitLoopForWindow => ' for the window';
 
   @override
   String get migrationMobileWaitLoopSign => '서⁠명⁠하⁠기';
 
   @override
+  String migrationMobileWaitLoopSignLine(String highlight) {
+    return '거⁠래 배⁠치 $highlight';
+  }
+
+  @override
   String get migrationMobileWaitLoopWait => '기⁠다⁠리⁠기';
+
+  @override
+  String migrationMobileWaitLoopWaitLine(String highlight) {
+    return '서⁠명 구⁠간⁠까⁠지 $highlight';
+  }
 
   @override
   String get migrationMobileWaitNoteSplit => '노⁠트 분⁠할';
@@ -4879,7 +5100,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationMobileWaitSplitInto(int count) {
-    return '노⁠트⁠를 이⁠전 $count⁠단⁠계⁠로 분⁠할';
+    return '노⁠트⁠를 이⁠전 파⁠트 $count⁠개⁠로 분⁠할';
   }
 
   @override
@@ -4919,7 +5140,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationNextActionLabelNextWindow => '다⁠음 이⁠전 구⁠간';
 
   @override
-  String get migrationNextActionLabelOpeningWindow => '이⁠전 구⁠간 여⁠는 중';
+  String get migrationNextActionLabelOpeningWindow => '이⁠전 구⁠간 대⁠기 중';
 
   @override
   String get migrationNextActionLabelSending => '이⁠전 전⁠송 중';
@@ -4993,10 +5214,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationOptionsSelectReview => '선⁠택 및 검⁠토';
 
   @override
-  String get migrationOptionsTitle => '이⁠전 방⁠식 선⁠택';
+  String get migrationOptionsTitle => '이⁠전 방⁠법 선⁠택';
 
   @override
-  String get migrationOptionsTitleMoveRest => '나⁠머⁠지⁠를 옮⁠기⁠는 방⁠법';
+  String get migrationOptionsTitleMoveRest => '나⁠머⁠지 이⁠전 방⁠법';
 
   @override
   String migrationOverallProgress(String completed, String total) {
@@ -5041,7 +5262,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationPreparationTipOrganizing =>
-      '잔⁠액⁠을 흔⁠한 크⁠기⁠로 나⁠누⁠고 있⁠어⁠요. 이⁠전⁠을 연⁠결⁠해 알⁠아⁠내⁠기 어⁠려⁠워⁠져⁠요.';
+      '잔⁠액⁠을 많⁠이 쓰⁠이⁠는 크⁠기⁠로 나⁠누⁠고 있⁠어⁠요. 이⁠렇⁠게 하⁠면 이⁠전 내⁠역⁠을 서⁠로 연⁠결⁠하⁠기 어⁠려⁠워⁠져⁠요.';
 
   @override
   String get migrationPreparationTipRounds =>
@@ -5144,7 +5365,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationRingWaitingForBlock => '블⁠록 대⁠기 중';
 
   @override
-  String get migrationRingWaitingForPreviousSplit => '이⁠전 분⁠할 대⁠기 중';
+  String get migrationRingWaitingForPreviousSplit => '직⁠전 분⁠할 대⁠기 중';
 
   @override
   String get migrationRouteNotAvailable => '이 계⁠정⁠에⁠서⁠는 이⁠전⁠을 사⁠용⁠할 수 없⁠어⁠요.';
@@ -5157,7 +5378,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationRouteSyncFailed =>
-      '동⁠기⁠화⁠를 마⁠치⁠지 못⁠했⁠어⁠요. Vizor⁠가 동⁠기⁠화⁠된 후 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '동⁠기⁠화⁠를 마⁠치⁠지 못⁠했⁠어⁠요. Vizor⁠가 동⁠기⁠화⁠된 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationScheduleBroadcasting => '전⁠송 중';
@@ -5220,7 +5441,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationScheduleSemanticsAwaiting(String height) {
-    return '이⁠전 분⁠할⁠을 기⁠다⁠리⁠는 중, 예⁠상 블⁠록 $height';
+    return '직⁠전 분⁠할⁠을 기⁠다⁠리⁠는 중, 예⁠상 블⁠록 $height';
   }
 
   @override
@@ -5291,7 +5512,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationScheduleSemanticsRescheduled(String from, String to) {
-    return '블⁠록 $from⁠에⁠서 블⁠록 $to⁠로 재⁠예⁠약⁠됨';
+    return '$from 블⁠록⁠에⁠서 $to 블⁠록⁠으⁠로 재⁠예⁠약⁠됨';
   }
 
   @override
@@ -5383,7 +5604,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationStatusAttentionFooter =>
-      '자⁠금⁠은 잃⁠지 않⁠았⁠어⁠요. Vizor⁠가 동⁠기⁠화⁠되⁠어 온⁠라⁠인⁠인⁠지 확⁠인⁠한 뒤 이⁠전⁠을 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '잃⁠은 자⁠금⁠은 없⁠어⁠요. Vizor⁠가 동⁠기⁠화⁠되⁠어 온⁠라⁠인⁠인⁠지 확⁠인⁠한 뒤 이⁠전⁠을 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationStatusAttentionTitle => '이⁠전 확⁠인 필⁠요';
@@ -5425,7 +5646,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationStatusLeaveFooter =>
-      '이 화⁠면⁠을 나⁠가⁠도 돼⁠요.\n단, Vizor⁠는 계⁠속 열⁠어 두⁠세⁠요.';
+      '이 화⁠면⁠을 나⁠가⁠도 돼⁠요.\n단, Vizor⁠는 열⁠어 둔 채 계⁠속 실⁠행⁠해 두⁠세⁠요.';
 
   @override
   String get migrationStatusLedgerUnsupported =>
@@ -5468,7 +5689,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationStatusScheduledFooter =>
-      'Vizor⁠가 열⁠려 있⁠는 동⁠안 이⁠전 작⁠업⁠기⁠가 예⁠약⁠된 전⁠송⁠을 진⁠행⁠해⁠요.';
+      'Vizor⁠가 열⁠려 있⁠는 동⁠안 예⁠약⁠된 전⁠송⁠이 자⁠동⁠으⁠로 진⁠행⁠돼⁠요.';
 
   @override
   String get migrationStatusScheduledTitle => '전⁠송 예⁠약⁠됨';
@@ -5482,7 +5703,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationStatusUnavailableHint =>
-      '홈⁠으⁠로 돌⁠아⁠가 동⁠기⁠화⁠가 새⁠로 고⁠쳐⁠진 뒤 다⁠시 시⁠도⁠하⁠세⁠요. 이⁠미 진⁠행 중⁠인 이⁠전⁠이 있⁠다⁠면 저⁠장⁠된 상⁠태⁠를 읽⁠을 수 있⁠게 된 후 Vizor⁠가 이⁠어⁠서 진⁠행⁠해⁠요.';
+      '홈⁠으⁠로 돌⁠아⁠가 동⁠기⁠화⁠가 갱⁠신⁠된 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요. 이⁠미 진⁠행 중⁠인 이⁠전⁠이 있⁠다⁠면 저⁠장⁠된 상⁠태⁠를 읽⁠을 수 있⁠게 된 후 Vizor⁠가 이⁠어⁠서 진⁠행⁠해⁠요.';
 
   @override
   String get migrationStatusUnavailableTitle => '이⁠전 상⁠태⁠를 확⁠인⁠할 수 없⁠어⁠요';
@@ -5529,6 +5750,156 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationViewSchedule => '일⁠정 보⁠기';
 
   @override
+  String get nativeBiometricEnableTitle => '지⁠문 잠⁠금 해⁠제 켜⁠기';
+
+  @override
+  String get nativeBiometricUsePasscode => '암⁠호 사⁠용';
+
+  @override
+  String get nativeIronwoodContinueBody =>
+      '다⁠음 이⁠전 거⁠래⁠를 준⁠비⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get nativeIronwoodContinueTitle => 'Ironwood 이⁠전⁠을 계⁠속⁠하⁠세⁠요';
+
+  @override
+  String get nativeIronwoodNeedsAttentionBody =>
+      '이⁠전⁠을 확⁠인⁠하⁠고 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get nativeIronwoodNeedsAttentionTitle => 'Ironwood 이⁠전 확⁠인⁠이 필⁠요⁠해⁠요';
+
+  @override
+  String get nativeLedgerApduArgumentsInvalid =>
+      'Ledger APDU 인⁠수⁠가 올⁠바⁠르⁠지 않⁠아⁠요.';
+
+  @override
+  String get nativeLedgerApduListInvalid =>
+      'Ledger 서⁠명 APDU 목⁠록⁠이 비⁠어 있⁠거⁠나 올⁠바⁠르⁠지 않⁠아⁠요.';
+
+  @override
+  String get nativeLedgerAppSwitchTimedOut =>
+      'Zcash 앱⁠을 연 뒤 Vizor⁠가 이⁠어⁠서 진⁠행⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get nativeLedgerBleUnsupported =>
+      '이 기⁠기⁠는 Bluetooth LE⁠를 지⁠원⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get nativeLedgerBleUnsupportedAndroid =>
+      '이 Android 기⁠기⁠는 Bluetooth LE⁠를 지⁠원⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get nativeLedgerBluetoothUnavailable => 'Bluetooth⁠를 사⁠용⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get nativeLedgerCommunicationFailed =>
+      'Ledger⁠와 통⁠신⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get nativeLedgerDiscoveryFailed =>
+      'Ledger 기⁠기⁠를 찾⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get nativeLedgerInvalidResponse =>
+      'Ledger⁠가 올⁠바⁠르⁠지 않⁠은 응⁠답⁠을 보⁠냈⁠어⁠요.';
+
+  @override
+  String nativeLedgerOperationFailed(String reason) {
+    return 'Ledger 작⁠업⁠에 실⁠패⁠했⁠어⁠요: $reason';
+  }
+
+  @override
+  String get nativeLedgerPermissionRequestActive =>
+      'Ledger 권⁠한 요⁠청⁠이 이⁠미 진⁠행 중⁠이⁠에⁠요.';
+
+  @override
+  String get nativeLedgerZcashAppNotInstalled =>
+      '이 Ledger⁠에 Zcash 앱⁠이 설⁠치⁠되⁠어 있⁠지 않⁠아⁠요.';
+
+  @override
+  String nativeMigrationAccountsNeedAttentionBody(String count) {
+    return '계⁠정 $count⁠개⁠를 확⁠인⁠해⁠야 해⁠요. 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+  }
+
+  @override
+  String get nativeMigrationNeedsAttentionTitle => '이⁠전 확⁠인⁠이 필⁠요⁠해⁠요';
+
+  @override
+  String get nativeMigrationStoppedByUpgradeBody =>
+      '남⁠은 잔⁠액⁠을 옮⁠기⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get nativeMigrationStoppedByUpgradeTitle =>
+      '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 이⁠전⁠이 중⁠단⁠됐⁠어⁠요';
+
+  @override
+  String get nativeMigrationTransfersSentBody =>
+      '예⁠약⁠된 이⁠전 거⁠래⁠를 모⁠두 제⁠출⁠했⁠어⁠요. 상⁠태⁠를 확⁠인⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get nativeMigrationTransfersSentTitle => '이⁠전 거⁠래⁠를 보⁠냈⁠어⁠요';
+
+  @override
+  String get nativeMigrationUpdatesTitle => '이⁠전 업⁠데⁠이⁠트';
+
+  @override
+  String get nativeOpenToContinue => '계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get nativePrepAccountsChanged => '지⁠갑 계⁠정⁠이 변⁠경⁠됐⁠어⁠요';
+
+  @override
+  String nativePrepAccountsReadyBody(String count) {
+    return '계⁠정 $count⁠개⁠가 다⁠음 단⁠계⁠로 진⁠행⁠할 수 있⁠어⁠요. 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+  }
+
+  @override
+  String get nativePrepCheckingConfirmations => '거⁠래 확⁠인 수⁠를 확⁠인⁠하⁠고 있⁠어⁠요';
+
+  @override
+  String get nativePrepCompleteTitle => '이⁠전 준⁠비⁠가 완⁠료⁠됐⁠어⁠요';
+
+  @override
+  String get nativePrepConfirmedTitle => '준⁠비 거⁠래⁠가 확⁠인⁠됐⁠어⁠요';
+
+  @override
+  String get nativePrepOpenToContinueMigration =>
+      '이⁠전⁠을 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요';
+
+  @override
+  String get nativePrepOpenToResume => '다⁠시 시⁠작⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요';
+
+  @override
+  String get nativePrepOpenToStartNextStep =>
+      '다⁠음 단⁠계⁠를 시⁠작⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요';
+
+  @override
+  String get nativePrepOpenToStartNextStepBody =>
+      '다⁠음 단⁠계⁠를 시⁠작⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String nativePrepProgress(String completed, String total) {
+    return '준⁠비 거⁠래 $total⁠건 중 $completed⁠건 확⁠인⁠됨';
+  }
+
+  @override
+  String get nativePrepStoppedTitle => '준⁠비⁠가 중⁠단⁠됐⁠어⁠요';
+
+  @override
+  String get nativePrepTaskTitle => '이⁠전⁠을 준⁠비⁠하⁠고 있⁠어⁠요';
+
+  @override
+  String get nativePrepTrackingPausedBody =>
+      '이⁠전 준⁠비⁠를 다⁠시 시⁠작⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+
+  @override
+  String get nativePrepTrackingPausedTitle => '준⁠비 추⁠적⁠이 일⁠시 중⁠지⁠됐⁠어⁠요';
+
+  @override
+  String get nativePrepUpdatesTitle => '이⁠전 준⁠비 업⁠데⁠이⁠트';
+
+  @override
   String get navActivity => '활⁠동';
 
   @override
@@ -5548,6 +5919,26 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get navVote => '투⁠표';
+
+  @override
+  String get networkPrivacyFinishUpdateBeforeTorOff =>
+      'Tor⁠를 끄⁠기 전⁠에 진⁠행 중⁠인 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 끝⁠내⁠세⁠요.';
+
+  @override
+  String get networkPrivacyFinishUpdateBeforeTorOn =>
+      'Tor⁠를 켜⁠기 전⁠에 진⁠행 중⁠인 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 끝⁠내⁠세⁠요.';
+
+  @override
+  String get networkPrivacyTorStartupFailed =>
+      'Tor⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요. 네⁠트⁠워⁠크 요⁠청⁠이 일⁠시 중⁠지⁠됐⁠어⁠요.';
+
+  @override
+  String get networkPrivacyTorUpdatesUnavailable =>
+      'Tor⁠는 연⁠결⁠되⁠었⁠지⁠만 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 사⁠용⁠할 수 없⁠어⁠요. 직⁠접 업⁠데⁠이⁠트⁠하⁠려⁠면 Tor⁠를 끄⁠세⁠요.';
+
+  @override
+  String get networkPrivacyUpdatesUnavailable =>
+      '소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 사⁠용⁠할 수 없⁠어⁠요. 다⁠른 네⁠트⁠워⁠크 요⁠청⁠은 계⁠속 직⁠접 연⁠결⁠을 사⁠용⁠해⁠요.';
 
   @override
   String get networkSettingsTitle => '네⁠트⁠워⁠크 설⁠정';
@@ -5634,7 +6025,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingBirthdayCantRemember => '기⁠억⁠나⁠지 않⁠아⁠요';
 
   @override
-  String get onboardingBirthdayDateHint => 'mm/dd/yyyy';
+  String get onboardingBirthdayDateHint => 'yyyy. mm. dd.';
 
   @override
   String get onboardingBirthdayDontRemember => '기⁠억⁠나⁠지 않⁠아⁠요';
@@ -5674,7 +6065,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '해⁠당 날⁠짜⁠의 높⁠이⁠를 추⁠정⁠하⁠지 못⁠했⁠어⁠요. 대⁠신 블⁠록 높⁠이⁠를 직⁠접 입⁠력⁠해 주⁠세⁠요.';
 
   @override
-  String get onboardingBirthdayMonthHint => 'mm/yyyy';
+  String get onboardingBirthdayMonthHint => 'yyyy. mm.';
 
   @override
   String get onboardingBirthdayPickDate => '날⁠짜 고⁠르⁠기';
@@ -5706,6 +6097,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingBlockHeight => '블⁠록 높⁠이';
+
+  @override
+  String get onboardingBlockHeightRequired =>
+      '지⁠갑⁠을 만⁠들⁠려⁠면 현⁠재 Zcash 블⁠록 높⁠이⁠가 필⁠요⁠해⁠요. 네⁠트⁠워⁠크 연⁠결⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get onboardingCheckingAccounts => '계⁠정 확⁠인⁠하⁠는 중...';
@@ -5744,6 +6139,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingDiscoveryTitle => '추⁠가 계⁠정⁠을 찾⁠았⁠어⁠요';
 
   @override
+  String get onboardingDuplicateAccount => '이 계⁠정⁠은 이⁠미 지⁠갑⁠에 있⁠어⁠요.';
+
+  @override
+  String get onboardingDuplicateKeystoneAccount =>
+      '이 Keystone 계⁠정⁠은 이⁠미 지⁠갑⁠에 있⁠어⁠요.';
+
+  @override
   String get onboardingEditBip39Passphrase => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈 수⁠정';
 
   @override
@@ -5763,7 +6165,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '암⁠호⁠가 기⁠억⁠나⁠지 않⁠으⁠면 계⁠정⁠을 복⁠구⁠하⁠는 유⁠일⁠한 방⁠법⁠은 Vizor 앱⁠을 완⁠전⁠히 초⁠기⁠화⁠하⁠는 것⁠뿐⁠이⁠에⁠요. 모⁠든 계⁠정⁠이 삭⁠제⁠되⁠고 계⁠정⁠을 다⁠시 가⁠져⁠와⁠야 해⁠요. 공⁠유⁠하⁠지 않⁠은 기⁠프⁠트 카⁠드 링⁠크⁠는 영⁠구⁠적⁠으⁠로 사⁠라⁠져⁠요.';
 
   @override
-  String get onboardingForgotPasscodeCantBeUndone => '되⁠돌⁠릴 수 없⁠어⁠요.\n';
+  String get onboardingForgotPasscodeCantBeUndone => '이 작⁠업⁠은 되⁠돌⁠릴 수 없⁠어⁠요.\n';
 
   @override
   String get onboardingForgotPasscodeContinueToReset => 'Vizor 초⁠기⁠화 계⁠속';
@@ -5889,11 +6291,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingIntroSubtitle =>
-      'Zcash(ZEC)는 금⁠융 프⁠라⁠이⁠버⁠시⁠와 자⁠기 수⁠탁⁠을 중⁠심⁠으⁠로 만⁠들⁠어⁠졌⁠어⁠요.';
+      'Zcash(ZEC)는 금⁠융 프⁠라⁠이⁠버⁠시⁠와 자⁠기 보⁠관⁠을 중⁠심⁠으⁠로 만⁠들⁠어⁠졌⁠어⁠요.';
 
   @override
   String get onboardingIntroSubtitleMobile =>
-      'Zcash(ZEC)는 금⁠융 프⁠라⁠이⁠버⁠시⁠와\n자⁠기 수⁠탁⁠을 중⁠심⁠으⁠로 만⁠들⁠어⁠졌⁠어⁠요.';
+      'Zcash(ZEC)는 금⁠융 프⁠라⁠이⁠버⁠시⁠와\n자⁠기 보⁠관⁠을 중⁠심⁠으⁠로 만⁠들⁠어⁠졌⁠어⁠요.';
 
   @override
   String get onboardingIntroTitle => '차⁠폐⁠된 세⁠상';
@@ -6096,7 +6498,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingStorageRetryWalletDbFailed =>
-      '지⁠갑 데⁠이⁠터⁠베⁠이⁠스 업⁠데⁠이⁠트⁠에 또 실⁠패⁠했⁠어⁠요.';
+      '지⁠갑 데⁠이⁠터⁠베⁠이⁠스⁠를 여⁠전⁠히 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요.';
 
   @override
   String get onboardingStorageSecureStorageLockedBody =>
@@ -6109,6 +6511,10 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get onboardingStorageStartupFailureBody =>
       'Vizor⁠가 로⁠컬 시⁠작 상⁠태⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 Vizor⁠를 종⁠료⁠한 뒤 다⁠시 실⁠행⁠해 주⁠세⁠요.';
+
+  @override
+  String get onboardingStorageStartupFailureDetail =>
+      'Vizor⁠가 시⁠작 상⁠태⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
 
   @override
   String get onboardingTellMeHowZcashWorks => 'Zcash 작⁠동 방⁠식 알⁠아⁠보⁠기';
@@ -6131,7 +6537,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingThingsTimeToSyncTitle => '동⁠기⁠화 시⁠간';
 
   @override
-  String get onboardingThingsToKnow => '알⁠아 두⁠세⁠요';
+  String get onboardingThingsToKnow => '알⁠아 둘 점';
 
   @override
   String get onboardingUnknownHeightBody =>
@@ -6165,7 +6571,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingUnlockOpening => '지⁠갑⁠을 여⁠는 중...';
 
   @override
-  String get onboardingUnlockWelcomeBack => '다⁠시 오⁠신 것⁠을 환⁠영⁠해⁠요';
+  String get onboardingUnlockWelcomeBack => '다⁠시 오⁠셨⁠네⁠요';
 
   @override
   String get onboardingWelcome => '시⁠작 화⁠면';
@@ -6205,6 +6611,17 @@ class AppLocalizationsKo extends AppLocalizations {
   String get passwordLabel => '비⁠밀⁠번⁠호';
 
   @override
+  String get passwordPolicyAscii => '영⁠문, 숫⁠자, 기⁠호⁠만 사⁠용⁠하⁠세⁠요.';
+
+  @override
+  String passwordPolicyMinLength(int min) {
+    return '비⁠밀⁠번⁠호⁠는 $min⁠자 이⁠상⁠이⁠어⁠야 해⁠요.';
+  }
+
+  @override
+  String get passwordPolicyMustDiffer => '다⁠른 비⁠밀⁠번⁠호⁠를 사⁠용⁠하⁠세⁠요.';
+
+  @override
   String get passwordsDoNotMatch => '비⁠밀⁠번⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요.';
 
   @override
@@ -6230,7 +6647,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get payAmountEstimatedSpend => '예⁠상 지⁠출';
 
   @override
-  String get payAmountPayingFrom => '결⁠제 출⁠처';
+  String get payAmountPayingFrom => '결⁠제⁠에 사⁠용⁠할 잔⁠액:';
 
   @override
   String get payAmountPayingIn => '결⁠제 자⁠산';
@@ -6278,7 +6695,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get payRefreshingQuote => '견⁠적 새⁠로⁠고⁠침 중';
 
   @override
-  String get payReviewConfirmPay => '확⁠인 및 결⁠제';
+  String get payReviewConfirmPay => '확⁠인⁠하⁠고 결⁠제';
 
   @override
   String get payReviewConvertedAmount => '변⁠환 금⁠액';
@@ -6336,11 +6753,11 @@ class AppLocalizationsKo extends AppLocalizations {
       '결⁠제⁠를 제⁠출⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
-  String get paySubmittedGoToActivity => '활⁠동 내⁠역⁠으⁠로 이⁠동';
+  String get paySubmittedGoToActivity => '활⁠동⁠으⁠로 이⁠동';
 
   @override
   String get paySubmittedStatusUncertainNotice =>
-      '결⁠제 상⁠태⁠가 확⁠실⁠하⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 활⁠동 내⁠역⁠을 확⁠인⁠하⁠세⁠요.';
+      '결⁠제 상⁠태⁠가 확⁠실⁠하⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 활⁠동⁠을 확⁠인⁠해 주⁠세⁠요.';
 
   @override
   String get paySubmittedSubmittingBody => '결⁠제⁠를 네⁠트⁠워⁠크⁠에 제⁠출⁠하⁠고 있⁠어⁠요...';
@@ -6350,14 +6767,14 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get paySubmittedSucceededBody =>
-      '곧 온⁠체⁠인⁠에⁠서 확⁠인⁠될 거⁠예⁠요.\n활⁠동 내⁠역⁠에⁠서 확⁠인⁠해 보⁠세⁠요.';
+      '곧 온⁠체⁠인⁠에⁠서 확⁠인⁠돼⁠요.\n활⁠동⁠에⁠서 진⁠행 상⁠황⁠을 확⁠인⁠해 보⁠세⁠요.';
 
   @override
   String get paySubmittedSucceededTitle => '결⁠제⁠를\n제⁠출⁠했⁠어⁠요';
 
   @override
   String get paySubmittedUnavailableNotice =>
-      '이 결⁠제⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 최⁠신 상⁠태⁠는 활⁠동 내⁠역⁠에⁠서 확⁠인⁠하⁠세⁠요.';
+      '이 결⁠제⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 최⁠신 상⁠태⁠는 활⁠동⁠에⁠서 확⁠인⁠해 주⁠세⁠요.';
 
   @override
   String get paySubmittedUnavailableTitle => '결⁠제⁠를 불⁠러⁠올 수 없⁠어⁠요';
@@ -6367,7 +6784,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String payTitleAmount(String symbol) {
-    return '$symbol⁠로 결⁠제';
+    return '$symbol(으)로 결⁠제';
   }
 
   @override
@@ -6375,15 +6792,15 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get paymentLinkAccountChangedRedeemAgain =>
-      '활⁠성 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 새 계⁠정⁠으⁠로 받⁠으⁠려⁠면 이 기⁠프⁠트 카⁠드⁠를 다⁠시 받⁠아 주⁠세⁠요.';
+      '선⁠택⁠한 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 새 계⁠정⁠으⁠로 받⁠으⁠려⁠면 이 기⁠프⁠트 카⁠드⁠를 다⁠시 받⁠아 주⁠세⁠요.';
 
   @override
   String get paymentLinkAccountChangedReviewAmount =>
-      '활⁠성 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 기⁠프⁠트 카⁠드 금⁠액⁠과 수⁠수⁠료⁠를 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+      '선⁠택⁠한 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 기⁠프⁠트 카⁠드 금⁠액⁠과 수⁠수⁠료⁠를 다⁠시 확⁠인⁠해 주⁠세⁠요.';
 
   @override
   String get paymentLinkActiveAccountChangedReviewAmount =>
-      '활⁠성 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 금⁠액⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      '선⁠택⁠한 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 금⁠액⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get paymentLinkAlmostReadyHeading => '기⁠프⁠트 카⁠드⁠가\n거⁠의 준⁠비⁠됐⁠어⁠요!';
@@ -6607,7 +7024,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get paymentLinkBatchSaveLinksWarning =>
-      '이 파⁠일⁠이 있⁠는 사⁠람⁠은 누⁠구⁠나 이 카⁠드⁠를 받⁠을 수 있⁠어⁠요. 안⁠전⁠한 곳⁠에 저⁠장⁠하⁠세⁠요.';
+      '이 파⁠일⁠이 있⁠는 사⁠람⁠은 누⁠구⁠나 이 카⁠드⁠를 받⁠을 수 있⁠어⁠요. 다⁠른 사⁠람⁠이 접⁠근⁠할 수 없⁠는 곳⁠에 저⁠장⁠해 주⁠세⁠요.';
 
   @override
   String paymentLinkBatchShowQrSemantic(String number) {
@@ -7006,7 +7423,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get paymentLinkFundingStillVerifying =>
-      '충⁠전⁠을 아⁠직 확⁠인⁠하⁠는 중⁠이⁠에⁠요. Vizor⁠가 계⁠속 확⁠인⁠할⁠게⁠요.';
+      '충⁠전⁠을 아⁠직 확⁠인⁠하⁠는 중⁠이⁠에⁠요. Vizor⁠가 계⁠속 확⁠인⁠해⁠요.';
 
   @override
   String get paymentLinkFundingStorageNeedsSync =>
@@ -7084,7 +7501,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get paymentLinkHowDesktopStepShare =>
-      '카⁠드⁠를 만⁠들⁠면 받⁠기 비⁠밀 정⁠보⁠가 담⁠긴 고⁠유 링⁠크⁠가 생⁠성⁠돼⁠요. 이 링⁠크⁠는 받⁠을 사⁠람⁠에⁠게⁠만 보⁠내⁠세⁠요.';
+      '카⁠드⁠를 만⁠들⁠면 카⁠드⁠를 받⁠는 데 필⁠요⁠한 비⁠밀 정⁠보⁠가 담⁠긴 고⁠유 링⁠크⁠가 생⁠성⁠돼⁠요. 이 링⁠크⁠는 받⁠을 사⁠람⁠에⁠게⁠만 보⁠내⁠세⁠요.';
 
   @override
   String get paymentLinkHowGiftCardsWork => '기⁠프⁠트 카⁠드 사⁠용 방⁠법';
@@ -7139,7 +7556,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get paymentLinkKeystoneFundingUncertain =>
-      '충⁠전 상⁠태⁠가 불⁠확⁠실⁠해⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 활⁠동 내⁠역⁠을 확⁠인⁠해 주⁠세⁠요.';
+      '충⁠전 상⁠태⁠가 불⁠확⁠실⁠해⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 활⁠동⁠을 확⁠인⁠해 주⁠세⁠요.';
 
   @override
   String get paymentLinkKeystoneScanCaption =>
@@ -7230,8 +7647,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get paymentLinkNewGiftCardRequired => '새 기⁠프⁠트 카⁠드⁠가 필⁠요⁠해⁠요';
 
   @override
-  String get paymentLinkNoActiveAccountAvailable =>
-      '사⁠용 가⁠능⁠한 활⁠성 계⁠정⁠이 없⁠어⁠요.';
+  String get paymentLinkNoActiveAccountAvailable => '선⁠택⁠된 계⁠정⁠이 없⁠어⁠요.';
 
   @override
   String get paymentLinkNoCreatedCardsText => '아⁠직 만⁠든 카⁠드⁠가 없⁠어⁠요.';
@@ -7261,10 +7677,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get paymentLinkPasteLabel => '카⁠드 링⁠크 붙⁠여⁠넣⁠기';
 
   @override
-  String get paymentLinkPrivacyModeOff => '개⁠인⁠정⁠보 보⁠호 모⁠드 끄⁠기';
+  String get paymentLinkPrivacyModeOff => '프⁠라⁠이⁠버⁠시 모⁠드 끄⁠기';
 
   @override
-  String get paymentLinkPrivacyModeOn => '개⁠인⁠정⁠보 보⁠호 모⁠드 켜⁠기';
+  String get paymentLinkPrivacyModeOn => '프⁠라⁠이⁠버⁠시 모⁠드 켜⁠기';
 
   @override
   String get paymentLinkQrCardHeading => 'ZEC⁠를\n받⁠았⁠어⁠요';
@@ -7364,7 +7780,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get paymentLinkRemoveCardLabel => '카⁠드 삭⁠제';
 
   @override
-  String get paymentLinkRemoveCardSupporting => '되⁠돌⁠릴 수 없⁠어⁠요.';
+  String get paymentLinkRemoveCardSupporting => '이 작⁠업⁠은 되⁠돌⁠릴 수 없⁠어⁠요.';
 
   @override
   String get paymentLinkRemoveCardTitle => '이 카⁠드⁠를 삭⁠제⁠할⁠까⁠요?';
@@ -7631,7 +8047,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get paymentUriMigrationSendGate =>
-      '요⁠청 링⁠크⁠를 열⁠기 전⁠에 Ironwood 마⁠이⁠그⁠레⁠이⁠션⁠을 마⁠쳐 주⁠세⁠요.';
+      '요⁠청 링⁠크⁠를 열⁠기 전⁠에 Ironwood 이⁠전⁠을 마⁠쳐 주⁠세⁠요.';
 
   @override
   String get paymentUriNoWallet =>
@@ -7646,7 +8062,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get paymentUriUnavailable =>
-      'Vizor⁠에⁠서 이 요⁠청 링⁠크⁠를 열 수 없⁠었⁠어⁠요. 지⁠갑⁠이 로⁠드⁠된 후 다⁠시 열⁠어 주⁠세⁠요.';
+      'Vizor⁠가 이 요⁠청 링⁠크⁠를 열⁠지 못⁠했⁠어⁠요. 지⁠갑⁠이 로⁠드⁠된 후 다⁠시 열⁠어 주⁠세⁠요.';
 
   @override
   String get paymentUriUnsupported =>
@@ -7659,7 +8075,34 @@ class AppLocalizationsKo extends AppLocalizations {
   String get poolTransparent => '투⁠명';
 
   @override
+  String get privateQueriesOptOutUnfinished =>
+      '비⁠공⁠개 조⁠회 끄⁠기⁠가 완⁠료⁠되⁠지 않⁠았⁠어⁠요. 투⁠명 자⁠금⁠을 사⁠용⁠하⁠려⁠면 설⁠정⁠에⁠서 다⁠시 끄⁠세⁠요.';
+
+  @override
   String get profilePictureChange => '프⁠로⁠필 사⁠진 변⁠경';
+
+  @override
+  String profilePictureName(String id) {
+    String _temp0 = intl.Intl.selectLogic(id, {
+      'p01': '기⁠사',
+      'p02': '바⁠이⁠킹',
+      'p03': '사⁠무⁠라⁠이',
+      'p04': '군⁠주',
+      'p05': '철⁠투⁠구',
+      'p06': '로⁠닌',
+      'p07': '해⁠골 기⁠사',
+      'p08': '예⁠언⁠자',
+      'p09': '광⁠전⁠사',
+      'p10': '도⁠적',
+      'p11': '마⁠법⁠사',
+      'p12': '가⁠면 쓴 고⁠양⁠이',
+      'p13': '감⁠시⁠자',
+      'p14': '청⁠동 투⁠구',
+      'p15': '물⁠고⁠기 기⁠사',
+      'other': '',
+    });
+    return '$_temp0';
+  }
 
   @override
   String get profilePictureSelect => '프⁠로⁠필 사⁠진 선⁠택';
@@ -7853,7 +8296,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendBroadcastFirstUnknown =>
-      '첫 번⁠째 거⁠래⁠는 로⁠컬⁠에 저⁠장⁠됐⁠고 네⁠트⁠워⁠크⁠에 도⁠달⁠했⁠을 수 있⁠지⁠만 확⁠인⁠이 시⁠간 초⁠과⁠됐⁠어⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동⁠을 확⁠인⁠하⁠세⁠요.';
+      '첫 번⁠째 거⁠래⁠는 로⁠컬⁠에 저⁠장⁠됐⁠고 네⁠트⁠워⁠크⁠에 도⁠달⁠했⁠을 수 있⁠지⁠만 확⁠인 시⁠간⁠이 초⁠과⁠됐⁠어⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동⁠을 확⁠인⁠하⁠세⁠요.';
 
   @override
   String get sendBroadcastHardwareExpired =>
@@ -7865,15 +8308,15 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendBroadcastLedgerFirstUnknown =>
-      '첫 번⁠째 거⁠래⁠가 네⁠트⁠워⁠크⁠에 도⁠달⁠했⁠을 수 있⁠지⁠만 확⁠인⁠이 시⁠간 초⁠과⁠됐⁠어⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동⁠을 확⁠인⁠하⁠세⁠요.';
+      '첫 번⁠째 거⁠래⁠가 네⁠트⁠워⁠크⁠에 도⁠달⁠했⁠을 수 있⁠지⁠만 확⁠인 시⁠간⁠이 초⁠과⁠됐⁠어⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동⁠을 확⁠인⁠하⁠세⁠요.';
 
   @override
   String get sendBroadcastLedgerNotStored =>
-      '거⁠래⁠가 네⁠트⁠워⁠크⁠에 도⁠달⁠했⁠지⁠만 Vizor⁠가 로⁠컬⁠에 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠나 탐⁠색⁠기⁠에⁠서 최⁠신 상⁠태⁠를 확⁠인⁠하⁠기 전⁠에⁠는 다⁠시 보⁠내⁠지 마⁠세⁠요.';
+      '거⁠래⁠가 네⁠트⁠워⁠크⁠에 도⁠달⁠했⁠지⁠만 Vizor⁠가 로⁠컬⁠에 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠나 블⁠록 탐⁠색⁠기⁠에⁠서 최⁠신 상⁠태⁠를 확⁠인⁠하⁠기 전⁠에⁠는 다⁠시 보⁠내⁠지 마⁠세⁠요.';
 
   @override
   String get sendBroadcastLedgerRejected =>
-      '네⁠트⁠워⁠크⁠가 거⁠래⁠를 거⁠부⁠했⁠어⁠요. 나⁠중⁠에 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '네⁠트⁠워⁠크⁠가 거⁠래⁠를 거⁠부⁠했⁠어⁠요. 나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendBroadcastLocalRetry =>
@@ -7888,15 +8331,15 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendBroadcastProofParamsRequired =>
-      '서⁠명⁠된 이 거⁠래⁠를 다⁠시 시⁠도⁠하⁠려⁠면 증⁠명 매⁠개⁠변⁠수⁠가 필⁠요⁠해⁠요.';
+      '이 서⁠명⁠된 거⁠래⁠를 다⁠시 시⁠도⁠하⁠려⁠면 증⁠명 매⁠개⁠변⁠수⁠가 필⁠요⁠해⁠요.';
 
   @override
   String get sendBroadcastRejectedLocal =>
-      '거⁠래⁠가 로⁠컬⁠에⁠서 만⁠들⁠어⁠졌⁠지⁠만 네⁠트⁠워⁠크⁠에 도⁠달⁠하⁠지 않⁠았⁠어⁠요. 지⁠갑⁠이 만⁠료⁠될 때⁠까⁠지 계⁠속 다⁠시 시⁠도⁠해⁠요. 이 거⁠래⁠가 만⁠료⁠되⁠기 전⁠에⁠는 다⁠시 보⁠내⁠지 마⁠세⁠요.';
+      '거⁠래⁠가 로⁠컬⁠에⁠서 만⁠들⁠어⁠졌⁠지⁠만 네⁠트⁠워⁠크⁠에 도⁠달⁠하⁠지 않⁠았⁠어⁠요. 거⁠래⁠가 만⁠료⁠될 때⁠까⁠지 지⁠갑⁠이 계⁠속 다⁠시 시⁠도⁠해⁠요. 이 거⁠래⁠가 만⁠료⁠되⁠기 전⁠에⁠는 다⁠시 보⁠내⁠지 마⁠세⁠요.';
 
   @override
   String get sendBroadcastTrackingFailed =>
-      '거⁠래⁠가 네⁠트⁠워⁠크⁠에 도⁠달⁠했⁠지⁠만 로⁠컬 추⁠적⁠에 실⁠패⁠했⁠어⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동⁠이⁠나 탐⁠색⁠기⁠를 확⁠인⁠하⁠세⁠요.';
+      '거⁠래⁠가 네⁠트⁠워⁠크⁠에 도⁠달⁠했⁠지⁠만 로⁠컬 추⁠적⁠에 실⁠패⁠했⁠어⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동⁠이⁠나 블⁠록 탐⁠색⁠기⁠를 확⁠인⁠하⁠세⁠요.';
 
   @override
   String get sendCalculatingMax => '최⁠대 금⁠액⁠을 계⁠산⁠하⁠고 있⁠어⁠요';
@@ -7921,14 +8364,14 @@ class AppLocalizationsKo extends AppLocalizations {
       '거⁠래⁠를 보⁠내⁠지 못⁠했⁠어⁠요. 지⁠갑⁠으⁠로 돌⁠아⁠가 최⁠신 상⁠태⁠를 확⁠인⁠하⁠세⁠요.';
 
   @override
-  String get sendErrorDonationFailed => '후⁠원⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+  String get sendErrorDonationFailed => '후⁠원⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendErrorExpiredBeforeSent => '거⁠래⁠가 전⁠송⁠되⁠기 전⁠에 만⁠료⁠됐⁠어⁠요.';
 
   @override
   String get sendErrorExpiredTryAgain =>
-      '거⁠래⁠가 전⁠송⁠되⁠기 전⁠에 만⁠료⁠됐⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '거⁠래⁠가 전⁠송⁠되⁠기 전⁠에 만⁠료⁠됐⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendErrorInsufficientShielded =>
@@ -7936,7 +8379,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendErrorNetwork =>
-      '네⁠트⁠워⁠크 오⁠류⁠예⁠요. 연⁠결⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '네⁠트⁠워⁠크 오⁠류⁠예⁠요. 연⁠결⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendErrorPartiallySent =>
@@ -7944,25 +8387,25 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendErrorRejectedTryAgain =>
-      '네⁠트⁠워⁠크⁠가 이 거⁠래⁠를 거⁠부⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '네⁠트⁠워⁠크⁠가 이 거⁠래⁠를 거⁠부⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendErrorRejectedTryLater =>
-      '네⁠트⁠워⁠크⁠가 이 거⁠래⁠를 거⁠부⁠했⁠어⁠요. 나⁠중⁠에 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '네⁠트⁠워⁠크⁠가 이 거⁠래⁠를 거⁠부⁠했⁠어⁠요. 나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
-  String get sendErrorSendFailed => '보⁠내⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+  String get sendErrorSendFailed => '보⁠내⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendErrorSyncFinishing =>
-      '지⁠갑 동⁠기⁠화⁠를 마⁠무⁠리⁠하⁠는 중⁠이⁠에⁠요. 잠⁠시 후 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '지⁠갑 동⁠기⁠화⁠를 마⁠무⁠리⁠하⁠는 중⁠이⁠에⁠요. 잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendFeeAboutSemantics => '거⁠래 수⁠수⁠료 안⁠내';
 
   @override
   String get sendFeeUnavailableTryAgain =>
-      '수⁠수⁠료⁠를 확⁠인⁠할 수 없⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '수⁠수⁠료⁠를 확⁠인⁠할 수 없⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendFeeUpdatedAfterSync =>
@@ -8016,11 +8459,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendKeystonePrepareFailedGoBack =>
-      'Keystone 서⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 뒤⁠로 가⁠서 다⁠시 시⁠도⁠하⁠세⁠요.';
+      'Keystone 서⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 뒤⁠로 가⁠서 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendKeystonePrepareFailedReturnToSend =>
-      'Keystone 서⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 보⁠내⁠기⁠로 돌⁠아⁠가 다⁠시 시⁠도⁠하⁠세⁠요.';
+      'Keystone 서⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 보⁠내⁠기⁠로 돌⁠아⁠가 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendKeystoneQrMismatch =>
@@ -8028,7 +8471,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendKeystoneScanCameraOnly =>
-      'Keystone 서⁠명⁠은 카⁠메⁠라 QR 스⁠캔⁠만 지⁠원⁠해⁠요. 카⁠메⁠라⁠를 연⁠결⁠하⁠고 다⁠시 시⁠도⁠하⁠세⁠요.';
+      'Keystone 서⁠명⁠은 카⁠메⁠라 QR 스⁠캔⁠만 지⁠원⁠해⁠요. 카⁠메⁠라⁠를 연⁠결⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendKeystoneScanDecodeFailed =>
@@ -8047,7 +8490,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String sendKeystoneTexTwoApprovals(int index) {
-    return '이 TEX 보⁠내⁠기⁠는 Keystone⁠에⁠서 두 번 승⁠인⁠해⁠야 해⁠요. $index/2⁠번⁠째 거⁠래⁠를 스⁠캔⁠하⁠세⁠요.';
+    return '이 TEX 보⁠내⁠기⁠는 Keystone⁠에⁠서 두 번 승⁠인⁠해⁠야 해⁠요. 2⁠개 중 $index⁠번⁠째 거⁠래⁠를 스⁠캔⁠하⁠세⁠요.';
   }
 
   @override
@@ -8065,7 +8508,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendLedgerCouldNotPrepare =>
-      'Vizor⁠가 거⁠래⁠를 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+      'Vizor⁠가 거⁠래⁠를 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendLedgerCouldNotSaveTitle => '서⁠명⁠한 거⁠래⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요';
@@ -8083,18 +8526,18 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendLedgerKeepOpenRetry =>
-      'Vizor⁠를 열⁠어 둔 채⁠로 다⁠시 시⁠도⁠하⁠세⁠요. Ledger⁠에⁠서 다⁠시 승⁠인⁠하⁠지 않⁠아⁠도 돼⁠요.';
+      'Vizor⁠를 열⁠어 둔 채⁠로 다⁠시 시⁠도⁠해 주⁠세⁠요. Ledger⁠에⁠서 다⁠시 승⁠인⁠하⁠지 않⁠아⁠도 돼⁠요.';
 
   @override
   String get sendLedgerKeepOpenRetrySaving =>
-      'Vizor⁠를 열⁠어 둔 채⁠로 저⁠장⁠을 다⁠시 시⁠도⁠하⁠세⁠요. Ledger⁠에⁠서 다⁠시 승⁠인⁠하⁠지 않⁠아⁠도 돼⁠요.';
+      'Vizor⁠를 열⁠어 둔 채⁠로 저⁠장⁠을 다⁠시 시⁠도⁠해 주⁠세⁠요. Ledger⁠에⁠서 다⁠시 승⁠인⁠하⁠지 않⁠아⁠도 돼⁠요.';
 
   @override
   String get sendLedgerRejectedOnDevice => 'Ledger⁠에⁠서 거⁠래⁠가 거⁠부⁠됐⁠어⁠요.';
 
   @override
   String get sendLedgerSignaturePreservedMessage =>
-      'Ledger 서⁠명⁠이 보⁠존⁠돼 있⁠어⁠요. 다⁠른 거⁠래⁠를 승⁠인⁠하⁠지 말⁠고 저⁠장⁠만 다⁠시 시⁠도⁠하⁠세⁠요.';
+      'Ledger 서⁠명⁠이 보⁠존⁠돼 있⁠어⁠요. 다⁠른 거⁠래⁠를 승⁠인⁠하⁠지 말⁠고 저⁠장⁠만 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendLedgerSignedNeedsAttentionTitle => '서⁠명⁠한 거⁠래⁠를 확⁠인⁠해⁠야 해⁠요';
@@ -8116,7 +8559,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String sendLoadError(String error) {
-    return '문⁠제⁠가 생⁠겼⁠어⁠요. 잠⁠시 후 다⁠시 시⁠도⁠하⁠세⁠요.\n\n자⁠세⁠한 내⁠용: $error';
+    return '문⁠제⁠가 생⁠겼⁠어⁠요. 잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요.\n\n자⁠세⁠한 내⁠용: $error';
   }
 
   @override
@@ -8185,7 +8628,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendPaymentRequestCheckNoAmount =>
-      '이 링⁠크⁠에⁠는 결⁠제⁠할 수 있⁠는 금⁠액⁠이 없⁠어⁠요. 금⁠액⁠을 입⁠력⁠하⁠고 계⁠속⁠해 주⁠세⁠요';
+      '이 링⁠크⁠에⁠는 결⁠제⁠할 금⁠액⁠이 지⁠정⁠되⁠지 않⁠았⁠어⁠요. 금⁠액⁠을 입⁠력⁠하⁠고 계⁠속⁠해 주⁠세⁠요';
 
   @override
   String get sendPaymentRequestCheckUpgradeHold =>
@@ -8193,7 +8636,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendPaymentRequestCheckUpgradeScheduleChanged =>
-      '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 마⁠이⁠그⁠레⁠이⁠션 일⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 계⁠획⁠을 확⁠인⁠한 다⁠음 다⁠시 시⁠작⁠해 주⁠세⁠요.';
+      '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 이⁠전 일⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 계⁠획⁠을 확⁠인⁠한 다⁠음 다⁠시 시⁠작⁠해 주⁠세⁠요.';
 
   @override
   String get sendPaymentRequestClose => '결⁠제 요⁠청 닫⁠기';
@@ -8203,7 +8646,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '보⁠낸 사⁠람⁠에⁠게 내⁠용⁠을 확⁠인⁠하⁠세⁠요.';
 
   @override
-  String get sendPaymentRequestHideFullAddress => '받⁠는 전⁠체 주⁠소 숨⁠기⁠기';
+  String get sendPaymentRequestHideFullAddress => '받⁠는 주⁠소 전⁠체 숨⁠기⁠기';
 
   @override
   String get sendPaymentRequestHidePaymentDetails => '결⁠제 상⁠세 숨⁠기⁠기';
@@ -8284,7 +8727,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '원⁠래 QR 코⁠드⁠를 Vizor⁠에⁠서 직⁠접 스⁠캔⁠하⁠세⁠요.';
 
   @override
-  String get sendPaymentRequestShowFullAddress => '받⁠는 전⁠체 주⁠소 보⁠기';
+  String get sendPaymentRequestShowFullAddress => '받⁠는 주⁠소 전⁠체 보⁠기';
 
   @override
   String get sendPaymentRequestShowRequesterInfo => '요⁠청⁠자 정⁠보 보⁠기';
@@ -8327,7 +8770,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendQrScannerOpenFailed =>
-      'QR 스⁠캐⁠너⁠를 열⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+      'QR 스⁠캐⁠너⁠를 열⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendRecentsSection => '최⁠근 보⁠낸 곳';
@@ -8346,7 +8789,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendRequestScanCheckFailed =>
-      '이 QR 코⁠드⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '이 QR 코⁠드⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendRequestScanInvalidAddress =>
@@ -8474,7 +8917,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendSpendableTooltipBody =>
-      '자⁠금⁠은 사⁠용⁠하⁠기 전⁠에 확⁠인⁠이 필⁠요⁠해⁠요. 내 지⁠갑⁠에⁠서 돌⁠아⁠온 잔⁠돈⁠은 3⁠번, 다⁠른 사⁠람⁠에⁠게 받⁠은 자⁠금⁠은 6⁠번⁠이⁠에⁠요. 차⁠폐⁠된 노⁠트⁠도 모⁠두 스⁠캔⁠되⁠어⁠야 해⁠요. 곧 사⁠용⁠할 수 있⁠게 돼⁠요.';
+      '자⁠금⁠을 사⁠용⁠하⁠려⁠면 먼⁠저 확⁠인⁠이 필⁠요⁠해⁠요. 내 지⁠갑⁠에⁠서 돌⁠아⁠온 잔⁠돈⁠은 3⁠회, 다⁠른 사⁠람⁠에⁠게 받⁠은 자⁠금⁠은 6⁠회⁠예⁠요. 차⁠폐 노⁠트⁠도 모⁠두 스⁠캔⁠되⁠어⁠야 해⁠요. 곧 사⁠용⁠할 수 있⁠게 돼⁠요.';
 
   @override
   String get sendSpendableTooltipTitle =>
@@ -8493,21 +8936,21 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendStatusMobileConfirmSoon =>
-      '곧 블⁠록⁠체⁠인⁠에⁠서 확⁠인⁠돼⁠요. 활⁠동⁠에⁠서 진⁠행 상⁠황⁠을 확⁠인⁠하⁠세⁠요.';
+      '곧 온⁠체⁠인⁠에⁠서 확⁠인⁠돼⁠요. 활⁠동⁠에⁠서 진⁠행 상⁠황⁠을 확⁠인⁠해 보⁠세⁠요.';
 
   @override
   String get sendStatusMobileDonationQueued => '후⁠원⁠이 대⁠기 중⁠이⁠에⁠요';
 
   @override
   String get sendStatusMobileDonationSupport =>
-      '보⁠내 주⁠신 후⁠원⁠이 Vizor⁠를 계⁠속 움⁠직⁠이⁠게 해⁠요.';
+      '보⁠내 주⁠신 후⁠원 덕⁠분⁠에 Vizor⁠가 계⁠속 나⁠아⁠갈 수 있⁠어⁠요.';
 
   @override
   String get sendStatusMobileDonationThanks => 'Vizor⁠를\n후⁠원⁠해 주⁠셔⁠서 감⁠사⁠해⁠요';
 
   @override
   String get sendStatusMobileNothingSent =>
-      '아⁠무⁠것⁠도 보⁠내⁠지 않⁠았⁠고 자⁠금⁠은 그⁠대⁠로⁠예⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '아⁠무⁠것⁠도 보⁠내⁠지 않⁠았⁠고 자⁠금⁠은 그⁠대⁠로⁠예⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendStatusMobilePendingDefault =>
@@ -8530,7 +8973,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendStatusRetryAfterSync =>
-      '지⁠갑 동⁠기⁠화⁠가 끝⁠날 때⁠까⁠지 기⁠다⁠린 다⁠음 서⁠명⁠된 이 거⁠래⁠를 다⁠시 시⁠도⁠하⁠세⁠요.';
+      '지⁠갑 동⁠기⁠화⁠가 끝⁠날 때⁠까⁠지 기⁠다⁠린 다⁠음 이 서⁠명⁠된 거⁠래⁠를 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get sendStatusRowStatus => '상⁠태';
@@ -8607,7 +9050,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String settingsBiometricTurnOffBody(String feature) {
-    return 'Vizor⁠는 암⁠호⁠로 잠⁠금 해⁠제⁠해⁠요. $feature⁠은(는) 언⁠제⁠든 설⁠정⁠에⁠서 다⁠시 켤 수 있⁠어⁠요.';
+    return '앞⁠으⁠로⁠는 암⁠호⁠로 Vizor 잠⁠금⁠을 해⁠제⁠해⁠요. $feature⁠은(는) 언⁠제⁠든 설⁠정⁠에⁠서 다⁠시 켤 수 있⁠어⁠요.';
   }
 
   @override
@@ -8726,7 +9169,16 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsExplorerCustomSubtitle => '원⁠하⁠는 탐⁠색⁠기⁠를 사⁠용⁠해⁠요';
 
   @override
+  String get settingsExplorerPrivacyCopy =>
+      '거⁠래 링⁠크⁠는 이 탐⁠색⁠기⁠에⁠서 열⁠려⁠요. ZecBlock⁠이⁠나 원⁠하⁠는 다⁠른 사⁠이⁠트⁠를 사⁠용⁠하⁠세⁠요. 보⁠낸 뒤⁠에 공⁠개 탐⁠색⁠기⁠를 열⁠면 내 IP 주⁠소⁠가 해⁠당 거⁠래⁠와 연⁠결⁠될 수 있⁠어⁠요.';
+
+  @override
   String get settingsExplorerSaveFailed => '탐⁠색⁠기 URL⁠을 저⁠장⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String settingsExplorerTemplateHint(String txid, String txHash) {
+    return '경⁠로⁠에 $txid 또⁠는 $txHash⁠를 넣⁠거⁠나 도⁠메⁠인⁠만 입⁠력⁠하⁠세⁠요.';
+  }
 
   @override
   String get settingsExplorerTitle => '블⁠록 탐⁠색⁠기';
@@ -8883,7 +9335,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsPirUseCustomServer => '사⁠용⁠자 지⁠정 서⁠버 사⁠용';
 
   @override
-  String get settingsPrivacyTitle => '개⁠인⁠정⁠보 보⁠호';
+  String get settingsPrivacyTitle => '프⁠라⁠이⁠버⁠시';
+
+  @override
+  String get settingsPrivateQueriesCopy =>
+      '실⁠험⁠적 기⁠능⁠이⁠에⁠요. 투⁠명 자⁠금⁠을 비⁠공⁠개⁠로 복⁠구⁠해 서⁠버⁠가 내 투⁠명 주⁠소⁠를 알⁠지 못⁠하⁠게 해⁠요. 지⁠원⁠되⁠는 거⁠래⁠는 서⁠버⁠에 ID⁠를 알⁠리⁠지 않⁠고 조⁠회⁠해⁠요.';
+
+  @override
+  String get settingsPrivateQueriesIosNote =>
+      '켜⁠져 있⁠는 동⁠안⁠에⁠는 Vizor⁠가 열⁠려 있⁠을 때⁠만 이⁠전 거⁠래⁠의 확⁠인 수⁠를 점⁠검⁠해⁠요.';
 
   @override
   String get settingsPrivateQueriesLabel => '비⁠공⁠개 조⁠회';
@@ -8978,14 +9438,19 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsSeedRemindLater => '나⁠중⁠에 알⁠림';
 
   @override
-  String get settingsSeedScreenshotAck => '확⁠인⁠했⁠어⁠요';
+  String get settingsSeedScreenshotAck => '확⁠인';
+
+  @override
+  String settingsSeedScreenshotBody(String highlight) {
+    return '$highlight. 휴⁠대⁠폰⁠이⁠나 사⁠진 보⁠관⁠함⁠에 접⁠근⁠할 수 있⁠는 사⁠람⁠은 누⁠구⁠나 복⁠구 문⁠구⁠를 볼 수 있⁠어⁠요. 대⁠신 종⁠이⁠에 직⁠접 적⁠어 두⁠세⁠요.';
+  }
 
   @override
   String get settingsSeedScreenshotBodyLead => '스⁠크⁠린⁠샷⁠은 안⁠전⁠하⁠지 않⁠아⁠요';
 
   @override
   String get settingsSeedScreenshotBodyRest =>
-      '. 휴⁠대⁠폰⁠이⁠나 사⁠진 보⁠관⁠함⁠에 접⁠근⁠할 수 있⁠는 사⁠람⁠은 누⁠구⁠나 복⁠구 문⁠구⁠를 볼 수 있⁠어⁠요. 대⁠신 종⁠이⁠에 직⁠접 적⁠어 두⁠세⁠요.';
+      '. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
 
   @override
   String get settingsSeedScreenshotTitle => '복⁠구 문⁠구⁠를 스⁠크⁠린⁠샷⁠으⁠로 남⁠기⁠지 마⁠세⁠요';
@@ -9037,7 +9502,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsTorDescConnectedIos =>
-      'Vizor⁠의 네⁠트⁠워⁠크 요⁠청⁠은 Tor⁠를 거⁠쳐⁠요. Ironwood 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠은 Vizor⁠가 닫⁠혀 있⁠는 동⁠안 직⁠접 연⁠결⁠을 사⁠용⁠해⁠요. 다⁠른 앱⁠에⁠서 연 링⁠크⁠는 해⁠당 앱⁠의 네⁠트⁠워⁠크 설⁠정⁠을 따⁠라⁠요.';
+      'Vizor⁠의 네⁠트⁠워⁠크 요⁠청⁠은 Tor⁠를 거⁠쳐⁠요. Ironwood 비⁠공⁠개 이⁠전⁠은 Vizor⁠가 닫⁠혀 있⁠는 동⁠안 직⁠접 연⁠결⁠을 사⁠용⁠해⁠요. 다⁠른 앱⁠에⁠서 연 링⁠크⁠는 해⁠당 앱⁠의 네⁠트⁠워⁠크 설⁠정⁠을 따⁠라⁠요.';
 
   @override
   String get settingsTorDescConnectedNoUpdates =>
@@ -9105,7 +9570,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsTorGeneralIosSuffix =>
-      ' Ironwood 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠은 Vizor⁠가 닫⁠혀 있⁠는 동⁠안 직⁠접 연⁠결⁠돼⁠요.';
+      ' Ironwood 비⁠공⁠개 이⁠전⁠은 Vizor⁠가 닫⁠혀 있⁠는 동⁠안 직⁠접 연⁠결⁠돼⁠요.';
 
   @override
   String get settingsTorRetryUpdates => '업⁠데⁠이⁠트 다⁠시 시⁠도';
@@ -9120,7 +9585,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsTorStatusDirect => '직⁠접 연⁠결';
 
   @override
-  String get settingsTorStatusNotSaved => '설⁠정⁠이 저⁠장⁠되⁠지 않⁠았⁠어⁠요';
+  String get settingsTorStatusNotSaved => '저⁠장 실⁠패';
 
   @override
   String get settingsTorStatusSwitchFailed => '전⁠환 실⁠패';
@@ -9229,10 +9694,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsUpdatePasswordTitle => '비⁠밀⁠번⁠호 변⁠경';
 
   @override
-  String get settingsUpdateRestartButton => '재⁠시⁠작⁠하⁠여 업⁠데⁠이⁠트';
+  String get settingsUpdateRestartButton => '다⁠시 시⁠작⁠해 업⁠데⁠이⁠트';
 
   @override
-  String get settingsUpdateRestartingButton => '재⁠시⁠작 중…';
+  String get settingsUpdateRestartingButton => '다⁠시 시⁠작 중…';
 
   @override
   String settingsUpdateStatusAvailable(String version) {
@@ -9292,7 +9757,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsViewingKeyConfirmAgain =>
-      '접⁠근⁠을 다⁠시 확⁠인⁠한 뒤 이 키⁠를 불⁠러⁠와 주⁠세⁠요.';
+      '이 키⁠를 불⁠러⁠오⁠려⁠면 접⁠근⁠을 다⁠시 확⁠인⁠해 주⁠세⁠요.';
 
   @override
   String get settingsViewingKeyCopy => '뷰⁠잉 키 복⁠사';
@@ -9390,7 +9855,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsWinUpdateUnavailableBody =>
-      'Tor⁠는 꺼⁠져 있⁠지⁠만 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 아⁠직 사⁠용⁠할 수 없⁠어⁠요. 다⁠운⁠로⁠드⁠하⁠기 전⁠에 설⁠정⁠에⁠서 업⁠데⁠이⁠트⁠를 다⁠시 시⁠도⁠하⁠세⁠요.';
+      'Tor⁠는 꺼⁠져 있⁠지⁠만 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 아⁠직 사⁠용⁠할 수 없⁠어⁠요. 다⁠운⁠로⁠드⁠하⁠기 전⁠에 설⁠정⁠에⁠서 업⁠데⁠이⁠트⁠를 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get settingsWinUpdateUnavailableTitle =>
@@ -9535,10 +10000,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapActivityExpectedToReceive => '예⁠상 수⁠령 금⁠액';
 
   @override
-  String get swapActivityIncompleteDeposit => '입⁠금⁠이 완⁠료⁠되⁠지 않⁠았⁠어⁠요';
+  String get swapActivityIncompleteDeposit => '입⁠금 부⁠족';
 
   @override
-  String get swapActivityIncompletePayment => '결⁠제⁠가 완⁠료⁠되⁠지 않⁠았⁠어⁠요';
+  String get swapActivityIncompletePayment => '결⁠제 미⁠완⁠료';
 
   @override
   String get swapActivityLastCheckJustNow => '마⁠지⁠막 확⁠인: 방⁠금 전';
@@ -9562,7 +10027,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String swapActivityPickerNoRecipients(String symbol) {
-    return '저⁠장⁠된 $symbol 수⁠신⁠자⁠가 없⁠어⁠요';
+    return '저⁠장⁠된 $symbol 받⁠는 사⁠람⁠이 없⁠어⁠요';
   }
 
   @override
@@ -9572,7 +10037,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String swapActivityPickerRecipientsTitle(String symbol) {
-    return '$symbol 수⁠신⁠자';
+    return '$symbol 받⁠는 사⁠람';
   }
 
   @override
@@ -9584,7 +10049,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapActivityReceiveAssetFallback => '수⁠령 자⁠산';
 
   @override
-  String get swapActivityRecipientReceived => '수⁠신⁠자⁠가 받⁠은 금⁠액';
+  String get swapActivityRecipientReceived => '받⁠는 사⁠람 수⁠령⁠액';
 
   @override
   String swapActivityStateAddressOrAccountHint(String chain) {
@@ -9658,7 +10123,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String swapActivityStepDeliverActive(String symbol) {
-    return '$symbol 전⁠달...';
+    return '$symbol 전⁠달 중...';
   }
 
   @override
@@ -9700,16 +10165,16 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get swapActivityStepRecipientReceives => '수⁠신⁠자 수⁠령';
+  String get swapActivityStepRecipientReceives => '받⁠는 사⁠람 수⁠령';
 
   @override
   String swapActivityStepRecipientReceivesAsset(String symbol) {
-    return '수⁠신⁠자⁠가 $symbol 수⁠령 중...';
+    return '받⁠는 사⁠람⁠에⁠게 $symbol 전⁠달 중...';
   }
 
   @override
   String get swapActivityStepRecipientReceivesDescription =>
-      '수⁠신⁠자 쪽 결⁠제⁠를 확⁠인⁠하⁠고 있⁠어⁠요.';
+      '받⁠는 사⁠람 쪽 결⁠제⁠를 확⁠인⁠하⁠고 있⁠어⁠요.';
 
   @override
   String swapActivityStepSend(String symbol) {
@@ -9771,7 +10236,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapActivityTooltipFees =>
-      '당⁠사 수⁠수⁠료⁠와 경⁠로 제⁠공⁠자⁠가 이 스⁠왑⁠을 처⁠리⁠하⁠는 데 드⁠는 비⁠용⁠이 포⁠함⁠돼⁠요. 위 환⁠율⁠에 이⁠미 반⁠영⁠되⁠어 있⁠어⁠요.';
+      '저⁠희 수⁠수⁠료⁠와 경⁠로 제⁠공⁠자⁠가 이 스⁠왑⁠을 처⁠리⁠하⁠는 데 드⁠는 비⁠용⁠이 포⁠함⁠돼⁠요. 위 환⁠율⁠에 이⁠미 반⁠영⁠되⁠어 있⁠어⁠요.';
 
   @override
   String swapActivityTooltipMinimumReceive(String symbol) {
@@ -9998,7 +10463,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapFailureZecDepositFunding =>
-      '이 스⁠왑⁠과 네⁠트⁠워⁠크 수⁠수⁠료⁠를 낼 수 있⁠는 ZEC⁠가 부⁠족⁠해⁠요.\n더 적⁠은 금⁠액⁠으⁠로 시⁠도⁠하⁠거⁠나 최⁠대⁠를 사⁠용⁠해 주⁠세⁠요.';
+      '이 스⁠왑⁠과 네⁠트⁠워⁠크 수⁠수⁠료⁠를 낼 수 있⁠는 ZEC⁠가 부⁠족⁠해⁠요.\n더 적⁠은 금⁠액⁠으⁠로 시⁠도⁠하⁠거⁠나 최⁠대 금⁠액⁠을 사⁠용⁠해 주⁠세⁠요.';
 
   @override
   String get swapFailureZecDepositPreflight =>
@@ -10085,7 +10550,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapNoticeAccountChanged =>
-      '활⁠성 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 시⁠작⁠하⁠기 전⁠에 견⁠적⁠을 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+      '선⁠택⁠한 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 시⁠작⁠하⁠기 전⁠에 견⁠적⁠을 다⁠시 확⁠인⁠해 주⁠세⁠요.';
 
   @override
   String get swapNoticeAffectedNetworks => '영⁠향⁠받⁠는 네⁠트⁠워⁠크';
@@ -10147,7 +10612,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapNoticeReceiveAddressUnavailable =>
-      '새 지⁠갑 받⁠기 주⁠소⁠를 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 지⁠갑 동⁠기⁠화 후 다⁠시 시⁠도⁠하⁠거⁠나, 새 견⁠적⁠을 요⁠청⁠하⁠기 전⁠에 대⁠기 중⁠인 이⁠전 스⁠왑⁠을 닫⁠아 주⁠세⁠요.';
+      '새 지⁠갑 받⁠기 주⁠소⁠를 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 지⁠갑 동⁠기⁠화 후 다⁠시 시⁠도⁠하⁠거⁠나, 새 견⁠적⁠을 요⁠청⁠하⁠기 전⁠에 대⁠기 중⁠인 예⁠전 스⁠왑⁠을 닫⁠아 주⁠세⁠요.';
 
   @override
   String get swapNoticeServiceTitle => '서⁠비⁠스 안⁠내';
@@ -10212,7 +10677,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapReviewBackPay => '결⁠제';
 
   @override
-  String get swapReviewConfirmAndSwap => '확⁠인 후 스⁠왑';
+  String get swapReviewConfirmAndSwap => '확⁠인⁠하⁠고 스⁠왑';
 
   @override
   String get swapReviewConfirmPaymentTitle => '결⁠제 확⁠인';
@@ -10359,6 +10824,42 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get syncFailureChainRecovery =>
+      '동⁠기⁠화 중 체⁠인⁠이 바⁠뀌⁠었⁠어⁠요. 복⁠구⁠를 계⁠속 시⁠도⁠할⁠게⁠요.';
+
+  @override
+  String get syncFailureDatabaseBusy =>
+      '지⁠갑 데⁠이⁠터⁠가 사⁠용 중⁠이⁠에⁠요. 자⁠동⁠으⁠로 다⁠시 동⁠기⁠화⁠할⁠게⁠요.';
+
+  @override
+  String get syncFailureDatabaseFatal =>
+      '지⁠갑 데⁠이⁠터⁠를 읽⁠지 못⁠했⁠어⁠요. 앱⁠을 다⁠시 시⁠작⁠한 뒤 동⁠기⁠화⁠를 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get syncFailureEndpoint =>
+      '설⁠정⁠된 Zcash 엔⁠드⁠포⁠인⁠트⁠에 연⁠결⁠할 수 없⁠어⁠요. 엔⁠드⁠포⁠인⁠트 설⁠정⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get syncFailureNetwork =>
+      '네⁠트⁠워⁠크 연⁠결⁠이 끊⁠어⁠졌⁠어⁠요. 자⁠동⁠으⁠로 계⁠속 시⁠도⁠할⁠게⁠요.';
+
+  @override
+  String get syncFailureParse =>
+      '동⁠기⁠화 데⁠이⁠터⁠를 처⁠리⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠를 다⁠시 시⁠도⁠하⁠거⁠나 엔⁠드⁠포⁠인⁠트⁠를 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get syncFailurePrivateStatus =>
+      '비⁠공⁠개 거⁠래 조⁠회⁠로 거⁠래 상⁠태⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠를 계⁠속⁠하⁠려⁠면 설⁠정⁠에⁠서 실⁠험⁠적 비⁠공⁠개 조⁠회⁠를 끄⁠세⁠요.';
+
+  @override
+  String get syncFailureTor =>
+      'Tor⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 설⁠정⁠에⁠서 Tor⁠를 끄⁠세⁠요.';
+
+  @override
+  String get syncFailureUnknown =>
+      '동⁠기⁠화⁠에 실⁠패⁠했⁠어⁠요. 계⁠속⁠하⁠려⁠면 동⁠기⁠화⁠를 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
   String get syncSynced => '동⁠기⁠화 완⁠료';
 
   @override
@@ -10384,6 +10885,14 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get syncVizorSynced => 'Vizor 동⁠기⁠화⁠됨';
+
+  @override
+  String get transparentLedgerNeedsNewerBuild =>
+      '이 지⁠갑⁠의 투⁠명 자⁠금⁠을 사⁠용⁠하⁠려⁠면 더 최⁠신 버⁠전⁠의 Vizor⁠가 필⁠요⁠해⁠요.';
+
+  @override
+  String get transparentRecoveryIncomplete =>
+      '비⁠공⁠개 복⁠구⁠가 끝⁠날 때⁠까⁠지 투⁠명 자⁠금⁠을 사⁠용⁠할 수 없⁠어⁠요.';
 
   @override
   String get txFeeHelpTooltip =>
@@ -10626,6 +11135,82 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get votingErrorChainCancelled => '체⁠인 제⁠출⁠이 취⁠소⁠됐⁠어⁠요.';
+
+  @override
+  String get votingErrorChainNoUsableTransaction =>
+      '체⁠인 제⁠출⁠이 사⁠용⁠할 수 있⁠는 거⁠래 없⁠이 끝⁠났⁠어⁠요.';
+
+  @override
+  String get votingErrorChainRecoveryPending =>
+      '체⁠인 제⁠출 복⁠구⁠가 아⁠직 진⁠행 중⁠이⁠에⁠요.';
+
+  @override
+  String get votingErrorChainRejected => '체⁠인⁠에⁠서 제⁠출⁠을 거⁠부⁠했⁠어⁠요.';
+
+  @override
+  String get votingErrorChainSubmittedWithoutHash =>
+      '제⁠출⁠이 체⁠인⁠에 도⁠달⁠했⁠을 수 있⁠지⁠만 거⁠래 해⁠시⁠를 받⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠지 마⁠세⁠요.';
+
+  @override
+  String votingErrorDelegationFailed(String details) {
+    return '위⁠임 묶⁠음⁠을 처⁠리⁠하⁠지 못⁠했⁠어⁠요: $details';
+  }
+
+  @override
+  String get votingErrorHotkeyMissing =>
+      '투⁠표 핫⁠키⁠가 없⁠어⁠요. 투⁠표⁠하⁠기 전⁠에 이 라⁠운⁠드⁠를 위⁠임⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingErrorImmediateShareExpired =>
+      '헬⁠퍼⁠가 즉⁠시 전⁠송⁠된 투⁠표 데⁠이⁠터⁠를 확⁠인⁠하⁠기 전⁠에 투⁠표 라⁠운⁠드⁠가 끝⁠났⁠어⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 투⁠표 상⁠태⁠를 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingErrorKeystoneAccountOnly =>
+      'Keystone 투⁠표⁠는 Keystone 계⁠정⁠에⁠서⁠만 할 수 있⁠어⁠요.';
+
+  @override
+  String get votingErrorKeystoneHardwareOnly =>
+      'Keystone 투⁠표⁠는 하⁠드⁠웨⁠어 지⁠갑 계⁠정⁠에⁠서⁠만 할 수 있⁠어⁠요.';
+
+  @override
+  String get votingErrorKeystoneInvalidSignature =>
+      'Keystone⁠에⁠서 받⁠은 투⁠표 서⁠명⁠이 올⁠바⁠르⁠지 않⁠아⁠요. 여⁠기 표⁠시⁠된 QR⁠에 대⁠한 결⁠과⁠를 스⁠캔⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingErrorKeystoneNoSignatures =>
+      'Keystone⁠에⁠서 투⁠표 서⁠명⁠을 받⁠지 못⁠했⁠어⁠요. 결⁠과⁠를 다⁠시 스⁠캔⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingErrorKeystoneNoSigningRequest =>
+      '서⁠명⁠을 기⁠다⁠리⁠는 Keystone 서⁠명 요⁠청⁠이 없⁠어⁠요.';
+
+  @override
+  String votingErrorKeystoneQrPrepareFailed(String reason) {
+    return 'Keystone 투⁠표 QR⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요: $reason';
+  }
+
+  @override
+  String get votingErrorKeystoneResultMismatch =>
+      '이 Keystone 결⁠과⁠가 여⁠기 표⁠시⁠된 투⁠표 QR⁠과 일⁠치⁠하⁠지 않⁠아⁠요. 일⁠치⁠하⁠는 결⁠과⁠를 스⁠캔⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingErrorKeystoneSignatureConflict =>
+      '이 Keystone 결⁠과⁠가 이 투⁠표 요⁠청⁠에 이⁠미 저⁠장⁠된 서⁠명⁠과 충⁠돌⁠해⁠요. Keystone 서⁠명⁠을 다⁠시 시⁠작⁠하⁠고 새⁠로 생⁠성⁠된 결⁠과⁠를 스⁠캔⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingErrorKeystoneSignatureMismatch =>
+      'Keystone⁠에⁠서 받⁠은 서⁠명⁠이 이 투⁠표 요⁠청⁠과 일⁠치⁠하⁠지 않⁠아⁠요. 여⁠기 표⁠시⁠된 QR⁠에 대⁠한 결⁠과⁠를 스⁠캔⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingErrorKeystoneSignatureSaveFailed =>
+      'Keystone 서⁠명⁠을 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 같⁠은 Keystone 결⁠과⁠를 다⁠시 스⁠캔⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingErrorKeystoneSkipNeedsSignature =>
+      '나⁠머⁠지⁠를 건⁠너⁠뛰⁠기 전⁠에 Keystone 묶⁠음⁠에 하⁠나 이⁠상 서⁠명⁠해 주⁠세⁠요.';
+
+  @override
   String get votingErrorLedgerCancelled => 'Ledger⁠에⁠서 투⁠표 승⁠인⁠을 취⁠소⁠했⁠어⁠요.';
 
   @override
@@ -10634,8 +11219,20 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get votingErrorLedgerNoPendingBundle =>
+      '승⁠인⁠을 기⁠다⁠리⁠는 Ledger 투⁠표 묶⁠음⁠이 없⁠어⁠요.';
+
+  @override
   String get votingErrorLedgerRejected =>
       'Ledger⁠에⁠서 투⁠표 서⁠명⁠을 거⁠부⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 서⁠명⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingErrorLedgerSignatureConflict =>
+      '이 Ledger 서⁠명⁠이 이 투⁠표 묶⁠음⁠에 이⁠미 저⁠장⁠된 서⁠명⁠과 충⁠돌⁠해⁠요.';
+
+  @override
+  String get votingErrorLedgerSignatureSaveFailed =>
+      'Ledger 투⁠표 서⁠명⁠을 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 이 묶⁠음⁠을 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String votingErrorLedgerWrongApp(String instruction) {
@@ -10648,12 +11245,77 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String votingErrorMinimumWeightReason(String amount, String snapshot) {
+    return '투⁠표⁠하⁠려⁠면 $snapshot⁠에 $amount 이⁠상⁠의 자⁠격 있⁠는 차⁠폐 노⁠트 묶⁠음⁠이 하⁠나 이⁠상 필⁠요⁠해⁠요';
+  }
+
+  @override
+  String get votingErrorNoActiveAccount => '투⁠표⁠에 사⁠용⁠할 계⁠정⁠이 선⁠택⁠되⁠지 않⁠았⁠어⁠요.';
+
+  @override
   String votingErrorNoSpendableNotes(String snapshot) {
     return '이 계⁠정⁠은 이⁠번 투⁠표 라⁠운⁠드⁠에 참⁠여⁠할 수 없⁠어⁠요. $snapshot⁠에 투⁠표 자⁠격⁠이 있⁠는 차⁠폐 자⁠금⁠이 없⁠었⁠어⁠요. 자⁠격⁠이 있⁠는 계⁠정⁠으⁠로 전⁠환⁠해 투⁠표⁠해 주⁠세⁠요.';
   }
 
   @override
+  String votingErrorNoSpendableNotesReason(String snapshot) {
+    return '이 계⁠정⁠은 이⁠번 투⁠표 라⁠운⁠드⁠에 참⁠여⁠할 수 없⁠어⁠요. $snapshot⁠에 투⁠표 자⁠격⁠이 있⁠는 차⁠폐 자⁠금⁠이 없⁠었⁠어⁠요';
+  }
+
+  @override
+  String get votingErrorNoVoteChosen => '제⁠출⁠하⁠기 전⁠에 하⁠나 이⁠상 투⁠표⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingErrorPirEndpointResolveFailed =>
+      'PIR 엔⁠드⁠포⁠인⁠트⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get votingErrorPirEndpointUnresolved =>
+      'PIR 엔⁠드⁠포⁠인⁠트⁠를 아⁠직 확⁠인⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get votingErrorRoundDetailsUnavailable =>
+      '투⁠표 라⁠운⁠드 정⁠보⁠를 아⁠직 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingErrorRoundEndTimeUnavailable =>
+      '투⁠표 라⁠운⁠드 종⁠료 시⁠간⁠을 알 수 없⁠어⁠요. 잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
   String get votingErrorSessionFailed => '투⁠표 작⁠업⁠에 실⁠패⁠했⁠어⁠요.';
+
+  @override
+  String votingErrorSignBundleFirst(int bundle, String signer) {
+    return '제⁠출⁠하⁠기 전⁠에 $signer(으)로 위⁠임 묶⁠음 $bundle⁠에 서⁠명⁠해 주⁠세⁠요.';
+  }
+
+  @override
+  String votingErrorSignBundlesFirst(String signer) {
+    return '제⁠출⁠하⁠기 전⁠에 $signer(으)로 위⁠임 묶⁠음⁠에 서⁠명⁠해 주⁠세⁠요.';
+  }
+
+  @override
+  String votingErrorSignerAccountOnly(String signer) {
+    return '$signer 투⁠표⁠는 해⁠당 하⁠드⁠웨⁠어 지⁠갑 계⁠정⁠에⁠서⁠만 할 수 있⁠어⁠요.';
+  }
+
+  @override
+  String get votingErrorSoftwareMnemonicRequired =>
+      '소⁠프⁠트⁠웨⁠어 위⁠임⁠에⁠는 이 계⁠정⁠의 복⁠구 문⁠구⁠가 필⁠요⁠해⁠요. 이 계⁠정⁠을 잠⁠금 해⁠제⁠하⁠거⁠나 복⁠구 문⁠구⁠에 접⁠근⁠할 수 있⁠는 계⁠정⁠으⁠로 전⁠환⁠해 주⁠세⁠요.';
+
+  @override
+  String votingErrorVoteCastingFailed(String details) {
+    return '투⁠표⁠하⁠지 못⁠했⁠어⁠요: $details';
+  }
+
+  @override
+  String votingErrorWalletSyncTimeout(
+    String duration,
+    String scanned,
+    String snapshot,
+  ) {
+    return '지⁠갑 동⁠기⁠화⁠가 $duration 안⁠에 이 투⁠표 라⁠운⁠드 스⁠냅⁠샷⁠에 도⁠달⁠하⁠지 못⁠했⁠어⁠요. $snapshot 블⁠록 중 $scanned 블⁠록⁠까⁠지 스⁠캔⁠했⁠어⁠요. 지⁠갑 동⁠기⁠화⁠가 따⁠라⁠잡⁠을 때⁠까⁠지 기⁠다⁠린 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+  }
 
   @override
   String get votingForumDiscussion => '포⁠럼 토⁠론';
@@ -10846,22 +11508,22 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String votingPirAhead(String expected, String reported) {
-    return '설⁠정⁠된 PIR 엔⁠드⁠포⁠인⁠트⁠가 이 투⁠표 라⁠운⁠드 스⁠냅⁠샷⁠보⁠다 앞⁠서 있⁠어⁠요. 예⁠상 스⁠냅⁠샷 블⁠록⁠은 $expected⁠이⁠고 엔⁠드⁠포⁠인⁠트⁠는 $reported(으)로 보⁠고⁠해⁠요.';
+    return '설⁠정⁠된 PIR 엔⁠드⁠포⁠인⁠트⁠가 이 투⁠표 라⁠운⁠드 스⁠냅⁠샷⁠보⁠다 앞⁠서 있⁠어⁠요. 예⁠상 스⁠냅⁠샷 블⁠록: $expected, 엔⁠드⁠포⁠인⁠트 보⁠고 블⁠록: $reported.';
   }
 
   @override
   String votingPirBehind(String expected, String reported) {
-    return '이 투⁠표 라⁠운⁠드⁠의 PIR 데⁠이⁠터⁠가 아⁠직 준⁠비⁠되⁠지 않⁠았⁠어⁠요. 예⁠상 스⁠냅⁠샷 블⁠록⁠은 $expected⁠이⁠고 PIR 엔⁠드⁠포⁠인⁠트⁠는 $reported(으)로 보⁠고⁠해⁠요. PIR 서⁠비⁠스⁠가 따⁠라⁠잡⁠으⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+    return '이 투⁠표 라⁠운⁠드⁠의 PIR 데⁠이⁠터⁠가 아⁠직 준⁠비⁠되⁠지 않⁠았⁠어⁠요. 예⁠상 스⁠냅⁠샷 블⁠록: $expected, PIR 엔⁠드⁠포⁠인⁠트 보⁠고 블⁠록: $reported. PIR 서⁠비⁠스⁠가 따⁠라⁠잡⁠으⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.';
   }
 
   @override
   String votingPirNoMatch(String expected) {
-    return '이 투⁠표 라⁠운⁠드 스⁠냅⁠샷⁠과 일⁠치⁠하⁠는 PIR 엔⁠드⁠포⁠인⁠트⁠가 없⁠어⁠요. 예⁠상 스⁠냅⁠샷 블⁠록⁠은 $expected⁠이⁠에⁠요.';
+    return '이 투⁠표 라⁠운⁠드 스⁠냅⁠샷⁠과 일⁠치⁠하⁠는 PIR 엔⁠드⁠포⁠인⁠트⁠가 없⁠어⁠요. 예⁠상 스⁠냅⁠샷 블⁠록: $expected.';
   }
 
   @override
   String votingPirNoMatchDiagnostics(String expected, String diagnostics) {
-    return '이 투⁠표 라⁠운⁠드 스⁠냅⁠샷⁠과 일⁠치⁠하⁠는 PIR 엔⁠드⁠포⁠인⁠트⁠가 없⁠어⁠요. 예⁠상 스⁠냅⁠샷 블⁠록⁠은 $expected⁠이⁠에⁠요. 진⁠단 정⁠보: $diagnostics.';
+    return '이 투⁠표 라⁠운⁠드 스⁠냅⁠샷⁠과 일⁠치⁠하⁠는 PIR 엔⁠드⁠포⁠인⁠트⁠가 없⁠어⁠요. 예⁠상 스⁠냅⁠샷 블⁠록: $expected. 진⁠단 정⁠보: $diagnostics.';
   }
 
   @override
@@ -10893,7 +11555,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get votingPollsEmptyBody => '아⁠직 표⁠시⁠할 토⁠큰 보⁠유⁠자 투⁠표 라⁠운⁠드⁠가 없⁠어⁠요.';
 
   @override
-  String get votingPollsEmptyTitle => '진⁠행 중⁠인 투⁠표 라⁠운⁠드⁠가 없⁠어⁠요';
+  String get votingPollsEmptyTitle => '사⁠용⁠할 수 있⁠는 투⁠표 라⁠운⁠드⁠가 없⁠어⁠요';
 
   @override
   String get votingPollsLoadFailedTitle => '투⁠표 라⁠운⁠드⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요';
@@ -10917,7 +11579,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String votingPrivacyTrimNotice(String amount) {
-    return '제⁠출⁠한 투⁠표⁠를 덜 식⁠별⁠되⁠게 하⁠려⁠고 $amount⁠은(는) 이⁠번 투⁠표⁠에⁠서 제⁠외⁠돼⁠요.';
+    return '제⁠출⁠한 투⁠표⁠가 덜 식⁠별⁠되⁠도⁠록 $amount⁠은(는) 이⁠번 투⁠표⁠에⁠서 제⁠외⁠돼⁠요.';
   }
 
   @override
@@ -10984,7 +11646,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get votingResultsWinner => '우⁠승';
+  String get votingResultsWinner => '최⁠다 득⁠표';
 
   @override
   String get votingResultsYourVote => '내 투⁠표';
@@ -10993,7 +11655,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get votingReviewChooseOne => '제⁠출⁠하⁠기 전⁠에 하⁠나 이⁠상 선⁠택⁠해 주⁠세⁠요.';
 
   @override
-  String get votingReviewConfirmSubmit => '확⁠인 및 제⁠출';
+  String get votingReviewConfirmSubmit => '확⁠인⁠하⁠고 제⁠출';
 
   @override
   String votingReviewLoadFailed(String error) {
@@ -11025,7 +11687,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get votingSignedOnlyWarning =>
-      '서⁠명⁠하⁠지 않⁠은 묶⁠음⁠은 건⁠너⁠뛰⁠며, 이⁠번 투⁠표 라⁠운⁠드⁠의 투⁠표⁠권⁠이 줄⁠어⁠들⁠어⁠요.';
+      '서⁠명⁠하⁠지 않⁠은 묶⁠음⁠은 건⁠너⁠뛰⁠어⁠서 이⁠번 투⁠표 라⁠운⁠드⁠의 투⁠표⁠권⁠이 줄⁠어⁠들⁠어⁠요.';
 
   @override
   String get votingSkip => '건⁠너⁠뛰⁠기';
@@ -11090,7 +11752,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get votingStatusVoted => '투⁠표 완⁠료';
 
   @override
-  String get votingStepCasting => '투⁠표 및 지⁠분 제⁠출 중';
+  String get votingStepCasting => '투⁠표⁠하⁠고 투⁠표 데⁠이⁠터⁠를 제⁠출⁠하⁠는 중';
 
   @override
   String get votingStepFinalizing => '제⁠출 마⁠무⁠리 중';
@@ -11105,6 +11767,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get votingStepSigningLedger => 'Ledger⁠로 서⁠명 중';
 
   @override
+  String get votingSubmissionInProgress =>
+      '투⁠표 제⁠출⁠이 아⁠직 진⁠행 중⁠이⁠에⁠요. 계⁠정⁠을 삭⁠제⁠하⁠거⁠나 지⁠갑⁠을 초⁠기⁠화⁠하⁠기 전⁠에 제⁠출⁠이 끝⁠날 때⁠까⁠지 기⁠다⁠려 주⁠세⁠요.';
+
+  @override
   String get votingSwitchAccount => '계⁠정 전⁠환';
 
   @override
@@ -11113,7 +11779,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String votingSyncBlocksRemaining(int count) {
-    return '$count⁠개 블⁠록 남⁠음';
+    return '$count 블⁠록 남⁠음';
   }
 
   @override
@@ -11141,7 +11807,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get votingTerminalReasonDefault => '확⁠인 없⁠이 종⁠료⁠됐⁠어⁠요';
+  String get votingTerminalReasonDefault => '확⁠인 없⁠이 종⁠료⁠됨';
 
   @override
   String votingTerminalSingle(String bundle) {
@@ -11182,7 +11848,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get walletLinkCameraRequired =>
-      '데⁠스⁠크⁠탑 연⁠결⁠을 스⁠캔⁠하⁠려⁠면 이 기⁠기⁠에 카⁠메⁠라⁠가 필⁠요⁠해⁠요.';
+      '데⁠스⁠크⁠톱 연⁠결⁠을 스⁠캔⁠하⁠려⁠면 이 기⁠기⁠에 카⁠메⁠라⁠가 필⁠요⁠해⁠요.';
 
   @override
   String walletLinkContactsFound(int count) {
@@ -11289,21 +11955,21 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get walletLinkErrorExpiredBody =>
-      '컴⁠퓨⁠터⁠의 코⁠드⁠가 만⁠료⁠됐⁠어⁠요. 데⁠스⁠크⁠탑⁠에⁠서 새 코⁠드 생⁠성⁠을 선⁠택⁠하⁠고 다⁠시 스⁠캔⁠해 주⁠세⁠요.';
+      '컴⁠퓨⁠터⁠의 코⁠드⁠가 만⁠료⁠됐⁠어⁠요. 데⁠스⁠크⁠톱⁠에⁠서 새 코⁠드 생⁠성⁠을 선⁠택⁠하⁠고 다⁠시 스⁠캔⁠해 주⁠세⁠요.';
 
   @override
   String get walletLinkErrorExpiredTitle => '링⁠크⁠가 만⁠료⁠됐⁠어⁠요';
 
   @override
   String get walletLinkErrorFailedBody =>
-      '데⁠스⁠크⁠탑⁠에 코⁠드⁠가 계⁠속 표⁠시⁠되⁠어 있⁠는⁠지 확⁠인⁠한 뒤 다⁠시 스⁠캔⁠해 주⁠세⁠요.';
+      '데⁠스⁠크⁠톱⁠에 코⁠드⁠가 계⁠속 표⁠시⁠되⁠어 있⁠는⁠지 확⁠인⁠한 뒤 다⁠시 스⁠캔⁠해 주⁠세⁠요.';
 
   @override
   String get walletLinkErrorFailedTitle => '이 링⁠크⁠를 열 수 없⁠어⁠요';
 
   @override
   String get walletLinkErrorInvalidBody =>
-      '스⁠캔⁠한 코⁠드⁠는 Vizor 데⁠스⁠크⁠탑 연⁠결 코⁠드⁠가 아⁠니⁠에⁠요. 컴⁠퓨⁠터⁠에⁠서 설⁠정 → Vizor 모⁠바⁠일 연⁠결⁠을 열⁠어 주⁠세⁠요.';
+      '스⁠캔⁠한 코⁠드⁠는 Vizor 데⁠스⁠크⁠톱 연⁠결 코⁠드⁠가 아⁠니⁠에⁠요. 컴⁠퓨⁠터⁠에⁠서 설⁠정 → Vizor 모⁠바⁠일 연⁠결⁠을 열⁠어 주⁠세⁠요.';
 
   @override
   String get walletLinkErrorInvalidTitle => '잘⁠못⁠된 QR 코⁠드';
@@ -11318,13 +11984,13 @@ class AppLocalizationsKo extends AppLocalizations {
       '지⁠갑⁠과 연⁠락⁠처⁠를 휴⁠대⁠폰⁠으⁠로 복⁠사⁠해⁠요. 컴⁠퓨⁠터⁠에⁠서⁠는 아⁠무⁠것⁠도 바⁠뀌⁠지 않⁠으⁠며 둘 다 사⁠용⁠할 수 있⁠어⁠요.';
 
   @override
-  String get walletLinkIntroReady => '스⁠캔⁠할 준⁠비⁠가 됐⁠어⁠요';
+  String get walletLinkIntroReady => '스⁠캔 준⁠비 완⁠료';
 
   @override
-  String get walletLinkIntroSubtitle => '데⁠스⁠크⁠탑 지⁠갑⁠을 이 휴⁠대⁠폰⁠으⁠로 복⁠사⁠하⁠세⁠요';
+  String get walletLinkIntroSubtitle => '데⁠스⁠크⁠톱 지⁠갑⁠을 이 휴⁠대⁠폰⁠으⁠로 복⁠사⁠하⁠세⁠요';
 
   @override
-  String get walletLinkIntroTitle => '데⁠스⁠크⁠탑⁠과 연⁠결';
+  String get walletLinkIntroTitle => '데⁠스⁠크⁠톱⁠과 연⁠결';
 
   @override
   String walletLinkLinkAccounts(int count) {
@@ -11333,11 +11999,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get walletLinkNothingNewSubtitle =>
-      '이 데⁠스⁠크⁠탑 연⁠결⁠에⁠서 새⁠로 가⁠져⁠올 항⁠목⁠이 없⁠어⁠요.';
+      '이 데⁠스⁠크⁠톱 연⁠결⁠에⁠서 새⁠로 가⁠져⁠올 항⁠목⁠이 없⁠어⁠요.';
 
   @override
   String get walletLinkNothingToImportBody =>
-      '이 데⁠스⁠크⁠탑 연⁠결⁠의 모⁠든 항⁠목⁠이 이⁠미 이 휴⁠대⁠폰⁠에 있⁠어⁠요.';
+      '이 데⁠스⁠크⁠톱 연⁠결⁠의 모⁠든 항⁠목⁠이 이⁠미 이 휴⁠대⁠폰⁠에 있⁠어⁠요.';
 
   @override
   String get walletLinkNothingToImportTitle => '가⁠져⁠올 항⁠목⁠이 없⁠어⁠요';
@@ -11346,10 +12012,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get walletLinkReadingLink => '링⁠크⁠를 읽⁠는 중...';
 
   @override
-  String get walletLinkScanCaption => 'Vizor 데⁠스⁠크⁠탑 QR⁠을 스⁠캔⁠하⁠세⁠요';
+  String get walletLinkScanCaption => 'Vizor 데⁠스⁠크⁠톱 QR⁠을 스⁠캔⁠하⁠세⁠요';
 
   @override
-  String get walletLinkScanSubtitleDesktop => '데⁠스⁠크⁠탑⁠에 표⁠시⁠된 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
+  String get walletLinkScanSubtitleDesktop => '데⁠스⁠크⁠톱⁠에 표⁠시⁠된 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
 
   @override
   String get walletLinkSelectAll => '모⁠두 선⁠택';
@@ -11359,15 +12025,22 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get walletLinkStepScanQr =>
-      '다⁠음 화⁠면⁠에⁠서 데⁠스⁠크⁠탑⁠에 표⁠시⁠된 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요.';
+      '다⁠음 화⁠면⁠에⁠서 데⁠스⁠크⁠톱⁠에 표⁠시⁠된 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요.';
 
   @override
   String get walletLinkStepUnlockDesktop =>
-      'Vizor 데⁠스⁠크⁠탑 앱⁠을 열⁠고 잠⁠금⁠을 해⁠제⁠하⁠세⁠요';
+      'Vizor 데⁠스⁠크⁠톱 앱⁠을 열⁠고 잠⁠금⁠을 해⁠제⁠하⁠세⁠요';
+
+  @override
+  String get walletMutationBusy =>
+      '다⁠른 지⁠갑 작⁠업⁠을 시⁠작⁠하⁠기 전⁠에 현⁠재 작⁠업⁠을 먼⁠저 끝⁠내⁠세⁠요.';
 
   @override
   String get walletResetDeviceAuthFailed =>
       '기⁠기 소⁠유⁠자⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get walletResetDeviceAuthReason => 'Vizor 초⁠기⁠화 확⁠인';
 
   @override
   String get walletResetDeviceAuthRequired =>
@@ -11382,5 +12055,13 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get walletResetGiftCardWarning =>
-      '기⁠프⁠트 카⁠드⁠를 아⁠직 받⁠는 중⁠이⁠에⁠요. 초⁠기⁠화⁠하⁠면 잃⁠게 돼⁠요.';
+      '기⁠프⁠트 카⁠드⁠를 아⁠직 받⁠는 중⁠이⁠에⁠요. 초⁠기⁠화⁠하⁠면 이 기⁠프⁠트 카⁠드⁠를 잃⁠게 돼⁠요.';
+
+  @override
+  String get windowsUpdateNotReady =>
+      '이 업⁠데⁠이⁠트⁠는 더 이⁠상 다⁠운⁠로⁠드⁠할 수 없⁠어⁠요. 업⁠데⁠이⁠트⁠를 다⁠시 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get windowsUpdateTorRouteUnavailable =>
+      '소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠터⁠가 Tor⁠에 연⁠결⁠되⁠어 있⁠지 않⁠아⁠요. 설⁠정⁠에⁠서 업⁠데⁠이⁠트⁠를 다⁠시 시⁠도⁠하⁠거⁠나 Tor⁠를 끄⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 }

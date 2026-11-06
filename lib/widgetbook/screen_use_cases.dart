@@ -2841,7 +2841,6 @@ Widget buildDesktopHomeSidebarSyncNetworkErrorUseCase(BuildContext context) {
       failure: const SyncFailure(
         kind: SyncFailureKind.network,
         rawMessage: 'network failed',
-        userMessage: 'Network connection lost.',
       ),
     ),
     migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
@@ -7245,7 +7244,7 @@ class _PreviewPrivateQueries extends EnhancePirNotifier {
 
 class _PreviewEnhancePirChanging extends EnhancePirTransitionNotifier {
   @override
-  String? build() => 'Changing setting…';
+  EnhancePirTransition? build() => EnhancePirTransition.changing;
 }
 
 Widget buildWelcomePrivateQueriesEnabledUseCase(BuildContext context) =>

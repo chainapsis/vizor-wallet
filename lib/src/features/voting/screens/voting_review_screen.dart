@@ -16,6 +16,7 @@ import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
+import '../voting_message.dart';
 import '../voting_poll_ordering.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
@@ -392,7 +393,7 @@ String? _votingEligibilityMessage(
 }) {
   if (state.hasConfirmedVotingEligibility) return null;
   final error = state.error;
-  if (error != null) return friendlyVotingErrorText(l10n, error.message);
+  if (error != null) return normalizedVotingMessage(error.message).text(l10n);
   if (preparing) return l10n.votingPreparingPower;
   return l10n.votingPowerUnavailableSentence;
 }

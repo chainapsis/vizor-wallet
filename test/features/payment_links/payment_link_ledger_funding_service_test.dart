@@ -313,7 +313,7 @@ void main() {
         isA<LedgerGiftFundingTerminalException>().having(
           (error) => error.userMessage(testL10n),
           'userMessage',
-          kNetworkUpgradeHoldMessage,
+          networkUpgradeHoldText(testL10n),
         ),
       ),
     );

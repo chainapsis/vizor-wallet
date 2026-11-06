@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/features/voting/voting_message.dart';
 import 'package:zcash_wallet/src/services/voting/voting_file_cache.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_home_entry_provider.dart';
 import 'dart:async';
@@ -69,7 +70,11 @@ import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 import '../../features/voting/fake_voting_round_session.dart';
 import '../../features/voting/round_plan_test_utils.dart';
 import '../../services/voting/fake_voting_http.dart';
+import '../../support/test_l10n.dart';
 import '../../features/voting/fake_round_recovery_state.dart';
+
+/// The English a screen shows for [message].
+String? _text(VotingMessage? message) => message?.text(testL10n);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -2859,9 +2864,12 @@ void main() {
     final state = container.read(votingSessionProvider(kRoundId)).value!;
 
     expect(state.phase, VotingSessionPhase.error);
-    expect(state.error?.message, contains('Voting PIR data is not ready'));
-    expect(state.error?.message, contains('123'));
-    expect(state.error?.message, contains('122'));
+    expect(
+      _text(state.error?.message),
+      contains('Voting PIR data is not ready'),
+    );
+    expect(_text(state.error?.message), contains('123'));
+    expect(_text(state.error?.message), contains('122'));
     expect(state.error?.pirDiagnostics, hasLength(1));
     expect(rust.setupCalls, 0);
     expect(rust.delegationBundleCalls, isEmpty);
@@ -3074,8 +3082,11 @@ void main() {
     final state = container.read(votingSessionProvider(kRoundId)).value!;
 
     expect(state.phase, VotingSessionPhase.error);
-    expect(state.error?.message, contains('submission has no usable hash'));
-    expect(state.error?.message, contains('Do not retry'));
+    expect(
+      _text(state.error?.message),
+      contains('submission has no usable hash'),
+    );
+    expect(_text(state.error?.message), contains('Do not retry'));
     expect(rust.delegationBundleCalls, isEmpty);
     expect(rust.storedDelegationTxHashes, isEmpty);
   });
@@ -3115,12 +3126,12 @@ void main() {
       // a reason to leave the user believing the round carries both bundles.
       expect(rust.delegationBundleCalls, contains(1));
       expect(rust.delegationBundleCalls, isNot(contains(0)));
-      expect(state.terminalDelegationNotice, contains('bundle 1'));
+      expect(_text(state.terminalDelegationNotice), contains('bundle 1'));
       expect(
-        state.terminalDelegationNotice,
+        _text(state.terminalDelegationNotice),
         contains('submission has no usable hash'),
       );
-      expect(state.terminalDelegationNotice, contains('Do not retry'));
+      expect(_text(state.terminalDelegationNotice), contains('Do not retry'));
       // It must stay a notice. The submission job treats an error phase after
       // delegation as fatal and returns, so failing here would keep a round
       // that still has a healthy bundle from ever reaching the ballot.
@@ -3152,10 +3163,13 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('lightwalletd is unreachable'));
+      expect(
+        _text(state.error?.message),
+        contains('lightwalletd is unreachable'),
+      );
       // The bare "the stream ended" text is what this failure decays to when the
       // error never crosses the bridge.
-      expect(state.error?.message, isNot(contains('without a result')));
+      expect(_text(state.error?.message), isNot(contains('without a result')));
       final cause = state.error?.cause;
       expect(cause, isNotNull);
       final bridgeError = votingRustExceptionOf(cause!);
@@ -3197,7 +3211,7 @@ void main() {
     final state = container.read(votingSessionProvider(kRoundId)).value!;
 
     expect(state.phase, VotingSessionPhase.error);
-    expect(state.error?.message, contains('nullifier already spent'));
+    expect(_text(state.error?.message), contains('nullifier already spent'));
     expect(rust.keystoneProofBundleCalls, isEmpty);
   });
 
@@ -3251,8 +3265,8 @@ void main() {
         key,
         VotingSubmissionJobStatus.error,
       );
-      expect(result.errorMessage, contains('wallet session changed'));
-      expect(result.errorMessage, isNot(contains('password')));
+      expect(_text(result.errorMessage), contains('wallet session changed'));
+      expect(_text(result.errorMessage), isNot(contains('password')));
       expect(rust.delegationBundleCalls, isEmpty);
     },
   );
@@ -3300,11 +3314,13 @@ void main() {
           interruption == 'none' ? [0] : isEmpty,
         );
         if (interruption != 'none') {
-          final error = container
-              .read(votingSessionProvider(kRoundId))
-              .value
-              ?.error
-              ?.message;
+          final error = _text(
+            container
+                .read(votingSessionProvider(kRoundId))
+                .value
+                ?.error
+                ?.message,
+          );
           expect(error, contains('wallet session changed'));
           expect(error, isNot(contains('password')));
         }
@@ -3391,9 +3407,9 @@ void main() {
     final state = container.read(votingSessionProvider(kRoundId)).value!;
 
     expect(state.phase, VotingSessionPhase.error);
-    expect(state.error?.message, contains('submitted-delegation-tx'));
-    expect(state.error?.message, contains('bundle 0'));
-    expect(state.error?.message, contains('manual recovery'));
+    expect(_text(state.error?.message), contains('submitted-delegation-tx'));
+    expect(_text(state.error?.message), contains('bundle 0'));
+    expect(_text(state.error?.message), contains('manual recovery'));
     expect(rust.delegationRecoveryModes, [
       rust_api.ApiChainRecoveryMode.statusOnly,
     ]);
@@ -3643,7 +3659,10 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('could not read the round plan'));
+      expect(
+        _text(state.error?.message),
+        contains('could not read the round plan'),
+      );
     }();
   });
 
@@ -3663,7 +3682,10 @@ void main() {
     final state = container.read(votingSessionProvider(kRoundId)).value!;
 
     expect(state.phase, VotingSessionPhase.error);
-    expect(state.error?.message, contains('delegation rejected by chain'));
+    expect(
+      _text(state.error?.message),
+      contains('delegation rejected by chain'),
+    );
     expect(rust.storedDelegationTxHashes, isEmpty);
   });
 
@@ -3726,7 +3748,10 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('dispatch attempts exhausted'));
+      expect(
+        _text(state.error?.message),
+        contains('dispatch attempts exhausted'),
+      );
       expect(rust.delegationRecoveryModes, [
         rust_api.ApiChainRecoveryMode.statusOnly,
       ]);
@@ -4043,7 +4068,7 @@ void main() {
 
       expect(state.phase, VotingSessionPhase.error);
       expect(
-        state.error?.message,
+        _text(state.error?.message),
         contains('invalid branch id from lightwalletd'),
       );
       expect(rust.keystoneDelegationRequestCalls, [0]);
@@ -4103,7 +4128,7 @@ void main() {
     final state = container.read(votingSessionProvider(kRoundId)).value!;
 
     expect(state.phase, VotingSessionPhase.error);
-    expect(state.error?.message, contains('Keystone'));
+    expect(_text(state.error?.message), contains('Keystone'));
     expect(rust.delegationBundleCalls, isEmpty);
   });
 
@@ -4124,7 +4149,7 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.keystoneSigning);
-      expect(state.keystoneScanError, contains('do not match'));
+      expect(_text(state.keystoneScanError), contains('do not match'));
       expect(rust.storedKeystoneSignatures, isEmpty);
     },
   );
@@ -4152,7 +4177,7 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.keystoneSigning);
-      expect(state.keystoneScanError, contains('conflicts'));
+      expect(_text(state.keystoneScanError), contains('conflicts'));
       expect(rust.storedKeystoneSignatures[0]?.sig, List.filled(64, 7));
     },
   );
@@ -4181,7 +4206,7 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.readyToDelegate);
-      expect(state.keystoneScanError, isNull);
+      expect(_text(state.keystoneScanError), isNull);
       expect(rust.storedKeystoneSignatures, hasLength(1));
     },
   );
@@ -4210,7 +4235,7 @@ void main() {
         state.keystoneSigningRequests.map((request) => request.bundleIndex),
         [0],
       );
-      expect(state.keystoneScanError, contains('same Keystone result'));
+      expect(_text(state.keystoneScanError), contains('same Keystone result'));
       expect(rust.storedKeystoneSignatures, isEmpty);
 
       await container
@@ -4218,7 +4243,7 @@ void main() {
           .handleKeystoneBatchSignatures(response);
       state = container.read(votingSessionProvider(kRoundId)).value!;
       expect(state.phase, VotingSessionPhase.readyToDelegate);
-      expect(state.keystoneScanError, isNull);
+      expect(_text(state.keystoneScanError), isNull);
       expect(rust.storedKeystoneSignatures.keys, [0]);
     },
   );
@@ -4370,7 +4395,10 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.keystoneSigning);
-      expect(state.keystoneScanError, contains('invalid voting signature'));
+      expect(
+        _text(state.keystoneScanError),
+        contains('invalid voting signature'),
+      );
       expect(rust.storedKeystoneSignatures, isEmpty);
     },
   );
@@ -4471,7 +4499,10 @@ void main() {
     var state = container.read(votingSessionProvider(kRoundId)).value!;
 
     expect(state.phase, VotingSessionPhase.error);
-    expect(state.error?.message, contains('Keystone bundle proof failure'));
+    expect(
+      _text(state.error?.message),
+      contains('Keystone bundle proof failure'),
+    );
     expect(delegationBundleIndexesNeedingSigning(state.roundPlan), [1]);
     expect(rust.keystoneProofBundleCalls, [0, 1, 2]);
     expect(rust.storedKeystoneSignatures.keys, [0, 1, 2]);
@@ -4580,7 +4611,7 @@ void main() {
       state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('Sign at least one'));
+      expect(_text(state.error?.message), contains('Sign at least one'));
       expect(rust.deleteSkippedBundleKeepCounts, isEmpty);
     },
   );
@@ -4613,7 +4644,10 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('missing stored voting hotkey'));
+      expect(
+        _text(state.error?.message),
+        contains('missing stored voting hotkey'),
+      );
       expect(rust.generateVotingHotkeyCalls, 0);
       expect(rust.keystoneDelegationRequestCalls, isEmpty);
     },
@@ -4708,7 +4742,7 @@ void main() {
 
       expect(state.phase, VotingSessionPhase.error);
       expect(
-        state.error?.message,
+        _text(state.error?.message),
         contains('Sign delegation bundle 2 with Keystone before submitting'),
       );
       expect(rust.keystoneProofBundleCalls, isEmpty);
@@ -4740,7 +4774,10 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('missing stored voting hotkey'));
+      expect(
+        _text(state.error?.message),
+        contains('missing stored voting hotkey'),
+      );
       expect(rust.generateVotingHotkeyCalls, 0);
       expect(rust.keystoneProofBundleCalls, isEmpty);
       expect(rust.storedDelegationTxHashes, isEmpty);
@@ -4767,7 +4804,7 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('did not match'));
+      expect(_text(state.error?.message), contains('did not match'));
       expect(rust.keystoneProofBundleCalls, [0]);
       expect(rust.storedDelegationTxHashes, isEmpty);
     },
@@ -4897,7 +4934,10 @@ void main() {
     );
 
     expect(failed.key, key);
-    expect(failed.errorMessage, 'Choose at least one vote before submitting.');
+    expect(
+      failed.errorMessage,
+      const VotingNotice(VotingNoticeKind.noVoteChosen),
+    );
     expect(
       container
           .read(votingSubmissionGuardProvider.notifier)
@@ -4944,7 +4984,7 @@ void main() {
 
     expect(
       failed.errorMessage,
-      'Voting round end time is unavailable. Retry in a moment.',
+      const VotingNotice(VotingNoticeKind.roundEndTimeUnavailable),
     );
     expect(rust.eligibilityCheckCalls, 0);
     expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 0);
@@ -5011,11 +5051,11 @@ void main() {
     expect(secondFailed.key, secondKey);
     expect(
       firstFailed.errorMessage,
-      'Choose at least one vote before submitting.',
+      const VotingNotice(VotingNoticeKind.noVoteChosen),
     );
     expect(
       secondFailed.errorMessage,
-      'Choose at least one vote before submitting.',
+      const VotingNotice(VotingNoticeKind.noVoteChosen),
     );
   });
 
@@ -5052,7 +5092,7 @@ void main() {
 
       expect(
         failed.errorMessage,
-        'Choose at least one vote before submitting.',
+        const VotingNotice(VotingNoticeKind.noVoteChosen),
       );
       expect(rust.delegationBundleCalls, isEmpty);
     },
@@ -5296,7 +5336,7 @@ void main() {
         VotingSubmissionJobStatus.complete,
       );
 
-      expect(completed.errorMessage, isNull);
+      expect(_text(completed.errorMessage), isNull);
       expect(rust.setupCalls, 1);
       expect(rust.delegationBundleCalls, [0]);
       expect(rust.delegationMnemonics, [
@@ -5341,7 +5381,7 @@ void main() {
         VotingSubmissionJobStatus.complete,
       );
 
-      expect(completed.errorMessage, isNull);
+      expect(_text(completed.errorMessage), isNull);
       expect(rust.setupCalls, 0);
       expect(rust.delegationBundleCalls, [0]);
       expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
@@ -5387,12 +5427,10 @@ void main() {
       VotingSubmissionJobStatus.complete,
     );
 
-    expect(completed.errorMessage, isNull);
-    expect(
-      rust.delegationBundleCalls,
-      [0],
-      reason: 'the managed bundle was advanced, not left waiting on a draft',
-    );
+    expect(_text(completed.errorMessage), isNull);
+    expect(rust.delegationBundleCalls, [
+      0,
+    ], reason: 'the managed bundle was advanced, not left waiting on a draft');
     expect(rust.setupCalls, 0);
   });
 
@@ -5431,7 +5469,7 @@ void main() {
         VotingSubmissionJobStatus.complete,
       );
 
-      expect(completed.errorMessage, isNull);
+      expect(_text(completed.errorMessage), isNull);
       expect(rust.setupCalls, 0);
       expect(rust.keystoneDelegationRequestCalls, isEmpty);
       expect(rust.keystoneProofBundleCalls, [0]);
@@ -5485,7 +5523,7 @@ void main() {
         VotingSubmissionJobStatus.complete,
       );
 
-      expect(completed.errorMessage, isNull);
+      expect(_text(completed.errorMessage), isNull);
       expect(rust.eligibilityCheckCalls, 1);
       expect(rust.setupCalls, 0);
     },
@@ -5608,7 +5646,7 @@ void main() {
       VotingSubmissionJobStatus.complete,
     );
 
-    expect(completed.errorMessage, isNull);
+    expect(_text(completed.errorMessage), isNull);
     expect(
       container
           .read(votingSubmissionGuardProvider.notifier)
@@ -5846,7 +5884,7 @@ void main() {
       VotingSubmissionJobStatus.complete,
     );
 
-    expect(completed.errorMessage, isNull);
+    expect(_text(completed.errorMessage), isNull);
     // The focused check is what confirmed it, not a round-wide pass. Background
     // tracking may also have started by now — it is fire-and-forget once the
     // job hands off — so what pins the mechanism is which call confirmed the
@@ -6150,7 +6188,7 @@ void main() {
         attempts: 400,
       );
 
-      expect(completed.errorMessage, isNull);
+      expect(_text(completed.errorMessage), isNull);
       expect(rust.confirmedShares, ['0:7:0']);
       expect(
         http.requests.where(
@@ -6236,8 +6274,7 @@ void main() {
 
       expect(
         failed.errorMessage,
-        'The voting round ended before a helper confirmed the immediate share. '
-        'Check the voting status before retrying.',
+        const VotingNotice(VotingNoticeKind.immediateShareExpired),
       );
       expect(
         container
@@ -6386,7 +6423,7 @@ void main() {
       VotingSubmissionJobStatus.error,
     );
 
-    expect(failed.errorMessage, 'share retry planning failed');
+    expect(_text(failed.errorMessage), 'share retry planning failed');
     // The failure came from a tracking pass that actually ran.
     expect(rust.trackPendingSharesCalls, isNotEmpty);
     expect(rust.shareTrackingSessions, isNotEmpty);
@@ -8176,9 +8213,9 @@ void main() {
     final state = container.read(votingSessionProvider(kRoundId)).value!;
 
     expect(state.phase, VotingSessionPhase.error);
-    expect(state.error?.message, contains('submitted-vote-tx'));
-    expect(state.error?.message, contains('bundle 0, proposal 7'));
-    expect(state.error?.message, contains('manual recovery'));
+    expect(_text(state.error?.message), contains('submitted-vote-tx'));
+    expect(_text(state.error?.message), contains('bundle 0, proposal 7'));
+    expect(_text(state.error?.message), contains('manual recovery'));
     expect(rust.voteCommitBundleCalls, isEmpty);
     expect(rust.voteRecoveryModes, [rust_api.ApiChainRecoveryMode.statusOnly]);
   });
@@ -8776,7 +8813,7 @@ void main() {
     expect(rust.submittedSharePlans, isEmpty);
     final state = container.read(votingSessionProvider(kRoundId)).value!;
     expect(state.phase, VotingSessionPhase.error);
-    expect(state.error?.message, contains('planning failed'));
+    expect(_text(state.error?.message), contains('planning failed'));
   });
 
   test('helper fan-out honors the shared concurrent post cap', () async {
@@ -8913,7 +8950,7 @@ void main() {
     expect(rust.recordedShares, isEmpty);
     final state = container.read(votingSessionProvider(kRoundId)).value!;
     expect(state.phase, VotingSessionPhase.error);
-    expect(state.error?.message, contains('invalid vote share 2'));
+    expect(_text(state.error?.message), contains('invalid vote share 2'));
   });
 
   test(
@@ -8962,7 +8999,10 @@ void main() {
       );
       final state = container.read(votingSessionProvider(kRoundId)).value!;
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('share persistence failed 1'));
+      expect(
+        _text(state.error?.message),
+        contains('share persistence failed 1'),
+      );
     },
   );
 
@@ -9002,7 +9042,7 @@ void main() {
 
     final state = container.read(votingSessionProvider(kRoundId)).value!;
     expect(state.phase, VotingSessionPhase.error);
-    expect(state.error?.message, contains('intent write failed'));
+    expect(_text(state.error?.message), contains('intent write failed'));
     expect(rust.sessionBallotIntents, isEmpty);
     expect(rust.voteCommitBundleCalls, isEmpty);
     expect(rust.storedVoteTxHashes, isEmpty);
@@ -9195,7 +9235,7 @@ void main() {
 
       final state = container.read(votingSessionProvider(kRoundId)).value!;
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('pending shares'));
+      expect(_text(state.error?.message), contains('pending shares'));
       expect(rust.recordedShares, hasLength(1));
       expect(rust.recordedShares.single.sentToUrls, isEmpty);
       expect(rust.recordedShares.single.ambiguousUrls, isEmpty);

@@ -1217,7 +1217,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       children: [
         if (sync.failure?.kind == SyncFailureKind.privateStatusCoverage) ...[
           _PrivateStatusCoverageNotice(
-            message: sync.failure!.userMessage,
+            message: sync.failure!.userMessage(context.l10n),
             onSettings: () {
               _expectReviewVisit('/settings');
               context.go('/settings');

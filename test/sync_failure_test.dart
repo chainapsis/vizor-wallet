@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 
+import 'support/test_l10n.dart';
+
 void main() {
   test('classifies transient network failures', () {
     final failure = classifySyncFailure(
@@ -16,7 +18,7 @@ void main() {
 
     expect(failure.kind, SyncFailureKind.endpoint);
     expect(failure.showSettingsAction, isTrue);
-    expect(failure.actionLabel, 'Settings');
+    expect(failure.actionLabel(testL10n), 'Settings');
   });
 
   test(
@@ -27,9 +29,9 @@ void main() {
       expect(failure.kind, SyncFailureKind.privateStatusCoverage);
       expect(failure.showSettingsAction, isTrue);
       expect(failure.settingsRoute, '/settings');
-      expect(failure.actionLabel, 'Settings');
+      expect(failure.actionLabel(testL10n), 'Settings');
       expect(
-        failure.userMessage,
+        failure.userMessage(testL10n),
         "Private transaction lookup couldn't determine a transaction's status. "
         'Turn off experimental private queries in Settings to continue syncing.',
       );
@@ -67,9 +69,9 @@ void main() {
       expect(failure.kind, SyncFailureKind.torUnavailable, reason: raw);
       expect(failure.retriesTorRoute, isTrue, reason: raw);
       expect(failure.showSettingsAction, isFalse, reason: raw);
-      expect(failure.actionLabel, 'Retry', reason: raw);
+      expect(failure.actionLabel(testL10n), 'Retry', reason: raw);
       expect(
-        failure.userMessage,
+        failure.userMessage(testL10n),
         "Tor couldn't connect. Retry, or turn Tor off in Settings.",
       );
     }
@@ -100,6 +102,6 @@ void main() {
 
     expect(failure.kind, SyncFailureKind.unknown);
     expect(failure.rawMessage, 'unexpected failure');
-    expect(failure.actionLabel, 'Retry');
+    expect(failure.actionLabel(testL10n), 'Retry');
   });
 }

@@ -56,7 +56,7 @@ class _WalletLinkDesktopScreenState
   String? _passwordError;
 
   String? get _passwordPolicyMessage =>
-      validateWalletPassword(_passwordController.text);
+      validateWalletPassword(context.l10n, _passwordController.text);
 
   bool get _canSubmitPassword =>
       !_isSubmittingPassword && isWalletPasswordValid(_passwordController.text);

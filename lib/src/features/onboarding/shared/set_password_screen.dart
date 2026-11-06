@@ -88,7 +88,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   }
 
   String? get _passwordPolicyError =>
-      validateWalletPassword(_passwordController.text);
+      validateWalletPassword(context.l10n, _passwordController.text);
   bool get _matches =>
       _confirmController.text.isNotEmpty &&
       _confirmController.text == _passwordController.text;
@@ -111,10 +111,12 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       await ref
           .read(linuxKeyringCoordinatorProvider)
           .runMutation(_submitWithOwnership);
-    } on WalletMutationBusyException catch (error) {
+    } on WalletMutationBusyException {
       if (!mounted) return;
       setState(
-        () => _submitError = OnboardingSubmitError.text(error.toString()),
+        () => _submitError = OnboardingSubmitError.localized(
+          (l10n) => l10n.walletMutationBusy,
+        ),
       );
     }
   }
@@ -537,9 +539,12 @@ class _SetPasswordOnPageContent extends StatelessWidget {
         children: [
           const _SetPasswordTitle(),
           const SizedBox(height: _SetPasswordContent._sectionGap),
-          SizedBox(
-            width: double.infinity,
-            height: _SetPasswordContent._mainHeight,
+          // Minimum height: CJK labels and messages run slightly taller.
+          ConstrainedBox(
+            constraints: const BoxConstraints(
+              minWidth: double.infinity,
+              minHeight: _SetPasswordContent._mainHeight,
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.sm,

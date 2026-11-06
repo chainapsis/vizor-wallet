@@ -152,10 +152,10 @@ void main() {
     );
     await _pumpUntil(
       tester,
-      () => find.text(kNetworkUpgradeHoldMessage).evaluate().isNotEmpty,
+      () => find.text(networkUpgradeHoldText(testL10n)).evaluate().isNotEmpty,
     );
 
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
     expect(find.text('Paused for network upgrade'), findsOneWidget);
     expect(find.text('Ledger signing failed'), findsNothing);
     expect(find.text('Change connection'), findsNothing);
@@ -186,7 +186,7 @@ void main() {
     );
     await _pumpUntil(
       tester,
-      () => find.text(kNetworkUpgradeHoldMessage).evaluate().isNotEmpty,
+      () => find.text(networkUpgradeHoldText(testL10n)).evaluate().isNotEmpty,
     );
 
     expect(operations.broadcasts, hasLength(1));

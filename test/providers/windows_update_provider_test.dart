@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
 import 'package:zcash_wallet/src/services/windows_update_service.dart';
+import '../support/test_l10n.dart';
 
 void main() {
   test('an automatic startup check survives a native failure', () async {
@@ -83,7 +84,7 @@ void main() {
         .downloadUpdate();
 
     expect(result.started, isFalse);
-    expect(result.message, 'Signed feed verification failed.');
+    expect(result.message(testL10n), 'Signed feed verification failed.');
     expect(
       container.read(windowsUpdateProvider).message,
       'Signed feed verification failed.',
@@ -112,7 +113,7 @@ void main() {
         .downloadUpdate();
 
     expect(result.started, isFalse);
-    expect(result.message, 'Software update routing is changing.');
+    expect(result.message(testL10n), 'Software update routing is changing.');
     expect(
       container.read(windowsUpdateProvider).status,
       WindowsUpdateStatus.failed,
@@ -191,7 +192,7 @@ void main() {
           .downloadUpdate();
 
       expect(result.started, isFalse);
-      expect(result.message, kWindowsTorUpdateRouteUnavailableMessage);
+      expect(result.issue, WindowsUpdateIssue.torRouteUnavailable);
       expect(service.downloadCalls, 0);
     },
   );
@@ -216,10 +217,10 @@ void main() {
         .downloadUpdate();
 
     expect(result.started, isFalse);
-    expect(result.message, kWindowsUpdateGenericFailureMessage);
+    expect(result.issue, WindowsUpdateIssue.generic);
     expect(
-      container.read(windowsUpdateProvider).message,
-      kWindowsUpdateGenericFailureMessage,
+      container.read(windowsUpdateProvider).issue,
+      WindowsUpdateIssue.generic,
     );
   });
 
@@ -243,7 +244,7 @@ void main() {
         .read(windowsUpdateProvider.notifier)
         .downloadUpdate();
 
-    expect(result.message, 'Signed feed verification failed.');
+    expect(result.message(testL10n), 'Signed feed verification failed.');
   });
 
   test('check reports the blocked Tor update route', () async {
@@ -263,7 +264,7 @@ void main() {
 
     final state = container.read(windowsUpdateProvider);
     expect(state.status, WindowsUpdateStatus.failed);
-    expect(state.message, kWindowsTorUpdateRouteUnavailableMessage);
+    expect(state.issue, WindowsUpdateIssue.torRouteUnavailable);
     expect(state.canCheck, isTrue);
     expect(service.checkCalls, 0);
   });

@@ -102,7 +102,7 @@ class _MobileCustomiseAccountScreenState
   String? get _nameMessage {
     if (_submitError != null) return _submitError;
     return _nameLength > kAccountNameMaxCharacters
-        ? kAccountNameLengthMessage
+        ? context.l10n.accountNameTooLong
         : null;
   }
 
@@ -231,7 +231,7 @@ class _MobileCustomiseAccountScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _SubmitPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
+        _submitError = onboardingSubmitErrorMessage(context.l10n, e);
       });
     }
   }

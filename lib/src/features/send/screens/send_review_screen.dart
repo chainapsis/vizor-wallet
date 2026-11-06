@@ -365,6 +365,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           _ledgerFailure = LedgerSigningFailurePresentation(
             title: context.l10n.sendLedgerCouldNotFinishTitle,
             statusLabel: context.l10n.commonActionNeeded,
+            actionNeeded: true,
             message: _ledgerSigningComplete
                 ? context.l10n.sendLedgerKeepOpenRetry
                 : context.l10n.sendLedgerCouldNotPrepare,
@@ -513,13 +514,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     late final LedgerSigningFailurePresentation failure;
     late final _LedgerSendRecoveryAction? action;
 
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) {
       // Rust refused the PCZT at the live tip; the device was never asked.
       // Nothing to do here until the upgrade, so only Cancel remains.
       failure = LedgerSigningFailurePresentation(
-        title: kNetworkUpgradeHoldActionLabel,
+        title: networkUpgradeHoldActionLabel(context.l10n),
         statusLabel: context.l10n.commonActionNeeded,
+        actionNeeded: true,
         message: upgradeHold,
         showDeviceAppPrompt: false,
         showConnectionPicker: false,
@@ -530,6 +532,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       failure = LedgerSigningFailurePresentation(
         title: context.l10n.commonTransactionExpired,
         statusLabel: context.l10n.sendLedgerStatusNewTransactionRequired,
+        actionNeeded: false,
         message: context.l10n.sendLedgerExpiredMessage,
         showDeviceAppPrompt: false,
         actionLabel: context.l10n.sendLedgerCreateNewTransaction,
@@ -545,6 +548,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       failure = LedgerSigningFailurePresentation(
         title: context.l10n.sendLedgerSigningUnavailableTitle,
         statusLabel: context.l10n.sendLedgerStatusUnsupportedTransaction,
+        actionNeeded: false,
         message: context.l10n.ledgerFailureMsgSaplingRecipient,
         showDeviceAppPrompt: false,
       );
@@ -555,6 +559,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         requestFailure: LedgerRequestFailure.fromError(error),
         title: LedgerRequestFailure.fromError(error).title(context.l10n),
         statusLabel: context.l10n.sendLedgerStatusNewTransactionRequired,
+        actionNeeded: false,
         message: guidance.message,
         showDeviceAppPrompt: false,
         actionLabel: context.l10n.sendLedgerCreateNewTransaction,
@@ -565,6 +570,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         requestFailure: LedgerRequestFailure.fromError(error),
         title: context.l10n.commonLedgerNeedsAttention,
         statusLabel: context.l10n.commonActionNeeded,
+        actionNeeded: true,
         message: guidance.message,
         showDeviceAppPrompt: guidance.showDeviceAppPrompt,
         bluetoothRecovery: guidance.bluetoothRecovery,
@@ -590,6 +596,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         requestFailure: LedgerRequestFailure.fromError(error),
         title: context.l10n.commonLedgerSigningFailed,
         statusLabel: context.l10n.commonActionNeeded,
+        actionNeeded: true,
         message: message,
         showDeviceAppPrompt: false,
         actionLabel: context.l10n.commonTryAgain,
@@ -647,6 +654,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           statusLabel: terminal
               ? context.l10n.sendLedgerStatusRecoveryRequired
               : context.l10n.sendLedgerStatusSignaturePreserved,
+          actionNeeded: false,
           message: terminal
               ? context.l10n.sendLedgerCouldNotVerifySaved
               : context.l10n.sendLedgerSignaturePreservedMessage,
@@ -978,7 +986,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   String _friendlyKeystoneError(String raw) {
-    final upgradeHold = networkUpgradeHoldMessage(raw);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, raw);
     if (upgradeHold != null) return upgradeHold;
     final lower = raw.toLowerCase();
     if (lower.contains('proposal not found') ||

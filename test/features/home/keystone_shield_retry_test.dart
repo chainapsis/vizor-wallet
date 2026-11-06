@@ -115,7 +115,7 @@ void main() {
     await tester.pumpWidget(_app(onComplete: () {}));
     await _settle(tester);
 
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
     expect(find.text('Shield balance failed. Please try again.'), findsNothing);
     expect(find.text('Get Signature'), findsNothing);
     expect(api.broadcasts, isEmpty);

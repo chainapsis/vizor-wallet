@@ -125,7 +125,7 @@ class StaticVotingConfigSourceMalformed implements Exception {
   const StaticVotingConfigSourceMalformed(this.message);
 
   @override
-  String toString() => 'StaticVotingConfigSourceMalformed: $message';
+  String toString() => 'StaticVotingConfigSourceMalformed: $message'; // l10n-ignore: exception text for logs
 }
 
 /// Which of the two mirrored fetch stages a mirror failure came from.

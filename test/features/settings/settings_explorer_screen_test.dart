@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/providers/zcash_explorer_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 
 const _accountState = AccountState(
   accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
@@ -98,7 +99,7 @@ void main() {
     expect(find.text('Explorer'), findsOneWidget);
     expect(find.text('ZecBlock'), findsOneWidget);
     expect(find.textContaining('zecblock.com'), findsWidgets);
-    expect(find.text(kZcashExplorerPrivacyCopy), findsOneWidget);
+    expect(find.text(testL10n.settingsExplorerPrivacyCopy), findsOneWidget);
     expect(find.text('Any explorer you prefer'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('explorer_option_custom')));

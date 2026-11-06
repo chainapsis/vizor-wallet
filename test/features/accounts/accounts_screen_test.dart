@@ -44,9 +44,7 @@ void main() {
       _bootstrap.initialAccountState,
       switchError: const WalletMutationBusyException(),
     );
-    await tester.pumpWidget(
-      _accountsHarness(accountNotifier: () => notifier),
-    );
+    await tester.pumpWidget(_accountsHarness(accountNotifier: () => notifier));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Shielded Savings'));
     await tester.pumpAndSettle();

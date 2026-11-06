@@ -17,6 +17,7 @@ import '../import/import_birthday_unknown_height_modal.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'keystone_onboarding_flow.dart';
+import '../../../core/formatting/date_format.dart';
 
 enum KeystoneBirthdayTab { date, blockHeight }
 
@@ -281,7 +282,7 @@ class _KeystoneWalletBirthdayScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _KeystoneBirthdaySubmitPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
+        _submitError = onboardingSubmitErrorMessage(context.l10n, e);
       });
       return;
     }
@@ -429,7 +430,10 @@ class _KeystoneWalletBirthdayScreenState
                                     width: _fieldWidth,
                                     valueText: _selectedDate == null
                                         ? null
-                                        : _formatDate(_selectedDate!),
+                                        : formatNumericDate(
+                                            _selectedDate!,
+                                            context.l10n.localeName,
+                                          ),
                                     enabled: !_isSubmitting,
                                     onTap: _pickDate,
                                   )
@@ -805,10 +809,4 @@ DateTime _clampDate(DateTime value, DateTime min, DateTime max) {
 
 DateTime _dateOnly(DateTime value) {
   return DateTime(value.year, value.month, value.day);
-}
-
-String _formatDate(DateTime date) {
-  final month = date.month.toString().padLeft(2, '0');
-  final day = date.day.toString().padLeft(2, '0');
-  return '$month/$day/${date.year}';
 }
