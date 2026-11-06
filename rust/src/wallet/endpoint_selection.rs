@@ -1,7 +1,7 @@
 //! Bounded, cancellable measurement of public lightwalletd candidates.
 //!
-//! Work is kept inside one runtime and its futures are dropped when the batch
-//! finishes. Selection does not touch wallet state or send wallet identifiers.
+//! Each worker owns its runtime until all blocking work drains, even after its
+//! result returns. Selection does not touch wallet state or send wallet identifiers.
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -17,15 +17,16 @@ use futures::{stream, StreamExt};
 use tonic::Request;
 use zcash_client_backend::proto::service::{ChainSpec, Empty};
 
-use crate::{
-    network_privacy,
-    wallet::{bounded_runtime::BoundedRuntime, keys},
-};
+use crate::{network_privacy, wallet::keys};
 
 const COMPARISON_WINDOW: Duration = Duration::from_millis(250);
 const ROUTE_CHECK_INTERVAL: Duration = Duration::from_millis(25);
 const MAX_CANDIDATES: usize = 32;
 const MAX_ACTIVE_SELECTIONS: usize = 16;
+// Matches the maximum native probe concurrency, including timed-out lookups
+// still running on this worker. Draining workers retain their selection slot.
+const MAX_SELECTION_BLOCKING_THREADS: usize = 8;
+const LOCAL_WORKER_FAILED: &str = "automatic endpoint selection: local worker failed";
 const MAX_RECENT_IDS: usize = 64;
 const RECENT_ID_LIFETIME: Duration = Duration::from_secs(60);
 pub(crate) const CANCELLED: &str = "automatic endpoint selection: cancelled";
@@ -296,7 +297,8 @@ pub(crate) fn probe_candidates(
         .filter(|url| seen.insert(url.clone()))
         .collect();
     let route_revision = ready_route_revision()?;
-    run_with_selection_runtime(lease, |runtime, cancellation| {
+    let expected_network = expected_network.to_owned();
+    run_with_selection_runtime(lease, move |runtime, cancellation| {
         runtime.block_on(run_probe_batch(
             urls,
             max_concurrency.min(8) as usize,
@@ -307,7 +309,7 @@ pub(crate) fn probe_candidates(
             wait_for_all,
             cancellation,
             || ready_route_revision().is_ok_and(|revision| revision == route_revision),
-            |url| probe_candidate(url, expected_network, cancellation, route_revision),
+            |url| probe_candidate(url, &expected_network, cancellation, route_revision),
         ))
     })
 }
@@ -329,7 +331,8 @@ pub(crate) fn read_tip(
         return Err("automatic endpoint selection: invalid tip request".to_string());
     }
     let route_revision = ready_route_revision()?;
-    run_with_selection_runtime(lease, |runtime, cancellation| {
+    let expected_network = expected_network.to_owned();
+    run_with_selection_runtime(lease, move |runtime, cancellation| {
         runtime.block_on(async {
             let mut probes = run_probe_batch(
                 vec![url],
@@ -342,7 +345,7 @@ pub(crate) fn read_tip(
                 |url| {
                     request_candidate_tip(
                         url,
-                        expected_network,
+                        &expected_network,
                         cancellation,
                         route_revision,
                         false,
@@ -357,21 +360,55 @@ pub(crate) fn read_tip(
     })
 }
 
-fn run_with_selection_runtime<T>(
+fn run_with_selection_runtime<T: Send + 'static>(
     lease: SelectionLease,
-    work: impl FnOnce(&BoundedRuntime, &CancellationSignal) -> Result<T, String>,
+    work: impl FnOnce(&tokio::runtime::Runtime, &CancellationSignal) -> Result<T, String>
+        + Send
+        + 'static,
 ) -> Result<T, String> {
-    // DNS resolution runs on Tokio's blocking pool. Dropping an ordinary
-    // runtime could wait forever for a resolver that cannot be cancelled,
-    // retaining both a bridge worker and this bounded selection slot. Give
-    // such work only the shared two-second shutdown grace; it has no wallet
-    // state to mutate after abandonment. Dart's wall budget remains separate
-    // and can return before this native cleanup finishes.
-    let runtime = BoundedRuntime::new()?;
-    let result = work(&runtime, &lease.signal);
-    drop(runtime);
-    drop(lease);
-    result
+    let (answer, receiver) = std::sync::mpsc::sync_channel(1);
+    std::thread::Builder::new()
+        .name("endpoint-selection".to_owned())
+        .spawn(move || {
+            // Public metadata probes are I/O-bound. One owning thread drives
+            // their futures; the separate, explicitly bounded blocking pool
+            // runs the OS resolver. No common wallet runtime is changed.
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .max_blocking_threads(MAX_SELECTION_BLOCKING_THREADS)
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    log::warn!("endpoint selection runtime setup failed: {error}");
+                    let _ = answer.send(Err(LOCAL_WORKER_FAILED.to_owned()));
+                    return;
+                }
+            };
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if lease.signal.is_cancelled() {
+                    Err(CANCELLED.to_owned())
+                } else {
+                    work(&runtime, &lease.signal)
+                }
+            }))
+            .unwrap_or_else(|_| {
+                log::error!("endpoint selection worker panicked");
+                Err(LOCAL_WORKER_FAILED.to_owned())
+            });
+            // The caller never waits for an uninterruptible resolver to drain.
+            // Capacity, however, is not free until Runtime::drop has joined it.
+            let _ = answer.send(result);
+            drop(runtime);
+            drop(lease);
+        })
+        .map_err(|error| {
+            log::warn!("endpoint selection worker setup failed: {error}");
+            LOCAL_WORKER_FAILED.to_owned()
+        })?;
+    receiver
+        .recv()
+        .unwrap_or_else(|_| Err(LOCAL_WORKER_FAILED.to_owned()))
 }
 
 async fn probe_candidate(
@@ -521,7 +558,11 @@ where
 }
 
 #[cfg(test)]
+mod runtime_tests;
+
+#[cfg(test)]
 mod tests {
+    use super::runtime_tests::assert_selection_released;
     use super::*;
     use std::sync::atomic::AtomicUsize;
 
@@ -530,7 +571,7 @@ mod tests {
     // different test thread while it is between cancel and registration.
     static REGISTRY_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    fn registry_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    pub(super) fn registry_test_lock() -> std::sync::MutexGuard<'static, ()> {
         REGISTRY_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -771,7 +812,7 @@ mod tests {
             )
             .unwrap_err();
             assert!(error.contains("invalid budget"));
-            assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+            assert_selection_released(id);
         }
         assert!(server.requests().is_empty());
         let id = "complete-max-budget";
@@ -784,7 +825,7 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(probes.len(), 1);
-        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        assert_selection_released(id);
         assert_eq!(server.count("/GetLightdInfo"), 1);
         assert_eq!(server.count("/GetLatestBlock"), 1);
     }
@@ -1002,7 +1043,7 @@ mod tests {
         assert!(probe.observed_at_ms <= observation_time_ms());
         assert_eq!(server.count("/GetLatestBlock"), 1);
         assert_eq!(server.count("/GetLightdInfo"), 0);
-        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        assert_selection_released(id);
         let cached = super::super::sync_engine::latest_block_for_transaction(
             &server.url,
             super::super::network::WalletNetwork::Main,
@@ -1091,7 +1132,7 @@ mod tests {
         .unwrap_err();
         assert_eq!(error, NO_HEALTHY_CANDIDATES);
         assert!(started.elapsed() < Duration::from_secs(1));
-        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        assert_selection_released(id);
         assert_eq!(server.count("/GetLatestBlock"), 1);
         gate.notify_waiters();
         gate.notify_one();
@@ -1132,7 +1173,7 @@ mod tests {
             .unwrap()
             .unwrap_err();
         assert_eq!(error, CANCELLED);
-        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        assert_selection_released(id);
         gate.notify_waiters();
         gate.notify_one();
         super::super::sync_engine::latest_block_for_transaction(
@@ -1172,7 +1213,7 @@ mod tests {
             .unwrap()
             .unwrap_err();
         assert_eq!(error, ROUTE_BLOCKED);
-        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        assert_selection_released(id);
         network_privacy::disable_tor();
         gate.notify_waiters();
         gate.notify_one();
@@ -1193,13 +1234,13 @@ mod tests {
         cancel_selection(id);
         let error = read_tip("http://127.0.0.1:1".to_string(), "main", id, 50).unwrap_err();
         assert_eq!(error, CANCELLED);
-        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        assert_selection_released(id);
         let id = "warm-tip-invalid-budget";
         begin_selection(id).unwrap();
         assert!(read_tip("http://127.0.0.1:1".to_string(), "main", id, 0)
             .unwrap_err()
             .contains("invalid tip request"));
-        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        assert_selection_released(id);
     }
 
     #[tokio::test]
@@ -1242,7 +1283,7 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error, CANCELLED);
-        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        assert_selection_released(id);
     }
 
     #[test]
@@ -1264,7 +1305,7 @@ mod tests {
         begin_selection(id).unwrap();
         let error = probe_candidates(Vec::new(), "main", id, 10, 10, 1, false).unwrap_err();
         assert!(error.contains("invalid candidates"));
-        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        assert_selection_released(id);
 
         let id = "reserved-one-worker-only";
         begin_selection(id).unwrap();
@@ -1310,58 +1351,52 @@ mod tests {
         assert!(error.contains("not reserved"));
     }
 
-    #[test]
-    fn cancelled_blocking_resolution_cannot_retain_the_selection_slot_without_bound() {
+    /// Manual loopback measurement of runtime-call overhead, without
+    /// external network variance. Request-count assertions are deterministic.
+    #[tokio::test]
+    #[ignore = "manual loopback endpoint runtime overhead measurement"]
+    async fn local_selection_runtime_overhead() {
         let _registry = registry_test_lock();
-        let id = "reserved-stalled-blocking-resolver";
-        begin_selection(id).unwrap();
-        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
-        let (release_tx, release_rx) = std::sync::mpsc::channel();
-        let (returned_tx, returned_rx) = std::sync::mpsc::channel();
-        let worker = std::thread::spawn(move || {
-            let lease = SelectionLease::claim(id, false).unwrap();
-            let result = run_with_selection_runtime(lease, |runtime, cancellation| {
-                runtime.block_on(async {
-                    // Models getaddrinfo, which the real HttpConnector runs
-                    // in spawn_blocking and which dropping a probe cannot stop.
-                    tokio::task::spawn_blocking(move || {
-                        let _ = entered_tx.send(());
-                        let _ = release_rx.recv();
-                    });
-                    let cancel = async {
-                        tokio::time::sleep(Duration::from_millis(5)).await;
-                        cancellation.cancel();
-                    };
-                    let probe = run_probe_batch(
-                        vec!["resolver-pending".to_string()],
-                        1,
-                        Duration::from_secs(5),
-                        Duration::from_secs(5),
-                        false,
-                        cancellation,
-                        || true,
-                        |_| std::future::pending::<Result<CandidateProbe, String>>(),
-                    );
-                    let (result, ()) = tokio::join!(probe, cancel);
-                    result
+        let _route = network_privacy::test_route_policy::lock_route_policy();
+        let server = super::super::sync_engine::test_lwd::CapturingLwd::start_with(
+            Vec::new(),
+            3_000_000,
+            |_| {},
+        )
+        .await;
+        const SAMPLES: usize = 40;
+        for cold in [false, true] {
+            let mut times = Vec::new();
+            for index in 0..SAMPLES + 5 {
+                let url = server.url.clone();
+                let id = format!("runtime-measure-{cold}-{index}");
+                begin_selection(&id).unwrap();
+                let elapsed = tokio::task::spawn_blocking(move || {
+                    let start = Instant::now();
+                    if cold {
+                        probe_candidates(vec![url], "main", &id, 1_000, 1_000, 4, false).unwrap();
+                    } else {
+                        read_tip(url, "main", &id, 1_000).unwrap();
+                    }
+                    start.elapsed().as_micros()
                 })
-            });
-            let _ = returned_tx.send(result);
-        });
-        let entered = entered_rx.recv_timeout(Duration::from_secs(5));
-        let returned = returned_rx
-            .recv_timeout(crate::wallet::bounded_runtime::CANCEL_GRACE + Duration::from_secs(3));
-        let slot_retained = SELECTIONS.lock().unwrap().active.contains_key(id);
-        // Always release the fake resolver before asserting, including when
-        // plain-runtime shutdown regresses and the bounded wait above fails.
-        let _ = release_tx.send(());
-        worker.join().unwrap();
-        assert!(entered.is_ok(), "blocking resolver did not start");
-        assert!(matches!(returned, Ok(Err(error)) if error == CANCELLED));
-        assert!(
-            !slot_retained,
-            "cancelled resolver retained its reserved slot"
-        );
+                .await
+                .unwrap();
+                if index >= 5 {
+                    times.push(elapsed);
+                }
+            }
+            times.sort();
+            println!(
+                "RUNTIME_OVERHEAD {} n={} median_us={} p95_us={}",
+                if cold { "selection" } else { "warm" },
+                SAMPLES,
+                times[SAMPLES / 2],
+                times[SAMPLES * 95 / 100]
+            );
+        }
+        assert_eq!(server.count("/GetLightdInfo"), SAMPLES + 5);
+        assert_eq!(server.count("/GetLatestBlock"), (SAMPLES + 5) * 2);
     }
 
     #[test]

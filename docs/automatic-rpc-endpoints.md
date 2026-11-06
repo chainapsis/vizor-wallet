@@ -27,13 +27,23 @@ Direct selection has a 6-second total network budget, 3-second per-candidate
 budget, and at most four concurrent candidates. Tor uses 15 seconds, 8 seconds,
 and two candidates. Once a valid candidate finishes, the batch waits at most
 250 milliseconds for comparison results, then drops outstanding candidate
-futures. Native runtime cleanup uses the existing bounded two-second shutdown
-grace so a stuck OS DNS resolver cannot retain a bridge worker indefinitely. Rust owns the native timeouts and cancellation. Dart also bounds time spent
-waiting for a bridge worker and synchronously cancels on expiry. A synchronous
-reservation before dispatch retains cancellation until a queued worker consumes
-it, with bounded outstanding reservations providing backpressure. The budgets begin after route readiness, not
-while Tor is bootstrapping. Tor failures remain route failures and never permit
-a direct fallback. These are initial policy values rather than measured global
+futures. Each claimed selection runs on one owning thread with a single-thread
+I/O runtime and at most eight blocking threads. Results return before runtime
+cleanup, so stalled OS DNS never makes the caller wait for cleanup. The worker
+retains its selection slot until the runtime and every running blocking lookup
+have actually stopped. The sixteen-slot admission bound includes draining
+workers as well as queued and active selections. Cancelling again cannot free a
+slot whose OS lookup is still running; capacity returns when that lookup exits.
+
+Capacity exhaustion is local backpressure shared by Direct and Tor selections.
+It does not prove a server outage, add a host cooldown, or permit a direct
+fallback. Automatic probing is limited while all slots are occupied. Normal
+connection paths outside selection retain their existing runtime and resolver.
+No extra metadata RPCs are introduced. Rust owns the native timeouts and
+cancellation; Dart also bounds bridge queue time and synchronously cancels on
+expiry. Synchronous reservation keeps that cancellation attached until a queued
+worker consumes it. Network budgets begin after route readiness, not while Tor
+is bootstrapping. These are initial policy values rather than measured global
 service-level guarantees.
 
 The optional cache is keyed by network and direct/Tor route. It stores the

@@ -684,6 +684,10 @@ void main() {
         StateError('automatic endpoint selection: no healthy candidates'),
       ),
       ('local runtime', StateError('tokio: Too many open files (os error 24)')),
+      (
+        'local worker',
+        StateError('automatic endpoint selection: local worker failed'),
+      ),
       ('panic', StateError('Rust panic: local failure')),
       (
         'admission',
