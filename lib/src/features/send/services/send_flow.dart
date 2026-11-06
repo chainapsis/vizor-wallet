@@ -635,6 +635,7 @@ class SendBroadcastOutcome {
     this.txid,
     this.statusMessage,
     this.error,
+    this.errorHold,
     this.canRetryBroadcast = false,
   });
 
@@ -653,6 +654,9 @@ class SendBroadcastOutcome {
   final String? txid;
   final String? statusMessage;
   final String? error;
+
+  /// The upgrade hold [error] explains, so screens need not compare its text.
+  final NetworkUpgradeHold? errorHold;
 }
 
 String? _firstTxid(String txids) {
@@ -1177,6 +1181,9 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
     }
 
     if (!secretGuard.enabled && await abortRequested()) return aborted();
+    final expiredHold = networkUpgradeHoldKind(
+      broadcastMessageForFallback ?? '',
+    );
     return SendBroadcastOutcome(
       phase: broadcastExpired
           ? SendBroadcastPhase.failed
@@ -1187,12 +1194,9 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
       txid: receiptTxid,
       statusMessage: pendingStatusMessage,
       error: broadcastExpired
-          ? networkUpgradeHoldMessage(
-                  l10n,
-                  broadcastMessageForFallback ?? '',
-                ) ??
-                l10n.sendBroadcastHardwareExpired
+          ? expiredHold?.message(l10n) ?? l10n.sendBroadcastHardwareExpired
           : null,
+      errorHold: broadcastExpired ? expiredHold : null,
     );
   } catch (e) {
     log('SendBroadcast: ERROR: $e');
@@ -1223,6 +1227,7 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
       proposalConsumed: proposalConsumed,
       canRetryBroadcast: canRetryBroadcast,
       error: message,
+      errorHold: networkUpgradeHoldKind(e),
     );
   }
 }

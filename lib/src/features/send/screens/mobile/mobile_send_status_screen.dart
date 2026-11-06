@@ -70,6 +70,7 @@ class _MobileSendStatusScreenState
   KeystoneBroadcastArgs? _keystoneRecovery;
   String? _statusMessage;
   String? _error;
+  NetworkUpgradeHold? _errorHold;
 
   /// Captured in [initState] so [dispose] can release the flag without reading
   /// from `ref` after the element is gone.
@@ -182,6 +183,7 @@ class _MobileSendStatusScreenState
       };
       _statusMessage = outcome.statusMessage;
       _error = outcome.error;
+      _errorHold = outcome.errorHold;
     });
     // Success and failure use custom native haptic patterns without system
     // notification sounds.
@@ -286,7 +288,7 @@ class _MobileSendStatusScreenState
       _MobileSendStatusPhase.failed =>
         _canRetryBroadcast
             ? (_error ?? context.l10n.sendStatusRetryAfterSync)
-            : _error == networkUpgradeHoldText(context.l10n)
+            : _errorHold == NetworkUpgradeHold.hold
             ? networkUpgradeHoldText(context.l10n)
             : context.l10n.sendStatusMobileNothingSent,
     };

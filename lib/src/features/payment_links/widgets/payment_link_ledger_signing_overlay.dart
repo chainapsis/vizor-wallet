@@ -72,7 +72,24 @@ class _PaymentLinkLedgerSigningOverlayState
   bool _checkpointed = false;
   bool _terminal = false;
   bool _requestNeedsRebuilding = false;
-  String? _error;
+  String? _errorText;
+
+  /// The upgrade hold [_error] explains, kept beside the localized text so
+  /// the modal can tell a hold apart without comparing copy.
+  NetworkUpgradeHold? _errorHold;
+
+  String? get _error => _errorText;
+
+  set _error(String? text) {
+    _errorText = text;
+    _errorHold = null;
+  }
+
+  void _setError(String text, NetworkUpgradeHold? hold) {
+    _errorText = text;
+    _errorHold = hold;
+  }
+
   LedgerFailureGuidance? _deviceGuidance;
   LedgerRequestFailure? _requestFailure;
 
@@ -213,13 +230,20 @@ class _PaymentLinkLedgerSigningOverlayState
               !_terminal &&
               !_checkpointed &&
               _deviceGuidance?.retryable == false;
-          _error = error is LedgerGiftFundingTerminalException
-              ? error.userMessage(context.l10n)
-              : _checkpointed
-              ? context.l10n.paymentLinkLedgerSavedForRecovery
-              : networkUpgradeHoldMessage(context.l10n, error) ??
-                    _deviceGuidance?.message ??
-                    _ledgerFailureMessage(error);
+          final hold =
+              error is LedgerGiftFundingTerminalException || _checkpointed
+              ? null
+              : networkUpgradeHoldKind(error);
+          _setError(
+            error is LedgerGiftFundingTerminalException
+                ? error.userMessage(context.l10n)
+                : _checkpointed
+                ? context.l10n.paymentLinkLedgerSavedForRecovery
+                : hold?.message(context.l10n) ??
+                      _deviceGuidance?.message ??
+                      _ledgerFailureMessage(error),
+            hold,
+          );
         });
       }
     }
@@ -311,7 +335,7 @@ class _PaymentLinkLedgerSigningOverlayState
 
   @override
   Widget build(BuildContext context) {
-    final upgradeHold = _error == networkUpgradeHoldText(context.l10n);
+    final upgradeHold = _errorHold == NetworkUpgradeHold.hold;
     final canRetry = !_terminal && !_requestNeedsRebuilding;
     final canLeave = !_durableBusy && !_cancelled;
     final modal = LedgerSigningModal(

@@ -549,6 +549,7 @@ void main() {
         phase: SendBroadcastPhase.failed,
         proposalConsumed: true,
         error: networkUpgradeHoldText(testL10n),
+        errorHold: NetworkUpgradeHold.hold,
       ),
     );
     await tester.pump();
