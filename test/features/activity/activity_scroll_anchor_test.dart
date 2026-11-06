@@ -19,6 +19,7 @@ ActivityRowData _row(int id, {List<ActivityRowData> children = const []}) =>
       subtitle: 'Shielded',
       amountText: '+1 ZEC',
       statusText: 'Completed',
+      statusIsRoutine: true,
       timestampText: 'Oct 23, 12:00',
       childRows: children,
     );

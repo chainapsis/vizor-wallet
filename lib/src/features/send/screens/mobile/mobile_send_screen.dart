@@ -2668,9 +2668,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               height: AppInputSizing.height,
               child: Center(
                 child: _AddressFieldActionButton(
-                  label: _addressController.text.trim().isEmpty
-                      ? context.l10n.sendPasteAction
-                      : context.l10n.commonClear,
+                  action: _addressController.text.trim().isEmpty
+                      ? _AddressFieldAction.paste
+                      : _AddressFieldAction.clear,
                   onTap: _addressController.text.trim().isEmpty
                       ? () => unawaited(_pasteAddress())
                       : _clearAddress,
@@ -4652,21 +4652,29 @@ class _RecipientLineText extends StatelessWidget {
 
 /// Inline action pill in the recipient field's trailing slot — Figma
 /// `Send to Focus` variants switch it between Paste and Clear.
+enum _AddressFieldAction {
+  paste(_kMobileSendAddressPasteWidth),
+  clear(_kMobileSendAddressClearWidth);
+
+  const _AddressFieldAction(this.width);
+
+  /// Figma width; a longer translation grows the pill up to the slot width.
+  final double width;
+}
+
 class _AddressFieldActionButton extends StatelessWidget {
-  const _AddressFieldActionButton({required this.label, required this.onTap});
+  const _AddressFieldActionButton({required this.action, required this.onTap});
 
-  final String label;
+  final _AddressFieldAction action;
   final VoidCallback onTap;
-
-  double get _width => switch (label) {
-    'Paste' => _kMobileSendAddressPasteWidth,
-    'Clear' => _kMobileSendAddressClearWidth,
-    _ => _kMobileSendAddressPasteWidth,
-  };
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final label = switch (action) {
+      _AddressFieldAction.paste => context.l10n.sendPasteAction,
+      _AddressFieldAction.clear => context.l10n.commonClear,
+    };
     return Semantics(
       button: true,
       label: label,
@@ -4674,22 +4682,32 @@ class _AddressFieldActionButton extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: SizedBox(
-          key: ValueKey('mobile_send_address_${label.toLowerCase()}'),
-          width: _width,
-          height: _kMobileSendAddressActionHeight,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: colors.button.secondary.bg,
-              borderRadius: BorderRadius.circular(AppRadii.full),
+        child: IntrinsicWidth(
+          key: ValueKey('mobile_send_address_${action.name}'),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minWidth: action.width,
+              maxWidth: _kMobileSendAddressActionSlotWidth,
+              minHeight: _kMobileSendAddressActionHeight,
+              maxHeight: _kMobileSendAddressActionHeight,
             ),
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                child: Text(
-                  label,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.button.secondary.label,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.button.secondary.bg,
+                borderRadius: BorderRadius.circular(AppRadii.full),
+              ),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                  ),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.button.secondary.label,
+                    ),
                   ),
                 ),
               ),

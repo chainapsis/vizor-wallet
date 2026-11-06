@@ -163,6 +163,7 @@ ActivityRowData buildTransactionActivityRow({
         : isPending
         ? l10n.commonInProgress
         : l10n.commonCompleted,
+    statusIsRoutine: !isFailed,
     statusIconName: isFailed
         ? AppIcons.skull
         : isPending

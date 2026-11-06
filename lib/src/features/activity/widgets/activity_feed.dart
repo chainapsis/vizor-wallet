@@ -1179,11 +1179,7 @@ class _ActivityRowAmount extends StatelessWidget {
     if (childRow) return null;
     if (row.amountSubtitle != null) return row.amountSubtitle;
     final status = row.statusText.trim();
-    final routineStatus =
-        status == 'Completed' ||
-        status == 'In progress' ||
-        RegExp(r'^\d+/\d+ In progress$').hasMatch(status);
-    if (status.isNotEmpty && !routineStatus) return status;
+    if (status.isNotEmpty && !row.statusIsRoutine) return status;
     return row.timestampText == '--' ? null : row.timestampText;
   }
 

@@ -171,6 +171,7 @@ ActivityRowData buildSwapActivityRow({
     amountSubtitleIconName: timedOut ? AppIcons.time : null,
     amountSubtitleIconColor: timedOut ? colors.text.secondary : null,
     statusText: _swapActivityStatusText(l10n, item.status, progress),
+    statusIsRoutine: _swapActivityStatusIsRoutine(item.status),
     statusIconName: failed
         ? AppIcons.skull
         : item.status == SwapIntentStatus.refunded
@@ -384,6 +385,22 @@ String _swapActivityStatusText(
     SwapIntentStatus.refunded => l10n.commonRefunded,
     SwapIntentStatus.expired => l10n.commonFailed,
     SwapIntentStatus.failed => l10n.commonFailed,
+  };
+}
+
+/// In progress and completed rows show their timestamp instead of the status.
+bool _swapActivityStatusIsRoutine(SwapIntentStatus status) {
+  return switch (status) {
+    SwapIntentStatus.awaitingDeposit ||
+    SwapIntentStatus.awaitingExternalDeposit ||
+    SwapIntentStatus.depositObserved ||
+    SwapIntentStatus.processing ||
+    SwapIntentStatus.providerStatusUnknown ||
+    SwapIntentStatus.complete => true,
+    SwapIntentStatus.incompleteDeposit ||
+    SwapIntentStatus.refunded ||
+    SwapIntentStatus.expired ||
+    SwapIntentStatus.failed => false,
   };
 }
 

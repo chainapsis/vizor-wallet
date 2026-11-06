@@ -642,6 +642,7 @@ ActivityRowData _row({
     amountSubtitle: amountSubtitle,
     amountSubtitleIconName: amountSubtitleIconName,
     statusText: 'Completed',
+    statusIsRoutine: true,
     timestampText: 'Today, 13:11',
     childRows: childRows,
     onTap: onTap,
