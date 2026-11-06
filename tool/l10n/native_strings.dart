@@ -16,6 +16,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'generated_output.dart';
+
 const nativeKeyPrefix = 'native';
 
 /// The ARB file each language's native strings are read from, English first.
@@ -346,6 +348,7 @@ void main(List<String> args) {
   }
   final check = args.contains('--check');
   for (final MapEntry(key: path, value: expected) in files.entries) {
+    if (!checkGeneratedOutputPath(path)) continue;
     final output = File(path);
     if (!check) {
       output.writeAsStringSync(expected);
