@@ -116,7 +116,10 @@ class RustSwapDepositSender implements SwapDepositSender {
             operation: () async {
               final dbPath = await getWalletDbPath();
               secretGuard.check();
-              final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+              final endpoint = await _ref
+                  .read(rpcEndpointFailoverProvider.notifier)
+                  .ensureReady();
+              secretGuard.check();
               final refundIndex = quote.swapRefundIndex;
               final proposal = refundIndex != null
                   ? await rust_sync.proposeSwapFunding(

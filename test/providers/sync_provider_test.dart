@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/providers/account_initialization_provider.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_balance_cache.dart';
 import 'package:zcash_wallet/src/providers/wallet_balance_cache_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
@@ -23,6 +24,132 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 void main() {
+  final nativeSync = _SpendReadinessRustApiFake()..running = false;
+  setUpAll(() => RustLib.initMock(api: nativeSync));
+  tearDownAll(RustLib.dispose);
+  setUp(() => nativeSync.running = false);
+
+  for (final failHistory in [false, true]) {
+    testWidgets(
+      'initial restore completion reports actual local read outcome: failure=$failHistory',
+      (tester) async {
+        final notifier =
+            _BalanceRefreshTestSyncNotifier(
+                () async => 'wallet.db',
+                initialState: SyncState(accountUuid: _accountUuid),
+              )
+              ..balance = _availableBalance(BigInt.zero)
+              ..failHistory = failHistory;
+        final c = ProviderContainer(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+            accountProvider.overrideWith(_ExistingAccountNotifier.new),
+            syncProvider.overrideWith(() => notifier),
+            walletBalanceCacheProvider.overrideWithValue(
+              _TestBalanceCacheStore(),
+            ),
+          ],
+        );
+        addTearDown(c.dispose);
+        await c.read(accountProvider.future);
+        await c.read(syncProvider.future);
+        final registry = c.read(accountInitializationProvider.notifier);
+        registry.register(_accountUuid, AccountInitializationKind.restored);
+        await notifier.handleSyncProgressForTesting(
+          const SyncProgressEvent(
+            scannedHeight: 100,
+            chainTipHeight: 100,
+            percentage: 1,
+            displayTargetPercentage: 1,
+            displayTargetBlocks: 0,
+            remainingScanBlocks: 0,
+            isSyncing: false,
+            isComplete: true,
+            hasNewTx: false,
+          ),
+        );
+        notifier.stopTipChecksForTesting();
+        expect(
+          c.read(accountInitializationProvider)[_accountUuid]!.scanCompleted,
+          isTrue,
+        );
+        expect(
+          c.read(accountInitializationProvider)[_accountUuid]!.reads,
+          failHistory
+              ? InitialAccountReads.unavailable
+              : InitialAccountReads.available,
+        );
+        if (failHistory) {
+          notifier.failHistory = false;
+          await notifier.refreshAfterSend();
+          expect(
+            c.read(accountInitializationProvider)[_accountUuid]!.reads,
+            InitialAccountReads.available,
+          );
+        }
+      },
+    );
+  }
+
+  testWidgets(
+    'a newer local refresh can finish initialization while completion reads unwind',
+    (tester) async {
+      final notifier =
+          _BalanceRefreshTestSyncNotifier(
+              () async => 'wallet.db',
+              initialState: SyncState(accountUuid: _accountUuid),
+            )
+            ..balance = _availableBalance(BigInt.zero)
+            ..gateFirstBalanceRead();
+      final c = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(() => notifier),
+          walletBalanceCacheProvider.overrideWithValue(
+            _TestBalanceCacheStore(),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      await c.read(accountProvider.future);
+      await c.read(syncProvider.future);
+      final registry = c.read(accountInitializationProvider.notifier);
+      registry.register(_accountUuid, AccountInitializationKind.restored);
+      final completing = notifier.handleSyncProgressForTesting(
+        const SyncProgressEvent(
+          scannedHeight: 100,
+          chainTipHeight: 100,
+          percentage: 1,
+          displayTargetPercentage: 1,
+          displayTargetBlocks: 0,
+          remainingScanBlocks: 0,
+          isSyncing: false,
+          isComplete: true,
+          hasNewTx: false,
+        ),
+      );
+      await notifier.firstBalanceReadStarted;
+      expect(
+        c.read(accountInitializationProvider)[_accountUuid]!.reads,
+        InitialAccountReads.pending,
+      );
+      await notifier.refreshAfterSend();
+      expect(
+        c.read(accountInitializationProvider)[_accountUuid]!.reads,
+        InitialAccountReads.available,
+      );
+      notifier.releaseFirstBalanceRead();
+      await completing;
+      await tester.pump();
+      notifier.stopTipChecksForTesting();
+      expect(
+        c.read(accountInitializationProvider)[_accountUuid]!.reads,
+        InitialAccountReads.available,
+      );
+    },
+  );
+
   test(
     'unlock restores only selected cached balance without live reads',
     () async {
@@ -62,9 +189,7 @@ void main() {
   testWidgets(
     'cached snapshot survives a live read and Send waits for sync completion',
     (tester) async {
-      final nativeSync = _SpendReadinessRustApiFake();
-      RustLib.initMock(api: nativeSync);
-      addTearDown(RustLib.dispose);
+      nativeSync.running = true;
       final cached =
           SyncState(
             accountUuid: _accountUuid,
@@ -1564,8 +1689,14 @@ void main() {
       container.listen(syncProvider, (_, _) {});
       await container.read(syncProvider.future);
 
-      // Cache account 1, then switch back to restore that cached snapshot.
+      final initialization = container.read(
+        accountInitializationProvider.notifier,
+      );
+      initialization.register(_accountUuid, AccountInitializationKind.restored);
+      final tokens = initialization.pendingTokens();
+      // Cache the partial account, then complete its wallet-wide scan while B is active.
       notifier.handleAccountSwitchForTesting(_otherAccountUuid);
+      initialization.observeScan(tokens, completed: true);
       notifier.handleAccountSwitchForTesting(_accountUuid);
       expect(
         container.read(syncProvider).requireValue.displaySpendableBalance,
@@ -1573,6 +1704,11 @@ void main() {
       );
 
       await notifier.refreshAfterAccountSwitch();
+      expect(
+        container.read(accountInitializationProvider)[_accountUuid]!.reads,
+        InitialAccountReads.unavailable,
+      );
+
       expect(
         container.read(syncProvider).requireValue.displaySpendableBalance,
         BigInt.zero,

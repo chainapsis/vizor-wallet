@@ -13,8 +13,10 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/rpc_endpoint_latency_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../widgets/automatic_endpoint_detail.dart';
 
 class SettingsEndpointScreen extends ConsumerStatefulWidget {
   const SettingsEndpointScreen({super.key});
@@ -279,11 +281,14 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
                       color: colors.text.accent,
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.s),
-                  _CurrentEndpointSubtitle(
-                    current: widget.current,
-                    latencyState: widget.latencyState,
-                  ),
+                  if (!isAutomaticRpcEndpointConfig(widget.current) ||
+                      widget.activeTab == _EndpointTab.custom) ...[
+                    const SizedBox(height: AppSpacing.s),
+                    _CurrentEndpointSubtitle(
+                      current: widget.current,
+                      latencyState: widget.latencyState,
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.base),
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -328,7 +333,7 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
   }
 }
 
-class _CurrentEndpointSubtitle extends StatelessWidget {
+class _CurrentEndpointSubtitle extends ConsumerWidget {
   const _CurrentEndpointSubtitle({
     required this.current,
     required this.latencyState,
@@ -338,18 +343,21 @@ class _CurrentEndpointSubtitle extends StatelessWidget {
   final RpcEndpointLatencyState latencyState;
 
   @override
-  Widget build(BuildContext context) {
-    final preset = findRpcEndpointPresetByUrl(
-      current.normalizedLightwalletdUrl,
-      networkName: current.networkName,
-    );
-    final latency = latencyState.sampleForUrl(
-      current.normalizedLightwalletdUrl,
-    );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final automatic = isAutomaticRpcEndpointConfig(current);
+    final effective = ref.watch(rpcEndpointFailoverProvider);
+    final selected = effective.current;
+    final latency = automatic && !effective.automaticReady
+        ? null
+        : latencyState.sampleForUrl(selected.normalizedLightwalletdUrl);
     final text = [
-      'Current: ${current.hostPort}',
+      if (automatic)
+        effective.automaticReady
+            ? 'Automatic · ${selected.hostPort}'
+            : 'Automatic · Selecting...'
+      else
+        'Current: ${selected.hostPort}',
       if (latency != null) latency.label,
-      if (preset?.isDefault ?? false) '(Default)',
     ].join(' ');
 
     return Text(
@@ -452,7 +460,7 @@ class _EndpointTabButton extends StatelessWidget {
   }
 }
 
-class _PresetList extends StatelessWidget {
+class _PresetList extends ConsumerWidget {
   const _PresetList({
     required this.networkName,
     required this.latencyState,
@@ -468,7 +476,13 @@ class _PresetList extends StatelessWidget {
   final ValueChanged<String> onSelect;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final automaticDetail = currentPresetId == kDefaultRpcEndpointPresetId
+        ? automaticEndpointDetailLabel(
+            ref.watch(rpcEndpointFailoverProvider),
+            latencyState,
+          )
+        : null;
     final groups = <String, List<RpcEndpointPreset>>{};
     for (final preset in rpcEndpointPresetsForNetwork(networkName)) {
       groups.putIfAbsent(preset.region, () => []).add(preset);
@@ -483,6 +497,7 @@ class _PresetList extends StatelessWidget {
             label: entries[i].key,
             presets: entries[i].value,
             latencyState: latencyState,
+            automaticDetail: automaticDetail,
             currentPresetId: currentPresetId,
             pendingPresetId: pendingPresetId,
             onSelect: onSelect,
@@ -499,6 +514,7 @@ class _PresetRegionSegment extends StatelessWidget {
     required this.label,
     required this.presets,
     required this.latencyState,
+    required this.automaticDetail,
     required this.currentPresetId,
     required this.pendingPresetId,
     required this.onSelect,
@@ -507,6 +523,7 @@ class _PresetRegionSegment extends StatelessWidget {
   final String label;
   final List<RpcEndpointPreset> presets;
   final RpcEndpointLatencyState latencyState;
+  final String? automaticDetail;
   final String currentPresetId;
   final String? pendingPresetId;
   final ValueChanged<String> onSelect;
@@ -529,8 +546,11 @@ class _PresetRegionSegment extends StatelessWidget {
         const SizedBox(height: AppSpacing.s),
         for (var i = 0; i < presets.length; i++) ...[
           _PresetCard(
+            key: ValueKey('endpoint_preset_${presets[i].id}'),
             preset: presets[i],
-            latency: latencyState.sampleForUrl(presets[i].url),
+            detailLabel: presets[i].isAutomatic
+                ? automaticDetail
+                : latencyState.sampleForUrl(presets[i].url)?.label,
             isCurrent: presets[i].id == currentPresetId,
             isSelected: presets[i].id == pendingPresetId,
             onTap: () => onSelect(presets[i].id),
@@ -545,14 +565,15 @@ class _PresetRegionSegment extends StatelessWidget {
 class _PresetCard extends StatelessWidget {
   const _PresetCard({
     required this.preset,
-    required this.latency,
+    required this.detailLabel,
     required this.isCurrent,
     required this.isSelected,
     required this.onTap,
+    super.key,
   });
 
   final RpcEndpointPreset preset;
-  final RpcEndpointLatencySample? latency;
+  final String? detailLabel;
 
   /// Currently applied endpoint (`current.effectivePresetId`).
   final bool isCurrent;
@@ -614,7 +635,7 @@ class _PresetCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        preset.hostPort,
+                        preset.displayLabel,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelMedium.copyWith(
                           color: colors.text.accent,
@@ -623,10 +644,11 @@ class _PresetCard extends StatelessWidget {
                               : FontWeight.w500,
                         ),
                       ),
-                      if (latency != null) ...[
+                      if (detailLabel != null) ...[
                         const SizedBox(height: 2),
                         Text(
-                          latency!.label,
+                          detailLabel!,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelMedium.copyWith(
                             color: isCurrent
