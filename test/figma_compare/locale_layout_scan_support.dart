@@ -121,7 +121,8 @@ List<String> _wordSplits(WidgetTester tester) {
   final found = <String>{};
   for (final paragraph
       in tester.allRenderObjects.whereType<RenderParagraph>()) {
-    if (!paragraph.hasSize) continue;
+    // Text that does not wrap cannot split a word; _cutOffTexts reports it.
+    if (!paragraph.hasSize || !paragraph.softWrap) continue;
     final text = paragraph.text.toPlainText(includeSemanticsLabels: false);
     if (!text.contains(wordJoiner)) continue;
     var hasInlineWidget = false;
