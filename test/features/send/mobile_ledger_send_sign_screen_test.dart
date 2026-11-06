@@ -1507,7 +1507,9 @@ final _bootstrap = AppBootstrapState(
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  rpcEndpointConfig: defaultRpcEndpointConfig(
+    'main',
+  ).copyWith(presetId: kManualUsRpcEndpointPresetId),
   themeMode: ThemeMode.light,
   privacyModeEnabled: false,
   isPasswordConfigured: true,
@@ -1586,7 +1588,9 @@ class _FakeOperationService
 class _Route extends RpcEndpointFailoverNotifier {
   @override
   RpcEndpointFailoverState build() => RpcEndpointFailoverState(
-    primary: defaultRpcEndpointConfig('main'),
+    primary: defaultRpcEndpointConfig(
+      'main',
+    ).copyWith(presetId: kManualUsRpcEndpointPresetId),
     current: defaultRpcEndpointConfig('main'),
     fallbackCandidates: const [],
   );

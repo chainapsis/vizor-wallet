@@ -1,6 +1,7 @@
 // ignore_for_file: unused_element, unused_field
 
 import '../providers/home_activity_state.dart';
+import '../providers/home_initialization_provider.dart';
 import '../widgets/home_activity_skeleton.dart';
 import '../../activity/widgets/deferred_gift_card_recovery.dart';
 import 'dart:async';
@@ -332,8 +333,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final transparentBalance = TransparentBalanceDisplay.of(sync);
     final canShieldTransparentBalance =
         sync.canShieldTransparentBalance && !isMigrationRequired;
-    final isImportingForBackground =
-        activeAccountUuid != null && sync.isImportingAccount;
+    final isImportingForBackground = ref
+        .watch(homeInitializationPresentationProvider)
+        .showImporting;
     final isDark = context.appTheme == AppThemeData.dark;
     final backgroundAsset = isImportingForBackground
         ? 'assets/illustrations/home_importing_background.webp'
@@ -637,7 +639,10 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         }
       }
     }
-    final isImporting = widget.sync.isImportingAccount;
+    final initialPresentation = ref.watch(
+      homeInitializationPresentationProvider,
+    );
+    final isImporting = initialPresentation.showImporting;
     final hasBalance = widget.showsIronwoodOnlyBalance
         ? widget.sync.displayIronwoodBalance +
                   widget.sync.displayIronwoodPendingBalance >
@@ -653,18 +658,21 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       homeMigrationCtaPulseMotionEnabledProvider,
     );
 
-    final activityState = homeActivityState(
-      accountUuid: activeAccountUuid,
-      sync: widget.sync,
-      hasRows: rows.isNotEmpty,
-      localSources: [
-        if (activeAccountUuid != null) ...[
-          ref.watch(giftCardActivityIndexProvider(activeAccountUuid)),
-          if (swapFeatureEnabled)
-            ref.watch(swapActivityRowItemsProvider(activeAccountUuid)),
-        ],
-      ],
-    );
+    final activityState =
+        initialPresentation.activityUnavailable && rows.isEmpty
+        ? HomeActivityState.unavailable
+        : homeActivityState(
+            accountUuid: activeAccountUuid,
+            sync: widget.sync,
+            hasRows: rows.isNotEmpty,
+            localSources: [
+              if (activeAccountUuid != null) ...[
+                ref.watch(giftCardActivityIndexProvider(activeAccountUuid)),
+                if (swapFeatureEnabled)
+                  ref.watch(swapActivityRowItemsProvider(activeAccountUuid)),
+              ],
+            ],
+          );
 
     final content = _HomeDesktopPane(
       hasSetupReminders: ref.watch(showDesktopHomeSetupCarouselProvider),

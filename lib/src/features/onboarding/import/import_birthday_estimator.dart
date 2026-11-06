@@ -23,6 +23,11 @@ class ImportBirthdayMetadata {
   final DateTime tipDate;
 }
 
+typedef ImportBirthdayEndpointRunner =
+    Future<int> Function(
+      Future<int> Function(RpcEndpointConfig endpoint) action,
+    );
+
 class ImportBirthdayEstimator {
   ImportBirthdayEstimator._();
 
@@ -47,19 +52,30 @@ class ImportBirthdayEstimator {
     required RpcEndpointConfig endpoint,
     required DateTime selectedDate,
     ImportBirthdayMetadata? metadata,
+    ImportBirthdayEndpointRunner? runWithEndpoint,
   }) async {
     final searchDate = importBirthdaySearchDate(selectedDate);
     final targetEpoch = searchDate.toUtc().millisecondsSinceEpoch ~/ 1000;
-    final height = await rust_network_privacy.estimateImportBirthdayHeight(
-      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      targetEpochSeconds: targetEpoch,
-      useMainnetFastPath: _useMainnetFastPath(endpoint),
-      tipHeight: metadata == null ? null : BigInt.from(metadata.tipHeight),
-      tipTime: metadata == null
-          ? null
-          : metadata.tipDate.toUtc().millisecondsSinceEpoch ~/ 1000,
-    );
-    return height.toInt();
+    Future<int> estimate(RpcEndpointConfig selected) async {
+      final height = await rust_network_privacy.estimateImportBirthdayHeight(
+        lightwalletdUrl: selected.normalizedLightwalletdUrl,
+        targetEpochSeconds: targetEpoch,
+        useMainnetFastPath: _useMainnetFastPath(selected),
+        tipHeight: metadata == null ? null : BigInt.from(metadata.tipHeight),
+        tipTime: metadata == null
+            ? null
+            : metadata.tipDate.toUtc().millisecondsSinceEpoch ~/ 1000,
+      );
+      return height.toInt();
+    }
+
+    // Mainnet's compiled table plus an observed tip answers locally. Do not
+    // make that calculation depend on endpoint discovery or a working route.
+    if ((_useMainnetFastPath(endpoint) && metadata != null) ||
+        runWithEndpoint == null) {
+      return estimate(endpoint);
+    }
+    return runWithEndpoint(estimate);
   }
 
   static DateTime _blockTimeToLocalDate(int blockTime) {

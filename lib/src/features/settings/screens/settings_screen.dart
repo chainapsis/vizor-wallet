@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/config/zcash_explorer.dart';
+import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
@@ -205,7 +206,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
     final endpoint = ref.watch(rpcEndpointProvider);
-    final endpointLabel = endpoint.hostPort;
+    final endpointLabel = isAutomaticRpcEndpointConfig(endpoint)
+        ? 'Automatic'
+        : endpoint.hostPort;
     final explorerLabel = explorerSettingsLabel(
       ref.watch(zcashExplorerProvider),
       networkName: endpoint.networkName,

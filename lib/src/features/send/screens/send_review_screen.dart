@@ -301,7 +301,10 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
 
       // PCZT creation consumes the proposal; select the live route once and
       // never retry the consumed proposal through a generic failover runner.
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
+      if (!_isCurrentLedgerAttempt(generation)) return;
       final pczts = await _getOrCreateLedgerBasePczts(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -852,7 +855,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     try {
       final dbPath = await getWalletDbPath();
       if (!isCurrent()) return;
-      final endpoint = ref.read(rpcEndpointProvider);
       final saplingParams = await loadSaplingParamsStatus();
       if (!isCurrent()) return;
 
@@ -880,6 +882,10 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       final currentSaplingParams = await loadSaplingParamsStatus();
       if (!isCurrent()) return;
       _keystoneSaplingParams = currentSaplingParams;
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
+      if (!isCurrent()) return;
 
       final texFuture = args.addressType == 'tex'
           ? rust_sync.createTexPcztsFromProposal(
