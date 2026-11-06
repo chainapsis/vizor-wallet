@@ -11796,6 +11796,28 @@ impl SseDecode for bool {
     }
 }
 
+impl SseDecode for crate::api::sync::BroadcastNotice {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_index = <Option<u32>>::sse_decode(deserializer);
+        let mut var_total = <Option<u32>>::sse_decode(deserializer);
+        let mut var_txid = <Option<String>>::sse_decode(deserializer);
+        let mut var_detail = <Option<String>>::sse_decode(deserializer);
+        let mut var_expiryHeight = <Option<u32>>::sse_decode(deserializer);
+        let mut var_chainHeight = <Option<u64>>::sse_decode(deserializer);
+        return crate::api::sync::BroadcastNotice {
+            kind: var_kind,
+            index: var_index,
+            total: var_total,
+            txid: var_txid,
+            detail: var_detail,
+            expiry_height: var_expiryHeight,
+            chain_height: var_chainHeight,
+        };
+    }
+}
+
 impl SseDecode for zcash_voting::wire::ChainConfirmationSourceView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -12182,6 +12204,7 @@ impl SseDecode for crate::api::sync::ExecuteProposalResult {
         let mut var_broadcastedCount = <u32>::sse_decode(deserializer);
         let mut var_totalCount = <u32>::sse_decode(deserializer);
         let mut var_message = <Option<String>>::sse_decode(deserializer);
+        let mut var_notices = <Vec<crate::api::sync::BroadcastNotice>>::sse_decode(deserializer);
         let mut var_broadcastFailureKind = <Option<String>>::sse_decode(deserializer);
         return crate::api::sync::ExecuteProposalResult {
             txids: var_txids,
@@ -12189,6 +12212,7 @@ impl SseDecode for crate::api::sync::ExecuteProposalResult {
             broadcasted_count: var_broadcastedCount,
             total_count: var_totalCount,
             message: var_message,
+            notices: var_notices,
             broadcast_failure_kind: var_broadcastFailureKind,
         };
     }
@@ -12200,10 +12224,12 @@ impl SseDecode for crate::api::sync::ExtractAndBroadcastPcztResult {
         let mut var_txid = <String>::sse_decode(deserializer);
         let mut var_status = <String>::sse_decode(deserializer);
         let mut var_message = <Option<String>>::sse_decode(deserializer);
+        let mut var_notices = <Vec<crate::api::sync::BroadcastNotice>>::sse_decode(deserializer);
         return crate::api::sync::ExtractAndBroadcastPcztResult {
             txid: var_txid,
             status: var_status,
             message: var_message,
+            notices: var_notices,
         };
     }
 }
@@ -12599,6 +12625,7 @@ impl SseDecode for crate::api::ledger::LedgerSignedOperation {
         let mut var_txid = <Option<String>>::sse_decode(deserializer);
         let mut var_status = <Option<String>>::sse_decode(deserializer);
         let mut var_message = <Option<String>>::sse_decode(deserializer);
+        let mut var_notices = <Vec<crate::api::sync::BroadcastNotice>>::sse_decode(deserializer);
         let mut var_createdAtMs = <i64>::sse_decode(deserializer);
         let mut var_updatedAtMs = <i64>::sse_decode(deserializer);
         return crate::api::ledger::LedgerSignedOperation {
@@ -12612,6 +12639,7 @@ impl SseDecode for crate::api::ledger::LedgerSignedOperation {
             txid: var_txid,
             status: var_status,
             message: var_message,
+            notices: var_notices,
             created_at_ms: var_createdAtMs,
             updated_at_ms: var_updatedAtMs,
         };
@@ -12625,12 +12653,14 @@ impl SseDecode for crate::api::ledger::LedgerSignedOperationBroadcastResult {
         let mut var_txid = <String>::sse_decode(deserializer);
         let mut var_status = <String>::sse_decode(deserializer);
         let mut var_message = <Option<String>>::sse_decode(deserializer);
+        let mut var_notices = <Vec<crate::api::sync::BroadcastNotice>>::sse_decode(deserializer);
         let mut var_requiresAck = <bool>::sse_decode(deserializer);
         return crate::api::ledger::LedgerSignedOperationBroadcastResult {
             operation_id: var_operationId,
             txid: var_txid,
             status: var_status,
             message: var_message,
+            notices: var_notices,
             requires_ack: var_requiresAck,
         };
     }
@@ -12875,6 +12905,20 @@ impl SseDecode for Vec<crate::api::sync::BlockMetaInfo> {
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
             ans_.push(<crate::api::sync::BlockMetaInfo>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::sync::BroadcastNotice> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::sync::BroadcastNotice>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -15466,12 +15510,14 @@ impl SseDecode for crate::api::sync::StoreAndBroadcastPcztsResult {
         let mut var_broadcastedCount = <u32>::sse_decode(deserializer);
         let mut var_totalCount = <u32>::sse_decode(deserializer);
         let mut var_message = <Option<String>>::sse_decode(deserializer);
+        let mut var_notices = <Vec<crate::api::sync::BroadcastNotice>>::sse_decode(deserializer);
         return crate::api::sync::StoreAndBroadcastPcztsResult {
             txids: var_txids,
             status: var_status,
             broadcasted_count: var_broadcastedCount,
             total_count: var_totalCount,
             message: var_message,
+            notices: var_notices,
         };
     }
 }
@@ -17738,6 +17784,32 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::wallet::BlockSpacingSchedule>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::BroadcastNotice {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.kind.into_into_dart().into_dart(),
+            self.index.into_into_dart().into_dart(),
+            self.total.into_into_dart().into_dart(),
+            self.txid.into_into_dart().into_dart(),
+            self.detail.into_into_dart().into_dart(),
+            self.expiry_height.into_into_dart().into_dart(),
+            self.chain_height.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::BroadcastNotice
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::BroadcastNotice>
+    for crate::api::sync::BroadcastNotice
+{
+    fn into_into_dart(self) -> crate::api::sync::BroadcastNotice {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::ChainConfirmationSourceView> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
@@ -18307,6 +18379,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ExecuteProposalResult {
             self.broadcasted_count.into_into_dart().into_dart(),
             self.total_count.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
+            self.notices.into_into_dart().into_dart(),
             self.broadcast_failure_kind.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -18330,6 +18403,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ExtractAndBroadcastPczt
             self.txid.into_into_dart().into_dart(),
             self.status.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
+            self.notices.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -18881,6 +18955,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ledger::LedgerSignedOperation
             self.txid.into_into_dart().into_dart(),
             self.status.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
+            self.notices.into_into_dart().into_dart(),
             self.created_at_ms.into_into_dart().into_dart(),
             self.updated_at_ms.into_into_dart().into_dart(),
         ]
@@ -18906,6 +18981,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ledger::LedgerSignedOperation
             self.txid.into_into_dart().into_dart(),
             self.status.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
+            self.notices.into_into_dart().into_dart(),
             self.requires_ack.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -20702,6 +20778,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::StoreAndBroadcastPcztsR
             self.broadcasted_count.into_into_dart().into_dart(),
             self.total_count.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
+            self.notices.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -22260,6 +22337,19 @@ impl SseEncode for bool {
     }
 }
 
+impl SseEncode for crate::api::sync::BroadcastNotice {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.kind, serializer);
+        <Option<u32>>::sse_encode(self.index, serializer);
+        <Option<u32>>::sse_encode(self.total, serializer);
+        <Option<String>>::sse_encode(self.txid, serializer);
+        <Option<String>>::sse_encode(self.detail, serializer);
+        <Option<u32>>::sse_encode(self.expiry_height, serializer);
+        <Option<u64>>::sse_encode(self.chain_height, serializer);
+    }
+}
+
 impl SseEncode for zcash_voting::wire::ChainConfirmationSourceView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -22600,6 +22690,7 @@ impl SseEncode for crate::api::sync::ExecuteProposalResult {
         <u32>::sse_encode(self.broadcasted_count, serializer);
         <u32>::sse_encode(self.total_count, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
+        <Vec<crate::api::sync::BroadcastNotice>>::sse_encode(self.notices, serializer);
         <Option<String>>::sse_encode(self.broadcast_failure_kind, serializer);
     }
 }
@@ -22610,6 +22701,7 @@ impl SseEncode for crate::api::sync::ExtractAndBroadcastPcztResult {
         <String>::sse_encode(self.txid, serializer);
         <String>::sse_encode(self.status, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
+        <Vec<crate::api::sync::BroadcastNotice>>::sse_encode(self.notices, serializer);
     }
 }
 
@@ -22873,6 +22965,7 @@ impl SseEncode for crate::api::ledger::LedgerSignedOperation {
         <Option<String>>::sse_encode(self.txid, serializer);
         <Option<String>>::sse_encode(self.status, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
+        <Vec<crate::api::sync::BroadcastNotice>>::sse_encode(self.notices, serializer);
         <i64>::sse_encode(self.created_at_ms, serializer);
         <i64>::sse_encode(self.updated_at_ms, serializer);
     }
@@ -22885,6 +22978,7 @@ impl SseEncode for crate::api::ledger::LedgerSignedOperationBroadcastResult {
         <String>::sse_encode(self.txid, serializer);
         <String>::sse_encode(self.status, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
+        <Vec<crate::api::sync::BroadcastNotice>>::sse_encode(self.notices, serializer);
         <bool>::sse_encode(self.requires_ack, serializer);
     }
 }
@@ -23060,6 +23154,16 @@ impl SseEncode for Vec<crate::api::sync::BlockMetaInfo> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::sync::BlockMetaInfo>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::sync::BroadcastNotice> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::sync::BroadcastNotice>::sse_encode(item, serializer);
         }
     }
 }
@@ -25045,6 +25149,7 @@ impl SseEncode for crate::api::sync::StoreAndBroadcastPcztsResult {
         <u32>::sse_encode(self.broadcasted_count, serializer);
         <u32>::sse_encode(self.total_count, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
+        <Vec<crate::api::sync::BroadcastNotice>>::sse_encode(self.notices, serializer);
     }
 }
 

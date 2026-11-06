@@ -991,6 +991,95 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String broadcastNoticeBroadcastFailed(
+    String sent,
+    String total,
+    String txids,
+    String detail,
+  ) {
+    return 'Broadcast failed after $sent/$total txs sent ($txids). Error: $detail';
+  }
+
+  @override
+  String broadcastNoticeBroadcastStorageFailed(String txid, String detail) {
+    return 'Broadcast succeeded (txid=$txid) but local storage failed. $detail. The transaction is on the network; check an explorer to confirm, and do not attempt to send again until the next sync reconciles your balance.';
+  }
+
+  @override
+  String broadcastNoticeDatabaseUnavailable(String detail) {
+    return 'Failed to open DB for broadcast after local transaction creation: $detail';
+  }
+
+  @override
+  String broadcastNoticeExpired(
+    String txid,
+    String expiryHeight,
+    String chainHeight,
+  ) {
+    return 'Hardware signing request expired before broadcast: txid=$txid, expiry height $expiryHeight, current chain height $chainHeight. Start the signing flow again so Vizor can build a fresh transaction.';
+  }
+
+  @override
+  String broadcastNoticeRawTransactionUnavailable(String txid, String detail) {
+    return 'Failed to get raw tx for $txid after local transaction creation: $detail';
+  }
+
+  @override
+  String broadcastNoticeResponseUnavailable(String txid, String detail) {
+    return 'Broadcast response was unavailable for txid=$txid ($detail). The transaction may already be on the network. Do not send again until sync or an explorer confirms whether this transaction was accepted.';
+  }
+
+  @override
+  String broadcastNoticeRetentionFailed(String detail) {
+    return 'Proposal input-lock retention also failed: $detail.';
+  }
+
+  @override
+  String get broadcastNoticeRetryingLocally =>
+      'It was stored locally and will retry automatically during sync until it is confirmed or expires.';
+
+  @override
+  String broadcastNoticeRouteUnavailable(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return 'Failed to open the broadcast route for transaction $index of $total; it was not stored: $detail';
+  }
+
+  @override
+  String broadcastNoticeStorageFailed(String detail) {
+    return 'A transaction may already be on the network, but local storage failed: $detail. Do not send again until sync or an explorer confirms the result.';
+  }
+
+  @override
+  String get broadcastNoticeStoredLocally =>
+      'The accepted-or-ambiguous transaction prefix was stored locally for recovery.';
+
+  @override
+  String broadcastNoticeTrackingFailed(String detail) {
+    return 'Local tracking also failed: $detail. Check an explorer before retrying this send.';
+  }
+
+  @override
+  String broadcastNoticeTransactionRejected(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return 'Transaction $index of $total was rejected and was not stored: $detail';
+  }
+
+  @override
+  String broadcastNoticeTransactionUnknown(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return 'Transaction $index of $total has an unknown broadcast result: $detail';
+  }
+
+  @override
   String get capsLockWarning => 'Caps Lock is on';
 
   @override

@@ -389,6 +389,7 @@ class _SwapActivityDetailSurfaceState
             txHash: result.txHash,
             broadcastStatus: result.status,
             broadcastMessage: result.message,
+            broadcastNotices: result.notices,
           );
     }
     if (!toastContext.mounted) return;

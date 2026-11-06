@@ -225,6 +225,7 @@ class PaymentLinkLedgerFundingService {
           txid: entry.txid ?? '',
           status: entry.status ?? '',
           message: entry.message,
+          notices: entry.notices,
           requiresAck: true,
         );
       } else {
@@ -254,6 +255,7 @@ class PaymentLinkLedgerFundingService {
         txids: result.txid,
         status: result.status,
         message: result.message,
+        notices: result.notices,
         fundingMetadataSaved: true,
       );
     } finally {

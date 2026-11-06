@@ -114,6 +114,7 @@ use crate::wallet::sync_engine::enhancement::private_queries_active;
 use crate::wallet::{confirmations_policy, payment_link_claim_confirmations_policy};
 
 mod gift_card_input;
+use super::broadcast_notice::BroadcastNotice;
 use super::migration::MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI;
 use super::migration_wallet_ops::{
     migration_locked_input_policy, select_spendable_orchard_v2_notes,
@@ -455,6 +456,9 @@ pub struct ExecuteProposalResult {
     pub broadcasted_count: u32,
     pub total_count: u32,
     pub message: Option<String>,
+    /// `message` as notices when it is [`broadcast_notice::english`] of them;
+    /// empty otherwise.
+    pub notices: Vec<BroadcastNotice>,
     /// Server rejection is distinct from a missing response, but is not finality.
     pub broadcast_failure_kind: Option<String>,
 }
@@ -5893,6 +5897,7 @@ fn retire_expired_denomination_run(
         broadcasted_count: 0,
         total_count: expired_count,
         message: Some(message),
+        notices: Vec::new(),
     }))
 }
 
@@ -5934,6 +5939,7 @@ fn denomination_expiry_scan_wait_result(txids: &str, total_count: u32) -> Create
             "Migration preparation reached its expiry height. Waiting for wallet sync to determine whether the preparation schedule must be rebuilt."
                 .to_string(),
         ),
+        notices: Vec::new(),
     }
 }
 
@@ -6005,6 +6011,7 @@ async fn broadcast_pending_denomination_stages(
             message: Some(
                 "Background migration stopped before denomination broadcast.".to_string(),
             ),
+            notices: Vec::new(),
         }));
     }
     let live_chain_tip_height = match live_chain_tip_height(lightwalletd_url).await {
@@ -6017,6 +6024,7 @@ async fn broadcast_pending_denomination_stages(
                 broadcasted_count: 0,
                 total_count,
                 message: Some(e),
+                notices: Vec::new(),
             }));
         }
     };
@@ -6044,6 +6052,7 @@ async fn broadcast_pending_denomination_stages(
             broadcasted_count: 0,
             total_count,
             message: Some(network_upgrade::MIGRATION_HOLD_MESSAGE.to_string()),
+            notices: Vec::new(),
         }));
     }
     let due = pending
@@ -6096,6 +6105,7 @@ async fn broadcast_pending_denomination_stages(
                     "Denomination split broadcast failed for {}: {e}",
                     stage.expected_txid_hex
                 )),
+                notices: Vec::new(),
             }));
         }
 
@@ -6114,6 +6124,7 @@ async fn broadcast_pending_denomination_stages(
                 broadcasted_count,
                 total_count,
                 message: Some(message),
+                notices: Vec::new(),
             }));
         }
 
@@ -6175,6 +6186,7 @@ async fn broadcast_pending_denomination_stages(
                 "{total_count} independent denomination split stages were created. Migration will continue after confirmation."
             )
         }),
+        notices: Vec::new(),
     }))
 }
 
@@ -6910,6 +6922,7 @@ struct CreatedBroadcastResult {
     broadcasted_count: u32,
     total_count: u32,
     message: Option<String>,
+    notices: Vec<BroadcastNotice>,
 }
 
 impl CreatedBroadcastResult {
@@ -6926,6 +6939,7 @@ impl CreatedBroadcastResult {
             broadcasted_count: self.broadcasted_count,
             total_count: self.total_count,
             message: self.message,
+            notices: self.notices,
             broadcast_failure_kind: failure_kind.map(str::to_owned),
         }
     }
@@ -6960,8 +6974,8 @@ async fn broadcast_created_transactions(
     let read_conn = match open_readonly_conn(db_path) {
         Ok(conn) => conn,
         Err(e) => {
-            let message =
-                format!("Failed to open DB for broadcast after local transaction creation: {e}");
+            let notice = BroadcastNotice::database_unavailable(e.to_string());
+            let message = notice.sentence();
             log::warn!("{log_label}: {message}");
             return CreatedBroadcastResult {
                 broadcast_failure_kind: None,
@@ -6970,6 +6984,7 @@ async fn broadcast_created_transactions(
                 broadcasted_count: 0,
                 total_count,
                 message: Some(message),
+                notices: vec![notice],
             };
         }
     };
@@ -6983,9 +6998,11 @@ async fn broadcast_created_transactions(
         ) {
             Ok(raw_tx) => raw_tx,
             Err(e) => {
-                let message = format!(
-                    "Failed to get raw tx for {txid} after local transaction creation: {e}"
+                let notice = BroadcastNotice::raw_transaction_unavailable(
+                    txid.to_string(),
+                    e.to_string(),
                 );
+                let message = notice.sentence();
                 log::warn!("{log_label}: {message}");
                 return CreatedBroadcastResult {
                     broadcast_failure_kind: None,
@@ -6998,6 +7015,7 @@ async fn broadcast_created_transactions(
                     broadcasted_count: broadcast_ok.len() as u32,
                     total_count,
                     message: Some(message),
+                    notices: vec![notice],
                 };
             }
         };
@@ -7008,12 +7026,13 @@ async fn broadcast_created_transactions(
                 log::info!("{log_label}: broadcast {txid} ({} bytes)", raw_tx.len());
             }
             Err(e) => {
-                let message = format!(
-                    "Broadcast failed after {}/{} txs sent ({}). Error: {e}",
-                    broadcast_ok.len(),
-                    txids.len(),
-                    broadcast_ok.join(",")
+                let notice = BroadcastNotice::broadcast_failed(
+                    broadcast_ok.len() as u32,
+                    total_count,
+                    broadcast_ok.join(","),
+                    e.clone(),
                 );
+                let message = notice.sentence();
                 log::warn!("{log_label}: {message}");
                 return CreatedBroadcastResult {
                     broadcast_failure_kind: Some(if e.starts_with("Broadcast rejected:") {
@@ -7030,6 +7049,7 @@ async fn broadcast_created_transactions(
                     broadcasted_count: broadcast_ok.len() as u32,
                     total_count,
                     message: Some(message),
+                    notices: vec![notice],
                 };
             }
         }
@@ -7042,6 +7062,7 @@ async fn broadcast_created_transactions(
         broadcasted_count: total_count,
         total_count,
         message: None,
+        notices: Vec::new(),
     }
 }
 

@@ -446,6 +446,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: _txid,
       status: 'broadcasted',
       broadcastedCount: 1,
@@ -495,6 +496,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: '$_txid,second-txid',
       status: 'broadcast_unknown',
       broadcastedCount: 0,
@@ -535,6 +537,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: '$_txid,second-txid',
       status: 'partial_broadcast',
       broadcastedCount: 1,
@@ -571,10 +574,73 @@ void main() {
     expect(find.textContaining('was not stored'), findsOneWidget);
   });
 
+  for (final (locale, sentence) in [
+    (const Locale('ko'), '전체 2건 중 2번째 거래가 거부되어 저장하지 않았어요: bad-txns-spent'),
+    (const Locale('zh'), '第 2 笔交易（共 2 笔）被拒绝，未保存：bad-txns-spent'),
+  ]) {
+    testWidgets('Keystone broadcast notices read in ${locale.languageCode}', (
+      tester,
+    ) async {
+      const english =
+          'Transaction 2 of 2 was rejected and was not stored: bad-txns-spent '
+          'The accepted-or-ambiguous transaction prefix was stored locally for '
+          'recovery.';
+      rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+        txids: '$_txid,second-txid',
+        status: 'partial_broadcast',
+        broadcastedCount: 1,
+        totalCount: 2,
+        message: english,
+        notices: [
+          BroadcastNotice(
+            kind: 'transaction_rejected',
+            index: 2,
+            total: 2,
+            detail: 'bad-txns-spent',
+          ),
+          BroadcastNotice(kind: 'stored_locally'),
+        ],
+      );
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(address: _texAddress, addressType: 'tex'),
+          keystone: KeystoneBroadcastArgs(
+            reviewArgs: _reviewArgs(address: _texAddress, addressType: 'tex'),
+            pcztWithProofs: const [
+              [1],
+              [2],
+            ],
+            pcztWithSignatures: const [
+              [3],
+              [4],
+            ],
+          ),
+          isHardware: true,
+          locale: locale,
+        ),
+      );
+      await tester.pump();
+      await _flushBroadcast(tester);
+
+      expect(find.textContaining('was rejected'), findsNothing);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Text &&
+              (widget.data ?? '').replaceAll('\u2060', '').contains(sentence),
+        ),
+        findsOneWidget,
+      );
+    });
+  }
+
   testWidgets('TEX broadcasts both validated steps in dependency order', (
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: '$_txid,$_secondTxid',
       status: 'broadcasted',
       broadcastedCount: 2,
@@ -845,6 +911,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: _txid,
       status: 'broadcast_unknown',
       broadcastedCount: 0,
@@ -954,6 +1021,7 @@ void main() {
         expect(_sendStatusTerminal(tester), isFalse);
         gate.complete(
           StoreAndBroadcastPcztsResult(
+            notices: const [],
             txids: addressType == 'tex' ? '$_txid,$_secondTxid' : _txid,
             status: 'broadcasted',
             broadcastedCount: payload.pcztWithProofs.length,
@@ -1046,6 +1114,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: _txid,
       status: 'broadcasted_storage_failed',
       broadcastedCount: 1,
@@ -1081,6 +1150,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: _txid,
       status: 'expired',
       broadcastedCount: 0,
@@ -1124,6 +1194,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: _txid,
       status: 'expired',
       broadcastedCount: 0,
@@ -1227,6 +1298,7 @@ ExecuteProposalResult _executeResult({
   String? broadcastFailureKind,
 }) {
   return ExecuteProposalResult(
+    notices: const [],
     txids: _txid,
     status: status,
     broadcastedCount: status == 'broadcasted' ? 1 : 0,
@@ -1243,6 +1315,7 @@ Widget _harness(
   bool isHardware = false,
   SendStatusBroadcastRunner? broadcastRunner,
   LedgerSignedOperationService? ledgerOperationService,
+  Locale? locale,
 }) {
   final router = GoRouter(
     initialLocation: '/send/status',
@@ -1280,6 +1353,8 @@ Widget _harness(
     ],
     child: MaterialApp.router(
       localizationsDelegates: appLocalizationsDelegates,
+      supportedLocales: appSupportedLocales(preview: true),
+      locale: locale,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

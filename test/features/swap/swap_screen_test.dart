@@ -9238,6 +9238,68 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a deposit broadcast with notices stores them and shows the English Rust wrote',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      const english =
+          'Broadcast failed after 0/1 txs sent (). Error: transport error';
+      final swapProvider = _FakeSwapProvider();
+      final depositSender = _FakeSwapDepositSender(
+        broadcastStatus: SwapDepositBroadcastStatus.pendingBroadcast,
+        broadcastMessage: english,
+        broadcastNotices: const [
+          rust_sync.BroadcastNotice(
+            kind: 'broadcast_failed',
+            index: 0,
+            total: 1,
+            txid: '',
+            detail: 'transport error',
+          ),
+        ],
+      );
+      final sessionStore = _FakeSwapPersistenceStore();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: swapProvider,
+          depositSender: depositSender,
+          sessionStore: sessionStore,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '1.5',
+      );
+      await _enterDestinationText(
+        tester,
+        '0x52908400098527886e0f7030069857d2e4169ee7',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_start_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+      await tester.pumpAndSettle();
+
+      final saved = sessionStore.savedIntents.single.broadcastNotice;
+      expect(saved, isA<SwapBroadcastMessage>());
+      expect(saved!.text(testL10n), english);
+      await _openSwapStatusDetails(tester, expand: true);
+      expect(find.text(english), findsWidgets);
+    },
+  );
+
   testWidgets('pending ZEC deposit broadcast switches to a fallback endpoint', (
     tester,
   ) async {

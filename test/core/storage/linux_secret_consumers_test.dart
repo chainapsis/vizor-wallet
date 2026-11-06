@@ -411,6 +411,7 @@ class _ConsumerRustFake implements RustLibApi {
         executeCalls++;
         return Future.value(
           const ExecuteProposalResult(
+            notices: [],
             txids: 'test-txid',
             status: 'broadcasted',
             broadcastedCount: 1,

@@ -12,6 +12,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../rust/api/sync.dart' show BroadcastNotice;
 import 'swap_activity_tracker.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
@@ -1255,6 +1256,7 @@ class SwapNotifier extends Notifier<SwapState> {
     required String txHash,
     String? broadcastStatus,
     String? broadcastMessage,
+    List<BroadcastNotice> broadcastNotices = const [],
   }) async {
     final selected = state.intents.swapIntentById(intentId);
     final normalizedTxHash = txHash.trim();
@@ -1262,6 +1264,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final broadcastNotice = _depositBroadcastNotice(
       status: broadcastStatus,
       message: broadcastMessage,
+      notices: broadcastNotices,
     );
     final submitProviderStatus = _shouldSubmitProviderDepositStatus(
       broadcastStatus,
@@ -1276,6 +1279,7 @@ class SwapNotifier extends Notifier<SwapState> {
         txHash: normalizedTxHash,
         broadcastStatus: broadcastStatus,
         broadcastMessage: broadcastMessage,
+        broadcastNotices: broadcastNotices,
         submitProviderStatus: submitProviderStatus,
       );
       return;
@@ -1285,6 +1289,7 @@ class SwapNotifier extends Notifier<SwapState> {
       normalizedTxHash,
       broadcastStatus: broadcastStatus,
       broadcastMessage: broadcastMessage,
+      broadcastNotices: broadcastNotices,
       submitProviderStatus: submitProviderStatus,
     );
     if (broadcastNotice == null) return;
@@ -1321,6 +1326,7 @@ class SwapNotifier extends Notifier<SwapState> {
         txHash: normalizedTxHash,
         broadcastStatus: broadcast.status,
         broadcastMessage: broadcast.message,
+        broadcastNotices: broadcast.notices,
       );
       return;
     }
@@ -1328,6 +1334,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final broadcastNotice = _depositBroadcastNotice(
       status: broadcast.status,
       message: broadcast.message,
+      notices: broadcast.notices,
     );
     final submitProviderStatus = _shouldSubmitProviderDepositStatus(
       broadcast.status,
@@ -1457,6 +1464,7 @@ class SwapNotifier extends Notifier<SwapState> {
     String txHash, {
     String? broadcastStatus,
     String? broadcastMessage,
+    List<BroadcastNotice> broadcastNotices = const [],
     bool submitProviderStatus = true,
   }) async {
     if (!_isAccountActive(selected.accountUuid)) {
@@ -1466,6 +1474,7 @@ class SwapNotifier extends Notifier<SwapState> {
         txHash: txHash,
         broadcastStatus: broadcastStatus,
         broadcastMessage: broadcastMessage,
+        broadcastNotices: broadcastNotices,
         submitProviderStatus: submitProviderStatus,
       );
       return;
@@ -1482,6 +1491,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final broadcastNotice = _depositBroadcastNotice(
       status: broadcastStatus,
       message: broadcastMessage,
+      notices: broadcastNotices,
     );
     final checkpointed = swapIntentWithDepositCheckpoint(
       selected,
@@ -1525,6 +1535,7 @@ class SwapNotifier extends Notifier<SwapState> {
           snapshot: snapshot,
           broadcastStatus: broadcastStatus,
           broadcastMessage: broadcastMessage,
+          broadcastNotices: broadcastNotices,
         );
         return;
       }
@@ -1558,6 +1569,7 @@ class SwapNotifier extends Notifier<SwapState> {
           txHash: txHash,
           broadcastStatus: broadcastStatus,
           broadcastMessage: broadcastMessage,
+          broadcastNotices: broadcastNotices,
           submitProviderStatus: false,
           statusError: message,
         );
@@ -1573,6 +1585,7 @@ class SwapNotifier extends Notifier<SwapState> {
     required String txHash,
     String? broadcastStatus,
     String? broadcastMessage,
+    List<BroadcastNotice> broadcastNotices = const [],
     bool submitProviderStatus = true,
     SwapMessage? statusError,
   }) async {
@@ -1585,6 +1598,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final broadcastNotice = _depositBroadcastNotice(
       status: broadcastStatus,
       message: broadcastMessage,
+      notices: broadcastNotices,
     );
     final checkpointed = swapIntentWithDepositCheckpoint(
       intent,
@@ -1635,6 +1649,7 @@ class SwapNotifier extends Notifier<SwapState> {
     required SwapIntentSnapshot snapshot,
     String? broadcastStatus,
     String? broadcastMessage,
+    List<BroadcastNotice> broadcastNotices = const [],
   }) async {
     final storedIntents = await ref
         .read(swapActivityTrackerProvider)
@@ -1645,6 +1660,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final broadcastNotice = _depositBroadcastNotice(
       status: broadcastStatus,
       message: broadcastMessage,
+      notices: broadcastNotices,
     );
     final updated = swapIntentWithDepositSnapshot(
       intent,
@@ -1701,6 +1717,7 @@ class SwapNotifier extends Notifier<SwapState> {
         txHash: broadcast.txHash,
         broadcastStatus: broadcast.status,
         broadcastMessage: broadcast.message,
+        broadcastNotices: broadcast.notices,
         submitProviderStatus: broadcast.isCertain,
       );
       return;
@@ -1708,6 +1725,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final broadcastNotice = _depositBroadcastNotice(
       status: broadcast.status,
       message: broadcast.message,
+      notices: broadcast.notices,
     );
     final intent = state.intents.swapIntentById(intentId);
     if (intent == null) {
@@ -2278,14 +2296,21 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   /// The notice for a deposit broadcast that did not cleanly succeed. Rust's
-  /// own detail wins and is shown as it is.
-  SwapMessage? _depositBroadcastNotice({String? status, String? message}) {
+  /// own detail wins: as its sentences when it has [notices], otherwise as
+  /// the text it wrote.
+  SwapMessage? _depositBroadcastNotice({
+    String? status,
+    String? message,
+    List<BroadcastNotice> notices = const [],
+  }) {
     final normalizedStatus = status?.trim();
     if (normalizedStatus == null ||
         normalizedStatus.isEmpty ||
         normalizedStatus == SwapDepositBroadcastStatus.broadcasted) {
       return null;
     }
+    final described = SwapBroadcastMessage.tryFrom(notices);
+    if (described != null) return described;
     final trimmedMessage = message?.trim();
     if (trimmedMessage != null && trimmedMessage.isNotEmpty) {
       return SwapLiteralMessage(trimmedMessage);

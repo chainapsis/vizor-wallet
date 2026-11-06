@@ -1689,6 +1689,111 @@ abstract class AppLocalizations {
   /// **'BIP39 Passphrase: {passphrase}'**
   String bip39PassphraseValue(String passphrase);
 
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. A software send stopped part way: {sent} of {total} transactions went out ({txids} lists their IDs). {detail} is the error from the network, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcast failed after {sent}/{total} txs sent ({txids}). Error: {detail}'**
+  String broadcastNoticeBroadcastFailed(
+    String sent,
+    String total,
+    String txids,
+    String detail,
+  );
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The network accepted the transaction but the wallet could not record it. {detail} is the storage error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcast succeeded (txid={txid}) but local storage failed. {detail}. The transaction is on the network; check an explorer to confirm, and do not attempt to send again until the next sync reconciles your balance.'**
+  String broadcastNoticeBroadcastStorageFailed(String txid, String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The wallet created the transaction but could not open its database to send it. {detail} is the database error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to open DB for broadcast after local transaction creation: {detail}'**
+  String broadcastNoticeDatabaseUnavailable(String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The device approval took so long that the transaction would expire; nothing was sent. {expiryHeight} and {chainHeight} are block heights.
+  ///
+  /// In en, this message translates to:
+  /// **'Hardware signing request expired before broadcast: txid={txid}, expiry height {expiryHeight}, current chain height {chainHeight}. Start the signing flow again so Vizor can build a fresh transaction.'**
+  String broadcastNoticeExpired(
+    String txid,
+    String expiryHeight,
+    String chainHeight,
+  );
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The wallet created the transaction but could not read it back to send it. {detail} is the database error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to get raw tx for {txid} after local transaction creation: {detail}'**
+  String broadcastNoticeRawTransactionUnavailable(String txid, String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The connection ended before the server answered. {detail} is the connection status, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcast response was unavailable for txid={txid} ({detail}). The transaction may already be on the network. Do not send again until sync or an explorer confirms whether this transaction was accepted.'**
+  String broadcastNoticeResponseUnavailable(String txid, String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Follows the storage failure sentence: the wallet also could not keep the spent funds reserved. {detail} is the error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Proposal input-lock retention also failed: {detail}.'**
+  String broadcastNoticeRetentionFailed(String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Follows the sentence about the unavailable response.
+  ///
+  /// In en, this message translates to:
+  /// **'It was stored locally and will retry automatically during sync until it is confirmed or expires.'**
+  String get broadcastNoticeRetryingLocally;
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Earlier transactions of the batch went out; transaction {index} of {total} could not be sent. {detail} is the network error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to open the broadcast route for transaction {index} of {total}; it was not stored: {detail}'**
+  String broadcastNoticeRouteUnavailable(
+    String index,
+    String total,
+    String detail,
+  );
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. May follow another sentence of the result. {detail} is the storage error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'A transaction may already be on the network, but local storage failed: {detail}. Do not send again until sync or an explorer confirms the result.'**
+  String broadcastNoticeStorageFailed(String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Follows a sentence about a transaction that failed or has an unknown result: the transactions that went out, or may have, were saved so sync can recover them.
+  ///
+  /// In en, this message translates to:
+  /// **'The accepted-or-ambiguous transaction prefix was stored locally for recovery.'**
+  String get broadcastNoticeStoredLocally;
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Follows the sentence about the unavailable response. {detail} is the storage error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Local tracking also failed: {detail}. Check an explorer before retrying this send.'**
+  String broadcastNoticeTrackingFailed(String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Earlier transactions of the batch went out; the server rejected transaction {index} of {total}. {detail} is the rejection, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction {index} of {total} was rejected and was not stored: {detail}'**
+  String broadcastNoticeTransactionRejected(
+    String index,
+    String total,
+    String detail,
+  );
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The connection ended while transaction {index} of {total} was being sent, so it may be on the network. {detail} is the connection error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction {index} of {total} has an unknown broadcast result: {detail}'**
+  String broadcastNoticeTransactionUnknown(
+    String index,
+    String total,
+    String detail,
+  );
+
   /// Tooltip on a password field warning that Caps Lock is on.
   ///
   /// In en, this message translates to:

@@ -974,6 +974,95 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String broadcastNoticeBroadcastFailed(
+    String sent,
+    String total,
+    String txids,
+    String detail,
+  ) {
+    return '거⁠래 $total⁠건 중 $sent⁠건⁠을 보⁠낸 뒤 전⁠송⁠에 실⁠패⁠했⁠어⁠요($txids). 오⁠류: $detail';
+  }
+
+  @override
+  String broadcastNoticeBroadcastStorageFailed(String txid, String detail) {
+    return '전⁠송⁠에 성⁠공⁠했⁠지⁠만(txid=$txid) 로⁠컬 저⁠장⁠에 실⁠패⁠했⁠어⁠요. $detail. 거⁠래⁠는 네⁠트⁠워⁠크⁠에 있⁠어⁠요. 블⁠록 탐⁠색⁠기⁠에⁠서 확⁠인⁠하⁠고, 다⁠음 동⁠기⁠화⁠로 잔⁠액⁠이 맞⁠춰⁠질 때⁠까⁠지 다⁠시 보⁠내⁠지 마⁠세⁠요.';
+  }
+
+  @override
+  String broadcastNoticeDatabaseUnavailable(String detail) {
+    return '로⁠컬⁠에⁠서 거⁠래⁠를 만⁠든 뒤 전⁠송⁠을 위⁠해 데⁠이⁠터⁠베⁠이⁠스⁠를 열⁠지 못⁠했⁠어⁠요: $detail';
+  }
+
+  @override
+  String broadcastNoticeExpired(
+    String txid,
+    String expiryHeight,
+    String chainHeight,
+  ) {
+    return '하⁠드⁠웨⁠어 서⁠명 요⁠청⁠이 전⁠송 전⁠에 만⁠료⁠됐⁠어⁠요: txid=$txid, 만⁠료 블⁠록 높⁠이 $expiryHeight, 현⁠재 블⁠록 높⁠이 $chainHeight. Vizor⁠가 새 거⁠래⁠를 만⁠들 수 있⁠도⁠록 서⁠명⁠을 다⁠시 시⁠작⁠하⁠세⁠요.';
+  }
+
+  @override
+  String broadcastNoticeRawTransactionUnavailable(String txid, String detail) {
+    return '로⁠컬⁠에⁠서 거⁠래⁠를 만⁠든 뒤 $txid⁠의 원⁠본 거⁠래⁠를 읽⁠지 못⁠했⁠어⁠요: $detail';
+  }
+
+  @override
+  String broadcastNoticeResponseUnavailable(String txid, String detail) {
+    return 'txid=$txid⁠의 전⁠송 응⁠답⁠을 받⁠지 못⁠했⁠어⁠요($detail). 거⁠래⁠가 이⁠미 네⁠트⁠워⁠크⁠에 있⁠을 수 있⁠어⁠요. 동⁠기⁠화⁠나 블⁠록 탐⁠색⁠기⁠에⁠서 이 거⁠래⁠가 수⁠락⁠됐⁠는⁠지 확⁠인⁠하⁠기 전⁠에⁠는 다⁠시 보⁠내⁠지 마⁠세⁠요.';
+  }
+
+  @override
+  String broadcastNoticeRetentionFailed(String detail) {
+    return '보⁠낸 자⁠금⁠의 잠⁠금 유⁠지⁠에⁠도 실⁠패⁠했⁠어⁠요: $detail.';
+  }
+
+  @override
+  String get broadcastNoticeRetryingLocally =>
+      '로⁠컬⁠에 저⁠장⁠했⁠고, 확⁠인⁠되⁠거⁠나 만⁠료⁠될 때⁠까⁠지 동⁠기⁠화 중⁠에 자⁠동⁠으⁠로 다⁠시 시⁠도⁠해⁠요.';
+
+  @override
+  String broadcastNoticeRouteUnavailable(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return '전⁠체 $total⁠건 중 $index⁠번⁠째 거⁠래⁠의 전⁠송 경⁠로⁠를 열⁠지 못⁠해 저⁠장⁠하⁠지 않⁠았⁠어⁠요: $detail';
+  }
+
+  @override
+  String broadcastNoticeStorageFailed(String detail) {
+    return '거⁠래⁠가 이⁠미 네⁠트⁠워⁠크⁠에 있⁠을 수 있⁠지⁠만 로⁠컬 저⁠장⁠에 실⁠패⁠했⁠어⁠요: $detail. 동⁠기⁠화⁠나 블⁠록 탐⁠색⁠기⁠에⁠서 결⁠과⁠를 확⁠인⁠하⁠기 전⁠에⁠는 다⁠시 보⁠내⁠지 마⁠세⁠요.';
+  }
+
+  @override
+  String get broadcastNoticeStoredLocally =>
+      '전⁠송⁠됐⁠거⁠나 전⁠송⁠됐⁠을 수 있⁠는 거⁠래⁠는 복⁠구⁠를 위⁠해 로⁠컬⁠에 저⁠장⁠했⁠어⁠요.';
+
+  @override
+  String broadcastNoticeTrackingFailed(String detail) {
+    return '로⁠컬 추⁠적⁠에⁠도 실⁠패⁠했⁠어⁠요: $detail. 이 송⁠금⁠을 다⁠시 시⁠도⁠하⁠기 전⁠에 블⁠록 탐⁠색⁠기⁠를 확⁠인⁠하⁠세⁠요.';
+  }
+
+  @override
+  String broadcastNoticeTransactionRejected(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return '전⁠체 $total⁠건 중 $index⁠번⁠째 거⁠래⁠가 거⁠부⁠되⁠어 저⁠장⁠하⁠지 않⁠았⁠어⁠요: $detail';
+  }
+
+  @override
+  String broadcastNoticeTransactionUnknown(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return '전⁠체 $total⁠건 중 $index⁠번⁠째 거⁠래⁠의 전⁠송 결⁠과⁠를 알 수 없⁠어⁠요: $detail';
+  }
+
+  @override
   String get capsLockWarning => 'Caps Lock⁠이 켜⁠져 있⁠어⁠요';
 
   @override

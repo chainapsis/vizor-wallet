@@ -419,6 +419,7 @@ void main() {
     expect(api.discards, isEmpty);
     api.pendingBroadcast!.complete(
       const StoreAndBroadcastPcztsResult(
+        notices: [],
         broadcastedCount: 1,
         totalCount: 1,
         txids: 'ab',
@@ -691,6 +692,7 @@ class _Api extends RustLibApi {
     broadcasts++;
     return pendingBroadcast?.future ??
         const StoreAndBroadcastPcztsResult(
+          notices: [],
           broadcastedCount: 1,
           totalCount: 1,
           txids: 'ab',

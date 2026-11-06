@@ -20,6 +20,7 @@ import '../../../core/layout/app_form_factor.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/transparent_ledger_errors.dart';
 import '../../../core/zcash/wallet_error_code.dart';
 import '../../../core/zcash/zip321_payment_request.dart'
@@ -689,31 +690,38 @@ String _pcztBroadcastStatusMessage(
   AppLocalizations l10n,
   rust_sync.StoreAndBroadcastPcztsResult result,
 ) {
+  final detail = broadcastResultText(
+    l10n,
+    notices: result.notices,
+    message: result.message,
+  );
   if (result.status == 'broadcast_unknown') {
-    return result.message ?? l10n.sendBroadcastFirstUnknown;
+    return detail ?? l10n.sendBroadcastFirstUnknown;
   }
   if (result.status == 'partial_broadcast') {
-    return result.message ?? l10n.sendBroadcastDependentIncomplete;
+    return detail ?? l10n.sendBroadcastDependentIncomplete;
   }
   if (result.status == 'broadcasted_storage_failed') {
-    return result.message ?? l10n.sendBroadcastTrackingFailed;
+    return detail ?? l10n.sendBroadcastTrackingFailed;
   }
-  return result.message ?? l10n.sendBroadcastIncomplete;
+  return detail ?? l10n.sendBroadcastIncomplete;
 }
 
 String _ledgerBroadcastStatusMessage(
   AppLocalizations l10n, {
   required String status,
   required String? message,
+  required List<rust_sync.BroadcastNotice> notices,
 }) {
+  final detail = broadcastResultText(l10n, notices: notices, message: message);
   if (status == 'broadcast_unknown') {
-    return message ?? l10n.sendBroadcastLedgerFirstUnknown;
+    return detail ?? l10n.sendBroadcastLedgerFirstUnknown;
   }
   if (status == 'partial_broadcast') {
-    return message ?? l10n.sendBroadcastDependentIncomplete;
+    return detail ?? l10n.sendBroadcastDependentIncomplete;
   }
   if (status == 'broadcasted_storage_failed') {
-    return message ?? l10n.sendBroadcastLedgerNotStored;
+    return detail ?? l10n.sendBroadcastLedgerNotStored;
   }
   final rawMessage = message?.toLowerCase() ?? '';
   if (rawMessage.contains('broadcast rejected')) {
@@ -963,6 +971,7 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
                 l10n,
                 status: result.status,
                 message: result.message,
+                notices: result.notices,
               );
         broadcastMessageForFallback = result.message;
       } else {

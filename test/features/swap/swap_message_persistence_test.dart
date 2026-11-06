@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/swap/models/swap_intent_presentation_m
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_status_presentation.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' show BroadcastNotice;
 
 import '../../support/test_l10n.dart';
 
@@ -249,6 +250,102 @@ void main() {
       expect(_plain(restored.broadcastNotice!.text(_ko)), _broadcastUnknownKo);
     },
   );
+
+  test(
+    'a broadcast result stores its notices beside the English Rust wrote',
+    () async {
+      const english =
+          'Transaction 2 of 2 has an unknown broadcast result: deadline '
+          'exceeded The accepted-or-ambiguous transaction prefix was stored '
+          'locally for recovery.';
+      final notice = SwapBroadcastMessage.tryFrom(const [
+        BroadcastNotice(
+          kind: 'transaction_unknown',
+          index: 2,
+          total: 2,
+          detail: 'deadline exceeded',
+        ),
+        BroadcastNotice(kind: 'stored_locally'),
+      ])!;
+      final intent = SwapIntent(
+        id: 't1notice',
+        pair: 'ZEC -> USDC',
+        sellAmount: '1.5 ZEC',
+        receiveEstimate: '105 USDC',
+        provider: 'NEAR Intents',
+        status: SwapIntentStatus.processing,
+        nextAction: SwapNextAction.processing.name,
+        direction: SwapDirection.zecToExternal,
+        depositAddress: 't1notice',
+        broadcastNotice: notice,
+        broadcastStatus: 'partial_broadcast',
+      );
+      await store.saveRecords(
+        accountUuid: 'account-1',
+        records: [SwapIntentRecord.fromIntent(intent)],
+      );
+
+      final raw = jsonDecode(
+        (await secureStore.readString(
+          swapActivityStorageKeyForTest('account-1'),
+        ))!,
+      );
+      final json = (raw['records'] as List).single as Map<String, dynamic>;
+      expect(json['broadcastNotice'], english);
+      expect(json['broadcastNoticeCode'], {
+        'type': 'broadcast',
+        'notices': [
+          {
+            'kind': 'transaction_unknown',
+            'index': 2,
+            'total': 2,
+            'detail': 'deadline exceeded',
+          },
+          {'kind': 'stored_locally'},
+        ],
+      });
+
+      final restored = await loadSingle();
+      expect(restored.broadcastNotice, notice);
+      expect(restored.broadcastNotice!.text(testL10n), english);
+      expect(
+        _plain(restored.broadcastNotice!.text(_ko)),
+        '전체 2건 중 2번째 거래의 전송 결과를 알 수 없어요: deadline exceeded '
+        '전송됐거나 전송됐을 수 있는 거래는 복구를 위해 로컬에 저장했어요.',
+      );
+    },
+  );
+
+  test('broadcast notices from a newer build fall back to the text', () async {
+    await secureStore.writeString(
+      swapActivityStorageKeyForTest('account-1'),
+      jsonEncode([
+        {
+          'id': 't1future',
+          'provider': 'NEAR Intents',
+          'pair': 'ZEC -> USDC',
+          'sellAmount': '1.5 ZEC',
+          'receiveEstimate': '105 USDC',
+          'status': 'processing',
+          'nextAction': 'processing',
+          'broadcastNotice': 'A sentence a newer build wrote.',
+          'broadcastNoticeCode': {
+            'type': 'broadcast',
+            'notices': [
+              {'kind': 'from_the_future'},
+            ],
+          },
+        },
+      ]),
+    );
+
+    final intent = await loadSingle();
+
+    expect(
+      intent.broadcastNotice,
+      const SwapLiteralMessage('A sentence a newer build wrote.'),
+    );
+  });
 
   test('a stored code wins over its English text', () async {
     await secureStore.writeString(

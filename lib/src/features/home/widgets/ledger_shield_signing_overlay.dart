@@ -9,6 +9,7 @@ import '../../../../main.dart' show log;
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -175,6 +176,7 @@ class _LedgerShieldSigningOverlayState
             _error = _broadcastStatusMessage(
               status: existingOperation.status ?? '',
               message: existingOperation.message,
+              notices: existingOperation.notices,
             );
           });
           return;
@@ -449,6 +451,7 @@ class _LedgerShieldSigningOverlayState
           _error = _broadcastStatusMessage(
             status: result.status,
             message: result.message,
+            notices: result.notices,
           );
         });
         return false;
@@ -606,16 +609,22 @@ class _LedgerShieldSigningOverlayState
   String _broadcastStatusMessage({
     required String status,
     required String? message,
+    required List<rust_sync.BroadcastNotice> notices,
   }) {
     final upgradeHold = networkUpgradeHoldMessage(context.l10n, message ?? '');
     if (upgradeHold != null) return upgradeHold;
+    final detail = broadcastResultText(
+      context.l10n,
+      notices: notices,
+      message: message,
+    );
     if (status == 'broadcast_unknown') {
-      return message ?? context.l10n.homeLedgerBroadcastUnknown;
+      return detail ?? context.l10n.homeLedgerBroadcastUnknown;
     }
     if (status == 'broadcasted_storage_failed') {
-      return message ?? context.l10n.homeLedgerBroadcastNotStored;
+      return detail ?? context.l10n.homeLedgerBroadcastNotStored;
     }
-    return message ?? context.l10n.homeShieldStatusUncertain;
+    return detail ?? context.l10n.homeShieldStatusUncertain;
   }
 
   Future<LedgerSignedOperationMetadata?> _findExistingShieldOperation(

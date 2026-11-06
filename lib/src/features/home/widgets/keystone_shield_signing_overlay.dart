@@ -11,6 +11,7 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -339,13 +340,18 @@ class _KeystoneShieldSigningOverlayState
       result.message ?? '',
     );
     if (upgradeHold != null) return upgradeHold;
+    final detail = broadcastResultText(
+      context.l10n,
+      notices: result.notices,
+      message: result.message,
+    );
     if (result.status == 'broadcast_unknown') {
-      return result.message ?? context.l10n.homeShieldBroadcastUnknown;
+      return detail ?? context.l10n.homeShieldBroadcastUnknown;
     }
     if (result.status == 'broadcasted_storage_failed') {
-      return result.message ?? context.l10n.homeShieldBroadcastNotStored;
+      return detail ?? context.l10n.homeShieldBroadcastNotStored;
     }
-    return result.message ?? context.l10n.homeShieldStatusUncertain;
+    return detail ?? context.l10n.homeShieldStatusUncertain;
   }
 
   String? _postBroadcastErrorMessage(Object error) {

@@ -1271,6 +1271,164 @@
       }
     }
   },
+  "broadcastNoticeBroadcastFailed": "Broadcast failed after {sent}/{total} txs sent ({txids}). Error: {detail}",
+  "@broadcastNoticeBroadcastFailed": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. A software send stopped part way: {sent} of {total} transactions went out ({txids} lists their IDs). {detail} is the error from the network, shown in English.",
+    "placeholders": {
+      "sent": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      },
+      "txids": {
+        "type": "String"
+      },
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "broadcastNoticeBroadcastStorageFailed": "Broadcast succeeded (txid={txid}) but local storage failed. {detail}. The transaction is on the network; check an explorer to confirm, and do not attempt to send again until the next sync reconciles your balance.",
+  "@broadcastNoticeBroadcastStorageFailed": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The network accepted the transaction but the wallet could not record it. {detail} is the storage error, shown in English.",
+    "placeholders": {
+      "txid": {
+        "type": "String"
+      },
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "broadcastNoticeDatabaseUnavailable": "Failed to open DB for broadcast after local transaction creation: {detail}",
+  "@broadcastNoticeDatabaseUnavailable": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The wallet created the transaction but could not open its database to send it. {detail} is the database error, shown in English.",
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "broadcastNoticeExpired": "Hardware signing request expired before broadcast: txid={txid}, expiry height {expiryHeight}, current chain height {chainHeight}. Start the signing flow again so Vizor can build a fresh transaction.",
+  "@broadcastNoticeExpired": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The device approval took so long that the transaction would expire; nothing was sent. {expiryHeight} and {chainHeight} are block heights.",
+    "placeholders": {
+      "txid": {
+        "type": "String"
+      },
+      "expiryHeight": {
+        "type": "String"
+      },
+      "chainHeight": {
+        "type": "String"
+      }
+    }
+  },
+  "broadcastNoticeRawTransactionUnavailable": "Failed to get raw tx for {txid} after local transaction creation: {detail}",
+  "@broadcastNoticeRawTransactionUnavailable": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The wallet created the transaction but could not read it back to send it. {detail} is the database error, shown in English.",
+    "placeholders": {
+      "txid": {
+        "type": "String"
+      },
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "broadcastNoticeResponseUnavailable": "Broadcast response was unavailable for txid={txid} ({detail}). The transaction may already be on the network. Do not send again until sync or an explorer confirms whether this transaction was accepted.",
+  "@broadcastNoticeResponseUnavailable": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The connection ended before the server answered. {detail} is the connection status, shown in English.",
+    "placeholders": {
+      "txid": {
+        "type": "String"
+      },
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "broadcastNoticeRetentionFailed": "Proposal input-lock retention also failed: {detail}.",
+  "@broadcastNoticeRetentionFailed": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Follows the storage failure sentence: the wallet also could not keep the spent funds reserved. {detail} is the error, shown in English.",
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "broadcastNoticeRetryingLocally": "It was stored locally and will retry automatically during sync until it is confirmed or expires.",
+  "@broadcastNoticeRetryingLocally": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Follows the sentence about the unavailable response."
+  },
+  "broadcastNoticeRouteUnavailable": "Failed to open the broadcast route for transaction {index} of {total}; it was not stored: {detail}",
+  "@broadcastNoticeRouteUnavailable": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Earlier transactions of the batch went out; transaction {index} of {total} could not be sent. {detail} is the network error, shown in English.",
+    "placeholders": {
+      "index": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      },
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "broadcastNoticeStorageFailed": "A transaction may already be on the network, but local storage failed: {detail}. Do not send again until sync or an explorer confirms the result.",
+  "@broadcastNoticeStorageFailed": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. May follow another sentence of the result. {detail} is the storage error, shown in English.",
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "broadcastNoticeStoredLocally": "The accepted-or-ambiguous transaction prefix was stored locally for recovery.",
+  "@broadcastNoticeStoredLocally": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Follows a sentence about a transaction that failed or has an unknown result: the transactions that went out, or may have, were saved so sync can recover them."
+  },
+  "broadcastNoticeTrackingFailed": "Local tracking also failed: {detail}. Check an explorer before retrying this send.",
+  "@broadcastNoticeTrackingFailed": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Follows the sentence about the unavailable response. {detail} is the storage error, shown in English.",
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "broadcastNoticeTransactionRejected": "Transaction {index} of {total} was rejected and was not stored: {detail}",
+  "@broadcastNoticeTransactionRejected": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Earlier transactions of the batch went out; the server rejected transaction {index} of {total}. {detail} is the rejection, shown in English.",
+    "placeholders": {
+      "index": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      },
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "broadcastNoticeTransactionUnknown": "Transaction {index} of {total} has an unknown broadcast result: {detail}",
+  "@broadcastNoticeTransactionUnknown": {
+    "description": "[security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The connection ended while transaction {index} of {total} was being sent, so it may be on the network. {detail} is the connection error, shown in English.",
+    "placeholders": {
+      "index": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      },
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
   "capsLockWarning": "Caps Lock is on",
   "@capsLockWarning": {
     "description": "Tooltip on a password field warning that Caps Lock is on."

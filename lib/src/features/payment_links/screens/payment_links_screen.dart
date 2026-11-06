@@ -25,6 +25,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../core/zcash/block_spacing.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -2063,7 +2064,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     }
     showAppToast(
       context,
-      result.message ??
+      broadcastResultText(
+            context.l10n,
+            notices: result.notices,
+            message: result.message,
+          ) ??
           (result.status == 'broadcast_unknown'
               ? context.l10n.paymentLinkFundingStillVerifying
               : context.l10n.paymentLinkFundingStorageNeedsSync),

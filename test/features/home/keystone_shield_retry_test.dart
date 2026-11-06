@@ -302,6 +302,7 @@ class _ShieldApi extends RustLibApi {
     broadcasts.add(List.of(pcztWithSignatures.single));
     if (refusals.isNotEmpty) throw refusals.removeAt(0);
     return const StoreAndBroadcastPcztsResult(
+      notices: [],
       broadcastedCount: 1,
       totalCount: 1,
       txids: 'ab',

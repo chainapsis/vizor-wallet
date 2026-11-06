@@ -1,8 +1,10 @@
 import 'dart:ui' show Locale;
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show listEquals, visibleForTesting;
 
 import '../../../core/l10n/l10n.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
+import '../../../rust/api/sync.dart' show BroadcastNotice;
 
 // Enum names below are written into persisted swap records
 // (`statusErrorCode`, `broadcastNoticeCode`). Renaming one needs a decode
@@ -131,6 +133,35 @@ final class SwapNotice extends SwapMessage {
   String toString() => 'SwapNotice(${kind.name})';
 }
 
+/// A deposit broadcast result as Rust's sentences (`BroadcastNotice`). Its
+/// English is the text Rust wrote.
+final class SwapBroadcastMessage extends SwapMessage {
+  /// Null when a notice has a kind this build does not know; keep Rust's
+  /// text as a [SwapLiteralMessage] then.
+  static SwapBroadcastMessage? tryFrom(List<BroadcastNotice> notices) {
+    if (broadcastNoticeText(_englishL10n, notices) == null) return null;
+    return SwapBroadcastMessage._(List.unmodifiable(notices));
+  }
+
+  const SwapBroadcastMessage._(this.notices);
+
+  final List<BroadcastNotice> notices;
+
+  @override
+  String text(AppLocalizations l10n) => broadcastNoticeText(l10n, notices)!;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SwapBroadcastMessage && listEquals(other.notices, notices);
+
+  @override
+  int get hashCode => Object.hashAll(notices);
+
+  @override
+  String toString() =>
+      'SwapBroadcastMessage(${notices.map((n) => n.kind).join(', ')})';
+}
+
 /// Text shown as it is: Rust and SDK errors and stored text that no code describes.
 final class SwapLiteralMessage extends SwapMessage {
   const SwapLiteralMessage(this.value);
@@ -225,6 +256,10 @@ Map<String, Object?>? swapMessageCodeToJson(SwapMessage? message) {
       'surface': surface.name,
     },
     SwapNotice(:final kind) => {'type': 'notice', 'kind': kind.name},
+    SwapBroadcastMessage(:final notices) => {
+      'type': 'broadcast',
+      'notices': broadcastNoticesToJson(notices),
+    },
     SwapLiteralMessage() || null => null,
   };
 }
@@ -270,6 +305,9 @@ SwapMessage? _swapMessageFromCode(Object? code) {
     case 'notice':
       final kind = _enumByName(SwapNoticeKind.values, code['kind']);
       return kind == null ? null : SwapNotice(kind);
+    case 'broadcast':
+      final notices = broadcastNoticesFromJson(code['notices']);
+      return notices == null ? null : SwapBroadcastMessage.tryFrom(notices);
   }
   return null;
 }

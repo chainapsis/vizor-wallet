@@ -504,6 +504,7 @@ class _SwapLedgerSigningOverlayState
           txHash: result.txid,
           status: result.status,
           message: result.message,
+          notices: result.notices,
         ),
       );
     } catch (error) {
@@ -525,6 +526,7 @@ class _SwapLedgerSigningOverlayState
       txid: txid,
       status: status,
       message: operation.message,
+      notices: operation.notices,
       requiresAck: true,
     );
   }

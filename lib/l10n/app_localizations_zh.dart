@@ -947,6 +947,93 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String broadcastNoticeBroadcastFailed(
+    String sent,
+    String total,
+    String txids,
+    String detail,
+  ) {
+    return '已发送 $sent/$total 笔交易后广播失败（$txids）。错误：$detail';
+  }
+
+  @override
+  String broadcastNoticeBroadcastStorageFailed(String txid, String detail) {
+    return '广播成功（txid=$txid），但本地保存失败。$detail。交易已在网络上；请在区块浏览器中确认，在下次同步核对余额之前，请勿再次发送。';
+  }
+
+  @override
+  String broadcastNoticeDatabaseUnavailable(String detail) {
+    return '在本地创建交易后，无法打开数据库进行广播：$detail';
+  }
+
+  @override
+  String broadcastNoticeExpired(
+    String txid,
+    String expiryHeight,
+    String chainHeight,
+  ) {
+    return '硬件签名请求在广播前已过期：txid=$txid，过期区块高度 $expiryHeight，当前区块高度 $chainHeight。请重新开始签名，以便 Vizor 构建新的交易。';
+  }
+
+  @override
+  String broadcastNoticeRawTransactionUnavailable(String txid, String detail) {
+    return '在本地创建交易后，无法读取 $txid 的原始交易：$detail';
+  }
+
+  @override
+  String broadcastNoticeResponseUnavailable(String txid, String detail) {
+    return '未能获取 txid=$txid 的广播响应（$detail）。交易可能已在网络上。在同步或区块浏览器确认此交易是否被接受之前，请勿再次发送。';
+  }
+
+  @override
+  String broadcastNoticeRetentionFailed(String detail) {
+    return '保留已用资金的锁定也失败了：$detail。';
+  }
+
+  @override
+  String get broadcastNoticeRetryingLocally => '已保存在本地，同步期间会自动重试，直至确认或过期。';
+
+  @override
+  String broadcastNoticeRouteUnavailable(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return '无法为第 $index 笔交易（共 $total 笔）打开广播通道，未保存：$detail';
+  }
+
+  @override
+  String broadcastNoticeStorageFailed(String detail) {
+    return '交易可能已在网络上，但本地保存失败：$detail。在同步或区块浏览器确认结果之前，请勿再次发送。';
+  }
+
+  @override
+  String get broadcastNoticeStoredLocally => '已发送或可能已发送的交易已保存在本地，以便恢复。';
+
+  @override
+  String broadcastNoticeTrackingFailed(String detail) {
+    return '本地追踪也失败了：$detail。重试此发送前，请先查看区块浏览器。';
+  }
+
+  @override
+  String broadcastNoticeTransactionRejected(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return '第 $index 笔交易（共 $total 笔）被拒绝，未保存：$detail';
+  }
+
+  @override
+  String broadcastNoticeTransactionUnknown(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return '第 $index 笔交易（共 $total 笔）的广播结果未知：$detail';
+  }
+
+  @override
   String get capsLockWarning => '大写锁定已开启';
 
   @override

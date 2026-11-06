@@ -279,6 +279,7 @@ class _ProposalRustApi extends Fake implements RustLibApi {
   String status = 'broadcasted';
 
   ExecuteProposalResult get _executed => ExecuteProposalResult(
+    notices: const [],
     txids: 'aa' * 32,
     status: status,
     broadcastedCount: status == 'broadcasted' ? 1 : 0,
@@ -321,6 +322,7 @@ class _ProposalRustApi extends Fake implements RustLibApi {
     String? spendParamsPath,
     String? outputParamsPath,
   }) async => StoreAndBroadcastPcztsResult(
+    notices: const [],
     txids: 'aa' * 32,
     status: status,
     broadcastedCount: status == 'broadcasted' ? 1 : 0,
