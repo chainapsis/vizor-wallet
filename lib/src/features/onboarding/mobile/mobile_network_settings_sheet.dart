@@ -196,9 +196,7 @@ class _MobileNetworkSettingsSheetState
       _finishWithError(OnboardingSubmitError.text(error.message));
     } on RpcEndpointSaveException {
       _finishWithError(
-        OnboardingSubmitError.localized(
-          (l10n) => l10n.onboardingNetworkSaveFailed,
-        ),
+        OnboardingSubmitError.localized((l10n) => l10n.endpointSaveFailed),
       );
     } catch (_) {
       _finishWithError(
@@ -226,9 +224,7 @@ class _MobileNetworkSettingsSheetState
       widget.onUpdated?.call();
     } catch (_) {
       _finishWithError(
-        OnboardingSubmitError.localized(
-          (l10n) => l10n.onboardingNetworkSaveFailed,
-        ),
+        OnboardingSubmitError.localized((l10n) => l10n.endpointSaveFailed),
       );
     }
   }
@@ -258,8 +254,10 @@ class _MobileNetworkSettingsSheetState
     final effective = automatic ? ref.watch(rpcEndpointFailoverProvider) : null;
     final currentLabel = automatic
         ? effective!.automaticReady
-              ? 'Automatic · ${effective.current.hostPort}'
-              : 'Automatic'
+              ? context.l10n.endpointAutomaticWithHost(
+                  effective.current.hostPort,
+                )
+              : context.l10n.endpointAutomatic
         : current.hostPort;
     final changingPrivateQueries =
         ref.watch(enhancePirTransitionProvider) ==
@@ -377,7 +375,7 @@ class MobileNetworkSettingsContent extends StatelessWidget {
                     context.l10n.endpointCurrent(
                       currentEndpointLabel ??
                           (isAutomaticRpcEndpointConfig(current)
-                              ? 'Automatic'
+                              ? context.l10n.endpointAutomatic
                               : current.hostPort),
                     ),
                     style: AppTypography.bodySmall.copyWith(
@@ -391,7 +389,7 @@ class MobileNetworkSettingsContent extends StatelessWidget {
                       key: const ValueKey('welcome_endpoint_automatic'),
                       variant: AppButtonVariant.secondary,
                       onPressed: onUseAutomatic,
-                      child: const Text('Use automatic selection'),
+                      child: Text(context.l10n.endpointUseAutomatic),
                     ),
                   ],
                   const SizedBox(height: AppSpacing.sm),

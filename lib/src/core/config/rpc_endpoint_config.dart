@@ -77,7 +77,8 @@ class RpcEndpointPreset {
 
   bool get isAutomatic => id == kDefaultRpcEndpointPresetId;
 
-  String get displayLabel => isAutomatic ? label : hostPort;
+  String displayLabel(AppLocalizations l10n) =>
+      isAutomatic ? l10n.endpointAutomatic : hostPort;
 }
 
 // The default ID stores automatic selection intent. Its URL remains a local
@@ -86,7 +87,7 @@ final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
   RpcEndpointPreset(
     id: kDefaultRpcEndpointPresetId,
     region: RpcEndpointRegion.standard,
-    label: 'Automatic',
+    label: 'Automatic', // l10n-ignore: displayLabel shows endpointAutomatic
     url: ZcashNetwork.mainnet.lightwalletdUrl,
     isDefault: true,
   ),

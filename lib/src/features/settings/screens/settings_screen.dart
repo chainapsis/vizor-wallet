@@ -228,7 +228,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final showLanguage = languages.length > 1;
     final endpoint = ref.watch(rpcEndpointProvider);
     final endpointLabel = isAutomaticRpcEndpointConfig(endpoint)
-        ? 'Automatic'
+        ? context.l10n.endpointAutomatic
         : endpoint.hostPort;
     final explorerLabel = explorerSettingsLabel(
       context.l10n,

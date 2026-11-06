@@ -56,7 +56,7 @@ class MobileSettingsScreen extends ConsumerWidget {
     final account = ref.watch(accountProvider).value?.activeAccount;
     final endpointConfig = ref.watch(rpcEndpointProvider);
     final endpoint = isAutomaticRpcEndpointConfig(endpointConfig)
-        ? 'Automatic'
+        ? context.l10n.endpointAutomatic
         : endpointConfig.hostPort;
     final explorer = explorerSettingsLabel(
       context.l10n,

@@ -595,8 +595,8 @@ class _MobileCurrentEndpointText extends ConsumerWidget {
     final suffix = latency?.label(context.l10n) ?? '';
     final hostLabel = automatic
         ? effective.automaticReady
-              ? 'Automatic · ${selected.hostPort}'
-              : 'Automatic · Selecting...'
+              ? context.l10n.endpointAutomaticWithHost(selected.hostPort)
+              : context.l10n.endpointAutomaticSelecting
         : selected.hostPort;
 
     return Text.rich(
@@ -658,7 +658,7 @@ class _PresetCard extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: [preset.displayLabel, ?detailLabel].join(', '),
+      label: [preset.displayLabel(context.l10n), ?detailLabel].join(', '),
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -712,7 +712,7 @@ class _PresetCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        preset.displayLabel,
+                        preset.displayLabel(context.l10n),
                         overflow: TextOverflow.ellipsis,
                         style: titleStyle,
                       ),

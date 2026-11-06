@@ -92,7 +92,8 @@ class _KeystoneWalletBirthdayScreenState
       final metadata = await ref
           .read(rpcEndpointFailoverProvider.notifier)
           .runWithEndpointFallback(
-            operation: 'import birthday metadata',
+            operation:
+                'import birthday metadata', // l10n-ignore: operation label
             action: (endpoint) {
               if (!mounted) {
                 throw StateError('Birthday metadata load cancelled.');
@@ -135,7 +136,8 @@ class _KeystoneWalletBirthdayScreenState
             runWithEndpoint: (action) => ref
                 .read(rpcEndpointFailoverProvider.notifier)
                 .runWithEndpointFallback(
-                  operation: 'import birthday estimate',
+                  operation:
+                      'import birthday estimate', // l10n-ignore: operation label
                   action: action,
                 ),
           );

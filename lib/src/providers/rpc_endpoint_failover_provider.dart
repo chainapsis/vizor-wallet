@@ -191,7 +191,7 @@ class _InvalidAutomaticTipHeight implements Exception {
   const _InvalidAutomaticTipHeight();
 
   @override
-  String toString() => 'Automatic endpoint returned an invalid block height.';
+  String toString() => 'Automatic endpoint returned an invalid block height.'; // l10n-ignore: exception text, logged
 }
 
 bool shouldFallbackFromLightwalletdError(Object error) {

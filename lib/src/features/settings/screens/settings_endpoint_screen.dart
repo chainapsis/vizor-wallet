@@ -353,8 +353,8 @@ class _CurrentEndpointSubtitle extends ConsumerWidget {
     final text = [
       if (automatic)
         effective.automaticReady
-            ? 'Automatic · ${selected.hostPort}'
-            : 'Automatic · Selecting...'
+            ? context.l10n.endpointAutomaticWithHost(selected.hostPort)
+            : context.l10n.endpointAutomaticSelecting
       else
         context.l10n.endpointCurrent(selected.hostPort),
       if (latency != null) latency.label(context.l10n),
@@ -638,7 +638,7 @@ class _PresetCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        preset.displayLabel,
+                        preset.displayLabel(context.l10n),
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelMedium.copyWith(
                           color: colors.text.accent,

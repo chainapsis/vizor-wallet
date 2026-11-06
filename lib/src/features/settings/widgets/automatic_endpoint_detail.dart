@@ -8,7 +8,7 @@ String automaticEndpointDetailLabel(
   RpcEndpointFailoverState effective,
   RpcEndpointLatencyState latencies,
 ) {
-  if (!effective.automaticReady) return 'Selecting an endpoint…';
+  if (!effective.automaticReady) return l10n.endpointSelecting;
   final endpoint = effective.current;
   final sample = latencies.sampleForUrl(endpoint.normalizedLightwalletdUrl);
   return [

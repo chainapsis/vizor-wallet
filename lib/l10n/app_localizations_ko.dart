@@ -1848,6 +1848,17 @@ class AppLocalizationsKo extends AppLocalizations {
   String get donationThanksTitle => 'Vizor⁠를 후⁠원⁠해 주⁠셔⁠서 감⁠사⁠해⁠요';
 
   @override
+  String get endpointAutomatic => '자⁠동';
+
+  @override
+  String get endpointAutomaticSelecting => '자⁠동 · 선⁠택⁠하⁠는 중...';
+
+  @override
+  String endpointAutomaticWithHost(String endpoint) {
+    return '자⁠동 · $endpoint';
+  }
+
+  @override
   String endpointCurrent(String endpoint) {
     return '현⁠재: $endpoint';
   }
@@ -1886,10 +1897,20 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get endpointSaveFailed =>
+      '엔⁠드⁠포⁠인⁠트⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get endpointSelecting => '엔⁠드⁠포⁠인⁠트⁠를 선⁠택⁠하⁠는 중…';
+
+  @override
   String get endpointUpdate => '엔⁠드⁠포⁠인⁠트 업⁠데⁠이⁠트';
 
   @override
   String get endpointUpdated => '엔⁠드⁠포⁠인⁠트⁠를 업⁠데⁠이⁠트⁠했⁠어⁠요';
+
+  @override
+  String get endpointUseAutomatic => '자⁠동 선⁠택 사⁠용';
 
   @override
   String get enhancePirChanging => '설⁠정 변⁠경 중…';
@@ -6472,10 +6493,6 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get onboardingNetworkEndpointHelper =>
       '이 지⁠갑⁠의 네⁠트⁠워⁠크⁠용 lightwalletd 서⁠버⁠를 사⁠용⁠하⁠세⁠요.';
-
-  @override
-  String get onboardingNetworkSaveFailed =>
-      '엔⁠드⁠포⁠인⁠트⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get onboardingNetworkVerifyFailed =>

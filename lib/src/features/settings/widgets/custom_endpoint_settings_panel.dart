@@ -149,7 +149,7 @@ class _CustomEndpointSettingsPanelState
       if (!mounted) return;
       setState(() {
         _isSubmitting = false;
-        _submitError = "Couldn't save the endpoint. Try again.";
+        _submitError = context.l10n.endpointSaveFailed;
       });
     }
   }
@@ -222,7 +222,7 @@ class _CustomEndpointSettingsPanelState
                           onPressed: _isSubmitting || changingRecovery
                               ? null
                               : _useAutomatic,
-                          child: const Text('Use automatic selection'),
+                          child: Text(context.l10n.endpointUseAutomatic),
                         ),
                       ],
                       const SizedBox(height: AppSpacing.sm),
@@ -341,8 +341,8 @@ class CurrentEndpointText extends StatelessWidget {
     ].join(' ');
     final hostLabel = automatic
         ? automaticReady && effectiveEndpoint != null
-              ? 'Automatic · ${endpoint.hostPort}'
-              : 'Automatic'
+              ? context.l10n.endpointAutomaticWithHost(endpoint.hostPort)
+              : context.l10n.endpointAutomatic
         : endpoint.hostPort;
 
     return Text.rich(
