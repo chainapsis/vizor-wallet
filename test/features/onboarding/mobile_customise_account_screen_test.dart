@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/router_refresh_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _mnemonic = 'stub mnemonic words';
 
@@ -578,6 +579,7 @@ void main() {
             appSecurityProvider.overrideWith(() => security),
           ],
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, c) => AppTheme(
               data: AppThemeData.dark,
@@ -655,6 +657,7 @@ void main() {
           }),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) => AppTheme(
             data: AppThemeData.dark,
@@ -722,6 +725,7 @@ void main() {
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, c) => AppTheme(
             data: AppThemeData.dark,
@@ -793,6 +797,7 @@ void main() {
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, c) => AppTheme(
             data: AppThemeData.dark,
@@ -847,6 +852,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, c) => AppTheme(
             data: AppThemeData.dark,
@@ -916,6 +922,7 @@ void main() {
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, c) => AppTheme(
             data: AppThemeData.dark,
@@ -974,6 +981,7 @@ void main() {
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, c) => AppTheme(
             data: AppThemeData.dark,
@@ -1013,6 +1021,7 @@ Widget _harness(Widget child) {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, c) => AppTheme(
         data: AppThemeData.dark,
         child: MobileOnboardingProgressFrame(child: c!),
@@ -1028,6 +1037,7 @@ Widget _routerHarness(GoRouter router) {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(
         data: AppThemeData.dark,

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_navigation_scope.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_page_viewport.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import '../../../support/localized_test_scope.dart';
 
 void main() {
   for (final maximum in <double?>[null, 640]) {
@@ -17,8 +18,7 @@ void main() {
       addTearDown(tester.view.reset);
       const probe = ValueKey('expanded-content');
       await tester.pumpWidget(
-        Directionality(
-          textDirection: TextDirection.ltr,
+        LocalizedTestScope(
           child: AppTheme(
             data: AppThemeData.light,
             child: MediaQuery(
@@ -57,8 +57,7 @@ void main() {
         addTearDown(tester.view.reset);
         const probe = ValueKey('content');
         await tester.pumpWidget(
-          Directionality(
-            textDirection: TextDirection.ltr,
+          LocalizedTestScope(
             child: AppTheme(
               data: AppThemeData.light,
               child: MediaQuery(

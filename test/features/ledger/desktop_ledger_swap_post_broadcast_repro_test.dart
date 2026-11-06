@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/swap_ledger_signing_overl
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
@@ -779,6 +780,7 @@ Future<ProviderContainer> _pumpOverlay(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: Scaffold(
           body: RepaintBoundary(
             key: _captureBoundaryKey,

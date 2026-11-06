@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_exit_back_guard.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 _ExitBackTestRouter _exitBackRouter({
   MobileExitBackGuard? exitBackGuard,
@@ -84,6 +85,7 @@ Widget _app(
   _ExitBackTestRouter testRouter, {
   AppThemeData theme = AppThemeData.dark,
 }) => MaterialApp.router(
+  localizationsDelegates: appLocalizationsDelegates,
   routeInformationProvider: testRouter.router.routeInformationProvider,
   routeInformationParser: testRouter.router.routeInformationParser,
   routerDelegate: testRouter.router.routerDelegate,

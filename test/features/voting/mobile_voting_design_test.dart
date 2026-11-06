@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets
 import 'package:zcash_wallet/src/features/voting/widgets/voting_pane_scroll_area.dart';
 import 'package:zcash_wallet/src/services/native_modal_corners.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -1244,6 +1245,7 @@ Future<void> _pumpMobileFixture(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       theme: ThemeData(brightness: brightness),
       builder: (context, child) => AppTheme(
         data: brightness == Brightness.dark

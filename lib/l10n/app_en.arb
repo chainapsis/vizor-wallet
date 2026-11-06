@@ -1,0 +1,34 @@
+{
+  "@@locale": "en",
+  "commonCancel": "Cancel",
+  "@commonCancel": {
+    "description": "Button that closes a modal or sheet without applying a change."
+  },
+  "commonUpdate": "Update",
+  "@commonUpdate": {
+    "description": "Button that applies a setting chosen in a picker modal or sheet (theme, language)."
+  },
+  "commonUpdating": "Updating...",
+  "@commonUpdating": {
+    "description": "The Update button label while the change is being saved."
+  },
+  "languageSystemOption": "System ({language})",
+  "@languageSystemOption": {
+    "description": "Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.",
+    "placeholders": {
+      "language": {
+        "type": "String",
+        "example": "English",
+        "description": "The resolved language, written in its own script."
+      }
+    }
+  },
+  "settingsLanguageLabel": "Language",
+  "@settingsLanguageLabel": {
+    "description": "Settings > System row label and picker title for choosing the app language. Also the screen-reader label of the Welcome language button."
+  },
+  "settingsLanguageUpdateFailed": "Couldn't update language.",
+  "@settingsLanguageUpdateFailed": {
+    "description": "Error under the language options when saving the choice failed. The modal stays open."
+  }
+}

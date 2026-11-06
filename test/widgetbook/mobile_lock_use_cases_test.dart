@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_auth_shel
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -38,6 +39,7 @@ void main() {
           paymentLinkClaimsInFlightProvider.overrideWith((ref) async => 1),
         ],
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           builder: (context, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
           home: Builder(
@@ -266,6 +268,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Center(
@@ -443,6 +446,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       const MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: ForgotPasscodeLastWarningSheet(),
@@ -510,6 +514,7 @@ Future<void> _pumpMobileLockUseCase(
         ),
       ],
       child: MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         key: UniqueKey(),
         home: AppTheme(
           data: theme,

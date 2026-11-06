@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_sh
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_device_sheet.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'ledger_pairing_recovery_test.dart' as fixture;
 
@@ -48,6 +49,7 @@ Future<void> _frames(WidgetTester tester) async {
 }
 
 Widget _harness(Widget child, {double scale = 1}) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   home: AppTheme(
     data: AppThemeData.light,
     child: Builder(

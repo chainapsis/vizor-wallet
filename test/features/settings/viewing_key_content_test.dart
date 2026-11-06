@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/settings/viewing_key_copy.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/viewing_key_content.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' show AccountViewingKeys;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 
 const _account = AccountInfo(uuid: 'target', name: 'Savings account', order: 0);
@@ -35,6 +36,7 @@ Future<void> _pump(
   var selectedType = type;
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) => AppTheme(
         data: AppThemeData.dark,
         child: MediaQuery(

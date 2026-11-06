@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -34,9 +35,11 @@ import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../fakes/fake_app_language_notifier.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -165,6 +168,7 @@ Widget _app({
   bool enhancePirEnabled = false,
   EnhancePirNotifier Function()? enhancePir,
   bool walletTransparentPrivate = false,
+  List<Override> extraOverrides = const [],
 }) {
   Widget themedBuilder(BuildContext context, Widget? child) => AppTheme(
     data: themeData ?? AppThemeData.dark,
@@ -177,6 +181,7 @@ Widget _app({
   );
   final app = router == null
       ? MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           builder: themedBuilder,
           home: withTabBar
               ? AppMobileShell(
@@ -195,7 +200,11 @@ Widget _app({
                 )
               : const MobileSettingsScreen(),
         )
-      : MaterialApp.router(routerConfig: router, builder: themedBuilder);
+      : MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
+          routerConfig: router,
+          builder: themedBuilder,
+        );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -226,6 +235,7 @@ Widget _app({
         biometricUnlockProvider.overrideWith(
           () => _FakeBiometricNotifier(biometric),
         ),
+      ...extraOverrides,
     ],
     child: app,
   );
@@ -290,6 +300,7 @@ Widget _routedApp({PaymentLinkCardsLoader? cardsLoader}) {
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) =>
           AppTheme(data: AppThemeData.dark, child: child!),
@@ -1702,6 +1713,67 @@ void main() {
       find.descendant(of: row, matching: find.text('Off')),
       findsOneWidget,
     );
+  });
+
+  group('language', () {
+    testWidgets(
+      'the Language row is hidden while English is the only language',
+      (tester) async {
+        await tester.pumpWidget(_app());
+        await tester.pump();
+
+        expect(
+          find.byKey(const ValueKey('mobile_settings_language_row')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('the sheet saves the chosen language', (tester) async {
+      final saved = <AppLanguage?>[];
+      await tester.pumpWidget(
+        _app(extraOverrides: languagePreviewOverrides(saved)),
+      );
+      await tester.pump();
+
+      final row = find.byKey(const ValueKey('mobile_settings_language_row'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('mobile_language_option_system')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('mobile_language_option_zh')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('mobile_language_update')));
+      await tester.pumpAndSettle();
+
+      expect(saved, [AppLanguage.zh]);
+      expect(find.byType(MobileModalScaffold), findsNothing);
+    });
+
+    testWidgets('closing the sheet keeps the language', (tester) async {
+      final saved = <AppLanguage?>[];
+      await tester.pumpWidget(
+        _app(extraOverrides: languagePreviewOverrides(saved)),
+      );
+      await tester.pump();
+
+      final row = find.byKey(const ValueKey('mobile_settings_language_row'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_language_option_ko')));
+      await tester.pump();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(saved, isEmpty);
+    });
   });
 }
 

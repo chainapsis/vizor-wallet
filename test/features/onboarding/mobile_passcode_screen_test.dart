@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/router_refresh_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Widget _app() {
   return ProviderScope(
@@ -29,6 +30,7 @@ Widget _app() {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, c) => AppTheme(
         data: AppThemeData.light,
         child: MobileOnboardingProgressFrame(child: c!),
@@ -141,6 +143,7 @@ Widget _routerHarness(
     if (refresh != null) routerRefreshProvider.overrideWithValue(refresh),
   ],
   child: MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, c) => AppTheme(
       data: AppThemeData.light,

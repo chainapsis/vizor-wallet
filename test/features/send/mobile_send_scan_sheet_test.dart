@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_scan_s
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _mainnetAddress =
     'u1testshieldedaddress000000000000000000000000000000000000000000000000';
@@ -65,6 +66,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(

@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_model.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_sheet.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../support/leading_decimal_input.dart';
 
 const _shielded =
@@ -1010,6 +1011,7 @@ Future<void> _pump(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.dark,
         child: Center(

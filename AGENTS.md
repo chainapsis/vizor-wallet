@@ -186,6 +186,46 @@ Android and Dart: `--dart-define=VIZOR_DEEPLINK_BASE_URL` (default
   Dart's `classifyIncomingLink`, which drops unknown paths on the origin
   silently.
 
+## Localization (VIZOR_I18N_PREVIEW)
+
+UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
+`lib/l10n/app_<locale>.arb` (`app_en.arb` is the template), and
+`flutter pub get` regenerates the committed `lib/l10n/app_localizations*.dart`.
+
+- `AppLanguage` in `lib/src/core/l10n/app_language.dart` is the only list of
+  languages. A new language is one enum entry plus one ARB file.
+- Unreleased languages are offered only with
+  `--dart-define=VIZOR_I18N_PREVIEW=true`. Without it `supportedLocales` is
+  English only, so Korean and Chinese devices keep the English UI. Widgetbook
+  previews every language.
+- The preference (`zcash_app_language`: `system` or a language tag) is plain
+  storage read during bootstrap, like the theme mode.
+- Every `MaterialApp` root passes `appSupportedLocales()` and
+  `appLocalizationsDelegates`. A new root must too.
+- Widgets read strings through `context.l10n` (`lib/src/core/l10n/l10n.dart`),
+  which names the fix when localizations are missing. Every test
+  `MaterialApp` passes `localizationsDelegates: appLocalizationsDelegates`;
+  a test without a `MaterialApp` wraps its tree in `LocalizedTestScope`
+  (`test/support/localized_test_scope.dart`). There is no English fallback.
+- Every `app_en.arb` key needs an `@key` description
+  (`required-resource-attributes`). Never translate Rust error strings or
+  strings that code matches with `.contains` or uses as keys.
+- `test/l10n/l10n_gates_test.dart` checks sorted keys, placeholders, URLs,
+  numbers and `lib/l10n/glossary.yaml`, and fails when a directory listed in
+  `tool/l10n/migrated_dirs.txt` gains a hardcoded string.
+  `fvm dart run tool/l10n/strings.dart list <dir>` lists what is left to move.
+  Translation rules live in `docs/i18n/`.
+- Korean is edited in `lib/l10n/source/app_ko.arb`. Regenerate
+  `lib/l10n/app_ko.arb` with `fvm dart run tool/l10n/korean_arb.dart`; it adds
+  invisible word joiners so Flutter breaks Korean lines between words, not
+  inside them. Compare shipped Korean strings in tests with the joiners
+  removed.
+- `LocaleTypography` (applied in every app root's `builder`) gives Korean and
+  Chinese UI their own CJK font fallback. Without it the engine picks Han
+  glyphs by the OS language. A `TextPainter` built from a token style misses
+  the fallback; merge with `DefaultTextStyle.of(context).style` when
+  measurement must match rendering.
+
 ## Mainnet Block-Time Table
 
 On mainnet, wallet birthday conversions (import date to height, seed-phrase

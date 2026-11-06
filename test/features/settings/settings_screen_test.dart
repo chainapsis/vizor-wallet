@@ -27,8 +27,10 @@ import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_app_language_notifier.dart';
 
 void main() {
   testWidgets('private recovery is labelled experimental', (tester) async {
@@ -48,6 +50,7 @@ void main() {
     Future<String> description() async {
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.dark,
             child: EnhancePirPrivacyControl(
@@ -1053,6 +1056,64 @@ void main() {
       _resetPlatformOverride();
     }
   });
+
+  group('language', () {
+    testWidgets(
+      'the Language row is hidden while English is the only language',
+      (tester) async {
+        await tester.pumpWidget(_settingsHarness());
+        await tester.pump();
+
+        expect(
+          find.byKey(const ValueKey('settings_language_row')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('a language applies only after Update', (tester) async {
+      final saved = <AppLanguage?>[];
+      await tester.pumpWidget(
+        _settingsHarness(extraOverrides: languagePreviewOverrides(saved)),
+      );
+      await tester.pump();
+
+      final row = find.byKey(const ValueKey('settings_language_row'));
+      await tester.ensureVisible(row);
+      expect(
+        find.descendant(of: row, matching: find.text('System (English)')),
+        findsOneWidget,
+      );
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+
+      for (final option in ['system', 'en', 'ko', 'zh']) {
+        expect(find.byKey(ValueKey('language_option_$option')), findsOneWidget);
+      }
+      expect(find.text('简体中文'), findsOneWidget);
+
+      // Update stays disabled until the choice differs from the saved one.
+      await tester.tap(
+        find.byKey(const ValueKey('account_modal_action_button')),
+      );
+      await tester.pump();
+      expect(saved, isEmpty);
+
+      await tester.tap(find.byKey(const ValueKey('language_option_ko')));
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('account_modal_action_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(saved, [AppLanguage.ko]);
+      expect(find.byKey(const ValueKey('language_option_ko')), findsNothing);
+      expect(
+        find.descendant(of: row, matching: find.text('한국어')),
+        findsOneWidget,
+      );
+    });
+  });
 }
 
 void _overridePlatform(TargetPlatform platform) {
@@ -1116,6 +1177,7 @@ Widget _settingsHarness({
       ...extraOverrides,
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

@@ -4,12 +4,12 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
+import '../../support/localized_test_scope.dart';
 
 Widget _app(Widget content) {
   return AppTheme(
     data: AppThemeData.light,
-    child: Directionality(
-      textDirection: TextDirection.ltr,
+    child: LocalizedTestScope(
       child: Overlay(
         initialEntries: [OverlayEntry(builder: (_) => Center(child: content))],
       ),
@@ -70,8 +70,7 @@ void main() {
     (tester) async {
       Widget request(List<String> parts) => AppTheme(
         data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+        child: LocalizedTestScope(
           child: Center(
             child: KeystonePcztQrStage(
               phase: KeystonePcztQrStagePhase.ready,

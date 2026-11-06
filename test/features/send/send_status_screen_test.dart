@@ -34,6 +34,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_zec_market_data_cache.dart';
 
@@ -771,6 +772,7 @@ void main() {
               syncProvider.overrideWith(_FakeSyncNotifier.new),
             ],
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: Consumer(
                 builder: (_, ref, _) {
                   widgetRef = ref;
@@ -1269,6 +1271,7 @@ Widget _harness(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../storage/linux_keyring_coordinator.dart';
+import '../l10n/app_language.dart';
 import '../theme/app_theme.dart';
 import 'app_button.dart';
 import 'app_icon.dart';
@@ -139,9 +140,13 @@ class _LinuxKeyringStartupHostState extends State<LinuxKeyringStartupHost> {
   Widget build(BuildContext context) {
     if (_app case final app?) return app;
 
+    // Shown before storage is readable, so there is no saved language yet:
+    // follow the device.
     return MaterialApp(
       title: 'Vizor',
       debugShowCheckedModeBanner: false,
+      supportedLocales: appSupportedLocales(),
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) => AppTheme(
         data: MediaQuery.platformBrightnessOf(context) == Brightness.dark
             ? AppThemeData.dark

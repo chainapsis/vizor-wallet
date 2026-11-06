@@ -12,6 +12,7 @@ import 'core/config/app_version_config.dart';
 import 'core/config/rpc_endpoint_config.dart';
 import 'core/config/swap_remote_enable_config.dart';
 import 'core/config/zcash_explorer.dart';
+import 'core/l10n/app_language.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/enhance_pir_preference_store.dart';
 import 'core/storage/wallet_paths.dart';
@@ -56,6 +57,7 @@ class AppBootstrapState {
     required this.rpcEndpointConfig,
     this.explorerUrlTemplate = '',
     required this.themeMode,
+    this.appLanguage,
     required this.privacyModeEnabled,
     required this.isPasswordConfigured,
     required this.isUnlocked,
@@ -76,6 +78,9 @@ class AppBootstrapState {
   final RpcEndpointConfig rpcEndpointConfig;
   final String explorerUrlTemplate;
   final ThemeMode themeMode;
+
+  /// The saved language preference; `null` follows the device language.
+  final AppLanguage? appLanguage;
   final bool privacyModeEnabled;
   final bool swapEnabledOverrideCachedForRelease;
   final bool syncKeepAwakeEnabled;
@@ -276,6 +281,7 @@ Future<AppBootstrapState> loadAppBootstrap({
     final rpcEndpointConfig = await _readRpcEndpointConfig(storage, network);
     final explorerUrlTemplate = await _readExplorerUrlTemplate(storage);
     final themeMode = await _readThemeMode(storage);
+    final appLanguage = await _readAppLanguage(storage);
     final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
     final swapEnabledOverrideCachedForRelease =
         await _readSwapEnabledOverrideCachedForRelease();
@@ -485,6 +491,7 @@ Future<AppBootstrapState> loadAppBootstrap({
       rpcEndpointConfig: rpcEndpointConfig,
       explorerUrlTemplate: explorerUrlTemplate,
       themeMode: themeMode,
+      appLanguage: appLanguage,
       privacyModeEnabled: privacyModeEnabled,
       swapEnabledOverrideCachedForRelease: swapEnabledOverrideCachedForRelease,
       biometricUnlockEnabled: biometricUnlockEnabled,
@@ -643,6 +650,19 @@ Future<ThemeMode> _readThemeMode(AppSecureStore storage) async {
   } catch (e) {
     log('bootstrap: failed to read theme mode: $e');
     return ThemeMode.system;
+  }
+}
+
+Future<AppLanguage?> _readAppLanguage(AppSecureStore storage) async {
+  try {
+    return decodeAppLanguagePreference(
+      await storage.readString(kAppLanguageKey),
+    );
+  } on SecureStorageUnavailableException {
+    rethrow;
+  } catch (e) {
+    log('bootstrap: failed to read app language: $e');
+    return null;
   }
 }
 

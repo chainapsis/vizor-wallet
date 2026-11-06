@@ -5,6 +5,7 @@ import 'dart:ui' show SemanticsAction, Tristate;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -24,7 +25,9 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_scree
 import 'package:zcash_wallet/src/features/onboarding/shared/welcome_art_assets.dart';
 import 'package:zcash_wallet/src/features/payment_links/screens/gift_claim_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/welcome_button_tokens.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../fakes/fake_app_language_notifier.dart';
 
 Widget _app({
   bool existingWallet = false,
@@ -35,6 +38,7 @@ Widget _app({
   TargetPlatform platform = TargetPlatform.iOS,
   EdgeInsets padding = EdgeInsets.zero,
   EdgeInsets viewInsets = EdgeInsets.zero,
+  List<Override> extraOverrides = const [],
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -61,8 +65,10 @@ Widget _app({
       ),
       if (security != null) appSecurityProvider.overrideWith(() => security),
       ledgerTargetPlatformProvider.overrideWithValue(platform),
+      ...extraOverrides,
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
@@ -683,6 +689,53 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Shielded\nby default'), findsOneWidget);
     }
+  });
+
+  group('language', () {
+    Future<void> pumpWelcome(
+      WidgetTester tester, {
+      List<Override> extraOverrides = const [],
+      String location = '/welcome',
+    }) async {
+      tester.view.physicalSize = const Size(393, 852);
+      addTearDown(tester.view.resetPhysicalSize);
+      await tester.pumpWidget(
+        _app(initialLocation: location, extraOverrides: extraOverrides),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('no language button while English is the only language', (
+      tester,
+    ) async {
+      await pumpWelcome(tester);
+
+      expect(
+        find.byKey(const ValueKey('mobile_welcome_language')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the language button opens the sheet and saves the choice', (
+      tester,
+    ) async {
+      final saved = <AppLanguage?>[];
+      await pumpWelcome(
+        tester,
+        extraOverrides: languagePreviewOverrides(saved),
+      );
+
+      final button = find.byKey(const ValueKey('mobile_welcome_language'));
+      expect(tester.getSize(button).height, greaterThanOrEqualTo(44));
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_language_option_zh')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('mobile_language_update')));
+      await tester.pumpAndSettle();
+
+      expect(saved, [AppLanguage.zh]);
+    });
   });
 }
 

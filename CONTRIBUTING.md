@@ -348,6 +348,16 @@ create `release_notes/vX.Y.Z.md`. Unless the release scope says otherwise,
 those notes cover desktop behavior on Windows, Linux, and macOS and exclude
 mobile-only or internal changes.
 
+## Translations
+
+User-facing copy lives in `lib/l10n/app_<locale>.arb`. New UI text goes into
+`app_en.arb` with an `@key` description and is read through `context.l10n`;
+do not hardcode it in widgets. Translators start from
+[docs/i18n](docs/i18n/README.md), which covers the glossary, the per-language
+style guides and the checks a translation must pass. Changes to security copy
+(secret passphrase, signing, amounts, warnings) need approval from a
+maintainer who reads the language.
+
 ## License
 
 Vizor is licensed under the [Apache License 2.0](LICENSE). Submit only work that

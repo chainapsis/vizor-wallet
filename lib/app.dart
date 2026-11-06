@@ -145,6 +145,9 @@ import 'src/features/voting/screens/voting_software_account_guard.dart';
 import 'src/features/voting/screens/voting_status_screen.dart';
 import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
+import 'src/providers/app_language_provider.dart';
+import 'src/core/l10n/app_language.dart';
+import 'src/core/l10n/locale_typography.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/sync_keep_awake_provider.dart';
 import 'src/providers/enhance_pir_provider.dart';
@@ -1857,6 +1860,8 @@ class ZcashWalletApp extends ConsumerWidget {
     final appRouter = ref.watch(_routerProvider);
     final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);
+    final appLanguage = ref.watch(appLanguageProvider);
+    final languages = ref.watch(availableAppLanguagesProvider);
 
     return MaterialApp.router(
       title: 'Vizor',
@@ -1864,6 +1869,9 @@ class ZcashWalletApp extends ConsumerWidget {
       theme: buildLegacyLightTheme(),
       darkTheme: buildLegacyDarkTheme(),
       themeMode: themeMode,
+      locale: appLocaleFor(appLanguage, languages),
+      supportedLocales: [for (final language in languages) language.locale],
+      localizationsDelegates: appLocalizationsDelegates,
       routeInformationProvider: router.routeInformationProvider,
       routeInformationParser: router.routeInformationParser,
       routerDelegate: router.routerDelegate,
@@ -1943,12 +1951,13 @@ class ZcashWalletApp extends ConsumerWidget {
         // Root sheets and overlays sit outside the wallet pane's Navigator.
         // Share the full-window decision before SafeArea or a keyboard can
         // change their local metrics, including while a modal is already open.
+        final localized = LocaleTypography(child: app);
         return kAppFormFactor == AppFormFactor.mobile
             ? MobileWindowPolicyScope(
                 policy: MobileWindowPolicy.resolve(MediaQuery.of(context)),
-                child: app,
+                child: localized,
               )
-            : app;
+            : localized;
       },
     );
   }

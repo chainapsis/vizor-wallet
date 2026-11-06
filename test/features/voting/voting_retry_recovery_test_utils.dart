@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'round_plan_test_utils.dart';
 
@@ -61,6 +62,7 @@ Future<void> expectVotingRetryClearsError(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),

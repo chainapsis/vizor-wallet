@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
@@ -79,6 +80,7 @@ Widget _app({double textScale = 1}) => ProviderScope(
     zecLiveUsdUnitPriceProvider.overrideWithValue(70),
   ],
   child: MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (context, child) => MediaQuery(
       data: MediaQuery.of(
         context,

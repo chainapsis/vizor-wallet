@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   for (final status in [
@@ -62,7 +63,10 @@ void main() {
             container: container,
             child: AppTheme(
               data: AppThemeData.light,
-              child: MaterialApp.router(routerConfig: router),
+              child: MaterialApp.router(
+                localizationsDelegates: appLocalizationsDelegates,
+                routerConfig: router,
+              ),
             ),
           ),
         );

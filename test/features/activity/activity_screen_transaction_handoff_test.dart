@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/wallet_path_read_blocker.dart';
@@ -230,6 +231,7 @@ void main() {
             ),
           ],
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.dark, child: child!),
@@ -297,6 +299,7 @@ Future<_SwitchableAccountNotifier> _pumpActivityScreen(
         ),
       ],
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
       ),

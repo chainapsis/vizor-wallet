@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -54,6 +55,7 @@ Widget _app({
   return ProviderScope(
     overrides: [syncProvider.overrideWith(FakeSyncNotifier.new)],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(
           context,
@@ -83,6 +85,7 @@ bool _sendStatusTerminal(WidgetTester tester) {
 Widget _ledgerApp({required MobileSendBroadcastRunner broadcastRunner}) {
   return ProviderScope(
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendStatusScreen(
@@ -682,6 +685,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: MobileSendStatusScreen(
@@ -716,7 +720,10 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: SizedBox.shrink()),
+        child: const MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
+          home: SizedBox.shrink(),
+        ),
       ),
     );
     await tester.pump();
@@ -776,6 +783,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: MobileSendStatusScreen(
@@ -797,7 +805,10 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: SizedBox.shrink()),
+        child: const MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
+          home: SizedBox.shrink(),
+        ),
       ),
     );
     await tester.pump();
@@ -944,6 +955,7 @@ void main() {
       ProviderScope(
         overrides: [syncProvider.overrideWith(FakeSyncNotifier.new)],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (context, child) =>
               AppTheme(data: AppThemeData.light, child: child!),

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -314,6 +315,7 @@ Widget _cardsApp({
   ValueChanged<PaymentLinkCardsTab>? onTabSelected,
   String? emptyLabel,
 }) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   builder: (_, navigator) =>
       AppTheme(data: AppThemeData.dark, child: navigator!),
   home: Directionality(

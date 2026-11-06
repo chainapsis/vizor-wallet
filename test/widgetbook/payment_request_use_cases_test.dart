@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_surface.dart';
 import 'package:zcash_wallet/widgetbook/payment_request_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _desktopSize = Size(1080, 720);
 const _mobileSize = Size(393, 852);
@@ -406,6 +407,7 @@ Future<void> _pumpUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Center(

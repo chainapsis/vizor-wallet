@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_cop
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -27,6 +28,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, child) => AppTheme(
           data: AppThemeData.dark,
           child: MediaQuery(
@@ -1813,6 +1815,7 @@ Future<void> _pump(
 }) {
   return tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, appChild) => MediaQuery(
         data: MediaQuery.of(
           context,

@@ -22,11 +22,13 @@ import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_status_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart'
     show mobileSwapStatusRecipientFullAddress;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
 Widget _harness(Widget child) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, navigator) =>
         AppTheme(data: AppThemeData.light, child: navigator!),
     home: Directionality(
