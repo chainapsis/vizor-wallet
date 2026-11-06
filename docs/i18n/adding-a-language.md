@@ -6,9 +6,13 @@
    Keys stay sorted.
 3. Add the language to `lib/l10n/glossary.yaml` (a column per term) and write
    `docs/i18n/style-<tag>.md`.
-4. Add native resources: iOS `<tag>.lproj` (`InfoPlist.strings` and the string
-   catalog used by background notifications) and Android
-   `values-<qualifier>` plus its `localeConfig` entry.
+4. When the language ships (step 7), declare it to the OS and the stores:
+   `knownRegions` in the iOS and macOS Runner projects,
+   `<tag>.lproj/InfoPlist.strings` in both Runner targets, and Android
+   `res/xml/locales_config.xml` with `android:localeConfig`. Earlier, the
+   stores would list a language the app does not offer.
+   `test/l10n/native_locale_declarations_test.dart` fails when these and
+   `released` disagree.
 5. Check fonts: the language's script needs a system font on every platform.
    A CJK language also gets its own list in `fontFamilyFallbackFor`
    (`lib/src/core/l10n/locale_typography.dart`).

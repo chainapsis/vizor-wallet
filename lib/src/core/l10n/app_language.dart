@@ -9,7 +9,10 @@ import '../../../l10n/app_localizations.dart';
 const kI18nPreviewEnabled = bool.fromEnvironment('VIZOR_I18N_PREVIEW');
 
 /// The single list of app languages. Adding a language means one entry here
-/// and one `lib/l10n/app_<tag>.arb` file.
+/// and one `lib/l10n/app_<tag>.arb` file. Releasing one also needs the native
+/// declarations in docs/i18n/adding-a-language.md, which
+/// test/l10n/native_locale_declarations_test.dart keeps in step with
+/// [released].
 enum AppLanguage {
   // English stays first: locale resolution falls back to the first entry.
   en(tag: 'en', nativeName: 'English', released: true),
