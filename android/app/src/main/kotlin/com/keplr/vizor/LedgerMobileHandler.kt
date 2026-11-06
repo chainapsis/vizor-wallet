@@ -73,6 +73,10 @@ class LedgerMobileHandler(
     private var permissionNeedsSettings = false
     private var permissionResult: MethodChannel.Result? = null
 
+    /** Messages Dart shows as is follow the app language, not the device's. */
+    private fun nativeText(key: NativeString, vararg args: Pair<String, String>): String =
+        NativeStrings.text(activity, key, *args)
+
     fun handle(call: MethodCall, result: MethodChannel.Result) {
         if (closed) {
             result.error("cancelled", "Ledger connection was closed.", null)
@@ -193,7 +197,7 @@ class LedgerMobileHandler(
             return
         }
         if (permissionResult != null) {
-            result.error("unavailable", "A Ledger permission request is already active.", null)
+            result.error("unavailable", nativeText(NativeString.nativeLedgerPermissionRequestActive), null)
             return
         }
         permissionResult = result
@@ -213,7 +217,7 @@ class LedgerMobileHandler(
             return
         }
         if (!dmk.isBluetoothBleSupported()) {
-            result.error("unavailable", "This Android device does not support Bluetooth LE.", null)
+            result.error("unavailable", nativeText(NativeString.nativeLedgerBleUnsupportedAndroid), null)
             return
         }
         keyMissingObserver.stop()
@@ -266,7 +270,7 @@ class LedgerMobileHandler(
                         )
                         DiscoveryResult.Failure.BluetoothBleNotSupported -> emitError(
                             "unavailable",
-                            "This Android device does not support Bluetooth LE.",
+                            nativeText(NativeString.nativeLedgerBleUnsupportedAndroid),
                         )
                         is DiscoveryResult.Failure.Unknown -> emitError("unavailable", update.message)
                     }
@@ -275,7 +279,7 @@ class LedgerMobileHandler(
                 // stopDiscovery owns invalidation and SDK shutdown.
             } catch (_: Exception) {
                 if (generation == discoveryGeneration && !closed) {
-                    emitError("unavailable", "Could not discover Ledger devices. Try again.")
+                    emitError("unavailable", nativeText(NativeString.nativeLedgerDiscoveryFailed))
                 }
             }
         }
@@ -386,7 +390,7 @@ class LedgerMobileHandler(
                             "location_disabled", "Location must be enabled for Bluetooth discovery on this Android version.",
                         )
                         DiscoveryResult.Failure.BluetoothBleNotSupported -> throw LedgerDiscoveryException(
-                            "unavailable", "This Android device does not support Bluetooth LE.",
+                            "unavailable", nativeText(NativeString.nativeLedgerBleUnsupportedAndroid),
                         )
                         is DiscoveryResult.Failure.Unknown -> throw LedgerDiscoveryException(
                             "unavailable", update.message,
@@ -512,7 +516,7 @@ class LedgerMobileHandler(
     private fun exchangeApdus(call: MethodCall, result: MethodChannel.Result) {
         val values = call.argument<List<*>>("commands")
         if (values.isNullOrEmpty()) {
-            result.error("unavailable", "Ledger signing APDU list is empty or invalid.", null)
+            result.error("unavailable", nativeText(NativeString.nativeLedgerApduListInvalid), null)
             return
         }
         val commands = mutableListOf<ApduCommand>()
@@ -591,7 +595,7 @@ class LedgerMobileHandler(
             } catch (_: SecurityException) {
                 request.error("permission_denied", "Bluetooth permission is required to connect to Ledger.", null)
             } catch (_: Exception) {
-                request.error("unavailable", "Could not communicate with Ledger. Try again.", null)
+                request.error("unavailable", nativeText(NativeString.nativeLedgerCommunicationFailed), null)
             }
         }
         request.job = job
@@ -754,7 +758,11 @@ class LedgerMobileHandler(
             DeviceOperationFailureReason.DeviceNotFound,
             DeviceOperationFailureReason.NoResponse,
             -> result.error("disconnected", "The Ledger disconnected. Reconnect and try again.", null)
-            else -> result.error("unavailable", "Ledger operation failed: $reason", null)
+            else -> result.error(
+                "unavailable",
+                nativeText(NativeString.nativeLedgerOperationFailed, "reason" to reason.toString()),
+                null,
+            )
         }
     }
 
@@ -779,7 +787,7 @@ class LedgerMobileHandler(
             p2 == null || p2 !in 0..255 ||
             data == null || data.size > 255
         ) {
-            result.error("unavailable", "Ledger APDU arguments are invalid.", null)
+            result.error("unavailable", nativeText(NativeString.nativeLedgerApduArgumentsInvalid), null)
             return null
         }
         return ApduCommand(cla, ins, p1, p2, data)

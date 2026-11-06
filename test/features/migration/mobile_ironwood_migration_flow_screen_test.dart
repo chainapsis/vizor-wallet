@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -43,7 +44,6 @@ import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
-import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -53,6 +53,7 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
     as rust_keystone_wallet;
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
@@ -842,6 +843,7 @@ Widget _app({
     child: AppTheme(
       data: theme,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
@@ -1064,6 +1066,7 @@ Widget _productionApp({
     child: AppTheme(
       data: AppThemeData.light,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
@@ -1595,6 +1598,7 @@ void main() {
             ironwoodMigrationServiceProvider.overrideWithValue(service),
           ],
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.light, child: child!),
@@ -1701,6 +1705,7 @@ void main() {
             ironwoodMigrationServiceProvider.overrideWithValue(service),
           ],
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.light, child: child!),
@@ -2454,13 +2459,13 @@ void main() {
       error:
           "Migrations can't start this close to the network upgrade. Try "
           'again after it activates.',
-      copy: kNetworkUpgradeHoldMessage,
+      copy: networkUpgradeHoldText(testL10n),
     ),
     (
       error:
           'Migration schedule was drawn before the network upgrade; review '
           'the plan again',
-      copy: kNetworkUpgradeScheduleChangedMessage,
+      copy: testL10n.sendPaymentRequestCheckUpgradeScheduleChanged,
     ),
   ]) {
     testWidgets('a draft resume explains an upgrade refusal: ${refusal.copy}', (
@@ -4236,6 +4241,7 @@ void main() {
         child: AppTheme(
           data: AppThemeData.light,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: MobileIronwoodMigrationKeystoneDenominationSignScreen(
               previewRequest: request,
               previewUrParts: const ['UR:ZCASH-SIGN-BATCH/PREVIEW'],
@@ -4314,6 +4320,7 @@ void main() {
         child: AppTheme(
           data: AppThemeData.dark,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: MobileIronwoodMigrationKeystoneImmediateSignScreen(
               approvedPlan: _immediatePlan,
               previewRequest: request,
@@ -4792,6 +4799,7 @@ void main() {
         child: AppTheme(
           data: AppThemeData.light,
           child: const MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: MobileIronwoodMigrationKeystoneDenominationSignScreen(),
           ),
         ),
@@ -9042,7 +9050,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(kLedgerAppUpdateRequiredTitle), findsOneWidget);
+    expect(find.text(testL10n.ledgerAppUpdateRequiredTitle), findsOneWidget);
     expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
     expect(discarded, ['ledger-immediate-request']);
 

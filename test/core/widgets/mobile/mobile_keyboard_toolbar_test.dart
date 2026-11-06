@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/theme/legacy_material_theme.dart';
 import '../../../figma_compare/figma_compare_font_loader.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_keyboard_toolbar.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const toolbar = ValueKey('mobile_keyboard_toolbar');
 const captureKey = ValueKey('keyboard_capture');
@@ -24,6 +25,7 @@ Future<void> pumpHost(
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       theme: dark ? buildLegacyDarkTheme() : buildLegacyLightTheme(),
       builder: (context, child) => AppTheme(
         data: dark ? AppThemeData.dark : AppThemeData.light,

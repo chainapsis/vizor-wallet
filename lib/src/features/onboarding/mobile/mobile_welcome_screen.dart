@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show Scaffold;
@@ -6,7 +7,12 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
+import '../../../core/widgets/app_toast.dart';
+import '../../../providers/app_language_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
+import '../../settings/widgets/language_picker.dart';
+import '../shared/welcome_language_button.dart';
 import '../providers/welcome_network_settings_provider.dart';
 import 'mobile_network_settings_sheet.dart';
 
@@ -69,6 +75,31 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
     });
   }
 
+  // Holds incoming Gift links like the network sheet does.
+  Future<void> _openLanguageSheet() async {
+    if (ref.read(welcomeNetworkSettingsPresentedProvider)) return;
+    final presentation = ref.read(
+      welcomeNetworkSettingsPresentedProvider.notifier,
+    );
+    final current = ref.read(appLanguageProvider);
+    presentation.setPresented(true);
+    try {
+      final choice = await showMobileLanguageSheet(
+        context,
+        current: current,
+        available: ref.read(availableAppLanguagesProvider),
+      );
+      if (choice == null || choice.language == current) return;
+      await ref.read(appLanguageProvider.notifier).set(choice.language);
+    } catch (_) {
+      if (mounted) {
+        showAppToast(context, context.l10n.settingsLanguageUpdateFailed);
+      }
+    } finally {
+      presentation.setPresented(false);
+    }
+  }
+
   void _enter(VoidCallback navigate) {
     if (!widget.showBackButton &&
         !welcomeNetworkReady(ref.read(networkPrivacyProvider))) {
@@ -86,6 +117,9 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
       }
     });
     final windowPolicy = MobileWindowPolicyScope.of(context);
+    final showLanguage =
+        !widget.showBackButton &&
+        ref.watch(availableAppLanguagesProvider).length > 1;
     final bottom = math.max(50.0, MediaQuery.paddingOf(context).bottom + 16);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -206,30 +240,47 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                   Positioned(
                     top: MediaQuery.paddingOf(context).top + AppSpacing.xs,
                     right: (landscape ? insets.right : 0) + AppSpacing.sm,
-                    child: Semantics(
-                      label: 'Network settings',
-                      button: true,
-                      child: GestureDetector(
-                        key: const ValueKey('mobile_welcome_network_settings'),
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () =>
-                            showMobileWelcomeNetworkSettings(context, ref),
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: const BoxDecoration(
-                            color: Color(0x66000000),
-                            shape: BoxShape.circle,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (showLanguage) ...[
+                          WelcomeLanguageButton(
+                            key: const ValueKey('mobile_welcome_language'),
+                            height: 44,
+                            background: const Color(0x66000000),
+                            hoverBackground: const Color(0x66000000),
+                            onTap: () => unawaited(_openLanguageSheet()),
                           ),
-                          child: const Center(
-                            child: AppIcon(
-                              AppIcons.cog,
-                              size: 24,
-                              color: Color(0xffffffff),
+                          const SizedBox(width: AppSpacing.xs),
+                        ],
+                        Semantics(
+                          label: context.l10n.networkSettingsTitle,
+                          button: true,
+                          child: GestureDetector(
+                            key: const ValueKey(
+                              'mobile_welcome_network_settings',
+                            ),
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () =>
+                                showMobileWelcomeNetworkSettings(context, ref),
+                            child: Container(
+                              width: 44,
+                              height: 44,
+                              decoration: const BoxDecoration(
+                                color: Color(0x66000000),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Center(
+                                child: AppIcon(
+                                  AppIcons.cog,
+                                  size: 24,
+                                  color: Color(0xffffffff),
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 if (widget.showBackButton)
@@ -237,7 +288,7 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                     top: MediaQuery.paddingOf(context).top + AppSpacing.xs,
                     left: (landscape ? insets.left : 0) + AppSpacing.s,
                     child: Semantics(
-                      label: 'Back',
+                      label: context.l10n.commonBack,
                       button: true,
                       child: AppButton(
                         variant: AppButtonVariant.ghost,
@@ -267,7 +318,7 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
         const VizorWordmark(width: 106, height: 40, color: Color(0xffffffff)),
         const SizedBox(height: AppSpacing.md),
         Text(
-          'Shielded\nby default',
+          'Shielded\nby default', // l10n-ignore: brand tagline
           textAlign: TextAlign.center,
           style: AppTypography.displayLarge.copyWith(
             color: const Color(0xffffffff),
@@ -307,8 +358,8 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                   leading: const AppIcon(AppIcons.importWallet),
                   growWithContent: true,
                   constrainContent: true,
-                  child: const Text(
-                    'Import wallet',
+                  child: Text(
+                    context.l10n.onboardingWelcomeImportWallet,
                     textAlign: TextAlign.center,
                   ),
                 ),

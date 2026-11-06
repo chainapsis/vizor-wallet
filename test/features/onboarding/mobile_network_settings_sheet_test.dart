@@ -23,9 +23,11 @@ import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 import '../../support/payment_link_navigation_support.dart';
+import '../../support/test_l10n.dart';
 
 class _QueriesApi extends RustLibApi {
   final enabled = <bool>[];
@@ -178,6 +180,7 @@ Future<(ProviderContainer, GoRouter)> _pump(
         builder: (context, ref, _) {
           container = ProviderScope.containerOf(context);
           return MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (context, child) => AppTheme(
               data: AppThemeData.dark,
@@ -338,7 +341,7 @@ void main() {
       await tester.ensureVisible(row);
       await tester.tap(row);
       await tester.pumpAndSettle();
-      expect(find.text(kEnhancePirChangingMessage), findsOneWidget);
+      expect(find.text(testL10n.enhancePirChanging), findsOneWidget);
       await _tryDismiss(tester);
       expect(find.byType(MobileNetworkSettingsSheet), findsOneWidget);
       expect(container.read(welcomeNetworkSettingsPresentedProvider), isTrue);
@@ -380,7 +383,7 @@ void main() {
     await tester.ensureVisible(row);
     await tester.tap(row);
     await tester.pumpAndSettle();
-    expect(find.text(kEnhancePirUnchangedMessage), findsOneWidget);
+    expect(find.text(testL10n.enhancePirUnchanged), findsOneWidget);
     expect(store.value, isFalse);
     expect(api.enabled, isEmpty);
     store.fail = false;
@@ -388,7 +391,7 @@ void main() {
     await tester.tap(row);
     await tester.pumpAndSettle();
     expect(store.value, isTrue);
-    expect(find.text(kEnhancePirUnchangedMessage), findsNothing);
+    expect(find.text(testL10n.enhancePirUnchanged), findsNothing);
     await tester.tap(find.bySemanticsLabel('Close'));
     await tester.pumpAndSettle();
     expect(find.byType(MobileNetworkSettingsSheet), findsNothing);

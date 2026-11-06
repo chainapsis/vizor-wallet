@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../support/test_l10n.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_modal.dart';
@@ -13,6 +14,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_bluetooth_acces
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_bluetooth_recovery.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 class _Access implements LedgerMobileBleService, LedgerBluetoothAccess {
   LedgerBluetoothAccessStatus status = const LedgerBluetoothAccessStatus(
@@ -51,6 +53,7 @@ class _Access implements LedgerMobileBleService, LedgerBluetoothAccess {
 
 Widget _harness(_Access service, {ProviderContainer? container}) {
   final child = MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
       data: AppThemeData.light,
       child: Center(
@@ -114,6 +117,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: StatefulBuilder(
@@ -199,6 +203,7 @@ void main() {
           UncontrolledProviderScope(
             container: container,
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.light,
                 child: Center(
@@ -250,12 +255,12 @@ void main() {
       expect(status.locationPermission, isTrue);
       expect(status.bluetoothEnabled, isTrue);
       expect(status.locationEnabled, isFalse);
-      expect(status.message, contains('Turn on location services'));
+      expect(status.message(testL10n), contains('Turn on location services'));
       expect(
         LedgerBluetoothAccessStatus.fromMap({
           'permission': 'settings',
           'platform': 'macOS',
-        }).message,
+        }).message(testL10n),
         contains('System Settings'),
       );
     },
@@ -377,7 +382,7 @@ void main() {
     await tester.pumpWidget(_harness(service));
     await tester.pumpAndSettle();
     expect(find.text('Allow access'), findsNothing);
-    expect(find.text(service.status.message), findsOneWidget);
+    expect(find.text(service.status.message(testL10n)), findsOneWidget);
     expect(find.text('Open settings'), findsOneWidget);
   });
 

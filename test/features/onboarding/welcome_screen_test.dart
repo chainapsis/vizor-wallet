@@ -15,6 +15,7 @@ import 'package:flutter/widgets.dart'
         ValueKey,
         Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -27,6 +28,8 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../fakes/fake_app_language_notifier.dart';
 
 void main() {
   final api = _PrivacyApi();
@@ -353,6 +356,72 @@ void main() {
     expect(find.text('Open add account'), findsOneWidget);
     expect(find.text('Home'), findsNothing);
   });
+
+  group('language', () {
+    testWidgets('no language button while English is the only language', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_welcomeScreen());
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('welcome_language_button')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the add-account Welcome has no language button', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _welcomeScreen(
+          showBackButton: true,
+          extraOverrides: languagePreviewOverrides([]),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('welcome_language_button')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the language button opens the picker and applies on Update', (
+      tester,
+    ) async {
+      final saved = <AppLanguage?>[];
+      await tester.pumpWidget(
+        _welcomeScreen(extraOverrides: languagePreviewOverrides(saved)),
+      );
+      await tester.pump();
+
+      final button = find.byKey(const ValueKey('welcome_language_button'));
+      expect(
+        find.descendant(of: button, matching: find.text('English')),
+        findsOneWidget,
+      );
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('welcome_language_modal')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('language_option_ko')));
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('account_modal_action_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(saved, [AppLanguage.ko]);
+      expect(
+        find.byKey(const ValueKey('welcome_language_modal')),
+        findsNothing,
+      );
+    });
+  });
 }
 
 Future<void> _loadAppFonts() async {
@@ -378,6 +447,7 @@ Widget _welcomeScreen({
   AppThemeData theme = AppThemeData.light,
   _PrivacyStore? privacyStore,
   bool privacyAvailable = true,
+  List<Override> extraOverrides = const [],
 }) {
   return ProviderScope(
     overrides: [
@@ -394,8 +464,10 @@ Widget _welcomeScreen({
       networkPrivacyProvider.overrideWith(
         () => _FakeNetworkPrivacyNotifier(networkPrivacyCalls ?? <bool>[]),
       ),
+      ...extraOverrides,
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: theme,
         child: WelcomeScreen(
@@ -427,6 +499,7 @@ Widget _welcomeRouter(GoRouter router) {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

@@ -46,6 +46,9 @@ import '../../widgets/ledger_immediate_migration_signing_overlay.dart';
 import '../../widgets/mobile/mobile_ironwood_migration_attention.dart';
 import '../ironwood_migration_flow_screen.dart';
 import '../../../../core/zcash/network_upgrade_hold.dart';
+import '../../../../core/l10n/inline_spans.dart';
+import '../../../../core/l10n/l10n.dart';
+import '../../../../core/l10n/locale_typography.dart';
 
 part 'mobile_ironwood_migration_models.dart';
 part 'mobile_ironwood_migration_back_scope.dart';

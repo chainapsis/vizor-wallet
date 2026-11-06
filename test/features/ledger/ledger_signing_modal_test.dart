@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../../support/test_l10n.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_selection.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +18,7 @@ import 'package:zcash_wallet/src/features/ledger/widgets/ledger_procedure.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_modal_content.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -94,6 +96,7 @@ void main() {
             appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
           ],
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: ValueListenableBuilder<bool>(
@@ -205,6 +208,7 @@ void main() {
         failure: const LedgerSigningFailurePresentation(
           title: 'Ledger signing failed',
           statusLabel: 'Action needed',
+          actionNeeded: true,
           message: 'Reconnect your Ledger and try again.',
           showDeviceAppPrompt: true,
           actionLabel: 'Try again',
@@ -227,7 +231,7 @@ void main() {
     await tester.pumpWidget(
       _harness(
         phase: LedgerSigningModalPhase.failed,
-        failure: ledgerMemoHashUpdateFailure,
+        failure: ledgerMemoHashUpdateFailure(testL10n),
         onFailureAction: () => retryCount++,
       ),
     );
@@ -249,6 +253,7 @@ void main() {
           requestFailure: LedgerRequestFailure.appUpdateRequired,
           title: 'Ledger signing failed',
           statusLabel: 'Action needed',
+          actionNeeded: true,
           message: ledgerAppUpdateRequiredError,
           showDeviceAppPrompt: false,
           actionLabel: 'Try again',
@@ -256,7 +261,7 @@ void main() {
       ),
     );
 
-    expect(find.text(kLedgerAppUpdateRequiredTitle), findsOneWidget);
+    expect(find.text(testL10n.ledgerAppUpdateRequiredTitle), findsOneWidget);
     expect(find.text('Ledger signing failed'), findsNothing);
     expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
   });
@@ -287,6 +292,7 @@ void main() {
         failure: const LedgerSigningFailurePresentation(
           title: 'Ledger signing failed',
           statusLabel: 'Action needed',
+          actionNeeded: true,
           message: 'Open the Zcash app, then try again.',
           showDeviceAppPrompt: true,
           actionLabel: 'Try again',
@@ -330,6 +336,7 @@ void main() {
         failure: const LedgerSigningFailurePresentation(
           title: 'Could not save signed transaction',
           statusLabel: 'Signature preserved',
+          actionNeeded: false,
           message: 'Retry saving without approving another transaction.',
           showDeviceAppPrompt: false,
           actionLabel: 'Retry saving',
@@ -355,6 +362,7 @@ void main() {
       var visible = false;
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: StatefulBuilder(
@@ -408,6 +416,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: MediaQuery(
@@ -470,6 +479,7 @@ void main() {
           failure: const LedgerSigningFailurePresentation(
             title: 'Ledger signing failed',
             statusLabel: 'Action needed',
+            actionNeeded: true,
             message: 'Reconnect your Ledger and try again.',
             showDeviceAppPrompt: true,
             actionLabel: 'Try again',
@@ -572,6 +582,7 @@ Widget _harness({
         accountProvider.overrideWith(() => _StaticAccountNotifier(account)),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       debugShowCheckedModeBanner: false,
       home: Builder(
         builder: (context) => AppTheme(
@@ -613,6 +624,7 @@ const _bluetoothAccount = AccountInfo(
 const _usbConnectionFailure = LedgerSigningFailurePresentation(
   title: 'Ledger signing failed',
   statusLabel: 'Action needed',
+  actionNeeded: true,
   message: 'Connect and unlock your Ledger with USB, then try again.',
   showDeviceAppPrompt: false,
   actionLabel: 'Try again',

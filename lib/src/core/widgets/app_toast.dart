@@ -5,8 +5,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart'
     show TextButton, IconButton, ButtonStyle, MaterialTapTargetSize;
 
+import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
+import '../l10n/locale_typography.dart';
 
 enum AppToastTone { neutral, destructive }
 
@@ -68,7 +70,7 @@ class AppToast extends StatelessWidget {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             icon: Semantics(
-              label: 'Dismiss notification',
+              label: context.l10n.commonDismissNotification,
               excludeSemantics: true,
               child: AppIcon(
                 AppIcons.cross,
@@ -152,7 +154,10 @@ class AppToast extends StatelessWidget {
     final direction = Directionality.of(context);
     double textWidth(String value, TextStyle style) {
       final painter = TextPainter(
-        text: TextSpan(text: value, style: style),
+        text: TextSpan(
+          text: value,
+          style: withLocaleFontFallback(context, style),
+        ),
         textDirection: direction,
         textScaler: textScaler,
       )..layout();

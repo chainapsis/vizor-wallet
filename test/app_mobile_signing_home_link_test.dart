@@ -33,6 +33,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fakes/fake_gift_link_rust_api.dart';
 import 'fakes/fake_sync_notifier.dart';
@@ -162,6 +163,7 @@ void main() {
               syncProvider.overrideWith(FakeSyncNotifier.new),
             ],
             child: MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
               routerConfig: router,
               builder: (_, child) => AppTheme(
                 data: AppThemeData.dark,

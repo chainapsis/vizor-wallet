@@ -9,6 +9,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/privacy_mode_provider.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Toggles the wallet-wide privacy setting from the gift card list.
 class PaymentLinkPrivacyButton extends ConsumerWidget {
@@ -17,7 +18,9 @@ class PaymentLinkPrivacyButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enabled = ref.watch(privacyModeProvider);
-    final label = enabled ? 'Turn off privacy mode' : 'Turn on privacy mode';
+    final label = enabled
+        ? context.l10n.paymentLinkPrivacyModeOff
+        : context.l10n.paymentLinkPrivacyModeOn;
     const size = kAppFormFactor == AppFormFactor.mobile ? 44.0 : 32.0;
     return AppTooltip(
       message: label,

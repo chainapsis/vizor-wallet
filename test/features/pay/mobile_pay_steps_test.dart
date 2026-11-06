@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart'
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_amount_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_recipient_step.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/leading_decimal_input.dart';
 
@@ -1112,6 +1113,7 @@ Future<void> _pumpStep(WidgetTester tester, Widget child) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Scaffold(body: SizedBox(width: 393, height: 699, child: child)),

@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -31,9 +32,6 @@ import '../widgets/receive_address_widgets.dart';
 import '../widgets/request/request_amount_card.dart';
 import '../widgets/request/request_amount_model.dart';
 import '../../../core/widgets/app_tooltip.dart';
-
-const _renewShieldedAddressErrorMessage =
-    "We couldn't refresh your shielded address. Try again, or use your current one.";
 
 bool _shouldRefreshTransparentAddressAfterSyncUpdate(
   SyncState previous,
@@ -109,7 +107,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorText = 'No active account';
+        _errorText = context.l10n.commonNoActiveAccount;
       });
       return;
     }
@@ -157,7 +155,10 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       setState(() {
         _shieldedAddress ??= walletAddress;
         _isLoading = false;
-        _errorText = e.toString();
+        _errorText = context.l10n.commonErrorWithDetails(
+          context.l10n.receiveShieldedAddressLoadFailed,
+          e.toString(),
+        );
       });
     }
   }
@@ -217,7 +218,10 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       setState(() {
         _isLoadingTransparent = false;
         _transparentLoadingAccountUuid = null;
-        _transparentErrorText = e.toString();
+        _transparentErrorText = context.l10n.commonErrorWithDetails(
+          context.l10n.receiveTransparentAddressLoadFailed,
+          e.toString(),
+        );
       });
     }
   }
@@ -281,10 +285,13 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       }
       setState(() {
         _isRenewingShielded = false;
-        _errorText = '$_renewShieldedAddressErrorMessage\nDetails: $e';
+        _errorText = context.l10n.commonErrorWithDetails(
+          context.l10n.receiveRenewAddressError,
+          e.toString(),
+        );
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(_renewShieldedAddressErrorMessage)),
+        SnackBar(content: Text(context.l10n.receiveRenewAddressError)),
       );
     }
   }
@@ -292,7 +299,11 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   void _copySelectedAddress() {
     final address = _selectedAddress;
     if (address.isEmpty) return;
-    copyTextWithToast(context, text: address, toastMessage: 'Address copied');
+    copyTextWithToast(
+      context,
+      text: address,
+      toastMessage: context.l10n.commonAddressCopied,
+    );
   }
 
   Future<void> _shareSelectedAddress() async {
@@ -303,7 +314,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     } catch (e) {
       log('Receive: ERROR sharing address: $e');
       if (!mounted) return;
-      showAppToast(context, "Couldn't share this address. Copy it instead.");
+      showAppToast(context, context.l10n.receiveShareFailed);
     }
   }
 
@@ -497,7 +508,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       // Cancelling the save dialog is not an outcome worth a toast.
       if (saved == null) return;
       if (!mounted) return;
-      showAppToast(context, 'QR image saved to ${saved.folderName}');
+      showAppToast(context, context.l10n.receiveQrSaved(saved.folderName));
     } catch (e) {
       log('Receive: ERROR saving request QR image: $e');
       if (!mounted) return;
@@ -514,8 +525,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   void _reportRequestQrSaveFailed() {
     showAppToast(
       context,
-      "We couldn't save the QR image. Try another folder, or copy the "
-      'request link instead.',
+      context.l10n.receiveQrSaveFailed,
       iconName: AppIcons.cancel,
       tone: AppToastTone.destructive,
       duration: const Duration(seconds: 4),
@@ -636,7 +646,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                   copyTextWithToast(
                     context,
                     text: uri,
-                    toastMessage: kRequestLinkCopiedToast,
+                    toastMessage: context.l10n.receiveRequestLinkCopied,
                   );
                 },
                 onSaveQrImage: (png) =>
@@ -840,7 +850,9 @@ class _ReceiveContentLayout extends StatelessWidget {
                             width: 256,
                             height: 33,
                             child: Text(
-                              'Receive $kZcashDefaultCurrencyTicker',
+                              context.l10n.receiveTitle(
+                                kZcashDefaultCurrencyTicker,
+                              ),
                               maxLines: 1,
                               style: AppTypography.headlineLarge.copyWith(
                                 color: colors.text.accent,
@@ -885,8 +897,10 @@ class _ReceiveContentLayout extends StatelessWidget {
                                         : 'receive_copy_transparent_address_button',
                                   ),
                                   label: _isShielded
-                                      ? 'Copy shielded address'
-                                      : 'Copy transparent address',
+                                      ? context.l10n.commonCopyShieldedAddress
+                                      : context
+                                            .l10n
+                                            .receiveCopyTransparentAddress,
                                   type: selectedType,
                                   enabled: address.isNotEmpty && !isLoading,
                                   onTap: onCopy,
@@ -895,13 +909,17 @@ class _ReceiveContentLayout extends StatelessWidget {
                               const SizedBox(width: AppSpacing.xs),
                               AppTooltip(
                                 message: _isShielded
-                                    ? 'Share shielded address'
-                                    : 'Share transparent address',
+                                    ? context.l10n.receiveShareShieldedAddress
+                                    : context
+                                          .l10n
+                                          .receiveShareTransparentAddress,
                                 child: Semantics(
                                   button: true,
                                   label: _isShielded
-                                      ? 'Share shielded address'
-                                      : 'Share transparent address',
+                                      ? context.l10n.receiveShareShieldedAddress
+                                      : context
+                                            .l10n
+                                            .receiveShareTransparentAddress,
                                   child: AppButton(
                                     key: const ValueKey('receive_share_button'),
                                     variant: AppButtonVariant.secondary,
@@ -930,7 +948,7 @@ class _ReceiveContentLayout extends StatelessWidget {
                             onPressed: address.isNotEmpty && !isLoading
                                 ? onRequest
                                 : null,
-                            child: const Text('Request ZEC'),
+                            child: Text(context.l10n.receiveRequestZecButton),
                           ),
                         ],
                       ),
@@ -1164,11 +1182,15 @@ class _ReceiveInfoDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final title = receiveAddressInfoTitle(type);
-    final subtitle = receiveAddressInfoSubtitle(type);
+    final title = receiveAddressInfoTitle(context.l10n, type);
+    final subtitle = receiveAddressInfoSubtitle(context.l10n, type);
     // Copy and icons come from the shared explainer content; the fixed
     // row heights are desktop-dialog layout.
-    final infoItems = receiveAddressInfoItems(type, touchUi: false);
+    final infoItems = receiveAddressInfoItems(
+      context.l10n,
+      type,
+      touchUi: false,
+    );
     final heights = _isShielded
         ? const [63.0, 63.0, 63.0]
         : const [42.0, 84.0, 105.0, 105.0];
@@ -1259,7 +1281,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
               size: AppButtonSize.medium,
               height: 36,
               minWidth: 280,
-              child: const Text('Close'),
+              child: Text(context.l10n.commonClose),
             ),
           ),
         ],

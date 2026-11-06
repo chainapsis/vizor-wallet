@@ -160,7 +160,7 @@ String mobileIronwoodMigrationAttentionFingerprint({
     // The run id and phase already identify a stopped run.
     MobileIronwoodMigrationAttentionKind.upgradeStopped => const [],
   };
-  return '$accountUuid:$runId:${status.phase}:'
+  return '$accountUuid:$runId:${status.phase}:' // l10n-ignore: persistence key
       '${attention.kind.name}:${attention.count}:$actionIdentity';
 }
 

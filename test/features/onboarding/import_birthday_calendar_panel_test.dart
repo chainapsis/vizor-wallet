@@ -3,9 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_calendar_overlay.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Widget _app({DateTime? initialMonth}) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     home: Center(
       child: ImportBirthdayCalendarPanel(

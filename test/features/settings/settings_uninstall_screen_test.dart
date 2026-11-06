@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_share_tracking_restorer_provider.dart';
+import '../../support/test_l10n.dart';
 
 const _validPassword = 'Correct123!';
 
@@ -76,10 +77,7 @@ void main() {
 
       // The password gate never opens and nothing is wiped: the claim would
       // pay into the wallet this flow is about to delete.
-      expect(
-        find.text(kWalletResetInFlightGiftCardClaimsMessage),
-        findsOneWidget,
-      );
+      expect(find.text(testL10n.walletResetGiftCardInFlight), findsOneWidget);
       expect(find.text('Confirm access'), findsNothing);
       expect(accountNotifier.resetWalletCalled, isFalse);
     } finally {

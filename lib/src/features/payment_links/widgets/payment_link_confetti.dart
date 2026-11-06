@@ -56,10 +56,9 @@ class _PaymentLinkConfettiState extends State<PaymentLinkConfetti>
     // The original handoff extends the paint surface 160 px horizontally and
     // 140 px vertically around a 360 x 225 card. Keep that relationship while
     // aligning the burst origin with the current desktop/mobile card slots.
-    const defaultAlignment =
-        kAppFormFactor == AppFormFactor.mobile
-            ? Alignment(0, -0.22)
-            : Alignment(0, -0.08);
+    const defaultAlignment = kAppFormFactor == AppFormFactor.mobile
+        ? Alignment(0, -0.22)
+        : Alignment(0, -0.08);
     return IgnorePointer(
       child: ExcludeSemantics(
         child: Align(
@@ -72,15 +71,14 @@ class _PaymentLinkConfettiState extends State<PaymentLinkConfetti>
               height: 505,
               child: AnimatedBuilder(
                 animation: _controller,
-                builder:
-                    (context, _) => RepaintBoundary(
-                      child: CustomPaint(
-                        key: const ValueKey('payment_link_confetti_burst'),
-                        painter: _ConfettiPainter(
-                          progress: _showStaticFrame ? 0.55 : _controller.value,
-                        ),
-                      ),
+                builder: (context, _) => RepaintBoundary(
+                  child: CustomPaint(
+                    key: const ValueKey('payment_link_confetti_burst'),
+                    painter: _ConfettiPainter(
+                      progress: _showStaticFrame ? 0.55 : _controller.value,
                     ),
+                  ),
+                ),
               ),
             ),
           ),

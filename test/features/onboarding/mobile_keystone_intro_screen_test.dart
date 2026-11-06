@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_pr
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_keystone_screens.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Widget _app(String initialLocation) {
   final router = GoRouter(
@@ -30,6 +31,7 @@ Widget _app(String initialLocation) {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(
         data: AppThemeData.light,

@@ -12,6 +12,7 @@ import 'core/config/app_version_config.dart';
 import 'core/config/rpc_endpoint_config.dart';
 import 'core/config/swap_remote_enable_config.dart';
 import 'core/config/zcash_explorer.dart';
+import 'core/l10n/app_language.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/enhance_pir_preference_store.dart';
 import 'core/storage/wallet_paths.dart';
@@ -56,6 +57,7 @@ class AppBootstrapState {
     required this.rpcEndpointConfig,
     this.explorerUrlTemplate = '',
     required this.themeMode,
+    this.appLanguage,
     required this.privacyModeEnabled,
     required this.isPasswordConfigured,
     required this.isUnlocked,
@@ -76,6 +78,9 @@ class AppBootstrapState {
   final RpcEndpointConfig rpcEndpointConfig;
   final String explorerUrlTemplate;
   final ThemeMode themeMode;
+
+  /// The saved language preference; `null` follows the device language.
+  final AppLanguage? appLanguage;
   final bool privacyModeEnabled;
   final bool swapEnabledOverrideCachedForRelease;
   final bool syncKeepAwakeEnabled;
@@ -276,6 +281,7 @@ Future<AppBootstrapState> loadAppBootstrap({
     final rpcEndpointConfig = await _readRpcEndpointConfig(storage, network);
     final explorerUrlTemplate = await _readExplorerUrlTemplate(storage);
     final themeMode = await _readThemeMode(storage);
+    final appLanguage = await _readAppLanguage(storage);
     final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
     final swapEnabledOverrideCachedForRelease =
         await _readSwapEnabledOverrideCachedForRelease();
@@ -283,12 +289,12 @@ Future<AppBootstrapState> loadAppBootstrap({
     final syncKeepAwakeEnabled = await _readPlainBool(
       storage,
       key: kSyncKeepAwakeEnabledKey,
-      label: 'sync keep-awake enabled flag',
+      label: 'sync keep-awake enabled flag', // l10n-ignore: log label
     );
     final syncKeepAwakePromptSeen = await _readPlainBool(
       storage,
       key: kSyncKeepAwakePromptSeenKey,
-      label: 'sync keep-awake prompt seen flag',
+      label: 'sync keep-awake prompt seen flag', // l10n-ignore: log label
     );
     final enhancePirEnabled = await readEnhancePirEnabledPreference(storage);
     var isPasswordConfigured = await storage.isPasswordConfigured();
@@ -485,6 +491,7 @@ Future<AppBootstrapState> loadAppBootstrap({
       rpcEndpointConfig: rpcEndpointConfig,
       explorerUrlTemplate: explorerUrlTemplate,
       themeMode: themeMode,
+      appLanguage: appLanguage,
       privacyModeEnabled: privacyModeEnabled,
       swapEnabledOverrideCachedForRelease: swapEnabledOverrideCachedForRelease,
       biometricUnlockEnabled: biometricUnlockEnabled,
@@ -503,7 +510,7 @@ Future<AppBootstrapState> loadAppBootstrap({
     return AppBootstrapState.blocked(
       failureKind: AppBootstrapFailureKind.secureStorageUnavailable,
       failureMessage:
-          'Vizor needs access to secure storage before it can open your wallet.',
+          'Vizor needs access to secure storage before it can open your wallet.', // l10n-ignore: diagnostic; the screen words it by failureKind
     );
   } catch (e) {
     log('bootstrap: failed, blocking startup: $e');
@@ -512,7 +519,8 @@ Future<AppBootstrapState> loadAppBootstrap({
     );
     return AppBootstrapState.blocked(
       failureKind: AppBootstrapFailureKind.startupFailure,
-      failureMessage: 'Vizor could not load its startup state.',
+      failureMessage:
+          'Vizor could not load its startup state.', // l10n-ignore: diagnostic; the screen words it by failureKind
     );
   }
 }
@@ -535,19 +543,19 @@ String _walletDbMigrationFailureMessage(Object error) {
   if (message.contains('seedrequired') ||
       message.contains('seed is required') ||
       message.contains('wallet seed is required')) {
-    return 'This wallet requires a database update that cannot be completed automatically.';
+    return 'This wallet requires a database update that cannot be completed automatically.'; // l10n-ignore: diagnostic; the screen words it by failureKind
   }
   if (message.contains('seednotrelevant') ||
       message.contains('seed is not relevant') ||
       message.contains('not relevant to any derived accounts')) {
-    return 'The available wallet seed does not match the database update requirement.';
+    return 'The available wallet seed does not match the database update requirement.'; // l10n-ignore: diagnostic; the screen words it by failureKind
   }
   if (message.contains('sqlite') &&
       (message.contains('not supported') ||
           message.contains('database not supported'))) {
-    return 'The local SQLite version cannot open this wallet database.';
+    return 'The local SQLite version cannot open this wallet database.'; // l10n-ignore: diagnostic; the screen words it by failureKind
   }
-  return 'The wallet database update did not complete.';
+  return 'The wallet database update did not complete.'; // l10n-ignore: diagnostic; the screen words it by failureKind
 }
 
 Future<void> _applyE2eBootstrapOverrides(AppSecureStore storage) async {
@@ -646,6 +654,19 @@ Future<ThemeMode> _readThemeMode(AppSecureStore storage) async {
   }
 }
 
+Future<AppLanguage?> _readAppLanguage(AppSecureStore storage) async {
+  try {
+    return decodeAppLanguagePreference(
+      await storage.readString(kAppLanguageKey),
+    );
+  } on SecureStorageUnavailableException {
+    rethrow;
+  } catch (e) {
+    log('bootstrap: failed to read app language: $e');
+    return null;
+  }
+}
+
 ThemeMode _decodeThemeMode(String? raw) {
   return switch (raw) {
     'light' => ThemeMode.light,
@@ -671,7 +692,7 @@ Future<bool> _readBiometricUnlockEnabled(AppSecureStore storage) async {
   return _readPlainBool(
     storage,
     key: _biometricUnlockEnabledKey,
-    label: 'biometric unlock flag',
+    label: 'biometric unlock flag', // l10n-ignore: log label
   );
 }
 

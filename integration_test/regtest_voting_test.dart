@@ -283,12 +283,14 @@ void main() {
           final job = providerContainer.read(
             votingSubmissionJobProvider(draftKey),
           );
-          if (job.errorMessage != null) fail(job.errorMessage!);
+          if (job.errorMessage != null) fail('${job.errorMessage}');
           final session = providerContainer.read(
             votingSessionProvider(_roundId),
           );
           if (session.hasError) fail('Voting session failed: ${session.error}');
-          if (session.value?.error != null) fail(session.value!.error!.message);
+          if (session.value?.error != null) {
+            fail('${session.value!.error!.message}');
+          }
           return tester.any(
             find.byKey(const ValueKey('voting_submission_done_button')),
           );

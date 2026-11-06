@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../providers/voting/voting_participation_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,6 +28,7 @@ import '../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
+import '../voting_message.dart';
 import '../voting_poll_ordering.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
@@ -203,17 +205,17 @@ class _VotingProposalDetailViewState
       loading: () => _stateView(const VotingPaneLoading()),
       error: (error, _) => _stateView(
         _Message(
-          title: "Couldn't load voting round",
-          message: friendlyVotingErrorMessage(error),
+          title: context.l10n.votingDetailLoadFailedTitle,
+          message: friendlyVotingErrorMessage(context.l10n, error),
         ),
       ),
       data: (state) {
         final round = state.round;
         if (round == null) {
           return _stateView(
-            const _Message(
-              title: 'Voting round unavailable',
-              message: 'The selected voting round could not be loaded.',
+            _Message(
+              title: context.l10n.votingDetailUnavailableTitle,
+              message: context.l10n.votingDetailUnavailableBody,
             ),
           );
         }
@@ -241,7 +243,7 @@ class _VotingProposalDetailViewState
           return _PendingVoteContent(
             showDesktopToolbar: widget.showDesktopToolbar,
             roundTitle: round.title.isEmpty
-                ? 'Token holder voting'
+                ? context.l10n.votingTokenHolderTitle
                 : round.title,
             snapshotHeight: round.snapshotHeight,
             description: _roundDescription(round.rawJson),
@@ -255,7 +257,7 @@ class _VotingProposalDetailViewState
           return VotingVotedPollContent(
             showDesktopToolbar: widget.showDesktopToolbar,
             roundTitle: round.title.isEmpty
-                ? 'Token holder voting'
+                ? context.l10n.votingTokenHolderTitle
                 : round.title,
             snapshotHeight: round.snapshotHeight,
             description: _roundDescription(round.rawJson),
@@ -271,7 +273,7 @@ class _VotingProposalDetailViewState
           return _PendingVoteContent(
             showDesktopToolbar: widget.showDesktopToolbar,
             roundTitle: round.title.isEmpty
-                ? 'Token holder voting'
+                ? context.l10n.votingTokenHolderTitle
                 : round.title,
             snapshotHeight: round.snapshotHeight,
             description: _roundDescription(round.rawJson),
@@ -309,7 +311,9 @@ class _VotingProposalDetailViewState
           mobileHeaderBuilder: widget.mobileHeaderBuilder,
           showDesktopToolbar: widget.showDesktopToolbar,
           roundId: roundId,
-          title: round.title.isEmpty ? 'Token holder voting' : round.title,
+          title: round.title.isEmpty
+              ? context.l10n.votingTokenHolderTitle
+              : round.title,
           snapshotHeight: round.snapshotHeight,
           description: _roundDescription(round.rawJson),
           forumUri: forumUri,
@@ -533,7 +537,7 @@ bool _isVotingEligibilityPending(VotingSessionState state) {
   return state.eligibleWeightZatoshi == null && state.error == null;
 }
 
-String? _votingEligibilityMessage(
+VotingMessage? _votingEligibilityMessage(
   VotingSessionState state, {
   required bool preparing,
 }) {
@@ -541,13 +545,10 @@ String? _votingEligibilityMessage(
     return _privacyTrimNotice(state.privacyTrimDroppedValueZatoshi);
   }
   final error = state.error;
-  if (error != null) return friendlyVotingErrorText(error.message);
+  if (error != null) return normalizedVotingMessage(error.message);
   if (preparing) return null;
-  return _votingPowerUnavailableMessage;
+  return const VotingNotice(VotingNoticeKind.votingPowerUnavailable);
 }
-
-const _votingPowerUnavailableLabel = 'Voting power unavailable';
-const _votingPowerUnavailableMessage = '$_votingPowerUnavailableLabel.';
 
 /// One quiet line for the voters whose voting power the privacy trim reduced.
 ///
@@ -555,12 +556,11 @@ const _votingPowerUnavailableMessage = '$_votingPowerUnavailableLabel.';
 /// number of delegation submissions they emit. That withheld value is real
 /// voting power, so it is stated rather than silently discarded. Most voters
 /// have nothing withheld and see nothing.
-String? _privacyTrimNotice(BigInt? droppedValueZatoshi) {
+VotingMessage? _privacyTrimNotice(BigInt? droppedValueZatoshi) {
   if (droppedValueZatoshi == null || droppedValueZatoshi <= BigInt.zero) {
     return null;
   }
-  return '${formatVotingPower(droppedValueZatoshi)} is left out of this vote '
-      'to keep your submission less identifiable.';
+  return VotingPrivacyTrimNotice(droppedValueZatoshi);
 }
 
 /// Session-free presentation shared by the live route and deterministic previews.
@@ -609,8 +609,8 @@ class VotingActivePollContent extends StatefulWidget {
   /// [votingEligibilityConfirmed]: it also covers the window where voting
   /// power is still being calculated.
   final bool answersEditable;
-  final String? votingEligibilityMessage;
-  final String? votingEligibilityErrorMessage;
+  final VotingMessage? votingEligibilityMessage;
+  final VotingMessage? votingEligibilityErrorMessage;
   final VoidCallback onVotingEligibilityRetry;
   final List<VotingProposalView> proposals;
   final VotingDraftState draft;
@@ -709,12 +709,16 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
 
   Widget _buildPollSummary() {
     if (kAppFormFactor == AppFormFactor.mobile) {
+      final message = widget.votingEligibilityMessage;
+      final votingPowerUnavailable =
+          message is VotingNotice &&
+          message.kind == VotingNoticeKind.votingPowerUnavailable;
       final votingEligibilityMessage =
-          widget.votingEligibilityMessage == _votingPowerUnavailableMessage &&
+          votingPowerUnavailable &&
               widget.votingPowerZatoshi == null &&
               !widget.votingPowerPreparing
           ? null
-          : widget.votingEligibilityMessage;
+          : message?.text(context.l10n);
       return _MobilePollSummary(
         title: widget.title,
         snapshotHeight: widget.snapshotHeight,
@@ -737,7 +741,9 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
       endDate: widget.endDate,
       votingPowerZatoshi: widget.votingPowerZatoshi,
       votingPowerPreparing: widget.votingPowerPreparing,
-      votingEligibilityMessage: widget.votingEligibilityMessage,
+      votingEligibilityMessage: widget.votingEligibilityMessage?.text(
+        context.l10n,
+      ),
     );
   }
 
@@ -754,12 +760,12 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
               isIneligible ||
               widget.votingEligibilityConfirmed && _hasAnswers),
       label: widget.participationUnavailable
-          ? 'Unavailable'
+          ? context.l10n.votingActionUnavailable
           : canRetryEligibility
-          ? 'Retry eligibility'
+          ? context.l10n.votingActionRetryEligibility
           : isIneligible
-          ? 'Not eligible'
-          : 'Review answers',
+          ? context.l10n.votingNotEligible
+          : context.l10n.votingActionReviewAnswers,
       onPressed: _handleBottomActionPressed,
     );
   }
@@ -790,13 +796,13 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(
-        votingAlreadyUsedMessage,
+        context.l10n.votingAlreadyUsedNotice,
         key: const ValueKey('voting_participation_unavailable'),
         style: AppTypography.labelLarge,
       ),
       TextButton(
         onPressed: widget.onParticipationRetry,
-        child: const Text('Check again'),
+        child: Text(context.l10n.commonCheckAgain),
       ),
     ],
   );
@@ -815,9 +821,9 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
           ),
         Expanded(
           child: widget.proposals.isEmpty
-              ? const _Message(
-                  title: 'No proposals',
-                  message: 'This voting round does not contain any proposals.',
+              ? _Message(
+                  title: context.l10n.votingNoProposalsTitle,
+                  message: context.l10n.votingNoProposalsBody,
                 )
               : VotingProposalList(
                   key: ValueKey(widget.roundId),
@@ -904,8 +910,10 @@ class _DesktopVotedPollHeader extends StatelessWidget {
           children: [
             _MetaText(
               votedAt == null
-                  ? 'Voted'
-                  : 'Voted ${formatMonthDayYear(votedAt!)}',
+                  ? context.l10n.votingStatusVoted
+                  : context.l10n.votingVotedOn(
+                      formatMonthDayYear(votedAt!, context.l10n.localeName),
+                    ),
             ),
             const _MetaText('·'),
             _VotingPowerMeta(
@@ -913,7 +921,7 @@ class _DesktopVotedPollHeader extends StatelessWidget {
               preparing: votingPowerPreparing,
             ),
             const _MetaText('·'),
-            const _MetaText('Vote locked'),
+            _MetaText(context.l10n.votingVoteLocked),
           ],
         ),
         if (description.isNotEmpty) ...[
@@ -981,7 +989,7 @@ class _SkippedQuestionsDialog extends StatelessWidget {
                     const SizedBox(width: AppSpacing.xs),
                     Expanded(
                       child: Text(
-                        'Skip unanswered questions?',
+                        context.l10n.votingSkipDialogTitle,
                         style: AppTypography.bodyLarge.copyWith(
                           color: colors.text.accent,
                           fontWeight: FontWeight.w600,
@@ -992,9 +1000,7 @@ class _SkippedQuestionsDialog extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  'You have not answered $skippedCount of $totalCount '
-                  'questions. The review screen will mark them as skipped, '
-                  'and skipped questions will not be submitted.',
+                  context.l10n.votingSkipDialogBody(skippedCount, totalCount),
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.secondary,
                   ),
@@ -1006,7 +1012,7 @@ class _SkippedQuestionsDialog extends StatelessWidget {
                   growWithContent: true,
                   constrainContent: true,
                   expand: true,
-                  child: const Text('Continue to review'),
+                  child: Text(context.l10n.commonContinueToReview),
                 ),
                 const SizedBox(height: AppSpacing.s),
                 AppButton(
@@ -1016,7 +1022,7 @@ class _SkippedQuestionsDialog extends StatelessWidget {
                   growWithContent: true,
                   constrainContent: true,
                   expand: true,
-                  child: const Text('Keep voting'),
+                  child: Text(context.l10n.votingKeepVoting),
                 ),
               ],
             ),
@@ -1031,7 +1037,7 @@ class _SkippedQuestionsDialog extends StatelessWidget {
 class VotingIneligibleDialog extends StatelessWidget {
   const VotingIneligibleDialog({super.key, required this.message});
 
-  final String message;
+  final VotingMessage message;
 
   @override
   Widget build(BuildContext context) {
@@ -1057,7 +1063,7 @@ class VotingIneligibleDialog extends StatelessWidget {
             followsScreenCorners: false,
             child: SingleChildScrollView(
               child: MobileModalScaffold(
-                title: 'Not eligible for this voting round',
+                title: context.l10n.votingIneligibleTitle,
                 titleMaxLines: 3,
                 onClose: () => Navigator.of(context).pop(false),
                 bodyGap: AppSpacing.md,
@@ -1074,8 +1080,8 @@ class VotingIneligibleDialog extends StatelessWidget {
                       constrainContent: true,
                       height: actionHeight,
                       onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text(
-                        'Switch account',
+                      child: Text(
+                        context.l10n.votingSwitchAccount,
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -1087,7 +1093,10 @@ class VotingIneligibleDialog extends StatelessWidget {
                       constrainContent: true,
                       height: actionHeight,
                       onPressed: () => Navigator.of(context).pop(false),
-                      child: const Text('Close', textAlign: TextAlign.center),
+                      child: Text(
+                        context.l10n.commonClose,
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   ],
                 ),
@@ -1128,7 +1137,7 @@ class VotingIneligibleDialog extends StatelessWidget {
                   const SizedBox(width: AppSpacing.xs),
                   Expanded(
                     child: Text(
-                      'Not eligible for this voting round',
+                      context.l10n.votingIneligibleTitle,
                       style: AppTypography.bodyLarge.copyWith(
                         color: colors.text.accent,
                         fontWeight: FontWeight.w600,
@@ -1139,7 +1148,7 @@ class VotingIneligibleDialog extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                message,
+                message.text(context.l10n),
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -1148,7 +1157,7 @@ class VotingIneligibleDialog extends StatelessWidget {
               AppButton(
                 onPressed: () => Navigator.of(context).pop(),
                 minWidth: 312,
-                child: const Text('Done'),
+                child: Text(context.l10n.commonDone),
               ),
             ],
           ),
@@ -1161,19 +1170,16 @@ class VotingIneligibleDialog extends StatelessWidget {
 class _MobileVotingEligibilityMessage extends StatelessWidget {
   const _MobileVotingEligibilityMessage({required this.message});
 
-  final String message;
+  final VotingMessage message;
 
   @override
   Widget build(BuildContext context) {
-    const guidance = 'Switch to an eligible account to vote.';
-    final text = message.trim();
-    final hasGuidance = text.endsWith(guidance);
-    var reason = hasGuidance
-        ? text.substring(0, text.length - guidance.length).trimRight()
-        : text;
-    if (hasGuidance && reason.endsWith('.')) {
-      reason = reason.substring(0, reason.length - 1);
-    }
+    final l10n = context.l10n;
+    final message = this.message;
+    // An eligibility failure ends with the switch-account guidance, which the
+    // dialog sets apart; any other message is shown whole.
+    final failure = message is VotingEligibilityFailure ? message : null;
+    final reason = failure?.reasonText(l10n) ?? message.text(l10n).trim();
     final spans = <TextSpan>[];
     var offset = 0;
     for (final match in RegExp(r'\b\d+(?:\.\d+)? ZEC\b').allMatches(reason)) {
@@ -1187,10 +1193,10 @@ class _MobileVotingEligibilityMessage extends StatelessWidget {
       offset = match.end;
     }
     spans.add(TextSpan(text: reason.substring(offset)));
-    if (hasGuidance) {
+    if (failure != null) {
       spans.add(
         TextSpan(
-          text: '\n\n$guidance',
+          text: '\n\n${l10n.votingSwitchEligibleGuidance}',
           style: TextStyle(color: context.colors.text.accent),
         ),
       );
@@ -1260,7 +1266,7 @@ class _MobilePollSummary extends StatelessWidget {
                   ),
                   const SizedBox(width: AppSpacing.xs),
                   Text(
-                    'Not eligible',
+                    context.l10n.votingNotEligible,
                     key: const ValueKey('voting_detail_ineligible_badge'),
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.destructive,
@@ -1287,8 +1293,10 @@ class _MobilePollSummary extends StatelessWidget {
           children: [
             _MetaText(
               endDate == null
-                  ? 'Voting active'
-                  : 'Ends ${formatMonthDayYear(endDate!)}',
+                  ? context.l10n.votingActive
+                  : context.l10n.votingEnds(
+                      formatMonthDayYear(endDate!, context.l10n.localeName),
+                    ),
             ),
             if (!isIneligible) ...[
               const _MetaText('·'),
@@ -1340,8 +1348,8 @@ class _MobilePollSummary extends StatelessWidget {
                           Flexible(
                             child: Text(
                               expanded
-                                  ? 'Hide description'
-                                  : 'Show description',
+                                  ? context.l10n.votingResultsHideDescription
+                                  : context.l10n.votingResultsShowDescription,
                               style: AppTypography.labelLarge.copyWith(
                                 color: colors.text.accent,
                                 fontWeight: FontWeight.w400,
@@ -1450,8 +1458,10 @@ class _PollSummary extends StatelessWidget {
           children: [
             _MetaText(
               endDate == null
-                  ? 'Voting active'
-                  : 'Ends ${formatMonthDayYear(endDate!)}',
+                  ? context.l10n.votingActive
+                  : context.l10n.votingEnds(
+                      formatMonthDayYear(endDate!, context.l10n.localeName),
+                    ),
             ),
             const _MetaText('·'),
             _VotingPowerMeta(
@@ -1460,7 +1470,7 @@ class _PollSummary extends StatelessWidget {
             ),
             if (endDate != null) ...[
               const _MetaText('·'),
-              _MetaText(_daysLeftLabel(endDate!)),
+              _MetaText(_daysLeftLabel(context.l10n, endDate!)),
             ],
           ],
         ),
@@ -1584,10 +1594,9 @@ class VotingVotedPollContent extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           Expanded(
             child: itemCount == 0
-                ? const _Message(
-                    title: 'No proposals',
-                    message:
-                        'This voting round does not contain any proposals.',
+                ? _Message(
+                    title: context.l10n.votingNoProposalsTitle,
+                    message: context.l10n.votingNoProposalsBody,
                   )
                 : VotingPaneListView.separated(
                     maxWidth: 560,
@@ -1608,7 +1617,9 @@ class VotingVotedPollContent extends StatelessWidget {
                         fallbackForumUri: forumUri,
                         selectedChoice: choice,
                         readOnly: true,
-                        statusLabel: choice == null ? 'Skipped' : null,
+                        statusLabel: choice == null
+                            ? context.l10n.votingReviewSkipped
+                            : null,
                       );
                     },
                   ),
@@ -1643,10 +1654,9 @@ class VotingVotedPollContent extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 if (proposals.isEmpty)
-                  const _Message(
-                    title: 'No proposals',
-                    message:
-                        'This voting round does not contain any proposals.',
+                  _Message(
+                    title: context.l10n.votingNoProposalsTitle,
+                    message: context.l10n.votingNoProposalsBody,
                   )
                 else
                   for (var index = 0; index < proposals.length; index++) ...[
@@ -1657,7 +1667,7 @@ class VotingVotedPollContent extends StatelessWidget {
                       readOnly: true,
                       statusLabel:
                           choicesByProposalId[proposals[index].id] == null
-                          ? 'Skipped'
+                          ? context.l10n.votingReviewSkipped
                           : null,
                     ),
                     if (index < proposals.length - 1)
@@ -1761,15 +1771,14 @@ class _PendingVoteContent extends StatelessWidget {
                           ],
                           const SizedBox(height: AppSpacing.md),
                           Text(
-                            'Vote in progress',
+                            context.l10n.votingPendingTitle,
                             style: AppTypography.headlineSmall.copyWith(
                               color: colors.text.accent,
                             ),
                           ),
                           const SizedBox(height: AppSpacing.xxs),
                           Text(
-                            'You have an unfinished vote for this round. '
-                            'Resume to complete the submission.',
+                            context.l10n.votingPendingBody,
                             style: AppTypography.bodyMedium.copyWith(
                               color: colors.text.secondary,
                             ),
@@ -1783,7 +1792,7 @@ class _PendingVoteContent extends StatelessWidget {
                               ),
                             ),
                             variant: AppButtonVariant.primary,
-                            child: const Text('Continue voting'),
+                            child: Text(context.l10n.votingContinueVoting),
                           ),
                         ],
                       ),
@@ -1842,7 +1851,7 @@ class _VotedPollHeader extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.xs),
             Text(
-              'Voted',
+              context.l10n.votingStatusVoted,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.positiveStrong,
               ),
@@ -1861,8 +1870,8 @@ class _VotedPollHeader extends StatelessWidget {
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.primary,
             ),
-            collapsedLabel: 'Show description',
-            expandedLabel: 'Hide description',
+            collapsedLabel: context.l10n.votingResultsShowDescription,
+            expandedLabel: context.l10n.votingResultsHideDescription,
             buttonAlignment: Alignment.centerLeft,
             showToggleWhenNotOverflowing: true,
           ),
@@ -1891,22 +1900,25 @@ class _VotedPollHeader extends StatelessWidget {
           child: Column(
             children: [
               _VotedReviewRow(
-                label: 'Voted',
+                label: context.l10n.votingStatusVoted,
                 value: votedAt == null
-                    ? 'Not available'
-                    : formatMonthDayYear(votedAt!),
+                    ? context.l10n.votingNotAvailable
+                    : formatMonthDayYear(votedAt!, context.l10n.localeName),
               ),
               const SizedBox(height: AppSpacing.sm),
               _VotedReviewRow(
-                label: 'Voting power',
+                label: context.l10n.votingReceiptPower,
                 value: votingPowerZatoshi == null
                     ? votingPowerPreparing
-                          ? 'Preparing...'
-                          : 'Not available'
+                          ? context.l10n.commonPreparingDots
+                          : context.l10n.votingNotAvailable
                     : formatVotingPower(votingPowerZatoshi!),
               ),
               const SizedBox(height: AppSpacing.sm),
-              const _VotedReviewRow(label: 'Status', value: 'Vote locked'),
+              _VotedReviewRow(
+                label: context.l10n.activityReceiptStatus,
+                value: context.l10n.votingVoteLocked,
+              ),
             ],
           ),
         ),
@@ -1975,7 +1987,7 @@ class _VotingPowerMeta extends StatelessWidget {
     final votingPower = zatoshi;
     if (votingPower == null) {
       if (!preparing) {
-        return const _MetaText(_votingPowerUnavailableLabel);
+        return _MetaText(context.l10n.votingPowerUnavailableTitle);
       }
       final colors = context.colors;
       return Row(
@@ -1990,11 +2002,13 @@ class _VotingPowerMeta extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.xxs),
-          const _MetaText('Preparing voting power'),
+          _MetaText(context.l10n.votingPreparingPowerMeta),
         ],
       );
     }
-    return _MetaText('Voting power ${formatVotingPower(votingPower)}');
+    return _MetaText(
+      context.l10n.votingPowerMeta(formatVotingPower(votingPower)),
+    );
   }
 }
 
@@ -2022,10 +2036,13 @@ class _CompletedVote {
   }
 }
 
-class _PendingVoteRecovery {
-  const _PendingVoteRecovery({required this.message});
+/// Why a vote is blocked on recovery. Only its presence gates the screen.
+enum _PendingVoteRecoveryKind { delegation, voteCommitment, shareDelivery }
 
-  final String message;
+class _PendingVoteRecovery {
+  const _PendingVoteRecovery({required this.kind});
+
+  final _PendingVoteRecoveryKind kind;
 
   static _PendingVoteRecovery? fromPlan(rust_wire.RoundPlanView? roundPlan) {
     if (roundPlan == null ||
@@ -2036,8 +2053,7 @@ class _PendingVoteRecovery {
     if (roundPlan.primaryAction == rust_wire.RoundPlanActionKind.delegate ||
         roundPlan.recoveredDelegationWork.isNotEmpty) {
       return const _PendingVoteRecovery(
-        message:
-            'This vote has local progress, but delegation is not fully confirmed yet. The app should continue recovery before accepting another vote.',
+        kind: _PendingVoteRecoveryKind.delegation,
       );
     }
     if (roundPlan.primaryAction == rust_wire.RoundPlanActionKind.vote ||
@@ -2046,13 +2062,11 @@ class _PendingVoteRecovery {
               work.kind != rust_wire.VoteRecoveryWorkKindView.submitShares,
         )) {
       return const _PendingVoteRecovery(
-        message:
-            'This vote has been started, but its commitment transaction recovery data is not complete yet. Do not vote again from this account.',
+        kind: _PendingVoteRecoveryKind.voteCommitment,
       );
     }
     return const _PendingVoteRecovery(
-      message:
-          'This vote was submitted, but some helper-server shares are still waiting for confirmation. Do not vote again from this account.',
+      kind: _PendingVoteRecoveryKind.shareDelivery,
     );
   }
 }
@@ -2071,15 +2085,13 @@ DateTime? _roundEndDate(Map<String, dynamic> json) {
   return parseFlexibleDate(json['vote_end_time']);
 }
 
-String _daysLeftLabel(DateTime endDate) {
+String _daysLeftLabel(AppLocalizations l10n, DateTime endDate) {
   final now = DateTime.now();
   final localEnd = endDate.toLocal();
   final today = DateTime(now.year, now.month, now.day);
   final endDay = DateTime(localEnd.year, localEnd.month, localEnd.day);
   final days = endDay.difference(today).inDays;
-  if (days <= 0) return 'Ends today';
-  if (days == 1) return '1 day left';
-  return '$days days left';
+  return l10n.votingDaysLeft(days < 0 ? 0 : days);
 }
 
 class _Message extends StatelessWidget {

@@ -4,12 +4,14 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -21,10 +23,7 @@ import '../../send/services/sapling_params.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
 import '../services/hardware_shielding_session.dart';
 import '../services/transparent_shielding_service.dart'
-    show
-        isHardwareBroadcastRetryable,
-        kShieldWaitingForPrivateRecoveryMessage,
-        observeShieldingBroadcast;
+    show isHardwareBroadcastRetryable, observeShieldingBroadcast;
 
 enum _KeystoneShieldPhase {
   preparing,
@@ -157,8 +156,7 @@ class _KeystoneShieldSigningOverlayState
           if (!mounted || _closed) return;
           setState(() {
             _phase = _KeystoneShieldPhase.failed;
-            _error =
-                'Shielding was cancelled before proving parameters were downloaded.';
+            _error = context.l10n.homeShieldCancelledBeforeParams;
           });
           return;
         }
@@ -303,7 +301,7 @@ class _KeystoneShieldSigningOverlayState
       if (isHardwareBroadcastRetryable(e)) {
         setState(() {
           _phase = _KeystoneShieldPhase.failed;
-          _error = kShieldWaitingForPrivateRecoveryMessage;
+          _error = context.l10n.homeShieldWaitingForPrivateRecovery;
           _retrySignatures = signatures;
         });
         return;
@@ -335,7 +333,7 @@ class _KeystoneShieldSigningOverlayState
         .switchToFallbackFor(
           error,
           endpoint: attemptedEndpoint,
-          operation: 'keystone shield broadcast',
+          operation: 'keystone shield broadcast', // l10n-ignore: log label
         );
     if (switched) {
       unawaited(ref.read(syncProvider.notifier).restartSync());
@@ -345,18 +343,23 @@ class _KeystoneShieldSigningOverlayState
   String _pcztBroadcastStatusMessage(
     rust_sync.ExtractAndBroadcastPcztResult result,
   ) {
-    final upgradeHold = networkUpgradeHoldMessage(result.message ?? '');
+    final upgradeHold = networkUpgradeHoldMessage(
+      context.l10n,
+      result.message ?? '',
+    );
     if (upgradeHold != null) return upgradeHold;
+    final detail = broadcastResultText(
+      context.l10n,
+      notices: result.notices,
+      message: result.message,
+    );
     if (result.status == 'broadcast_unknown') {
-      return result.message ??
-          'The shield transaction may have reached the network, but confirmation timed out. Check activity before trying again.';
+      return detail ?? context.l10n.homeShieldBroadcastUnknown;
     }
     if (result.status == 'broadcasted_storage_failed') {
-      return result.message ??
-          'The shield transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.';
+      return detail ?? context.l10n.homeShieldBroadcastNotStored;
     }
-    return result.message ??
-        'The shield transaction status is uncertain. Check activity before trying again.';
+    return detail ?? context.l10n.homeShieldStatusUncertain;
   }
 
   String? _postBroadcastErrorMessage(Object error) {
@@ -366,27 +369,27 @@ class _KeystoneShieldSigningOverlayState
   }
 
   String _friendlyError(Object error) {
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('sync')) {
-      return 'Sync the wallet before shielding transparent balance.';
+      return context.l10n.homeShieldErrorSyncFirst;
     }
     if (lower.contains('threshold') ||
         lower.contains('too small') ||
         lower.contains('no transparent funds')) {
-      return 'Transparent balance is too small to shield after fees.';
+      return context.l10n.homeShieldErrorTooSmall;
     }
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return context.l10n.commonProvingParamsFailed;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return 'Shield transaction could not be broadcast.';
+      return context.l10n.homeShieldErrorBroadcast;
     }
     if (lower.contains('extract') || lower.contains('pczt')) {
-      return 'Keystone signature could not be applied.';
+      return context.l10n.commonKeystoneSignatureCouldNotBeApplied;
     }
-    return 'Shield balance failed. Please try again.';
+    return context.l10n.homeShieldErrorGeneric;
   }
 
   Future<void> _cancelToHome() async {
@@ -399,7 +402,7 @@ class _KeystoneShieldSigningOverlayState
       setState(() {
         _closed = false;
         _phase = _KeystoneShieldPhase.failed;
-        _error = 'Could not finish cancelling. Please try again.';
+        _error = context.l10n.commonCancelFailedRetry;
       });
       return;
     }
@@ -420,8 +423,7 @@ class _KeystoneShieldSigningOverlayState
       _KeystoneShieldPhase.broadcasting => KeystoneSigningModalPhase.preparing,
     };
     final error = isBroadcastWarning
-        ? _statusMessage ??
-              'The shield transaction status is uncertain. Check activity before trying again.'
+        ? _statusMessage ?? context.l10n.homeShieldStatusUncertain
         : _error;
 
     return AbsorbPointer(
@@ -436,21 +438,21 @@ class _KeystoneShieldSigningOverlayState
               urParts: _urParts,
               error: error,
               title: isBroadcasting
-                  ? 'Broadcasting shield tx'
-                  : 'Sign tx on your Keystone',
+                  ? context.l10n.homeShieldBroadcastingTitle
+                  : context.l10n.homeShieldSignTitle,
               subtitle: isBroadcasting
-                  ? 'Submitting transaction'
-                  : 'Scan the QR code to sign',
+                  ? context.l10n.commonSubmittingTransaction
+                  : context.l10n.homeShieldScanToSign,
               instruction: isBroadcasting
-                  ? 'Keep Vizor open while the transaction is sent.'
+                  ? context.l10n.commonKeepVizorOpenWhileTheTransaction
                   : isFailed || isBroadcastWarning
                   ? null
-                  : 'After you scanned, click Get Signature.',
+                  : context.l10n.homeShieldAfterScan,
               primaryLabel: canRetry
-                  ? 'Try again'
+                  ? context.l10n.commonTryAgain
                   : isFailed || isBroadcastWarning || isBroadcasting
                   ? null
-                  : 'Get Signature',
+                  : context.l10n.homeShieldGetSignature,
               onPrimary: canRetry
                   ? _retryBroadcast
                   : _phase == _KeystoneShieldPhase.ready
@@ -459,8 +461,8 @@ class _KeystoneShieldSigningOverlayState
               secondaryLabel: isBroadcasting
                   ? null
                   : isFailed || isBroadcastWarning
-                  ? 'Back to Wallet'
-                  : 'Reject',
+                  ? context.l10n.homeShieldBackToWalletTitleCase
+                  : context.l10n.homeShieldReject,
               onSecondary: _cancelToHome,
             ),
           ),

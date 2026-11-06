@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -28,10 +29,8 @@ Future<void> startWindowsUpdateDownload({
           !privacy.softwareUpdatesAvailable) {
         await _showUpdateError(
           context,
-          title: 'Software updates unavailable over Tor',
-          message:
-              'Vizor kept direct requests blocked. Retry updates in Settings, '
-              'or turn off Tor and try the download again.',
+          title: context.l10n.settingsWinUpdateTorBlockedTitle,
+          message: context.l10n.settingsWinUpdateTorBlockedBody,
         );
         return;
       }
@@ -54,10 +53,8 @@ Future<void> startWindowsUpdateDownload({
       if (!privacy.softwareUpdatesAvailable) {
         await _showUpdateError(
           context,
-          title: 'Software updates unavailable',
-          message:
-              'Tor is off, but software updates are still unavailable. Retry '
-              'updates in Settings before downloading.',
+          title: context.l10n.settingsWinUpdateUnavailableTitle,
+          message: context.l10n.settingsWinUpdateUnavailableBody,
         );
         return;
       }
@@ -70,18 +67,16 @@ Future<void> startWindowsUpdateDownload({
   if (!context.mounted || result.started) return;
   await _showUpdateError(
     context,
-    title: "Couldn't start the update",
-    message: result.message,
+    title: context.l10n.settingsWinUpdateStartFailedTitle,
+    message: result.message(context.l10n),
   );
 }
 
 Future<void> _showTorDisableError(BuildContext context) {
   return _showUpdateError(
     context,
-    title: "Couldn't turn off Tor",
-    message:
-        'Tor remains on, so Vizor kept the update blocked. Try again, or turn '
-        'off Tor in Settings before downloading.',
+    title: context.l10n.settingsWinUpdateTorOffFailedTitle,
+    message: context.l10n.settingsWinUpdateTorOffFailedBody,
   );
 }
 
@@ -103,14 +98,13 @@ class _WindowsUpdatePrivacyChoiceDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return _WindowsUpdateDialogFrame(
       iconName: AppIcons.shieldKeyholeOutline,
-      title: 'Use Tor for this update?',
+      title: context.l10n.settingsWinUpdateTorChoiceTitle,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Updating over Tor may take longer. Turning Tor off switches '
-            'all Vizor network requests to a direct connection.',
+            context.l10n.settingsWinUpdateTorChoiceBody,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
             ),
@@ -120,7 +114,7 @@ class _WindowsUpdatePrivacyChoiceDialog extends StatelessWidget {
             expand: true,
             onPressed: () =>
                 Navigator.of(context).pop(_WindowsUpdatePrivacyChoice.tor),
-            child: const Text('Continue with Tor'),
+            child: Text(context.l10n.settingsWinUpdateContinueTor),
           ),
           const SizedBox(height: AppSpacing.xs),
           AppButton(
@@ -128,14 +122,14 @@ class _WindowsUpdatePrivacyChoiceDialog extends StatelessWidget {
             variant: AppButtonVariant.secondary,
             onPressed: () =>
                 Navigator.of(context).pop(_WindowsUpdatePrivacyChoice.direct),
-            child: const Text('Turn off Tor and update'),
+            child: Text(context.l10n.settingsWinUpdateTurnOffTorAndUpdate),
           ),
           const SizedBox(height: AppSpacing.xs),
           AppButton(
             expand: true,
             variant: AppButtonVariant.ghost,
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
         ],
       ),
@@ -168,7 +162,7 @@ class _WindowsUpdateErrorDialog extends StatelessWidget {
           AppButton(
             expand: true,
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
+            child: Text(context.l10n.commonClose),
           ),
         ],
       ),

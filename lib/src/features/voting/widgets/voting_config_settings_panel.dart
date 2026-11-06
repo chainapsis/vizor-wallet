@@ -3,6 +3,7 @@ import 'package:flutter/services.dart'
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_button.dart';
@@ -17,7 +18,7 @@ import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../services/voting/voting_config_loader.dart';
-import '../../../services/voting/voting_models.dart';
+import 'voting_config_error_text.dart';
 
 class VotingConfigSettingsPanel extends ConsumerStatefulWidget {
   const VotingConfigSettingsPanel({
@@ -107,7 +108,7 @@ class _VotingConfigSettingsPanelState
       return _submitError;
     }
     if (name.length > _maxSourceNameLength) {
-      return 'Title must be $_maxSourceNameLength characters or less.';
+      return context.l10n.votingConfigTitleTooLong(_maxSourceNameLength);
     }
     return null;
   }
@@ -125,7 +126,7 @@ class _VotingConfigSettingsPanelState
     try {
       parseStaticVotingConfigSource(trimmed);
     } on StaticVotingConfigSourceMalformed catch (error) {
-      return error.message;
+      return staticVotingConfigSourceProblemText(context.l10n, error.problem);
     }
     return _duplicateMessage(trimmed, source, excludingId: _editingSourceId);
   }
@@ -168,7 +169,9 @@ class _VotingConfigSettingsPanelState
       if (!mounted) return;
       setState(() {
         _submitError = _messageFromError(error);
-        _validationField = 'url';
+        // The field message has one line; an SDK refusal with its details
+        // goes above the editor instead.
+        _validationField = votingConfigErrorHasDetails(error) ? null : 'url';
         _isSubmitting = false;
       });
     }
@@ -323,7 +326,7 @@ class _VotingConfigSettingsPanelState
     final guards = ref.read(votingSubmissionGuardProvider);
     if (guards.isEmpty) return false;
     setState(() {
-      _submitError = guards.first.message;
+      _submitError = guards.first.message.text(context.l10n);
       _validationField = null;
       _isSubmitting = false;
       _isSavingSelection = false;
@@ -357,26 +360,22 @@ class _VotingConfigSettingsPanelState
     String? excludingId,
   }) {
     if (_sameSourceLocation(input, kDefaultStaticVotingConfigSource)) {
-      return 'This source URL is already added.';
+      return context.l10n.votingConfigDuplicate;
     }
     for (final saved in source.savedSources) {
       if (saved.id == excludingId) continue;
       if (_sameSourceLocation(input, saved.sourceUrl)) {
-        return 'This source URL is already added.';
+        return context.l10n.votingConfigDuplicate;
       }
     }
     return null;
   }
 
-  String _messageFromError(Object error) {
-    if (error is StaticVotingConfigSourceMalformed) return error.message;
-    if (error is DuplicateVotingConfigSource) return error.message;
-    if (error is VotingHttpException) {
-      return "Couldn't load voting config from that source.";
-    }
-    final text = error.toString().trim();
-    return text.isEmpty ? "Couldn't update voting config." : text;
-  }
+  String _messageFromError(Object error) => votingConfigSourceErrorText(
+    context.l10n,
+    error,
+    fallback: context.l10n.votingConfigUpdateFailed,
+  );
 
   Future<void> _toggleTestRoundVisibility(bool currentlyShown) async {
     if (_isSavingTestRoundVisibility) return;
@@ -392,7 +391,7 @@ class _VotingConfigSettingsPanelState
       if (!mounted) return;
       setState(() {
         _testRoundVisibilityError =
-            "Couldn't update the test round visibility setting.";
+            context.l10n.votingConfigTestVisibilityFailed;
       });
     } finally {
       if (mounted) {
@@ -468,7 +467,7 @@ class _VotingConfigSettingsPanelState
                           ),
                           const SizedBox(height: AppSpacing.sm),
                           _SourceCard(
-                            title: 'Token holder voting',
+                            title: context.l10n.votingTokenHolderTitle,
                             sourceUrl: kDefaultStaticVotingConfigSource,
                             isDefault: true,
                             selected: selectedSource.isDefault,
@@ -486,7 +485,7 @@ class _VotingConfigSettingsPanelState
                           if (showUnsavedActiveSource) ...[
                             const SizedBox(height: AppSpacing.xs),
                             _SourceCard(
-                              title: 'Custom source',
+                              title: context.l10n.votingConfigCustomSource,
                               sourceUrl: source.sourceUrl,
                               selected:
                                   !selectedSource.isDefault &&
@@ -567,7 +566,9 @@ class _VotingConfigSettingsPanelState
                                   minWidth: 128,
                                   trailing: const AppIcon(AppIcons.check),
                                   child: Text(
-                                    _isSavingSelection ? 'Saving...' : 'Save',
+                                    _isSavingSelection
+                                        ? context.l10n.votingConfigSaving
+                                        : context.l10n.commonSave,
                                   ),
                                 ),
                                 const SizedBox(width: AppSpacing.xs),
@@ -579,7 +580,9 @@ class _VotingConfigSettingsPanelState
                                   variant: AppButtonVariant.secondary,
                                   minWidth: 220,
                                   leading: const AppIcon(AppIcons.addNew),
-                                  child: const Text('Add custom source'),
+                                  child: Text(
+                                    context.l10n.votingConfigAddCustomSource,
+                                  ),
                                 ),
                               ],
                             ),
@@ -631,7 +634,7 @@ class _ShowTestRoundsCardState extends State<_ShowTestRoundsCard> {
       button: true,
       enabled: interactive,
       toggled: widget.enabled,
-      label: 'Show test rounds',
+      label: context.l10n.votingConfigShowTestRounds,
       onTap: widget.onToggle,
       excludeSemantics: true,
       child: MouseRegion(
@@ -681,14 +684,14 @@ class _ShowTestRoundsCardState extends State<_ShowTestRoundsCard> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Show test rounds',
+                            context.l10n.votingConfigShowTestRounds,
                             style: AppTypography.labelLarge.copyWith(
                               color: colors.text.accent,
                             ),
                           ),
                           const SizedBox(height: AppSpacing.xxs),
                           Text(
-                            'Display authenticated rounds whose titles begin with [TEST].',
+                            context.l10n.votingConfigShowTestRoundsHint,
                             style: AppTypography.labelMedium.copyWith(
                               color: colors.text.secondary,
                             ),
@@ -847,25 +850,25 @@ class _SourceCard extends StatelessWidget {
                   const SizedBox(width: AppSpacing.sm),
                   AppIconHoverButton(
                     icon: AppIcons.copy,
-                    semanticLabel: 'Copy source URL',
+                    semanticLabel: context.l10n.votingConfigCopyUrl,
                     onTap: () {
                       copyTextWithToast(
                         context,
                         text: sourceUrl,
-                        toastMessage: 'Source URL copied.',
+                        toastMessage: context.l10n.votingConfigUrlCopied,
                       );
                     },
                   ),
                   if (onEdit != null)
                     AppIconHoverButton(
                       icon: AppIcons.options,
-                      semanticLabel: 'Edit saved source',
+                      semanticLabel: context.l10n.votingConfigEditSaved,
                       onTap: onEdit!,
                     ),
                   if (onDelete != null)
                     AppIconHoverButton(
                       icon: AppIcons.trash,
-                      semanticLabel: 'Delete saved source',
+                      semanticLabel: context.l10n.votingConfigDeleteSaved,
                       onTap: onDelete!,
                     ),
                 ],
@@ -919,7 +922,9 @@ class _EditorCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              isEditing ? 'Edit custom source' : 'Add custom source',
+              isEditing
+                  ? context.l10n.votingConfigEditCustomSource
+                  : context.l10n.votingConfigAddCustomSource,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.text.accent,
               ),
@@ -928,7 +933,7 @@ class _EditorCard extends StatelessWidget {
             SizedBox(
               height: nameMessage == null ? 66 : 82,
               child: AppTextField(
-                label: 'Title',
+                label: context.l10n.votingConfigFieldTitle,
                 controller: nameController,
                 autofocus: !isEditing,
                 inputHorizontalPadding: AppSpacing.s,
@@ -944,7 +949,7 @@ class _EditorCard extends StatelessWidget {
             SizedBox(
               height: urlMessage == null ? 66 : 82,
               child: AppTextField(
-                label: 'Static config URL',
+                label: context.l10n.votingConfigFieldStaticUrl,
                 controller: urlController,
                 inputHorizontalPadding: AppSpacing.s,
                 keyboardType: TextInputType.url,
@@ -965,7 +970,7 @@ class _EditorCard extends StatelessWidget {
                   onPressed: isSubmitting ? null : onCancel,
                   variant: AppButtonVariant.secondary,
                   minWidth: 128,
-                  child: const Text('Cancel'),
+                  child: Text(context.l10n.commonCancel),
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 AppButton(
@@ -973,7 +978,11 @@ class _EditorCard extends StatelessWidget {
                   variant: AppButtonVariant.primary,
                   minWidth: 160,
                   trailing: const AppIcon(AppIcons.chevronForward),
-                  child: Text(isSubmitting ? 'Validating...' : 'Save'),
+                  child: Text(
+                    isSubmitting
+                        ? context.l10n.votingConfigValidating
+                        : context.l10n.commonSave,
+                  ),
                 ),
               ],
             ),
@@ -1034,7 +1043,7 @@ class _DefaultBadge extends StatelessWidget {
           vertical: 2,
         ),
         child: Text(
-          'Default',
+          context.l10n.commonDefault,
           style: AppTypography.labelSmall.copyWith(
             color: colors.text.secondary,
           ),
@@ -1059,7 +1068,7 @@ class _ActiveBadge extends StatelessWidget {
           vertical: 2,
         ),
         child: Text(
-          'Active',
+          context.l10n.votingStatusActive,
           style: AppTypography.labelSmall.copyWith(
             color: colors.text.brandCrimson,
           ),
@@ -1084,7 +1093,7 @@ class _PanelHeader extends StatelessWidget {
         children: [
           Center(
             child: Text(
-              'Voting config',
+              context.l10n.votingConfigTooltip,
               style: AppTypography.headlineMedium.copyWith(
                 color: colors.text.accent,
               ),
@@ -1095,7 +1104,7 @@ class _PanelHeader extends StatelessWidget {
               right: 0,
               child: AppIconHoverButton(
                 icon: AppIcons.cross,
-                semanticLabel: 'Close voting config settings',
+                semanticLabel: context.l10n.votingConfigCloseSettings,
                 onTap: onClose!,
               ),
             ),

@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -35,7 +36,7 @@ class Nu7AnnouncementContent extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           child: Text(
-            'NU7 Update is live.\nWhat does this mean?',
+            context.l10n.homeNu7Title,
             textAlign: TextAlign.center,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.text.accent,
@@ -43,23 +44,19 @@ class Nu7AnnouncementContent extends StatelessWidget {
           ),
         ),
         SizedBox(height: gap),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Nu7AnnouncementPoint(
-                title: '~3× faster blocks',
-                body:
-                    'Average wait for first confirmation drops from ~75s '
-                    'to ~25s.',
+                title: context.l10n.homeNu7FasterTitle,
+                body: context.l10n.homeNu7FasterBody,
               ),
               SizedBox(height: AppSpacing.xs),
               _Nu7AnnouncementPoint(
-                title: 'Higher shielded throughput',
-                body:
-                    'Network can handle 2.3x more shielded transactions '
-                    'per block.',
+                title: context.l10n.homeNu7ThroughputTitle,
+                body: context.l10n.homeNu7ThroughputBody,
               ),
             ],
           ),
@@ -74,7 +71,7 @@ class Nu7AnnouncementContent extends StatelessWidget {
             constrainContent: true,
             height: compact ? 44 : 50,
             onPressed: onClose,
-            child: const Text('Got it'),
+            child: Text(context.l10n.homeNu7GotIt),
           ),
         ),
         SizedBox(height: compact ? AppSpacing.sm : AppSpacing.base),
@@ -265,7 +262,7 @@ class _Nu7AnnouncementHeader extends ConsumerWidget {
             top: AppSpacing.sm,
             right: AppSpacing.sm,
             child: Semantics(
-              label: 'Close',
+              label: context.l10n.commonClose,
               button: true,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,

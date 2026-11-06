@@ -27,7 +27,7 @@ double payAmountInputWidth({
 bool payAmountCanContinue(SwapState state) {
   final hasAmount = state.receiveAmount != null || state.quoteAmount != null;
   return hasAmount &&
-      state.quoteAmountPrecisionError == null &&
+      !state.hasQuoteAmountPrecisionError &&
       state.externalAssetIsAvailable &&
       !state.quoteLoading &&
       !state.pricingLoading;

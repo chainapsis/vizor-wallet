@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_card.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _address =
     'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
@@ -210,6 +211,7 @@ Future<void> _pump(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: PaymentRequestCard(

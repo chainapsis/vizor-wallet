@@ -19,6 +19,7 @@ import '../src/features/voting/screens/voting_proposal_detail_screen.dart';
 import '../src/features/voting/screens/voting_results_screen.dart';
 import '../src/features/voting/screens/voting_status_screen.dart';
 import '../src/features/voting/voting_flow_models.dart';
+import '../src/features/voting/voting_message.dart';
 import '../src/features/voting/widgets/voting_metadata_widgets.dart';
 import '../src/features/voting/widgets/mobile/mobile_voting_config_settings_sheet.dart';
 import '../src/providers/voting/voting_config_provider.dart';
@@ -266,9 +267,7 @@ Widget buildMobileVotingPrivacyTrimUseCase(BuildContext context) =>
     _buildMobileVotingActiveUseCase(
       context,
       eligible: true,
-      votingEligibilityMessage:
-          '0.125 ZEC is left out of this vote '
-          'to keep your submission less identifiable.',
+      votingEligibilityMessage: VotingPrivacyTrimNotice(BigInt.from(12500000)),
     );
 
 Widget buildMobileVotingEligibilityErrorUseCase(BuildContext context) =>
@@ -276,7 +275,9 @@ Widget buildMobileVotingEligibilityErrorUseCase(BuildContext context) =>
       context,
       eligible: false,
       eligibilityUnknown: true,
-      votingEligibilityMessage: 'Unable to check voting eligibility.',
+      votingEligibilityMessage: const VotingLiteralMessage(
+        'Unable to check voting eligibility.',
+      ),
     );
 
 Widget _buildMobileVotingActiveUseCase(
@@ -284,7 +285,7 @@ Widget _buildMobileVotingActiveUseCase(
   required bool eligible,
   bool eligibilityUnknown = false,
   bool previouslyUsed = false,
-  String? votingEligibilityMessage,
+  VotingMessage? votingEligibilityMessage,
 }) {
   return _mobileVotingFullPagePreview(
     context,
@@ -314,8 +315,10 @@ Widget _buildMobileVotingActiveUseCase(
         votingEligibilityErrorMessage:
             eligible || eligibilityUnknown || previouslyUsed
             ? null
-            : 'This account did not have enough eligible '
-                  'shielded funds at snapshot block 3,543,600. Switch to an eligible account to vote.',
+            : const VotingEligibilityFailure(
+                VotingEligibilityFailureKind.minimumWeight,
+                snapshotHeight: 3543600,
+              ),
         onVotingEligibilityRetry: _previewNoop,
         proposals: const [_previewNsmProposal],
         draft: const VotingDraftState(),
@@ -333,10 +336,10 @@ Widget buildMobileVotingIneligibleModalUseCase(BuildContext context) {
       buildMobileVotingIneligibleUseCase(context),
       ColoredBox(color: context.colors.background.neutralScrim),
       const VotingIneligibleDialog(
-        message:
-            'Voting requires at least one eligible shielded note bundle '
-            'with 0.125 ZEC at snapshot block 3,459,350. '
-            'Switch to an eligible account to vote.',
+        message: VotingEligibilityFailure(
+          VotingEligibilityFailureKind.minimumWeight,
+          snapshotHeight: 3459350,
+        ),
       ),
     ],
   );

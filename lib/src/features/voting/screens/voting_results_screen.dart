@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/formatting/number_format.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_form_factor.dart';
@@ -114,7 +115,9 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
               }
               _clearPendingTallyRefresh();
               return _Message(
-                "Couldn't load results: ${friendlyVotingErrorMessage(error)}",
+                context.l10n.votingResultsLoadFailed(
+                  friendlyVotingErrorMessage(context.l10n, error),
+                ),
               );
             },
             data: (result) {
@@ -123,8 +126,9 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
                 _clearPendingTallyRefresh();
                 if (session.hasError) {
                   return _Message(
-                    "Couldn't load voting round details: "
-                    "${friendlyVotingErrorMessage(session.error!)}",
+                    context.l10n.votingResultsRoundLoadFailed(
+                      friendlyVotingErrorMessage(context.l10n, session.error!),
+                    ),
                   );
                 }
                 return const VotingPaneLoading();
@@ -135,7 +139,7 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
               }
               _clearPendingTallyRefresh();
               return VotingResultsContent(
-                title: _roundTitle(round),
+                title: _roundTitle(context.l10n, round),
                 snapshotHeight: round.snapshotHeight,
                 description: _roundDescription(round) ?? '',
                 forumUri: votingRoundForumUriFromJson(round.rawJson),
@@ -166,7 +170,7 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
 
   Widget _pendingResults() {
     _schedulePendingTallyRefresh();
-    return const _Message('Results pending...');
+    return _Message(context.l10n.votingResultsPending);
   }
 
   void _schedulePendingTallyRefresh() {
@@ -245,7 +249,7 @@ class VotingResultsContent extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           if (kAppFormFactor != AppFormFactor.mobile) ...[
             Text(
-              'Results',
+              context.l10n.commonResults,
               style: AppTypography.headlineSmall.copyWith(
                 color: context.colors.text.accent,
               ),
@@ -253,7 +257,7 @@ class VotingResultsContent extends StatelessWidget {
             const SizedBox(height: AppSpacing.s),
           ],
           if (proposals.isEmpty)
-            const _Message('No proposals in this round.')
+            _Message(context.l10n.votingResultsNoProposals)
           else
             for (var index = 0; index < proposals.length; index++)
               Padding(
@@ -322,7 +326,7 @@ class _MobileResultsHeader extends StatelessWidget {
                   ),
                   const SizedBox(width: AppSpacing.xs),
                   Text(
-                    'Voted',
+                    context.l10n.votingStatusVoted,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.positiveStrong,
                       letterSpacing: -0.04,
@@ -366,7 +370,9 @@ class _MobileResultsHeader extends StatelessWidget {
                         const AppIcon(AppIcons.expand, size: 16),
                         const SizedBox(width: AppSpacing.xxs),
                         Text(
-                          expanded ? 'Hide description' : 'Show description',
+                          expanded
+                              ? context.l10n.votingResultsHideDescription
+                              : context.l10n.votingResultsShowDescription,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.accent,
                             fontWeight: FontWeight.w400,
@@ -541,7 +547,7 @@ class VotingResultCard extends StatelessWidget {
                 if (selectedLabel != null)
                   Expanded(
                     child: Text(
-                      'Voted: $selectedLabel',
+                      context.l10n.votingResultsVotedFor(selectedLabel),
                       style: AppTypography.bodySmall.copyWith(
                         color: context.colors.text.secondary,
                       ),
@@ -551,7 +557,9 @@ class VotingResultCard extends StatelessWidget {
                   const Spacer(),
                 if (total > 0)
                   Text(
-                    'Total: ${_formatTallyZec(total)}',
+                    context.l10n.votingResultsTotalAmount(
+                      _formatTallyZec(total),
+                    ),
                     style: AppTypography.bodySmall.copyWith(
                       color: context.colors.text.secondary,
                     ),
@@ -672,7 +680,7 @@ class _MobileResultCard extends StatelessWidget {
                   runSpacing: AppSpacing.xs,
                   children: [
                     Text(
-                      'Total',
+                      context.l10n.commonTotal,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                         fontWeight: FontWeight.w500,
@@ -731,7 +739,7 @@ class _MobileTallyRow extends StatelessWidget {
           AppProfilePicture(profilePictureId: profilePictureId!),
           const SizedBox(width: AppSpacing.xs),
         ],
-        Text('Your vote', style: labelStyle),
+        Text(context.l10n.votingResultsYourVote, style: labelStyle),
       ],
     );
     return Container(
@@ -777,7 +785,7 @@ class _MobileTallyRow extends StatelessWidget {
                           const _VotingWinnerAward(),
                           const SizedBox(width: AppSpacing.xs),
                           Text(
-                            'Winner',
+                            context.l10n.votingResultsWinner,
                             style: labelStyle.copyWith(
                               color: colors.text.accent,
                             ),
@@ -845,9 +853,14 @@ class _VotingWinnerAward extends StatelessWidget {
   );
 }
 
-String _formatMobileTallyZec(num amount) => _formatTallyZec(amount)
-    .replaceFirst(RegExp(r'\.00 ZEC$'), ' ZEC')
-    .replaceFirstMapped(RegExp(r'(\.\d)0 ZEC$'), (match) => '${match[1]} ZEC');
+String _formatMobileTallyZec(num amount) {
+  return _formatTallyZec(amount)
+      .replaceFirst(RegExp(r'\.00 ZEC$'), ' ZEC') // l10n-ignore: amount format
+      .replaceFirstMapped(
+        RegExp(r'(\.\d)0 ZEC$'),
+        (match) => '${match[1]} ZEC', // l10n-ignore: amount format
+      );
+}
 
 String _formatTallyPercentage(num amount, num total) {
   final percentage = total <= 0 ? 0.0 : (amount / total).clamp(0.0, 1.0) * 100;
@@ -970,9 +983,9 @@ bool _isTallyNotReadyError(Object error) {
   return error is VotingHttpException && error.statusCode == 404;
 }
 
-String _roundTitle(VotingRoundDetails round) {
+String _roundTitle(AppLocalizations l10n, VotingRoundDetails round) {
   final title = round.title.trim();
-  return title.isEmpty ? 'Voting results' : title;
+  return title.isEmpty ? l10n.votingResultsFallbackTitle : title;
 }
 
 String? _roundDescription(VotingRoundDetails round) {
@@ -1168,7 +1181,7 @@ String _formatTallyZec(num ballotUnits) {
   final fixed = zec.toStringAsFixed(2);
   final parts = fixed.split('.');
   final integer = int.tryParse(parts.first) ?? 0;
-  return '${formatGroupedInteger(integer)}.${parts.last} ZEC';
+  return '${formatGroupedInteger(integer)}.${parts.last} ZEC'; // l10n-ignore: amount format
 }
 
 String? _profilePictureIdForAccount(

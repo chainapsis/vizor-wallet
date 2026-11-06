@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
+import '../../support/localized_test_scope.dart';
 
 const _cameraKey = ValueKey('mobile_address_scan_card_camera');
 
@@ -30,8 +31,7 @@ Widget _host(Widget child) {
     data: AppThemeData.dark,
     child: MediaQuery(
       data: const MediaQueryData(size: Size(393, 852)),
-      child: Directionality(
-        textDirection: TextDirection.ltr,
+      child: LocalizedTestScope(
         child: Align(
           alignment: Alignment.bottomCenter,
           child: SizedBox(width: 361, child: child),
@@ -48,8 +48,7 @@ Widget _host(Widget child) {
 Widget _swapHost(Widget child) {
   return AppTheme(
     data: AppThemeData.dark,
-    child: Directionality(
-      textDirection: TextDirection.ltr,
+    child: LocalizedTestScope(
       child: SafeArea(
         bottom: false,
         child: Column(

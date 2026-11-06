@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/account_provider.dart';
 import '../../ledger_device_label.dart';
@@ -18,6 +19,7 @@ class MobileLedgerSigningContent extends StatelessWidget {
     required this.status,
     required this.active,
     required this.failed,
+    required this.showFailureStatus,
     required this.onClose,
     required this.onAction,
     this.actionLabel,
@@ -40,6 +42,7 @@ class MobileLedgerSigningContent extends StatelessWidget {
   final String status;
   final bool active;
   final bool failed;
+  final bool showFailureStatus;
   final AccountInfo? account;
   final String? actionLabel;
   final VoidCallback? onClose;
@@ -58,15 +61,14 @@ class MobileLedgerSigningContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     if (cancelling) {
-      return const MobileLedgerSheetContent(
-        title: 'Cancelling request',
+      return MobileLedgerSheetContent(
+        title: l10n.ledgerCancellingRequest,
         onClose: null,
         children: [
-          MobileLedgerMessage(
-            'Keep Vizor open while the Ledger request is cancelled.',
-          ),
-          MobileLedgerStatus('Cancelling…'),
+          MobileLedgerMessage(l10n.ledgerSigningKeepOpenWhileCancelling),
+          MobileLedgerStatus(l10n.commonCancelling),
         ],
       );
     }
@@ -82,40 +84,40 @@ class MobileLedgerSigningContent extends StatelessWidget {
         stage == LedgerSigningStage.preparing &&
         readiness == LedgerAppReadinessPhase.confirmOpening;
     final currentMessage = declined
-        ? 'Signing was declined on Ledger. Try again when you’re ready.'
+        ? l10n.ledgerSigningDeclined
         : saving
-        ? 'Saving the signed transaction.'
+        ? l10n.ledgerSigningSaving
         : finishing
-        ? 'Approved on Ledger. Vizor is finishing the transaction.'
+        ? l10n.ledgerSigningApprovedFinishing
         : stage == LedgerSigningStage.preparing
         ? opening
-              ? 'Confirm opening Zcash on Ledger.'
-              : 'Keep Ledger connected.'
+              ? l10n.ledgerConfirmOpeningZcash
+              : l10n.ledgerSigningKeepLedgerConnected
         : stage == LedgerSigningStage.sending
-        ? kLedgerSigningWaitInstruction
+        ? l10n.ledgerSigningWaitInstruction
         : stage == LedgerSigningStage.reviewing
-        ? 'When prompted, check the amount and recipient on Ledger.'
+        ? l10n.ledgerSigningCheckAmountRecipient
         : stage == LedgerSigningStage.finishing
-        ? 'Finishing the Ledger request.'
+        ? l10n.ledgerSigningFinishingRequest
         : message;
     final reviewNote = [
       if (opening)
-        'Keep Zcash open.'
+        l10n.ledgerKeepZcashOpen
       else if (stage == LedgerSigningStage.reviewing)
-        'Approve to sign, or reject to cancel.'
+        l10n.ledgerSigningApproveOrReject
       else if (stage != LedgerSigningStage.preparing)
-        'Keep Ledger connected.',
+        l10n.ledgerSigningKeepLedgerConnected,
       if (roundCount > 1 && roundNumber < roundCount)
-        'You will approve the next transaction separately.',
+        l10n.ledgerSigningApproveNextSeparately,
     ].join('\n\n');
     return MobileLedgerSheetContent(
       title: declined
-          ? 'Request declined'
+          ? l10n.ledgerSheetDeclinedTitle
           : failed
           ? title
           : broadcasting
-          ? 'Sending transaction'
-          : 'Sign transaction',
+          ? l10n.ledgerSigningTitleSendingTx
+          : l10n.ledgerSigningTitleSign,
       onClose: onClose,
       action: failed && actionLabel != null
           ? MobileLedgerAction(actionLabel!, onPressed: onAction)
@@ -137,17 +139,20 @@ class MobileLedgerSigningContent extends StatelessWidget {
             currentStep: current,
             steps: [
               LedgerStep(
-                'Prepare transaction',
+                l10n.ledgerSigningStepPrepare,
                 message: current == 0 ? currentMessage : null,
-                note: current == 0 && opening ? 'Keep Zcash open.' : null,
+                note: current == 0 && opening ? l10n.ledgerKeepZcashOpen : null,
                 busy: current == 0 && active,
                 requiresDeviceAction: opening && active,
               ),
               LedgerStep(
-                'Review on Ledger',
+                l10n.ledgerSigningStepReview,
                 message: current == 1 ? currentMessage : null,
                 detail: roundCount > 1
-                    ? 'Transaction $roundNumber of $roundCount'
+                    ? l10n.ledgerSigningTransactionProgress(
+                        '$roundNumber',
+                        '$roundCount',
+                      )
                     : null,
                 note: current == 1 && !declined && reviewNote.isNotEmpty
                     ? reviewNote
@@ -159,9 +164,9 @@ class MobileLedgerSigningContent extends StatelessWidget {
                     active,
               ),
               LedgerStep(
-                'Finish transaction',
+                l10n.ledgerSigningStepFinish,
                 message: current == 2 ? currentMessage : null,
-                note: current == 2 ? 'Keep Vizor open.' : null,
+                note: current == 2 ? l10n.ledgerSigningKeepVizorOpen : null,
                 busy: current == 2 && active,
               ),
             ],
@@ -177,7 +182,7 @@ class MobileLedgerSigningContent extends StatelessWidget {
             padding: const EdgeInsets.only(top: AppSpacing.s),
             child: MobileLedgerMessage(roundFeeNotice!),
           ),
-        if (failed && status != 'Action needed') ...[
+        if (failed && showFailureStatus) ...[
           const SizedBox(height: AppSpacing.sm),
           Text(
             status,
@@ -188,7 +193,7 @@ class MobileLedgerSigningContent extends StatelessWidget {
         ],
         if (failed && actionLabel == null && onClose == null) ...[
           const SizedBox(height: AppSpacing.sm),
-          const MobileLedgerMessage('Keep Vizor open.'),
+          MobileLedgerMessage(l10n.ledgerSigningKeepVizorOpen),
         ],
       ],
     );

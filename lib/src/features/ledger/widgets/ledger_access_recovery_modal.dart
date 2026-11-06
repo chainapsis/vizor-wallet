@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -119,7 +120,9 @@ class _LedgerAccessRecoveryModalState
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _changeError = 'Could not stop the search. Try again.');
+        setState(
+          () => _changeError = context.l10n.ledgerCouldNotStopSearchTryAgain,
+        );
       }
     } finally {
       if (mounted) setState(() => _changing = false);
@@ -169,14 +172,19 @@ class _LedgerAccessRecoveryModalState
       widget.onClose?.call();
     }
 
-    Widget footer({String? label, VoidCallback? action}) {
-      if (label == 'Close') {
+    final l10n = context.l10n;
+    Widget footer({
+      String? label,
+      VoidCallback? action,
+      bool closeButton = false,
+    }) {
+      if (closeButton) {
         return Center(
           child: AppButton(
             size: AppButtonSize.mediumLarge,
             minWidth: kAppModalButtonMinWidth,
             onPressed: action,
-            child: const Text('Close'),
+            child: Text(l10n.commonClose),
           ),
         );
       }
@@ -203,7 +211,7 @@ class _LedgerAccessRecoveryModalState
             variant: AppButtonVariant.ghost,
             minWidth: kAppModalButtonMinWidth,
             onPressed: close,
-            child: const Text('Cancel'),
+            child: Text(l10n.commonCancel),
           ),
         );
       }
@@ -216,14 +224,17 @@ class _LedgerAccessRecoveryModalState
       String? label,
       VoidCallback? action,
       String? identity,
+      bool closeFooter = false,
     }) => LedgerModalContent(
       title: title,
       identity: identity,
-      backLabel: 'Change connection',
+      backLabel: context.l10n.ledgerSigningChangeConnection,
       onBack: canGoBack && !_changing
           ? () => unawaited(_changeConnection())
           : null,
-      footer: _changing ? null : footer(label: label, action: action),
+      footer: _changing
+          ? null
+          : footer(label: label, action: action, closeButton: closeFooter),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -240,7 +251,7 @@ class _LedgerAccessRecoveryModalState
       enabled: !_changing,
       onRetry: retry,
       onClose: widget.onClose == null ? null : close,
-      retryLabel: 'Find Ledger',
+      retryLabel: l10n.ledgerFind,
       onBusyChanged: (busy) {
         _canChange = !busy;
         _refresh();
@@ -254,21 +265,22 @@ class _LedgerAccessRecoveryModalState
             _message(context, c.message),
             LedgerBluetoothRestrictedHelp(model: c),
             if (c.busy)
-              const LedgerProgressStatus(label: 'Checking Bluetooth access…'),
+              LedgerProgressStatus(label: l10n.ledgerCheckingBluetoothAccess),
           ],
         ),
         label: c.label,
         action: c.onAction,
+        closeFooter: c.restricted && !c.busy,
       ),
     );
     if (_transport == null) {
       return frame(
-        'Connect Ledger',
+        l10n.commonConnectLedger,
         Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _message(context, 'Connect the Ledger for this account.'),
+            _message(context, l10n.ledgerConnectForAccount),
             const SizedBox(height: AppSpacing.sm),
             for (final transport in LedgerConnectionTransport.values)
               _choice(context, transport),
@@ -278,11 +290,11 @@ class _LedgerAccessRecoveryModalState
     }
     if (_transport == LedgerConnectionTransport.usb) {
       return frame(
-        'Connect Ledger',
+        l10n.commonConnectLedger,
         _usbContent(context),
-        label: _usbError == null ? null : 'Try again',
+        label: _usbError == null ? null : l10n.commonTryAgain,
         action: _usbError == null ? null : () => unawaited(_connectUsb()),
-        identity: 'USB connection',
+        identity: l10n.ledgerUsbConnection,
       );
     }
     if ((!widget.pairingRecovery && request == null) ||
@@ -314,10 +326,8 @@ class _LedgerAccessRecoveryModalState
       builder: (context, c) {
         if (_changing) {
           return frame(
-            'Stopping search',
-            const LedgerProgressStatus(
-              label: 'Returning to connection options…',
-            ),
+            l10n.ledgerStoppingSearch,
+            LedgerProgressStatus(label: l10n.ledgerReturningToOptions),
           );
         }
         if (c.accessRecovery) return bluetooth(c.scan);
@@ -328,44 +338,42 @@ class _LedgerAccessRecoveryModalState
           LedgerPairingStage.scanning || LedgerPairingStage.devices =>
             c.devices.isEmpty
                 ? c.busy
-                      ? 'Unlock Ledger, enable Bluetooth and keep it nearby.'
-                      : 'No Ledger found. Unlock Ledger, enable Bluetooth and keep it nearby. Then search again.'
-                : 'Choose a device to continue.',
+                      ? l10n.ledgerUnlockEnableBluetoothNearby
+                      : l10n.ledgerNoneFoundDesktop
+                : l10n.ledgerChooseDevice,
           LedgerPairingStage.verifying =>
             c.sameSavedDevice
-                ? 'Unlock Ledger and confirm opening Zcash if prompted.'
-                : 'Complete pairing if prompted, then approve sharing your viewing key.',
-          LedgerPairingStage.saving =>
-            'Your account matches. Saving the verified connection.',
-          LedgerPairingStage.saved =>
-            'This Ledger matches your account. Find it again to continue.',
-          LedgerPairingStage.ready =>
-            'Your Ledger is ready. Continue signing when you’re ready.',
-          LedgerPairingStage.mismatch =>
-            'Choose the Ledger that holds this account. Your saved connection has not changed.',
+                ? l10n.ledgerVerifyingSavedDevice
+                : l10n.ledgerVerifyingNewDevice,
+          LedgerPairingStage.saving => l10n.ledgerSavingVerified,
+          LedgerPairingStage.saved => l10n.ledgerSavedFindAgain,
+          LedgerPairingStage.ready => l10n.ledgerReadyContinueSigning,
+          LedgerPairingStage.mismatch => l10n.ledgerMismatchChooseHolder,
           LedgerPairingStage.failed =>
             c.pairingInvalid
-                ? 'Your Ledger no longer recognizes this Bluetooth pairing.'
-                : c.failureMessage,
+                ? l10n.ledgerPairingNoLongerRecognized
+                : c.failureMessage(l10n),
         };
         final title = choosing
-            ? 'Find Ledger'
+            ? l10n.ledgerFind
             : c.stage == LedgerPairingStage.mismatch
-            ? 'This Ledger doesn’t match'
+            ? l10n.ledgerTitleMismatch
             : c.stage == LedgerPairingStage.failed
             ? c.pairingInvalid
-                  ? 'Pair your Ledger again'
-                  : c.requestFailure.title
-            : 'Connect Ledger';
+                  ? l10n.ledgerTitlePairAgain
+                  : c.requestFailure.title(l10n)
+            : l10n.commonConnectLedger;
         final label = c.busy
             ? null
             : switch (c.stage) {
-                LedgerPairingStage.ready => 'Continue signing',
-                LedgerPairingStage.devices => 'Search again',
-                LedgerPairingStage.mismatch => 'Choose another Ledger',
+                LedgerPairingStage.ready => l10n.ledgerContinueSigning,
+                LedgerPairingStage.devices => l10n.ledgerSearchAgain,
+                LedgerPairingStage.mismatch => l10n.ledgerChooseAnother,
                 LedgerPairingStage.failed when !c.pairingInvalid =>
-                  c.failureRetryable ? 'Try again' : 'Choose another Ledger',
-                _ => 'Find Ledger',
+                  c.failureRetryable
+                      ? l10n.commonTryAgain
+                      : l10n.ledgerChooseAnother,
+                _ => l10n.ledgerFind,
               };
         return frame(
           title,
@@ -379,10 +387,12 @@ class _LedgerAccessRecoveryModalState
                 _recoveryStep(
                   context,
                   '1',
-                  'Remove the old pairing',
+                  l10n.ledgerRemoveOldPairing,
                   platform == TargetPlatform.iOS
-                      ? 'Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device.'
-                      : 'Open ${platform == TargetPlatform.macOS ? 'System Settings > Bluetooth' : 'Bluetooth settings'}. If your Ledger is listed, remove its saved pairing.',
+                      ? l10n.ledgerRemovePairingIos
+                      : platform == TargetPlatform.macOS
+                      ? l10n.ledgerRemovePairingMacos
+                      : l10n.ledgerRemovePairingOther,
                 ),
                 if (platform != TargetPlatform.iOS &&
                     c.service is LedgerBluetoothPairingSettings)
@@ -391,15 +401,15 @@ class _LedgerAccessRecoveryModalState
                     child: AppButton(
                       onPressed: c.busy ? null : c.settings,
                       variant: AppButtonVariant.ghost,
-                      child: const Text('Open settings'),
+                      child: Text(l10n.commonOpenSettings),
                     ),
                   ),
                 const SizedBox(height: AppSpacing.sm),
                 _recoveryStep(
                   context,
                   '2',
-                  'Come back and reconnect',
-                  'Keep your Ledger unlocked, then select Find Ledger below.',
+                  l10n.ledgerComeBackReconnect,
+                  l10n.ledgerComeBackFindLedger,
                 ),
               ],
               if (choosing)
@@ -429,7 +439,7 @@ class _LedgerAccessRecoveryModalState
                                   device.id,
                                 ))
                                   Text(
-                                    'Different from saved connection',
+                                    l10n.ledgerDifferentFromSaved,
                                     style: AppTypography.bodySmall.copyWith(
                                       color: context.colors.text.secondary,
                                     ),
@@ -445,8 +455,8 @@ class _LedgerAccessRecoveryModalState
               if (c.busy)
                 LedgerProgressStatus(
                   label: choosing
-                      ? 'Searching for nearby Ledgers…'
-                      : 'Follow the prompts on Ledger.',
+                      ? l10n.ledgerSearchingNearby
+                      : l10n.ledgerFollowPromptsOnLedger,
                 ),
               if (c.error != null) _message(context, c.error!),
             ],
@@ -459,7 +469,7 @@ class _LedgerAccessRecoveryModalState
               : c.scan,
           identity: c.selectedDevice == null
               ? null
-              : '${ledgerDeviceLabel(c.selectedDevice!)} · Bluetooth',
+              : '${ledgerDeviceLabel(c.selectedDevice!)} · ${l10n.ledgerTransportBluetooth}',
         );
       },
     );
@@ -533,8 +543,8 @@ class _LedgerAccessRecoveryModalState
               Expanded(
                 child: Text(
                   transport == LedgerConnectionTransport.usb
-                      ? 'USB'
-                      : 'Bluetooth',
+                      ? context.l10n.ledgerTransportUsb
+                      : context.l10n.ledgerTransportBluetooth,
                   style: AppTypography.bodyMediumStrong,
                 ),
               ),
@@ -545,6 +555,7 @@ class _LedgerAccessRecoveryModalState
       );
 
   Widget _usbContent(BuildContext context) {
+    final l10n = context.l10n;
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     final opening =
         _usbBusy && readiness.phase == LedgerAppReadinessPhase.confirmOpening;
@@ -559,19 +570,19 @@ class _LedgerAccessRecoveryModalState
           context,
           _usbError != null
               ? (declined
-                    ? LedgerRequestFailure.declined.message
-                    : ledgerFailureGuidance(_usbError!)?.message ??
-                          'Check the USB cable, unlock your Ledger, and open the Zcash app.')
+                    ? LedgerRequestFailure.declined.message(l10n)
+                    : ledgerFailureGuidance(l10n, _usbError!)?.message ??
+                          l10n.ledgerUsbCheckCableOpenApp)
               : (opening
-                    ? 'Approve opening the Zcash app on your Ledger.'
-                    : 'Connect your Ledger with a USB cable, unlock it, and open the Zcash app.'),
+                    ? l10n.ledgerUsbApproveOpening
+                    : l10n.ledgerUsbConnectUnlockOpen),
         ),
         const SizedBox(height: AppSpacing.md),
         if (_usbError == null)
           LedgerProgressStatus(
             label: opening
-                ? 'Waiting for approval…'
-                : 'Checking USB connection…',
+                ? l10n.ledgerWaitingForApproval
+                : l10n.ledgerCheckingUsb,
           ),
       ],
     );

@@ -19,11 +19,11 @@ Widget buildMobileWelcomePrivateQueriesEnabled(BuildContext context) =>
 Widget buildMobileWelcomePrivateQueriesChanging(BuildContext context) =>
     _preview(
       const NetworkPrivacyState.off(),
-      privateQueriesTransition: kEnhancePirChangingMessage,
+      privateQueriesTransition: EnhancePirTransition.changing,
     );
 Widget buildMobileWelcomePrivateQueriesFailed(BuildContext context) => _preview(
   const NetworkPrivacyState.off(),
-  privateQueriesTransition: kEnhancePirUnchangedMessage,
+  privateQueriesTransition: EnhancePirTransition.unchanged,
 );
 Widget buildMobileWelcomeNetworkConnecting(BuildContext context) => _preview(
   const NetworkPrivacyState(
@@ -90,7 +90,7 @@ Widget _preview(
   Object? rpcError,
   bool rpcPending = false,
   bool privateQueriesEnabled = false,
-  String? privateQueriesTransition,
+  EnhancePirTransition? privateQueriesTransition,
 }) => mobileWelcomePreviewScope(
   // This preview already owns an inline modal; the scope keeps Welcome's
   // startup presentation from stacking another one on top of the scene.

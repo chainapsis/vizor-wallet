@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_car
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('celebration grows and turns the settled card into view', (
@@ -31,12 +32,11 @@ void main() {
       ),
     );
 
-    Matrix4 revealMatrix() =>
-        tester
-            .widget<Transform>(
-              find.byKey(const ValueKey('payment_link_reveal_transform')),
-            )
-            .transform;
+    Matrix4 revealMatrix() => tester
+        .widget<Transform>(
+          find.byKey(const ValueKey('payment_link_reveal_transform')),
+        )
+        .transform;
 
     expect(revealMatrix().entry(0, 0), closeTo(1, 1e-6));
 
@@ -63,12 +63,11 @@ void main() {
       ),
     );
 
-    Matrix4 tiltMatrix() =>
-        tester
-            .widget<Transform>(
-              find.byKey(const ValueKey('payment_link_tilt_transform')),
-            )
-            .transform;
+    Matrix4 tiltMatrix() => tester
+        .widget<Transform>(
+          find.byKey(const ValueKey('payment_link_tilt_transform')),
+        )
+        .transform;
     final rest = tiltMatrix().clone();
     final region = tester.widget<MouseRegion>(
       find.byKey(const ValueKey('payment_link_tilt_mouse_region')),
@@ -210,13 +209,13 @@ Future<void> _pump(
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     MaterialApp(
-      builder:
-          (context, appChild) => MediaQuery(
-            data: MediaQuery.of(
-              context,
-            ).copyWith(disableAnimations: disableAnimations),
-            child: AppTheme(data: AppThemeData.dark, child: appChild!),
-          ),
+      localizationsDelegates: appLocalizationsDelegates,
+      builder: (context, appChild) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(disableAnimations: disableAnimations),
+        child: AppTheme(data: AppThemeData.dark, child: appChild!),
+      ),
       home: Scaffold(body: Center(child: child)),
     ),
   );

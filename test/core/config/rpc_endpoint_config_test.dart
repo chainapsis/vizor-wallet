@@ -119,28 +119,28 @@ void main() {
           'us.zec.stardust.rest:443',
           networkName: 'main',
         )?.region,
-        'Americas',
+        RpcEndpointRegion.americas,
       );
       expect(
         findRpcEndpointPresetByUrl(
           'eu.zec.stardust.rest:443',
           networkName: 'main',
         )?.region,
-        'Europe',
+        RpcEndpointRegion.europe,
       );
       expect(
         findRpcEndpointPresetByUrl(
           'kr.zec.stardust.rest:443',
           networkName: 'main',
         )?.region,
-        'Asia Pacific',
+        RpcEndpointRegion.asiaPacific,
       );
       expect(
         findRpcEndpointPresetByUrl(
           'ap.zec.rocks:443',
           networkName: 'main',
         )?.region,
-        'Asia Pacific',
+        RpcEndpointRegion.asiaPacific,
       );
       expect(
         findRpcEndpointPresetByUrl(
@@ -432,7 +432,9 @@ void main() {
       );
       expect(
         candidates.every(
-          (entry) => explicitRpcEndpointPresetFor(entry)?.region != 'Community',
+          (entry) =>
+              explicitRpcEndpointPresetFor(entry)?.region !=
+              RpcEndpointRegion.community,
         ),
         isTrue,
       );
@@ -440,7 +442,11 @@ void main() {
         candidates
             .map((entry) => explicitRpcEndpointPresetFor(entry)?.region)
             .toSet(),
-        containsAll(['Americas', 'Europe', 'Asia Pacific']),
+        containsAll([
+          RpcEndpointRegion.americas,
+          RpcEndpointRegion.europe,
+          RpcEndpointRegion.asiaPacific,
+        ]),
       );
     });
 
@@ -474,7 +480,7 @@ void main() {
           candidates.any(
             (c) =>
                 findRpcEndpointPresetById('main', c.presetId!)!.region ==
-                'Community',
+                RpcEndpointRegion.community,
           ),
           isFalse,
         );

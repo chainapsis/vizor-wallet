@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../support/test_l10n.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,11 +28,11 @@ import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
-import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   setUpAll(() async {
@@ -615,7 +616,7 @@ void main() {
     await tester.tap(find.widgetWithText(AppButton, 'Authorise anyway'));
     await tester.pumpAndSettle();
 
-    expect(find.text(kLedgerAppUpdateRequiredTitle), findsOneWidget);
+    expect(find.text(testL10n.ledgerAppUpdateRequiredTitle), findsOneWidget);
     expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
     expect(discarded, ['ledger-immediate-request']);
 
@@ -1102,15 +1103,21 @@ void main() {
     'Keystone migration scan error asks for firmware update on legacy sign result',
     () {
       final legacyMessage = ironwoodMigrationKeystoneScanErrorMessage(
-        Exception(
-          'Unexpected UR type: got "zcash-sign-result", '
-          'expected "zcash-batch-sig-result"',
+        testL10n,
+        const rust_sync.ApiWalletError(
+          code: rust_sync.ApiWalletErrorCode.unexpectedUrType,
+          message:
+              'Unexpected UR type: got "zcash-sign-result", '
+              'expected "zcash-batch-sig-result"',
         ),
       );
       final wrongQrMessage = ironwoodMigrationKeystoneScanErrorMessage(
-        Exception(
-          'Unexpected UR type: got "zcash-pczt", '
-          'expected "zcash-batch-sig-result"',
+        testL10n,
+        const rust_sync.ApiWalletError(
+          code: rust_sync.ApiWalletErrorCode.unexpectedUrType,
+          message:
+              'Unexpected UR type: got "zcash-pczt", '
+              'expected "zcash-batch-sig-result"',
         ),
       );
 
@@ -1129,6 +1136,7 @@ void main() {
     'Keystone migration explains a signed QR from another signing round',
     () {
       final message = ironwoodMigrationKeystoneSigningErrorMessage(
+        testL10n,
         Exception(
           'Keystone batch result request id does not match the request',
         ),
@@ -1144,13 +1152,14 @@ void main() {
 
   test('Keystone migration explains the network upgrade hold', () {
     final message = ironwoodMigrationKeystoneSigningErrorMessage(
+      testL10n,
       Exception(
         "Migrations can't start this close to the network upgrade. "
         'Try again after it activates.',
       ),
     );
 
-    expect(message, kNetworkUpgradeHoldMessage);
+    expect(message, networkUpgradeHoldText(testL10n));
   });
 
   testWidgets(
@@ -1177,6 +1186,7 @@ void main() {
           child: AppTheme(
             data: AppThemeData.light,
             child: MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
               routerConfig: GoRouter(
                 initialLocation: '/migration/immediate/keystone/sign',
                 routes: [
@@ -1380,13 +1390,14 @@ void main() {
     expect(ironwoodMigrationKeystoneProofReady(ready), isTrue);
     expect(ironwoodMigrationKeystoneProofFailed(failed), isTrue);
     expect(
-      ironwoodMigrationKeystoneProofWaitingMessage(pending),
+      ironwoodMigrationKeystoneProofWaitingMessage(testL10n, pending),
       'Signature captured. Vizor is still preparing local proofs (1/3). '
       'Keep this screen open.',
     );
     expect(
-      ironwoodMigrationKeystoneProofFailureMessage(failed),
-      'Proof generation failed.',
+      ironwoodMigrationKeystoneProofFailureMessage(testL10n, failed),
+      'Vizor could not prepare local proofs. Go back and prepare this request '
+      'again.\nDetails: Proof generation failed.',
     );
   });
 
@@ -1631,14 +1642,14 @@ void main() {
       error:
           "Migrations can't start this close to the network upgrade. Try "
           'again after it activates.',
-      copy: kNetworkUpgradeHoldMessage,
+      copy: networkUpgradeHoldText(testL10n),
       redraws: false,
     ),
     (
       error:
           'Migration schedule was drawn before the network upgrade; review '
           'the plan again',
-      copy: kNetworkUpgradeScheduleChangedMessage,
+      copy: testL10n.sendPaymentRequestCheckUpgradeScheduleChanged,
       redraws: true,
     ),
   ]) {
@@ -6011,6 +6022,7 @@ Widget _migrationOptionsHarness({
         ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
@@ -6232,6 +6244,7 @@ class _MutablePrivateStatusHarnessState
       child: Builder(
         key: _scopeKey,
         builder: (context) => MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: _router,
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(
@@ -6305,6 +6318,7 @@ Widget _migrationFlowDataHarness({
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(
@@ -6384,6 +6398,7 @@ Widget _migrationPrepareHarness({
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(
@@ -6528,6 +6543,7 @@ Widget _migrationEntryHarness({
         ironwoodMigrationServiceProvider.overrideWithValue(migrationService),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(

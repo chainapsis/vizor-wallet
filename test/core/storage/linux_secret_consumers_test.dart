@@ -29,6 +29,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart'
     show AccountExportMetadata;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import '../../support/test_l10n.dart';
 
 const _accountUuid = 'account-1';
 const _accounts = AccountState(
@@ -112,6 +113,7 @@ void main() {
           final operation = switch (flow) {
             'send' => runSendBroadcast(
               ref: ref,
+              l10n: testL10n,
               args: _sendArgs(),
               confirmSaplingParamsDownload: () async => false,
               shouldAbort: () async => !ref.context.mounted,
@@ -179,6 +181,7 @@ void main() {
           final operation = switch (flow) {
             'send' => runSendBroadcast(
               ref: ref,
+              l10n: testL10n,
               args: _sendArgs(),
               confirmSaplingParamsDownload: () async => false,
             ),
@@ -411,6 +414,7 @@ class _ConsumerRustFake implements RustLibApi {
         executeCalls++;
         return Future.value(
           const ExecuteProposalResult(
+            notices: [],
             txids: 'test-txid',
             status: 'broadcasted',
             broadcastedCount: 1,

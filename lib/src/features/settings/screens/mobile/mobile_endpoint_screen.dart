@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/rpc_endpoint_config.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -153,7 +154,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
         }
         _isSubmitting = false;
       });
-      showAppToast(context, 'Endpoint updated');
+      showAppToast(context, context.l10n.endpointUpdated);
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -164,8 +165,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
       log('MobileEndpointScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _submitError =
-            "Couldn't connect to that endpoint. Check the host and port.";
+        _submitError = context.l10n.settingsEndpointConnectFailed;
         _isSubmitting = false;
       });
     }
@@ -184,7 +184,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
           child: Column(
             children: [
               MobileTopNav.back(
-                title: 'Endpoints',
+                title: context.l10n.settingsEndpointsTitle,
                 onBack: _isSubmitting ? null : () => context.pop(),
               ),
               if (!isAutomaticRpcEndpointConfig(current) ||
@@ -203,7 +203,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                     child: _ModeTab(
                       key: const ValueKey('mobile_endpoint_tab_list'),
                       iconName: AppIcons.endpoint,
-                      label: 'Select from the list',
+                      label: context.l10n.settingsEndpointSelectFromList,
                       selected: _activeTab == _EndpointTab.list,
                       alignment: Alignment.centerRight,
                       onTap: () => _selectTab(_EndpointTab.list),
@@ -214,7 +214,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                     child: _ModeTab(
                       key: const ValueKey('mobile_endpoint_tab_custom'),
                       iconName: AppIcons.edit,
-                      label: 'Custom endpoint',
+                      label: context.l10n.endpointCustom,
                       selected: _activeTab == _EndpointTab.custom,
                       alignment: Alignment.centerLeft,
                       onTap: () => _selectTab(_EndpointTab.custom),
@@ -274,7 +274,9 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                             key: const ValueKey('mobile_endpoint_update'),
                             onPressed: _canUpdate(current) ? _submit : null,
                             child: Text(
-                              _isSubmitting ? 'Updating...' : 'Update endpoint',
+                              _isSubmitting
+                                  ? context.l10n.commonUpdating
+                                  : context.l10n.endpointUpdate,
                             ),
                           ),
                         ),
@@ -296,9 +298,10 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
     RpcEndpointLatencyState latencyState,
   ) {
     final colors = context.colors;
-    final groups = <String, List<RpcEndpointPreset>>{};
+    final groups = <RpcEndpointRegion, List<RpcEndpointPreset>>{};
     final automaticDetail = isAutomaticRpcEndpointConfig(current)
         ? automaticEndpointDetailLabel(
+            context.l10n,
             ref.watch(rpcEndpointFailoverProvider),
             latencyState,
           )
@@ -322,7 +325,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
               bottom: AppSpacing.xs,
             ),
             child: Text(
-              entry.key,
+              entry.key.label(context.l10n),
               style: AppTypography.labelMedium.copyWith(
                 color: colors.text.secondary,
               ),
@@ -334,7 +337,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
               preset: preset,
               detailLabel: preset.isAutomatic
                   ? automaticDetail
-                  : latencyState.sampleForUrl(preset.url)?.label,
+                  : latencyState.sampleForUrl(preset.url)?.label(context.l10n),
               selected: preset.id == _selectedPresetId,
               onTap: _isSubmitting
                   ? null
@@ -390,7 +393,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Custom endpoint',
+                      context.l10n.endpointCustom,
                       style: AppTypography.displaySmall.copyWith(
                         color: colors.text.homeCard,
                       ),
@@ -406,7 +409,8 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
                           fieldKey: const ValueKey(
                             'mobile_endpoint_custom_field',
                           ),
-                          hintText: '<hostname>:<port>',
+                          hintText:
+                              '<hostname>:<port>', // l10n-ignore: address format hint
                           controller: _customController,
                           focusNode: _customFocusNode,
                           backgroundColor: colors.background.ground,
@@ -465,17 +469,16 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
               AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                "If the endpoint is configured wrong, your wallet won't be able "
-                'to sync with the Zcash blockchain.',
+                context.l10n.settingsEndpointWarningBlockchain,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: colors.text.accent,
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'The wallet will show the balance from the last time it was '
-                "successfully connected. It won't show any ZEC you recently "
-                'received.',
+                context.l10n.settingsEndpointBalanceNote(
+                  'ZEC', // l10n-ignore: currency ticker
+                ),
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -489,7 +492,11 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
             key: const ValueKey('mobile_endpoint_update'),
             minWidth: 226,
             onPressed: _canUpdate(current) ? _submit : null,
-            child: Text(_isSubmitting ? 'Updating...' : 'Customise endpoint'),
+            child: Text(
+              _isSubmitting
+                  ? context.l10n.commonUpdating
+                  : context.l10n.settingsEndpointCustomise,
+            ),
           ),
         ),
       ],
@@ -585,16 +592,16 @@ class _MobileCurrentEndpointText extends ConsumerWidget {
     final latency = automatic && !effective.automaticReady
         ? null
         : latencyState.sampleForUrl(selected.normalizedLightwalletdUrl);
-    final suffix = latency?.label ?? '';
+    final suffix = latency?.label(context.l10n) ?? '';
     final hostLabel = automatic
         ? effective.automaticReady
-              ? 'Automatic · ${selected.hostPort}'
-              : 'Automatic · Selecting...'
+              ? context.l10n.endpointAutomaticWithHost(selected.hostPort)
+              : context.l10n.endpointAutomaticSelecting
         : selected.hostPort;
 
     return Text.rich(
       TextSpan(
-        text: automatic ? '' : 'Current: ',
+        text: automatic ? '' : context.l10n.settingsEndpointCurrentPrefix,
         style: AppTypography.labelMedium.copyWith(
           fontWeight: FontWeight.w500,
           color: colors.text.primary,
@@ -651,7 +658,7 @@ class _PresetCard extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: [preset.displayLabel, ?detailLabel].join(', '),
+      label: [preset.displayLabel(context.l10n), ?detailLabel].join(', '),
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -705,7 +712,7 @@ class _PresetCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        preset.displayLabel,
+                        preset.displayLabel(context.l10n),
                         overflow: TextOverflow.ellipsis,
                         style: titleStyle,
                       ),

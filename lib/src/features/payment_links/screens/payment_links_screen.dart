@@ -6,15 +6,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/navigation/incoming_link_entry_policy.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/app_secure_store.dart';
 import '../../../core/theme/app_theme.dart';
@@ -22,6 +25,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../core/zcash/block_spacing.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -42,7 +46,6 @@ import '../providers/gift_card_check_progress_provider.dart';
 import '../services/payment_link_clipboard.dart';
 import '../services/payment_link_batch_export.dart';
 import '../services/payment_link_batch_limits.dart';
-import '../services/payment_link_entry_policy.dart';
 import '../services/payment_link_hardware_signing_service.dart';
 import '../services/payment_link_qr_export.dart';
 import '../services/payment_link_qr_image_saver.dart';
@@ -64,7 +67,6 @@ import '../widgets/payment_link_card_selector_rail.dart';
 import '../widgets/payment_link_claim_outcome_view.dart';
 import '../widgets/payment_link_confetti.dart';
 import '../widgets/payment_link_confirm_modal.dart';
-import '../widgets/payment_link_copy.dart';
 import '../widgets/payment_link_desktop_views.dart';
 import '../widgets/payment_link_gift_card.dart';
 import '../widgets/payment_link_keystone_signing_overlay.dart';
@@ -100,23 +102,6 @@ class PaymentLinksScreen extends ConsumerStatefulWidget {
 class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     with _PaymentLinksBatchCreation {
   static const _linkAvailableSoonRemainingConfirmations = 3;
-  static const _syncingFeeEstimateMessage =
-      'Card fee will be estimated when wallet sync completes.';
-
-  static const _monthNames = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
 
   BlockTimeEstimate _blockTimes() => ref
       .read(blockSpacingProvider)
@@ -129,7 +114,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final totalSeconds = _blockTimes().secondsForBlocks(remaining);
     final minutes = totalSeconds ~/ 60;
     final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
-    return 'Wait $minutes:$seconds to get the link';
+    return context.l10n.paymentLinkWaitToGetLink(minutes, seconds);
   }
 
   String _estimatedClaimWaitLabel(PaymentLinkClaimSession session) {
@@ -138,7 +123,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final totalSeconds = _blockTimes().secondsForBlocks(max(remaining, 0));
     final minutes = totalSeconds ~/ 60;
     final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
-    return 'Wait $minutes:$seconds to claim';
+    return context.l10n.paymentLinkWaitToClaim(minutes, seconds);
   }
 
   @override
@@ -205,8 +190,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   bool _preparationInterrupted = false;
 
   String get _preparationFailureMessage => _preparationInterrupted
-      ? kPaymentLinkInterruptedCheckMessage
-      : 'Card balance could not be checked. Try again.';
+      ? context.l10n.paymentLinkInterruptedCheckMessage
+      : context.l10n.paymentLinkCardBalanceCheckFailed;
   @override
   PaymentLinkFundingResult? _pendingFundingMetadata;
   _PaymentLinkHardwareFundingRequest? _hardwareFundingRequest;
@@ -370,12 +355,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     }
     if (_pendingFundingMetadata != null &&
         page != PaymentLinksLocalPage.review) {
-      _showError('Save this gift card before leaving this screen.');
+      _showError(context.l10n.paymentLinkLeaveSaveOne);
       return;
     }
     if (_batchSubmission is _BatchUnsaved &&
         page != PaymentLinksLocalPage.bulk) {
-      _showError('Save these gift cards before leaving this screen.');
+      _showError(context.l10n.paymentLinkLeaveSaveMany);
       return;
     }
     if (_page == PaymentLinksLocalPage.bulk &&
@@ -629,7 +614,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   void _showDeferredPendingLinkMessage() {
     showAppToast(
       context,
-      kPaymentLinkDeferredByActiveFlowMessage,
+      IncomingLinkNotice.giftBusy.text(context.l10n),
       iconName: AppIcons.warning,
     );
   }
@@ -678,7 +663,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       _selectedBatchId = null;
       _page = PaymentLinksLocalPage.home;
     });
-    _showError('This group wasn’t funded. Create it again.');
+    _showError(context.l10n.paymentLinkGroupNotFunded);
   }
 
   bool _acceptsCardRead(int epoch, int storageGeneration) =>
@@ -697,8 +682,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         _recoveries = records.toList()..sort(compareCreatedPaymentLinks);
       });
     } catch (_) {
+      if (!mounted) return;
       if (_acceptsCardRead(epoch, generation)) {
-        _showError('Gift cards could not be loaded.');
+        _showError(context.l10n.paymentLinkCardsLoadFailed);
       }
     }
   }
@@ -720,9 +706,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           'PaymentLinkCards: local received load failed '
           'attempt=$attempt type=${error.runtimeType}',
         );
-        if (!_acceptsCardRead(epoch, generation)) return;
+        if (!mounted || !_acceptsCardRead(epoch, generation)) return;
         if (attempt == 2) {
-          _showError('Received gift cards could not be loaded.');
+          _showError(context.l10n.paymentLinkReceivedCardsLoadFailed);
         }
       }
     }
@@ -766,8 +752,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       _createdRecoveryNeedsResume = true;
       // Keep the persisted list while locked, backgrounded, or changing wallets.
     } catch (_) {
-      if (acceptsResult() && showError) {
-        _showError('Gift cards could not be loaded.');
+      if (mounted && acceptsResult() && showError) {
+        _showError(context.l10n.paymentLinkCardsLoadFailed);
       }
     } finally {
       if (mounted) setState(() => _checkingCreatedDrafts = const {});
@@ -829,7 +815,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         }
       });
       if (readyFundingExpired) {
-        _showError('Gift card funding expired. Create it again.');
+        _showError(context.l10n.paymentLinkFundingExpired);
       }
       if (hadOpenBatch) _leaveVanishedBatch();
     } catch (_) {
@@ -1019,7 +1005,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
             });
           } catch (_) {
             if (mounted && _isCurrentNavigation(epoch)) {
-              _showError('Card status could not be checked. Try again.');
+              _showError(context.l10n.paymentLinkCardStatusCheckFailed);
             }
           } finally {
             if (mounted) setState(() => _operationInProgress = false);
@@ -1053,11 +1039,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final confirmed = await showPaymentLinkConfirmSheet(
       context,
       iconName: AppIcons.trash,
-      title: kPaymentLinkRemoveCardTitle,
-      body: kPaymentLinkClaimedElsewhereDescription,
-      supporting: kPaymentLinkRemoveCardSupporting,
-      confirmLabel: kPaymentLinkRemoveCardLabel,
-      cancelLabel: 'Cancel',
+      title: context.l10n.paymentLinkRemoveCardTitle,
+      body: context.l10n.paymentLinkClaimedElsewhereDescription,
+      supporting: context.l10n.paymentLinkRemoveCardSupporting,
+      confirmLabel: context.l10n.paymentLinkRemoveCardLabel,
+      cancelLabel: context.l10n.commonCancel,
       sheetKey: const ValueKey('payment_link_remove_card_sheet'),
       confirmKey: const ValueKey(
         'payment_link_remove_card_sheet_confirm_button',
@@ -1080,7 +1066,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   Future<void> _removeReceivedCard(PaymentLinkReceivedRecord record) =>
       _updateReceivedCard(
         () => _paymentLinkOperations.removeReceivedCard(record.address),
-        errorText: 'Card could not be removed. Try again.',
+        errorText: context.l10n.paymentLinkCardRemoveFailed,
       );
 
   Future<void> _setCardArchived(
@@ -1091,7 +1077,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       record.address,
       archived,
     ),
-    errorText: 'Card could not be updated. Try again.',
+    errorText: context.l10n.paymentLinkCardUpdateFailed,
   );
 
   /// Applies one change to a received Card, then shows the list as stored. A
@@ -1177,15 +1163,19 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   String? get _usdDisabledReason {
     if (_page != PaymentLinksLocalPage.amount) return null;
     if (ref.read(zecLiveUsdUnitPriceProvider) == null) {
-      return _usdPriceLoading ? 'Fetching USD price…' : 'USD price unavailable';
+      return _usdPriceLoading
+          ? context.l10n.paymentLinkUsdFetchingPrice
+          : context.l10n.paymentLinkUsdPriceUnavailable;
     }
-    return 'Amount is too small for USD input.';
+    return context.l10n.paymentLinkUsdAmountTooSmall;
   }
 
   String? _amountConversionText(String? fiatText) {
     if (_amountInputIsUsd) {
       final amount = _amountZatoshi;
-      return amount == null ? null : '≈ ${formatZecAmount(amount)} ZEC';
+      return amount == null
+          ? null
+          : '≈ ${formatZecAmount(amount)} ZEC'; // l10n-ignore: amount format
     }
     return fiatText != null && fiatText.startsWith(r'$')
         ? '≈ $fiatText'
@@ -1423,7 +1413,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     setState(() => _fundingQuoteRequestedAccountUuid = accountUuid);
     if (!_canEstimateCardFee(sync, accountUuid)) {
       setState(() {
-        _amountSupportingText = _syncingFeeEstimateMessage;
+        _amountSupportingText = context.l10n.paymentLinkFeeEstimatedAfterSync;
         _amountSupportingTextIsError = false;
       });
       return;
@@ -1433,7 +1423,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     if (maxQuote?.sourceAccountUuid == accountUuid &&
         amount > maxQuote!.recipientAmountZatoshi) {
       setState(() {
-        _amountSupportingText = 'Above your maximum ZEC';
+        _amountSupportingText = context.l10n.paymentLinkAboveMaximumZec;
         _amountSupportingTextIsError = true;
       });
       return;
@@ -1442,7 +1432,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     if (readySync.hasBalanceData &&
         readySync.spendableBalance <= minimumFunding) {
       setState(() {
-        _amountSupportingText = 'Above your maximum ZEC';
+        _amountSupportingText = context.l10n.paymentLinkAboveMaximumZec;
         _amountSupportingTextIsError = true;
       });
       return;
@@ -1512,7 +1502,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     if (wasPastAmountStep) {
       showAppToast(
         context,
-        'Active account changed. Review the gift card amount and fees again.',
+        context.l10n.paymentLinkAccountChangedReviewAmount,
         iconName: AppIcons.warning,
       );
     }
@@ -1552,8 +1542,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     _releaseClaimSession(session, keepCard: keepCard);
     showAppToast(
       context,
-      'Active account changed. Redeem this gift card again to receive it in '
-      'the new account.',
+      context.l10n.paymentLinkAccountChangedRedeemAgain,
       iconName: AppIcons.warning,
     );
   }
@@ -1582,7 +1571,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       setState(() {
         _fundingQuoteInProgress = false;
         _fundingQuote = insufficient ? null : quote;
-        _amountSupportingText = insufficient ? 'Above your maximum ZEC' : null;
+        _amountSupportingText = insufficient
+            ? context.l10n.paymentLinkAboveMaximumZec
+            : null;
         _amountSupportingTextIsError = insufficient;
       });
     } catch (_) {
@@ -1593,8 +1584,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         _fundingQuoteInProgress = false;
         _fundingQuote = null;
         _amountSupportingText = waitingForSync
-            ? _syncingFeeEstimateMessage
-            : 'Card fee could not be estimated. Try again.';
+            ? context.l10n.paymentLinkFeeEstimatedAfterSync
+            : context.l10n.paymentLinkFeeEstimateFailed;
         _amountSupportingTextIsError = !waitingForSync;
       });
     }
@@ -1717,7 +1708,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
 
   void _selectWizardStep(int step) {
     if (_pendingFundingMetadata != null) {
-      _showError('Save this gift card before leaving this screen.');
+      _showError(context.l10n.paymentLinkLeaveSaveOne);
       return;
     }
     switch (step) {
@@ -1750,22 +1741,20 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         amount <= BigInt.zero ||
         quote == null ||
         quote.recipientAmountZatoshi != amount) {
-      _showError('Enter a valid gift card amount.');
+      _showError(context.l10n.paymentLinkEnterValidAmount);
       return;
     }
     if (activeAccountUuid == null || activeAccountUuid.isEmpty) {
-      _showError('No active account is available.');
+      _showError(context.l10n.paymentLinkNoActiveAccountAvailable);
       return;
     }
     if (activeAccountUuid != quote.sourceAccountUuid) {
       _handleActiveAccountChanged(quote.sourceAccountUuid, activeAccountUuid);
-      _showError(
-        'The active account changed. Review the amount and try again.',
-      );
+      _showError(context.l10n.paymentLinkActiveAccountChangedReviewAmount);
       return;
     }
     if (ref.read(networkUpgradeWindowProvider).holdsTransactions) {
-      _showError(kNetworkUpgradeHoldMessage);
+      _showError(networkUpgradeHoldText(context.l10n));
       return;
     }
     final sourceAccountUuid = quote.sourceAccountUuid;
@@ -1828,10 +1817,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           _reviewShowsBack = false;
           _page = PaymentLinksLocalPage.review;
         });
-        _showError(
-          'Funding was sent, but the gift card could not be saved. '
-          'Try again before closing Vizor.',
-        );
+        _showError(context.l10n.paymentLinkFundingSentCardNotSaved);
         return;
       }
       await _loadRecoveries(showError: false);
@@ -1853,13 +1839,13 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       if (mounted) {
         // Rust can observe the new tip before the display's epoch changes.
         _feeQuoteRefreshPending = true;
-        _showError(_kBatchFeeChangedText);
+        _showError(context.l10n.paymentLinkBatchFeeChanged);
       }
     } catch (error) {
       if (mounted) {
         _showError(
-          networkUpgradeHoldMessage(error) ??
-              'Gift card creation failed. Try again.',
+          networkUpgradeHoldMessage(context.l10n, error) ??
+              context.l10n.paymentLinkCreationFailed,
         );
       }
     } finally {
@@ -1911,9 +1897,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       _confirmCardCreated(broadcastAccepted: pending.broadcastAccepted);
     } catch (_) {
       if (mounted) {
-        _showError(
-          'The gift card still could not be saved. Try again before closing Vizor.',
-        );
+        _showError(context.l10n.paymentLinkStillNotSaved);
       }
     } finally {
       if (mounted) {
@@ -1967,9 +1951,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     // result from an old account/request must not replace the current flow.
     if (!mounted || _hardwareFundingRequest != request) return;
     if (refusal is PaymentLinkBatchQuoteChanged) {
-      _showError(_kBatchFeeChangedText);
+      _showError(context.l10n.paymentLinkBatchFeeChanged);
     } else if (refusal is PaymentLinkBatchRejected) {
-      _showError(refusal.message);
+      _showError(refusal.text(context.l10n));
     }
     await _cancelHardwareFunding();
   }
@@ -2002,7 +1986,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       // but require returning to Amount before this old quote can be used.
       if (quote != null) _fundingQuote = quote;
       _amountSupportingText = quote == null
-          ? 'Card fee could not be updated. Return to the amount step and try again.'
+          ? context.l10n.paymentLinkFeeUpdateFailed
           : null;
       _amountSupportingTextIsError = quote == null;
       _maxFundingQuote = null;
@@ -2043,10 +2027,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           _page = PaymentLinksLocalPage.review;
         }
       });
-      _showError(
-        'Funding was sent, but the gift card could not be saved. '
-        'Try again before closing Vizor.',
-      );
+      _showError(context.l10n.paymentLinkFundingSentCardNotSaved);
       return;
     }
     setState(() {
@@ -2083,10 +2064,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     }
     showAppToast(
       context,
-      result.message ??
+      broadcastResultText(
+            context.l10n,
+            notices: result.notices,
+            message: result.message,
+          ) ??
           (result.status == 'broadcast_unknown'
-              ? 'Funding is still being verified. Vizor will keep checking it.'
-              : 'Funding was sent, but local transaction storage needs to sync.'),
+              ? context.l10n.paymentLinkFundingStillVerifying
+              : context.l10n.paymentLinkFundingStorageNeedsSync),
       iconName: AppIcons.warning,
     );
   }
@@ -2107,15 +2092,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
             .read(paymentLinkOperationsProvider)
             .markCreatedLinkShared(link);
         await _loadRecoveries(showError: false);
-        if (mounted) showAppToast(context, 'Gift link copied');
+        if (mounted) showAppToast(context, context.l10n.paymentLinkLinkCopied);
       } catch (_) {
         if (mounted) {
-          _showError('Gift link copied, but its status could not be updated.');
+          _showError(context.l10n.paymentLinkLinkCopiedStatusFailed);
         }
       }
     } catch (_) {
       if (mounted && epoch == _mobileNavigationEpoch) {
-        _showError('Gift link could not be copied.');
+        _showError(context.l10n.paymentLinkLinkCopyFailed);
       }
     } finally {
       if (mounted) setState(() => _copyingLinkAddresses.remove(link.address));
@@ -2567,8 +2552,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     await _checkPaymentLink(retryLink);
   }
 
-  String get _redeemActionLabel =>
-      _retryLink == null ? 'Paste card link' : 'Try again';
+  String get _redeemActionLabel => _retryLink == null
+      ? context.l10n.paymentLinkPasteLabel
+      : context.l10n.commonTryAgain;
 
   Future<void> _confirmMobileClaim() async {
     final link = _receivedLink;
@@ -2758,7 +2744,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           // already owns progress and recovery for these outcomes.
           showAppToast(
             context,
-            'Claim result is not confirmed. Check its status.',
+            context.l10n.paymentLinkClaimResultNotConfirmed,
           );
         }
         unawaited(_refreshReceivedClaims());
@@ -2767,8 +2753,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       showAppToast(
         context,
         result.status == PaymentLinkClaimBroadcastStatus.broadcasted
-            ? 'Gift claim submitted'
-            : 'Claim result is not confirmed. Check its status.',
+            ? context.l10n.paymentLinkClaimSubmitted
+            : context.l10n.paymentLinkClaimResultNotConfirmed,
       );
       unawaited(_refreshReceivedClaims());
     } on PaymentLinkClaimDestinationChangedException {
@@ -2794,8 +2780,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         });
         _showError(
           mobile
-              ? 'Receiving account changed. Try again to check this gift.'
-              : 'Receiving account changed. Open the gift card again to continue.',
+              ? context.l10n.paymentLinkReceivingAccountChangedRetry
+              : context.l10n.paymentLinkReceivingAccountChangedReopen,
         );
       }
     } catch (error) {
@@ -2810,11 +2796,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         if (mobile) setState(() => _operationInProgress = false);
         unawaited(_refreshReceivedClaims());
         _showError(
-          networkUpgradeHoldMessage(error) ??
+          networkUpgradeHoldMessage(context.l10n, error) ??
               (mobile
-                  ? "Couldn't finish receiving this gift. Try again to check its status."
-                  : 'Gift card claim failed. It may still be waiting for confirmation '
-                        'or may already be spent.'),
+                  ? context.l10n.paymentLinkReceiveFinishFailed
+                  : context.l10n.paymentLinkClaimFailedMaybePending),
         );
       }
     } finally {
@@ -2928,6 +2913,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         claimOutcome: _buildClaimOutcome(),
         operationInProgress: _operationInProgress,
         redeemActionLabel: _redeemActionLabel,
+        redeemIsRetry: _retryLink != null,
         redeemFromQrCode: _redeemFromQrCode,
         keystoneOverlay: mobileHardwareRequest == null
             ? null
@@ -3028,11 +3014,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         : _removeConfirmRecord != null
         ? PaymentLinkConfirmModal(
             iconName: AppIcons.trash,
-            title: kPaymentLinkRemoveCardTitle,
-            body: kPaymentLinkClaimedElsewhereDescription,
-            supporting: kPaymentLinkRemoveCardSupporting,
-            confirmLabel: kPaymentLinkRemoveCardLabel,
-            cancelLabel: 'Cancel',
+            title: context.l10n.paymentLinkRemoveCardTitle,
+            body: context.l10n.paymentLinkClaimedElsewhereDescription,
+            supporting: context.l10n.paymentLinkRemoveCardSupporting,
+            confirmLabel: context.l10n.paymentLinkRemoveCardLabel,
+            cancelLabel: context.l10n.commonCancel,
             onConfirm: () => unawaited(_confirmRemoveReceivedCard()),
             onCancel: _cancelRemoveReceivedCard,
             confirmKey: const ValueKey(
@@ -3069,7 +3055,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     )[paymentLinkClaimWalletDirectoryName(link)];
     // A complete stream event is not yet a prepared claim session. Keep the
     // waiting surface until prepareClaim installs its authoritative result.
-    return progress?.label ?? 'Checking the gift…';
+    return progress?.label(context.l10n) ??
+        context.l10n.paymentLinkCheckingGiftEllipsis;
   }
 
   Widget _buildCurrentPage({
@@ -3123,7 +3110,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         width: 243,
         height: 162,
         fit: BoxFit.contain,
-        semanticLabel: 'Gift box',
+        semanticLabel: context.l10n.paymentLinkArtworkGift,
       ),
       onBack: () => context.go('/home'),
       onShowHelp: _showHelpOverlay,
@@ -3145,7 +3132,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           Padding(
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
             child: Text(
-              kPaymentLinkNoReceivedCardsText,
+              context.l10n.paymentLinkNoReceivedCardsText,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.secondary,
@@ -3212,20 +3199,23 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       }
       return <PaymentLinkCardsSection>[
         if (batches.isNotEmpty)
-          PaymentLinkCardsSection(label: 'Groups', cards: batches),
+          PaymentLinkCardsSection(
+            label: context.l10n.paymentLinkGroupsHeading,
+            cards: batches,
+          ),
         if (pendingCards.isNotEmpty)
           PaymentLinkCardsSection(
-            label: kPaymentLinkPendingSectionLabel,
+            label: context.l10n.commonPending,
             cards: pendingCards,
           ),
         if (unusedCards.isNotEmpty)
           PaymentLinkCardsSection(
-            label: kPaymentLinkUnusedSectionLabel,
+            label: context.l10n.paymentLinkUnusedSectionLabel,
             cards: unusedCards,
           ),
         if (usedCards.isNotEmpty)
           PaymentLinkCardsSection(
-            label: kPaymentLinkUsedSectionLabel,
+            label: context.l10n.paymentLinkUsedSectionLabel,
             cards: usedCards,
           ),
       ];
@@ -3244,19 +3234,19 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     return <PaymentLinkCardsSection>[
       if (receivedCards.isNotEmpty || claimedElsewhereCards.isEmpty)
         PaymentLinkCardsSection(
-          label: kPaymentLinkReceivedTabLabel,
+          label: context.l10n.commonReceived,
           cards: receivedCards.isNotEmpty
               ? receivedCards.map(receivedRow).toList()
               : emptyReceivedCards,
         ),
       if (claimedElsewhereCards.isNotEmpty)
         PaymentLinkCardsSection(
-          label: kPaymentLinkClaimedElsewhereLabel,
+          label: context.l10n.paymentLinkClaimedElsewhereLabel,
           cards: claimedElsewhereCards.map(receivedRow).toList(),
         ),
       if (archivedCards.isNotEmpty)
         PaymentLinkCardsSection(
-          label: 'Archived',
+          label: context.l10n.paymentLinkArchivedHeading,
           header: PaymentLinkArchiveHeader(
             count: archivedCards.length,
             expanded: _showArchivedCards,
@@ -3286,10 +3276,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     return (
       canUseLink: canUseLink,
       statusText: checkingDraft
-          ? kPaymentLinkCheckingLabel
+          ? context.l10n.commonCheckingEllipsis
           : record.state == PaymentLinkRecoveryState.draft
-          ? kPaymentLinkFundingIncompleteStatus
-          : (usage ?? record.usage).label,
+          ? context.l10n.paymentLinkFundingIncompleteStatus
+          : (usage ?? record.usage).label(context.l10n),
       showLoader: !canUseLink && record.state != PaymentLinkRecoveryState.draft,
     );
   }
@@ -3308,7 +3298,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     // and its trailing label is the action: nothing is left to claim.
     if (record.canRemove) {
       return (
-        statusText: 'Remove',
+        statusText: context.l10n.commonRemove,
         actionLabel: null,
         onAction: _operationInProgress
             ? null
@@ -3324,14 +3314,17 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         : record.status;
     return (
       statusText: switch (effectiveStatus) {
-        PaymentLinkReceivedStatus.readyToClaim => record.availability.label,
-        PaymentLinkReceivedStatus.submitting => 'Checking result',
+        PaymentLinkReceivedStatus.readyToClaim => record.availability.label(
+          context.l10n,
+        ),
+        PaymentLinkReceivedStatus.submitting =>
+          context.l10n.paymentLinkAvailabilityCheckingResult,
         PaymentLinkReceivedStatus.receiving =>
           (record.availability == PaymentLinkAvailability.checking ||
                   record.availability == PaymentLinkAvailability.rejected)
-              ? 'Checking result'
-              : 'Receiving…',
-        PaymentLinkReceivedStatus.received => 'Received',
+              ? context.l10n.paymentLinkAvailabilityCheckingResult
+              : context.l10n.paymentLinkReceivingStatus,
+        PaymentLinkReceivedStatus.received => context.l10n.commonReceived,
       },
       actionLabel:
           record.status == PaymentLinkReceivedStatus.received ||
@@ -3339,8 +3332,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
               record.availability == PaymentLinkAvailability.available
           ? null
           : record.archived
-          ? 'View card'
-          : 'Check status',
+          ? context.l10n.paymentLinkViewCardAction
+          : context.l10n.paymentLinkCheckStatus,
       onAction:
           (effectiveStatus == PaymentLinkReceivedStatus.readyToClaim ||
                   record.availability == PaymentLinkAvailability.checking ||
@@ -3374,7 +3367,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       key: ValueKey('payment_link_recovery_${record.link.address}'),
       thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
       amountText: hideAmountIfPrivacyMode(
-        '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+        '${formatZecAmount(record.link.amountZatoshi)} ZEC', // l10n-ignore: amount format
         privacyModeEnabled: ref.watch(privacyModeProvider),
       ),
       dateText: _formatCardDate(record.link.createdAt),
@@ -3424,12 +3417,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         .length;
     final usageSummary = usedCount > 0
         ? usedCount == count
-              ? 'All used'
-              : '$usedCount of $count used'
+              ? context.l10n.paymentLinkUsageAllUsed
+              : context.l10n.paymentLinkUsageUsedOfCount(usedCount, count)
         : unusedCount > 0
         ? unusedCount == count
-              ? kPaymentLinkUnusedSectionLabel
-              : '$unusedCount of $count unused'
+              ? context.l10n.paymentLinkUnusedSectionLabel
+              : context.l10n.paymentLinkUsageUnusedOfCount(unusedCount, count)
         : null;
     final checkingFunding =
         !_fundingProgressChecked ||
@@ -3451,7 +3444,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           : null,
       count: count,
       amountText: hideAmountIfPrivacyMode(
-        '${formatZecAmount(first.link.amountZatoshi)} ZEC',
+        '${formatZecAmount(first.link.amountZatoshi)} ZEC', // l10n-ignore: amount format
         privacyModeEnabled: ref.watch(privacyModeProvider),
       ),
       dateText: _formatCardDate(first.link.createdAt),
@@ -3460,16 +3453,16 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       statusText:
           usageSummary ??
           (!ready && checkingFunding
-              ? kPaymentLinkCheckingLabel
+              ? context.l10n.commonCheckingEllipsis
               : ready
-              ? 'Ready to share'
+              ? context.l10n.paymentLinkReadyHeading
               : switch (_batchPendingKind(members)) {
                   PaymentLinkBatchPendingKind.incomplete =>
-                    'Some cards aren’t ready',
+                    context.l10n.paymentLinkGroupSomeNotReady,
                   PaymentLinkBatchPendingKind.unconfirmedBroadcast =>
-                    'Payment status pending',
+                    context.l10n.paymentLinkGroupPaymentPending,
                   PaymentLinkBatchPendingKind.confirming =>
-                    'Confirming payment',
+                    context.l10n.paymentLinkGroupConfirmingPayment,
                 }),
       onOpen: () => _openBatchDetail(first.batchId!),
     );
@@ -3515,12 +3508,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       // Not loaded at all (a failed reload): show the list until it is.
       if (_initialCardsLoaded && !_openBatchLoaded) return _buildHome();
       return PaymentLinkPane(
-        backLabel: 'Gift Cards',
+        backLabel: context.l10n.paymentLinkGiftCardsTitle,
         onBack: () => _showPage(PaymentLinksLocalPage.home),
         child: Center(
           child: _initialCardsLoaded
               ? Text(
-                  'This group belongs to another account. Switch accounts to view it.',
+                  context.l10n.paymentLinkGroupOtherAccount,
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.secondary,
                   ),
@@ -3562,12 +3555,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
               artwork: PaymentLinkCardArtwork.fromProtocolId(
                 record.link.presentation?.artworkId,
               ),
-              statusLabel: usage.label,
+              statusLabel: usage.label(context.l10n),
               used: used,
               // The section already says Unused or Used; anything else is
               // spelled out on the row.
               note: pending || usage.status == GiftCardUsageStatus.spendDetected
-                  ? usage.label
+                  ? usage.label(context.l10n)
                   : null,
               updateFailed:
                   !usage.cleaned &&
@@ -3623,15 +3616,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       // Saved classifications are visible before sharing becomes available.
       sections: [
         PaymentLinkCardsSection(
-          label: kPaymentLinkPendingSectionLabel,
+          label: context.l10n.commonPending,
           cards: pendingCards,
         ),
         PaymentLinkCardsSection(
-          label: kPaymentLinkUnusedSectionLabel,
+          label: context.l10n.paymentLinkUnusedSectionLabel,
           cards: unusedCards,
         ),
         PaymentLinkCardsSection(
-          label: kPaymentLinkUsedSectionLabel,
+          label: context.l10n.paymentLinkUsedSectionLabel,
           cards: usedCards,
         ),
       ],
@@ -3640,16 +3633,21 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
 
   String _checkedAgoText(DateTime checkedAt) {
     final elapsed = DateTime.now().toUtc().difference(checkedAt.toUtc());
-    if (elapsed.inMinutes < 1) return 'Checked just now';
-    if (elapsed.inHours < 1) return 'Checked ${elapsed.inMinutes}m ago';
-    if (elapsed.inDays < 1) return 'Checked ${elapsed.inHours}h ago';
-    return 'Checked ${_formatCardDate(checkedAt.toLocal())}';
+    final l10n = context.l10n;
+    if (elapsed.inMinutes < 1) return l10n.paymentLinkCheckedJustNow;
+    if (elapsed.inHours < 1) {
+      return l10n.paymentLinkCheckedMinutesAgo(elapsed.inMinutes);
+    }
+    if (elapsed.inDays < 1) {
+      return l10n.paymentLinkCheckedHoursAgo(elapsed.inHours);
+    }
+    return l10n.paymentLinkCheckedOnDate(_formatCardDate(checkedAt.toLocal()));
   }
 
   void _requestBatchExport(List<PaymentLinkRecoveryRecord> members) {
     if (!_batchMembersReady(members) ||
         _exportingBatchIds.contains(members.first.batchId)) {
-      _showError('All cards must be ready before exporting links.');
+      _showError(context.l10n.paymentLinkExportNotReady);
       return;
     }
     setState(() => _exportConfirmMembers = members);
@@ -3666,17 +3664,17 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final latest = _recoveries.where((record) => record.batchId == id).toList();
     if (currentAccount != members.first.sourceAccountUuid ||
         !_batchMembersReady(latest)) {
-      _showError(
-        'The account or card status changed. Check the cards and try again.',
-      );
+      _showError(context.l10n.paymentLinkExportStatusChanged);
       return;
     }
     setState(() => _exportingBatchIds.add(id));
     try {
       final saved = await exportPaymentLinkBatchCsv(latest);
-      if (saved && mounted) showAppToast(context, 'Gift card links saved');
+      if (saved && mounted) {
+        showAppToast(context, context.l10n.paymentLinkLinksSaved);
+      }
     } catch (error) {
-      if (mounted) _showError('Gift card links could not be saved. Try again.');
+      if (mounted) _showError(context.l10n.paymentLinkLinksSaveFailed);
       log('PaymentLinksScreen: batch export failed: $error');
     } finally {
       if (mounted) setState(() => _exportingBatchIds.remove(id));
@@ -3692,7 +3690,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       key: ValueKey('payment_link_mobile_recovery_${record.link.address}'),
       thumbnail: _cardThumbnail(record.link.presentation?.artworkId),
       amountText: hideAmountIfPrivacyMode(
-        '${formatZecAmount(record.link.amountZatoshi)} ZEC',
+        '${formatZecAmount(record.link.amountZatoshi)} ZEC', // l10n-ignore: amount format
         privacyModeEnabled: ref.watch(privacyModeProvider),
       ),
       dateText: _formatCardDate(record.link.createdAt),
@@ -3731,7 +3729,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       shareData = (await preparePaymentLinkShareUri(record.link)).toString();
     } catch (_) {
       if (mounted && epoch == _mobileNavigationEpoch) {
-        _showError('Gift link could not be shared.');
+        _showError(context.l10n.paymentLinkShareFailed);
       }
       return;
     } finally {
@@ -3751,9 +3749,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
                 _sharePaymentLinkQr(record.link, png, origin),
             onShareError: () {
               if (mounted) {
-                _showError(
-                  "Couldn't share this gift card. Copy the link instead.",
-                );
+                _showError(context.l10n.paymentLinkShareFailedCopyInstead);
               }
             },
             onCopyLink: () => _copyPaymentLink(record.link),
@@ -3795,8 +3791,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       onCopyLink: _operationInProgress || copying
           ? null
           : () => _copyPaymentLink(record.link),
-      saveLabel: saving ? 'Saving…' : 'Save QR code',
-      copyLabel: copying ? 'Copying…' : 'Copy link',
+      saveLabel: saving
+          ? context.l10n.paymentLinkSaving
+          : context.l10n.paymentLinkSaveQrCode,
+      copyLabel: copying
+          ? context.l10n.paymentLinkCopying
+          : context.l10n.commonCopyLink,
     );
   }
 
@@ -3821,16 +3821,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
             .read(paymentLinkOperationsProvider)
             .markCreatedLinkShared(record.link);
         await _loadRecoveries(showError: false);
-        if (mounted) showAppToast(context, 'Gift card QR saved');
+        if (mounted) showAppToast(context, context.l10n.paymentLinkQrSaved);
       } catch (_) {
         if (mounted) {
-          _showError(
-            'Gift card QR saved, but its status could not be updated.',
-          );
+          _showError(context.l10n.paymentLinkQrSavedStatusFailed);
         }
       }
     } catch (_) {
-      if (mounted) _showError('Gift card QR could not be saved.');
+      if (mounted) _showError(context.l10n.paymentLinkQrSaveFailed);
     } finally {
       if (mounted) {
         setState(() => _savingQrAddresses.remove(record.link.address));
@@ -3857,7 +3855,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         if (mounted) await _loadRecoveries(showError: false);
       } catch (_) {
         if (mounted) {
-          _showError('Gift card shared, but its status could not be updated.');
+          _showError(context.l10n.paymentLinkSharedStatusFailed);
         }
       }
     } finally {
@@ -3871,7 +3869,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       key: ValueKey('payment_link_received_${record.address}'),
       thumbnail: _cardThumbnail(record.artworkId, dimmed: record.canRemove),
       amountText: hideAmountIfPrivacyMode(
-        '${formatZecAmount(record.amountZatoshi)} ZEC',
+        '${formatZecAmount(record.amountZatoshi)} ZEC', // l10n-ignore: amount format
         privacyModeEnabled: ref.watch(privacyModeProvider),
       ),
       dateText: _formatCardDate(record.createdAt),
@@ -3888,7 +3886,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       key: ValueKey('payment_link_mobile_received_${record.address}'),
       thumbnail: _cardThumbnail(record.artworkId, dimmed: record.canRemove),
       amountText: hideAmountIfPrivacyMode(
-        '${formatZecAmount(record.amountZatoshi)} ZEC',
+        '${formatZecAmount(record.amountZatoshi)} ZEC', // l10n-ignore: amount format
         privacyModeEnabled: ref.watch(privacyModeProvider),
       ),
       dateText: _formatCardDate(record.createdAt),
@@ -3929,8 +3927,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       supportingText: _amountSupportingText,
       supportingTextIsError: _amountSupportingTextIsError,
       emptyActionLabel: _amountSupportingTextIsError
-          ? 'Enter amount'
-          : 'Continue',
+          ? context.l10n.commonEnterAmount
+          : context.l10n.commonContinue,
     );
   }
 
@@ -3940,7 +3938,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       showBack: true,
       message: _messageController.text,
       onTap: _revealMessageEditor,
-      semanticLabel: 'Start writing gift card message',
+      semanticLabel: context.l10n.paymentLinkStartWritingMessage,
     );
     final messageEditorCard = PaymentLinkGiftCard(
       artwork: _selectedArtwork,
@@ -3955,7 +3953,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       ],
       onMessageChanged: _handleMessageChanged,
       onDeleteMessage: _hasMessage ? _clearMessage : null,
-      semanticLabel: 'Gift card message input',
+      semanticLabel: context.l10n.paymentLinkMessageInputSemantic,
     );
     return PaymentLinkMessageDesktopView(
       state: _hasMessage
@@ -3974,7 +3972,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           : null,
       onStepSelected: _selectWizardStep,
       errorText: _messageExceedsByteLimit
-          ? kPaymentLinkMessageTooLargeText
+          ? context.l10n.paymentLinkMessageTooLarge
           : null,
     );
   }
@@ -3992,7 +3990,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       onTap: message.isEmpty
           ? null
           : () => setState(() => _reviewShowsBack = true),
-      semanticLabel: message.isEmpty ? null : 'Reveal gift card message',
+      semanticLabel: message.isEmpty
+          ? null
+          : context.l10n.paymentLinkRevealMessageSemanticLabel,
     );
     final card = message.isEmpty
         ? front
@@ -4004,17 +4004,18 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
               showBack: true,
               message: message,
               onTap: () => setState(() => _reviewShowsBack = false),
-              semanticLabel: 'Show gift card front',
+              semanticLabel: context.l10n.paymentLinkShowCardFrontSemantic,
             ),
           );
     return PaymentLinkReviewDesktopView(
       card: card,
       onBack: () => _showPage(PaymentLinksLocalPage.home),
       cardAmountText:
-          '${formatZecAmount(_fundingQuote!.recipientAmountZatoshi)} ZEC',
-      cardFeeText: '${formatZecAmount(_fundingQuote!.cardFeeZatoshi)} ZEC',
+          '${formatZecAmount(_fundingQuote!.recipientAmountZatoshi)} ZEC', // l10n-ignore: amount format
+      cardFeeText:
+          '${formatZecAmount(_fundingQuote!.cardFeeZatoshi)} ZEC', // l10n-ignore: amount format
       totalAmountText:
-          '${formatZecAmount(_fundingQuote!.totalDeductedZatoshi)} ZEC',
+          '${formatZecAmount(_fundingQuote!.totalDeductedZatoshi)} ZEC', // l10n-ignore: amount format
       onConfirm:
           _operationInProgress ||
               (_pendingFundingMetadata == null && !_canContinueAmount)
@@ -4025,11 +4026,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       onStepSelected: _operationInProgress ? null : _selectWizardStep,
       confirmLabel: _operationInProgress
           ? _pendingFundingMetadata == null
-                ? 'Creating…'
-                : 'Saving…'
+                ? context.l10n.commonCreating
+                : context.l10n.paymentLinkSaving
           : _pendingFundingMetadata == null
-          ? 'Create card'
-          : 'Try saving again',
+          ? context.l10n.paymentLinkCreateCardButton
+          : context.l10n.paymentLinkTrySavingAgain,
     );
   }
 
@@ -4083,7 +4084,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           : null,
       onReturnHome: () => _showPage(PaymentLinksLocalPage.home),
       waitingStatusLabel: _estimatedLinkWaitLabel(fundingProgress),
-      copyLabel: copying ? 'Copying…' : 'Copy link',
+      copyLabel: copying
+          ? context.l10n.paymentLinkCopying
+          : context.l10n.commonCopyLink,
     );
   }
 
@@ -4141,16 +4144,16 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           ? PaymentLinkClaimDesktopState.waiting
           : PaymentLinkClaimDesktopState.ready,
       backLabel: loading || outcome
-          ? 'My Cards'
+          ? context.l10n.paymentLinkMyCards
           : checkLabel != null ||
                 (session?.waitingForFundingConfirmations ?? false)
-          ? 'Home'
-          : 'Cards',
+          ? context.l10n.navHome
+          : context.l10n.commonCards,
       waitingStatusLabel:
           checkLabel ??
           ((session?.waitingForFundingConfirmations ?? false)
               ? _estimatedClaimWaitLabel(session!)
-              : 'Checking the gift…'),
+              : context.l10n.paymentLinkCheckingGiftEllipsis),
       card: card,
       statusContent: outcome
           ? _buildClaimOutcome(embedded: true) ?? _buildPreparationResult()
@@ -4161,7 +4164,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       onRevealMessage: hasMessage
           ? () => setState(() => _receivedShowsBack = !_receivedShowsBack)
           : null,
-      claimLabel: _operationInProgress ? 'Claiming…' : 'Claim the gift card',
+      claimLabel: _operationInProgress
+          ? context.l10n.paymentLinkClaiming
+          : context.l10n.paymentLinkClaimTheGiftCard,
     );
   }
 
@@ -4181,7 +4186,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           )
         else if (invalid) ...[
           Text(
-            kPaymentLinkInvalidTitle,
+            context.l10n.paymentLinkInvalidTitle,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: context.colors.text.destructive,
@@ -4189,7 +4194,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            kPaymentLinkInvalidSubtitle,
+            context.l10n.paymentLinkInvalidSubtitle,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
@@ -4208,7 +4213,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         if (invalid) ...[
           const SizedBox(height: AppSpacing.sm),
           PaymentLinkTextAction(
-            label: kPaymentLinkClearClipboardLabel,
+            label: context.l10n.paymentLinkClearClipboardLabel,
             onTap: _clearClipboard,
           ),
         ],
@@ -4217,8 +4222,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   }
 
   String _formatCardDate(DateTime date) {
-    final local = date.toLocal();
-    return '${_monthNames[local.month - 1]} ${local.day}';
+    return DateFormat.MMMMd(context.l10n.localeName).format(date.toLocal());
   }
 }
 

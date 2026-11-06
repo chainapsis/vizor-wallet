@@ -11,11 +11,13 @@ import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shie
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/keystone_shield_morph.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/slide_to_shield.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_sheet_content.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   Widget host(Widget child, {double textScale = 1}) => AppTheme(
     data: AppThemeData.light,
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
           padding: const EdgeInsets.only(top: 24, bottom: 48),
@@ -479,6 +481,7 @@ void main() {
         AppTheme(
           data: AppThemeData.light,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: MediaQuery(
               data: const MediaQueryData(
                 size: Size(393, 852),

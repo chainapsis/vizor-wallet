@@ -17,6 +17,8 @@ import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 const _account = LedgerDeviceAccount(
   ufvk: 'ledger-ufvk',
@@ -85,7 +87,7 @@ void main() {
           await _digits(tester, '123456');
         }
         if (failFirst) {
-          expect(find.text('Ledger import failed. Try again.'), findsOneWidget);
+          expect(find.text(testL10n.onboardingSubmitFailed), findsOneWidget);
           expect(find.textContaining('Keystone'), findsNothing);
           expect(
             events,
@@ -219,6 +221,7 @@ Widget _harness(
       ledgerAccountImporterProvider.overrideWithValue(importer),
   ],
   child: MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(
       data: AppThemeData.light,

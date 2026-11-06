@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 
 @immutable
@@ -176,9 +177,11 @@ class _MobileHomeCarouselState extends State<MobileHomeCarousel> {
                   Semantics(
                     button: true,
                     selected: index == _activePage,
-                    label:
-                        'Show wallet setup banner ${index + 1} of '
-                        '${widget.items.length}',
+                    label: context.l10n.carouselShowPage(
+                      context.l10n.homeSetupCarouselName,
+                      index + 1,
+                      widget.items.length,
+                    ),
                     child: GestureDetector(
                       key: ValueKey('mobile_home_carousel_indicator_$index'),
                       behavior: HitTestBehavior.opaque,

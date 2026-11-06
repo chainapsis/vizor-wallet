@@ -1817,6 +1817,7 @@ fn shield_result_preserves_pending_broadcast_status() {
         broadcasted_count: 0,
         total_count: 1,
         message: Some("Broadcast could not start".to_string()),
+        notices: Vec::new(),
     }
     .into_shield_transparent_result(10_000, 90_000);
 
@@ -3156,6 +3157,7 @@ fn split_broadcast_result_preserves_status_and_migrated_amount() {
             broadcasted_count: 1,
             total_count: 2,
             message: Some("Only one transaction broadcast".to_string()),
+            notices: Vec::new(),
         },
         7,
         20_000,
@@ -4393,6 +4395,7 @@ fn execute_result_distinguishes_rejection_without_asserting_finality() {
             broadcasted_count: 1,
             total_count: 2,
             message: None,
+            notices: Vec::new(),
         }
         .into_execute_result();
         assert_eq!(result.broadcast_failure_kind.as_deref(), Some(expected));
@@ -4914,11 +4917,17 @@ fn validate_batch(
     let result = validate_payment_link_batch_proposal(proposal, WalletNetwork::Regtest, signer);
     if let Err(error) = &result {
         assert!(
-            error.starts_with(PAYMENT_LINK_BATCH_REJECTION_PREFIX),
-            "Dart shows only prefixed batch errors: {error}"
+            error.message.starts_with(PAYMENT_LINK_BATCH_REJECTION_PREFIX),
+            "older builds show only prefixed batch errors: {}",
+            error.message
+        );
+        assert!(
+            error.code.is_some(),
+            "the app picks its copy by code: {}",
+            error.message
         );
     }
-    result
+    result.map_err(String::from)
 }
 
 #[test]

@@ -4175,6 +4175,7 @@ Widget _buildLedgerSigningDeclined(BuildContext context) =>
       failureOverride: const LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
+        actionNeeded: true,
         message: 'Signing was declined on Ledger. Try again when you’re ready.',
         showDeviceAppPrompt: false,
         actionLabel: 'Try again',
@@ -4189,6 +4190,7 @@ Widget _buildLedgerSigningTexDeclined(BuildContext context) =>
       failureOverride: const LedgerSigningFailurePresentation(
         title: 'Ledger signing failed',
         statusLabel: 'Action needed',
+        actionNeeded: true,
         message: 'Signing was declined on Ledger. Try again when you’re ready.',
         showDeviceAppPrompt: false,
         actionLabel: 'Try again',
@@ -4202,6 +4204,7 @@ Widget _buildLedgerSigningSaveFailed(BuildContext context) =>
       failureOverride: const LedgerSigningFailurePresentation(
         title: 'Could not save signed transaction',
         statusLabel: 'Signature preserved',
+        actionNeeded: false,
         message:
             'Keep Vizor open and try again. No new Ledger approval needed.',
         showDeviceAppPrompt: false,

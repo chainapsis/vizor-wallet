@@ -7,11 +7,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
+import 'package:zcash_wallet/src/features/voting/voting_message.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'round_plan_test_utils.dart';
 
@@ -61,6 +63,7 @@ Future<void> expectVotingRetryClearsError(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
@@ -96,7 +99,7 @@ class _InterruptedSubmissionJob extends VotingSubmissionJobNotifier {
   VotingSubmissionJobState build() => const VotingSubmissionJobState(
     key: _key,
     status: VotingSubmissionJobStatus.error,
-    errorMessage: _message,
+    errorMessage: VotingLiteralMessage(_message),
   );
 }
 
@@ -124,7 +127,7 @@ class _RetryRecoveryVotingSessionNotifier
     roundId: _roundId,
     accountUuid: _key.accountUuid,
     phase: VotingSessionPhase.error,
-    error: const VotingSessionError(message: _message),
+    error: const VotingSessionError(message: VotingLiteralMessage(_message)),
     roundPlan: apiRoundPlan(
       roundId: _roundId,
       primaryAction: rust_wire.RoundPlanActionKind.vote,

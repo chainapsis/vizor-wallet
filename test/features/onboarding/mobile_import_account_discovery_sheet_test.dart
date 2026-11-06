@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_account_discovery_sheet.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _accounts = [
   rust_wallet.SoftwareWalletDiscoveredAccount(
@@ -27,6 +28,7 @@ Widget _app({
   MobileImportAccountTransparentBalanceLoader? loadTransparentBalance,
 }) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     home: MobileImportAccountDiscoverySheet(
       accounts: _accounts,

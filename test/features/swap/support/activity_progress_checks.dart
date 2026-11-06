@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dar
 import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_progress_explorer_footer.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../../figma_compare/figma_compare_font_loader.dart';
 
@@ -99,9 +100,7 @@ void runActivityProgressChecks({required bool mobile}) {
       await tester.pumpAndSettle();
       expect(find.text(progressLabel), findsNothing);
       expect(
-        find.text(
-          pay || mobile ? 'Completed' : SwapIntentStatus.complete.label,
-        ),
+        find.text(pay || mobile ? 'Completed' : 'Complete'),
         findsOneWidget,
       );
       expect(find.text('Tx ID'), findsOneWidget);
@@ -139,6 +138,7 @@ void runActivityProgressChecks({required bool mobile}) {
         await loadFigmaCompareFonts();
         await tester.pumpWidget(
           MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.dark,
               child: Scaffold(
@@ -247,6 +247,7 @@ Future<ProviderContainer> _pump(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, child) => AppTheme(
           data: AppThemeData.dark,
           child: MediaQuery(

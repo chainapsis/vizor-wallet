@@ -24,13 +24,11 @@ class RpcEndpointFailoverEvent {
   const RpcEndpointFailoverEvent({
     required this.sequence,
     required this.kind,
-    required this.message,
     required this.endpoint,
   });
 
   final int sequence;
   final RpcEndpointFailoverEventKind kind;
-  final String message;
   final RpcEndpointConfig endpoint;
 }
 
@@ -193,7 +191,7 @@ class _InvalidAutomaticTipHeight implements Exception {
   const _InvalidAutomaticTipHeight();
 
   @override
-  String toString() => 'Automatic endpoint returned an invalid block height.';
+  String toString() => 'Automatic endpoint returned an invalid block height.'; // l10n-ignore: exception text, logged
 }
 
 bool shouldFallbackFromLightwalletdError(Object error) {
@@ -1996,7 +1994,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   }
 
   Future<BigInt> _getLatestBlockHeight() async {
-    const operation = 'latest block height';
+    const operation = 'latest block height'; // l10n-ignore: log label
     await _ensureReadyForOperation(forTipRead: true);
     if (isAutomaticRpcEndpointConfig(state.primary) && _needsWarmTipRead) {
       await _ensureWarmTipRead();
@@ -2288,7 +2286,6 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     final event = RpcEndpointFailoverEvent(
       sequence: ++_eventSequence,
       kind: RpcEndpointFailoverEventKind.switchedToFallback,
-      message: 'Selected endpoint is unstable. Switched to fallback endpoint.',
       endpoint: fallback,
     );
     log(
@@ -2383,7 +2380,6 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     final event = RpcEndpointFailoverEvent(
       sequence: ++_eventSequence,
       kind: RpcEndpointFailoverEventKind.switchedToPrimary,
-      message: 'Selected endpoint recovered. Switched back.',
       endpoint: primary,
     );
     log(
@@ -2495,7 +2491,6 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     final event = RpcEndpointFailoverEvent(
       sequence: ++_eventSequence,
       kind: RpcEndpointFailoverEventKind.switchedToFallback,
-      message: 'Selected endpoint is unstable. Switched to fallback endpoint.',
       endpoint: fallback.endpoint,
     );
     log(
@@ -2507,7 +2502,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     state = state.copyWith(
       current: fallback.endpoint,
       lastFailure:
-          'Endpoint height increased by $heightIncrease blocks in '
+          'Endpoint height increased by $heightIncrease blocks in ' // l10n-ignore: diagnostic, never shown
           '${settings.slowHeightWindow.inSeconds}s.',
       switchedAt: now,
       lastPrimaryProbeAt: failedPrimary ? now : state.lastPrimaryProbeAt,

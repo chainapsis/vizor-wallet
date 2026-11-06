@@ -3,6 +3,7 @@ import 'package:zcash_wallet/src/core/zcash/transparent_ledger_errors.dart';
 import 'package:zcash_wallet/src/features/home/services/transparent_balance_display.dart';
 import 'package:zcash_wallet/src/features/home/services/transparent_shielding_service.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import '../../support/test_l10n.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 String _format(BigInt zatoshi) => '${zatoshi}zat';
@@ -16,7 +17,7 @@ void main() {
           transparentPendingBalance: BigInt.from(2),
         ),
       );
-      expect(display.text(_format), '7zat');
+      expect(display.text(testL10n, _format), '7zat');
       expect(display.visible, isTrue);
     });
 
@@ -24,7 +25,7 @@ void main() {
       final reserved = TransparentBalanceDisplay.of(
         SyncState(transparentLockedBalance: BigInt.from(4)),
       );
-      expect(reserved.text(_format), '4zat');
+      expect(reserved.text(testL10n, _format), '4zat');
       expect(reserved.visible, isTrue);
 
       final state = SyncState(
@@ -53,7 +54,7 @@ void main() {
           transparentLastKnownBalance: BigInt.from(9),
         ),
       );
-      expect(display.text(_format), '9zat (last known)');
+      expect(display.text(testL10n, _format), '9zat (last known)');
       expect(display.visible, isTrue);
     });
 
@@ -64,10 +65,10 @@ void main() {
               rust_sync.TransparentBalanceAuthority.unavailable,
         ),
       );
-      expect(display.text(_format), 'Unavailable');
+      expect(display.text(testL10n, _format), 'Unavailable');
       expect(display.amount, isNull);
       expect(display.visible, isTrue);
-      expect(display.hint, isNull);
+      expect(display.hint(testL10n), isNull);
     });
 
     test('a stopped recovery says why for each reason', () {
@@ -79,10 +80,14 @@ void main() {
             transparentStop: reason,
           ),
         );
-        expect(display.text(_format), 'Recovery stopped', reason: '$reason');
+        expect(
+          display.text(testL10n, _format),
+          'Recovery stopped',
+          reason: '$reason',
+        );
         expect(display.amount, isNull, reason: '$reason');
         expect(display.visible, isTrue, reason: '$reason');
-        final hint = display.hint;
+        final hint = display.hint(testL10n);
         expect(hint, isNotNull, reason: '$reason');
         hints.add(hint!);
       }
@@ -97,12 +102,12 @@ void main() {
         ),
       );
       expect(
-        display.hint,
+        display.hint(testL10n),
         "Turning off Private queries didn't finish. Turn it off again in "
         'Settings to look up transparent funds publicly.',
       );
-      expect(display.hint, isNot(contains('until private recovery')));
-      expect(display.hint, isNot(contains('selected')));
+      expect(display.hint(testL10n), isNot(contains('until private recovery')));
+      expect(display.hint(testL10n), isNot(contains('selected')));
     });
 
     test('conflicting records say turning off discards them', () {
@@ -115,7 +120,7 @@ void main() {
             transparentAuthority: rust_sync.TransparentBalanceAuthority.stopped,
             transparentStop: reason,
           ),
-        ).hint;
+        ).hint(testL10n);
         expect(
           hint,
           contains(
@@ -138,7 +143,10 @@ void main() {
           transparentBalance: BigInt.zero,
         ),
       );
-      expect(display.text(_format), '9zat (last known, recovery stopped)');
+      expect(
+        display.text(testL10n, _format),
+        '9zat (last known, recovery stopped)',
+      );
       expect(
         display.authority,
         isNot(rust_sync.TransparentBalanceAuthority.current),
@@ -254,23 +262,27 @@ void main() {
       // Vizor's own refusal is coded, so any wording reports recovery.
       expect(
         friendlyShieldBalanceError(
+          testL10n,
           const rust_sync.ApiWalletError(
             code: rust_sync.ApiWalletErrorCode.recoveryIncomplete,
             message: 'reworded',
           ),
         ),
-        transparentRecoveryIncompleteMessage,
+        transparentRecoveryIncompleteMessage(testL10n),
       );
       // The library's refusal still reaches the app as text.
       expect(
-        friendlyShieldBalanceError(Exception(libraryRefusal)),
-        transparentRecoveryIncompleteMessage,
+        friendlyShieldBalanceError(testL10n, Exception(libraryRefusal)),
+        transparentRecoveryIncompleteMessage(testL10n),
       );
     });
 
     test('an unfinished opt-out never promises recovery', () {
-      final copy = friendlyShieldBalanceError(optOutUnfinishedRefusal);
-      expect(copy, privateQueriesOptOutUnfinishedMessage);
+      final copy = friendlyShieldBalanceError(
+        testL10n,
+        optOutUnfinishedRefusal,
+      );
+      expect(copy, privateQueriesOptOutUnfinishedMessage(testL10n));
       expect(copy, contains('Turn it off again'));
       expect(copy, isNot(contains('until private recovery completes')));
     });

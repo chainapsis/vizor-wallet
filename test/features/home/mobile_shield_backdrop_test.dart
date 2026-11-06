@@ -8,6 +8,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shield_backdrop.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('captures the last full shell even with a pending repaint', (
@@ -20,6 +21,7 @@ void main() {
     late BuildContext homeContext;
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: MobileShieldBackdropHost(
           child: Builder(
             builder: (context) {
@@ -75,6 +77,7 @@ void main() {
     picture.dispose();
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: MobileShieldScene(
           phase: MobileShieldPhase.review,
           amount: '14.12',

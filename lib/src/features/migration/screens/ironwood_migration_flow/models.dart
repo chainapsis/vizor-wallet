@@ -18,8 +18,6 @@ const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
 const _migrationPrepareConfirmationBlocks = 3;
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
 const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
-const _keystoneMigrationFirmwareUpdateError =
-    'Update Keystone firmware to sign Ironwood migrations, then try again.';
 const _ironwoodMigrationIntroBannerLightAsset =
     'assets/illustrations/desktop/ironwood_migration_intro_banner_light.webp';
 const _ironwoodMigrationIntroBannerDarkAsset =
@@ -177,7 +175,7 @@ bool _isEmptyCompletedMigrationStatus(rust_sync.MigrationStatus status) {
 IronwoodMigrationFlowData _fallbackMigrationFlowData() {
   return IronwoodMigrationFlowData(
     amountZatoshi: BigInt.zero,
-    accountName: 'Username',
+    accountName: 'Username', // l10n-ignore: placeholder account name
     profilePictureId: kDefaultProfilePictureId,
   );
 }

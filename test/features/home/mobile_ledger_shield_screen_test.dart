@@ -28,6 +28,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progres
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_procedure.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/shield_hardware_motion.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   final api = _ShieldApi();
@@ -348,6 +349,7 @@ void main() {
           child: AppTheme(
             data: AppThemeData.light,
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: LedgerShieldSigningOverlay(
                 mobile: true,
                 onCancel: () {},
@@ -445,6 +447,7 @@ Future<ProviderContainer> _mountSigning(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: LedgerShieldSigningOverlay(
           mobile: true,
           onCancel: onClose ?? () {},

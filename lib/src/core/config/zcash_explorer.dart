@@ -1,20 +1,13 @@
 import 'package:url_launcher/url_launcher.dart';
 
 import 'network_config.dart';
+import '../l10n/l10n.dart';
 
 enum ZcashExplorerTxidOrder { protocol, display }
 
 typedef ZcashExplorerLauncher = Future<bool> Function(Uri uri);
 
 const kDefaultZcashExplorerLabel = 'ZecBlock';
-
-const kZcashExplorerPrivacyCopy =
-    'Transaction links open in this explorer. Use ZecBlock or another site '
-    'you prefer. Opening a public explorer after you send can link your IP '
-    'address to that transaction.';
-
-const kZcashExplorerTemplateHint =
-    'Use {txid} or {txHash} in the path, or enter just the origin.';
 
 final _txidHexPattern = RegExp(r'^[0-9a-f]{64}$');
 final _txidHexPathTailPattern = RegExp(r'/[0-9a-fA-F]{64}/?$');
@@ -34,6 +27,7 @@ String defaultZcashExplorerHost(String networkName) {
 
 /// Settings-row label: ZecBlock when unset, otherwise the custom host.
 String explorerSettingsLabel(
+  AppLocalizations l10n,
   String? customTemplate, {
   required String networkName,
 }) {
@@ -42,7 +36,7 @@ String explorerSettingsLabel(
   try {
     return Uri.parse(normalizeExplorerUrlTemplate(template)).host;
   } on FormatException {
-    return 'Custom';
+    return l10n.settingsExplorerCustom;
   }
 }
 
@@ -138,7 +132,7 @@ String _decodeTxidPlaceholders(String value) {
 
 Uri _ensureTxidPlaceholder(Uri uri) {
   final haystack = _decodeTxidPlaceholders(
-    '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}'
+    '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}' // l10n-ignore: URL composition
     '${uri.hasFragment ? '#${uri.fragment}' : ''}',
   );
   if (_txidPlaceholderPattern.hasMatch(haystack)) {

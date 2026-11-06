@@ -1,3 +1,5 @@
+// l10n-ignore-file: chain names are proper nouns
+import '../../../core/l10n/l10n.dart';
 import '../../../core/profile_pictures.dart';
 
 enum AddressBookNetwork {
@@ -185,19 +187,29 @@ String previewAddress(String address) {
   return '${trimmed.substring(0, 6)} ... ${trimmed.substring(trimmed.length - 5)}';
 }
 
-String? validateAddressBookLabel(String label) {
+enum AddressBookLabelError {
+  missing,
+  tooLong;
+
+  String text(AppLocalizations l10n) => switch (this) {
+    missing => l10n.addressBookLabelMissing,
+    tooLong => l10n.addressBookLabelLength,
+  };
+}
+
+AddressBookLabelError? validateAddressBookLabel(String label) {
   final trimmed = label.trim();
-  if (trimmed.isEmpty) return 'Add a label';
-  if (trimmed.length > 20) return 'Use 1-20 characters';
+  if (trimmed.isEmpty) return AddressBookLabelError.missing;
+  if (trimmed.length > 20) return AddressBookLabelError.tooLong;
   return null;
 }
 
-String? validateAddressBookAddress(String address) {
-  final trimmed = address.trim();
-  if (trimmed.isEmpty) return 'Add an address';
-  return null;
-}
+/// The only address problem this check reports is an empty field.
+bool addressBookAddressIsMissing(String address) => address.trim().isEmpty;
 
-String addressBookQrScanTitle(AddressBookNetwork network) {
-  return 'Scan ${network.label} QR code';
+String addressBookQrScanTitle(
+  AppLocalizations l10n,
+  AddressBookNetwork network,
+) {
+  return l10n.addressBookScanQrTitle(network.label);
 }

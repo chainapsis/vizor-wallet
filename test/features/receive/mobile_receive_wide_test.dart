@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_
 import 'package:zcash_wallet/src/features/receive/widgets/mobile/receive_request_sheet.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
 import 'package:zcash_wallet/src/services/native_mobile_navigation_geometry.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -34,6 +35,7 @@ Widget _app({
   double textScale = 1,
   bool dark = false,
 }) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   builder: (context, child) => AppTheme(
     data: dark ? AppThemeData.dark : AppThemeData.light,
     child: MediaQuery(

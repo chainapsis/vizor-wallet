@@ -2,12 +2,13 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/services/wallet_pir/wallet_pir_latency.dart';
+import '../support/test_l10n.dart';
 
 void main() {
   test('a successful HTTPS response produces a latency sample', () async {
     final sample = await measureWalletPirPing(() async => 200);
     expect(sample.status, WalletPirPingStatus.available);
-    expect(sample.label, endsWith('ms'));
+    expect(sample.label(testL10n), endsWith('ms'));
   });
 
   test('error statuses and transport failures are unavailable', () async {
@@ -40,7 +41,7 @@ void main() {
     monitor.resume();
     await tester.pump();
     expect(calls, 1);
-    expect(monitor.samples['https://a.example']?.label, '42ms');
+    expect(monitor.samples['https://a.example']?.label(testL10n), '42ms');
     await tester.pump(const Duration(seconds: 9));
     expect(calls, 1);
     await tester.pump(const Duration(seconds: 1));
@@ -102,7 +103,7 @@ void main() {
       );
       await tester.pump();
       expect(monitor.samples.keys, ['https://b.example']);
-      expect(monitor.samples['https://b.example']?.label, '9ms');
+      expect(monitor.samples['https://b.example']?.label(testL10n), '9ms');
       monitor.dispose();
     },
   );

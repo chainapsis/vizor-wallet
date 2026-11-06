@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -50,8 +51,8 @@ class _IntroZcashScreenState extends ConsumerState<IntroZcashScreen> {
     return OnboardingTrailingPane(
       backTarget:
           widget.backTarget ??
-          const OnboardingBackTarget.route(
-            label: 'Welcome',
+          OnboardingBackTarget.route(
+            label: context.l10n.onboardingWelcome,
             routePath: '/welcome',
           ),
       bodyPadding: EdgeInsets.zero,
@@ -146,7 +147,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'The Shielded World',
+            context.l10n.onboardingIntroTitle,
             style: AppTypography.displayLarge.copyWith(
               fontWeight: FontWeight.w500,
               color: colors.text.accent,
@@ -158,7 +159,7 @@ class _TitleBlock extends StatelessWidget {
         SizedBox(
           width: 226,
           child: Text(
-            'Zcash (ZEC) built around financial privacy & self-custody.',
+            context.l10n.onboardingIntroSubtitle,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.primary,
             ),
@@ -188,8 +189,9 @@ class _ShieldedInfoCard extends StatelessWidget {
         ? 'assets/illustrations/desktop/home_balance_card_pattern_dark.webp'
         : 'assets/illustrations/desktop/home_balance_card_pattern_light.webp';
 
+    // A minimum, not a fixed height: longer translations grow the card.
     return Container(
-      height: _height,
+      constraints: const BoxConstraints(minHeight: _height),
       width: double.infinity,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -197,6 +199,7 @@ class _ShieldedInfoCard extends StatelessWidget {
         borderRadius: _radius,
       ),
       child: Stack(
+        alignment: Alignment.center,
         children: [
           Positioned(
             left: (_cardWidth - _patternWidth) / 2,
@@ -231,14 +234,11 @@ class _ShieldedInfoCard extends StatelessWidget {
                   SizedBox(
                     width: _textWidth,
                     child: Text(
-                      'Unlike Bitcoin or Ethereum, shielded Zcash '
-                      'transactions hide the sender, recipient, and amount '
-                      '— verified by cryptography, not trust.',
+                      context.l10n.onboardingIntroCard,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.homeCard,
                       ),
                       textAlign: TextAlign.center,
-                      maxLines: 3,
                     ),
                   ),
                 ],
@@ -278,9 +278,7 @@ class _SetupIntroText extends StatelessWidget {
       child: SizedBox(
         width: double.infinity,
         child: Text(
-          closingText ??
-              "You're a few steps away from your first private wallet.\n"
-                  "Let's get you set up.",
+          closingText ?? context.l10n.onboardingIntroClosing,
           style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           textAlign: TextAlign.center,
         ),
@@ -319,7 +317,7 @@ class _ButtonStack extends StatelessWidget {
                 variant: AppButtonVariant.primary,
                 minWidth: _buttonMinWidth,
                 trailing: const AppIcon(AppIcons.chevronForward),
-                child: const Text('Tell me how Zcash works'),
+                child: Text(context.l10n.onboardingTellMeHowZcashWorks),
               ),
               const SizedBox(height: AppSpacing.s),
               AppButton(
@@ -333,7 +331,7 @@ class _ButtonStack extends StatelessWidget {
                 variant: AppButtonVariant.ghost,
                 minWidth: _buttonMinWidth,
                 trailing: const AppIcon(AppIcons.skip),
-                child: const Text('I know how to use Zcash'),
+                child: Text(context.l10n.onboardingIKnowHowToUseZcash),
               ),
             ],
           ),

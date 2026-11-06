@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../support/test_l10n.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 
@@ -33,10 +34,10 @@ void main() {
 
   test('sending guidance names no duration that depends on the model', () {
     expect(
-      LedgerSigningStage.sending.message,
-      '$kLedgerSigningWaitInstruction Keep your Ledger connected.',
+      LedgerSigningStage.sending.message(testL10n),
+      '${testL10n.ledgerSigningWaitInstruction} Keep your Ledger connected.',
     );
-    expect(kLedgerSigningWaitInstruction, contains('a few seconds'));
+    expect(testL10n.ledgerSigningWaitInstruction, contains('a few seconds'));
   });
 
   test(

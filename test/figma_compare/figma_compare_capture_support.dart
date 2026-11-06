@@ -9,6 +9,7 @@ import 'package:zcash_wallet/figma_compare/figma_compare_app.dart';
 import 'package:zcash_wallet/figma_compare/figma_compare_configuration.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 
+import 'capture_locale_fonts.dart';
 import 'figma_compare_font_loader.dart';
 
 const _windowAppearanceChannel = MethodChannel(
@@ -23,8 +24,10 @@ void runFigmaCompareCaptureTest({
   Future<void> Function(WidgetTester tester)? beforeCapture,
   TargetPlatform mobilePlatform = TargetPlatform.iOS,
 }) {
+  final languageTag = overrideConfiguration?.language?.tag;
   final testName =
-      'captures ${overrideConfiguration?.scenarioId ?? 'configured scenario'} ${overrideConfiguration?.themeMode.name ?? ''}';
+      'captures ${overrideConfiguration?.scenarioId ?? 'configured scenario'} ${overrideConfiguration?.themeMode.name ?? ''}'
+      '${languageTag == null ? '' : ' $languageTag'}';
   testWidgets(testName, (tester) async {
     expect(
       kAppFormFactor,
@@ -88,12 +91,15 @@ void runFigmaCompareCaptureTest({
     );
 
     await loadFigmaCompareFonts();
+    final language = configuration.language;
+    if (language != null) await loadCaptureLocaleFonts(language);
     final captureBoundaryKey = GlobalKey();
     await tester.pumpWidget(
       FigmaCompareApp(
         scenario: scenario,
         themeMode: configuration.themeMode,
         captureBoundaryKey: captureBoundaryKey,
+        locale: language?.locale,
       ),
     );
     await tester.pump();

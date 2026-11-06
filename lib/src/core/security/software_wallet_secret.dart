@@ -6,7 +6,7 @@ class SoftwareWalletSecretFormatException implements Exception {
   final String message;
 
   @override
-  String toString() => 'SoftwareWalletSecretFormatException: $message';
+  String toString() => 'SoftwareWalletSecretFormatException: $message'; // l10n-ignore: exception text for logs
 }
 
 /// Versioned software-wallet recovery material stored under the existing

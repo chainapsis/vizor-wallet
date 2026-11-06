@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'welcome_button_tokens.dart';
@@ -30,6 +31,9 @@ class WelcomeGiftCardButton extends StatelessWidget {
     growWithContent: true,
     constrainContent: true,
     onPressed: onPressed,
-    child: const Text('Activate gift card', textAlign: TextAlign.center),
+    child: Text(
+      context.l10n.onboardingWelcomeActivateGiftCard,
+      textAlign: TextAlign.center,
+    ),
   );
 }

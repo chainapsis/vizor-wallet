@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -93,9 +94,7 @@ class IronwoodMigrationAnnouncementModal extends StatelessWidget {
                 ),
                 const SizedBox(height: 13),
                 Text(
-                  'Ironwood is the latest Zcash shielded pool.\n'
-                  "It's the first formally verified pool with\n"
-                  'cutting edge cryptography.',
+                  context.l10n.migrationAnnouncementBody,
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.primary,
@@ -122,7 +121,7 @@ class IronwoodMigrationAnnouncementModal extends StatelessWidget {
                   expand: true,
                   constrainContent: true,
                   trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-                  child: const Text('Start Migration'),
+                  child: Text(context.l10n.migrationAnnouncementStart),
                 ),
                 const SizedBox(height: 20),
                 AppButton(
@@ -135,7 +134,7 @@ class IronwoodMigrationAnnouncementModal extends StatelessWidget {
                   minWidth: _contentWidth,
                   expand: true,
                   constrainContent: true,
-                  child: const Text('Official Release Note'),
+                  child: Text(context.l10n.migrationAnnouncementReleaseNote),
                 ),
               ],
             ),

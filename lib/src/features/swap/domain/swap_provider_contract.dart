@@ -42,8 +42,7 @@ class SwapIntentSnapshot {
       sellAmountText: quote.sellAmountText,
       receiveEstimateText: quote.receiveEstimateText,
       status: status,
-      nextAction:
-          'Send ${quote.sellAsset.symbol} to the one-time deposit address',
+      nextAction: SwapNextAction.sendDeposit.name,
       depositInstruction: quote.depositInstruction,
       sellAmountBaseUnits: quote.sellAmountBaseUnits,
       swapFeeText: quote.feeLabel,
@@ -61,6 +60,8 @@ class SwapIntentSnapshot {
   final String sellAmountText;
   final String receiveEstimateText;
   final SwapIntentStatus status;
+
+  /// A [SwapNextAction] name.
   final String nextAction;
   final SwapDepositInstruction depositInstruction;
   final String? swapFeeText;

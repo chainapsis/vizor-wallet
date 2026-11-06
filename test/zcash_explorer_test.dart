@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/zcash_explorer.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   test('formats protocol-order txids for display and copying', () {
@@ -166,11 +167,12 @@ void main() {
 
   test('settings label is ZecBlock until a custom host is set', () {
     expect(
-      explorerSettingsLabel('', networkName: 'main'),
+      explorerSettingsLabel(testL10n, '', networkName: 'main'),
       kDefaultZcashExplorerLabel,
     );
     expect(
       explorerSettingsLabel(
+        testL10n,
         'https://privacy.example/tx/{txid}',
         networkName: 'main',
       ),
