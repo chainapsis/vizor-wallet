@@ -32,6 +32,7 @@ class SwapActivityRowItem {
     this.depositedAmountText,
     this.refundedAmountText,
     this.payMode = false,
+    this.startPending = false,
   });
 
   factory SwapActivityRowItem.fromRecord(SwapIntentRecord record) {
@@ -77,6 +78,7 @@ class SwapActivityRowItem {
       depositedAmountText: depositedAmountText,
       refundedAmountText: record.providerRefundInfo?.refundedAmountText,
       payMode: record.payMode,
+      startPending: record.startPending,
     );
   }
 
@@ -115,6 +117,9 @@ class SwapActivityRowItem {
   final String? refundedAmountText;
 
   final bool payMode;
+
+  /// See [SwapIntent.startPending].
+  final bool startPending;
 }
 
 List<SwapActivityRowItem> swapActivityRowItemsFromRecords(
@@ -168,7 +173,9 @@ ActivityRowData buildSwapActivityRow({
     amountSubtitle: timedOut ? 'Timeout' : null,
     amountSubtitleIconName: timedOut ? AppIcons.time : null,
     amountSubtitleIconColor: timedOut ? colors.text.secondary : null,
-    statusText: _swapActivityStatusText(item.status, progress),
+    statusText: item.startPending && !item.status.isTerminal
+        ? swapStartingText
+        : _swapActivityStatusText(item.status, progress),
     statusIconName: failed
         ? AppIcons.skull
         : item.status == SwapIntentStatus.refunded
@@ -270,7 +277,7 @@ String _swapActivityAmountText(
       ? refundedAmount!
       : item.sellAmountText;
   if (amount.trim().isEmpty) return '--';
-  if (!includeSign) return amount;
+  if (!includeSign || amount == kSwapAmountNotReported) return amount;
   return '-$amount';
 }
 
@@ -287,7 +294,9 @@ String _swapActivityReceiveAmountText(
   }
   final amount = item.receiveEstimateText.trim();
   if (amount.isEmpty) return '--';
-  if (amount.startsWith('+')) return amount;
+  if (amount.startsWith('+') || amount == kSwapAmountNotReported) {
+    return amount;
+  }
   return '+$amount';
 }
 

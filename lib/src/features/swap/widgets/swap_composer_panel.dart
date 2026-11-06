@@ -11,6 +11,7 @@ import '../models/swap_address_formatting.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_models.dart';
 import 'swap_asset_icon.dart';
+import 'swap_quote_error_text.dart';
 
 class SwapComposerPanel extends StatefulWidget {
   const SwapComposerPanel({
@@ -301,7 +302,11 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
             ),
             if (quoteError != null) ...[
               const SizedBox(height: AppSpacing.xs),
-              _QuoteErrorMessage(message: quoteError),
+              SwapQuoteErrorText(
+                message: quoteError,
+                textKey: const ValueKey('swap_quote_error_message'),
+                maxLines: 2,
+              ),
             ],
           ],
         ),
@@ -822,25 +827,6 @@ class _SwapDirectionButton extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _QuoteErrorMessage extends StatelessWidget {
-  const _QuoteErrorMessage({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Text(
-      message,
-      key: const ValueKey('swap_quote_error_message'),
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      textAlign: TextAlign.center,
-      style: AppTypography.bodySmall.copyWith(color: colors.text.destructive),
     );
   }
 }

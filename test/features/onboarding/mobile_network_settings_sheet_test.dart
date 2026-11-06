@@ -40,6 +40,10 @@ class _QueriesApi extends RustLibApi {
   bool crateApiSyncIsSyncRunning() => false;
   @override
   bool crateApiSyncIsMempoolObserverRunning() => false;
+
+  /// Accepts the receiver-round cancellation the sync notifier sends.
+  @override
+  void crateApiOneTimeIvkCancelSwapRecovery() {}
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

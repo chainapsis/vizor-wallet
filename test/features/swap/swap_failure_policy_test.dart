@@ -384,6 +384,30 @@ void main() {
     );
   });
 
+  test('private swap funding shortfalls ask to move funds to Ironwood', () {
+    // A Rust error string, as FFI throws it. Its shortfall detail would also
+    // match the generic funding category.
+    const error =
+        'Swap funding needs Ironwood funds: Insufficient balance '
+        '(have 0, need 210000 including fee)';
+
+    expect(
+      swapFailureCategory(SwapFailureOperation.sendZecDeposit, error),
+      SwapFailureCategory.zecDepositIronwoodFunding,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.sendZecDeposit, error),
+      'Private swaps are funded from your Ironwood balance, which cannot '
+      'cover this swap and its network fee.\n'
+      'Move funds to Ironwood first or try a smaller amount.',
+    );
+    // Other operations keep their own categories.
+    expect(
+      swapFailureCategory(SwapFailureOperation.start, error),
+      SwapFailureCategory.unknown,
+    );
+  });
+
   test('ZEC deposits held before a network upgrade say so', () {
     final error = Exception(
       "Propose failed: Transactions can't be sent this close to the network "

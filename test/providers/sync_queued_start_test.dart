@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/one_time_ivk.dart' as rust_swap;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
@@ -111,6 +112,24 @@ class _Api extends RustLibApi {
     historyReads++;
     return const [];
   }
+
+  /// Reports the cancellation generation every call here is submitted under.
+  @override
+  BigInt crateApiOneTimeIvkSwapRecoveryGeneration() => BigInt.zero;
+
+  /// Reports a receiver round without recovery work. A failed round would
+  /// reload Activity like a changed one, which these tests count.
+  @override
+  Future<rust_swap.SwapRecoveryRound> crateApiOneTimeIvkRunSwapRecovery({
+    required String dbPath,
+    required String networkName,
+    required BigInt generation,
+  }) async => rust_swap.SwapRecoveryRound(
+    changed: false,
+    checked: false,
+    more: false,
+    rescan: false,
+  );
 
   /// Ends the sync that holds the guard: Rust releases it, then the stream
   /// closes.

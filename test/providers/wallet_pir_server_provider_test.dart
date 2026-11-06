@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/settings/widgets/wallet_pir_server_set
 import 'package:zcash_wallet/src/providers/wallet_pir_server_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_pir_latency_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/wallet_pir/wallet_pir_config.dart';
 import 'package:zcash_wallet/src/services/wallet_pir/wallet_pir_latency.dart';
 
@@ -204,8 +205,21 @@ class _Resolver implements WalletPirConfigResolver {
   }
 }
 
+/// NEAR swap privacy fixed at `on`.
+class _NearSwapPrivacy extends NearSwapPrivacyNotifier {
+  _NearSwapPrivacy(this.on);
+  final bool on;
+
+  @override
+  bool build() => on;
+}
+
 class _Harness {
-  _Harness({String? source = _sourceA, bool privateQueriesOn = true}) {
+  _Harness({
+    String? source = _sourceA,
+    bool privateQueriesOn = true,
+    bool nearSwapPrivacy = false,
+  }) {
     container = ProviderContainer(
       overrides: [
         walletPirConfigStoreProvider.overrideWithValue(store),
@@ -227,6 +241,11 @@ class _Harness {
         privateQueriesControlEnabledProvider.overrideWithValue(
           privateQueriesOn,
         ),
+        nearSwapPrivacyProvider.overrideWith(
+          () => _NearSwapPrivacy(nearSwapPrivacy),
+        ),
+        // Without a wallet, nothing is watched.
+        swapRecoveryStatusReaderProvider.overrideWithValue(() async => null),
         walletPirServerApplierProvider.overrideWithValue((base) async {
           applying++;
           if (applying > maxApplying) maxApplying = applying;
@@ -471,6 +490,52 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     h.dispose();
   });
+
+  testWidgets(
+    'with private queries off, swap recovery can replace a removed server',
+    (tester) async {
+      final h = _Harness(privateQueriesOn: false, nearSwapPrivacy: true);
+      h.fetcher.servers[_sourceA] = [_a, _b];
+      await tester.runAsync(h.start);
+      h.fetcher.servers[_sourceA] = [_b];
+      await tester.runAsync(h.notifier.refresh);
+      expect(h.state.needsSelection, isTrue);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: h.container,
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.dark,
+              child: Scaffold(
+                body: kAppFormFactor == AppFormFactor.mobile
+                    ? MobilePrivateQueriesControl(onRequest: () async {})
+                    : EnhancePirPrivacyControl(
+                        enabled: false,
+                        onToggle: () {},
+                        transition: null,
+                      ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('wallet_pir_server_settings_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(ValueKey('wallet_pir_server_option_${_b[1]}')),
+      );
+      await tester.runAsync(() => pumpEventQueue());
+      await tester.pumpAndSettle();
+      // Applying a server owes swap recovery a round.
+      expect(h.applied.last, _b[1]);
+      expect(h.state.needsSelection, isFalse);
+      await tester.pumpWidget(const SizedBox.shrink());
+      h.dispose();
+    },
+  );
 
   testWidgets('a failed server change stays open and can be retried', (
     tester,

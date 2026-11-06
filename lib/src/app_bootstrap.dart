@@ -65,6 +65,7 @@ class AppBootstrapState {
     this.syncKeepAwakeEnabled = false,
     this.syncKeepAwakePromptSeen = false,
     this.enhancePirEnabled = false,
+    this.nearSwapPrivacyEnabled = false,
     this.failureKind,
     this.failureMessage,
   });
@@ -85,6 +86,10 @@ class AppBootstrapState {
   /// An unreadable setting is private for this launch, but unconfirmed: see
   /// [readEnhancePirEnabledPreference].
   final bool? enhancePirEnabled;
+
+  /// The saved NEAR swap privacy setting, or `null` when it could not be read
+  /// (see `NearSwapPrivacyNotifier`).
+  final bool? nearSwapPrivacyEnabled;
 
   /// Whether biometric unlock was enabled at startup, read synchronously from
   /// secure storage. The unlock screen uses this to paint the biometric
@@ -291,6 +296,7 @@ Future<AppBootstrapState> loadAppBootstrap({
       label: 'sync keep-awake prompt seen flag',
     );
     final enhancePirEnabled = await readEnhancePirEnabledPreference(storage);
+    final nearSwapPrivacyEnabled = await readNearSwapPrivacyPreference();
     var isPasswordConfigured = await storage.isPasswordConfigured();
     var isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
@@ -491,6 +497,7 @@ Future<AppBootstrapState> loadAppBootstrap({
       syncKeepAwakeEnabled: syncKeepAwakeEnabled,
       syncKeepAwakePromptSeen: syncKeepAwakePromptSeen,
       enhancePirEnabled: enhancePirEnabled,
+      nearSwapPrivacyEnabled: nearSwapPrivacyEnabled,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
       passwordRotationRecoveryFailed: passwordRotationRecoveryFailed,
@@ -816,5 +823,18 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
   } catch (e) {
     log('bootstrap: failed to load balance cache: $e');
     return AppSyncSnapshot.emptyForAccount(accountUuid);
+  }
+}
+
+/// The saved NEAR swap privacy setting, off if never saved, or `null` when it
+/// can't be read, which is neither on nor off (see `NearSwapPrivacyNotifier`).
+Future<bool?> readNearSwapPrivacyPreference() async {
+  const preferences = SharedPreferencesEnhancePirStore(
+    key: kNearSwapPrivacyPreferenceKey,
+  );
+  try {
+    return await preferences.readEnabled() ?? false;
+  } catch (_) {
+    return null;
   }
 }

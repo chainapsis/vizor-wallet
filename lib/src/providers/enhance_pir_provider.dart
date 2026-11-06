@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/config/network_config.dart';
+import '../core/config/swap_feature_config.dart';
 import '../core/storage/enhance_pir_preference_store.dart';
 import '../core/storage/linux_keyring_coordinator.dart';
 import '../core/storage/wallet_paths.dart';
@@ -358,6 +359,7 @@ class EnhancePirNotifier extends Notifier<bool> {
     ref.read(transparentOptOutPendingProvider.notifier).update(false);
     ref.read(walletTransparentPrivateProvider.notifier).update(false);
     ref.read(enhancePirTransitionProvider.notifier).update(null);
+    ref.read(nearSwapPrivacyTransitionProvider.notifier).update(null);
   }
 
   bool get _controlEnabled =>
@@ -382,3 +384,95 @@ final enhancePirTransitionProvider =
     NotifierProvider<EnhancePirTransitionNotifier, String?>(
       EnhancePirTransitionNotifier.new,
     );
+
+/// Feedback for the NEAR swap privacy toggle, shown under its own row.
+final nearSwapPrivacyTransitionProvider =
+    NotifierProvider<EnhancePirTransitionNotifier, String?>(
+      EnhancePirTransitionNotifier.new,
+    );
+
+final nearSwapPrivacyPreferenceStoreProvider =
+    Provider<EnhancePirPreferenceStore>(
+      (_) => const SharedPreferencesEnhancePirStore(
+        key: kNearSwapPrivacyPreferenceKey,
+      ),
+    );
+
+/// Install-scoped opt-in for one-time addresses on new swaps. Private queries
+/// don't affect it, and payments to addresses already handed out are found
+/// whatever it says. It is `null` while the saved choice couldn't be read,
+/// which blocks quotes that would choose between a one-time and an ordinary
+/// address until the user chooses again, so an unreadable opt-in never turns
+/// into a quiet opt-out.
+class NearSwapPrivacyNotifier extends Notifier<bool?> {
+  @override
+  bool? build() => ref.watch(enhancePirAvailableProvider)
+      ? ref.watch(appBootstrapProvider).nearSwapPrivacyEnabled
+      : false;
+
+  /// Saves `enabled`, then applies it to Rust, which reads it when reserving a
+  /// new address and when a swap recovery round or filter step picks the
+  /// accounts it watches. Turning it on requests a round, so every software
+  /// account is watched now. A failed save changes nothing, except that an
+  /// unreadable setting takes the choice for this session anyway.
+  Future<void> set(bool enabled) async {
+    final feedback = ref.read(nearSwapPrivacyTransitionProvider.notifier);
+    if (enabled == state ||
+        (enabled && !ref.read(enhancePirAvailableProvider)) ||
+        ref.read(nearSwapPrivacyTransitionProvider) ==
+            kEnhancePirChangingMessage) {
+      return;
+    }
+    feedback.update(kEnhancePirChangingMessage);
+    String? unsaved;
+    try {
+      await ref
+          .read(nearSwapPrivacyPreferenceStoreProvider)
+          .writeEnabled(enabled);
+    } catch (error) {
+      log('NEAR swap privacy not saved: $error');
+      if (!ref.mounted) return;
+      if (state != null) return feedback.update(kEnhancePirUnchangedMessage);
+      unsaved = kNearSwapPrivacyUnsavedMessage;
+    }
+    rust_sync.setNearSwapPrivacyEnabled(enabled: enabled);
+    if (!ref.mounted) return;
+    state = enabled;
+    feedback.update(unsaved);
+    if (enabled) ref.read(syncProvider.notifier).requestSwapRecovery();
+  }
+
+  /// Flips the setting. An unreadable one counts as off, so this turns it on.
+  Future<void> toggle() => set(!(state ?? false));
+}
+
+/// Feedback when a choice for an unreadable NEAR swap privacy setting applies
+/// but couldn't be saved.
+const kNearSwapPrivacyUnsavedMessage =
+    "Couldn't save this choice. It applies until you close Vizor.";
+
+final nearSwapPrivacyProvider =
+    NotifierProvider<NearSwapPrivacyNotifier, bool?>(
+      NearSwapPrivacyNotifier.new,
+    );
+
+/// Whether Settings offers NEAR swap privacy: swaps are enabled here and the
+/// private service exists for this network.
+final nearSwapPrivacySettingAvailableProvider = Provider<bool>(
+  (ref) =>
+      ref.watch(swapFeatureEnabledProvider) &&
+      ref.watch(enhancePirAvailableProvider),
+);
+
+/// Whether swap recovery uses the private query server, so Settings offers
+/// its picker even with Private queries off: NEAR swap privacy is on, or the
+/// wallet still watches an account (see `SwapRecoveryStatus.watching`), read
+/// again after every swap recovery round. Without accounts, as on Welcome,
+/// nothing is watched.
+final swapRecoveryUsesServerProvider = FutureProvider<bool>((ref) async {
+  if (ref.watch(nearSwapPrivacyProvider) == true) return true;
+  if (ref.watch(accountProvider).value?.accounts.isEmpty ?? true) return false;
+  ref.watch(swapRecoveryRoundsProvider);
+  final status = await ref.read(swapRecoveryStatusReaderProvider)();
+  return status?.watching ?? false;
+});

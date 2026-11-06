@@ -50,7 +50,8 @@ Future<void> showWalletPirServerPopup(BuildContext context) async {
   );
 }
 
-/// A quiet settings action beside Private queries, unavailable while off.
+/// A quiet settings action beside Private queries, unavailable while nothing
+/// uses the server.
 class WalletPirServerSettingsButton extends StatelessWidget {
   const WalletPirServerSettingsButton({required this.enabled, super.key});
 
