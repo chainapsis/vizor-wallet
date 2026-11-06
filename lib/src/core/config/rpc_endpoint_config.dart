@@ -242,7 +242,7 @@ bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
 }
 
 /// Operator identity for the fixed Automatic pool, not arbitrary custom hosts.
-/// Used by birthday confirmation; regional URLs are not independent operators.
+/// Birthday confirmation prefers diverse operators but accepts regional peers.
 String? automaticRpcEndpointOperatorForUrl(String url) =>
     switch (Uri.tryParse(url)?.host.toLowerCase()) {
       'us.zec.stardust.rest' ||

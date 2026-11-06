@@ -366,7 +366,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   RpcEndpointConfig get currentEndpoint => state.current;
 
   /// Automatic can connect on one usable response, but a new account's durable
-  /// birthday needs fresh, agreeing observations from two public operators.
+  /// birthday needs fresh, agreeing observations from two distinct pool URLs.
   Future<BigInt> getCreationBirthdayHeight() {
     if (!isAutomaticRpcEndpointConfig(state.primary)) {
       return getLatestBlockHeight();
@@ -430,22 +430,29 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     requireCurrent();
     final context = _captureContext();
     final selectedUrl = context.current.normalizedLightwalletdUrl;
-    final operator = automaticRpcEndpointOperatorForUrl(selectedUrl);
-    if (operator == null) {
+    final candidates = automaticRpcEndpointCandidatesFor(context.primary);
+    if (!candidates.any((c) => c.normalizedLightwalletdUrl == selectedUrl)) {
       throw StateError(
         'Automatic birthday endpoint is not in the public pool.',
       );
     }
-    final candidates = automaticRpcEndpointCandidatesFor(context.primary);
-    final peers = candidates
-        .where(
-          (candidate) =>
-              automaticRpcEndpointOperatorForUrl(
-                candidate.normalizedLightwalletdUrl,
-              ) !=
-              operator,
-        )
-        .toList();
+    final operator = automaticRpcEndpointOperatorForUrl(selectedUrl);
+    final otherOperator = <RpcEndpointConfig>[];
+    final sameOperator = <RpcEndpointConfig>[];
+    for (final candidate in candidates) {
+      final url = candidate.normalizedLightwalletdUrl;
+      if (url == selectedUrl) continue;
+      (automaticRpcEndpointOperatorForUrl(url) == operator
+              ? sameOperator
+              : otherOperator)
+          .add(candidate);
+    }
+    // Prefer operator diversity without withholding regional peers from a race.
+    final peers = <RpcEndpointConfig>[];
+    for (var i = 0; i < otherOperator.length || i < sameOperator.length; i++) {
+      if (i < otherOperator.length) peers.add(otherOperator[i]);
+      if (i < sameOperator.length) peers.add(sameOperator[i]);
+    }
     final attempts = <String, int>{};
 
     while (true) {
@@ -459,10 +466,10 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         ),
       );
       final current = _creationTips[selectedUrl];
-      final observations = _creationTips.values.where(
-        (entry) =>
-            automaticRpcEndpointOperatorForUrl(entry.sample.url) != operator,
-      );
+      final observations = [
+        for (final peer in peers)
+          ?_creationTips[peer.normalizedLightwalletdUrl],
+      ];
       if (current != null) {
         for (final peer in observations) {
           if ((peer.sample.height - current.sample.height).abs() <=
@@ -479,19 +486,19 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           );
         }
       }
-      final peer = peers
+      final nextPeers = peers
           .where((p) => !attempts.containsKey(p.normalizedLightwalletdUrl))
-          .firstOrNull;
+          .take(2)
+          .toList();
       if ((current == null && (attempts[selectedUrl] ?? 0) >= 2) ||
-          (observations.isEmpty && peer == null)) {
+          (observations.isEmpty && nextPeers.isEmpty)) {
         throw StateError(
           'Could not confirm the current block height with another server. Try again.',
         );
       }
-      final targets = [
-        if (current == null) context.current,
-        if (observations.isEmpty) peer!,
-      ];
+      // Refresh a missing selected tip separately: an early selected response
+      // must not end a fast batch before its peer observations can finish.
+      final targets = current == null ? [context.current] : nextPeers;
       for (final target in targets) {
         attempts.update(
           target.normalizedLightwalletdUrl,
@@ -507,7 +514,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       try {
         final timeout = remaining();
         final samples = await Future.any([
-          ref.read(rpcEndpointFullCandidatesProbeProvider)(
+          ref.read(rpcEndpointCandidatesProbeProvider)(
             urls: targets.map((c) => c.normalizedLightwalletdUrl).toList(),
             network: context.primary.networkName,
             selectionId: id,
@@ -546,9 +553,12 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   ) {
     final now = ref.read(rpcEndpointFailoverClockProvider)();
     final settings = ref.read(automaticRpcEndpointSettingsProvider);
+    final allowed = automaticRpcEndpointCandidatesFor(
+      state.primary,
+    ).map((candidate) => candidate.normalizedLightwalletdUrl).toSet();
     for (final sample in samples) {
       final receivedAt = sample.observedAt ?? observedAt;
-      if (automaticRpcEndpointOperatorForUrl(sample.url) != null &&
+      if (allowed.contains(sample.url) &&
           sample.height > BigInt.zero &&
           sample.height <= BigInt.from(0xffffffff) &&
           isRecentEndpointObservation(

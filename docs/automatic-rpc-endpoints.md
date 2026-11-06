@@ -119,18 +119,24 @@ cycle, with all stale-result and privacy-route guards still enforced.
 
 Connecting to an Automatic candidate does not authorize its height as a new
 account's durable birthday. `getCreationBirthdayHeight` requires observations
-from the selected server and a different public operator, no more than two
-blocks apart, and returns the lower height. Regional hosts under one operator
-do not supply independent confirmation. The observations must be at most five
+from the selected server and another distinct URL in the fixed public pool, no
+more than two blocks apart, and returns the lower height. When fresh matching
+observations are already available, a different operator is preferred; a matching
+regional peer under the same operator is also sufficient. Operator groups are a
+diversity preference, not an admission requirement. The observations must be at most five
 seconds old on the same network, route and cancellation epoch. Their local
 receipt timestamps come from Rust immediately after each tip response, so an
 early result in a long batch does not become fresh again at batch completion.
 No height evidence is restored from the durable route cache.
 
-Fresh observations already collected for selection are reused. Otherwise only
-the missing selected/peer observation is requested. An unavailable peer can be
-retried through another region of that operator within the same six-second
-direct or fifteen-second Tor wall budget, starting after route readiness.
+Fresh observations already collected for selection are reused without extra
+requests. Otherwise a missing selected observation is refreshed first, so its
+early response cannot end a peer race prematurely. Up to two peers race next,
+interleaving other-operator and same-operator regions. The ordinary early-return
+probe avoids waiting for an unavailable operator after another peer responds.
+Failures can try the remaining distinct hosts within the same six-second direct
+or fifteen-second Tor wall budget, starting after route readiness. Existing
+Direct/Tor concurrency limits and cancellation apply.
 Height disagreement, expiry, cancellation or exhausted budget fails before
 account creation, existing DB replacement or secret persistence. Concurrent
 confirmation callers share the work; optional performance/peer rechecks give

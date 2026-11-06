@@ -126,7 +126,7 @@ void main() {
             await failed;
 
             // Neither first-account replacement nor additional-account writes
-            // may happen without the independent birthday-height proof.
+            // may happen without the fresh two-endpoint birthday-height check.
             expect(_rust.calls, isEmpty);
             expect(storage.writes, isEmpty);
             expect(await storage.readAll(), initialStorage);

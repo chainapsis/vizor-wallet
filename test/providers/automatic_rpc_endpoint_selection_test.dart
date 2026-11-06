@@ -1435,45 +1435,136 @@ void main() {
     expect(harness.store.values[('main', false)]?.presetId, 'eu-zec-stardust');
   });
   group('creation birthday confirmation', () {
+    _Harness birthdayHarness({
+      RpcEndpointConfig? endpoint,
+      NetworkPrivacyState route = const NetworkPrivacyState.off(),
+      RpcEndpointWarmTipReader? warmRead,
+      AutomaticRpcEndpointSettings settings =
+          const AutomaticRpcEndpointSettings(),
+    }) => _Harness(
+      endpoint: endpoint,
+      route: route,
+      warmRead: warmRead,
+      settings: settings,
+    )..respond = (call) async => [if (call.urls.contains(_eu)) _sample(_eu)];
     const rocks = 'https://eu.zec.rocks:443';
 
     test(
       'reuses a fresh two-operator pair and chooses the lower height',
       () async {
-        final h = _Harness();
+        final h = birthdayHarness();
         h.respond = (_) async => [
           _sample(_eu, 100, 102),
           _sample(rocks, 300, 100),
         ];
         expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
         expect(h.calls, hasLength(1));
-        expect(h.fullCalls, isEmpty);
+        expect(h.birthdayCalls, isEmpty);
         expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
       },
     );
 
-    test('same-operator regions require a different operator', () async {
-      final h = _Harness();
-      h.fullRespond = (call) async => [
-        for (final url in call.urls) _sample(url, 100, 99),
+    test(
+      'reuses a fresh same-operator pair without additional probes',
+      () async {
+        final h = birthdayHarness();
+        h.respond = (_) async => [
+          _sample(_eu, 100, 102),
+          _sample(_kr, 300, 100),
+        ];
+        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
+        expect(h.birthdayCalls, isEmpty);
+        expect(h.calls, hasLength(1));
+      },
+    );
+
+    test(
+      'prefers an already available agreeing observation from another operator',
+      () async {
+        final h = birthdayHarness();
+        h.respond = (call) async => [
+          if (call.urls.contains(_eu)) _sample(_eu, 100, 100),
+          if (call.urls.contains(_kr)) _sample(_kr, 200, 99),
+          if (call.urls.contains(rocks)) _sample(rocks, 300, 101),
+        ];
+        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
+        expect(h.birthdayCalls, isEmpty);
+      },
+    );
+
+    test(
+      'duplicate responses from the selected URL cannot confirm its height',
+      () async {
+        final h = birthdayHarness();
+        h.respond = (call) async => [
+          if (call.urls.contains(_eu)) ...[_sample(_eu), _sample(_eu)],
+        ];
+        h.birthdayRespond = (_) async => [];
+        await expectLater(
+          h.notifier.getCreationBirthdayHeight(),
+          throwsStateError,
+        );
+        expect(h.birthdayCalls, isNotEmpty);
+        expect(
+          h.birthdayCalls.every((call) => !call.urls.contains(_eu)),
+          isTrue,
+        );
+      },
+    );
+
+    for (final tor in [false, true]) {
+      test(
+        '${tor ? 'Tor' : 'direct'} peer race accepts a regional peer when the other operator is unavailable',
+        () async {
+          final h = birthdayHarness(
+            route: tor ? _torReady : const NetworkPrivacyState.off(),
+          );
+          h.birthdayRespond = (call) async => [
+            if (call.urls.contains(_us)) _sample(_us, 80, 99),
+          ];
+          expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(99));
+          expect(h.birthdayCalls, hasLength(1));
+          expect(h.birthdayCalls.single.urls, [rocks, _us]);
+          expect(h.birthdayCalls.single.maxConcurrency, tor ? 2 : 4);
+          expect(
+            h.birthdayCalls.single.totalTimeout,
+            lessThanOrEqualTo(
+              tor ? const Duration(seconds: 15) : const Duration(seconds: 6),
+            ),
+          );
+          expect(h.fullCalls, isEmpty);
+          expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+        },
+      );
+    }
+
+    test('same-operator disagreement beyond two blocks still fails', () async {
+      final h = birthdayHarness();
+      h.respond = (call) async => [
+        if (call.urls.contains(_eu)) _sample(_eu, 100, 100),
+        if (call.urls.contains(_kr)) _sample(_kr, 300, 97),
       ];
-      expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(99));
-      expect(h.fullCalls, hasLength(1));
-      expect(h.fullCalls.single.urls, [rocks]);
-      expect(h.calls, hasLength(1));
+      await expectLater(
+        h.notifier.getCreationBirthdayHeight(),
+        throwsStateError,
+      );
+      expect(h.birthdayCalls, isEmpty);
+      expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
     });
 
     test('a singleton future height cannot become a birthday', () async {
-      final h = _Harness();
-      h.respond = (_) async => [_sample(_eu, 20, 4000000000)];
-      h.fullRespond = (call) async => [
+      final h = birthdayHarness();
+      h.respond = (call) async => [
+        if (call.urls.contains(_eu)) _sample(_eu, 20, 4000000000),
+      ];
+      h.birthdayRespond = (call) async => [
         for (final url in call.urls) _sample(url, 100, 3500000),
       ];
       await expectLater(
         h.notifier.getCreationBirthdayHeight(),
         throwsStateError,
       );
-      expect(h.fullCalls, hasLength(1));
+      expect(h.birthdayCalls, hasLength(1));
       expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
       expect(
         h.container.read(rpcEndpointFailoverProvider).automaticReady,
@@ -1483,9 +1574,11 @@ void main() {
 
     for (final value in [0, -1, 0x100000000]) {
       test('rejects out-of-range birthday $value', () async {
-        final h = _Harness();
-        h.respond = (_) async => [_sample(_eu, 20, value)];
-        h.fullRespond = (call) async => [
+        final h = birthdayHarness();
+        h.respond = (call) async => [
+          if (call.urls.contains(_eu)) _sample(_eu, 20, value),
+        ];
+        h.birthdayRespond = (call) async => [
           for (final url in call.urls) _sample(url, 100, value),
         ];
         await expectLater(
@@ -1498,7 +1591,7 @@ void main() {
     test(
       'cached route and peer timestamps are not current-height proof',
       () async {
-        final h = _Harness(
+        final h = birthdayHarness(
           warmRead:
               ({
                 required endpoint,
@@ -1515,20 +1608,20 @@ void main() {
           lastNetworkVerifiedAt: h.now,
           lastBenchmarkAt: h.now,
         );
-        h.fullRespond = (call) async => [
+        h.birthdayRespond = (call) async => [
           for (final url in call.urls) _sample(url),
         ];
         expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
         expect(h.calls, isEmpty);
-        expect(h.fullCalls.single.urls, [rocks]);
+        expect(h.birthdayCalls.single.urls, [rocks, _us]);
       },
     );
 
     for (final future in [false, true]) {
       test('ignores ${future ? 'future' : 'old'} receipt times', () async {
-        final h = _Harness();
-        h.respond = (_) async => [
-          for (final url in [_eu, rocks])
+        final h = birthdayHarness();
+        h.respond = (call) async => [
+          for (final url in [_eu, rocks].where(call.urls.contains))
             RpcEndpointCandidateSample(
               url: url,
               height: BigInt.from(900),
@@ -1536,20 +1629,23 @@ void main() {
               observedAt: h.now.add(Duration(seconds: future ? 10 : -10)),
             ),
         ];
-        h.fullRespond = (call) async => [
+        h.birthdayRespond = (call) async => [
           for (final url in call.urls) _sample(url, 100, 100),
         ];
         expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
-        expect(h.fullCalls.single.urls, [_eu, rocks]);
+        expect(h.birthdayCalls.map((call) => call.urls), [
+          [_eu],
+          [rocks, _us],
+        ]);
       });
     }
 
     test(
       'uses actual receipt time for a slow Tor response and refreshes only the expired observation',
       () async {
-        final h = _Harness(route: _torReady);
-        h.fullRespond = (call) async {
-          if (h.fullCalls.length == 1) {
+        final h = birthdayHarness(route: _torReady);
+        h.birthdayRespond = (call) async {
+          if (h.birthdayCalls.length == 1) {
             h.now = h.now.add(const Duration(seconds: 8));
           }
           return [
@@ -1563,23 +1659,23 @@ void main() {
           ];
         };
         expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
-        expect(h.fullCalls, hasLength(2));
-        expect(h.fullCalls.first.urls, [rocks]);
-        expect(h.fullCalls.last.urls, [_eu]);
-        expect(h.fullCalls.every((c) => c.maxConcurrency == 2), isTrue);
+        expect(h.birthdayCalls, hasLength(2));
+        expect(h.birthdayCalls.first.urls, [rocks, _us]);
+        expect(h.birthdayCalls.last.urls, [_eu]);
+        expect(h.birthdayCalls.every((c) => c.maxConcurrency == 2), isTrue);
       },
     );
 
     test(
       'peer failure tries another region without cooling the current host',
       () async {
-        final h = _Harness();
-        h.fullRespond = (call) async {
-          if (h.fullCalls.length == 1) throw StateError('peer timeout');
+        final h = birthdayHarness();
+        h.birthdayRespond = (call) async {
+          if (h.birthdayCalls.length == 1) throw StateError('peer timeout');
           return [for (final url in call.urls) _sample(url)];
         };
         expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
-        expect(h.fullCalls, hasLength(2));
+        expect(h.birthdayCalls, hasLength(2));
         expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
         expect((await h.notifier.ensureReady()).lightwalletdUrl, _eu);
       },
@@ -1589,7 +1685,7 @@ void main() {
       test(
         '${tor ? 'Tor' : 'direct'} confirmation has a single bounded deadline',
         () async {
-          final h = _Harness(
+          final h = birthdayHarness(
             route: tor ? _torReady : const NetworkPrivacyState.off(),
             settings: const AutomaticRpcEndpointSettings(
               directBudget: Duration(milliseconds: 100),
@@ -1597,7 +1693,7 @@ void main() {
             ),
           );
           final peer = Completer<List<RpcEndpointCandidateSample>>();
-          h.fullRespond = (_) => peer.future;
+          h.birthdayRespond = (_) => peer.future;
           final watch = Stopwatch()..start();
           await expectLater(
             h.notifier.getCreationBirthdayHeight(),
@@ -1616,12 +1712,12 @@ void main() {
       'concurrent birthday callers share a confirmation but ordinary work stays fast',
       () async {
         final peer = Completer<List<RpcEndpointCandidateSample>>();
-        final h = _Harness();
-        h.fullRespond = (_) => peer.future;
+        final h = birthdayHarness();
+        h.birthdayRespond = (_) => peer.future;
         final first = h.notifier.getCreationBirthdayHeight();
         final second = h.notifier.getCreationBirthdayHeight();
         await _flush();
-        expect(h.fullCalls, hasLength(1));
+        expect(h.birthdayCalls, hasLength(1));
         expect((await h.notifier.ensureReady()).lightwalletdUrl, _eu);
         peer.complete([_sample(rocks)]);
         expect(await first, BigInt.from(100));
@@ -1641,8 +1737,8 @@ void main() {
         'cancels birthday confirmation on $action and ignores a late peer',
         () async {
           final peer = Completer<List<RpcEndpointCandidateSample>>();
-          final h = _Harness();
-          h.fullRespond = (_) => peer.future;
+          final h = birthdayHarness();
+          h.birthdayRespond = (_) => peer.future;
           final result = h.notifier.getCreationBirthdayHeight();
           final rejection = expectLater(result, throwsStateError);
           await _flush();
@@ -1684,14 +1780,14 @@ void main() {
             presetId: 'eu-zec-stardust',
           ),
         ]) {
-          final h = _Harness(endpoint: endpoint);
+          final h = birthdayHarness(endpoint: endpoint);
           h.readHeight = () async => BigInt.from(123);
           expect(
             await h.notifier.getCreationBirthdayHeight(),
             BigInt.from(123),
           );
           expect(h.calls, isEmpty);
-          expect(h.fullCalls, isEmpty);
+          expect(h.birthdayCalls, isEmpty);
         }
       },
     );
@@ -1749,8 +1845,10 @@ class _Harness {
         }) {
           expect(network, 'main');
           final call = _Call(urls, probeTimeout, totalTimeout, maxConcurrency);
-          calls.add(call);
-          return respond(call).then((samples) {
+          // Birthday confirmation uses the same early-return probe as selection.
+          final birthday = selectionId.contains('-birthday-');
+          (birthday ? birthdayCalls : calls).add(call);
+          return (birthday ? birthdayRespond : respond)(call).then((samples) {
             expect(
               samples.every((sample) => urls.contains(sample.url)),
               isTrue,
@@ -1783,6 +1881,9 @@ class _Harness {
   final _Store store;
   final List<_Call> calls = [];
   final List<_Call> fullCalls = [];
+  final List<_Call> birthdayCalls = [];
+  Future<List<RpcEndpointCandidateSample>> Function(_Call) birthdayRespond =
+      (call) async => [for (final url in call.urls) _sample(url)];
   Future<List<RpcEndpointCandidateSample>> Function(_Call) fullRespond =
       (_) async => [_sample(_eu), _sample(_kr, 300)];
   final List<String> cancelled = [];
