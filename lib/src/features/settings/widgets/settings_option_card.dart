@@ -7,11 +7,42 @@ import '../../../core/l10n/locale_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
-/// Applies [labelLocale]'s glyphs to a label written in another language,
-/// such as a language's own name in a picker.
-TextStyle _labelStyle(TextStyle style, Locale? labelLocale) {
-  if (labelLocale == null) return style;
-  return style.copyWith(fontFamilyFallback: fontFamilyFallbackFor(labelLocale));
+/// Draws [label], giving [labelLocale]'s glyphs to [localeText] (all of the
+/// label when null): the part written in another language, such as a
+/// language's own name in a picker.
+Text _label(
+  String label, {
+  required TextStyle style,
+  Locale? labelLocale,
+  String? localeText,
+  TextOverflow? overflow,
+}) {
+  if (labelLocale == null) return Text(label, overflow: overflow, style: style);
+  final fallback = fontFamilyFallbackFor(labelLocale);
+  final at = localeText == null ? -1 : label.indexOf(localeText);
+  if (at < 0) {
+    return Text(
+      label,
+      locale: labelLocale,
+      overflow: overflow,
+      style: style.copyWith(fontFamilyFallback: fallback),
+    );
+  }
+  final end = at + localeText!.length;
+  return Text.rich(
+    TextSpan(
+      children: [
+        if (at > 0) TextSpan(text: label.substring(0, at)),
+        TextSpan(
+          text: localeText,
+          style: TextStyle(locale: labelLocale, fontFamilyFallback: fallback),
+        ),
+        if (end < label.length) TextSpan(text: label.substring(end)),
+      ],
+    ),
+    overflow: overflow,
+    style: style,
+  );
 }
 
 /// A selectable row of a desktop settings picker modal (theme, language).
@@ -22,6 +53,7 @@ class SettingsOptionCard extends StatelessWidget {
     required this.onTap,
     this.iconName,
     this.labelLocale,
+    this.labelLocaleText,
     super.key,
   });
 
@@ -30,6 +62,9 @@ class SettingsOptionCard extends StatelessWidget {
   final VoidCallback onTap;
   final String? iconName;
   final Locale? labelLocale;
+
+  /// The part of [label] in [labelLocale]; all of it when null.
+  final String? labelLocaleText;
 
   @override
   Widget build(BuildContext context) {
@@ -81,16 +116,14 @@ class SettingsOptionCard extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xs),
               ],
               Expanded(
-                child: Text(
+                child: _label(
                   label,
-                  locale: labelLocale,
+                  labelLocale: labelLocale,
+                  localeText: labelLocaleText,
                   overflow: TextOverflow.ellipsis,
-                  style: _labelStyle(
-                    AppTypography.labelMedium.copyWith(
-                      color: colors.text.accent,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    ),
-                    labelLocale,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.text.accent,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                   ),
                 ),
               ),
@@ -142,6 +175,7 @@ class MobileSettingsOptionCard extends StatelessWidget {
     required this.onTap,
     this.iconName,
     this.labelLocale,
+    this.labelLocaleText,
     super.key,
   });
 
@@ -150,6 +184,9 @@ class MobileSettingsOptionCard extends StatelessWidget {
   final VoidCallback onTap;
   final String? iconName;
   final Locale? labelLocale;
+
+  /// The part of [label] in [labelLocale]; all of it when null.
+  final String? labelLocaleText;
 
   @override
   Widget build(BuildContext context) {
@@ -187,14 +224,12 @@ class MobileSettingsOptionCard extends StatelessWidget {
                 const SizedBox(width: AppSpacing.s),
               ],
               Expanded(
-                child: Text(
+                child: _label(
                   label,
-                  locale: labelLocale,
-                  style: _labelStyle(
-                    AppTypography.bodyMediumStrong.copyWith(
-                      color: colors.text.accent,
-                    ),
-                    labelLocale,
+                  labelLocale: labelLocale,
+                  localeText: labelLocaleText,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.accent,
                   ),
                 ),
               ),

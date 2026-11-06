@@ -30,6 +30,17 @@ String appLanguageLabel(
   );
 }
 
+/// Whose glyphs [option]'s label uses: a language's name is all in its own;
+/// in the System label only the device language's name is.
+({Locale locale, String? text}) _labelGlyphs(
+  AppLanguage? option,
+  List<AppLanguage> available,
+) {
+  if (option != null) return (locale: option.locale, text: null);
+  final device = deviceAppLanguage(available);
+  return (locale: device.locale, text: device.nativeName);
+}
+
 /// Follow the device first, then each offered language.
 List<AppLanguage?> _options(List<AppLanguage> available) => [
   null,
@@ -110,7 +121,8 @@ class _DesktopLanguageModalState extends State<DesktopLanguageModal> {
             SettingsOptionCard(
               key: ValueKey('language_option_${_optionKey(option)}'),
               label: appLanguageLabel(context, option, widget.available),
-              labelLocale: option?.locale,
+              labelLocale: _labelGlyphs(option, widget.available).locale,
+              labelLocaleText: _labelGlyphs(option, widget.available).text,
               selected: option == _selected,
               onTap: () => _select(option),
             ),
@@ -189,7 +201,8 @@ class _MobileLanguageSheetState extends State<MobileLanguageSheet> {
             MobileSettingsOptionCard(
               key: ValueKey('mobile_language_option_${_optionKey(option)}'),
               label: appLanguageLabel(context, option, widget.available),
-              labelLocale: option?.locale,
+              labelLocale: _labelGlyphs(option, widget.available).locale,
+              labelLocaleText: _labelGlyphs(option, widget.available).text,
               selected: option == _selected,
               onTap: () => setState(() => _selected = option),
             ),
