@@ -510,6 +510,7 @@ List<SwapStatusStepData> _swapActivityProgressSteps(
     SwapStatusStepData(
       title: l10n.swapActivityStepSwap,
       state: SwapStatusStepState.pending,
+      kind: SwapStatusStepKind.swap,
       activeTitle: l10n.swapActivityStepSwapActive,
       lastCheckedLabel: lastCheckedLabel,
       description: l10n.swapActivityStepSwapDescription,
@@ -517,6 +518,9 @@ List<SwapStatusStepData> _swapActivityProgressSteps(
     SwapStatusStepData(
       title: deliveryTitle,
       state: SwapStatusStepState.pending,
+      kind: sendsZecToExternal
+          ? SwapStatusStepKind.other
+          : SwapStatusStepKind.walletDelivery,
       activeTitle: deliveryActive,
       lastCheckedLabel: lastCheckedLabel,
       description: l10n.swapActivityStepDeliverSwapDescription,

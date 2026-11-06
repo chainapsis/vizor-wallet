@@ -8,10 +8,21 @@ enum SwapStatusTab { progress, details }
 
 enum SwapStatusStepState { complete, active, pending }
 
+/// What a progress step does; picks the icon of a step that is not done.
+enum SwapStatusStepKind {
+  /// The provider swaps the assets.
+  swap,
+
+  /// The provider sends the swapped asset to this wallet.
+  walletDelivery,
+  other,
+}
+
 class SwapStatusStepData {
   const SwapStatusStepData({
     required this.title,
     required this.state,
+    this.kind = SwapStatusStepKind.other,
     this.completeTitle,
     this.activeTitle,
     this.pendingTitle,
@@ -21,6 +32,7 @@ class SwapStatusStepData {
 
   final String title;
   final SwapStatusStepState state;
+  final SwapStatusStepKind kind;
   final String? completeTitle;
   final String? activeTitle;
   final String? pendingTitle;
@@ -39,6 +51,7 @@ class SwapStatusStepData {
     return SwapStatusStepData(
       title: title,
       state: state,
+      kind: kind,
       completeTitle: completeTitle,
       activeTitle: activeTitle,
       pendingTitle: pendingTitle,

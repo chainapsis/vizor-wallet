@@ -1,4 +1,7 @@
+import 'dart:ui' show Locale;
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_detail_tooltips.dart';
@@ -205,6 +208,31 @@ void main() {
       _detailRow(presentation.details, 'ZEC refund address').copyText,
       'u1refund-address',
     );
+  });
+
+  test('progress steps pick their icons by kind in every language', () {
+    for (final l10n in [testL10n, lookupAppLocalizations(const Locale('ko'))]) {
+      for (final (direction, delivery) in [
+        (SwapDirection.zecToExternal, SwapStatusStepKind.other),
+        (SwapDirection.externalToZec, SwapStatusStepKind.walletDelivery),
+      ]) {
+        final presentation = swapActivityStatusPresentationForIntent(
+          l10n,
+          _state(),
+          _intent(
+            status: SwapIntentStatus.processing,
+            direction: direction,
+            externalAsset: SwapAsset.usdc,
+          ),
+        );
+        expect(presentation.steps.map((step) => step.kind), [
+          SwapStatusStepKind.other,
+          SwapStatusStepKind.other,
+          SwapStatusStepKind.swap,
+          delivery,
+        ], reason: '${l10n.localeName} $direction');
+      }
+    }
   });
 
   test('maps completed pay activity to the Figma status presentation', () {

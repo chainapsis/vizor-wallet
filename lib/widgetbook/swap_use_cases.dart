@@ -920,6 +920,7 @@ const _designProgressSteps = <SwapStatusStepData>[
   SwapStatusStepData(
     title: 'Swap',
     state: SwapStatusStepState.pending,
+    kind: SwapStatusStepKind.swap,
     activeTitle: 'Swap...',
     lastCheckedLabel: 'Last check: 1m ago',
     description: 'The provider is executing the swap route.',
@@ -927,6 +928,7 @@ const _designProgressSteps = <SwapStatusStepData>[
   SwapStatusStepData(
     title: 'Send ZEC',
     state: SwapStatusStepState.pending,
+    kind: SwapStatusStepKind.walletDelivery,
     activeTitle: 'Send ZEC...',
     lastCheckedLabel: 'Last check: 1m ago',
     description: 'Delivering ZEC to the recipient address.',

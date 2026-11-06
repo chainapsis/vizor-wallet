@@ -792,10 +792,11 @@ class _ProgressStepIcon extends StatelessWidget {
 }
 
 String _pendingProgressIcon(SwapStatusStepData step) {
-  final title = step.title.toLowerCase();
-  if (title.contains('swap')) return AppIcons.swapArrows;
-  if (title.contains('send')) return AppIcons.arrowDownCircle;
-  return AppIcons.check;
+  return switch (step.kind) {
+    SwapStatusStepKind.swap => AppIcons.swapArrows,
+    SwapStatusStepKind.walletDelivery => AppIcons.arrowDownCircle,
+    SwapStatusStepKind.other => AppIcons.check,
+  };
 }
 
 /// Detail-rows column for the non-terminal Transaction details tab. The fee
