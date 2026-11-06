@@ -31,6 +31,9 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../fakes/fake_app_language_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
+
+final _en = lookupAppLocalizations(const Locale('en'));
 
 void main() {
   testWidgets('private recovery is labelled experimental', (tester) async {
@@ -579,10 +582,10 @@ void main() {
     // Leaving a wait is not a second transition, and does not announce itself
     // as one.
     expect(
-      NetworkPrivacyToggleAction.cancelPendingTor.semanticsLabel,
+      NetworkPrivacyToggleAction.cancelPendingTor.semanticsLabel(_en),
       'Stop connecting to Tor',
     );
-    expect(NetworkPrivacyToggleAction.disable.semanticsLabel, 'Use Tor');
+    expect(NetworkPrivacyToggleAction.disable.semanticsLabel(_en), 'Use Tor');
     expect(NetworkPrivacyToggleAction.none.isInteractive, isFalse);
   });
 
@@ -890,11 +893,14 @@ void main() {
         walletPrivate: true,
       );
       expect(_turnOffDialog, findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffTitle), findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffBody), findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffDisclosure), findsOneWidget);
+      expect(find.text(_en.settingsPrivateQueriesTurnOffTitle), findsOneWidget);
+      expect(find.text(_en.settingsPrivateQueriesTurnOffBody), findsOneWidget);
       expect(
-        kPrivateQueriesTurnOffDisclosure,
+        find.text(_en.settingsPrivateQueriesTurnOffDisclosure),
+        findsOneWidget,
+      );
+      expect(
+        _en.settingsPrivateQueriesTurnOffDisclosure,
         allOf(
           contains('every transparent address of every account'),
           contains('IDs of transactions private recovery found'),
@@ -902,7 +908,7 @@ void main() {
         ),
       );
       expect(
-        kPrivateQueriesTurnOffBody,
+        _en.settingsPrivateQueriesTurnOffBody,
         'Vizor will rebuild your transparent history publicly, allowing the '
         'server to learn all your addresses.',
       );

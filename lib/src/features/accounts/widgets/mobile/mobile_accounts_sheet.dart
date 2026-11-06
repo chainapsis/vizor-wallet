@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -128,18 +129,18 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
           );
       if (!mounted) return;
       if (address.trim().isEmpty) {
-        showAppToast(context, "Address couldn't be copied");
+        showAppToast(context, context.l10n.sidebarAddressCopyFailed);
         return;
       }
 
       await Clipboard.setData(ClipboardData(text: address));
       unawaited(AppHaptics.copy());
       if (!mounted) return;
-      showAppToast(context, 'Address copied');
+      showAppToast(context, context.l10n.commonAddressCopied);
     } catch (e) {
       log('MobileAccountsSheet: ERROR copying shielded address: $e');
       if (!mounted) return;
-      showAppToast(context, "Address couldn't be copied");
+      showAppToast(context, context.l10n.sidebarAddressCopyFailed);
     } finally {
       if (mounted) {
         setState(() => _isCopyingAddress = false);
@@ -196,7 +197,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
           const SizedBox(height: _accountsSheetCurrentToTitleGap),
           if (others.isNotEmpty) ...[
             Text(
-              'Other accounts',
+              context.l10n.accountsOtherAccounts,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.accent,
               ),
@@ -274,8 +275,8 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                     context.push('/accounts');
                   },
                   height: AppButtonSizing.largeHeight,
-                  child: const Text(
-                    'Manage accounts',
+                  child: Text(
+                    context.l10n.accountsManage,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -340,7 +341,7 @@ class _CopyAddressButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _AccountSheetButtonShell(
-      label: 'Copy shielded address',
+      label: context.l10n.sidebarCopyShieldedAddress,
       onTap: onTap,
       child: SizedBox(
         width: 40,
@@ -366,7 +367,7 @@ class _AddAccountButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return _AccountSheetButtonShell(
-      label: 'Add account',
+      label: context.l10n.commonAddAccount,
       onTap: onTap,
       child: Container(
         key: const ValueKey('mobile_accounts_add'),

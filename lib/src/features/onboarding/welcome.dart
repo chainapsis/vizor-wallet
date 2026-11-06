@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/l10n/l10n.dart';
 import '../../core/layout/app_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
@@ -199,8 +200,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                       _WelcomeIconButton(
                         key: const ValueKey('welcome_endpoint_settings_button'),
                         icon: AppIcons.cog,
-                        tooltip: 'Network settings',
-                        semanticLabel: 'Network settings',
+                        tooltip: context.l10n.networkSettingsTitle,
+                        semanticLabel: context.l10n.networkSettingsTitle,
                         onTap: _openEndpointSettings,
                       ),
                     ],
@@ -257,7 +258,7 @@ class _WelcomeContent extends StatelessWidget {
         const VizorWordmark(width: 106, height: 40, color: Color(0xffffffff)),
         const SizedBox(height: 48),
         Text(
-          'Shielded\nby default',
+          'Shielded\nby default', // l10n-ignore: brand tagline
           textAlign: TextAlign.center,
           style: AppTypography.displayLarge.copyWith(
             color: const Color(0xffffffff),
@@ -296,7 +297,7 @@ class _WelcomeContent extends StatelessWidget {
                       ? '/import/method?from=add-account'
                       : '/import/method',
                 ),
-                child: const Text('Import wallet'),
+                child: Text(context.l10n.onboardingWelcomeImportWallet),
               ),
               const SizedBox(height: 16),
               Semantics(
@@ -412,7 +413,7 @@ class _BackRow extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                'Back',
+                context.l10n.commonBack,
                 style: AppTypography.labelLarge.copyWith(
                   color: const Color(0xfff7f7f7),
                 ),

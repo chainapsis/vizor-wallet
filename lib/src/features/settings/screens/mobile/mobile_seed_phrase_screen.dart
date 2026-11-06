@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 import 'dart:math' as math;
@@ -7,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import '../../../../../main.dart' show log;
 import '../../../../core/navigation/external_action_guard_provider.dart';
@@ -165,7 +167,7 @@ class _MobileSeedPhraseScreenState
     try {
       readResult = await ref
           .read(biometricUnlockProvider.notifier)
-          .readPasscode(reason: 'Confirm access to your secret passphrase');
+          .readPasscode(reason: context.l10n.settingsSeedBiometricReason);
     } finally {
       _privacyController.endAuthPrompt();
     }
@@ -226,7 +228,7 @@ class _MobileSeedPhraseScreenState
         setState(() {
           _entry = '';
           _checking = false;
-          _gateError = 'Incorrect passcode';
+          _gateError = context.l10n.settingsIncorrectPasscode;
         });
         return;
       }
@@ -242,7 +244,7 @@ class _MobileSeedPhraseScreenState
       setState(() {
         _entry = '';
         _checking = false;
-        _gateError = "Couldn't verify the passcode. Try again.";
+        _gateError = context.l10n.settingsPasscodeVerifyFailed;
       });
     }
   }
@@ -278,7 +280,7 @@ class _MobileSeedPhraseScreenState
       _stage = _SeedStage.confirmAccess;
       _entry = '';
       _checking = false;
-      _gateError = 'Selected account changed. Enter your passcode again.';
+      _gateError = context.l10n.settingsAccountChangedPasscode;
       _mnemonic = null;
       _bip39Passphrase = null;
       _revealError = null;
@@ -289,6 +291,7 @@ class _MobileSeedPhraseScreenState
   }
 
   Future<void> _reveal(String? expectedAccountUuid) async {
+    final l10n = context.l10n;
     final accountState = ref.read(accountProvider).value;
     final account = _targetAccount(accountState);
     if (account?.uuid != expectedAccountUuid) {
@@ -300,10 +303,10 @@ class _MobileSeedPhraseScreenState
     String? bip39Passphrase;
     if (account == null) {
       revealError = widget.accountUuid == null
-          ? 'No active account is selected.'
-          : 'The selected account is no longer available.';
+          ? l10n.settingsNoActiveAccount
+          : l10n.settingsAccountUnavailable;
     } else if (account.isHardware) {
-      revealError = 'Secret passphrase is not available for hardware accounts.';
+      revealError = l10n.settingsSeedUnavailableHardware;
     } else {
       final secret = await ref
           .read(accountProvider.notifier)
@@ -313,7 +316,7 @@ class _MobileSeedPhraseScreenState
           ? secret!.bip39Passphrase
           : null;
       if (mnemonic == null || mnemonic.isEmpty) {
-        revealError = 'Secret passphrase is not available for this account.';
+        revealError = l10n.settingsSeedUnavailableAccount;
       }
     }
     if (!mounted) return;
@@ -377,7 +380,8 @@ class _MobileSeedPhraseScreenState
     final blockTime = await ref
         .read(rpcEndpointFailoverProvider.notifier)
         .runWithEndpointFallback(
-          operation: 'birthday block time',
+          operation:
+              'birthday block time', // l10n-ignore: endpoint failover operation name
           action: (endpoint) => rust_sync.getBlockTime(
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             height: BigInt.from(height),
@@ -418,7 +422,7 @@ class _MobileSeedPhraseScreenState
     if (mnemonic == null || mnemonic.isEmpty) return;
     await SensitiveClipboard.copyText(mnemonic);
     unawaited(AppHaptics.copy());
-    if (mounted) showAppToast(context, 'Secret passphrase copied');
+    if (mounted) showAppToast(context, context.l10n.settingsSeedCopiedToast);
   }
 
   Future<void> _copyBip39Passphrase() async {
@@ -426,7 +430,9 @@ class _MobileSeedPhraseScreenState
     if (passphrase == null || passphrase.isEmpty) return;
     await SensitiveClipboard.copyText(passphrase);
     unawaited(AppHaptics.copy());
-    if (mounted) showAppToast(context, 'BIP39 passphrase copied');
+    if (mounted) {
+      showAppToast(context, context.l10n.settingsBip39PassphraseCopied);
+    }
   }
 
   // ── Screenshot warning ─────────────────────────────────────────────
@@ -453,26 +459,11 @@ class _MobileSeedPhraseScreenState
 
   bool get _isCurrentRoute => ModalRoute.of(context)?.isCurrent ?? true;
 
-  static String _formatBirthdayDate(int blockTimeSeconds) {
-    const months = [
-      '',
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
+  static String _formatBirthdayDate(int blockTimeSeconds, String localeName) {
     final date = DateTime.fromMillisecondsSinceEpoch(
       blockTimeSeconds * 1000,
     ).toLocal();
-    return '${months[date.month]} ${date.day}, ${date.year}';
+    return DateFormat.yMMMMd(localeName).format(date);
   }
 
   @override
@@ -502,7 +493,7 @@ class _MobileSeedPhraseScreenState
                   child: MobileTopNav.back(
                     title: _stage == _SeedStage.confirmAccess
                         ? ''
-                        : 'Secret Passphrase',
+                        : context.l10n.secretPassphraseTitle,
                     onBack: () {
                       if (ref
                           .read(externalActionGuardProvider)
@@ -576,7 +567,10 @@ class _MobileSeedPhraseScreenState
                 expand: true,
                 growWithContent: true,
                 constrainContent: true,
-                child: const Text('Continue', textAlign: TextAlign.center),
+                child: Text(
+                  context.l10n.commonContinue,
+                  textAlign: TextAlign.center,
+                ),
               ),
               if (account != null && account.setupPending) ...[
                 const SizedBox(height: AppSpacing.xs),
@@ -592,8 +586,8 @@ class _MobileSeedPhraseScreenState
                   expand: true,
                   growWithContent: true,
                   constrainContent: true,
-                  child: const Text(
-                    'Remind me later',
+                  child: Text(
+                    context.l10n.settingsSeedRemindLater,
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -611,12 +605,12 @@ class _MobileSeedPhraseScreenState
         BiometricUnlockState.initial;
     final showBiometric = !_checking && biometric.usable;
     final title = Text(
-      'Enter Passcode',
+      context.l10n.settingsEnterPasscodeTitle,
       textAlign: TextAlign.center,
       style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
     );
     final subtitle = Text(
-      'Confirm your access',
+      context.l10n.settingsConfirmAccessSubtitle,
       textAlign: TextAlign.center,
       style: AppTypography.bodyMediumStrong.copyWith(
         color: colors.text.primary,
@@ -669,8 +663,8 @@ class _MobileSeedPhraseScreenState
         ),
     ];
     return AdaptivePasscodeLayout(
-      title: 'Enter Passcode',
-      subtitle: 'Confirm your access',
+      title: context.l10n.settingsEnterPasscodeTitle,
+      subtitle: context.l10n.settingsConfirmAccessSubtitle,
       prompt: PasscodePromptField(
         length: kMobilePasscodeLength,
         filled: _entry.length,
@@ -803,7 +797,7 @@ class _MobileSeedPhraseScreenState
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          'Secret Passphrase',
+                          context.l10n.secretPassphraseTitle,
                           style: AppTypography.bodyMediumStrong.copyWith(
                             fontWeight: FontWeight.w600,
                             color: colors.text.accent,
@@ -828,7 +822,7 @@ class _MobileSeedPhraseScreenState
                     right: AppSpacing.s,
                     child: _CopyChip(
                       key: const ValueKey('mobile_seed_copy'),
-                      label: 'Copy',
+                      label: context.l10n.commonCopy,
                       onTap: _copyMnemonic,
                     ),
                   ),
@@ -847,22 +841,28 @@ class _MobileSeedPhraseScreenState
               child: Column(
                 children: [
                   _BirthdayRow(
-                    label: 'Birthday date',
+                    label: context.l10n.settingsBirthdayDate,
                     value: _birthdayBlockTime != null
-                        ? _formatBirthdayDate(_birthdayBlockTime!)
+                        ? _formatBirthdayDate(
+                            _birthdayBlockTime!,
+                            context.l10n.localeName,
+                          )
                         : _birthdayLoading
                         ? '…'
                         : '—',
                     onCopy: _birthdayBlockTime == null
                         ? null
                         : () => _copy(
-                            _formatBirthdayDate(_birthdayBlockTime!),
-                            'Birthday date copied',
+                            _formatBirthdayDate(
+                              _birthdayBlockTime!,
+                              context.l10n.localeName,
+                            ),
+                            context.l10n.settingsBirthdayDateCopied,
                           ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   _BirthdayRow(
-                    label: 'Birthday block height',
+                    label: context.l10n.settingsBirthdayBlockHeight,
                     value:
                         _birthdayHeight?.toString() ??
                         (_birthdayLoading ? '…' : '—'),
@@ -870,7 +870,7 @@ class _MobileSeedPhraseScreenState
                         ? null
                         : () => _copy(
                             '$_birthdayHeight',
-                            'Birthday height copied',
+                            context.l10n.settingsBirthdayHeightCopied,
                           ),
                   ),
                 ],
@@ -902,8 +902,8 @@ class _MobileSeedPhraseScreenState
               expand: true,
               growWithContent: true,
               constrainContent: true,
-              child: const Text(
-                'I’ve written it down',
+              child: Text(
+                context.l10n.settingsSeedWrittenDown,
                 textAlign: TextAlign.center,
               ),
             ),
@@ -941,7 +941,7 @@ class _MobileSeedPhraseScreenState
     } catch (error) {
       log('MobileSeedPhrase: saving backup failed: $error');
       if (mounted) {
-        showAppToast(context, 'Couldn’t save that. Try again.');
+        showAppToast(context, context.l10n.settingsSeedBackupSaveFailed);
         setState(() {
           _snoozingBackup = false;
           _markingBackedUp = false;
@@ -965,7 +965,7 @@ class _CopyChip extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       button: true,
-      label: 'Copy secret passphrase',
+      label: context.l10n.secretPassphraseCopy,
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -1065,7 +1065,7 @@ class _MobileBip39PassphraseRow extends StatelessWidget {
     final colors = context.colors;
     final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.5;
     final label = Text(
-      'BIP39 Passphrase',
+      context.l10n.bip39PassphraseTitle,
       style: AppTypography.labelMedium.copyWith(color: colors.text.accent),
     );
     final valueAndCopy = Row(
@@ -1084,7 +1084,7 @@ class _MobileBip39PassphraseRow extends StatelessWidget {
         ),
         Semantics(
           button: true,
-          label: 'Copy BIP39 passphrase',
+          label: context.l10n.settingsBip39PassphraseCopy,
           excludeSemantics: true,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -1158,7 +1158,7 @@ class _BirthdayRow extends StatelessWidget {
         ? null
         : Semantics(
             button: true,
-            label: 'Copy $label',
+            label: context.l10n.settingsCopyLabel(label),
             excludeSemantics: true,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -1306,7 +1306,7 @@ class _MobileSeedScreenshotWarningSheetState
                     width: titleWidth,
                     child: Text(
                       key: const ValueKey('mobile_seed_screenshot_title'),
-                      'Don’t take screenshots of your Secret Passphrase',
+                      context.l10n.settingsSeedScreenshotTitle,
                       textAlign: TextAlign.center,
                       softWrap: true,
                       textHeightBehavior: _textHeightBehavior,
@@ -1326,18 +1326,12 @@ class _MobileSeedScreenshotWarningSheetState
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.accent,
               ),
-              children: const [
+              children: [
                 TextSpan(
-                  text: 'Screenshots are not reliable',
+                  text: context.l10n.settingsSeedScreenshotBodyLead,
                   style: AppTypography.bodyMediumStrong,
                 ),
-                TextSpan(
-                  text:
-                      '. Anyone who has access to your phone or your photo '
-                      'library will be able to see your Secret Passphrase. '
-                      'Write down your Phrase on a '
-                      'piece of paper instead.',
-                ),
+                TextSpan(text: context.l10n.settingsSeedScreenshotBodyRest),
               ],
             ),
             textAlign: TextAlign.center,
@@ -1350,7 +1344,10 @@ class _MobileSeedScreenshotWarningSheetState
             expand: true,
             height: AppButtonSizing.largeHeight,
             onPressed: _dismiss,
-            child: const Text('I understand', style: _buttonLabelStyle),
+            child: Text(
+              context.l10n.settingsSeedScreenshotAck,
+              style: _buttonLabelStyle,
+            ),
           ),
         ],
       ),

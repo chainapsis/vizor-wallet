@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../storage/linux_keyring_coordinator.dart';
 import '../l10n/app_language.dart';
+import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import 'app_button.dart';
 import 'app_icon.dart';
@@ -143,7 +144,7 @@ class _LinuxKeyringStartupHostState extends State<LinuxKeyringStartupHost> {
     // Shown before storage is readable, so there is no saved language yet:
     // follow the device.
     return MaterialApp(
-      title: 'Vizor',
+      title: 'Vizor', // l10n-ignore: product name
       debugShowCheckedModeBanner: false,
       supportedLocales: appSupportedLocales(),
       localizationsDelegates: appLocalizationsDelegates,
@@ -170,7 +171,9 @@ class _LinuxKeyringStartupHostState extends State<LinuxKeyringStartupHost> {
                   ),
                   const SizedBox(height: AppSpacing.md),
                   Text(
-                    _failed ? 'Unable to open Vizor' : 'Opening Vizor',
+                    _failed
+                        ? context.l10n.appOpenFailedTitle
+                        : context.l10n.keyringOpeningTitle,
                     style: AppTypography.headlineLarge.copyWith(
                       color: context.colors.text.accent,
                     ),
@@ -179,7 +182,7 @@ class _LinuxKeyringStartupHostState extends State<LinuxKeyringStartupHost> {
                   if (_failed) ...[
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      'Quit and restart Vizor to try again.',
+                      context.l10n.keyringRestartHint,
                       style: AppTypography.bodyMedium.copyWith(
                         color: context.colors.text.secondary,
                       ),
@@ -189,7 +192,7 @@ class _LinuxKeyringStartupHostState extends State<LinuxKeyringStartupHost> {
                     AppButton(
                       onPressed: () => unawaited(SystemNavigator.pop()),
                       variant: AppButtonVariant.ghost,
-                      child: const Text('Quit'),
+                      child: Text(context.l10n.commonQuit),
                     ),
                   ],
                 ],
@@ -243,28 +246,20 @@ class _LinuxKeyringNoticeState extends State<_LinuxKeyringNotice> {
         !coordinator.hasPendingMutation &&
         !unknown;
     final colors = context.colors;
+    final l10n = context.l10n;
     final title = switch (phase) {
-      LinuxKeyringPhase.outcomeUnknown => 'Unable to confirm the save',
-      LinuxKeyringPhase.serviceUnavailable => 'Secure storage is unavailable',
-      LinuxKeyringPhase.storageCorrupt => 'Unable to read secure storage',
-      LinuxKeyringPhase.retrying => 'Trying secure storage',
-      _ => 'Unlock your keyring',
+      LinuxKeyringPhase.outcomeUnknown => l10n.keyringSaveUnconfirmedTitle,
+      LinuxKeyringPhase.serviceUnavailable => l10n.keyringUnavailableTitle,
+      LinuxKeyringPhase.storageCorrupt => l10n.keyringUnreadableTitle,
+      LinuxKeyringPhase.retrying => l10n.keyringTryingTitle,
+      _ => l10n.keyringUnlockTitle,
     };
     final body = switch (phase) {
-      LinuxKeyringPhase.outcomeUnknown =>
-        'Vizor could not confirm whether your changes were saved. '
-            'Quit and restart Vizor before continuing.',
-      LinuxKeyringPhase.serviceUnavailable =>
-        'Vizor cannot connect to the system keyring. '
-            'Try again, or quit and restart Vizor.',
-      LinuxKeyringPhase.storageCorrupt =>
-        'Vizor could not read the data in your system keyring. '
-            'Retry after restoring access, or quit Vizor.',
-      LinuxKeyringPhase.keyringLocked =>
-        'Vizor cannot access your system keyring. '
-            'Unlock the keyring, then choose Retry. '
-            'A system prompt may ask for your keyring password.',
-      _ => 'Complete any system keyring prompt to continue in Vizor.',
+      LinuxKeyringPhase.outcomeUnknown => l10n.keyringSaveUnconfirmedBody,
+      LinuxKeyringPhase.serviceUnavailable => l10n.keyringUnavailableBody,
+      LinuxKeyringPhase.storageCorrupt => l10n.keyringUnreadableBody,
+      LinuxKeyringPhase.keyringLocked => l10n.keyringLockedBody,
+      _ => l10n.keyringPromptBody,
     };
 
     return FocusScope(
@@ -321,7 +316,7 @@ class _LinuxKeyringNoticeState extends State<_LinuxKeyringNotice> {
                       if (_actionFailed) ...[
                         const SizedBox(height: AppSpacing.sm),
                         Text(
-                          'The keyring did not respond. Try again.',
+                          l10n.keyringNoResponse,
                           style: AppTypography.bodySmall.copyWith(
                             color: colors.text.secondary,
                           ),
@@ -348,7 +343,7 @@ class _LinuxKeyringNoticeState extends State<_LinuxKeyringNotice> {
                                 ),
                           autofocus: true,
                           minWidth: 172,
-                          child: const Text('Retry'),
+                          child: Text(l10n.commonRetry),
                         ),
                       if (canCancel) ...[
                         const SizedBox(height: AppSpacing.xs),
@@ -363,7 +358,7 @@ class _LinuxKeyringNoticeState extends State<_LinuxKeyringNotice> {
                                   ),
                                 ),
                           variant: AppButtonVariant.ghost,
-                          child: const Text('Cancel'),
+                          child: Text(l10n.commonCancel),
                         ),
                       ],
                       if (!retrying) ...[
@@ -371,7 +366,7 @@ class _LinuxKeyringNoticeState extends State<_LinuxKeyringNotice> {
                         AppButton(
                           onPressed: () => unawaited(SystemNavigator.pop()),
                           variant: AppButtonVariant.ghost,
-                          child: const Text('Quit'),
+                          child: Text(l10n.commonQuit),
                         ),
                       ],
                     ],

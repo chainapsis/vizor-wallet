@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -34,7 +35,7 @@ class MobileImportBirthdayUnknownHeightSheet extends StatelessWidget {
 
     return MobileModalScaffold(
       key: const ValueKey('mobile_import_birthday_unknown_height_sheet'),
-      title: 'Import from the earliest height?',
+      title: context.l10n.onboardingUnknownHeightTitle,
       titleMaxLines: 2,
       leading: Container(
         width: 32,
@@ -57,14 +58,12 @@ class MobileImportBirthdayUnknownHeightSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'If you continue without a wallet birthday, Vizor will scan from '
-            'the earliest supported shielded height. This is safe, but the '
-            'first sync can take a very long time.',
+            context.l10n.onboardingUnknownHeightBody,
             style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Choosing even an approximate date will be much faster.',
+            context.l10n.onboardingUnknownHeightHint,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -76,7 +75,7 @@ class MobileImportBirthdayUnknownHeightSheet extends StatelessWidget {
             ),
             expand: true,
             onPressed: onConfirm,
-            child: const Text('Continue anyway'),
+            child: Text(context.l10n.onboardingContinueAnywayMobile),
           ),
           const SizedBox(height: AppSpacing.xs),
           AppButton(
@@ -84,7 +83,7 @@ class MobileImportBirthdayUnknownHeightSheet extends StatelessWidget {
             variant: AppButtonVariant.ghost,
             expand: true,
             onPressed: onCancel,
-            child: const Text('Go back'),
+            child: Text(context.l10n.commonGoBack),
           ),
         ],
       ),

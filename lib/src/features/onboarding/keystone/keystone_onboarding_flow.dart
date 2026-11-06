@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/motion/onboarding_motion.dart';
 import '../../../core/theme/app_theme.dart';
@@ -22,13 +23,15 @@ enum KeystoneOnboardingStep {
 extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
   // Sidebar step labels keep their original Title Case — see the
   // sentence-case exception in AGENTS.md (UI Copy Conventions).
-  String get label => switch (this) {
-    KeystoneOnboardingStep.howToConnect => 'How to Connect',
-    KeystoneOnboardingStep.scanQrCode => 'Scan QR Code',
-    KeystoneOnboardingStep.selectAccount => 'Select Account',
-    KeystoneOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
-    KeystoneOnboardingStep.setPassword => 'Set Password',
-    KeystoneOnboardingStep.customiseAccount => 'Customise wallet',
+  String label(AppLocalizations l10n) => switch (this) {
+    KeystoneOnboardingStep.howToConnect => l10n.keystoneStepHowToConnect,
+    KeystoneOnboardingStep.scanQrCode => l10n.commonScanQrCode,
+    KeystoneOnboardingStep.selectAccount => l10n.keystoneStepSelectAccount,
+    KeystoneOnboardingStep.walletBirthdayHeight =>
+      l10n.onboardingStepWalletBirthdayHeight,
+    KeystoneOnboardingStep.setPassword => l10n.onboardingStepSetPassword,
+    KeystoneOnboardingStep.customiseAccount =>
+      l10n.onboardingStepCustomiseWallet,
   };
 
   String get iconName => switch (this) {
@@ -124,7 +127,8 @@ class KeystoneOnboardingNotifier extends Notifier<KeystoneOnboardingState> {
   KeystoneAccountInfo _withFallbackAccountName(KeystoneAccountInfo account) {
     if (account.name.trim().isNotEmpty) return account;
     return KeystoneAccountInfo(
-      name: 'Account ${account.index + 1}',
+      name:
+          'Account ${account.index + 1}', // l10n-ignore: persisted account name
       ufvk: account.ufvk,
       index: account.index,
       seedFingerprint: account.seedFingerprint,
@@ -253,7 +257,7 @@ class _Sidebar extends StatelessWidget {
       steps: [
         for (final step in _steps)
           OnboardingSidebarStepData(
-            label: step.label,
+            label: step.label(context.l10n),
             iconName: step.iconName,
             active: step == activeStep,
           ),

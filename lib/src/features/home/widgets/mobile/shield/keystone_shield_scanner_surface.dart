@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
+import '../../../../../core/l10n/l10n.dart';
 import '../../../../../core/theme/app_theme.dart';
 import '../../../../../core/widgets/app_button.dart';
 import '../../../../address_scan/widgets/mobile_address_scan_view.dart'
@@ -33,8 +34,8 @@ class KeystoneShieldScannerSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final message = decoding
-        ? 'Reading signature…'
-        : hint ?? 'Scanning… $progress%';
+        ? context.l10n.homeShieldReadingSignature
+        : hint ?? context.l10n.homeShieldScanning(progress);
     final style = AppTypography.bodyMedium.copyWith(
       color: const Color(0xFFFFFFFF),
     );
@@ -51,7 +52,10 @@ class KeystoneShieldScannerSurface extends StatelessWidget {
 
     final messageHeight = math.max(
       measure(message),
-      math.max(measure('Reading signature…'), measure('Scanning… 100%')),
+      math.max(
+        measure(context.l10n.homeShieldReadingSignature),
+        measure(context.l10n.homeShieldScanning(100)),
+      ),
     );
     final overhead = math.max(100.0, messageHeight + 12 + 48);
     final viewSize = math.max(
@@ -109,10 +113,10 @@ class KeystoneShieldScannerSurface extends StatelessWidget {
               child: Opacity(
                 opacity: morph.scannerGlyphOpacity,
                 alwaysIncludeSemantics: true,
-                child: const Icon(
+                child: Icon(
                   Icons.flashlight_on_outlined,
-                  color: Color(0xFFFFFFFF),
-                  semanticLabel: 'Toggle flashlight',
+                  color: const Color(0xFFFFFFFF),
+                  semanticLabel: context.l10n.homeShieldToggleFlashlight,
                 ),
               ),
             ),

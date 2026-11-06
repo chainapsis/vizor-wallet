@@ -20,7 +20,6 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
-import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
@@ -40,6 +39,9 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 import '../../fakes/fake_app_language_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
+
+final _en = lookupAppLocalizations(const Locale('en'));
 
 const _accountState = AccountState(
   accounts: [
@@ -738,9 +740,12 @@ void main() {
         walletPrivate: true,
       );
       expect(_turnOffSheet, findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffTitle), findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffBody), findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffDisclosure), findsOneWidget);
+      expect(find.text(_en.settingsPrivateQueriesTurnOffTitle), findsOneWidget);
+      expect(find.text(_en.settingsPrivateQueriesTurnOffBody), findsOneWidget);
+      expect(
+        find.text(_en.settingsPrivateQueriesTurnOffDisclosure),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();

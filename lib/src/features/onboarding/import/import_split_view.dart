@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/motion/onboarding_motion.dart';
 import '../../../core/theme/app_theme.dart';
@@ -18,11 +19,12 @@ enum ImportOnboardingStep {
 extension ImportOnboardingStepX on ImportOnboardingStep {
   // Sidebar step labels keep their original Title Case — see the
   // sentence-case exception in AGENTS.md (UI Copy Conventions).
-  String get label => switch (this) {
-    ImportOnboardingStep.secretPassphrase => 'Secret Passphrase',
-    ImportOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
-    ImportOnboardingStep.setPassword => 'Set Password',
-    ImportOnboardingStep.customiseAccount => 'Customise wallet',
+  String label(AppLocalizations l10n) => switch (this) {
+    ImportOnboardingStep.secretPassphrase => l10n.secretPassphraseTitle,
+    ImportOnboardingStep.walletBirthdayHeight =>
+      l10n.onboardingStepWalletBirthdayHeight,
+    ImportOnboardingStep.setPassword => l10n.onboardingStepSetPassword,
+    ImportOnboardingStep.customiseAccount => l10n.onboardingStepCustomiseWallet,
   };
 
   String get iconName => switch (this) {
@@ -167,7 +169,7 @@ class _Sidebar extends StatelessWidget {
       steps: [
         for (final step in _steps)
           OnboardingSidebarStepData(
-            label: step.label,
+            label: step.label(context.l10n),
             iconName: step.iconName,
             active: step == activeStep,
           ),

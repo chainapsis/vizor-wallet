@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -9,7 +10,6 @@ import '../../address_scan/widgets/mobile_address_scan_card.dart';
 
 const _keystoneScannerCardHeight = 464.0;
 const _keystoneScannerFooterHeight = 68.0;
-const kMobileKeystoneScanCaption = 'Scan the Keystone account QR';
 
 class MobileKeystoneScanCardContent extends StatelessWidget {
   const MobileKeystoneScanCardContent({
@@ -38,7 +38,7 @@ class MobileKeystoneScanCardContent extends StatelessWidget {
     return MobileAddressScanCardContent(
       status: status,
       cameraView: cameraView,
-      caption: kMobileKeystoneScanCaption,
+      caption: context.l10n.keystoneScanCaption,
       error: error,
       unavailableDescription: unavailableDescription,
       cameraHeight: cameraHeight ?? _keystoneScannerCardHeight,
@@ -76,43 +76,40 @@ class MobileKeystoneScanPermissionCard extends StatelessWidget {
       status == AddressQrCameraStatus.restricted ||
       status == AddressQrCameraStatus.unavailable;
 
-  String get _title {
+  String _title(AppLocalizations l10n) {
     switch (status) {
       case AddressQrCameraStatus.denied:
-        return "You've denied camera access";
+        return l10n.keystoneCameraDeniedTitle;
       case AddressQrCameraStatus.restricted:
-        return 'Camera access is restricted';
+        return l10n.keystoneCameraRestrictedTitle;
       case AddressQrCameraStatus.unavailable:
-        return 'Camera unavailable';
+        return l10n.keystoneCameraUnavailableTitle;
       case AddressQrCameraStatus.requesting:
       case AddressQrCameraStatus.active:
       case AddressQrCameraStatus.loading:
-        return 'Enable camera access';
+        return l10n.keystoneCameraEnableTitle;
     }
   }
 
-  String get _description {
+  String _description(AppLocalizations l10n) {
     switch (status) {
       case AddressQrCameraStatus.denied:
-        return 'Request again, or enable manually\n'
-            'in the System settings.';
+        return l10n.keystoneCameraDeniedBody;
       case AddressQrCameraStatus.restricted:
-        return 'Screen Time or device management\n'
-            'is blocking the camera.';
+        return l10n.keystoneCameraRestrictedBody;
       case AddressQrCameraStatus.unavailable:
-        return unavailableDescription ??
-            'Keystone import uses camera QR scanning only.\n'
-                'Connect a camera and try again.';
+        return unavailableDescription ?? l10n.keystoneCameraUnavailableBody;
       case AddressQrCameraStatus.requesting:
       case AddressQrCameraStatus.active:
       case AddressQrCameraStatus.loading:
-        return 'A camera is required to connect Keystone.\n'
-            'You can revert this in settings anytime later.';
+        return l10n.keystoneCameraEnableBody;
     }
   }
 
-  String get _retryLabel =>
-      status == AddressQrCameraStatus.denied ? 'Request again' : 'Try again';
+  String _retryLabel(AppLocalizations l10n) =>
+      status == AddressQrCameraStatus.denied
+      ? l10n.keystoneCameraRequestAgain
+      : l10n.commonTryAgain;
 
   @override
   Widget build(BuildContext context) {
@@ -151,8 +148,8 @@ class MobileKeystoneScanPermissionCard extends StatelessWidget {
                       top: AppSpacing.md,
                     ),
                     child: _KeystonePermissionMessage(
-                      title: _title,
-                      description: _description,
+                      title: _title(context.l10n),
+                      description: _description(context.l10n),
                       denied:
                           status == AddressQrCameraStatus.denied ||
                           status == AddressQrCameraStatus.restricted,
@@ -166,7 +163,7 @@ class MobileKeystoneScanPermissionCard extends StatelessWidget {
                               minWidth: 96,
                               leading: const AppIcon(AppIcons.renew),
                               onPressed: onRetry,
-                              child: Text(_retryLabel),
+                              child: Text(_retryLabel(context.l10n)),
                             )
                           : null,
                     ),

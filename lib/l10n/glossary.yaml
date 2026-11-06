@@ -158,6 +158,12 @@ terms:
     tags: [security]
     ko: {term: 복구 문구, status: candidate, note: "Keplr uses 복구 문구. Avoid a literal 비밀 암호문."}
     zh: {term: 助记词, status: candidate, forbidden: [密码短语]}
+  - id: bip39_passphrase
+    en: BIP39 passphrase
+    definition: The optional 25th word that derives a separate wallet from the same secret passphrase.
+    tags: [security]
+    ko: {term: 패스프레이즈, status: candidate, note: "Keep distinct from 복구 문구 (secret passphrase) and 암호 (passcode)."}
+    zh: {term: 密码短语, status: candidate, note: "Keep distinct from 助记词 (secret passphrase)."}
   - id: password
     en: password
     tags: [security]

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../import/desktop_import_navigation.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -36,7 +37,7 @@ class _KeystoneSelectAccountScreenState
 
     return KeystoneOnboardingTrailingPane(
       backTarget: OnboardingBackTarget.route(
-        label: KeystoneOnboardingStep.scanQrCode.label,
+        label: KeystoneOnboardingStep.scanQrCode.label(context.l10n),
         routePath: desktopImportLocation(
           context,
           KeystoneOnboardingStep.scanQrCode.routePath,
@@ -158,7 +159,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Select account',
+            context.l10n.commonSelectAccount,
             style: AppTypography.displayLarge.copyWith(
               fontFamily: 'Young Serif',
               fontWeight: FontWeight.w400,
@@ -174,7 +175,7 @@ class _TitleBlock extends StatelessWidget {
         SizedBox(
           width: 226,
           child: Text(
-            'Prepare your Keystone wallet',
+            context.l10n.keystonePrepareSubtitle,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.primary,
             ),
@@ -214,7 +215,7 @@ class _FloatingConfirmButton extends StatelessWidget {
           onPressed: enabled ? onPressed : null,
           variant: AppButtonVariant.primary,
           minWidth: 196,
-          child: const Text('Confirm selection'),
+          child: Text(context.l10n.keystoneConfirmSelection),
         ),
       ),
     );
@@ -251,8 +252,7 @@ class _AccountPickerState extends State<_AccountPicker> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final accounts = widget.accounts;
-    final countLabel =
-        '${accounts.length} ${accounts.length == 1 ? 'account' : 'accounts'} found';
+    final countLabel = context.l10n.keystoneAccountsFound(accounts.length);
 
     return SizedBox(
       width: double.infinity,
@@ -397,7 +397,9 @@ class _AccountRadioCard extends StatelessWidget {
 
   String _accountName(KeystoneAccountInfo account) {
     final name = account.name.trim();
-    return name.isEmpty ? 'Account ${account.index + 1}' : name;
+    return name.isEmpty
+        ? 'Account ${account.index + 1}' /* l10n-ignore: mirrors persisted fallback name */
+        : name;
   }
 
   String _shortUfvk(String ufvk) {

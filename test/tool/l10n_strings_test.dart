@@ -50,4 +50,16 @@ void main() {
       expect(kindOf(text), isEmpty, reason: text);
     }
   });
+
+  test('a file marked l10n-ignore-file is skipped', () {
+    const body = "Widget build() => Text('Valiant Herald');";
+    expect(scanSource('lib/src/fixture.dart', body), isNotEmpty);
+    expect(
+      scanSource(
+        'lib/src/fixture.dart',
+        '// l10n-ignore-file: persisted names\n$body',
+      ),
+      isEmpty,
+    );
+  });
 }

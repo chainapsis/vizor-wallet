@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
@@ -42,14 +43,14 @@ class MobileWalletLinkIntroScreen extends StatelessWidget {
         context,
       ).at(OnboardingFlow.walletLink, OnboardingStage.linkIntro).value,
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Link with Desktop',
-      subtitle: 'Copy your desktop wallet to this phone',
+      title: context.l10n.walletLinkIntroTitle,
+      subtitle: context.l10n.walletLinkIntroSubtitle,
       bottomArea: AppButton(
         key: const ValueKey('mobile_wallet_link_intro_scan'),
         expand: true,
         onPressed: () =>
             context.pushOnboarding('/onboarding/link-desktop/scan'),
-        child: const Text("I'm ready to scan"),
+        child: Text(context.l10n.walletLinkIntroReady),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -86,7 +87,7 @@ class _DesktopLinkNoticeCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              'This copies the wallet and contacts to the phone. Nothing on the computer changes, and you can use both.',
+              context.l10n.walletLinkIntroNotice,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
               ),
@@ -104,10 +105,10 @@ class _DesktopLinkSteps extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    const steps = [
-      'Open & unlock your Vizor desktop app',
-      'Go to Settings → Link Vizor Mobile',
-      'Scan the QR code on your desktop from the next screen.',
+    final steps = [
+      context.l10n.walletLinkStepUnlockDesktop,
+      context.l10n.walletLinkStepOpenSettings,
+      context.l10n.walletLinkStepScanQr,
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -179,8 +180,8 @@ class MobileWalletLinkScanScreen extends ConsumerWidget {
           context,
         ).at(OnboardingFlow.walletLink, OnboardingStage.linkScan).value,
         onBack: () => Navigator.of(context).maybePop(),
-        title: 'Scan QR Code',
-        subtitle: 'Copy your desktop wallet to this phone',
+        title: context.l10n.commonScanQrCode,
+        subtitle: context.l10n.walletLinkIntroSubtitle,
         scrollable: false,
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -215,8 +216,8 @@ class MobileWalletLinkScanScreen extends ConsumerWidget {
             context,
           ).at(OnboardingFlow.walletLink, OnboardingStage.linkScan).value,
           onBack: () => Navigator.of(context).maybePop(),
-          title: 'Scan QR Code',
-          subtitle: 'Scan the code on your desktop',
+          title: context.l10n.commonScanQrCode,
+          subtitle: context.l10n.walletLinkScanSubtitleDesktop,
           scrollable: false,
           child: const SizedBox.shrink(),
         ),
@@ -281,7 +282,7 @@ class _WalletLinkScanCardState extends State<_WalletLinkScanCard> {
       return MobileAddressScanCardContent(
         status: forced,
         cameraHeight: widget.cameraHeight,
-        caption: 'Scan the Vizor desktop QR',
+        caption: context.l10n.walletLinkScanCaption,
         permissionBuilder:
             (context, status, unavailableDescription, onRetry, onClose) =>
                 MobileKeystoneScanPermissionCard(
@@ -302,10 +303,11 @@ class _WalletLinkScanCardState extends State<_WalletLinkScanCard> {
           : null,
       forceActiveForTesting: forced == AddressQrCameraStatus.active,
       cameraHeight: widget.cameraHeight,
-      caption: widget.loading ? 'Reading link...' : 'Scan the Vizor desktop QR',
-      permissionTitle: 'Scan the Vizor desktop QR',
-      unavailableDescription:
-          'Desktop link scanning needs a camera on this device.',
+      caption: widget.loading
+          ? context.l10n.walletLinkReadingLink
+          : context.l10n.walletLinkScanCaption,
+      permissionTitle: context.l10n.walletLinkScanCaption,
+      unavailableDescription: context.l10n.walletLinkCameraRequired,
       closeEnabled: !widget.loading,
       permissionBuilder:
           (context, status, unavailableDescription, onRetry, onClose) =>
@@ -337,19 +339,16 @@ class _WalletLinkScanErrorCard extends StatelessWidget {
   final double height;
   final VoidCallback onScanAgain;
 
-  String get _title => switch (error) {
-    MobileWalletLinkScanError.invalid => 'Invalid QR code',
-    MobileWalletLinkScanError.expired => 'Link expired',
-    MobileWalletLinkScanError.failed => "Couldn't open this link",
+  String _title(AppLocalizations l10n) => switch (error) {
+    MobileWalletLinkScanError.invalid => l10n.walletLinkErrorInvalidTitle,
+    MobileWalletLinkScanError.expired => l10n.walletLinkErrorExpiredTitle,
+    MobileWalletLinkScanError.failed => l10n.walletLinkErrorFailedTitle,
   };
 
-  String get _body => switch (error) {
-    MobileWalletLinkScanError.invalid =>
-      "The code you scanned isn't a Vizor desktop link. On your computer, open Settings → Link Vizor Mobile.",
-    MobileWalletLinkScanError.expired =>
-      'The code on your computer timed out. On desktop, choose Generate new code and scan it again.',
-    MobileWalletLinkScanError.failed =>
-      'Check that the desktop code is still visible, then scan it again.',
+  String _body(AppLocalizations l10n) => switch (error) {
+    MobileWalletLinkScanError.invalid => l10n.walletLinkErrorInvalidBody,
+    MobileWalletLinkScanError.expired => l10n.walletLinkErrorExpiredBody,
+    MobileWalletLinkScanError.failed => l10n.walletLinkErrorFailedBody,
   };
 
   @override
@@ -385,7 +384,7 @@ class _WalletLinkScanErrorCard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
-                  _title,
+                  _title(context.l10n),
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyLarge.copyWith(
                     color: colors.text.accent,
@@ -394,7 +393,7 @@ class _WalletLinkScanErrorCard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xxs),
                 Text(
-                  _body,
+                  _body(context.l10n),
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.secondary,
@@ -408,7 +407,7 @@ class _WalletLinkScanErrorCard extends StatelessWidget {
                   minWidth: 108,
                   leading: const AppIcon(AppIcons.renew),
                   onPressed: onScanAgain,
-                  child: const Text('Scan again'),
+                  child: Text(context.l10n.walletLinkScanAgain),
                 ),
               ],
             ),
@@ -457,22 +456,21 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
       progress: MobileOnboardingProgressScope.of(
         context,
       ).at(OnboardingFlow.walletLink, OnboardingStage.accountSelection).value,
-      title: 'Select account',
+      title: context.l10n.commonSelectAccount,
       subtitle: hasNothingToImport
-          ? const TextSpan(
-              text: 'There is nothing new to import from this desktop link.',
-            )
+          ? TextSpan(text: context.l10n.walletLinkNothingNewSubtitle)
           : TextSpan(
-              text:
-                  '${_walletLinkCountLabel(state.importableAccountCount, 'account', 'accounts')} ready to import, '
-                  '${alreadyImportedAccounts.length} already imported.',
+              text: context.l10n.walletLinkAccountsReadySubtitle(
+                state.importableAccountCount,
+                alreadyImportedAccounts.length,
+              ),
             ),
       buttonLabel: hasNothingToImport
-          ? 'Go back'
+          ? context.l10n.commonGoBack
           : state.selectedAccountCount == 0
-          ? 'Continue'
-          : 'Link ${state.selectedAccountCount} account${state.selectedAccountCount == 1 ? '' : 's'}',
-      buttonLoadingLabel: 'Importing...',
+          ? context.l10n.commonContinue
+          : context.l10n.walletLinkLinkAccounts(state.selectedAccountCount),
+      buttonLoadingLabel: context.l10n.commonImporting,
       buttonEnabled:
           hasNothingToImport ||
           state.selectedAccountCount > 0 ||
@@ -501,11 +499,12 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
               children: [
                 if (pendingAccounts.isNotEmpty)
                   _WalletLinkListSection(
-                    title:
-                        '${_walletLinkCountLabel(pendingAccounts.length, 'account', 'accounts')} found',
+                    title: context.l10n.walletLinkAccountsFound(
+                      pendingAccounts.length,
+                    ),
                     actionLabel: allAccountsSelected
-                        ? 'Deselect all'
-                        : 'Select all',
+                        ? context.l10n.walletLinkDeselectAll
+                        : context.l10n.walletLinkSelectAll,
                     onAction: submitting || state.importableAccountCount == 0
                         ? null
                         : allAccountsSelected
@@ -547,7 +546,9 @@ class MobileWalletLinkSelectAccountsScreen extends ConsumerWidget {
                   const SizedBox(height: AppSpacing.base),
                 if (alreadyImportedAccounts.isNotEmpty)
                   _WalletLinkListSection(
-                    title: '${alreadyImportedAccounts.length} already imported',
+                    title: context.l10n.walletLinkAlreadyImported(
+                      alreadyImportedAccounts.length,
+                    ),
                     child: Column(
                       children: [
                         for (final (index, account)
@@ -602,15 +603,17 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
       progress: MobileOnboardingProgressScope.of(
         context,
       ).at(OnboardingFlow.walletLink, OnboardingStage.contactSelection).value,
-      title: 'Import contacts',
+      title: context.l10n.onboardingStepImportContacts,
       subtitle: TextSpan(
-        text:
-            '${_walletLinkCountLabel(state.contacts.length, 'contact', 'contacts')} found, '
-            '${alreadyImportedContacts.length} already imported.',
+        text: context.l10n.walletLinkContactsReadySubtitle(
+          state.contacts.length,
+          alreadyImportedContacts.length,
+        ),
       ),
-      buttonLabel:
-          'Import ${state.selectedContactCount} contact${state.selectedContactCount == 1 ? '' : 's'}',
-      buttonLoadingLabel: 'Importing...',
+      buttonLabel: context.l10n.walletLinkImportContacts(
+        state.selectedContactCount,
+      ),
+      buttonLoadingLabel: context.l10n.commonImporting,
       buttonEnabled:
           state.selectedAccountCount > 0 || state.selectedContactCount > 0,
       buttonLoading: submitting,
@@ -620,9 +623,12 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
         children: [
           if (groups.isNotEmpty)
             _WalletLinkListSection(
-              title:
-                  '${_walletLinkCountLabel(pendingContacts.length, 'contact', 'contacts')} found',
-              actionLabel: allContactsSelected ? 'Deselect all' : 'Select all',
+              title: context.l10n.walletLinkContactsFound(
+                pendingContacts.length,
+              ),
+              actionLabel: allContactsSelected
+                  ? context.l10n.walletLinkDeselectAll
+                  : context.l10n.walletLinkSelectAll,
               onAction: submitting || state.importableContactCount == 0
                   ? null
                   : allContactsSelected
@@ -665,7 +671,9 @@ class MobileWalletLinkSelectContactsScreen extends ConsumerWidget {
             const SizedBox(height: AppSpacing.base),
           if (alreadyImportedGroups.isNotEmpty)
             _WalletLinkListSection(
-              title: '${alreadyImportedContacts.length} already imported',
+              title: context.l10n.walletLinkAlreadyImported(
+                alreadyImportedContacts.length,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1020,7 +1028,7 @@ class _WalletLinkNothingToImportCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'Nothing to import',
+            context.l10n.walletLinkNothingToImportTitle,
             textAlign: TextAlign.center,
             style: AppTypography.bodyLarge.copyWith(
               color: colors.text.accent,
@@ -1029,7 +1037,7 @@ class _WalletLinkNothingToImportCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            'Everything in this desktop link is already on this phone.',
+            context.l10n.walletLinkNothingToImportBody,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -1308,8 +1316,4 @@ Map<AddressBookNetwork, List<AddressBookContact>> _groupContactsByNetwork(
     grouped.putIfAbsent(contact.network, () => []).add(contact);
   }
   return grouped;
-}
-
-String _walletLinkCountLabel(int count, String singular, String plural) {
-  return '$count ${count == 1 ? singular : plural}';
 }

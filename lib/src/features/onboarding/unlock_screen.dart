@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/input/app_password_input_source.dart';
 import '../../../main.dart' show log;
+import '../../core/l10n/l10n.dart';
 import '../../core/navigation/payment_uri_unlock_claim.dart';
 import '../../core/security/password_policy.dart';
 import '../../core/theme/app_theme.dart';
@@ -29,10 +30,13 @@ class UnlockScreen extends ConsumerStatefulWidget {
   ConsumerState<UnlockScreen> createState() => _UnlockScreenState();
 }
 
+enum _UnlockFailure { openFailed, incorrectPassword }
+
 class _UnlockScreenState extends ConsumerState<UnlockScreen> {
   final _passwordController = TextEditingController();
   bool _isSubmitting = false;
   String? _errorText;
+  _UnlockFailure? _failure;
 
   String? get _passwordPolicyMessage =>
       validateWalletPassword(_passwordController.text);
@@ -60,6 +64,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
     setState(() {
       _isSubmitting = true;
       _errorText = null;
+      _failure = null;
     });
 
     final password = _passwordController.text;
@@ -123,7 +128,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
       if (!mounted) return;
       setState(() {
         _isSubmitting = false;
-        _errorText = "Couldn't open your wallet. Please try again.";
+        _failure = _UnlockFailure.openFailed;
       });
       return;
     }
@@ -133,7 +138,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
       log('UnlockScreen._submit: invalid password');
       setState(() {
         _isSubmitting = false;
-        _errorText = 'Incorrect password. Try again.';
+        _failure = _UnlockFailure.incorrectPassword;
       });
     }
   }
@@ -158,10 +163,20 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
               passwordController: _passwordController,
               autofocus: true,
               canSubmit: _canSubmit,
-              messageText: _errorText ?? _passwordPolicyMessage,
+              messageText:
+                  switch (_failure) {
+                    _UnlockFailure.openFailed =>
+                      context.l10n.onboardingUnlockOpenFailed,
+                    _UnlockFailure.incorrectPassword =>
+                      context.l10n.onboardingUnlockIncorrectPassword,
+                    null => null,
+                  } ??
+                  _errorText ??
+                  _passwordPolicyMessage,
               onChanged: () {
                 setState(() {
                   _errorText = null;
+                  _failure = null;
                 });
               },
               onSubmit: _submit,
@@ -185,7 +200,7 @@ class DesktopUnlockContent extends StatelessWidget {
     this.autofocus = false,
     this.showForgotPassword = true,
     this.reserveForgotPasswordSpace = false,
-    this.descriptionText = 'Enter your password to open Vizor.',
+    this.descriptionText,
     super.key,
   });
 
@@ -198,7 +213,7 @@ class DesktopUnlockContent extends StatelessWidget {
   final bool autofocus;
   final bool showForgotPassword;
   final bool reserveForgotPasswordSpace;
-  final String descriptionText;
+  final String? descriptionText;
 
   static const double cardWidth = 396;
   static const double cardHeight = 509;
@@ -226,7 +241,7 @@ class DesktopUnlockContent extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Welcome back',
+                context.l10n.onboardingUnlockWelcomeBack,
                 style: AppTypography.displayMedium.copyWith(
                   color: colors.text.accent,
                   height: 48 / 45,
@@ -237,7 +252,7 @@ class DesktopUnlockContent extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                descriptionText,
+                descriptionText ?? context.l10n.onboardingUnlockDescription,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: colors.text.accent,
                 ),
@@ -259,8 +274,8 @@ class DesktopUnlockContent extends StatelessWidget {
               child: AppPasswordInput(
                 child: PasswordTextField(
                   key: const ValueKey('unlock_password_field'),
-                  label: 'Password',
-                  hintText: 'Enter password',
+                  label: context.l10n.passwordLabel,
+                  hintText: context.l10n.onboardingEnterPassword,
                   showLabel: false,
                   // Figma Field Type=Secondary on the auth card.
                   surface: AppTextFieldSurface.secondary,
@@ -287,7 +302,7 @@ class DesktopUnlockContent extends StatelessWidget {
                   onPressed: canSubmit ? onSubmit : null,
                   variant: AppButtonVariant.primary,
                   minWidth: _buttonWidth,
-                  child: const Text('Unlock Vizor'),
+                  child: Text(context.l10n.commonUnlockVizor),
                 ),
                 if (showForgotPassword) ...[
                   const SizedBox(height: AppSpacing.s),
@@ -295,7 +310,7 @@ class DesktopUnlockContent extends StatelessWidget {
                     onPressed: onForgotPassword,
                     variant: AppButtonVariant.ghost,
                     minWidth: _buttonWidth,
-                    child: const Text('Forgot password?'),
+                    child: Text(context.l10n.onboardingForgotPassword),
                   ),
                 ] else if (reserveForgotPasswordSpace) ...[
                   const SizedBox(height: AppSpacing.s),

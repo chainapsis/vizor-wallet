@@ -120,6 +120,8 @@ void _clearExitHint(_ExitBackTestRouter testRouter) {
   MobileExitBackGuard.dismissVisibleHint();
 }
 
+const _exitHintMessage = 'Go back again to exit';
+
 void main() {
   tearDown(MobileExitBackGuard.dismissVisibleHint);
 
@@ -147,7 +149,7 @@ void main() {
       reason: 'the press dismissed the card, not the screen under it',
     );
     expect(
-      find.text(MobileExitBackGuard.exitHintMessage),
+      find.text(_exitHintMessage),
       findsNothing,
       reason: 'a press the card consumed must not arm the exit hint',
     );
@@ -156,7 +158,7 @@ void main() {
     // With the card gone the next press behaves exactly as before.
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(find.text(_exitHintMessage), findsOneWidget);
     expect(_systemNavigatorPopCallCount(platformCalls), 0);
     _clearExitHint(testRouter);
   });
@@ -185,7 +187,7 @@ void main() {
     await tester.pump();
     expect(backCalls, 2);
     expect(_systemNavigatorPopCallCount(platformCalls), 0);
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(find.text(_exitHintMessage), findsNothing);
   });
 
   testWidgets('android root back shows a lower exit hint before exiting', (
@@ -202,7 +204,7 @@ void main() {
     final surfaceFinder = find.byKey(
       const ValueKey('mobile_exit_back_hint_surface'),
     );
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(find.text(_exitHintMessage), findsOneWidget);
     expect(surfaceFinder, findsOneWidget);
 
     final screenHeight = tester.getSize(find.byType(MaterialApp)).height;
@@ -214,7 +216,7 @@ void main() {
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
     expect(_systemNavigatorPopCallCount(platformCalls), 1);
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(find.text(_exitHintMessage), findsNothing);
   });
 
   testWidgets('android root back requires the second press inside the window', (
@@ -226,15 +228,15 @@ void main() {
 
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(find.text(_exitHintMessage), findsOneWidget);
 
     await tester.pump(MobileExitBackGuard.confirmationWindow);
     await tester.pump(const Duration(milliseconds: 1));
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(find.text(_exitHintMessage), findsNothing);
 
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(find.text(_exitHintMessage), findsOneWidget);
     _clearExitHint(testRouter);
   });
 
@@ -248,18 +250,18 @@ void main() {
 
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(find.text(_exitHintMessage), findsOneWidget);
 
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     await tester.pump();
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pump();
 
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(find.text(_exitHintMessage), findsNothing);
 
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(find.text(_exitHintMessage), findsOneWidget);
     expect(_systemNavigatorPopCallCount(platformCalls), 0);
     _clearExitHint(testRouter);
   });
@@ -282,7 +284,7 @@ void main() {
 
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(find.text(_exitHintMessage), findsOneWidget);
     expect(_systemNavigatorPopCallCount(platformCalls), 0);
 
     testRouter.exitBackGuard.reset();
@@ -293,7 +295,7 @@ void main() {
 
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(find.text(_exitHintMessage), findsOneWidget);
     expect(_systemNavigatorPopCallCount(platformCalls), 0);
     _clearExitHint(testRouter);
   });
@@ -314,7 +316,7 @@ void main() {
 
     expect(find.text('Detail route'), findsNothing);
     expect(find.text('Home route'), findsOneWidget);
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(find.text(_exitHintMessage), findsNothing);
   });
 
   testWidgets('exit hint follows the resolved app theme', (tester) async {
@@ -370,7 +372,7 @@ void main() {
     await tester.pump();
 
     expect(handledBacks, 1);
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(find.text(_exitHintMessage), findsNothing);
     expect(_systemNavigatorPopCallCount(platformCalls), 0);
   });
 
@@ -399,7 +401,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Migration start route'), findsOneWidget);
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(find.text(_exitHintMessage), findsNothing);
     expect(_systemNavigatorPopCallCount(platformCalls), 0);
   });
 
@@ -419,7 +421,7 @@ void main() {
 
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(find.text(_exitHintMessage), findsOneWidget);
     expect(_systemNavigatorPopCallCount(platformCalls), 0);
 
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
@@ -458,7 +460,7 @@ void main() {
     await tester.pump();
 
     expect(handledBacks, 1);
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(find.text(_exitHintMessage), findsNothing);
     expect(_systemNavigatorPopCallCount(platformCalls), 0);
   });
 
@@ -488,7 +490,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Send review route'), findsOneWidget);
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(find.text(_exitHintMessage), findsNothing);
     expect(_systemNavigatorPopCallCount(platformCalls), 0);
   });
 
@@ -520,7 +522,7 @@ void main() {
       await tester.pump();
 
       expect(handledBacks, 1);
-      expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+      expect(find.text(_exitHintMessage), findsNothing);
       expect(_systemNavigatorPopCallCount(platformCalls), 0);
     },
   );
@@ -541,7 +543,7 @@ void main() {
 
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(find.text(_exitHintMessage), findsOneWidget);
 
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
@@ -564,7 +566,7 @@ void main() {
 
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
     await tester.pump();
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(find.text(_exitHintMessage), findsOneWidget);
     expect(_systemNavigatorPopCallCount(platformCalls), 0);
 
     expect(await testRouter.dispatcher.didPopRoute(), isTrue);
@@ -599,7 +601,7 @@ void main() {
       // everywhere else the root back press goes straight to the exit hint as
       // before.
       expect(handledBacks, 0);
-      expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+      expect(find.text(_exitHintMessage), findsOneWidget);
       _clearExitHint(testRouter);
     },
   );
@@ -615,6 +617,6 @@ void main() {
 
     expect(await testRouter.dispatcher.didPopRoute(), isFalse);
     await tester.pump();
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(find.text(_exitHintMessage), findsNothing);
   });
 }

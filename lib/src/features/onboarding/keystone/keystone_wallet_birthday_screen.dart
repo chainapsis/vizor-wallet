@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../import/desktop_import_navigation.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
@@ -31,8 +32,6 @@ class KeystoneWalletBirthdayScreen extends ConsumerStatefulWidget {
 
 class _KeystoneWalletBirthdayScreenState
     extends ConsumerState<KeystoneWalletBirthdayScreen> {
-  static const _manualHeightErrorText =
-      "That doesn't look like a valid block height.";
   static const _titleWidth = 396.0;
   static const _subtitleWidth = 226.0;
   static const _widgetWidth = 304.0;
@@ -104,7 +103,7 @@ class _KeystoneWalletBirthdayScreenState
       log('KeystoneWalletBirthdayScreen._loadMetadata: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _metadataError = 'Could not load wallet birthday metadata.';
+        _metadataError = context.l10n.onboardingBirthdayMetadataFailed;
       });
     }
   }
@@ -137,7 +136,7 @@ class _KeystoneWalletBirthdayScreenState
       if (!mounted || seq != _estimateSeq) return;
       setState(() {
         _isEstimating = false;
-        _submitError = 'Could not estimate the wallet birthday height.';
+        _submitError = context.l10n.onboardingBirthdayEstimateFailed;
       });
     }
   }
@@ -313,13 +312,13 @@ class _KeystoneWalletBirthdayScreenState
     final text = _manualHeightController.text.trim();
     if (text.isEmpty) return null;
     final parsed = int.tryParse(text);
-    if (parsed == null) return _manualHeightErrorText;
+    if (parsed == null) return context.l10n.keystoneBirthdayInvalidHeight;
     if (parsed < _minimumBirthdayHeight) {
-      return _manualHeightErrorText;
+      return context.l10n.keystoneBirthdayInvalidHeight;
     }
     final maximumHeight = _metadata?.tipHeight;
     if (maximumHeight != null && parsed > maximumHeight) {
-      return _manualHeightErrorText;
+      return context.l10n.keystoneBirthdayInvalidHeight;
     }
     if (_metadataError != null) return _metadataError;
     return null;
@@ -345,17 +344,18 @@ class _KeystoneWalletBirthdayScreenState
     final calendarFirstDate = _calendarFirstDate;
     final calendarLastDate = _calendarLastDate;
     final buttonLabel = switch (_submitPhase) {
-      _KeystoneBirthdaySubmitPhase.stoppingSync => 'Stop syncing...',
-      _KeystoneBirthdaySubmitPhase.importing => 'Importing...',
+      _KeystoneBirthdaySubmitPhase.stoppingSync =>
+        context.l10n.onboardingStopSyncing,
+      _KeystoneBirthdaySubmitPhase.importing => context.l10n.commonImporting,
       _KeystoneBirthdaySubmitPhase.idle =>
         activeTab == KeystoneBirthdayTab.date && _isEstimating
-            ? 'Estimating...'
-            : 'Continue',
+            ? context.l10n.onboardingEstimating
+            : context.l10n.commonContinue,
     };
 
     return KeystoneOnboardingTrailingPane(
       backTarget: OnboardingBackTarget.route(
-        label: KeystoneOnboardingStep.selectAccount.label,
+        label: KeystoneOnboardingStep.selectAccount.label(context.l10n),
         routePath: desktopImportLocation(
           context,
           KeystoneOnboardingStep.selectAccount.routePath,
@@ -393,7 +393,7 @@ class _KeystoneWalletBirthdayScreenState
                           SizedBox(
                             width: _titleWidth,
                             child: Text(
-                              'Around when did you create your wallet?',
+                              context.l10n.onboardingBirthdayTitle,
                               style: AppTypography.displayLarge.copyWith(
                                 fontFamily: 'Young Serif',
                                 fontWeight: FontWeight.w400,
@@ -406,7 +406,7 @@ class _KeystoneWalletBirthdayScreenState
                           SizedBox(
                             width: _subtitleWidth,
                             child: Text(
-                              'It helps us import your wallet faster.',
+                              context.l10n.keystoneBirthdaySubtitle,
                               style: AppTypography.bodyMedium.copyWith(
                                 color: context.colors.text.primary,
                               ),
@@ -491,7 +491,9 @@ class _KeystoneWalletBirthdayScreenState
                         variant: AppButtonVariant.ghost,
                         minWidth: _buttonWidth,
                         trailing: const AppIcon(AppIcons.skip),
-                        child: const Text('I can’t remember'),
+                        child: Text(
+                          context.l10n.onboardingBirthdayCantRemember,
+                        ),
                       ),
                     ],
                   ),
@@ -521,7 +523,7 @@ class _BirthdayTabRow extends StatelessWidget {
         children: [
           _TabLabel(
             iconName: AppIcons.calendar,
-            label: 'Enter the date',
+            label: context.l10n.onboardingBirthdayEnterDate,
             active: activeTab == KeystoneBirthdayTab.date,
             onTap: () => onTabSelected(KeystoneBirthdayTab.date),
             color: colors.text.accent,
@@ -529,7 +531,7 @@ class _BirthdayTabRow extends StatelessWidget {
           const SizedBox(width: AppSpacing.xs),
           _TabLabel(
             iconName: AppIcons.block,
-            label: 'Enter the block height',
+            label: context.l10n.onboardingBirthdayEnterBlockHeight,
             active: activeTab == KeystoneBirthdayTab.blockHeight,
             onTap: () => onTabSelected(KeystoneBirthdayTab.blockHeight),
             color: colors.text.accent,
@@ -635,7 +637,7 @@ class _DatePickerField extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    valueText ?? 'mm/dd/yyyy',
+                    valueText ?? context.l10n.onboardingBirthdayDateHint,
                     style: AppTypography.labelLarge.copyWith(
                       color: valueColor,
                       fontWeight: FontWeight.w400,
@@ -722,7 +724,7 @@ class _BlockHeightField extends StatelessWidget {
               ),
               cursorColor: colors.text.accent,
               decoration: material.InputDecoration.collapsed(
-                hintText: 'Block height',
+                hintText: context.l10n.onboardingBlockHeight,
                 hintStyle: AppTypography.labelLarge.copyWith(
                   color: colors.text.muted,
                   fontWeight: FontWeight.w400,

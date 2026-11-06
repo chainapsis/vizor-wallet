@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import 'mobile_onboarding_progress.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
@@ -64,7 +65,10 @@ class _MobileBiometricsScreenState
       if (!state.availability.usable) {
         if (!mounted) return;
         setState(() => _enabling = false);
-        showAppToast(context, 'Set up $method in your device settings first.');
+        showAppToast(
+          context,
+          context.l10n.onboardingBiometricSetUpFirst(method),
+        );
         return;
       }
       final passcode = ref
@@ -79,7 +83,7 @@ class _MobileBiometricsScreenState
       setState(() => _enabling = false);
       showAppToast(
         context,
-        "Couldn't enable $method. You can try again in settings.",
+        context.l10n.onboardingBiometricEnableFailed(method),
       );
     }
   }
@@ -95,10 +99,8 @@ class _MobileBiometricsScreenState
       showBackButton: false,
       aboveTitle: _BiometricHero(kind: kind),
       // Line breaks match the Figma title/subtitle wraps.
-      title: 'Unlock your wallet\nwith ${kind.onboardingTitleSuffix}',
-      subtitle:
-          'This is an easy and fast way to sign in.\n'
-          'You can switch back to passcode anytime.',
+      title: context.l10n.onboardingBiometricTitle(kind.onboardingTitleSuffix),
+      subtitle: context.l10n.onboardingBiometricSubtitle,
       bottomArea: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -123,7 +125,7 @@ class _MobileBiometricsScreenState
                     giftClaimSetupCompletionLocation(ref, otherwise: '/home'),
                   ),
             child: Text(
-              'Not now',
+              context.l10n.onboardingNotNow,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.primary,
               ),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_layout.dart';
@@ -198,7 +199,7 @@ class _LedgerShieldSigningOverlayState
         return;
       }
       if (work.belowThreshold) {
-        _pauseEarly('The remaining funds are below the shielding threshold.');
+        _pauseEarly(context.l10n.homeLedgerPausedBelowThreshold);
         return;
       }
       _pendingInputs = work.inputCount;
@@ -301,9 +302,7 @@ class _LedgerShieldSigningOverlayState
     }
     if (_network != ref.read(rpcEndpointProvider).networkName ||
         _accountUuid != ref.read(walletProvider).value?.activeAccountUuid) {
-      _pauseEarly(
-        'The selected account or network changed. Return to your wallet.',
-      );
+      _pauseEarly(context.l10n.homeLedgerContextChanged);
       return;
     }
     if (_operationCheckpointed) {
@@ -513,9 +512,7 @@ class _LedgerShieldSigningOverlayState
   void _completeShielding() {
     if (widget.mobile && mounted) {
       if (_sentRounds == 0) {
-        _pauseEarly(
-          'No spendable transparent funds remain. Return to your wallet.',
-        );
+        _pauseEarly(context.l10n.homeLedgerNoFundsRemain);
         return;
       }
       setState(() => _momentComplete = true);
@@ -526,9 +523,7 @@ class _LedgerShieldSigningOverlayState
 
   Future<void> _continueOrComplete() async {
     if (ref.read(ledgerOperationLifecycleProvider).isPaused) {
-      _pauseEarly(
-        'Shielding paused while wallet changes finish. Return to your wallet.',
-      );
+      _pauseEarly(context.l10n.homeLedgerPausedWalletChanges);
       return;
     }
     final rust_sync.LedgerShieldingProgress work;
@@ -536,9 +531,7 @@ class _LedgerShieldSigningOverlayState
       work = await _readProgress();
     } catch (error) {
       if (!mounted || _cancelled) return;
-      _pauseEarly(
-        'Round $_round was sent, but the remaining funds could not be checked. Return to your wallet and try again after sync.',
-      );
+      _pauseEarly(context.l10n.homeLedgerRoundSentUnchecked(_round));
       return;
     }
     if (!mounted || _cancelled) return;
@@ -547,15 +540,11 @@ class _LedgerShieldSigningOverlayState
       return;
     }
     if (work.belowThreshold) {
-      _pauseEarly(
-        'Round $_round was sent. The remaining funds are below the shielding threshold.',
-      );
+      _pauseEarly(context.l10n.homeLedgerRoundSentBelowThreshold(_round));
       return;
     }
     if (_pendingInputs == null || work.inputCount >= _pendingInputs!) {
-      _pauseEarly(
-        'Round $_round was sent, but no reduction in spendable inputs could be confirmed. Wait for sync before shielding again.',
-      );
+      _pauseEarly(context.l10n.homeLedgerRoundSentNoReduction(_round));
       return;
     }
     setState(() {
@@ -621,15 +610,12 @@ class _LedgerShieldSigningOverlayState
     final upgradeHold = networkUpgradeHoldMessage(message ?? '');
     if (upgradeHold != null) return upgradeHold;
     if (status == 'broadcast_unknown') {
-      return message ??
-          'The shield transaction may have reached the network. Check activity before trying again.';
+      return message ?? context.l10n.homeLedgerBroadcastUnknown;
     }
     if (status == 'broadcasted_storage_failed') {
-      return message ??
-          'The shield transaction reached the network but was not stored locally. Do not try again until sync confirms it.';
+      return message ?? context.l10n.homeLedgerBroadcastNotStored;
     }
-    return message ??
-        'The shield transaction status is uncertain. Check activity before trying again.';
+    return message ?? context.l10n.homeShieldStatusUncertain;
   }
 
   Future<LedgerSignedOperationMetadata?> _findExistingShieldOperation(
@@ -662,7 +648,7 @@ class _LedgerShieldSigningOverlayState
     if (failure == LedgerRequestFailure.requestRejected &&
         classifyLedgerError(error) == LedgerFailureKind.hostRequestRejected &&
         _round > 1) {
-      return 'Your Ledger couldn’t accept this approval. Earlier approvals were already sent.';
+      return context.l10n.homeLedgerApprovalNotAccepted;
     }
     if (guidance != null) return guidance.message;
     final lower = error.toString().toLowerCase();
@@ -670,25 +656,25 @@ class _LedgerShieldSigningOverlayState
       ref.read(rpcEndpointProvider).networkName,
     );
     if (failure == LedgerRequestFailure.declined) {
-      return 'The shield transaction was rejected on your Ledger.';
+      return context.l10n.homeLedgerRejected;
     }
     final usb = ledgerUsbErrorMessage(error, appInstruction: appInstruction);
     if (usb != null) return usb;
     if (lower.contains('sync')) {
-      return 'Sync the wallet before shielding transparent balance.';
+      return context.l10n.homeShieldErrorSyncFirst;
     }
     if (lower.contains('threshold') ||
         lower.contains('too small') ||
         lower.contains('no transparent funds')) {
-      return 'Transparent balance is too small to shield after fees.';
+      return context.l10n.homeShieldErrorTooSmall;
     }
     if (lower.contains('sapling')) {
-      return 'This Ledger preview does not support Sapling inputs or outputs.';
+      return context.l10n.homeLedgerNoSapling;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return 'Shield transaction could not be broadcast.';
+      return context.l10n.homeShieldErrorBroadcast;
     }
-    return 'Ledger shielding could not be completed.';
+    return context.l10n.homeLedgerShieldingFailed;
   }
 
   Future<void> _cancelToHome() async {
@@ -702,7 +688,7 @@ class _LedgerShieldSigningOverlayState
         _cancelled = false;
         _canRetry = false;
         _phase = LedgerSigningModalPhase.failed;
-        _error = 'Could not finish cancelling. Please try again.';
+        _error = context.l10n.homeShieldCancelFailed;
       });
       return;
     }
@@ -730,7 +716,7 @@ class _LedgerShieldSigningOverlayState
       roundNumber: _round,
       roundCount: _roundCount,
       roundFeeNotice: !widget.mobile && _roundCount > 1
-          ? 'Each approval creates a separate transaction with its own network fee.'
+          ? context.l10n.homeLedgerRoundFeeNotice
           : null,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
@@ -741,21 +727,23 @@ class _LedgerShieldSigningOverlayState
               pairingRecovery: _deviceGuidance?.pairingRecovery ?? false,
               isError: !_pausedEarly,
               title: _pausedEarly
-                  ? 'Shielding paused'
+                  ? context.l10n.homeLedgerPausedTitle
                   : upgradeHold
                   ? kNetworkUpgradeHoldActionLabel
-                  : 'Ledger signing failed',
-              statusLabel: _pausedEarly ? 'Inputs remaining' : 'Action needed',
-              message: _error ?? 'Ledger shielding could not be completed.',
+                  : context.l10n.homeLedgerSigningFailedTitle,
+              statusLabel: _pausedEarly
+                  ? context.l10n.homeLedgerInputsRemaining
+                  : context.l10n.homeLedgerActionNeeded,
+              message: _error ?? context.l10n.homeLedgerShieldingFailed,
               showDeviceAppPrompt:
                   !_pausedEarly &&
                   (_deviceGuidance?.showDeviceAppPrompt ?? false),
               showConnectionPicker: !upgradeHold,
-              actionLabel: _canRetry ? 'Try again' : null,
+              actionLabel: _canRetry ? context.l10n.commonTryAgain : null,
             )
           : null,
       onCancel: canLeave ? () => unawaited(_cancelToHome()) : null,
-      cancelLabel: 'Back to wallet',
+      cancelLabel: context.l10n.homeShieldBackToWallet,
       onFailureAction:
           !_cancelled && _phase == LedgerSigningModalPhase.failed && _canRetry
           ? () => unawaited(_retry())
@@ -787,17 +775,17 @@ class _LedgerShieldSigningOverlayState
                     : null,
                 showResultAmount: _shieldedTotalKnown,
                 title: !_momentStarted
-                    ? 'Transparent Balance'
+                    ? context.l10n.homeShieldBalanceTitle
                     : _momentComplete
-                    ? 'Shielded successfully'
+                    ? context.l10n.homeShieldSucceededTitle
                     : broadcasting
-                    ? 'Shielding your balance…'
-                    : 'Shield with Ledger',
+                    ? context.l10n.homeShieldingBalance
+                    : context.l10n.homeLedgerShieldTitle,
                 focusChild: _momentStarted && !_momentComplete && !broadcasting
                     ? LedgerInlinePresentation(
                         closeLabel: _phase == LedgerSigningModalPhase.failed
-                            ? 'Close'
-                            : 'Cancel shielding',
+                            ? context.l10n.commonClose
+                            : context.l10n.homeLedgerCancelShielding,
                         child: modal,
                       )
                     : null,

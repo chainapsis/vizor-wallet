@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/input/app_password_input_source.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
@@ -15,9 +16,8 @@ import 'account_modal_card.dart';
 
 enum AccountRemoveProgress { stoppingSync, removingAccount }
 
-typedef AccountRemoveProgressCallback = void Function(
-  AccountRemoveProgress progress,
-);
+typedef AccountRemoveProgressCallback =
+    void Function(AccountRemoveProgress progress);
 
 class AccountRemoveModal extends StatefulWidget {
   const AccountRemoveModal({
@@ -79,29 +79,24 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
   String? get _removalBlockMessage {
     if (widget.checkingPendingSwaps) {
-      return 'Checking this account for active swaps before removal.';
+      return context.l10n.accountsRemoveCheckingSwaps;
     }
     if (widget.pendingSwapCheckFailed) {
-      return "Couldn't check this account for active swaps. Try again before removing it.";
+      return context.l10n.accountsRemoveSwapsCheckFailed;
     }
     if (widget.pendingSwapCount > 0) {
-      final plural = widget.pendingSwapCount == 1 ? 'swap' : 'swaps';
-      return 'This account has ${widget.pendingSwapCount} active $plural. '
-          'Complete or remove them from swap activity before removing this account.';
+      return context.l10n.accountsRemoveBlockedBySwaps(widget.pendingSwapCount);
     }
     if (widget.checkingReceivingGiftCards) {
-      return 'Checking this account for incoming gift cards before removal.';
+      return context.l10n.accountsRemoveCheckingGiftCards;
     }
     if (widget.receivingGiftCardCheckFailed) {
-      return "Couldn't check this account for incoming gift cards. Try again before removing it.";
+      return context.l10n.accountsRemoveGiftCardsCheckFailed;
     }
     if (widget.receivingGiftCardCount <= 0) return null;
-    if (widget.receivingGiftCardCount == 1) {
-      return 'This account is receiving a gift card. '
-          'Wait for it to finish before removing this account.';
-    }
-    return 'This account is receiving ${widget.receivingGiftCardCount} gift cards. '
-        'Wait for them to finish before removing this account.';
+    return context.l10n.accountsRemoveBlockedByGiftCards(
+      widget.receivingGiftCardCount,
+    );
   }
 
   @override
@@ -140,7 +135,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _passwordError = "Couldn't check your password. Please try again.";
+        _passwordError = context.l10n.passwordCheckFailed;
         _isSubmitting = false;
         _submitPhase = null;
       });
@@ -150,7 +145,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     if (!mounted) return;
     if (!isPasswordValid) {
       setState(() {
-        _passwordError = 'Incorrect password. Please try again.';
+        _passwordError = context.l10n.passwordIncorrect;
         _isSubmitting = false;
         _submitPhase = null;
       });
@@ -171,8 +166,8 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
       if (!mounted) return;
       setState(() {
         _submitError = widget.isLastAccount
-            ? "Couldn't reset Vizor."
-            : "Couldn't remove account.";
+            ? context.l10n.accountsResetFailed
+            : context.l10n.accountsRemoveFailed;
       });
     } finally {
       if (mounted) {
@@ -251,8 +246,8 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
             height: _fieldHeight,
             child: AppPasswordInput(
               child: PasswordTextField(
-                label: 'Password',
-                hintText: 'Enter your password',
+                label: context.l10n.passwordLabel,
+                hintText: context.l10n.accountsRemovePasswordHint,
                 leadingSlotWidth: 32,
                 trailingSlotWidth: 40,
                 inputHorizontalPadding: AppSpacing.s,
@@ -303,28 +298,31 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
   String get _bodyText {
     if (widget.isLastAccount) {
-      return 'Removing this account will completely reset the Vizor app. '
-          'This means deleting all accounts and requiring you to import '
-          'accounts again.\n'
-          'Unshared gift card links will also be permanently lost.\n'
-          'This cannot be undone.';
+      return context.l10n.accountsResetModalBody;
     }
-    return "Are you sure you want to remove this account? "
-        "This action can't be reverted.\n"
-        'You will have to re-import your account.';
+    return context.l10n.accountsRemoveModalBody;
   }
 
   String get _submitButtonLabel {
     if (!_isSubmitting) {
-      return widget.isLastAccount ? 'Reset Vizor' : 'Remove';
+      return widget.isLastAccount
+          ? context.l10n.commonResetVizor
+          : context.l10n.accountsRemoveConfirm;
     }
 
     return switch (_submitPhase) {
-      _AccountRemoveSubmitPhase.checkingPassword => 'Checking password...',
-      _AccountRemoveSubmitPhase.stoppingSync => 'Stopping sync...',
+      _AccountRemoveSubmitPhase.checkingPassword =>
+        context.l10n.accountsRemoveCheckingPassword,
+      _AccountRemoveSubmitPhase.stoppingSync =>
+        context.l10n.accountsRemoveStoppingSync,
       _AccountRemoveSubmitPhase.removingAccount =>
-        widget.isLastAccount ? 'Resetting...' : 'Removing account...',
-      null => widget.isLastAccount ? 'Resetting...' : 'Removing account...',
+        widget.isLastAccount
+            ? context.l10n.accountsResetting
+            : context.l10n.accountsRemoving,
+      null =>
+        widget.isLastAccount
+            ? context.l10n.accountsResetting
+            : context.l10n.accountsRemoving,
     };
   }
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -155,7 +156,7 @@ class _LedgerDesktopConnectModalState
           generation,
           const LedgerMobileException(
             LedgerMobileFailure.permissionDenied,
-            'Allow Bluetooth access for Vizor in System Settings.',
+            'Allow Bluetooth access for Vizor in System Settings.', // l10n-ignore: exception message, not shown directly
           ),
         );
         return;
@@ -270,19 +271,19 @@ class _LedgerDesktopConnectModalState
       _accessRecovery = guidance?.bluetoothRecovery ?? false;
       _error = _declined
           ? _declinedStep == 1
-                ? 'Opening Zcash was declined on Ledger. Try again when you’re ready.'
-                : 'Sharing was declined on Ledger. Try again when you’re ready.'
+                ? context.l10n.ledgerBleDeclinedOpen
+                : context.l10n.ledgerBleDeclinedShare
           : guidance?.message ??
                 (error is LedgerAppReadinessException
                     ? error.message
                     : _bluetooth
-                    ? 'Vizor could not read this Ledger account. Try again.'
+                    ? context.l10n.ledgerBleReadFailedTryAgain
                     : ledgerUsbErrorMessage(
                             error,
                             appInstruction:
-                                'Open the Zcash app, then try again.',
+                                context.l10n.ledgerOpenZcashThenTryAgain,
                           ) ??
-                          'Vizor could not read this Ledger account. Reconnect Ledger with a USB cable, unlock it with your PIN, and open the Zcash app. Then try again.');
+                          context.l10n.ledgerBleReadFailedUsb);
     });
   }
 
@@ -318,7 +319,7 @@ class _LedgerDesktopConnectModalState
         _cleanupFailed = true;
         _accessRecovery = false;
         _phase = _Phase.failed;
-        _error = 'Could not finish cleanup. Try again.';
+        _error = context.l10n.ledgerCleanupFailed;
       });
     }
   }
@@ -330,7 +331,7 @@ class _LedgerDesktopConnectModalState
             variant: AppButtonVariant.ghost,
             minWidth: kAppModalButtonMinWidth,
             onPressed: () => unawaited(_finish()),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
         )
       : AppModalActions(
@@ -367,11 +368,13 @@ class _LedgerDesktopConnectModalState
   Widget _content(LedgerAppReadinessState readiness) {
     if (_phase == _Phase.cancelling) {
       return LedgerModalContent(
-        title: _stoppingSearch ? 'Stopping search' : 'Cancelling request',
+        title: _stoppingSearch
+            ? context.l10n.ledgerStoppingSearch
+            : context.l10n.ledgerCancellingRequest,
         child: _pending(
           _stoppingSearch
-              ? 'Returning to connection options…'
-              : 'Keep Ledger connected until the current request is cancelled.',
+              ? context.l10n.ledgerReturningToOptions
+              : context.l10n.ledgerKeepConnectedUntilCancelled,
         ),
       );
     }
@@ -380,7 +383,7 @@ class _LedgerDesktopConnectModalState
         service: widget.service,
         onRetry: _search,
         onClose: () => unawaited(_finish()),
-        retryLabel: 'Find Ledger',
+        retryLabel: context.l10n.ledgerFind,
         builder: (context, model) => LedgerModalContent(
           title: model.title,
           onBack: () => unawaited(_finish()),
@@ -390,7 +393,7 @@ class _LedgerDesktopConnectModalState
                     size: AppButtonSize.mediumLarge,
                     minWidth: kAppModalButtonMinWidth,
                     onPressed: model.onAction,
-                    child: const Text('Close'),
+                    child: Text(context.l10n.commonClose),
                   ),
                 )
               : _footer(label: model.label, action: model.onAction),
@@ -408,20 +411,18 @@ class _LedgerDesktopConnectModalState
     final failed = _phase == _Phase.failed;
     if (_choosing && !failed) {
       return LedgerModalContent(
-        title: 'Find Ledger',
-        identity: 'Bluetooth connection',
+        title: context.l10n.ledgerFind,
+        identity: context.l10n.ledgerBluetoothConnection,
         onBack: () => unawaited(_finish()),
         footer: _phase == _Phase.empty
-            ? _footer(label: 'Search again', action: _search)
+            ? _footer(label: context.l10n.ledgerSearchAgain, action: _search)
             : _footer(),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (_phase == _Phase.empty)
-              _message(
-                'No Ledger found. Unlock Ledger, enable Bluetooth and keep it nearby. Then search again.',
-              )
+              _message(context.l10n.ledgerNoneFoundDesktop)
             else ...[
               for (final device in _devices)
                 Padding(
@@ -446,13 +447,11 @@ class _LedgerDesktopConnectModalState
                   ),
                 ),
               if (_phase == _Phase.preparing) ...[
-                _pending('Checking Bluetooth access…'),
+                _pending(context.l10n.ledgerCheckingBluetoothAccess),
                 const SizedBox(height: AppSpacing.s),
-                _message(
-                  'macOS may ask for Bluetooth access. If prompted, allow access for Vizor.',
-                ),
+                _message(context.l10n.ledgerMacosBluetoothPrompt),
               ] else if (_discovering || _phase == _Phase.scanning)
-                _pending('Searching for nearby Ledgers…'),
+                _pending(context.l10n.ledgerSearchingNearby),
             ],
           ],
         ),
@@ -469,14 +468,18 @@ class _LedgerDesktopConnectModalState
                   ? 2
                   : _resumingStep ?? 1);
     return LedgerModalContent(
-      title: procedure ? 'Connect Ledger' : 'Could not connect Ledger',
+      title: procedure
+          ? context.l10n.onboardingConnectLedger
+          : context.l10n.ledgerCouldNotConnect,
       identity:
-          '${_device == null ? 'Ledger' : ledgerDeviceLabel(_device!)} · ${_bluetooth ? 'Bluetooth' : 'USB'}',
+          '${_device == null ? 'Ledger' /* l10n-ignore: product name */ : ledgerDeviceLabel(_device!)} · ${_bluetooth ? context.l10n.ledgerTransportBluetooth : context.l10n.ledgerTransportUsb}',
       onBack: () => unawaited(_finish(reselect: _device != null)),
-      backLabel: 'Choose another Ledger',
+      backLabel: context.l10n.ledgerChooseAnother,
       footer: failed
           ? _footer(
-              label: !_cleanupFailed && !_retryable ? 'Back' : 'Try again',
+              label: !_cleanupFailed && !_retryable
+                  ? context.l10n.commonBack
+                  : context.l10n.commonTryAgain,
               action: _cleanupFailed
                   ? () => unawaited(_finish(reselect: _reselectAfterCleanup))
                   : !_retryable
@@ -492,27 +495,29 @@ class _LedgerDesktopConnectModalState
               currentStep: current,
               steps: [
                 LedgerStep(
-                  'Connect Ledger',
+                  context.l10n.onboardingConnectLedger,
                   message: current == 0
-                      ? 'Keep your Ledger nearby and unlocked, with Bluetooth turned on.'
+                      ? context.l10n.ledgerKeepNearbyUnlocked
                       : null,
                   busy: current == 0 && !failed,
                 ),
                 LedgerStep(
-                  'Open Zcash',
+                  context.l10n.ledgerStepOpenZcash,
                   message: current == 1
                       ? _declinedStep == 1
                             ? _error
                             : opening
-                            ? 'Confirm opening Zcash on Ledger.'
-                            : 'Vizor is checking the Zcash app.'
+                            ? context.l10n.ledgerConfirmOpeningZcash
+                            : context.l10n.ledgerVizorCheckingZcash
                       : null,
-                  note: current == 1 && !failed ? 'Keep Zcash open.' : null,
+                  note: current == 1 && !failed
+                      ? context.l10n.ledgerKeepZcashOpen
+                      : null,
                   busy: current == 1 && !failed,
                   requiresDeviceAction: opening && !failed,
                 ),
                 LedgerStep(
-                  'Approve viewing key',
+                  context.l10n.ledgerStepApproveViewingKey,
                   message: _declinedStep == 2
                       ? _error
                       : ledgerViewingKeyApprovalMessage(

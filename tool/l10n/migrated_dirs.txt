@@ -1,3 +1,13 @@
-# Directories whose user-facing strings live in lib/l10n ARB files.
+# Directories (or single files) whose user-facing strings live in lib/l10n ARB files.
 # test/l10n/l10n_gates_test.dart fails when one of them gains a literal.
 # Add a directory here in the change that finishes moving its strings.
+lib/app.dart
+lib/src/core/layout
+lib/src/core/privacy
+lib/src/core/widgets/mobile
+lib/src/features/accounts
+lib/src/features/home/providers
+lib/src/features/home/screens
+lib/src/features/home/widgets
+lib/src/features/onboarding
+lib/src/features/settings

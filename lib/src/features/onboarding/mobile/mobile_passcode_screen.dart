@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/feedback/app_haptics.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
@@ -74,7 +75,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
   var _phase = _PasscodePhase.create;
   var _entry = '';
   String? _firstPasscode;
-  String? _error;
+  OnboardingSubmitError? _error;
   final _submission = AccountSetupSubmission();
 
   void _onDigit(int digit) {
@@ -111,7 +112,9 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
             _entry = '';
             _firstPasscode = null;
             _phase = _PasscodePhase.create;
-            _error = "Passcodes didn't match. Try again.";
+            _error = OnboardingSubmitError.localized(
+              (l10n) => l10n.passcodesDidNotMatch,
+            );
           });
         }
       case _PasscodePhase.submitting:
@@ -129,9 +132,10 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         await _submission.run(ref, () => onConfirmed(passcode));
       } catch (error) {
         if (mounted) {
-          _error = _submission.requiresRecovery
-              ? 'Setup interrupted. Retry to recover your wallet.'
-              : onboardingSubmitErrorMessage(error);
+          _error = OnboardingSubmitError.fromError(
+            error,
+            requiresRecovery: _submission.requiresRecovery,
+          );
         }
       }
       if (!mounted) return;
@@ -162,9 +166,10 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
       } catch (error, stack) {
         log('MobilePasscode: account setup failed: $error\n$stack');
         if (mounted) {
-          _error = _submission.requiresRecovery
-              ? 'Setup interrupted. Retry to recover your wallet.'
-              : onboardingSubmitErrorMessage(error);
+          _error = OnboardingSubmitError.fromError(
+            error,
+            requiresRecovery: _submission.requiresRecovery,
+          );
         }
       }
       if (!mounted) return;
@@ -267,7 +272,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         _phase = _PasscodePhase.create;
         _entry = '';
         _firstPasscode = null;
-        _error = onboardingSubmitErrorMessage(e);
+        _error = OnboardingSubmitError.text(onboardingSubmitErrorMessage(e));
       });
     }
   }
@@ -280,10 +285,10 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     final canNavigateBack =
         widget.onBack != null || Navigator.of(context).canPop();
     final subtitle = isSubmitting
-        ? 'Setting up your wallet...'
+        ? context.l10n.onboardingPasscodeSettingUp
         : isConfirm
-        ? 'Re-enter your passcode.'
-        : '6 digits length';
+        ? context.l10n.onboardingPasscodeReEnter
+        : context.l10n.passcodeSixDigits;
 
     // A custom body rather than MobileOnboardingStepScaffold: the keypad is
     // pinned at the bottom and the dots + error are centred in the gap
@@ -324,12 +329,14 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
               ),
               Expanded(
                 child: AdaptivePasscodeLayout(
-                  title: isConfirm ? 'Confirm Passcode' : 'Create Passcode',
+                  title: isConfirm
+                      ? context.l10n.passcodeConfirmTitle
+                      : context.l10n.onboardingPasscodeCreateTitle,
                   subtitle: subtitle,
                   prompt: PasscodePromptField(
                     length: kMobilePasscodeLength,
                     filled: _entry.length,
-                    error: _error,
+                    error: _error?.resolve(context.l10n),
                     minGap: 0,
                   ),
                   keypad: PasscodeNumpad(
@@ -359,8 +366,10 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                               children: [
                                 Text(
                                   isConfirm
-                                      ? 'Confirm Passcode'
-                                      : 'Create Passcode',
+                                      ? context.l10n.passcodeConfirmTitle
+                                      : context
+                                            .l10n
+                                            .onboardingPasscodeCreateTitle,
                                   textAlign: TextAlign.center,
                                   style: AppTypography.displayLarge.copyWith(
                                     color: colors.text.accent,
@@ -384,7 +393,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                                   child: PasscodePromptField(
                                     length: kMobilePasscodeLength,
                                     filled: _entry.length,
-                                    error: _error,
+                                    error: _error?.resolve(context.l10n),
                                     minGap: 0,
                                   ),
                                 ),
@@ -414,12 +423,12 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                                         setState(() {
                                           _phase = _PasscodePhase.create;
                                           _error =
-                                              "Couldn't resume setup. Please try again.";
+                                              OnboardingSubmitError.resumeFailed();
                                         });
                                       }
                                     }
                                   },
-                            child: const Text('Retry setup'),
+                            child: Text(context.l10n.onboardingRetrySetup),
                           )
                         else
                           PasscodeNumpad(

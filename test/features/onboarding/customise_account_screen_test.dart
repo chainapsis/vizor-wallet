@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:flutter/services.dart'
     show FontLoader, LogicalKeyboardKey, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -239,7 +240,12 @@ void main() {
   setUpAll(_loadAppFonts);
 
   test('customise account keeps its route and sidebar label', () {
-    expect(OnboardingStep.customiseAccount.label, 'Customise wallet');
+    expect(
+      OnboardingStep.customiseAccount.label(
+        lookupAppLocalizations(const Locale('en')),
+      ),
+      'Customise wallet',
+    );
     expect(
       OnboardingStep.customiseAccount.routePath,
       '/onboarding/customise-account',

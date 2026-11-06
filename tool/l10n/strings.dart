@@ -7,7 +7,8 @@
 //   fvm dart run tool/l10n/strings.dart check
 //       Fails when a directory listed in tool/l10n/migrated_dirs.txt has a
 //       user-facing literal. A literal that must stay put carries a trailing
-//       `// l10n-ignore: <reason>` comment on its line.
+//       `// l10n-ignore: <reason>` comment on its line; a file of data that is
+//       never translated starts a line with `// l10n-ignore-file: <reason>`.
 //
 // The scan is syntactic, so "likely" literals include some false positives;
 // "slot" literals sit in a widget text slot and are user-facing.
@@ -23,6 +24,7 @@ const _roots = ['lib/src', 'lib/app.dart'];
 const _skipDirs = ['lib/src/rust/', 'lib/src/generated/'];
 const _migratedDirsFile = 'tool/l10n/migrated_dirs.txt';
 const _ignoreMarker = 'l10n-ignore';
+final _ignoreFileMarker = RegExp(r'^// l10n-ignore-file: \S', multiLine: true);
 
 /// Named arguments that render their value as text.
 const _textSlots = {
@@ -228,6 +230,7 @@ class _Visitor extends RecursiveAstVisitor<void> {
 }
 
 List<Finding> scanSource(String path, String source) {
+  if (_ignoreFileMarker.hasMatch(source)) return const [];
   final unit = parseString(
     content: source,
     featureSet: FeatureSet.latestLanguageVersion(),

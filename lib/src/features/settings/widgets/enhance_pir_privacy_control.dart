@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/config/private_transparent_recovery_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'network_privacy_control.dart';
@@ -59,7 +60,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                         children: [
                           Flexible(
                             child: Text(
-                              'Private queries',
+                              context.l10n.settingsPrivateQueriesLabel,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: AppTypography.labelLarge.copyWith(
@@ -75,7 +76,9 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        enabled ? 'On' : 'Off',
+                        enabled
+                            ? context.l10n.settingsStatusOn
+                            : context.l10n.settingsStatusOff,
                         key: const ValueKey('settings_enhance_pir_status'),
                         style: AppTypography.labelLarge.copyWith(
                           color: enabled
@@ -92,7 +95,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                   key: const ValueKey('settings_enhance_pir_toggle'),
                   trackKey: const ValueKey('settings_enhance_pir_toggle_track'),
                   enabled: enabled,
-                  semanticsLabel: 'Private queries',
+                  semanticsLabel: context.l10n.settingsPrivateQueriesLabel,
                   onToggle: onToggle,
                 ),
               ],

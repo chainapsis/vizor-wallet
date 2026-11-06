@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/feedback/app_haptics.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
@@ -228,7 +229,7 @@ class PasscodeNumpad extends StatelessWidget {
         unawaited(AppHaptics.digit());
         onDigit(digit);
       },
-      label: 'Digit $digit',
+      label: context.l10n.onboardingPasscodeDigitSemantics(digit),
     );
 
     final helpKey = onHelp == null

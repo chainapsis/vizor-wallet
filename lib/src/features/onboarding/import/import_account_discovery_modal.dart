@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -191,7 +192,7 @@ class _ImportAccountDiscoveryModalState
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
-                    'Additional accounts found',
+                    context.l10n.onboardingDiscoveryTitle,
                     style: AppTypography.bodyLarge.copyWith(
                       color: colors.text.accent,
                       fontWeight: FontWeight.w500,
@@ -204,7 +205,7 @@ class _ImportAccountDiscoveryModalState
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
               child: Text(
-                'Choose the additional accounts to import.',
+                context.l10n.onboardingDiscoverySubtitle,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -267,7 +268,7 @@ class _ImportAccountDiscoveryModalState
                 'import_account_discovery_confirm_button',
               ),
               onCancel: widget.onCancel,
-              actionLabel: 'Import',
+              actionLabel: context.l10n.onboardingImport,
               onAction: canConfirm ? _confirm : null,
             ),
           ],
@@ -436,7 +437,7 @@ class _TransparentBalancePreviewLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final balanceText = switch (state.status) {
-      _TransparentBalanceStatus.loading => 'Loading',
+      _TransparentBalanceStatus.loading => context.l10n.onboardingLoading,
       _TransparentBalanceStatus.failed => '-',
       _TransparentBalanceStatus.loaded => ZecAmount.fromZatoshi(
         state.zatoshi ?? BigInt.zero,
@@ -454,7 +455,7 @@ class _TransparentBalancePreviewLabel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Text(
-          'Transparent',
+          context.l10n.poolTransparent,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.end,

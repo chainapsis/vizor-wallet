@@ -213,8 +213,10 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
 - `test/l10n/l10n_gates_test.dart` checks sorted keys, placeholders, URLs,
   numbers and `lib/l10n/glossary.yaml`, and fails when a directory listed in
   `tool/l10n/migrated_dirs.txt` gains a hardcoded string.
-  `fvm dart run tool/l10n/strings.dart list <dir>` lists what is left to move.
-  Translation rules live in `docs/i18n/`.
+  `fvm dart run tool/l10n/strings.dart list <dir>` lists what is left to move;
+  `docs/i18n/extracting-strings.md` has the key naming, what stays a literal
+  (`// l10n-ignore:`), and the finishing steps. Translation rules live in
+  `docs/i18n/`.
 - Korean is edited in `lib/l10n/source/app_ko.arb`. Regenerate
   `lib/l10n/app_ko.arb` with `fvm dart run tool/l10n/korean_arb.dart`; it adds
   invisible word joiners so Flutter breaks Korean lines between words, not

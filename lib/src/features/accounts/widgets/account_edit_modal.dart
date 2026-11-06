@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/account_name_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -115,7 +116,7 @@ class _AccountEditModalState extends State<AccountEditModal> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _submitError = "Couldn't update account.";
+        _submitError = context.l10n.accountsEditFailed;
       });
     } finally {
       if (mounted) {
@@ -149,8 +150,8 @@ class _AccountEditModalState extends State<AccountEditModal> {
                 ? _fieldHeight
                 : _fieldWithMessageHeight,
             child: AppTextField(
-              label: 'Account name',
-              hintText: '1-20 characters',
+              label: context.l10n.accountNameLabel,
+              hintText: context.l10n.accountsEditNameHint,
               controller: _controller,
               autofocus: true,
               enabled: !_isSubmitting,
@@ -166,7 +167,9 @@ class _AccountEditModalState extends State<AccountEditModal> {
           const SizedBox(height: AppSpacing.md),
           AccountModalActions(
             onCancel: _isSubmitting ? null : widget.onCancel,
-            actionLabel: _isSubmitting ? 'Updating...' : 'Update',
+            actionLabel: _isSubmitting
+                ? context.l10n.commonUpdating
+                : context.l10n.commonUpdate,
             onAction: _canUpdate ? _submit : null,
           ),
         ],
@@ -192,7 +195,7 @@ class _EditableAccountAvatar extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: onPressed != null,
-      label: 'Change profile picture',
+      label: context.l10n.profilePictureChange,
       child: MouseRegion(
         cursor: onPressed == null
             ? SystemMouseCursors.basic

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../import/desktop_import_navigation.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
@@ -60,10 +61,14 @@ class LedgerOnboardingShell extends ConsumerWidget {
           for (final step in steps)
             OnboardingSidebarStepData(
               label: switch (step) {
-                LedgerOnboardingStep.connect => 'Connect Ledger',
-                LedgerOnboardingStep.birthday => 'Wallet Birthday Height',
-                LedgerOnboardingStep.setPassword => 'Set Password',
-                LedgerOnboardingStep.customiseAccount => 'Customise wallet',
+                LedgerOnboardingStep.connect =>
+                  context.l10n.onboardingConnectLedger,
+                LedgerOnboardingStep.birthday =>
+                  context.l10n.onboardingStepWalletBirthdayHeight,
+                LedgerOnboardingStep.setPassword =>
+                  context.l10n.onboardingStepSetPassword,
+                LedgerOnboardingStep.customiseAccount =>
+                  context.l10n.onboardingStepCustomiseWallet,
               },
               iconName: switch (step) {
                 LedgerOnboardingStep.connect => AppIcons.ledger,
@@ -215,10 +220,10 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     final appInstruction = ledgerZcashAppOpenErrorInstruction(networkName);
     final failure = LedgerRequestFailure.fromError(error);
     if (failure == LedgerRequestFailure.declined) {
-      return 'The viewing-key request was rejected on your Ledger.';
+      return context.l10n.ledgerErrorViewingKeyRejected;
     }
     if (failure == LedgerRequestFailure.deviceLocked) {
-      return 'Unlock your Ledger. $appInstruction';
+      return context.l10n.ledgerErrorUnlock(appInstruction);
     }
     final guidance = ledgerFailureGuidance(
       error,
@@ -226,12 +231,12 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     );
     if (guidance != null) return guidance.message;
     if (failure == LedgerRequestFailure.transportLost) {
-      return 'Connect and unlock your Ledger. $appInstruction';
+      return context.l10n.ledgerErrorConnectAndUnlock(appInstruction);
     }
     if (lower.contains('already') || lower.contains('duplicate')) {
-      return 'This Ledger account is already in Vizor.';
+      return context.l10n.ledgerErrorAlreadyAdded;
     }
-    return 'Vizor could not read this Ledger account. $appInstruction Then try again.';
+    return context.l10n.ledgerErrorCannotReadWithInstruction(appInstruction);
   }
 
   Widget _transportChoice(LedgerConnectionTransport transport) {
@@ -271,7 +276,9 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
-                    bluetooth ? 'Bluetooth' : 'USB',
+                    bluetooth
+                        ? context.l10n.ledgerTransportBluetooth
+                        : context.l10n.ledgerTransportUsb,
                     style: AppTypography.bodyMediumStrong,
                   ),
                 ),
@@ -319,7 +326,8 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
       return KeyEventResult.ignored;
     },
     child: AppTooltip(
-      message: 'Nano X · Flex · Stax · Nano Gen5',
+      message:
+          'Nano X · Flex · Stax · Nano Gen5', // l10n-ignore: Ledger model names
       preferBelow: true,
       tapToShow: true,
       child: Builder(
@@ -339,7 +347,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
             variant: AppButtonVariant.ghost,
             size: AppButtonSize.small,
             growWithContent: true,
-            child: const Text('Supported devices'),
+            child: Text(context.l10n.ledgerSupportedDevices),
           ),
         ),
       ),
@@ -355,7 +363,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
         maintainAnimation: true,
         maintainSize: true,
         child: Text(
-          'Keep 0 unless you used a different index for this Ledger account.',
+          context.l10n.ledgerAccountIndexHint,
           style: AppTypography.bodySmall.copyWith(
             color: context.colors.text.secondary,
           ),
@@ -391,7 +399,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
           button: true,
           enabled: !_busy,
           expanded: _showAdvancedOptions,
-          label: 'Advanced options',
+          label: context.l10n.ledgerAdvancedOptions,
           onTap: _busy ? null : _toggleAdvancedOptions,
           child: ExcludeSemantics(
             child: AppButton(
@@ -410,7 +418,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
               pressedBackgroundColor: context.colors.state.hoverOpacity,
               child: Row(
                 children: [
-                  const Expanded(child: Text('Advanced options')),
+                  Expanded(child: Text(context.l10n.ledgerAdvancedOptions)),
                   const SizedBox(width: AppSpacing.xs),
                   RotatedBox(
                     quarterTurns: _showAdvancedOptions ? 2 : 0,
@@ -465,8 +473,8 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     activeStep: LedgerOnboardingStep.connect,
     backTarget:
         widget.backTarget ??
-        const OnboardingBackTarget.route(
-          label: 'Add account',
+        OnboardingBackTarget.route(
+          label: context.l10n.commonAddAccount,
           routePath: '/add-account',
         ),
     overlay: _connectionOverlay(),
@@ -483,7 +491,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        'Connect Ledger',
+                        context.l10n.onboardingConnectLedger,
                         style: AppTypography.displayLarge.copyWith(
                           fontFamily: 'Young Serif',
                           fontWeight: FontWeight.w400,
@@ -493,7 +501,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        'Prepare your Ledger wallet.',
+                        context.l10n.ledgerConnectSubtitle,
                         style: AppTypography.bodyMedium.copyWith(
                           color: context.colors.text.secondary,
                         ),
@@ -534,7 +542,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                               runSpacing: AppSpacing.xxs,
                               children: [
                                 Text(
-                                  'On your Ledger',
+                                  context.l10n.ledgerOnYourLedger,
                                   style: AppTypography.bodyMediumStrong
                                       .copyWith(
                                         color: context.colors.text.primary,
@@ -547,7 +555,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                             ),
                             const SizedBox(height: AppSpacing.s),
                             Text(
-                              '1. Unlock with your PIN.\n\n2. ${_transport == LedgerConnectionTransport.usb ? 'Connect with a USB cable.' : 'Enable Bluetooth and keep Ledger nearby.'}',
+                              '1. ${context.l10n.ledgerUnlockWithPin}\n\n2. ${_transport == LedgerConnectionTransport.usb ? context.l10n.ledgerConnectUsbCable : context.l10n.ledgerEnableBluetoothNearby}', // l10n-ignore: list numbering
                               style: AppTypography.bodyMedium.copyWith(
                                 color: context.colors.text.secondary,
                               ),
@@ -571,7 +579,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                         ),
                       const SizedBox(height: AppSpacing.sm),
                       Text(
-                        'See your balance and activity in Vizor.\nApprove transactions on Ledger.',
+                        context.l10n.ledgerBalanceActivityNote,
                         style: AppTypography.bodySmall.copyWith(
                           color: context.colors.text.secondary,
                         ),
@@ -590,7 +598,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                 variant: AppButtonVariant.primary,
                 growWithContent: true,
                 minWidth: 196,
-                child: const Text('Connect Ledger'),
+                child: Text(context.l10n.onboardingConnectLedger),
               ),
             ),
           ],

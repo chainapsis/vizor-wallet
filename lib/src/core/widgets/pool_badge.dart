@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
 
@@ -32,7 +33,9 @@ class PoolBadge extends StatelessWidget {
         const SizedBox(width: AppSpacing.xxs),
         Flexible(
           child: Text(
-            isShielded ? 'Shielded' : 'Transparent',
+            isShielded
+                ? context.l10n.poolShielded
+                : context.l10n.poolTransparent,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.labelSmall.copyWith(

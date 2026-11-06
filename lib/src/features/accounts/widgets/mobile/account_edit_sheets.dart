@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/account_name_policy.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -152,7 +153,7 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
               Center(
                 child: Semantics(
                   button: true,
-                  label: 'Change profile picture',
+                  label: context.l10n.profilePictureChange,
                   excludeSemantics: true,
                   child: GestureDetector(
                     key: const ValueKey('mobile_account_edit_avatar'),
@@ -184,7 +185,7 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                'Account name',
+                context.l10n.accountNameLabel,
                 style: AppTypography.labelLarge.copyWith(
                   fontWeight: FontWeight.w400,
                   color: colors.text.secondary,
@@ -203,7 +204,7 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
                 trailing: Padding(
                   padding: const EdgeInsets.only(right: AppSpacing.xs),
                   child: Semantics(
-                    label: 'Clear account name',
+                    label: context.l10n.accountsClearName,
                     button: true,
                     child: GestureDetector(
                       key: const ValueKey('mobile_account_edit_name_clear'),
@@ -246,7 +247,7 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
                 key: const ValueKey('mobile_account_edit_save'),
                 expand: true,
                 onPressed: _save,
-                child: const Text('Save edits'),
+                child: Text(context.l10n.accountsSaveEdits),
               ),
               const SizedBox(height: AppSpacing.s),
               MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
@@ -301,7 +302,7 @@ class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    'Select profile picture',
+                    context.l10n.profilePictureSelect,
                     style: AppTypography.bodyLarge.copyWith(
                       fontWeight: FontWeight.w600,
                       color: colors.text.accent,
@@ -323,7 +324,7 @@ class _ProfilePictureSheetState extends State<_ProfilePictureSheet> {
                 expand: true,
                 constrainContent: true,
                 onPressed: () => Navigator.of(context).pop(_selected),
-                child: const Text('Update picture'),
+                child: Text(context.l10n.accountsUpdatePicture),
               ),
               const SizedBox(height: AppSpacing.s),
               MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
@@ -508,7 +509,7 @@ class MobileSheetClose extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Semantics(
-      label: 'Close',
+      label: context.l10n.commonClose,
       button: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -547,7 +548,7 @@ class MobileSheetCancel extends StatelessWidget {
           height: AppButtonSizing.largeHeight,
           child: Center(
             child: Text(
-              'Cancel',
+              context.l10n.commonCancel,
               style:
                   textStyle ??
                   AppTypography.labelLarge.copyWith(

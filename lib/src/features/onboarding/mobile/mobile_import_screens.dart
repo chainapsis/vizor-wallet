@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -29,16 +30,16 @@ List<String> tokenizeMnemonicWords(String raw) => raw
 
 /// Validates a candidate phrase; returns an error message or null.
 const _kMnemonicCheckFailedMessage =
-    "That passphrase couldn't be checked. Try again.";
+    "That passphrase couldn't be checked. Try again."; // l10n-ignore: compared with == and returned by a context-free validator
 
 String? validateImportedMnemonic(List<String> words) {
   if (!kMnemonicWordCounts.contains(words.length)) {
-    return 'A secret passphrase has 12, 15, 18, 21, or 24 words — '
+    return 'A secret passphrase has 12, 15, 18, 21, or 24 words — ' // l10n-ignore: context-free validator
         'found ${words.length}.';
   }
   try {
     if (!rust_wallet.validateMnemonic(mnemonic: words.join(' '))) {
-      return 'These words are valid, but they do not form a valid secret '
+      return 'These words are valid, but they do not form a valid secret ' // l10n-ignore: context-free validator
           'passphrase. Check the order or replace any word that looks wrong.';
     }
   } catch (e) {
@@ -50,12 +51,6 @@ String? validateImportedMnemonic(List<String> words) {
 
 enum _ImportPasteState { idle, reading }
 
-const _kImportPasteHelperText =
-    'Accept 12, 15, 18, 21, or 24-word\nsecret passphrases';
-const _kImportClipboardReadError = "Can't read the clipboard";
-const _kImportNoPhraseError = 'No secret passphrase found';
-const _kImportInvalidPhraseError = 'Invalid secret passphrase';
-const _kImportCheckFailedError = "Couldn't check secret passphrase";
 const _kImportManualCardHeight = 385.0;
 const _kImportManualCardColumns = 3;
 const _kImportManualWordLineHeight = 24.0;
@@ -134,7 +129,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       if (!_isCurrentRoute) return;
       showAppToast(
         context,
-        _kImportClipboardReadError,
+        context.l10n.onboardingImportClipboardReadError,
         iconName: AppIcons.cancel,
         tone: AppToastTone.destructive,
       );
@@ -148,7 +143,7 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       if (!_isCurrentRoute) return;
       showAppToast(
         context,
-        'Clipboard is empty',
+        context.l10n.onboardingImportClipboardEmpty,
         iconName: AppIcons.cancel,
         tone: AppToastTone.destructive,
       );
@@ -182,23 +177,25 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
     final validate = widget.validatePastedWords;
     if (validate != null) return validate(words);
     if (!kMnemonicWordCounts.contains(words.length)) {
-      return _kImportNoPhraseError;
+      return context.l10n.onboardingImportNoPhraseError;
     }
 
     try {
       final wordList = rust_wallet.mnemonicWordList().toSet();
       if (wordList.isNotEmpty && !words.every(wordList.contains)) {
-        return _kImportNoPhraseError;
+        return context.l10n.onboardingImportNoPhraseError;
       }
     } catch (e) {
       log('MobileImport: ERROR reading mnemonic word list: $e');
-      return _kImportCheckFailedError;
+      return context.l10n.onboardingImportCheckFailedError;
     }
 
     final error = validateImportedMnemonic(words);
     if (error == null) return null;
-    if (error == _kMnemonicCheckFailedMessage) return _kImportCheckFailedError;
-    return _kImportInvalidPhraseError;
+    if (error == _kMnemonicCheckFailedMessage) {
+      return context.l10n.onboardingImportCheckFailedError;
+    }
+    return context.l10n.onboardingImportInvalidPhraseError;
   }
 
   void _openManual() {
@@ -213,8 +210,8 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
         context,
       ).at(OnboardingFlow.importWallet, OnboardingStage.phraseEntry).value,
       onBack: () => Navigator.of(context).maybePop(),
-      title: 'Import Wallet',
-      subtitle: _kImportPasteHelperText,
+      title: context.l10n.onboardingImportWalletTitleMobile,
+      subtitle: context.l10n.onboardingImportPasteHelper,
       bottomArea: _ImportPasteButton(state: _pasteState, onPaste: _paste),
       child: _ImportManualSeedCard(onTap: isReading ? null : _openManual),
     );
@@ -234,7 +231,7 @@ class _ImportManualSeedCard extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: 'Enter secret passphrase manually',
+      label: context.l10n.onboardingImportEnterManuallySemantics,
       child: GestureDetector(
         key: const ValueKey('mobile_import_enter_manually'),
         behavior: HitTestBehavior.opaque,
@@ -283,7 +280,7 @@ class _ImportManualSeedCard extends StatelessWidget {
                       SizedBox(
                         width: 255,
                         child: Text(
-                          'Manually Enter\nSecret Passphrase',
+                          context.l10n.onboardingImportManualCardTitle,
                           textAlign: TextAlign.center,
                           style: AppTypography.headlineLarge.copyWith(
                             color: homeText,
@@ -292,7 +289,7 @@ class _ImportManualSeedCard extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.md),
                       Text(
-                        'Word by word.',
+                        context.l10n.onboardingImportManualCardSubtitle,
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: homeText.withValues(alpha: 0.5),
@@ -430,7 +427,9 @@ class _ImportPasteButton extends StatelessWidget {
       onPressed: isReading ? null : onPaste,
       leading: AppIcon(isReading ? AppIcons.loader : AppIcons.paste, size: 20),
       child: Text(
-        isReading ? 'Reading clipboard data...' : 'Or paste from clipboard',
+        isReading
+            ? context.l10n.onboardingImportReadingClipboard
+            : context.l10n.onboardingImportPasteFromClipboard,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),

@@ -1,5 +1,6 @@
 // ignore_for_file: unused_element, unused_field
 
+import '../../../core/l10n/l10n.dart';
 import '../providers/home_activity_state.dart';
 import '../widgets/home_activity_skeleton.dart';
 import '../../activity/widgets/deferred_gift_card_recovery.dart';
@@ -136,7 +137,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       accountUuid = activeShieldingAccountUuid(ref);
     } catch (_) {
       setState(() {
-        _shieldBalanceError = 'No active account.';
+        _shieldBalanceError = context.l10n.homeShieldNoActiveAccount;
       });
       return;
     }
@@ -337,7 +338,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final isDark = context.appTheme == AppThemeData.dark;
     final backgroundAsset = isImportingForBackground
         ? 'assets/illustrations/home_importing_background.webp'
-        : 'assets/illustrations/desktop/'
+        : 'assets/illustrations/desktop/' // l10n-ignore: asset path
               'home_default_background_${isDark ? 'dark' : 'light'}.webp';
     final ironwoodAnnouncementAsync = ref.watch(
       ironwoodMigrationAnnouncementProvider,
@@ -392,8 +393,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (err, _) => Center(
                 child: Text(
-                  'Something went wrong. Try again in a moment.\n\n'
-                  'Details: $err',
+                  context.l10n.homeLoadFailed('$err'),
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.warning,
                   ),
@@ -711,9 +711,8 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     if (widget.passwordRotationRecoveryFailed) {
       return _HomeNoticeData(
         iconName: AppIcons.warning,
-        message:
-            "We couldn't verify the previous password change. Try again or restart Vizor.",
-        actionLabel: 'Settings',
+        message: context.l10n.homePasswordChangeUnverified,
+        actionLabel: context.l10n.navSettings,
         onTap: () => context.push('/settings'),
       );
     }
@@ -722,7 +721,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         iconName: AppIcons.warning,
         message: widget.shieldBalanceError!,
         detailMessage: widget.shieldBalanceErrorDetail,
-        actionLabel: 'Dismiss',
+        actionLabel: context.l10n.homeDismiss,
         onTap: widget.onDismissShieldBalanceError,
       );
     }
@@ -976,7 +975,7 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
                     child: _withHint(
                       balanceHint,
                       Text(
-                        'Transparent: $displayedBalance',
+                        context.l10n.homeTransparentBalance(displayedBalance),
                         key: const ValueKey('home_transparent_balance_text'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1070,7 +1069,9 @@ class _HomeShieldBalanceButton extends StatelessWidget {
                         horizontal: AppSpacing.xxs,
                       ),
                       child: Text(
-                        isLoading ? 'Shielding...' : 'Shield now',
+                        isLoading
+                            ? context.l10n.homeShieldingProgress
+                            : context.l10n.homeShieldNow,
                         style: AppTypography.labelLarge.copyWith(
                           color: contentColor,
                         ),
@@ -1462,8 +1463,8 @@ class _HomeImportingContent extends StatelessWidget {
     final normalizedAccountName = accountName?.trim();
     final detailText =
         normalizedAccountName != null && normalizedAccountName.isNotEmpty
-        ? 'Importing $normalizedAccountName\nKeep Vizor open & running.'
-        : 'It might take some time.\nKeep Vizor open & running.';
+        ? context.l10n.homeImportingDetailNamed(normalizedAccountName)
+        : context.l10n.homeImportingDetail;
     return SizedBox(
       width: 396,
       height: height,
@@ -1495,7 +1496,7 @@ class _HomeImportingContent extends StatelessWidget {
                   width: 246,
                   height: 60,
                   child: Text(
-                    "We're importing\nyour wallet...",
+                    context.l10n.homeImportingTitle,
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineMedium.copyWith(
                       color: colors.text.accent,
@@ -1648,8 +1649,8 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
         ? colors.text.disabled
         : colors.text.homeCard;
     final balanceTitle = migrationRequired
-        ? 'Migration Required'
-        : 'Shielded balance';
+        ? context.l10n.homeMigrationRequiredTitle
+        : context.l10n.homeShieldedBalance;
 
     return SizedBox(
       width: 396,
@@ -1843,7 +1844,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                   child: _HomeDesktopActionButton(
                     key: const ValueKey('home_desktop_send_button'),
                     icon: AppIcons.plane,
-                    label: 'Send',
+                    label: context.l10n.homeSend,
                     onTap: widget.onSend,
                     primary: true,
                   ),
@@ -1853,7 +1854,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                   child: _HomeDesktopActionButton(
                     key: const ValueKey('home_desktop_receive_button'),
                     icon: AppIcons.arrowDownCircle,
-                    label: 'Receive',
+                    label: context.l10n.homeReceive,
                     onTap: widget.onReceive,
                     primary: false,
                   ),
@@ -1865,7 +1866,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                     child: _HomeDesktopActionButton(
                       key: const ValueKey('home_desktop_pay_button'),
                       icon: AppIcons.paid,
-                      label: 'Pay in USDC',
+                      label: context.l10n.homePayInUsdc,
                       compact: true,
                       onTap: widget.onPay!,
                       primary: false,
@@ -1877,12 +1878,17 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
             const SizedBox(height: AppSpacing.s),
             _HomeDesktopMigrationCtaButton(
               label: migrationRequired
-                  ? 'Migrate to Ironwood'
+                  ? context.l10n.homeMigrateToIronwood
                   : migrationStopped
-                  ? 'Migration stopped by network upgrade'
+                  ? context.l10n.homeMigrationStoppedByUpgrade
                   : widget.waitingForMigrationConfirmation
-                  ? 'Waiting for confirmation...'
-                  : '${hideAmountIfPrivacyMode('${widget.migratingBalanceText} ZEC', privacyModeEnabled: widget.privacyModeEnabled)} still migrating',
+                  ? context.l10n.homeMigrationWaitingConfirmation
+                  : context.l10n.homeMigrationStillMigrating(
+                      hideAmountIfPrivacyMode(
+                        '${widget.migratingBalanceText} ZEC', // l10n-ignore: amount format
+                        privacyModeEnabled: widget.privacyModeEnabled,
+                      ),
+                    ),
               stopped: migrationStopped,
               animateIndicator: widget.animateMigrationCta,
               onTap: widget.onIronwoodMigrationCta,
@@ -1891,7 +1897,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
             _HomeDesktopActionButton(
               key: const ValueKey('home_desktop_receive_first_button'),
               icon: AppIcons.arrowDownCircle,
-              label: 'Receive your first ZEC',
+              label: context.l10n.homeReceiveFirstZec,
               onTap: widget.onReceive,
               primary: true,
               expanded: true,
@@ -1903,7 +1909,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                   child: _HomeDesktopActionButton(
                     key: const ValueKey('home_desktop_send_button'),
                     icon: AppIcons.plane,
-                    label: 'Send',
+                    label: context.l10n.homeSend,
                     onTap: widget.onSend,
                     primary: true,
                   ),
@@ -1913,7 +1919,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                   child: _HomeDesktopActionButton(
                     key: const ValueKey('home_desktop_receive_button'),
                     icon: AppIcons.arrowDownCircle,
-                    label: 'Receive',
+                    label: context.l10n.homeReceive,
                     onTap: widget.onReceive,
                     primary: false,
                   ),
@@ -1926,7 +1932,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                     child: _HomeDesktopActionButton(
                       key: const ValueKey('home_desktop_pay_button'),
                       icon: AppIcons.paid,
-                      label: 'Pay in USDC',
+                      label: context.l10n.homePayInUsdc,
                       compact: true,
                       onTap: widget.onPay!,
                       primary: false,
@@ -2343,7 +2349,9 @@ class _HomeDesktopPrivacyButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return _HomeDesktopInteractiveTarget(
-      semanticsLabel: privacyModeEnabled ? 'Show balance' : 'Hide balance',
+      semanticsLabel: privacyModeEnabled
+          ? context.l10n.sidebarShowBalance
+          : context.l10n.sidebarHideBalance,
       onTap: onTap,
       builder: (context, hovered, focused) {
         return SizedBox(
@@ -2523,8 +2531,8 @@ class _HomeDesktopEmptyActivity extends StatelessWidget {
           return Center(
             child: Text(
               isUnavailable
-                  ? 'Unable to load activity.'
-                  : 'No activity, yet...',
+                  ? context.l10n.homeActivityUnavailable
+                  : context.l10n.homeActivityEmpty,
               textAlign: TextAlign.center,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.text.accent,
@@ -2551,7 +2559,7 @@ class _HomeDesktopEmptyActivity extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'No activity, yet...',
+                  context.l10n.homeActivityEmpty,
                   style: AppTypography.headlineSmall.copyWith(
                     color: colors.text.accent,
                   ),
@@ -2560,7 +2568,7 @@ class _HomeDesktopEmptyActivity extends StatelessWidget {
                 SizedBox(
                   width: 188,
                   child: Text(
-                    'How about running your first ZEC tx?',
+                    context.l10n.homeActivityEmptyHint,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
@@ -2622,7 +2630,7 @@ class _HomeDesktopActivityCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Semantics(
-            label: isLoading ? 'Loading activity' : null,
+            label: isLoading ? context.l10n.homeActivityLoading : null,
             child: Column(
               children: [
                 for (
@@ -2663,7 +2671,7 @@ class _HomeDesktopActivityHeader extends StatelessWidget {
     final colors = context.colors;
     return Row(
       children: [
-        Text('Recent activity', style: titleStyle),
+        Text(context.l10n.homeRecentActivity, style: titleStyle),
         const Spacer(),
         MouseRegion(
           cursor: SystemMouseCursors.click,
@@ -2674,7 +2682,7 @@ class _HomeDesktopActivityHeader extends StatelessWidget {
               key: const ValueKey('home_desktop_activity_see_all_button'),
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('See all', style: seeAllStyle),
+                Text(context.l10n.homeSeeAll, style: seeAllStyle),
                 const SizedBox(width: AppSpacing.xxs),
                 AppIcon(
                   AppIcons.chevronForward,

@@ -12,6 +12,7 @@ adds invisible word joiners so lines break between words.
   term.
 - Style guides: [Korean](style-ko.md), [Simplified Chinese](style-zh.md).
 - [Adding a language](adding-a-language.md).
+- [Moving strings into ARB files](extracting-strings.md), for developers.
 
 ## How a string gets translated
 

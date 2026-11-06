@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/zcash_explorer.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
@@ -109,7 +110,7 @@ class _SettingsExplorerScreenState
       log('SettingsExplorerScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _submitError = "Couldn't save that explorer URL.";
+        _submitError = context.l10n.settingsExplorerSaveFailed;
         _isSubmitting = false;
       });
     }
@@ -142,7 +143,7 @@ class _SettingsExplorerScreenState
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Explorer',
+                      context.l10n.settingsExplorerTitle,
                       textAlign: TextAlign.center,
                       style: AppTypography.headlineLarge.copyWith(
                         color: colors.text.accent,
@@ -151,8 +152,15 @@ class _SettingsExplorerScreenState
                     const SizedBox(height: AppSpacing.s),
                     Text(
                       current.trim().isEmpty
-                          ? 'Current: ${defaultZcashExplorerHost(networkName)} (default)'
-                          : 'Current: ${explorerSettingsLabel(current, networkName: networkName)}',
+                          ? context.l10n.settingsExplorerCurrentDefault(
+                              defaultZcashExplorerHost(networkName),
+                            )
+                          : context.l10n.settingsExplorerCurrent(
+                              explorerSettingsLabel(
+                                current,
+                                networkName: networkName,
+                              ),
+                            ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
@@ -178,8 +186,8 @@ class _SettingsExplorerScreenState
                     _ExplorerOptionCard(
                       key: const ValueKey('explorer_option_custom'),
                       iconName: AppIcons.edit,
-                      label: 'Custom',
-                      subtitle: 'Any explorer you prefer',
+                      label: context.l10n.settingsExplorerCustom,
+                      subtitle: context.l10n.settingsExplorerCustomSubtitle,
                       selected: _choice == _ExplorerChoice.custom,
                       onTap: _isSubmitting
                           ? null
@@ -196,8 +204,9 @@ class _SettingsExplorerScreenState
                       const SizedBox(height: AppSpacing.md),
                       AppTextField(
                         key: const ValueKey('explorer_custom_field'),
-                        label: 'Explorer URL',
-                        hintText: 'https://explorer.example/tx/{txid}',
+                        label: context.l10n.settingsExplorerUrlLabel,
+                        hintText:
+                            'https://explorer.example/tx/{txid}', // l10n-ignore: URL template
                         controller: _customController,
                         keyboardType: TextInputType.url,
                         textInputAction: TextInputAction.done,
@@ -242,7 +251,9 @@ class _SettingsExplorerScreenState
                         onPressed: _canUpdate(current) ? _submit : null,
                         minWidth: 196,
                         child: Text(
-                          _isSubmitting ? 'Updating...' : 'Update explorer',
+                          _isSubmitting
+                              ? context.l10n.commonUpdating
+                              : context.l10n.settingsExplorerUpdate,
                         ),
                       ),
                     ),

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../main.dart' show log;
+import '../../core/l10n/l10n.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
@@ -16,6 +17,7 @@ import '../../providers/sync_provider.dart';
 import '../../providers/wallet_mutation_guard.dart';
 import '../../services/device_owner_auth.dart';
 import 'shared/onboarding_auth_shell.dart';
+import 'shared/onboarding_rich_text.dart';
 
 class LostPasswordScreen extends ConsumerStatefulWidget {
   const LostPasswordScreen({
@@ -241,10 +243,13 @@ class _LostPasswordContent extends StatelessWidget {
     final strongStyle = AppTypography.bodyMediumStrong.copyWith(
       color: colors.text.accent,
     );
+    final l10n = context.l10n;
     final buttonLabel = remainingSeconds > 0
-        ? 'Reset after ${remainingSeconds}s...'
-        : 'Reset Vizor';
-    final statusText = error ?? warning ?? 'This cannot be undone.';
+        ? l10n.onboardingLostPasswordResetCountdown(remainingSeconds)
+        : l10n.commonResetVizor;
+    final statusText = error ?? warning ?? l10n.commonCannotBeUndone;
+    final resetAction = l10n.onboardingLostPasswordResetAction;
+    final importAction = l10n.onboardingLostPasswordImportAction;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -262,7 +267,7 @@ class _LostPasswordContent extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Lost password?',
+              l10n.onboardingLostPasswordTitle,
               style: AppTypography.displayMedium.copyWith(
                 color: colors.text.accent,
                 height: 48 / 45,
@@ -276,22 +281,11 @@ class _LostPasswordContent extends StatelessWidget {
             Text.rich(
               TextSpan(
                 style: bodyStyle,
-                children: [
-                  const TextSpan(
-                    text:
-                        "If you've lost your password, the only way to recover\nyour account is to ",
-                  ),
-                  TextSpan(
-                    text: 'completely reset Vizor app',
-                    style: strongStyle,
-                  ),
-                  const TextSpan(
-                    text:
-                        '.\nThis deletes all accounts and unshared gift card links.\nYou will need to ',
-                  ),
-                  TextSpan(text: 'import accounts again', style: strongStyle),
-                  const TextSpan(text: '.'),
-                ],
+                children: onboardingEmphasisSpans(
+                  l10n.onboardingLostPasswordBody(resetAction, importAction),
+                  [resetAction, importAction],
+                  strongStyle,
+                ),
               ),
               textAlign: TextAlign.center,
             ),
@@ -328,7 +322,7 @@ class _LostPasswordContent extends StatelessWidget {
                     onPressed: onBack,
                     variant: AppButtonVariant.ghost,
                     minWidth: _destructiveButtonWidth,
-                    child: const Text('Cancel'),
+                    child: Text(l10n.commonCancel),
                   ),
                 ],
               ),

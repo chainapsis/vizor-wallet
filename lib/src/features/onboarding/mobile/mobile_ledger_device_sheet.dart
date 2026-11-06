@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 
+import '../../../core/l10n/l10n.dart';
 import '../../ledger/ledger_device_label.dart';
 import '../../ledger/services/ledger_bluetooth_access.dart';
 import '../../ledger/widgets/mobile/mobile_ledger_bluetooth_content.dart';
@@ -152,8 +153,7 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
       if (!granted) {
         setState(() {
           _state = _DiscoveryState.failed;
-          _error =
-              'Bluetooth permission is required to find your Ledger. Allow it in Settings, then try again.';
+          _error = context.l10n.ledgerBluetoothPermissionRequired;
         });
         return;
       }
@@ -207,15 +207,13 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
       if (!_isCurrent(generation)) return;
       if (!opened) {
         setState(
-          () => _helpError =
-              'Open Bluetooth settings manually to remove the old pairing.',
+          () => _helpError = context.l10n.ledgerOpenBluetoothSettingsManually,
         );
       }
     } catch (_) {
       if (_isCurrent(generation)) {
         setState(
-          () => _helpError =
-              'Open Bluetooth settings manually to remove the old pairing.',
+          () => _helpError = context.l10n.ledgerOpenBluetoothSettingsManually,
         );
       }
     } finally {
@@ -246,7 +244,7 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
     if (!_isCurrent(generation)) return;
     final message =
         ledgerFailureGuidance(error)?.message ??
-        'Vizor could not find Ledger devices. Try again.';
+        context.l10n.ledgerDiscoveryFailed;
     setState(() {
       _state = _DiscoveryState.failed;
       _error = message;
@@ -315,12 +313,13 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
                 service: widget.service,
                 onRetry: () => unawaited(_startDiscovery()),
                 onClose: _close,
-                retryLabel: 'Find my Ledger',
-                purpose: 'continue',
+                retryLabel: context.l10n.ledgerFindMyLedger,
+                purpose:
+                    'continue', // l10n-ignore: sentence fragment composed by MobileLedgerBluetoothContent
               )
             : MobileLedgerSheetContent(
                 key: const ValueKey('mobile_ledger_device_sheet'),
-                title: 'Add Ledger account',
+                title: context.l10n.ledgerAddAccountTitle,
                 onClose: _close,
                 action:
                     _state == _DiscoveryState.empty ||
@@ -330,8 +329,8 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
                         children: [
                           MobileLedgerAction(
                             _state == _DiscoveryState.empty
-                                ? 'Search again'
-                                : 'Try again',
+                                ? context.l10n.ledgerSearchAgain
+                                : context.l10n.commonTryAgain,
                             key: const ValueKey(
                               'mobile_ledger_discovery_retry',
                             ),
@@ -348,7 +347,7 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
                               onPressed: busy
                                   ? null
                                   : () => unawaited(_openHelp()),
-                              child: const Text('Connection help'),
+                              child: Text(context.l10n.ledgerConnectionHelp),
                             ),
                         ],
                       )
@@ -356,8 +355,8 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
                 children: [
                   Text(
                     _devices.isNotEmpty
-                        ? 'Select your Ledger.'
-                        : 'Unlock Ledger, turn on Bluetooth, and keep it nearby.',
+                        ? context.l10n.ledgerSelectYourLedger
+                        : context.l10n.ledgerUnlockBluetoothNearby,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -377,26 +376,26 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
                     )
                   else if (_state == _DiscoveryState.requestingPermission ||
                       _state == _DiscoveryState.scanning)
-                    const _StatusMessage(
-                      key: ValueKey('mobile_ledger_scanning'),
+                    _StatusMessage(
+                      key: const ValueKey('mobile_ledger_scanning'),
                       iconName: AppIcons.loader,
-                      title: 'Searching for Ledger devices…',
-                      message: 'This can take a few seconds.',
+                      title: context.l10n.ledgerSearchingDevices,
+                      message: context.l10n.ledgerSearchTakesAWhile,
                     )
                   else if (_state == _DiscoveryState.empty)
-                    const _StatusMessage(
-                      key: ValueKey('mobile_ledger_empty'),
+                    _StatusMessage(
+                      key: const ValueKey('mobile_ledger_empty'),
                       iconName: AppIcons.search,
-                      title: 'No Ledger devices found',
-                      message:
-                          'Check that your Ledger is unlocked and try again.',
+                      title: context.l10n.ledgerNoDevicesFound,
+                      message: context.l10n.ledgerNoDevicesFoundHint,
                     ),
                   if (_state == _DiscoveryState.failed)
                     _StatusMessage(
                       key: const ValueKey('mobile_ledger_discovery_error'),
                       iconName: AppIcons.warningCircle,
-                      title: 'Could not connect to your Ledger',
-                      message: _error ?? 'Try again.',
+                      title: context.l10n.ledgerDiscoveryErrorTitle,
+                      message:
+                          _error ?? context.l10n.ledgerDiscoveryErrorFallback,
                     ),
                 ],
               ),
@@ -449,7 +448,7 @@ class _LedgerDeviceRow extends StatelessWidget {
           alignment: AlignmentDirectional.centerStart,
           child: Text(
             connecting
-                ? 'Connecting to ${ledgerDeviceLabel(device)}'
+                ? context.l10n.ledgerConnectingTo(ledgerDeviceLabel(device))
                 : ledgerDeviceLabel(device),
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.accent,
