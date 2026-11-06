@@ -17,6 +17,8 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
@@ -156,6 +158,7 @@ void main() {
           ProviderScope(
             overrides: [
               appBootstrapProvider.overrideWithValue(paymentLinksBootstrap),
+              rpcEndpointProvider.overrideWith(_FixedRpcEndpoint.new),
               incomingUriServiceProvider.overrideWithValue(incoming),
               syncProvider.overrideWith(FakeSyncNotifier.new),
             ],
@@ -330,4 +333,12 @@ class _ProbeApi extends FakeGiftLinkRustApi {
     required List<int> pcztBytes,
     required BigInt maxFragmentLen,
   }) async => ['ur:zcash-pczt/test-fixture'];
+}
+
+// These incoming-link tests keep the signer/scanner transport deterministic.
+class _FixedRpcEndpoint extends RpcEndpointNotifier {
+  @override
+  RpcEndpointConfig build() => defaultRpcEndpointConfig(
+    'main',
+  ).copyWith(presetId: kManualUsRpcEndpointPresetId);
 }

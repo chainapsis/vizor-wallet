@@ -145,7 +145,11 @@ class _MobileKeystoneShieldScreenState
       final dbPath = await getWalletDbPath();
       if (!mounted || _closed || _cancellationStarted) return;
       _requireOriginalAccount();
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
+      if (!mounted || _closed || _cancellationStarted) return;
+      _requireOriginalAccount();
       final shieldPczt = await _session.prepare(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -382,7 +386,11 @@ class _MobileKeystoneShieldScreenState
     RpcEndpointConfig? attemptedEndpoint;
     try {
       final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
+      if (!mounted || _closed || _cancellationStarted) return;
+      _requireOriginalAccount();
       attemptedEndpoint = endpoint;
       _requireOriginalAccount();
       final result = await _session.broadcast(

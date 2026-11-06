@@ -9310,7 +9310,7 @@ void main() {
       broadcastMessage: 'gRPC connect failed: connection refused',
     );
     final sessionStore = _FakeSwapPersistenceStore();
-    final primary = defaultRpcEndpointConfig('main');
+    final primary = _fixedRpcEndpoint();
     final fallback = fallbackRpcEndpointCandidatesFor(primary).first;
 
     await tester.pumpWidget(
@@ -10378,7 +10378,7 @@ void main() {
         broadcastMessage: 'gRPC connect failed: connection refused',
       );
       final sessionStore = _FakeSwapPersistenceStore();
-      final primary = defaultRpcEndpointConfig('main');
+      final primary = _fixedRpcEndpoint();
       final fallback = fallbackRpcEndpointCandidatesFor(primary).first;
 
       await tester.pumpWidget(
@@ -11495,7 +11495,7 @@ final _bootstrap = AppBootstrapState(
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  rpcEndpointConfig: _fixedRpcEndpoint(),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
   isPasswordConfigured: true,
@@ -11512,7 +11512,7 @@ final _privacyModeBootstrap = AppBootstrapState(
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  rpcEndpointConfig: _fixedRpcEndpoint(),
   themeMode: ThemeMode.system,
   privacyModeEnabled: true,
   isPasswordConfigured: true,
@@ -11532,7 +11532,7 @@ final _twoAccountBootstrap = AppBootstrapState(
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  rpcEndpointConfig: _fixedRpcEndpoint(),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
   isPasswordConfigured: true,
@@ -11556,7 +11556,7 @@ final _hardwareBootstrap = AppBootstrapState(
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  rpcEndpointConfig: _fixedRpcEndpoint(),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
   isPasswordConfigured: true,
@@ -11581,7 +11581,7 @@ final _ledgerHardwareBootstrap = AppBootstrapState(
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  rpcEndpointConfig: _fixedRpcEndpoint(),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
   isPasswordConfigured: true,
@@ -11647,3 +11647,9 @@ String _fieldText(WidgetTester tester, String keyValue) {
   );
   return editable.controller.text;
 }
+
+// Swap fixtures either keep failover inert or opt in to a fixed primary and
+// fallback explicitly. Automatic selection has separate transport coverage.
+RpcEndpointConfig _fixedRpcEndpoint() => defaultRpcEndpointConfig(
+  'main',
+).copyWith(presetId: kManualUsRpcEndpointPresetId);

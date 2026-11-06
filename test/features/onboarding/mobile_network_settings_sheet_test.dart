@@ -97,10 +97,14 @@ class _Privacy extends NetworkPrivacyNotifier {
 }
 
 class _Endpoint extends RpcEndpointNotifier {
+  _Endpoint({this.initial});
+  final RpcEndpointConfig? initial;
   final pending = Completer<void>();
   int submissions = 0;
   @override
-  RpcEndpointConfig build() => defaultRpcEndpointConfig('main');
+  RpcEndpointConfig build() => initial ?? defaultRpcEndpointConfig('main');
+  @override
+  Future<void> setAutomatic() async => state = defaultRpcEndpointConfig('main');
   @override
   Future<void> setCustom(String input) async {
     submissions++;
@@ -230,6 +234,45 @@ void main() {
   });
   tearDownAll(RustLib.dispose);
   setUp(() => api.enabled.clear());
+
+  testWidgets('automatic selection does not present its seed URL as current', (
+    tester,
+  ) async {
+    await _pump(tester, _Privacy(), _Endpoint());
+    await _open(tester);
+    expect(find.text('Current: Automatic'), findsOneWidget);
+    final field = tester.widget<EditableText>(
+      find.descendant(
+        of: find.byKey(const ValueKey('welcome_endpoint_input')),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(field.controller.text, isEmpty);
+  });
+
+  testWidgets('custom endpoint can return to automatic without verification', (
+    tester,
+  ) async {
+    final endpoint = _Endpoint(
+      initial: const RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://custom.example:443',
+        presetId: kCustomRpcEndpointPresetId,
+      ),
+    );
+    final (container, _) = await _pump(tester, _Privacy(), endpoint);
+    await _open(tester);
+    final automatic = find.byKey(const ValueKey('welcome_endpoint_automatic'));
+    await tester.ensureVisible(automatic);
+    await tester.tap(automatic);
+    await tester.pumpAndSettle();
+    expect(
+      isAutomaticRpcEndpointConfig(container.read(rpcEndpointProvider)),
+      isTrue,
+    );
+    expect(endpoint.submissions, 0);
+    expect(find.byType(MobileNetworkSettingsSheet), findsNothing);
+  });
 
   testWidgets('private queries save immediately without an account and survive '
       'reopening the sheet', (tester) async {

@@ -5,6 +5,8 @@ mod cancellation;
 mod enhance_pir;
 mod pir_http;
 mod status_pir;
+#[cfg(test)]
+mod tor_recovery_tests;
 
 pub(super) use cancellation::cancelable;
 pub(super) use enhance_pir::client_protocol_error;
@@ -67,10 +69,12 @@ use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use std::{future::Future, time::Duration};
 use zakura_pir_client::enhance::transport::{self, BoundedBody};
+use zcash_client_backend::tor::{http::Retry, Error as TorError, ErrorKind, HasKind};
 
 use super::super::{lwd::DirectRouteConnector, SyncError};
 
 pub(super) const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
+const TOR_STREAM_OPEN_RECOVERY_RETRIES: u8 = 1;
 type DirectHttpsClient = Client<hyper_rustls::HttpsConnector<DirectRouteConnector>, Full<Bytes>>;
 
 #[derive(Debug)]
@@ -185,7 +189,7 @@ async fn routed_response(
                     "Tor route changed before private-service request",
                 ))
             })?;
-        return Ok(tor_response(&client, method, uri, body).await?);
+        return Ok(tor_response(&client, method, uri, body, should_exit).await?);
     }
 
     let request = Request::builder()
@@ -200,15 +204,18 @@ async fn routed_response(
     Ok(response)
 }
 
-/// Share the HTTP futures across cancellation callback types. Returning
-/// [`Incoming`] exposes headers without polling the body, so a malformed error
-/// body cannot erase its status. The caller still owns cancellation and routing.
+/// Returning [`Incoming`] exposes headers without polling the body, so a
+/// malformed error body cannot erase its status. The caller still owns the
+/// deadline, cancellation and routing.
 async fn tor_response(
     client: &zcash_client_backend::tor::Client,
     method: Method,
     uri: http::Uri,
     body: Vec<u8>,
+    should_exit: &impl Fn() -> bool,
 ) -> Result<http::Response<Incoming>, SyncError> {
+    let retry_filter =
+        |result: Result<StatusCode, &TorError>| stream_open_recovery(result, should_exit);
     match method {
         Method::GET => {
             client
@@ -216,8 +223,8 @@ async fn tor_response(
                     uri,
                     |builder| builder,
                     |incoming| async { Ok(incoming) },
-                    0,
-                    |_| None,
+                    TOR_STREAM_OPEN_RECOVERY_RETRIES,
+                    retry_filter,
                 )
                 .await
         }
@@ -230,14 +237,38 @@ async fn tor_response(
                     },
                     Full::new(Bytes::from(body)),
                     |incoming| async { Ok(incoming) },
-                    0,
-                    |_| None,
+                    TOR_STREAM_OPEN_RECOVERY_RETRIES,
+                    retry_filter,
                 )
                 .await
         }
         _ => unreachable!("private services use GET and POST only"),
     }
     .map_err(|error| SyncError::net(format!("private-service Tor request failed: {error}")))
+}
+
+/// In the SDK HTTP path, top-level Tor errors come from opening the stream,
+/// before TLS or HTTP. Recover only DNS failures or Arti's
+/// [`ErrorKind::RemoteNetworkTimeout`]. HTTP errors, including the ambiguous
+/// connect deadline, stay excluded.
+/// The enclosing cancellation and deadline still cover both attempts. A fresh
+/// isolation context does not guarantee a different exit relay.
+fn stream_open_recovery(
+    result: Result<StatusCode, &TorError>,
+    should_exit: &impl Fn() -> bool,
+) -> Option<Retry> {
+    if should_exit() || !crate::network_privacy::is_tor_desired() {
+        return None;
+    }
+    match result {
+        Err(error)
+            if error.is_tor_name_resolution_failure()
+                || matches!(error, TorError::Tor(error) if error.kind() == ErrorKind::RemoteNetworkTimeout) =>
+        {
+            Some(Retry::Isolated)
+        }
+        _ => None,
+    }
 }
 
 /// Keep the deadline outside both phases; error bodies are never consumed.

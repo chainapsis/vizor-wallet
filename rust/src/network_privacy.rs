@@ -50,6 +50,9 @@ static TOR_STATUS: AtomicU8 = AtomicU8::new(STATUS_DIRECT);
 static TOR_CLIENT: OnceLock<RwLock<Option<TorClient>>> = OnceLock::new();
 static TOR_INIT_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 static DIRECT_ROUTE_EPOCH: AtomicU64 = AtomicU64::new(0);
+// Includes both directions, so a request cannot accept a result after a route
+// changed away and back while its asynchronous work was in flight.
+static ROUTE_REVISION: AtomicU64 = AtomicU64::new(0);
 static NEXT_DIRECT_IO_ID: AtomicU64 = AtomicU64::new(1);
 static ACTIVE_DIRECT_IO: AtomicUsize = AtomicUsize::new(0);
 static DIRECT_IO_WAKERS: OnceLock<Mutex<HashMap<u64, Waker>>> = OnceLock::new();
@@ -80,6 +83,10 @@ fn init_lock() -> &'static tokio::sync::Mutex<()> {
     TOR_INIT_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
+pub(crate) fn route_revision() -> u64 {
+    ROUTE_REVISION.load(Ordering::Acquire)
+}
+
 pub fn is_tor_desired() -> bool {
     TOR_DESIRED.load(Ordering::Acquire)
 }
@@ -102,6 +109,7 @@ pub fn begin_tor_enable() {
         let mut wakers = direct_io_wakers()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        ROUTE_REVISION.fetch_add(1, Ordering::AcqRel);
         TOR_DESIRED.store(true, Ordering::Release);
         TOR_STATUS.store(STATUS_BOOTSTRAPPING, Ordering::Release);
         DIRECT_ROUTE_EPOCH.fetch_add(1, Ordering::AcqRel);
@@ -535,6 +543,7 @@ pub fn disable_tor() {
     let mut slot = client_slot()
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    ROUTE_REVISION.fetch_add(1, Ordering::AcqRel);
     TOR_DESIRED.store(false, Ordering::Release);
     TOR_STATUS.store(STATUS_DIRECT, Ordering::Release);
     *slot = None;

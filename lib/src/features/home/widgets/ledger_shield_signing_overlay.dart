@@ -229,7 +229,11 @@ class _LedgerShieldSigningOverlayState
 
       final dbPath = await ref.read(ledgerWalletDbPathProvider)();
       _requireOriginalContext();
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
+      if (!mounted || _cancelled) return;
+      _requireOriginalContext();
       final shieldPczt = await session.prepare(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,

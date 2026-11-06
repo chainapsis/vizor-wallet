@@ -1418,7 +1418,7 @@ AppBootstrapState _bootstrap(bool isHardware) {
     ),
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: kZcashDefaultNetworkName,
-    rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+    rpcEndpointConfig: _fixedRpcEndpoint(kZcashDefaultNetworkName),
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
     isPasswordConfigured: true,
@@ -1711,4 +1711,13 @@ class _RustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => Future<void>.value();
+}
+
+// Signing/broadcast fixtures exercise one fixed server; endpoint selection is
+// covered separately and must not replace the intended mocked Rust boundary.
+RpcEndpointConfig _fixedRpcEndpoint(String networkName) {
+  final endpoint = defaultRpcEndpointConfig(networkName);
+  return endpoint.network == ZcashNetwork.mainnet
+      ? endpoint.copyWith(presetId: kManualUsRpcEndpointPresetId)
+      : endpoint;
 }

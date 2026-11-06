@@ -14,6 +14,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../../services/native_date_picker.dart';
 import '../import/import_birthday_calendar_overlay.dart'
@@ -113,10 +114,17 @@ class _MobileImportBirthdayScreenState
 
   Future<void> _loadMetadata() async {
     try {
-      final endpoint = ref.read(rpcEndpointProvider);
-      final metadata = await ImportBirthdayEstimator.loadMetadata(
-        endpoint: endpoint,
-      );
+      final metadata = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .runWithEndpointFallback(
+            operation: 'import birthday metadata',
+            action: (endpoint) {
+              if (!mounted) {
+                throw StateError('Birthday metadata load cancelled.');
+              }
+              return ImportBirthdayEstimator.loadMetadata(endpoint: endpoint);
+            },
+          );
       if (mounted) setState(() => _metadata = metadata);
     } catch (e) {
       log('MobileImportBirthday: metadata load failed: $e');
@@ -245,11 +253,16 @@ class _MobileImportBirthdayScreenState
           _error = null;
         });
         try {
-          final endpoint = ref.read(rpcEndpointProvider);
           final height = await ImportBirthdayEstimator.estimateBirthdayHeight(
-            endpoint: endpoint,
+            endpoint: ref.read(rpcEndpointProvider),
             selectedDate: _selectedDate!,
             metadata: _metadata,
+            runWithEndpoint: (action) => ref
+                .read(rpcEndpointFailoverProvider.notifier)
+                .runWithEndpointFallback(
+                  operation: 'import birthday estimate',
+                  action: action,
+                ),
           );
           if (!mounted) return;
           await _submit(height);
