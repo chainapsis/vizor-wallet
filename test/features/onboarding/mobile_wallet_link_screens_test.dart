@@ -487,7 +487,7 @@ void main() {
     tester,
   ) async {
     final accountNotifier = _ValidatingAccountNotifier(
-      validationError: StateError(
+      validationError: const WalletLinkNetworkMismatchException(
         'Linked wallet network does not match the current wallet.',
       ),
     );
@@ -512,7 +512,7 @@ void main() {
     expect(accountNotifier.validatedNetworks, ['test']);
     expect(addressBookNotifier.importCalls, 0);
     expect(
-      find.textContaining('Linked wallet network does not match'),
+      find.text('This wallet link is for a different Zcash network.'),
       findsOneWidget,
     );
     expect(find.text('home route'), findsNothing);

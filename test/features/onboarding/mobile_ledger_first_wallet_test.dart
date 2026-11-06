@@ -87,15 +87,7 @@ void main() {
           await _digits(tester, '123456');
         }
         if (failFirst) {
-          expect(
-            find.text(
-              testL10n.commonErrorWithDetails(
-                testL10n.onboardingSubmitFailed,
-                'Ledger import failed. Try again.',
-              ),
-            ),
-            findsOneWidget,
-          );
+          expect(find.text(testL10n.onboardingSubmitFailed), findsOneWidget);
           expect(find.textContaining('Keystone'), findsNothing);
           expect(
             events,

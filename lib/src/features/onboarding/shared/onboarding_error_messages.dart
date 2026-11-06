@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show immutable;
 
+import '../../../../main.dart' show log;
 import '../../../core/l10n/l10n.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../providers/account_provider.dart';
@@ -54,6 +55,9 @@ String onboardingSubmitErrorMessage(AppLocalizations l10n, Object error) {
     return l10n.onboardingBlockHeightRequired;
   }
   if (error is PasswordPolicyViolation) return error.issue.message(l10n);
+  if (error is WalletLinkNetworkMismatchException) {
+    return l10n.onboardingWalletLinkNetworkMismatch;
+  }
 
   const exceptionPrefix = 'Exception: ';
   var message = error.toString();
@@ -75,7 +79,9 @@ String onboardingSubmitErrorMessage(AppLocalizations l10n, Object error) {
   if (message == kDuplicateLedgerAccountImportErrorMessage) {
     return l10n.onboardingDuplicateLedgerAccount;
   }
-  return l10n.commonErrorWithDetails(l10n.onboardingSubmitFailed, message);
+  // The inline message has one line, so the cause goes to the log only.
+  log('Onboarding submit failed: $message');
+  return l10n.onboardingSubmitFailed;
 }
 
 bool _isAccountCollisionMessage(String message) {

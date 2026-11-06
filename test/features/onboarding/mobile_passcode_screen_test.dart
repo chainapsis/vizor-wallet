@@ -409,15 +409,7 @@ void main() {
         await _enter(tester, '123456');
         await tester.pumpAndSettle();
         expect(find.text('Create Passcode'), findsOneWidget);
-        expect(
-          find.text(
-            testL10n.commonErrorWithDetails(
-              testL10n.onboardingSubmitFailed,
-              'Account save failed',
-            ),
-          ),
-          findsOneWidget,
-        );
+        expect(find.text(testL10n.onboardingSubmitFailed), findsOneWidget);
         expect(security.rollbackCalls, 1);
         expect(security.commitCalls, 0);
         expect(security.preparedPassword, isNull);

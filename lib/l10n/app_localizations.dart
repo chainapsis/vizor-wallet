@@ -2249,7 +2249,7 @@ abstract class AppLocalizations {
   /// **'Enter amount in USD'**
   String get commonEnterAmountInUsd;
 
-  /// An error summary line, then a technical details line. {details} is raw error text and is not translated. Shared by: receive, onboarding, migration, voting.
+  /// An error summary line, then a technical details line. {details} is raw error text and is not translated. Shared by: receive, migration, voting.
   ///
   /// In en, this message translates to:
   /// **'{message}\nDetails: {details}'**
@@ -11045,7 +11045,7 @@ abstract class AppLocalizations {
   /// **'Vizor could not load its startup state.'**
   String get onboardingStorageStartupFailureDetail;
 
-  /// Summary line of an onboarding error when creating or importing an account failed for a reason Vizor has no message for; a technical details line follows.
+  /// Inline onboarding error when creating or importing an account failed for a reason Vizor has no message for. Shown on one line; the cause is only logged.
   ///
   /// In en, this message translates to:
   /// **'Couldn’t finish this step. Try again.'**
@@ -11152,6 +11152,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Welcome back'**
   String get onboardingUnlockWelcomeBack;
+
+  /// Error when a wallet link from another device was made on another Zcash network (for example testnet) than this app or wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'This wallet link is for a different Zcash network.'**
+  String get onboardingWalletLinkNetworkMismatch;
 
   /// Name of the Welcome screen, used in back links.
   ///

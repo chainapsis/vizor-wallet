@@ -6697,6 +6697,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingUnlockWelcomeBack => '다⁠시 오⁠셨⁠네⁠요';
 
   @override
+  String get onboardingWalletLinkNetworkMismatch =>
+      '이 지⁠갑 링⁠크⁠는 다⁠른 Zcash 네⁠트⁠워⁠크⁠용⁠이⁠에⁠요.';
+
+  @override
   String get onboardingWelcome => '시⁠작 화⁠면';
 
   @override

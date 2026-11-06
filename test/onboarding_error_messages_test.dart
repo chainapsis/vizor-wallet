@@ -24,23 +24,17 @@ void main() {
     );
   });
 
-  test('puts other errors under a localized headline', () {
+  test('shows localized copy for errors without their own message', () {
     expect(
       onboardingSubmitErrorMessage(testL10n, Exception('bad input')),
-      testL10n.commonErrorWithDetails(
-        testL10n.onboardingSubmitFailed,
-        'bad input',
-      ),
+      testL10n.onboardingSubmitFailed,
     );
     expect(
       onboardingSubmitErrorMessage(
         testL10n,
         const _FakeAnyhowException('database is locked'),
       ),
-      testL10n.commonErrorWithDetails(
-        testL10n.onboardingSubmitFailed,
-        'database is locked',
-      ),
+      testL10n.onboardingSubmitFailed,
     );
   });
 

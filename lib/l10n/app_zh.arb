@@ -1833,6 +1833,7 @@
   "onboardingUnlockOpenFailed": "无法打开你的钱包。请重试。",
   "onboardingUnlockOpening": "正在打开你的钱包...",
   "onboardingUnlockWelcomeBack": "欢迎回来",
+  "onboardingWalletLinkNetworkMismatch": "此钱包链接属于其他 Zcash 网络。",
   "onboardingWelcome": "欢迎页",
   "onboardingWelcomeActivateGiftCard": "激活礼品卡",
   "onboardingWelcomeGetStarted": "开始使用",

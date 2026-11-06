@@ -6799,6 +6799,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingUnlockWelcomeBack => 'Welcome back';
 
   @override
+  String get onboardingWalletLinkNetworkMismatch =>
+      'This wallet link is for a different Zcash network.';
+
+  @override
   String get onboardingWelcome => 'Welcome';
 
   @override

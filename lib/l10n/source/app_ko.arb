@@ -1833,6 +1833,7 @@
   "onboardingUnlockOpenFailed": "지갑을 열지 못했어요. 다시 시도해 주세요.",
   "onboardingUnlockOpening": "지갑을 여는 중...",
   "onboardingUnlockWelcomeBack": "다시 오셨네요",
+  "onboardingWalletLinkNetworkMismatch": "이 지갑 링크는 다른 Zcash 네트워크용이에요.",
   "onboardingWelcome": "시작 화면",
   "onboardingWelcomeActivateGiftCard": "기프트 카드 활성화",
   "onboardingWelcomeGetStarted": "시작하기",

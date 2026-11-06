@@ -6299,6 +6299,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingUnlockWelcomeBack => '欢迎回来';
 
   @override
+  String get onboardingWalletLinkNetworkMismatch => '此钱包链接属于其他 Zcash 网络。';
+
+  @override
   String get onboardingWelcome => '欢迎页';
 
   @override

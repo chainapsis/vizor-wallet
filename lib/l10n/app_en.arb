@@ -1779,7 +1779,7 @@
   },
   "commonErrorWithDetails": "{message}\nDetails: {details}",
   "@commonErrorWithDetails": {
-    "description": "An error summary line, then a technical details line. {details} is raw error text and is not translated. Shared by: receive, onboarding, migration, voting.",
+    "description": "An error summary line, then a technical details line. {details} is raw error text and is not translated. Shared by: receive, migration, voting.",
     "placeholders": {
       "message": {
         "type": "String"
@@ -8628,7 +8628,7 @@
   },
   "onboardingSubmitFailed": "Couldn’t finish this step. Try again.",
   "@onboardingSubmitFailed": {
-    "description": "Summary line of an onboarding error when creating or importing an account failed for a reason Vizor has no message for; a technical details line follows."
+    "description": "Inline onboarding error when creating or importing an account failed for a reason Vizor has no message for. Shown on one line; the cause is only logged."
   },
   "onboardingTellMeHowZcashWorks": "Tell me how Zcash works",
   "@onboardingTellMeHowZcashWorks": {
@@ -8697,6 +8697,10 @@
   "onboardingUnlockWelcomeBack": "Welcome back",
   "@onboardingUnlockWelcomeBack": {
     "description": "Heading of the desktop unlock screen."
+  },
+  "onboardingWalletLinkNetworkMismatch": "This wallet link is for a different Zcash network.",
+  "@onboardingWalletLinkNetworkMismatch": {
+    "description": "Error when a wallet link from another device was made on another Zcash network (for example testnet) than this app or wallet."
   },
   "onboardingWelcome": "Welcome",
   "@onboardingWelcome": {
