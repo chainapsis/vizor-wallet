@@ -27,8 +27,14 @@ void main() {
   for (final additional in [false, true]) {
     for (final fromMnemonic in [false, true]) {
       for (final (label, failure) in <(String, Object)>[
-        ('disagreeing heights', StateError('birthday heights disagree')),
-        ('timeout', TimeoutException('birthday peer verification timed out')),
+        (
+          'missing selected height',
+          StateError('Could not get a valid current block height'),
+        ),
+        (
+          'selected height timeout',
+          TimeoutException('selected height request timed out'),
+        ),
         ('cancellation', StateError('birthday verification cancelled')),
       ]) {
         test(
@@ -126,7 +132,7 @@ void main() {
             await failed;
 
             // Neither first-account replacement nor additional-account writes
-            // may happen without the fresh two-endpoint birthday-height check.
+            // may happen without a valid selected-server birthday height.
             expect(_rust.calls, isEmpty);
             expect(storage.writes, isEmpty);
             expect(await storage.readAll(), initialStorage);

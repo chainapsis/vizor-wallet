@@ -366,8 +366,8 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
 
   RpcEndpointConfig get currentEndpoint => state.current;
 
-  /// Automatic can connect on one usable response, but a new account's durable
-  /// birthday needs fresh, agreeing observations from two distinct pool URLs.
+  /// Uses a valid selected-server tip, preferring a lower, fresh agreeing peer
+  /// observation when available. Peer comparison is best effort.
   Future<BigInt> getCreationBirthdayHeight() {
     if (!isAutomaticRpcEndpointConfig(state.primary)) {
       return getLatestBlockHeight();
@@ -378,7 +378,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     _creationCancelled = cancelled;
     _cancelProbe = ref.read(rpcEndpointSelectionCancelProvider);
     late final Future<BigInt> confirmation;
-    confirmation = _confirmCreationBirthdayHeight(cancelled).whenComplete(() {
+    confirmation = _readCreationBirthdayHeight(cancelled).whenComplete(() {
       if (identical(_creationHeightFlight, confirmation)) {
         _creationHeightFlight = null;
         _creationCancelled = null;
@@ -390,9 +390,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     return confirmation;
   }
 
-  Future<BigInt> _confirmCreationBirthdayHeight(
-    Completer<void> cancelled,
-  ) async {
+  Future<BigInt> _readCreationBirthdayHeight(Completer<void> cancelled) async {
     final epoch = _automaticEpoch;
     final tor = await _waitForRoute(cancelled);
     final settings = ref.read(automaticRpcEndpointSettingsProvider);
@@ -437,27 +435,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         'Automatic birthday endpoint is not in the public pool.',
       );
     }
-    final operator = automaticRpcEndpointOperatorForUrl(selectedUrl);
-    final otherOperator = <RpcEndpointConfig>[];
-    final sameOperator = <RpcEndpointConfig>[];
-    for (final candidate in candidates) {
-      final url = candidate.normalizedLightwalletdUrl;
-      if (url == selectedUrl) continue;
-      (automaticRpcEndpointOperatorForUrl(url) == operator
-              ? sameOperator
-              : otherOperator)
-          .add(candidate);
-    }
-    // Prefer operator diversity without withholding regional peers from a race.
-    final peers = <RpcEndpointConfig>[];
-    for (var i = 0; i < otherOperator.length || i < sameOperator.length; i++) {
-      if (i < otherOperator.length) peers.add(otherOperator[i]);
-      if (i < sameOperator.length) peers.add(sameOperator[i]);
-    }
-    final attempts = <String, int>{};
-
-    while (true) {
-      requireCurrent(context);
+    void discardOldObservations() {
       final now = ref.read(rpcEndpointFailoverClockProvider)();
       _creationTips.removeWhere(
         (_, observation) => !isRecentEndpointObservation(
@@ -466,54 +444,17 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           settings.tipReuseMaxAge,
         ),
       );
-      final current = _creationTips[selectedUrl];
-      final observations = [
-        for (final peer in peers)
-          ?_creationTips[peer.normalizedLightwalletdUrl],
-      ];
-      if (current != null) {
-        for (final peer in observations) {
-          if ((peer.sample.height - current.sample.height).abs() <=
-              BigInt.from(2)) {
-            requireCurrent(context);
-            return peer.sample.height < current.sample.height
-                ? peer.sample.height
-                : current.sample.height;
-          }
-        }
-        if (observations.isNotEmpty) {
-          throw StateError(
-            'Servers disagree on the current block height. Try again.',
-          );
-        }
-      }
-      final nextPeers = peers
-          .where((p) => !attempts.containsKey(p.normalizedLightwalletdUrl))
-          .take(2)
-          .toList();
-      if ((current == null && (attempts[selectedUrl] ?? 0) >= 2) ||
-          (observations.isEmpty && nextPeers.isEmpty)) {
-        throw StateError(
-          'Could not confirm the current block height with another server. Try again.',
-        );
-      }
-      // Refresh a missing selected tip separately: an early selected response
-      // must not end a fast batch before its peer observations can finish.
-      final targets = current == null ? [context.current] : nextPeers;
-      for (final target in targets) {
-        attempts.update(
-          target.normalizedLightwalletdUrl,
-          (count) => count + 1,
-          ifAbsent: () => 1,
-        );
-      }
+    }
+
+    Future<void> probe(List<RpcEndpointConfig> targets) async {
+      requireCurrent(context);
+      final timeout = remaining();
       _cancelOptionalSelectionForBirthday();
       final id =
           '${DateTime.now().microsecondsSinceEpoch}-birthday-${_selectionSequence++}';
       _creationSelectionId = id;
       final startedAt = ref.read(rpcEndpointFailoverClockProvider)();
       try {
-        final timeout = remaining();
         final samples = await Future.any([
           ref.read(rpcEndpointCandidatesProbeProvider)(
             urls: targets.map((c) => c.normalizedLightwalletdUrl).toList(),
@@ -537,15 +478,90 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           samples.where((s) => allowed.contains(s.url)),
           startedAt,
         );
-      } catch (_) {
-        requireCurrent(context);
-        // A failed optional peer is not evidence that the selected server is
-        // unhealthy. Try the next regional host within the same wall budget.
       } finally {
         _cancelProbe?.call(id);
         if (_creationSelectionId == id) _creationSelectionId = null;
       }
     }
+
+    discardOldObservations();
+    var current = _creationTips[selectedUrl];
+    if (current == null) {
+      await probe([context.current]);
+      discardOldObservations();
+      current = _creationTips[selectedUrl];
+    }
+    if (current == null) {
+      throw StateError(
+        'Could not get a valid current block height. Try again.',
+      );
+    }
+    // Keep this call's valid selected observation even if it ages out of the
+    // reusable evidence map while an optional peer is slow or unavailable.
+    final selected = current;
+    final operator = automaticRpcEndpointOperatorForUrl(selectedUrl);
+    final otherOperator = <RpcEndpointConfig>[];
+    final sameOperator = <RpcEndpointConfig>[];
+    for (final candidate in candidates) {
+      final url = candidate.normalizedLightwalletdUrl;
+      if (url == selectedUrl) continue;
+      (automaticRpcEndpointOperatorForUrl(url) == operator
+              ? sameOperator
+              : otherOperator)
+          .add(candidate);
+    }
+    final peers = <RpcEndpointConfig>[];
+    for (var i = 0; i < otherOperator.length || i < sameOperator.length; i++) {
+      if (i < otherOperator.length) peers.add(otherOperator[i]);
+      if (i < sameOperator.length) peers.add(sameOperator[i]);
+    }
+
+    BigInt? matchingHeight() {
+      discardOldObservations();
+      if (!isRecentEndpointObservation(
+        selected.observedAt,
+        ref.read(rpcEndpointFailoverClockProvider)(),
+        settings.tipReuseMaxAge,
+      )) {
+        return null;
+      }
+      for (final peer in peers) {
+        final observation = _creationTips[peer.normalizedLightwalletdUrl];
+        if (observation != null &&
+            (observation.sample.height - selected.sample.height).abs() <=
+                BigInt.from(2)) {
+          return observation.sample.height < selected.sample.height
+              ? observation.sample.height
+              : selected.sample.height;
+        }
+      }
+      return null;
+    }
+
+    final confirmed = matchingHeight();
+    requireCurrent(context);
+    if (confirmed != null) return confirmed;
+    if (peers.isEmpty ||
+        peers.any(
+          (p) => _creationTips.containsKey(p.normalizedLightwalletdUrl),
+        )) {
+      return selected.sample.height;
+    }
+    try {
+      // One optional race only. Missing/conflicting peers never gate creation.
+      await probe(peers.take(2).toList());
+    } catch (error) {
+      requireCurrent(context);
+      final message = error.toString().toLowerCase();
+      // Native route/cancellation signals can arrive before Dart's state does.
+      if (message.contains('network privacy blocked') ||
+          message.contains('cancelled')) {
+        rethrow;
+      }
+      log('Birthday peer comparison inconclusive; using selected tip: $error');
+    }
+    requireCurrent(context);
+    return matchingHeight() ?? selected.sample.height;
   }
 
   void _rememberCreationTips(

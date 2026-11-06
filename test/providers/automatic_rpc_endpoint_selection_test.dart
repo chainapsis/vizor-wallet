@@ -1766,11 +1766,8 @@ void main() {
           if (call.urls.contains(_eu)) ...[_sample(_eu), _sample(_eu)],
         ];
         h.birthdayRespond = (_) async => [];
-        await expectLater(
-          h.notifier.getCreationBirthdayHeight(),
-          throwsStateError,
-        );
-        expect(h.birthdayCalls, isNotEmpty);
+        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
+        expect(h.birthdayCalls, hasLength(1));
         expect(
           h.birthdayCalls.every((call) => !call.urls.contains(_eu)),
           isTrue,
@@ -1804,39 +1801,47 @@ void main() {
       );
     }
 
-    test('same-operator disagreement beyond two blocks still fails', () async {
-      final h = birthdayHarness();
-      h.respond = (call) async => [
-        if (call.urls.contains(_eu)) _sample(_eu, 100, 100),
-        if (call.urls.contains(_kr)) _sample(_kr, 300, 97),
-      ];
-      await expectLater(
-        h.notifier.getCreationBirthdayHeight(),
-        throwsStateError,
-      );
-      expect(h.birthdayCalls, isEmpty);
-      expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
-    });
+    test(
+      'peer disagreement uses the selected height without more probes',
+      () async {
+        final h = birthdayHarness();
+        h.respond = (call) async => [
+          if (call.urls.contains(_eu)) _sample(_eu, 100, 100),
+          if (call.urls.contains(_kr)) _sample(_kr, 300, 97),
+        ];
+        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
+        expect(h.birthdayCalls, isEmpty);
+        expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+      },
+    );
 
-    test('a singleton future height cannot become a birthday', () async {
-      final h = birthdayHarness();
-      h.respond = (call) async => [
-        if (call.urls.contains(_eu)) _sample(_eu, 20, 4000000000),
-      ];
-      h.birthdayRespond = (call) async => [
-        for (final url in call.urls) _sample(url, 100, 3500000),
-      ];
-      await expectLater(
-        h.notifier.getCreationBirthdayHeight(),
-        throwsStateError,
-      );
-      expect(h.birthdayCalls, hasLength(1));
-      expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
-      expect(
-        h.container.read(rpcEndpointFailoverProvider).automaticReady,
-        isTrue,
-      );
-    });
+    test(
+      'an uncorroborated valid u32 selected height remains usable',
+      () async {
+        final h = birthdayHarness();
+        h.respond = (call) async => [
+          if (call.urls.contains(_eu)) _sample(_eu, 20, 4000000000),
+        ];
+        h.birthdayRespond = (call) async => [
+          for (final url in call.urls) _sample(url, 100, 3500000),
+        ];
+        expect(
+          await h.notifier.getCreationBirthdayHeight(),
+          BigInt.from(4000000000),
+        );
+        expect(h.birthdayCalls, hasLength(1));
+        expect(
+          h.container.read(rpcEndpointFailoverProvider).automaticProvisional,
+          isTrue,
+        );
+        expect(h.store.values[('main', false)]?.lastPeerValidatedAt, isNull);
+        expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+        expect(
+          h.container.read(rpcEndpointFailoverProvider).automaticReady,
+          isTrue,
+        );
+      },
+    );
 
     for (final value in [0, -1, 0x100000000]) {
       test('rejects out-of-range birthday $value', () async {
@@ -1907,9 +1912,10 @@ void main() {
     }
 
     test(
-      'uses actual receipt time for a slow Tor response and refreshes only the expired observation',
+      'retains this call selected height when a slow Tor peer outlives its freshness',
       () async {
         final h = birthdayHarness(route: _torReady);
+        h.respond = (_) async => [_sample(_eu, 100, 102)];
         h.birthdayRespond = (call) async {
           if (h.birthdayCalls.length == 1) {
             h.now = h.now.add(const Duration(seconds: 8));
@@ -1924,32 +1930,136 @@ void main() {
               ),
           ];
         };
-        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
-        expect(h.birthdayCalls, hasLength(2));
-        expect(h.birthdayCalls.first.urls, [rocks, _us]);
-        expect(h.birthdayCalls.last.urls, [_eu]);
+        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(102));
+        expect(h.birthdayCalls, hasLength(1));
+        expect(h.birthdayCalls.single.urls, [rocks, _us]);
         expect(h.birthdayCalls.every((c) => c.maxConcurrency == 2), isTrue);
       },
     );
 
+    for (final failure in [
+      'peer timeout',
+      'too many active selections',
+      'local worker failed',
+      'no healthy automatic endpoint',
+    ]) {
+      test(
+        'optional $failure uses selected height without cooldown or retry',
+        () async {
+          final h = birthdayHarness();
+          h.birthdayRespond = (_) async => throw StateError(failure);
+          expect(
+            await h.notifier.getCreationBirthdayHeight(),
+            BigInt.from(100),
+          );
+          expect(h.birthdayCalls, hasLength(1));
+          expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+          expect(h.store.values[('main', false)]?.lastPeerValidatedAt, isNull);
+          expect((await h.notifier.ensureReady()).lightwalletdUrl, _eu);
+        },
+      );
+    }
+
+    for (final error in [
+      'Network privacy blocked: Tor is unavailable',
+      'Automatic endpoint selection: cancelled',
+    ]) {
+      test(
+        'native control signal $error still aborts with unchanged Dart route',
+        () async {
+          final h = birthdayHarness();
+          h.birthdayRespond = (_) async => throw StateError(error);
+          await expectLater(
+            h.notifier.getCreationBirthdayHeight(),
+            throwsStateError,
+          );
+          expect(h.birthdayCalls, hasLength(1));
+        },
+      );
+    }
+
     test(
-      'peer failure tries another region without cooling the current host',
+      'a missing selected height cannot fall back to a peer or a default',
       () async {
         final h = birthdayHarness();
-        h.birthdayRespond = (call) async {
-          if (h.birthdayCalls.length == 1) throw StateError('peer timeout');
-          return [for (final url in call.urls) _sample(url)];
-        };
+        h.respond = (_) async => [_sample(_eu, 100, 0)];
+        h.birthdayRespond = (_) async => [];
+        await expectLater(
+          h.notifier.getCreationBirthdayHeight(),
+          throwsStateError,
+        );
+        expect(h.birthdayCalls.single.urls, [_eu]);
+      },
+    );
+
+    test('selected height retrieval failure remains a hard error', () async {
+      final h = birthdayHarness();
+      h.respond = (_) async => [_sample(_eu, 100, 0)];
+      h.birthdayRespond = (_) async =>
+          throw TimeoutException('selected request timed out');
+      await expectLater(
+        h.notifier.getCreationBirthdayHeight(),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(h.birthdayCalls.single.urls, [_eu]);
+    });
+
+    test(
+      'a fresh lower agreeing peer is preferred to the selected snapshot',
+      () async {
+        final h = birthdayHarness();
+        h.respond = (_) async => [_sample(_eu, 100, 102)];
+        h.birthdayRespond = (_) async => [_sample(rocks, 100, 100)];
         expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
-        expect(h.birthdayCalls, hasLength(2));
-        expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
-        expect((await h.notifier.ensureReady()).lightwalletdUrl, _eu);
+        expect(h.birthdayCalls, hasLength(1));
+      },
+    );
+
+    for (final age in [-10, 10]) {
+      test(
+        'invalid peer receipt age $age cannot replace selected height',
+        () async {
+          final h = birthdayHarness();
+          h.respond = (_) async => [_sample(_eu, 100, 102)];
+          h.birthdayRespond = (_) async => [
+            RpcEndpointCandidateSample(
+              url: rocks,
+              height: BigInt.from(100),
+              latency: const Duration(milliseconds: 100),
+              observedAt: h.now.add(Duration(seconds: age)),
+            ),
+          ];
+          expect(
+            await h.notifier.getCreationBirthdayHeight(),
+            BigInt.from(102),
+          );
+          expect(h.birthdayCalls, hasLength(1));
+        },
+      );
+    }
+
+    test(
+      'a later birthday call refreshes an expired selected snapshot',
+      () async {
+        final h = birthdayHarness();
+        h.birthdayRespond = (_) async => [];
+        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
+        h.now = h.now.add(const Duration(seconds: 8));
+        h.birthdayCalls.clear();
+        h.birthdayRespond = (call) async => [
+          for (final url in call.urls) _sample(url, 100, 200),
+        ];
+        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(200));
+        expect(h.birthdayCalls.map((call) => call.urls), [
+          [_eu],
+          [rocks, _us],
+        ]);
       },
     );
 
     for (final tor in [false, true]) {
       test(
-        '${tor ? 'Tor' : 'direct'} confirmation has a single bounded deadline',
+        '${tor ? 'Tor' : 'direct'} peer timeout returns selected height within one budget',
         () async {
           final h = birthdayHarness(
             route: tor ? _torReady : const NetworkPrivacyState.off(),
@@ -1961,14 +2071,16 @@ void main() {
           final peer = Completer<List<RpcEndpointCandidateSample>>();
           h.birthdayRespond = (_) => peer.future;
           final watch = Stopwatch()..start();
-          await expectLater(
-            h.notifier.getCreationBirthdayHeight(),
-            throwsA(anyOf(isA<TimeoutException>(), isA<StateError>())),
+          expect(
+            await h.notifier.getCreationBirthdayHeight(),
+            BigInt.from(100),
           );
+          expect(h.birthdayCalls, hasLength(1));
           expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
           expect(h.cancelled, isNotEmpty);
-          peer.complete([_sample(rocks)]);
+          peer.complete([_sample(rocks, 100, 99)]);
           await _flush();
+          expect(h.store.values[('main', tor)]?.lastPeerValidatedAt, isNull);
           expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
         },
       );

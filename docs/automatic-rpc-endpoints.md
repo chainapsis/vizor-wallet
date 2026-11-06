@@ -127,37 +127,42 @@ cycle, with all stale-result and privacy-route guards still enforced.
 
 ## New-account birthday confirmation
 
-Connecting to an Automatic candidate does not authorize its height as a new
-account's durable birthday. `getCreationBirthdayHeight` requires observations
-from the selected server and another distinct URL in the fixed public pool, no
-more than two blocks apart, and returns the lower height. When fresh matching
-observations are already available, a different operator is preferred; a matching
-regional peer under the same operator is also sufficient. Operator groups are a
-diversity preference, not an admission requirement. The observations must be at most five
-seconds old on the same network, route and cancellation epoch. Their local
-receipt timestamps come from Rust immediately after each tip response, so an
-early result in a long batch does not become fresh again at batch completion.
-No height evidence is restored from the durable route cache.
+`getCreationBirthdayHeight` requires a valid positive-u32 height from the
+selected server. It reuses a selected observation no more than five seconds old
+on the same network, route and cancellation epoch, or refreshes that server once.
+No height evidence is restored from the durable route cache. Receipt timestamps
+come from Rust immediately after each tip response, so an early response in a
+long batch does not become fresh again at batch completion.
 
-Fresh observations already collected for selection are reused without extra
-requests. Otherwise a missing selected observation is refreshed first, so its
-early response cannot end a peer race prematurely. Up to two peers race next,
-interleaving other-operator and same-operator regions. The ordinary early-return
-probe avoids waiting for an unavailable operator after another peer responds.
-Failures can try the remaining distinct hosts within the same six-second direct
-or fifteen-second Tor wall budget, starting after route readiness. Existing
-Direct/Tor concurrency limits and cancellation apply.
-Height disagreement, expiry, cancellation or exhausted budget fails before
-account creation, existing DB replacement or secret persistence. Concurrent
-confirmation callers share the work; optional performance/peer rechecks give
-way while this boundary is checked. Ordinary connection and warm paths keep
-their existing request-count policy. Manual/custom choices retain their
-single-server policy, and Rust rejects zero or out-of-u32 birthdays for every
-mode instead of truncating or underflowing them.
+Peer comparison is best effort. If another distinct URL in the fixed public pool
+has a fresh observation within two blocks of the selected height, the lower
+height is preferred. A different operator is preferred among available matching
+peers, but a regional peer under the same operator is sufficient. If a fresh
+peer already disagrees, the selected height is used without further requests.
+Otherwise, up to two peers race once, interleaving other-operator and same-operator
+regions with the ordinary early-return probe. There are no further peer retries.
 
-This is bounded public-server corroboration, not header-chain or consensus
-verification. The existing Rust sync policy for adopting its own tip RPC into
-the wallet DB is separate from this birthday and probe-cache boundary.
+Disagreement, missing or invalid peer responses, timeout, and local worker or
+capacity failures use the selected height and allow creation to continue. This
+call retains its selected observation even if it ages beyond five seconds while
+waiting for that optional comparison; it cannot then form a fresh matching pair
+and is not reused by later calls after expiry. Failure does not confer peer
+validation on the endpoint or change normal Automatic cache confidence.
+
+The six-second direct or fifteen-second Tor wall budget starts after route
+readiness and covers readiness, selected-height retrieval and optional peers.
+Cancellation, lock, reset, disposal, preference or route changes (including native
+privacy-blocked/cancelled signals) still abort. Failure to obtain a valid selected
+height also aborts before account creation, existing DB replacement or secret
+persistence. Concurrent callers share this operation; optional performance/peer
+rechecks give way while it runs. Manual/custom choices retain their single-server
+policy. Rust rejects zero or out-of-u32 birthdays for every mode instead of
+truncating or underflowing them.
+
+This policy accepts the selected public server's height when comparison is
+inconclusive; it is not header-chain or consensus verification. The existing Rust
+sync policy for adopting its own tip RPC into the wallet DB is separate from
+this birthday and probe-cache boundary.
 
 ## Rechecks and failures
 
