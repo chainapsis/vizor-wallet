@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../../tool/l10n/korean_arb.dart' show wordJoiner;
+
 void main() {
   group('availableAppLanguages', () {
     test('offers released languages only without the preview define', () {
@@ -159,7 +161,7 @@ void main() {
     );
 
     // Shipped Korean strings carry word joiners (tool/l10n/korean_arb.dart).
-    String visible(String text) => text.replaceAll('⁠', '');
+    String visible(String text) => text.replaceAll(wordJoiner, '');
     expect(visible(app.settingsLanguageLabel), '언어');
     expect(
       visible(app.languageSystemOption(AppLanguage.ko.nativeName)),

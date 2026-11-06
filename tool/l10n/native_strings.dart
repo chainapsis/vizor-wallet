@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'generated_output.dart';
+import 'korean_arb.dart' show wordJoiner;
 
 const nativeKeyPrefix = 'native';
 
@@ -75,7 +76,7 @@ NativeStringTable parseNativeStrings(Map<String, String> arbJsonByTag) {
       if (message is! String) {
         throw FormatException('$tag $key is not a string.');
       }
-      final text = message.replaceAll('⁠', '');
+      final text = message.replaceAll(wordJoiner, '');
       _checkPlaceholders(tag, key, text, _declaredPlaceholders(template, key));
       table[key] = text;
     }

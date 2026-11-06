@@ -5,10 +5,14 @@
 //   fvm dart run tool/l10n/korean_arb.dart --check  fails if it is stale
 //
 // Flutter breaks Korean lines between any two syllables, splitting words.
-// The generated file joins the characters of each word with U+2060 WORD
-// JOINER, which renders as nothing and only removes the break opportunity,
-// so lines break at spaces like CSS `word-break: keep-all`. Translators never
-// see the joiners. A word longer than its line still wraps.
+// The generated file joins the characters of each word with U+200D ZERO
+// WIDTH JOINER, which renders as nothing and only removes the break
+// opportunity, so lines break at spaces like CSS `word-break: keep-all`.
+// Translators never see the joiners. A word longer than its line still wraps.
+//
+// Not U+2060 WORD JOINER: no app or system font has it, so each one split the
+// text into font runs and macOS cut off the last glyph of a line (약 drew as
+// 익). Apple SD Gothic Neo has U+200D.
 import 'dart:convert';
 import 'dart:io';
 
@@ -16,7 +20,7 @@ import 'generated_output.dart';
 
 const koreanSourcePath = 'lib/l10n/source/app_ko.arb';
 const koreanOutputPath = 'lib/l10n/app_ko.arb';
-const wordJoiner = '⁠';
+const wordJoiner = '\u200d';
 
 bool _isHangul(int c) => c >= 0xAC00 && c <= 0xD7A3;
 
