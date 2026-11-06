@@ -2579,6 +2579,12 @@ abstract class AppLocalizations {
   /// **'You don\'t have enough ZEC for this payment. Try a smaller amount.'**
   String get commonPayInsufficientZec;
 
+  /// Disabled primary button label on the Pay review while the payment is being started. Shared by: pay, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Paying'**
+  String get commonPayingButton;
+
   /// Title of a failed Pay activity row or detail screen. Shared by: activity, pay, swap.
   ///
   /// In en, this message translates to:
@@ -11363,7 +11369,7 @@ abstract class AppLocalizations {
   /// **'Converted amount'**
   String get payReviewConvertedAmount;
 
-  /// Label of the paying amount row on the Pay review step; also the disabled button label while the payment starts.
+  /// Label of the paying amount row on the Pay review step.
   ///
   /// In en, this message translates to:
   /// **'Paying'**
@@ -18002,12 +18008,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Locking quote'**
   String get swapReviewStartingLockingQuote;
-
-  /// Disabled primary button label on the pay review while the payment is being started.
-  ///
-  /// In en, this message translates to:
-  /// **'Paying'**
-  String get swapReviewStartingPaying;
 
   /// Disabled primary button label on the swap review while the ZEC deposit is being sent.
   ///

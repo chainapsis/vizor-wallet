@@ -2002,6 +2002,10 @@
   "@commonPayInsufficientZec": {
     "description": "Error on the Pay recipient step when the quote costs more ZEC than is spendable. Shared by: pay, swap."
   },
+  "commonPayingButton": "Paying",
+  "@commonPayingButton": {
+    "description": "Disabled primary button label on the Pay review while the payment is being started. Shared by: pay, swap."
+  },
   "commonPaymentFailed": "Payment failed",
   "@commonPaymentFailed": {
     "description": "Title of a failed Pay activity row or detail screen. Shared by: activity, pay, swap."
@@ -8867,7 +8871,7 @@
   },
   "payReviewPaying": "Paying",
   "@payReviewPaying": {
-    "description": "Label of the paying amount row on the Pay review step; also the disabled button label while the payment starts."
+    "description": "Label of the paying amount row on the Pay review step."
   },
   "payReviewQuoteExpired": "Quote expired",
   "@payReviewQuoteExpired": {
@@ -14044,10 +14048,6 @@
   "swapReviewStartingLockingQuote": "Locking quote",
   "@swapReviewStartingLockingQuote": {
     "description": "Disabled primary button label on the swap review while the quote is being locked."
-  },
-  "swapReviewStartingPaying": "Paying",
-  "@swapReviewStartingPaying": {
-    "description": "Disabled primary button label on the pay review while the payment is being started."
   },
   "swapReviewStartingSending": "Sending",
   "@swapReviewStartingSending": {

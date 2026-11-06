@@ -1445,6 +1445,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonPayInsufficientZec => '你的 ZEC 不足以完成此支付。请尝试较小的金额。';
 
   @override
+  String get commonPayingButton => '支付中';
+
+  @override
   String get commonPaymentFailed => '支付失败';
 
   @override
@@ -10152,9 +10155,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapReviewStartingLockingQuote => '正在锁定报价';
-
-  @override
-  String get swapReviewStartingPaying => '支付中';
 
   @override
   String get swapReviewStartingSending => '发送中';

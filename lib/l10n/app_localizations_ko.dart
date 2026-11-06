@@ -1487,6 +1487,9 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 결⁠제⁠에 필⁠요⁠한 ZEC⁠가 부⁠족⁠해⁠요. 더 적⁠은 금⁠액⁠으⁠로 시⁠도⁠해 보⁠세⁠요.';
 
   @override
+  String get commonPayingButton => '결⁠제 중';
+
+  @override
   String get commonPaymentFailed => '결⁠제⁠에 실⁠패⁠했⁠어⁠요';
 
   @override
@@ -10806,9 +10809,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapReviewStartingLockingQuote => '견⁠적 고⁠정 중';
-
-  @override
-  String get swapReviewStartingPaying => '결⁠제 중';
 
   @override
   String get swapReviewStartingSending => '보⁠내⁠는 중';

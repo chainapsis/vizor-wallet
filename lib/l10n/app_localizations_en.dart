@@ -1507,6 +1507,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'You don\'t have enough ZEC for this payment. Try a smaller amount.';
 
   @override
+  String get commonPayingButton => 'Paying';
+
+  @override
   String get commonPaymentFailed => 'Payment failed';
 
   @override
@@ -11006,9 +11009,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapReviewStartingLockingQuote => 'Locking quote';
-
-  @override
-  String get swapReviewStartingPaying => 'Paying';
 
   @override
   String get swapReviewStartingSending => 'Sending';
