@@ -25,6 +25,10 @@ String staticVotingConfigSourceProblemText(
     l10n.votingConfigChecksumFormat,
 };
 
+/// Whether [votingConfigSourceErrorText] adds a details line for [error].
+bool votingConfigErrorHasDetails(Object error) =>
+    error is rust_wire.VotingErrorView || error is VotingRustException;
+
 /// What the voting config settings show when adding, choosing or deleting a
 /// source fails. [fallback] covers failures with no copy of their own.
 String votingConfigSourceErrorText(
@@ -39,7 +43,7 @@ String votingConfigSourceErrorText(
   if (error is VotingHttpException) return l10n.votingConfigLoadFailed;
   // The SDK refused what the source served (a pin, signature or version);
   // its English says which.
-  if (error is rust_wire.VotingErrorView || error is VotingRustException) {
+  if (votingConfigErrorHasDetails(error)) {
     return l10n.commonErrorWithDetails(
       l10n.votingConfigLoadFailed,
       describeVotingConfigMirrorError(error),

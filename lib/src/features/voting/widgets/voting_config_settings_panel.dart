@@ -169,7 +169,9 @@ class _VotingConfigSettingsPanelState
       if (!mounted) return;
       setState(() {
         _submitError = _messageFromError(error);
-        _validationField = 'url';
+        // The field message has one line; an SDK refusal with its details
+        // goes above the editor instead.
+        _validationField = votingConfigErrorHasDetails(error) ? null : 'url';
         _isSubmitting = false;
       });
     }
