@@ -8,7 +8,8 @@ Rust returns English text in two ways:
   Dart reads the code with `walletErrorCode(error)`
   (`lib/src/core/zcash/wallet_error_code.dart`).
 - **Results.** Broadcast and migration results carry a `status` string, which
-  works as a code, and an optional English `message`.
+  works as a code, and an optional English `message`. Broadcast results also
+  carry `notices`, the same message as data (below).
 
 Dart either shows that text unchanged or matches English phrases in it to
 choose localized copy or a behaviour. This file lists every such site in
@@ -65,59 +66,50 @@ come from Rust text:
 
 Their matchers are listed below.
 
-## Broadcast results: unresolved (option B)
+## Broadcast results: notices
 
-These sites show `result.message ?? l10n.<status copy>`. Rust fills `message`
-for every non-`broadcasted` status, so ko/zh show Rust's English sentence. The
-sentences are hardware-send safety warnings, so English must stay
-byte-identical. That rules out swapping in the existing status copy.
+`ExtractAndBroadcastPcztResult`, `StoreAndBroadcastPcztsResult`,
+`ExecuteProposalResult` and the Ledger outbox's results carry
+`notices: Vec<BroadcastNotice>` beside `message`. Each notice is one sentence
+(`kind` plus `index`, `total`, `txid`, `detail`, `expiry_height`,
+`chain_height`), and Rust builds `message` from them
+(`wallet/sync/broadcast_notice.rs`), so the two cannot disagree. Dart shows
+`broadcastResultText(l10n, notices: …, message: …)`
+(`core/zcash/broadcast_notice_text.dart`): the `broadcastNotice*` ARB keys,
+or `message` when there are no notices or one has a kind it does not know.
 
-Option C would localize them without changing English: Rust sends structured
-fields and Dart rebuilds each sentence from ARB keys whose English values
-match Rust's. It was not done, because the sentences do not reduce to a few
-fixed shapes:
+- **English is unchanged.** `test/fixtures/broadcast_notices_en.json` holds
+  every kind and each composition. The Rust test checks `english()` against
+  it and `test/l10n/broadcast_notice_text_test.dart` checks the English ARB
+  copy against it. Rewording a sentence means changing Rust, the ARB key and
+  the fixture together.
+- **`message` stays.** Logs, endpoint failover
+  (`shouldFallbackFromLightwalletdError`), `ledger/operations.rs`
+  `acknowledge` for older rows and older builds read it.
+- **`detail` stays English.** It is server, transport or Rust text: a gRPC
+  status, "Broadcast rejected: … (code n)", a storage error. A `text` notice
+  is a whole sentence with no fixed shape (a refusal after a mined round, the
+  upgrade hold), shown as Rust wrote it; the hold already has localized copy
+  through `networkUpgradeHoldMessage`, which the sites check first.
+- **Stored results.** The Ledger outbox stores notices as JSON in a nullable
+  `notices` column, added with `ALTER TABLE` by `ensure_table`. Rows written
+  before it, and `retryable_error` rows, have none and show `message`.
+  `acknowledge` decides "storage failed" from the notices, or from the English
+  text for older rows. Swap records store `{type: 'broadcast', notices}` in
+  `broadcastNoticeCode` beside the English in `broadcastNotice`
+  (`SwapBroadcastMessage`); builds before this one read only the English.
+- **Not covered.** The mobile swap Keystone screen classifies a failure
+  through `_friendlyError`, and Ledger sends map unknown statuses to their own
+  copy; neither shows `message`. `IronwoodMigrationResult` and software
+  shielding (`ShieldTransparentResult`) have no notices.
 
-- **At least 10 templates across four result types:** `ExtractAndBroadcastPcztResult`,
-  `StoreAndBroadcastPcztsResult`, `LedgerSignedOperationBroadcastResult` and
-  `ExecuteProposalResult` (through swap).
-- **Nested composition.** The storage-failure sentence wraps whatever sentence
-  the broadcast step produced (`pczt.rs` `store_and_broadcast_pczts_inner`:
-  `"{network_message}A transaction may already be on the network, but local
-  storage failed: {storage_error}. … .{retain_error}"`). `broadcast_unknown`
-  for a single PCZT appends one of two suffixes (stored locally, or "Local
-  tracking also failed: …").
-- **`{error}` slots are often more Rust prose, not just a gRPC status.**
-  Examples: "Broadcast rejected: {msg} (code {n})", transparent-authority
-  refusals, and a whole `WalletFailure.message` when a later round fails
-  after a mined one.
-- **Persistence.** The Ledger outbox stores `status` and `message` in SQLite
-  (`ledger/operations.rs`, `ledger_signed_operations.message`). Swap records
-  store the notice. Structured fields would mean changing those schemas,
-  which this work must not do.
-
-| Dart site | Rust templates (file) | Status → fallback key already in ARB |
-| --- | --- | --- |
-| `send_flow.dart` `_pcztBroadcastStatusMessage` (Keystone sends) | `sync/pczt.rs` `pczt_broadcast_step`: "Transaction {i} of {n} has an unknown broadcast result: {error}", "Transaction {i} of {n} was rejected and was not stored: {error}", "Failed to open the broadcast route for transaction {i} of {n}; it was not stored: {error}"; a failed round's `WalletFailure.message`; the storage-failure wrapper above | `broadcast_unknown` → `sendBroadcastFirstUnknown`, `partial_broadcast` → `sendBroadcastDependentIncomplete`, `broadcasted_storage_failed` → `sendBroadcastTrackingFailed` |
-| `send_flow.dart` `_ledgerBroadcastStatusMessage` (Ledger sends) | Ledger outbox (`ledger/operations.rs`), stored text, same PCZT templates | `sendBroadcastLedgerFirstUnknown`, `sendBroadcastDependentIncomplete`, `sendBroadcastLedgerNotStored` |
-| `transparent_shielding_service.dart` `shieldPcztBroadcastStatusMessage`, `keystone_shield_signing_overlay.dart` `_pcztBroadcastStatusMessage` | `sync/pczt.rs` `handle_pczt_send_response`: "Broadcast succeeded (txid={txid}) but local storage failed. {storage_err}. The transaction is on the network; …"; `handle_pczt_transport_failure`: "Broadcast response was unavailable for txid={txid} ({status}). … Do not send again …" plus a suffix | `homeShieldBroadcastUnknown`, `homeShieldBroadcastNotStored`, `homeShieldStatusUncertain` |
-| `ledger_shield_signing_overlay.dart` `_broadcastStatusMessage` | Ledger outbox, stored text | `homeLedgerBroadcastUnknown`, `homeLedgerBroadcastNotStored` |
-| `payment_link_keystone_signing_overlay.dart` (funding not accepted) | `extract_and_broadcast_pczt` | `paymentLinkKeystoneFundingUncertain` |
-| `payment_links_screen.dart` `_warnUnsettledHardwareFunding` (toast) | `store_and_broadcast_pczts_*` | `paymentLinkFundingStillVerifying`, `paymentLinkFundingStorageNeedsSync` |
-| `swap_keystone_signing_overlay.dart` (no txid, desktop) | `extract_and_broadcast_pczt` `expired`: "Hardware signing request expired before broadcast: txid=…, expiry height …, current chain height …. Start the signing flow again …" | `swapKeystoneStatusUncertain`. The mobile screen already classifies the message through `_friendlyError`. |
-| `swap_state_provider.dart` `_depositBroadcastNotice` | swap deposit results, software and hardware; stored as `SwapLiteralMessage` | `SwapNoticeKind.broadcast*` |
-
-How to finish it without changing English:
-
-1. Give every result a flat `notice` enum per template, plus `index`, `total`,
-   `txid` and `detail`.
-2. Represent the storage-failure wrapper as a second notice: `stored_notice`
-   with its own `detail`.
-3. Carry the same fields through the Ledger outbox row and the swap record.
-4. Pin the ARB English against Rust's formatter in a test, with `{detail}`
-   left as Rust's English.
-
-That is a schema change for the Ledger outbox and swap records, so it needs
-its own decision.
+| Dart site | Rust result |
+| --- | --- |
+| `send_flow.dart` `_pcztBroadcastStatusMessage` (Keystone sends), `_ledgerBroadcastStatusMessage` (Ledger sends) | `StoreAndBroadcastPcztsResult`, Ledger outbox |
+| `transparent_shielding_service.dart` `shieldPcztBroadcastStatusMessage`, `keystone_shield_signing_overlay.dart`, `ledger_shield_signing_overlay.dart` | `ExtractAndBroadcastPcztResult`, Ledger outbox |
+| `payment_link_keystone_signing_overlay.dart`, `payment_links_screen.dart` `_warnUnsettledHardwareFunding` | Keystone and Ledger Gift Card funding |
+| `swap_keystone_signing_overlay.dart` | `ExtractAndBroadcastPcztResult` |
+| `swap_state_provider.dart` `_depositBroadcastNotice` | software (`ExecuteProposalResult`) and hardware deposits |
 
 ## English matchers kept
 
@@ -150,7 +142,6 @@ silently stops matching.
 
 | Dart site | Rust source | ko/zh now | Suggested fix |
 | --- | --- | --- | --- |
-| Broadcast results | see the option B table | English | Structured result notices (above) |
 | `payment_link_service.dart` `PaymentLinkBatchRejected`, shown as main text by `payment_links_screen.dart` and `payment_links_batch_creation.dart` | `sync/send.rs` `validate_payment_link_batch_proposal`, user-facing "This group …" sentences | English | A `FailureCode` per rejection; `propose_payment_link_batch` and `estimate_payment_link_batch_fee` return `ApiWalletError` |
 | `receive_screen.dart` `_loadAddresses`, `_loadTransparentReceiveAddress`, main warning text | `get_unified_address`, `get_transparent_receive_address` (`String`) | English | Localized headline, with the Rust text as detail (the renew path already uses `receiveErrorWithDetails`) |
 | `onboarding_error_messages.dart` `onboardingSubmitErrorMessage` | create/import FRB functions in `api/wallet.rs` | Duplicate → English `kDuplicate*` constants; anything else raw | Duplicate → localized copy; other errors → localized headline + detail |
@@ -180,10 +171,8 @@ These matchers read Dart or HTTP text, not Rust:
 
 ## Follow-ups
 
-1. **Broadcast result notices:** option C as described above. It needs a
-   decision on the Ledger outbox and swap record schemas.
-2. **Codes for the `String` paths:** start with `propose_send`, `estimate_fee`
+1. **Codes for the `String` paths:** start with `propose_send`, `estimate_fee`
    and `estimate_send_max`, adding `InsufficientFunds`, `ProposalExpired`
    (proposal store) and `WalletNotSynced`. `propose_request` and the
    proposal-store helpers must then return `WalletFailure`.
-3. **Raw-display rows** above.
+2. **Raw-display rows** above.

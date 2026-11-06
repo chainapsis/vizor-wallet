@@ -210,6 +210,10 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
 - Every `app_en.arb` key needs an `@key` description
   (`required-resource-attributes`). Never translate Rust error strings or
   strings that code matches with `.contains` or uses as keys.
+- Broadcast results carry `notices`, Rust's English `message` as sentences;
+  show them with `broadcastResultText`. A reworded sentence changes Rust, its
+  `broadcastNotice*` key and `test/fixtures/broadcast_notices_en.json`
+  together (`docs/i18n/rust-messages.md`).
 - `test/l10n/l10n_gates_test.dart` checks sorted keys, placeholders, URLs,
   numbers and `lib/l10n/glossary.yaml`, and fails when a path listed in
   `tool/l10n/migrated_dirs.txt` (all of `lib/src`) gains a hardcoded string.
