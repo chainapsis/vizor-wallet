@@ -368,9 +368,9 @@ Ledger accounts keep the decorative dot style.
 - **Exception**: sidebar entries and screen titles may use Title Case (e.g.
   onboarding step labels `Secret Passphrase`, `Wallet Birthday Height`) — do
   not sentence-case them in copy sweeps.
-- Existing rationale and full audit are in `qa-copy-review.csv` and
-  `copy-review-20260528-1554.csv` at the repo root. Reference these before
-  introducing new copy in this project.
+- English copy lives in `lib/l10n/app_en.arb`, where each key's description
+  says where it appears. Check `lib/l10n/glossary.yaml` for the shared terms
+  before introducing new copy.
 - When editing existing copy, also update widgetbook fixtures
   (`lib/widgetbook/*.dart`) and tests (`test/`) that assert on the literal
   string — `find.text(...)` matchers, `expectedNextAction` fields, and
