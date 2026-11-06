@@ -1,3 +1,4 @@
+import '../../support/home_initialization_checks.dart';
 import 'package:zcash_wallet/src/features/home/widgets/home_activity_skeleton.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_items_provider.dart';
 import 'dart:async';
@@ -51,6 +52,18 @@ import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 
 void main() {
+  registerHomeInitializationChecks(
+    mobile: false,
+    app: (state, notifier, cards) => _appHarness(
+      '/home',
+      syncState: state,
+      syncNotifier: notifier,
+      giftCardActivityFuture: cards,
+    ),
+    home: () => find.byType(HomeScreen),
+    importing: () => find.textContaining('Importing'),
+  );
+
   // Render with the real app fonts instead of the square-glyph test font.
   // The test font is much wider than Geist/Young Serif, which overflows the
   // balance row in ways the running app does not.
@@ -2071,6 +2084,7 @@ Widget _appHarness(
   bool passwordRotationRecoveryFailed = false,
   double? priceChange24hPct,
   SyncState? syncState,
+  FakeSyncNotifier? syncNotifier,
   SwapActivityStore? swapActivityStore,
   GiftCardActivityIndex? giftCardActivityIndex,
   Future<GiftCardActivityIndex>? giftCardActivityFuture,
@@ -2117,7 +2131,7 @@ Widget _appHarness(
         ),
       ),
       syncProvider.overrideWith(
-        () => FakeSyncNotifier(syncState ?? _syncedSyncState),
+        () => syncNotifier ?? FakeSyncNotifier(syncState ?? _syncedSyncState),
       ),
       ledgerSignedOperationServiceProvider.overrideWithValue(
         const _EmptyLedgerSignedOperationService(),
