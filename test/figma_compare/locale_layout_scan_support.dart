@@ -138,13 +138,18 @@ List<String> _wordSplits(WidgetTester tester) {
       textDirection: paragraph.textDirection,
       textScaler: paragraph.textScaler,
       maxLines: paragraph.maxLines,
+      // RenderParagraph reserves room for this on the last line.
+      ellipsis: paragraph.overflow == TextOverflow.ellipsis ? '\u2026' : null,
       locale: paragraph.locale,
       strutStyle: paragraph.strutStyle,
       textWidthBasis: paragraph.textWidthBasis,
       textHeightBehavior: paragraph.textHeightBehavior,
     )..layout(maxWidth: paragraph.size.width);
+    // A line cut short by maxLines ends at the truncation, not a break.
+    final lines = painter.computeLineMetrics().length;
+    final breaks = painter.didExceedMaxLines ? lines - 1 : lines;
     var offset = 0;
-    for (final _ in painter.computeLineMetrics()) {
+    for (var line = 0; line < breaks; line++) {
       final end = painter.getLineBoundary(TextPosition(offset: offset)).end;
       if (end <= offset || end >= text.length) break;
       if (text[end - 1] == wordJoiner || text[end] == wordJoiner) {
