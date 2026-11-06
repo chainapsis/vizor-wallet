@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/features/home/widgets/ledger_shield_signing_ove
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
@@ -308,6 +309,59 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  for (final privacyModeEnabled in [false, true]) {
+    testWidgets('review amount with privacy mode $privacyModeEnabled', (
+      tester,
+    ) async {
+      tester.view.physicalSize =
+          const Size(393, 852) * tester.view.devicePixelRatio;
+      addTearDown(tester.view.resetPhysicalSize);
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap()),
+          privacyModeProvider.overrideWith(() => _Privacy(privacyModeEnabled)),
+          syncProvider.overrideWith(_Sync.new),
+          walletProvider.overrideWith(_Wallet.new),
+          ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+          ledgerSignedOperationServiceProvider.overrideWithValue(_Operations()),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(syncProvider.future);
+      await container.read(walletProvider.future);
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: AppTheme(
+            data: AppThemeData.light,
+            child: MaterialApp(
+              home: LedgerShieldSigningOverlay(
+                mobile: true,
+                onCancel: () {},
+                onComplete: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+
+      final amount = privacyModeEnabled ? '******' : '0.01';
+      expect(
+        tester.widget<MobileShieldScene>(find.byType(MobileShieldScene)).amount,
+        amount,
+      );
+      expect(find.bySemanticsLabel('$amount ZEC'), findsOneWidget);
+      if (privacyModeEnabled) {
+        expect(find.bySemanticsLabel(RegExp(r'0\.01')), findsNothing);
+      }
+      expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+      semantics.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   testWidgets(
     'an empty Ledger round never celebrates an unsubmitted transaction',
     (tester) async {
@@ -574,6 +628,15 @@ class _Paths extends Fake
   final String root;
   @override
   Future<String?> getApplicationSupportPath() async => root;
+}
+
+class _Privacy extends PrivacyModeNotifier {
+  _Privacy(this.enabled);
+
+  final bool enabled;
+
+  @override
+  bool build() => enabled;
 }
 
 class _Sync extends SyncNotifier {

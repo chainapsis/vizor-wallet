@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/keystone_shield_morph.dart';
+import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/particles/particle_field.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/slide_to_shield.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_sheet_content.dart';
 
@@ -180,6 +181,46 @@ void main() {
     expect(requests, 1);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+  testWidgets('a privacy-masked amount keeps its art and unit semantics', (
+    tester,
+  ) async {
+    tester.view.physicalSize =
+        const Size(393, 852) * tester.view.devicePixelRatio;
+    addTearDown(tester.view.resetPhysicalSize);
+    final semantics = tester.ensureSemantics();
+    Widget scene(MobileShieldPhase phase) => host(
+      MobileShieldScene(
+        phase: phase,
+        amount: '******',
+        resultAmount: '******',
+        title: 'Transparent Balance',
+      ),
+    );
+    await tester.pumpWidget(scene(MobileShieldPhase.review));
+    for (var i = 0; i < 20; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(const Duration(milliseconds: 17));
+    }
+    expect(find.bySemanticsLabel('****** ZEC'), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+
+    // Particles exist only once the masked text was sampled successfully.
+    await tester.pumpWidget(scene(MobileShieldPhase.working));
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(
+      tester
+          .widgetList<CustomPaint>(find.byType(CustomPaint))
+          .map((paint) => paint.painter)
+          .whereType<ParticlePainter>(),
+      isNotEmpty,
+    );
+    semantics.dispose();
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('future result digits do not change the review amount size', (
     tester,
   ) async {

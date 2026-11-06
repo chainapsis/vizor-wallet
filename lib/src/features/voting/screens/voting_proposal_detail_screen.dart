@@ -9,11 +9,13 @@ import '../../../core/formatting/date_format.dart';
 import '../../../core/navigation/route_owned_redirect.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/privacy_mode_provider.dart';
 import '../../../core/formatting/number_format.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -197,6 +199,7 @@ class _VotingProposalDetailViewState
       votingParticipationUnavailableProvider(roundId),
     );
     final roundSession = ref.watch(votingSessionProvider(roundId));
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     var ownsHeader = false;
     final content = roundSession.when(
       skipLoadingOnRefresh: false,
@@ -262,6 +265,7 @@ class _VotingProposalDetailViewState
             forumUri: forumUri,
             votingPowerZatoshi: state.eligibleWeightZatoshi,
             votingPowerPreparing: _votingPowerPreparationInFlight,
+            privacyModeEnabled: privacyModeEnabled,
             votedAt: completedVote.votedAt,
             proposals: proposals,
             choicesByProposalId: completedVote.choicesByProposalId,
@@ -298,6 +302,7 @@ class _VotingProposalDetailViewState
         final votingEligibilityMessage = _votingEligibilityMessage(
           state,
           preparing: votingPowerPreparing,
+          privacyModeEnabled: privacyModeEnabled,
         );
         final votingError = state.error;
         final votingEligibilityError =
@@ -318,6 +323,7 @@ class _VotingProposalDetailViewState
               ? BigInt.zero
               : state.eligibleWeightZatoshi,
           votingPowerPreparing: votingPowerPreparing,
+          privacyModeEnabled: privacyModeEnabled,
           participationUnavailable: participationUnavailable,
           onParticipationRetry: () => unawaited(
             ref
@@ -536,9 +542,13 @@ bool _isVotingEligibilityPending(VotingSessionState state) {
 String? _votingEligibilityMessage(
   VotingSessionState state, {
   required bool preparing,
+  required bool privacyModeEnabled,
 }) {
   if (state.hasConfirmedVotingEligibility) {
-    return _privacyTrimNotice(state.privacyTrimDroppedValueZatoshi);
+    return _privacyTrimNotice(
+      state.privacyTrimDroppedValueZatoshi,
+      privacyModeEnabled: privacyModeEnabled,
+    );
   }
   final error = state.error;
   if (error != null) return friendlyVotingErrorText(error.message);
@@ -555,13 +565,30 @@ const _votingPowerUnavailableMessage = '$_votingPowerUnavailableLabel.';
 /// number of delegation submissions they emit. That withheld value is real
 /// voting power, so it is stated rather than silently discarded. Most voters
 /// have nothing withheld and see nothing.
-String? _privacyTrimNotice(BigInt? droppedValueZatoshi) {
+String? _privacyTrimNotice(
+  BigInt? droppedValueZatoshi, {
+  required bool privacyModeEnabled,
+}) {
   if (droppedValueZatoshi == null || droppedValueZatoshi <= BigInt.zero) {
     return null;
   }
-  return '${formatVotingPower(droppedValueZatoshi)} is left out of this vote '
+  final dropped = _displayVotingPower(
+    droppedValueZatoshi,
+    privacyModeEnabled: privacyModeEnabled,
+  );
+  return '$dropped is left out of this vote '
       'to keep your submission less identifiable.';
 }
+
+/// Voting power is the wallet's snapshot balance, so it is masked as one.
+String _displayVotingPower(
+  BigInt zatoshi, {
+  required bool privacyModeEnabled,
+}) => hideAmountIfPrivacyMode(
+  formatVotingPower(zatoshi),
+  privacyModeEnabled: privacyModeEnabled,
+  denomination: 'ZEC',
+);
 
 /// Session-free presentation shared by the live route and deterministic previews.
 class VotingActivePollContent extends StatefulWidget {
@@ -576,6 +603,7 @@ class VotingActivePollContent extends StatefulWidget {
     required this.endDate,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
+    this.privacyModeEnabled = false,
     required this.votingEligibilityConfirmed,
     required this.answersEditable,
     required this.votingEligibilityMessage,
@@ -600,6 +628,9 @@ class VotingActivePollContent extends StatefulWidget {
   final DateTime? endDate;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
+
+  /// Masks voting power; the live route passes the user's setting.
+  final bool privacyModeEnabled;
   final bool votingEligibilityConfirmed;
   final bool participationUnavailable;
   final VoidCallback? onParticipationRetry;
@@ -726,6 +757,7 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
         endDate: widget.endDate,
         votingPowerZatoshi: widget.votingPowerZatoshi,
         votingPowerPreparing: widget.votingPowerPreparing,
+        privacyModeEnabled: widget.privacyModeEnabled,
         votingEligibilityMessage: votingEligibilityMessage,
       );
     }
@@ -737,6 +769,7 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
       endDate: widget.endDate,
       votingPowerZatoshi: widget.votingPowerZatoshi,
       votingPowerPreparing: widget.votingPowerPreparing,
+      privacyModeEnabled: widget.privacyModeEnabled,
       votingEligibilityMessage: widget.votingEligibilityMessage,
     );
   }
@@ -861,6 +894,7 @@ class _DesktopVotedPollHeader extends StatelessWidget {
     required this.forumUri,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
+    required this.privacyModeEnabled,
     required this.votedAt,
   });
 
@@ -870,6 +904,7 @@ class _DesktopVotedPollHeader extends StatelessWidget {
   final Uri? forumUri;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
+  final bool privacyModeEnabled;
   final DateTime? votedAt;
 
   @override
@@ -911,6 +946,7 @@ class _DesktopVotedPollHeader extends StatelessWidget {
             _VotingPowerMeta(
               zatoshi: votingPowerZatoshi,
               preparing: votingPowerPreparing,
+              privacyModeEnabled: privacyModeEnabled,
             ),
             const _MetaText('·'),
             const _MetaText('Vote locked'),
@@ -1214,6 +1250,7 @@ class _MobilePollSummary extends StatelessWidget {
     required this.endDate,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
+    required this.privacyModeEnabled,
     required this.votingEligibilityMessage,
   });
 
@@ -1225,6 +1262,7 @@ class _MobilePollSummary extends StatelessWidget {
   final DateTime? endDate;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
+  final bool privacyModeEnabled;
   final String? votingEligibilityMessage;
 
   @override
@@ -1295,6 +1333,7 @@ class _MobilePollSummary extends StatelessWidget {
               _VotingPowerMeta(
                 zatoshi: votingPowerZatoshi,
                 preparing: votingPowerPreparing,
+                privacyModeEnabled: privacyModeEnabled,
               ),
             ],
           ],
@@ -1376,6 +1415,7 @@ class _PollSummary extends StatelessWidget {
     required this.endDate,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
+    required this.privacyModeEnabled,
     required this.votingEligibilityMessage,
   });
 
@@ -1386,6 +1426,7 @@ class _PollSummary extends StatelessWidget {
   final DateTime? endDate;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
+  final bool privacyModeEnabled;
   final String? votingEligibilityMessage;
 
   @override
@@ -1457,6 +1498,7 @@ class _PollSummary extends StatelessWidget {
             _VotingPowerMeta(
               zatoshi: votingPowerZatoshi,
               preparing: votingPowerPreparing,
+              privacyModeEnabled: privacyModeEnabled,
             ),
             if (endDate != null) ...[
               const _MetaText('·'),
@@ -1532,6 +1574,7 @@ class VotingVotedPollContent extends StatelessWidget {
     required this.forumUri,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
+    this.privacyModeEnabled = false,
     required this.votedAt,
     required this.proposals,
     required this.choicesByProposalId,
@@ -1545,6 +1588,9 @@ class VotingVotedPollContent extends StatelessWidget {
   final Uri? forumUri;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
+
+  /// Masks voting power; the live route passes the user's setting.
+  final bool privacyModeEnabled;
   final DateTime? votedAt;
   final List<VotingProposalView> proposals;
   final Map<int, int?> choicesByProposalId;
@@ -1576,6 +1622,7 @@ class VotingVotedPollContent extends StatelessWidget {
                   forumUri: forumUri,
                   votingPowerZatoshi: votingPowerZatoshi,
                   votingPowerPreparing: votingPowerPreparing,
+                  privacyModeEnabled: privacyModeEnabled,
                   votedAt: votedAt,
                 ),
               ),
@@ -1639,6 +1686,7 @@ class VotingVotedPollContent extends StatelessWidget {
                   forumUri: forumUri,
                   votingPowerZatoshi: votingPowerZatoshi,
                   votingPowerPreparing: votingPowerPreparing,
+                  privacyModeEnabled: privacyModeEnabled,
                   votedAt: votedAt,
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -1808,6 +1856,7 @@ class _VotedPollHeader extends StatelessWidget {
     required this.forumUri,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
+    required this.privacyModeEnabled,
     required this.votedAt,
   });
 
@@ -1817,6 +1866,7 @@ class _VotedPollHeader extends StatelessWidget {
   final Uri? forumUri;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
+  final bool privacyModeEnabled;
   final DateTime? votedAt;
 
   @override
@@ -1903,7 +1953,10 @@ class _VotedPollHeader extends StatelessWidget {
                     ? votingPowerPreparing
                           ? 'Preparing...'
                           : 'Not available'
-                    : formatVotingPower(votingPowerZatoshi!),
+                    : _displayVotingPower(
+                        votingPowerZatoshi!,
+                        privacyModeEnabled: privacyModeEnabled,
+                      ),
               ),
               const SizedBox(height: AppSpacing.sm),
               const _VotedReviewRow(label: 'Status', value: 'Vote locked'),
@@ -1965,10 +2018,15 @@ class _MetaText extends StatelessWidget {
 }
 
 class _VotingPowerMeta extends StatelessWidget {
-  const _VotingPowerMeta({required this.zatoshi, required this.preparing});
+  const _VotingPowerMeta({
+    required this.zatoshi,
+    required this.preparing,
+    required this.privacyModeEnabled,
+  });
 
   final BigInt? zatoshi;
   final bool preparing;
+  final bool privacyModeEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -1994,7 +2052,11 @@ class _VotingPowerMeta extends StatelessWidget {
         ],
       );
     }
-    return _MetaText('Voting power ${formatVotingPower(votingPower)}');
+    final display = _displayVotingPower(
+      votingPower,
+      privacyModeEnabled: privacyModeEnabled,
+    );
+    return _MetaText('Voting power $display');
   }
 }
 
