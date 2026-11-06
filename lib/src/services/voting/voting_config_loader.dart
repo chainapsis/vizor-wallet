@@ -119,10 +119,26 @@ typedef ResolveVotingConfigFromAttemptsFn =
       rust_config.ResolvedVotingConfig? previous,
     });
 
+/// Why a static config source URL was refused; picks the copy the settings
+/// show.
+enum StaticVotingConfigSourceProblem {
+  notHttps,
+  userInfo,
+  fragment,
+  encodedChecksumKey,
+  repeatedChecksum,
+  missingChecksum,
+  checksumPrefix,
+  checksumFormat,
+}
+
 class StaticVotingConfigSourceMalformed implements Exception {
+  final StaticVotingConfigSourceProblem problem;
+
+  /// Technical detail for logs.
   final String message;
 
-  const StaticVotingConfigSourceMalformed(this.message);
+  const StaticVotingConfigSourceMalformed(this.problem, this.message);
 
   @override
   String toString() => 'StaticVotingConfigSourceMalformed: $message'; // l10n-ignore: exception text for logs
@@ -212,20 +228,26 @@ VotingConfigMirrorFailureKind classifyVotingConfigMirrorFailure(Object error) {
   final rawQuery = _extractRawQuery(trimmed);
   final parsed = Uri.tryParse(trimmed);
   if (parsed == null || parsed.scheme != 'https' || parsed.host.isEmpty) {
-    throw StaticVotingConfigSourceMalformed('not an HTTPS URL: $raw');
+    throw StaticVotingConfigSourceMalformed(
+      StaticVotingConfigSourceProblem.notHttps,
+      'not an HTTPS URL: $raw',
+    );
   }
   if (parsed.userInfo.isNotEmpty) {
     throw const StaticVotingConfigSourceMalformed(
+      StaticVotingConfigSourceProblem.userInfo,
       'URL must not include user info',
     );
   }
   if (parsed.hasFragment) {
     throw const StaticVotingConfigSourceMalformed(
+      StaticVotingConfigSourceProblem.fragment,
       'URL must not include a fragment',
     );
   }
   if (_containsEncodedChecksumKey(rawQuery)) {
     throw StaticVotingConfigSourceMalformed(
+      StaticVotingConfigSourceProblem.encodedChecksumKey,
       'checksum key must be literal "checksum": $raw',
     );
   }
@@ -233,11 +255,15 @@ VotingConfigMirrorFailureKind classifyVotingConfigMirrorFailure(Object error) {
   final queryParametersAll = parsed.queryParametersAll;
   final checksumValues = queryParametersAll['checksum'];
   if (checksumValues != null && checksumValues.length != 1) {
-    throw StaticVotingConfigSourceMalformed('checksum must appear once: $raw');
+    throw StaticVotingConfigSourceMalformed(
+      StaticVotingConfigSourceProblem.repeatedChecksum,
+      'checksum must appear once: $raw',
+    );
   }
   final checksum = checksumValues?.single;
   if (requireChecksum && checksum == null) {
     throw StaticVotingConfigSourceMalformed(
+      StaticVotingConfigSourceProblem.missingChecksum,
       'checksum query parameter is required: $raw',
     );
   }
@@ -246,6 +272,7 @@ VotingConfigMirrorFailureKind classifyVotingConfigMirrorFailure(Object error) {
     const prefix = 'sha256:';
     if (!checksum.startsWith(prefix)) {
       throw StaticVotingConfigSourceMalformed(
+        StaticVotingConfigSourceProblem.checksumPrefix,
         'checksum must use sha256: prefix: $raw',
       );
     }
@@ -253,6 +280,7 @@ VotingConfigMirrorFailureKind classifyVotingConfigMirrorFailure(Object error) {
     final isLowerHex = RegExp(r'^[0-9a-f]+$').hasMatch(checksumHex);
     if (checksumHex.length != 64 || !isLowerHex) {
       throw StaticVotingConfigSourceMalformed(
+        StaticVotingConfigSourceProblem.checksumFormat,
         'checksum must be 64 lowercase hex chars: $raw',
       );
     }

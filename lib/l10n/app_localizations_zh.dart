@@ -10390,6 +10390,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingConfigAddCustomSource => '添加自定义来源';
 
   @override
+  String get votingConfigChecksumFormat => 'checksum 必须是 64 个小写十六进制字符。';
+
+  @override
+  String get votingConfigChecksumKeyEncoded =>
+      'checksum 参数名请直接写作 checksum，不要编码。';
+
+  @override
+  String get votingConfigChecksumPrefix => 'checksum 必须以 sha256: 开头。';
+
+  @override
+  String get votingConfigChecksumRepeated => 'checksum 参数只能出现一次。';
+
+  @override
+  String get votingConfigChecksumRequired => '请在 URL 中添加 checksum 参数。';
+
+  @override
   String get votingConfigCloseSettings => '关闭投票配置设置';
 
   @override
@@ -10481,6 +10497,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get votingConfigUrlCopied => '已复制来源网址。';
+
+  @override
+  String get votingConfigUrlHasFragment => 'URL 中不能包含片段（#…）。';
+
+  @override
+  String get votingConfigUrlHasUserInfo => 'URL 中不能包含用户名或密码。';
+
+  @override
+  String get votingConfigUrlNotHttps => '请使用 HTTPS URL。';
 
   @override
   String get votingConfigValidating => '正在验证...';

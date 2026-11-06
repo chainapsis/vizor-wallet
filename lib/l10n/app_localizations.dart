@@ -18423,6 +18423,36 @@ abstract class AppLocalizations {
   /// **'Add custom source'**
   String get votingConfigAddCustomSource;
 
+  /// Inline error under the voting config source URL field when the checksum after sha256: is not 64 lowercase hexadecimal characters.
+  ///
+  /// In en, this message translates to:
+  /// **'The checksum must be 64 lowercase hex characters.'**
+  String get votingConfigChecksumFormat;
+
+  /// Inline error under the voting config source URL field when the checksum query key is percent-encoded. Keep checksum as written; it is the literal parameter name.
+  ///
+  /// In en, this message translates to:
+  /// **'Write the checksum parameter name as checksum, without encoding.'**
+  String get votingConfigChecksumKeyEncoded;
+
+  /// Inline error under the voting config source URL field when the checksum value lacks the sha256: prefix. Keep sha256: as written.
+  ///
+  /// In en, this message translates to:
+  /// **'The checksum must start with sha256:.'**
+  String get votingConfigChecksumPrefix;
+
+  /// Inline error under the voting config source URL field when checksum appears more than once. Keep checksum as written; it is the literal parameter name.
+  ///
+  /// In en, this message translates to:
+  /// **'Include the checksum parameter only once.'**
+  String get votingConfigChecksumRepeated;
+
+  /// Inline error under the voting config source URL field when a checksum is required but missing. Keep checksum as written; it is the literal parameter name.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a checksum parameter to the URL.'**
+  String get votingConfigChecksumRequired;
+
   /// Accessibility label of the close button of the voting config panel.
   ///
   /// In en, this message translates to:
@@ -18596,6 +18626,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Source URL copied.'**
   String get votingConfigUrlCopied;
+
+  /// Inline error under the voting config source URL field when the URL has a # fragment.
+  ///
+  /// In en, this message translates to:
+  /// **'The URL must not include a fragment (#…).'**
+  String get votingConfigUrlHasFragment;
+
+  /// Inline error under the voting config source URL field when the URL contains user info (user:password@).
+  ///
+  /// In en, this message translates to:
+  /// **'The URL must not include a user name or password.'**
+  String get votingConfigUrlHasUserInfo;
+
+  /// Inline error under the voting config source URL field when the URL is not an HTTPS URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Use an HTTPS URL.'**
+  String get votingConfigUrlNotHttps;
 
   /// Label of the save button while the custom source is being validated.
   ///

@@ -140,12 +140,6 @@ silently stops matching.
 | `payment_link_service.dart` `PaymentLinkBatchRejected.from` | prefix `This group ` | `sync/send.rs` `validate_payment_link_batch_proposal` | See raw display below |
 | `transparent_shielding_service.dart` `postBroadcastShieldErrorMessage`, `keystone_shield_signing_overlay.dart` `_postBroadcastErrorMessage` | `broadcast succeeded` | Only in `ExtractAndBroadcastPcztResult.message`, never in an error | Dead: no error carries the phrase |
 
-## Raw Rust text still on screen
-
-| Dart site | Rust source | ko/zh now | Suggested fix |
-| --- | --- | --- | --- |
-| `voting_config_settings_panel.dart` `_messageFromError` fallback | `resolve_static_voting_config` / `resolve_voting_config_from_attempts` (`VotingErrorView`) | Shows "Instance of 'VotingErrorView'" in every language (no `toString`) | Voting owner: map `VotingErrorView` to copy |
-
 ## Stays English by design (secondary detail)
 
 | Dart site | Rust source | Shown as |
@@ -154,6 +148,7 @@ silently stops matching.
 | `receive_screen.dart` renew-address, shielded and transparent address load errors | `get_next_available_address`, `get_unified_address`, `get_transparent_receive_address` | Detail inside `commonErrorWithDetails` |
 | `onboarding_error_messages.dart` `onboardingSubmitErrorMessage`, errors other than the three duplicates | create/import FRB functions in `api/wallet.rs` | Detail under `onboardingSubmitFailed` |
 | migration `keystone_signing.dart` `ironwoodMigrationKeystoneProofFailureMessage` | `keystone_migration_proof_status`, `keystone_requests.rs` `proof_error` | Detail under `migrationKeystoneProofFailed` |
+| `voting_config_error_text.dart` `votingConfigSourceErrorText` (desktop panel, mobile sheet) | `resolve_static_voting_config` / `resolve_voting_config_from_attempts` (`VotingErrorView`) | Detail under `votingConfigLoadFailed`, as `kind: message` |
 | `mobile_ironwood_migration_review.dart` Fast migration warning | `IronwoodMigrationResult.message` ("The Immediate migration broadcast response was unavailable …") | Line under the localized `migrationMobileFastSubmittedBody` |
 | Logs, `rpc_endpoint_failover_provider.dart` `lastFailure`, `NetworkPrivacyState.error` | various | Not displayed |
 

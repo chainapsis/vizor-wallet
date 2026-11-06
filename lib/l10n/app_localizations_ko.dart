@@ -11085,6 +11085,24 @@ class AppLocalizationsKo extends AppLocalizations {
   String get votingConfigAddCustomSource => '사⁠용⁠자 지⁠정 소⁠스 추⁠가';
 
   @override
+  String get votingConfigChecksumFormat => 'checksum⁠은 소⁠문⁠자 hex 64⁠자⁠여⁠야 해⁠요.';
+
+  @override
+  String get votingConfigChecksumKeyEncoded =>
+      'checksum 매⁠개⁠변⁠수 이⁠름⁠은 인⁠코⁠딩⁠하⁠지 말⁠고 checksum⁠으⁠로 써 주⁠세⁠요.';
+
+  @override
+  String get votingConfigChecksumPrefix => 'checksum⁠은 sha256:으⁠로 시⁠작⁠해⁠야 해⁠요.';
+
+  @override
+  String get votingConfigChecksumRepeated =>
+      'checksum 매⁠개⁠변⁠수⁠는 한 번⁠만 넣⁠어 주⁠세⁠요.';
+
+  @override
+  String get votingConfigChecksumRequired =>
+      'URL⁠에 checksum 매⁠개⁠변⁠수⁠를 추⁠가⁠해 주⁠세⁠요.';
+
+  @override
   String get votingConfigCloseSettings => '투⁠표 설⁠정 닫⁠기';
 
   @override
@@ -11181,6 +11199,16 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get votingConfigUrlCopied => '소⁠스 URL⁠을 복⁠사⁠했⁠어⁠요.';
+
+  @override
+  String get votingConfigUrlHasFragment => 'URL⁠에 프⁠래⁠그⁠먼⁠트(#…)를 넣⁠을 수 없⁠어⁠요.';
+
+  @override
+  String get votingConfigUrlHasUserInfo =>
+      'URL⁠에 사⁠용⁠자 이⁠름⁠이⁠나 비⁠밀⁠번⁠호⁠를 넣⁠을 수 없⁠어⁠요.';
+
+  @override
+  String get votingConfigUrlNotHttps => 'HTTPS URL⁠을 입⁠력⁠해 주⁠세⁠요.';
 
   @override
   String get votingConfigValidating => '확⁠인 중...';

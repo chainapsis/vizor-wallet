@@ -14391,6 +14391,26 @@
   "@votingConfigAddCustomSource": {
     "description": "Button or title for adding a custom voting config source URL."
   },
+  "votingConfigChecksumFormat": "The checksum must be 64 lowercase hex characters.",
+  "@votingConfigChecksumFormat": {
+    "description": "Inline error under the voting config source URL field when the checksum after sha256: is not 64 lowercase hexadecimal characters."
+  },
+  "votingConfigChecksumKeyEncoded": "Write the checksum parameter name as checksum, without encoding.",
+  "@votingConfigChecksumKeyEncoded": {
+    "description": "Inline error under the voting config source URL field when the checksum query key is percent-encoded. Keep checksum as written; it is the literal parameter name."
+  },
+  "votingConfigChecksumPrefix": "The checksum must start with sha256:.",
+  "@votingConfigChecksumPrefix": {
+    "description": "Inline error under the voting config source URL field when the checksum value lacks the sha256: prefix. Keep sha256: as written."
+  },
+  "votingConfigChecksumRepeated": "Include the checksum parameter only once.",
+  "@votingConfigChecksumRepeated": {
+    "description": "Inline error under the voting config source URL field when checksum appears more than once. Keep checksum as written; it is the literal parameter name."
+  },
+  "votingConfigChecksumRequired": "Add a checksum parameter to the URL.",
+  "@votingConfigChecksumRequired": {
+    "description": "Inline error under the voting config source URL field when a checksum is required but missing. Keep checksum as written; it is the literal parameter name."
+  },
   "votingConfigCloseSettings": "Close voting config settings",
   "@votingConfigCloseSettings": {
     "description": "Accessibility label of the close button of the voting config panel."
@@ -14521,6 +14541,18 @@
   "votingConfigUrlCopied": "Source URL copied.",
   "@votingConfigUrlCopied": {
     "description": "Toast shown after copying a voting config source URL."
+  },
+  "votingConfigUrlHasFragment": "The URL must not include a fragment (#…).",
+  "@votingConfigUrlHasFragment": {
+    "description": "Inline error under the voting config source URL field when the URL has a # fragment."
+  },
+  "votingConfigUrlHasUserInfo": "The URL must not include a user name or password.",
+  "@votingConfigUrlHasUserInfo": {
+    "description": "Inline error under the voting config source URL field when the URL contains user info (user:password@)."
+  },
+  "votingConfigUrlNotHttps": "Use an HTTPS URL.",
+  "@votingConfigUrlNotHttps": {
+    "description": "Inline error under the voting config source URL field when the URL is not an HTTPS URL."
   },
   "votingConfigValidating": "Validating...",
   "@votingConfigValidating": {

@@ -18,7 +18,7 @@ import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../services/voting/voting_config_loader.dart';
-import '../../../services/voting/voting_models.dart';
+import 'voting_config_error_text.dart';
 
 class VotingConfigSettingsPanel extends ConsumerStatefulWidget {
   const VotingConfigSettingsPanel({
@@ -126,7 +126,7 @@ class _VotingConfigSettingsPanelState
     try {
       parseStaticVotingConfigSource(trimmed);
     } on StaticVotingConfigSourceMalformed catch (error) {
-      return error.message;
+      return staticVotingConfigSourceProblemText(context.l10n, error.problem);
     }
     return _duplicateMessage(trimmed, source, excludingId: _editingSourceId);
   }
@@ -369,15 +369,11 @@ class _VotingConfigSettingsPanelState
     return null;
   }
 
-  String _messageFromError(Object error) {
-    if (error is StaticVotingConfigSourceMalformed) return error.message;
-    if (error is DuplicateVotingConfigSource) return error.message;
-    if (error is VotingHttpException) {
-      return context.l10n.votingConfigLoadFailed;
-    }
-    final text = error.toString().trim();
-    return text.isEmpty ? context.l10n.votingConfigUpdateFailed : text;
-  }
+  String _messageFromError(Object error) => votingConfigSourceErrorText(
+    context.l10n,
+    error,
+    fallback: context.l10n.votingConfigUpdateFailed,
+  );
 
   Future<void> _toggleTestRoundVisibility(bool currentlyShown) async {
     if (_isSavingTestRoundVisibility) return;

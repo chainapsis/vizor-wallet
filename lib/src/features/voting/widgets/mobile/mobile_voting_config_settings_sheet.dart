@@ -17,6 +17,7 @@ import '../../../../providers/voting/voting_rounds_provider.dart';
 import '../../../../providers/voting/voting_service_providers.dart';
 import '../../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../../services/voting/voting_config_loader.dart';
+import '../voting_config_error_text.dart';
 
 Future<void> showMobileVotingConfigSettingsSheet(BuildContext context) {
   return showAppMobileSheet<void>(
@@ -167,13 +168,11 @@ class _MobileVotingConfigSettingsSheetState
     await ref.read(votingRoundsProvider.notifier).reload();
   }
 
-  String _friendlyError(Object error) {
-    if (error is StaticVotingConfigSourceMalformed ||
-        error is DuplicateVotingConfigSource) {
-      return error.toString();
-    }
-    return context.l10n.votingConfigMobileUpdateFailed;
-  }
+  String _friendlyError(Object error) => votingConfigSourceErrorText(
+    context.l10n,
+    error,
+    fallback: context.l10n.votingConfigMobileUpdateFailed,
+  );
 
   @override
   Widget build(BuildContext context) {

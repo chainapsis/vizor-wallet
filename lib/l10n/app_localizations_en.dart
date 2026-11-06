@@ -11266,6 +11266,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingConfigAddCustomSource => 'Add custom source';
 
   @override
+  String get votingConfigChecksumFormat =>
+      'The checksum must be 64 lowercase hex characters.';
+
+  @override
+  String get votingConfigChecksumKeyEncoded =>
+      'Write the checksum parameter name as checksum, without encoding.';
+
+  @override
+  String get votingConfigChecksumPrefix =>
+      'The checksum must start with sha256:.';
+
+  @override
+  String get votingConfigChecksumRepeated =>
+      'Include the checksum parameter only once.';
+
+  @override
+  String get votingConfigChecksumRequired =>
+      'Add a checksum parameter to the URL.';
+
+  @override
   String get votingConfigCloseSettings => 'Close voting config settings';
 
   @override
@@ -11363,6 +11383,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get votingConfigUrlCopied => 'Source URL copied.';
+
+  @override
+  String get votingConfigUrlHasFragment =>
+      'The URL must not include a fragment (#…).';
+
+  @override
+  String get votingConfigUrlHasUserInfo =>
+      'The URL must not include a user name or password.';
+
+  @override
+  String get votingConfigUrlNotHttps => 'Use an HTTPS URL.';
 
   @override
   String get votingConfigValidating => 'Validating...';
