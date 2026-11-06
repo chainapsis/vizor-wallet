@@ -53,9 +53,11 @@ fonts once with `scripts/fetch-capture-fonts.sh`; it stores them in
   ```
 
   Each line records one scenario in one language: the first layout exception,
-  the texts cut off by `maxLines` or a single line, and the Rows and Columns
-  whose children do not fit. A translation that adds an exception or cut-off
-  text that English does not have breaks that screen. Add
+  the texts cut off by `maxLines` or a single line, the Korean words broken
+  across lines because their box is too narrow (`wordSplits`), and the Rows
+  and Columns whose children do not fit. A translation that adds an exception
+  or cut-off text that English does not have breaks that screen, and so does
+  any word split. Add
   `--dart-define=LOCALE_SCAN_SCENARIOS=<id prefixes>` to rerun a few, and
   `--update-goldens --dart-define=LOCALE_SCAN_OUTPUT=<directory>` for PNGs.
 
