@@ -1087,7 +1087,7 @@ void main() {
         await _flush();
         expect(
           harness.container.read(rpcEndpointFailoverProvider).automaticReady,
-          !reset,
+          isFalse,
         );
         expect(
           harness.container
@@ -1243,7 +1243,64 @@ void main() {
   });
 
   test(
-    'a stored preferred endpoint does not schedule a full comparison',
+    'uncorroborated cache survives only as a hint until peers confirm',
+    () async {
+      final first = _Harness();
+      first.respond = (call) async =>
+          call.urls.contains(_eu) ? [_sample(_eu)] : [];
+      await first.notifier.ensureReady();
+      await _flush();
+      expect(first.store.values[('main', false)]!.lastPeerValidatedAt, isNull);
+
+      var warmReads = 0;
+      Future<RpcEndpointCandidateSample> warmRead({
+        required RpcEndpointConfig endpoint,
+        required String selectionId,
+        required Duration timeout,
+      }) async {
+        warmReads++;
+        return _sample(endpoint.normalizedLightwalletdUrl);
+      }
+
+      final second = _Harness(store: first.store, warmRead: warmRead);
+      second.respond = (call) async =>
+          call.urls.contains(_eu) ? [_sample(_eu)] : [];
+      await second.notifier.ensureReady();
+      await _flush();
+      expect(warmReads, 0);
+      expect(second.calls.first.urls, [_eu]);
+      expect(
+        second.container.read(rpcEndpointFailoverProvider).automaticProvisional,
+        isTrue,
+      );
+      expect(second.store.values[('main', false)]!.lastPeerValidatedAt, isNull);
+
+      second.now = second.now.add(const Duration(minutes: 1));
+      second.respond = (call) async => [
+        if (call.urls.contains(_kr)) _sample(_kr, 300),
+        if (call.urls.contains(_us)) _sample(_us, 400),
+      ];
+      await second.notifier.ensureReady();
+      await _flush();
+      expect(
+        second.container.read(rpcEndpointFailoverProvider).automaticProvisional,
+        isFalse,
+      );
+      expect(
+        second.store.values[('main', false)]!.lastPeerValidatedAt,
+        second.now,
+      );
+
+      final third = _Harness(store: second.store, warmRead: warmRead)
+        ..now = second.now;
+      expect((await third.notifier.ensureReady()).lightwalletdUrl, _eu);
+      expect(third.calls, isEmpty);
+      expect(warmReads, 1);
+    },
+  );
+
+  test(
+    'a cache hint schedules one full comparison after sync starts',
     () async {
       final harness = _Harness();
       harness.store.values[('main', false)] = AutomaticRpcEndpointCache(
@@ -1252,9 +1309,14 @@ void main() {
       );
       await harness.notifier.ensureReady();
       await _flush();
+      expect(harness.fullCalls, isEmpty);
       harness.notifier.startInitialComparisonAfterSyncStart();
       await _flush();
-      expect(harness.fullCalls, isEmpty);
+      expect(harness.fullCalls, hasLength(1));
+      expect(harness.fullCalls.single.urls, hasLength(8));
+      harness.notifier.startInitialComparisonAfterSyncStart();
+      await _flush();
+      expect(harness.fullCalls, hasLength(1));
     },
   );
 

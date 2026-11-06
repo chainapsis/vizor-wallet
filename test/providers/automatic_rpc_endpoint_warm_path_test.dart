@@ -40,6 +40,37 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 
+  test(
+    'warm cache requires a peer observation strictly within fifteen minutes',
+    () {
+      final now = DateTime.utc(2026, 11, 5);
+      for (final (peerAge, expected) in <(Duration?, bool)>[
+        (const Duration(minutes: 14, seconds: 59), true),
+        (const Duration(minutes: 15), false),
+        (null, false),
+        (const Duration(seconds: -1), false),
+      ]) {
+        final cache = AutomaticRpcEndpointCache(
+          presetId: 'eu-zec-stardust',
+          endpointUrl: _eu,
+          observedAt: now,
+          lastSuccessAt: now,
+          lastNetworkVerifiedAt: now,
+          lastPeerValidatedAt: peerAge == null ? null : now.subtract(peerAge),
+        );
+        expect(
+          cache.isWarm(
+            now,
+            const AutomaticRpcEndpointSettings(),
+            expectedUrl: _eu,
+          ),
+          expected,
+          reason: '$peerAge',
+        );
+      }
+    },
+  );
+
   test('warm timeout follows route latency within recovery bounds', () {
     const settings = AutomaticRpcEndpointSettings();
     for (final (tor, latency, expectedMs) in <(bool, Duration?, int)>[
@@ -514,35 +545,117 @@ void main() {
   );
 
   test(
-    'expired peer confidence cannot be renewed by ordinary successful reads',
+    'peer expiry during active use keeps verification in the background',
     () async {
       final harness = _WarmHarness()
-        ..seedTrusted('eu-zec-stardust', peerAge: const Duration(minutes: 16));
-      final oldPeerAt =
-          harness.store.values[('main', false)]!.lastPeerValidatedAt;
-      harness.probe = (_) async => [];
-      final response = Completer<RpcEndpointCandidateSample>();
-      harness.warmRead = (_) => response.future;
-      final preparing = harness.notifier.ensureReady();
-      await _flush();
-      expect(harness.warmReads, hasLength(1));
-      // A restored hint contains no current chain observation. Peer validation
-      // has to wait for this real tip rather than compare against a saved height.
-      expect(harness.probes, isEmpty);
-      response.complete(_sample(_eu, 111));
-      await preparing;
+        ..seedTrusted(
+          'eu-zec-stardust',
+          peerAge: const Duration(minutes: 14, seconds: 30),
+        );
+      await harness.notifier.ensureReady();
+      final peers = Completer<List<RpcEndpointCandidateSample>>();
+      harness.probe = (_) => peers.future;
+      harness.now = harness.now.add(const Duration(seconds: 31));
+      expect((await harness.notifier.ensureReady()).lightwalletdUrl, _eu);
       expect(await harness.notifier.getLatestBlockHeight(), BigInt.from(111));
       await _flush();
-      expect(harness.probes, isNotEmpty);
-      expect(harness.probes.every((call) => !call.urls.contains(_eu)), isTrue);
+      expect(harness.warmReads, hasLength(1));
+      expect(harness.probes.single.urls, isNot(contains(_eu)));
       expect(harness.state.automaticProvisional, isTrue);
-      expect(
-        harness.store.values[('main', false)]!.lastPeerValidatedAt,
-        anyOf(isNull, oldPeerAt),
-      );
-      expect(harness.store.values[('main', false)]!.lastSuccessAt, harness.now);
+      peers.complete([]);
+      await _flush();
+      expect(harness.state.automaticReady, isTrue);
     },
   );
+
+  for (final tor in [false, true]) {
+    for (final peerAge in <Duration?>[
+      null,
+      const Duration(minutes: 15),
+      const Duration(minutes: 16),
+      const Duration(seconds: -1),
+    ]) {
+      test(
+        '${tor ? 'Tor' : 'direct'} peer age $peerAge restores only as a hint',
+        () async {
+          final harness = _WarmHarness(
+            route: tor ? _tor : const NetworkPrivacyState.off(),
+          );
+          harness.store.values[('main', tor)] = AutomaticRpcEndpointCache(
+            presetId: 'eu-zec-stardust',
+            endpointUrl: _eu,
+            observedAt: harness.now,
+            lastSuccessAt: harness.now,
+            lastNetworkVerifiedAt: harness.now,
+            lastPeerValidatedAt: peerAge == null
+                ? null
+                : harness.now.subtract(peerAge),
+          );
+          final selected = Completer<List<RpcEndpointCandidateSample>>();
+          harness.probe = (call) =>
+              call.urls.contains(_eu) ? selected.future : Future.value([]);
+          final preparing = harness.notifier.ensureReady();
+          await _flush();
+          expect(harness.warmReads, isEmpty);
+          expect(harness.probes.single.urls, [_eu]);
+          expect(
+            harness.probes.single.totalTimeout,
+            tor
+                ? const Duration(seconds: 2)
+                : const Duration(milliseconds: 750),
+          );
+          selected.complete([_sample(_eu, 111)]);
+          await preparing;
+          expect(
+            await harness.notifier.getLatestBlockHeight(),
+            BigInt.from(111),
+          );
+          await _flush();
+          expect(harness.state.automaticProvisional, isTrue);
+          expect(
+            harness.store.values[('main', tor)]!.lastPeerValidatedAt,
+            isNull,
+          );
+          expect(
+            harness.store.values[('main', tor)]!.lastSuccessAt,
+            harness.now,
+          );
+          expect(harness.warmReads, isEmpty);
+          expect(harness.ordinaryReads, isEmpty);
+        },
+      );
+    }
+
+    for (final expiresWhilePaused in [false, true]) {
+      test(
+        '${tor ? 'Tor' : 'direct'} resume rechecks peer proof '
+        '${expiresWhilePaused ? 'expired while paused' : 'expired before pause'}',
+        () async {
+          final harness =
+              _WarmHarness(route: tor ? _tor : const NetworkPrivacyState.off())
+                ..seedTrusted(
+                  'eu-zec-stardust',
+                  tor: tor,
+                  peerAge: const Duration(minutes: 14, seconds: 30),
+                );
+          await harness.notifier.ensureReady();
+          if (!expiresWhilePaused) {
+            harness.now = harness.now.add(const Duration(seconds: 31));
+          }
+          harness.notifier.cancelAutomaticSelection();
+          if (expiresWhilePaused) {
+            harness.now = harness.now.add(const Duration(seconds: 31));
+          }
+          final startProbeCount = harness.probes.length;
+          await harness.notifier.ensureReady();
+          await _flush();
+          expect(harness.warmReads, hasLength(1));
+          expect(harness.probes.length, greaterThan(startProbeCount));
+          expect(harness.probes[startProbeCount].urls, [_eu]);
+        },
+      );
+    }
+  }
 
   test(
     'failed first actual warm tip falls through to bounded candidate selection',

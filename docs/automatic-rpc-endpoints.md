@@ -47,9 +47,15 @@ Cache reads are bounded and errors do not prevent connectivity.
 ## Restart, unlock and foreground fast paths
 
 This policy is region-independent: it reuses whichever server most recently
-worked on the selected route. A success within five minutes and a network-name
-verification within twelve hours permit the bounded warm read. The real first
-`GetLatestBlock` runs directly against that server, with no selection-only
+worked on the selected route. A success within five minutes, peer corroboration
+within fifteen minutes, and network-name verification within twelve hours permit
+the bounded warm read. Missing, expired, or future peer timestamps keep a cached
+server as a candidate hint: it gets the normal bounded head start and a fresh
+`GetLightdInfo` / `GetLatestBlock` probe before use. The same evidence requirements
+apply to in-memory health retained over lock and foreground transitions.
+
+For a trusted warm restore, the first `GetLatestBlock` runs directly against
+that server, with no selection-only
 `GetLightdInfo`. Generic operations still await this public read before consuming
 proposals or entering their native network operation. Concurrent first readers
 share one read. Selection and warm probes do not publish their responses to the
@@ -90,9 +96,10 @@ always drops both the reusable tip and any in-flight-read admission pointer.
 
 Lock and mobile backgrounding stop native selection work and advance its epoch,
 but retain recent public server health. After unlock/foreground the existing tip
-read performs bounded verification; a fresh peer check is not repeated merely
-because the app was locked. Longer absences, expired evidence, preference and
-route changes invalidate readiness. Reset pauses admission, drains cache writes,
+read performs bounded verification; peer corroboration that is still fresh
+is reused after a short lock. Expired peer evidence on return takes the bounded
+candidate-selection path before the operation. Longer absences, expired evidence,
+preference and route changes invalidate readiness. Reset pauses admission, drains cache writes,
 and removes both durable route records before destroying wallet storage.
 
 Successful actual tip reads update only success time. They do not renew peer,
@@ -147,7 +154,10 @@ round excludes every host already observed; only an agreeing height cluster can
 replace the current server for freshness. Unresolved checks retain the usable server and retry no more than
 once a minute on subsequent network operations. No recurring timer is needed.
 Lock, reset, and route changes cancel this work just like initial selection;
-short transient cancellation preserves previously corroborated public health.
+short transient cancellation preserves previously corroborated public health
+while its evidence remains fresh. A start from an untrusted cache hint also
+schedules the existing complete-pool comparison once after sync starts; a
+trusted warm restore continues to skip that comparison.
 
 A corroborated healthy selection is reused for 15 minutes. Periodic rechecks start
 with the current server. Performance-only changes respect a five-minute minimum residence

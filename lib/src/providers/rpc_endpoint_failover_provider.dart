@@ -762,11 +762,12 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
               policy.cacheMaxAge,
             ) ||
             (_needsWarmTipRead &&
-                !isRecentEndpointObservation(
-                  _lastSuccessAt,
-                  nowBefore,
-                  policy.warmReuseMaxAge,
-                )))) {
+                (!isRecentEndpointObservation(
+                      _lastSuccessAt,
+                      nowBefore,
+                      policy.warmReuseMaxAge,
+                    ) ||
+                    !_hasFreshPeerProof(nowBefore))))) {
       invalidateAutomaticSelection();
     }
     if (!state.automaticReady) await _ensureAutomatic();
@@ -816,14 +817,22 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   bool _canRetainAutomaticHealth() {
     if (!ref.mounted || !state.automaticReady) return false;
     final route = ref.read(networkPrivacyProvider);
+    final now = ref.read(rpcEndpointFailoverClockProvider)();
+    final settings = ref.read(automaticRpcEndpointSettingsProvider);
     return !route.isBusy &&
         (route.status == NetworkPrivacyConnectionStatus.off ||
             route.status == NetworkPrivacyConnectionStatus.connected) &&
         _evaluatedTor == route.torEnabled &&
+        _hasFreshPeerProof(now) &&
+        isRecentEndpointObservation(
+          _lastNetworkVerifiedAt,
+          now,
+          settings.cacheMaxAge,
+        ) &&
         isRecentEndpointObservation(
           _lastSuccessAt,
-          ref.read(rpcEndpointFailoverClockProvider)(),
-          ref.read(automaticRpcEndpointSettingsProvider).warmReuseMaxAge,
+          now,
+          settings.warmReuseMaxAge,
         );
   }
 
@@ -1143,11 +1152,6 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       final preferred = ordered
           .where((c) => c.presetId == cached?.presetId)
           .firstOrNull;
-      final hasUsableCache =
-          preferred != null &&
-          cacheAge != null &&
-          !cacheAge.isNegative &&
-          cacheAge < settings.cacheMaxAge;
       if (preferred != null &&
           cacheAge != null &&
           !cacheAge.isNegative &&
@@ -1273,7 +1277,9 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         epoch: epoch,
         provisional: provisional,
       );
-      if (!hadReady && !force && excludeUrl == null && !hasUsableCache) {
+      // A cache hint still needs the cold-start comparison. Only the trusted
+      // warm branch above returns without scheduling this one-shot work.
+      if (!hadReady && !force && excludeUrl == null) {
         _initialComparisonPending = true;
       }
       _pendingTip = _AutomaticTipObservation(

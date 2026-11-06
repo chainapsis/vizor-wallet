@@ -230,6 +230,11 @@ class AutomaticRpcEndpointCache {
         settings.warmReuseMaxAge,
       ) &&
       isRecentEndpointObservation(
+        lastPeerValidatedAt,
+        now,
+        settings.recheckInterval,
+      ) &&
+      isRecentEndpointObservation(
         lastNetworkVerifiedAt ?? lastBenchmarkAt,
         now,
         settings.cacheMaxAge,
