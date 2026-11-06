@@ -216,7 +216,10 @@ impl SyncError {
 #[allow(dead_code)]
 pub(crate) fn is_endpoint_failover_candidate_message(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
-    if lower.contains("wrong network")
+    // Policy failures can contain transport-like words (including unavailable),
+    // but switching hosts cannot repair a blocked or superseded route.
+    if lower.contains("network privacy blocked")
+        || lower.contains("wrong network")
         || lower.contains("endpoint is for")
         || lower.contains("database is locked")
         || lower.contains("proposal not found")
@@ -356,6 +359,25 @@ mod tests {
         assert!(!is_endpoint_failover_candidate_message(
             "Proposal not found (expired or already executed)"
         ));
+    }
+
+    #[test]
+    fn route_policy_refusals_do_not_blame_the_endpoint() {
+        for detail in [
+            "tip request route changed",
+            "tip request cancelled",
+            "Tor is still connecting",
+            "Tor connection failed",
+            "Tor is enabled but unavailable",
+        ] {
+            let error =
+                SyncError::Network(format!("network privacy blocked lightwalletd: {detail}",));
+            assert!(!error.is_endpoint_failover_candidate(), "{error}");
+            assert!(
+                !is_endpoint_failover_candidate_message(&error.to_string()),
+                "{error}"
+            );
+        }
     }
 
     #[test]

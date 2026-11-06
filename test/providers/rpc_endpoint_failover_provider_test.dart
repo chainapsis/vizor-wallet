@@ -41,6 +41,25 @@ void main() {
     );
   });
 
+  test('native tip route-control errors do not trigger endpoint failover', () {
+    for (final detail in [
+      'tip request route changed',
+      'tip request cancelled',
+      'Tor is still connecting',
+      'Tor connection failed',
+      'Tor is enabled but unavailable',
+    ]) {
+      expect(
+        shouldFallbackFromLightwalletdError(
+          'Read submission expiry tip: network: '
+          'network privacy blocked lightwalletd: $detail',
+        ),
+        isFalse,
+        reason: detail,
+      );
+    }
+  });
+
   test('checkRpcEndpointHealth rejects wrong-network endpoints', () async {
     await expectLater(
       checkRpcEndpointHealth(

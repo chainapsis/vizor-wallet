@@ -55,7 +55,16 @@ proposals or entering their native network operation. Concurrent first readers
 share one read. Selection and warm probes do not publish their responses to the
 native transaction-tip cache. Transaction preparation can still reuse tips
 recorded by ordinary sync/RPC reads under the existing fifteen-second policy;
-without such an observation it performs its own public tip read.
+without such an observation it performs its own public tip read. Each native
+observation also carries the route generation captured before opening its
+channel. A route change (including direct → Tor → direct) prevents reuse of
+the previous generation. Late responses from an old route or a cancelled
+sync/mempool task cannot publish to this cache or replace a current observation.
+Reused transaction channels retain their original generation through authority
+waits; pre-submission expiry checks reject a stale channel. These checks add no
+RPCs to the same-route cache fast path. Native and Dart failover classifiers
+exclude the canonical `network privacy blocked` errors before checking transport
+words, so route changes, cancellation and Tor readiness do not cool down hosts.
 
 The warm read adapts to the recent successful latency on the selected route.
 Its deadline is three times that latency plus 500ms direct / one second Tor,

@@ -191,7 +191,9 @@ Future<RpcEndpointHealth> checkRpcEndpointHealth({
 
 bool shouldFallbackFromLightwalletdError(Object error) {
   final message = error.toString().toLowerCase();
-  if (message.contains('wrong network') ||
+  // Route policy and cancelled route-scoped work say nothing about host health.
+  if (message.contains('network privacy blocked') ||
+      message.contains('wrong network') ||
       message.contains('endpoint is for') ||
       message.contains('database is locked') ||
       message.contains('proposal not found') ||

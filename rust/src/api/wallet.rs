@@ -200,6 +200,7 @@ pub fn get_latest_block_height(lightwalletd_url: String, network: String) -> Res
         let network = keys::parse_network(&network)?;
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
+            let tip_scope = crate::wallet::sync_engine::TipRequestScope::capture();
             let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -207,6 +208,8 @@ pub fn get_latest_block_height(lightwalletd_url: String, network: String) -> Res
                 &mut client,
                 &lightwalletd_url,
                 network,
+                tip_scope,
+                || false,
             )
             .await
             .map_err(|e| e.to_string())?;
@@ -372,6 +375,7 @@ pub fn get_chain_upgrade_status(
         rt.block_on(async {
             use zcash_client_backend::proto::service::Empty;
 
+            let tip_scope = crate::wallet::sync_engine::TipRequestScope::capture();
             let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -379,6 +383,8 @@ pub fn get_chain_upgrade_status(
                 &mut client,
                 &lightwalletd_url,
                 network,
+                tip_scope,
+                || false,
             )
             .await
             .map_err(|e| e.to_string())?;
@@ -1061,6 +1067,7 @@ pub(crate) async fn discover_used_software_accounts(
         return discover_privately(network, seed, birthday_height, private, &[]).await;
     }
     let start_height = discovery_start_height(network, birthday_height);
+    let tip_scope = crate::wallet::sync_engine::TipRequestScope::capture();
     let transport = match crate::wallet::sync_engine::open_lwd_transport(lightwalletd_url).await {
         Ok(transport) => transport,
         Err(e) => {
@@ -1074,6 +1081,8 @@ pub(crate) async fn discover_used_software_accounts(
         &mut client,
         lightwalletd_url,
         network,
+        tip_scope,
+        || false,
     )
     .await
     {
