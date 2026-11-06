@@ -116,7 +116,7 @@ class _SettingsEndpointScreenState
       normalizeRpcEndpointUrl(_customController.text, allowDefaultPort: true);
       return null;
     } on FormatException catch (e) {
-      return e.message;
+      return rpcEndpointErrorText(context.l10n, e);
     }
   }
 
@@ -137,7 +137,7 @@ class _SettingsEndpointScreenState
           _selectedPresetId!,
         );
         if (preset == null) {
-          throw const FormatException('Select an endpoint.');
+          throw RpcEndpointFormatException(RpcEndpointIssue.noSelection);
         }
         await notifier.setPreset(preset);
       } else {
@@ -157,7 +157,7 @@ class _SettingsEndpointScreenState
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() {
-        _submitError = e.message;
+        _submitError = rpcEndpointErrorText(context.l10n, e);
         _isSubmitting = false;
       });
     } catch (e, st) {

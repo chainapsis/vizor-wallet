@@ -2525,6 +2525,46 @@
   "@endpointCustom": {
     "description": "Option to enter a custom lightwalletd endpoint."
   },
+  "endpointErrorAutomaticUnavailable": "Automatic selection is unavailable.",
+  "@endpointErrorAutomaticUnavailable": {
+    "description": "Endpoint settings error when automatic endpoint selection cannot run."
+  },
+  "endpointErrorEmpty": "Enter an endpoint.",
+  "@endpointErrorEmpty": {
+    "description": "Endpoint field error when the field is empty."
+  },
+  "endpointErrorHost": "Enter a valid hostname and port.",
+  "@endpointErrorHost": {
+    "description": "Endpoint field error when the text is not a host name with a port."
+  },
+  "endpointErrorHttps": "Use an https:// endpoint.",
+  "@endpointErrorHttps": {
+    "description": "Endpoint field error when the endpoint is not https. Keep https:// as is."
+  },
+  "endpointErrorNoSelection": "Select an endpoint.",
+  "@endpointErrorNoSelection": {
+    "description": "Endpoint settings error when Update is pressed with no endpoint chosen in the list."
+  },
+  "endpointErrorPort": "Include a valid port, for example us.zec.stardust.rest:443.",
+  "@endpointErrorPort": {
+    "description": "Endpoint field error when the port is missing or out of range. Keep the example host and port as is."
+  },
+  "endpointErrorSpaces": "Endpoint cannot contain spaces.",
+  "@endpointErrorSpaces": {
+    "description": "Endpoint field error when the text contains a space."
+  },
+  "endpointErrorWrongNetwork": "Endpoint is for {endpointNetwork}, but this wallet uses {walletNetwork}.",
+  "@endpointErrorWrongNetwork": {
+    "description": "Endpoint error when the server serves another Zcash network. {endpointNetwork} and {walletNetwork} are network names the server reports, such as main or test; keep them as is.",
+    "placeholders": {
+      "endpointNetwork": {
+        "type": "String"
+      },
+      "walletNetwork": {
+        "type": "String"
+      }
+    }
+  },
   "endpointFailoverSwitchedBack": "Selected endpoint recovered. Switched back.",
   "@endpointFailoverSwitchedBack": {
     "description": "Toast when the wallet switched back to the selected server endpoint after it recovered."
@@ -12050,6 +12090,18 @@
   "settingsExplorerCustomSubtitle": "Any explorer you prefer",
   "@settingsExplorerCustomSubtitle": {
     "description": "Subtitle of the custom block explorer option card."
+  },
+  "settingsExplorerErrorEmpty": "Enter an explorer URL.",
+  "@settingsExplorerErrorEmpty": {
+    "description": "Settings > Explorer field error when the field is empty."
+  },
+  "settingsExplorerErrorHost": "Enter a host, like explorer.example.",
+  "@settingsExplorerErrorHost": {
+    "description": "Settings > Explorer field error when the URL has no host. Keep explorer.example as is."
+  },
+  "settingsExplorerErrorScheme": "Enter an http or https URL.",
+  "@settingsExplorerErrorScheme": {
+    "description": "Settings > Explorer field error when the URL is not http or https."
   },
   "settingsExplorerPrivacyCopy": "Transaction links open in this explorer. Use ZecBlock or another site you prefer. Opening a public explorer after you send can link your IP address to that transaction.",
   "@settingsExplorerPrivacyCopy": {

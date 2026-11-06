@@ -1821,6 +1821,35 @@ class AppLocalizationsZh extends AppLocalizations {
   String get endpointCustom => '自定义节点';
 
   @override
+  String get endpointErrorAutomaticUnavailable => '无法使用自动选择。';
+
+  @override
+  String get endpointErrorEmpty => '请输入节点。';
+
+  @override
+  String get endpointErrorHost => '请输入有效的主机名和端口。';
+
+  @override
+  String get endpointErrorHttps => '请使用 https:// 节点。';
+
+  @override
+  String get endpointErrorNoSelection => '请选择一个节点。';
+
+  @override
+  String get endpointErrorPort => '请填写有效的端口，例如 us.zec.stardust.rest:443。';
+
+  @override
+  String get endpointErrorSpaces => '节点不能包含空格。';
+
+  @override
+  String endpointErrorWrongNetwork(
+    String endpointNetwork,
+    String walletNetwork,
+  ) {
+    return '该节点属于 $endpointNetwork 网络，但此钱包使用 $walletNetwork 网络。';
+  }
+
+  @override
   String get endpointFailoverSwitchedBack => '所选节点已恢复，已切换回来。';
 
   @override
@@ -8743,6 +8772,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsExplorerCustomSubtitle => '任何你喜欢的区块浏览器';
+
+  @override
+  String get settingsExplorerErrorEmpty => '请输入区块浏览器网址。';
+
+  @override
+  String get settingsExplorerErrorHost => '请输入主机，例如 explorer.example。';
+
+  @override
+  String get settingsExplorerErrorScheme => '请输入 http 或 https 网址。';
 
   @override
   String get settingsExplorerPrivacyCopy =>

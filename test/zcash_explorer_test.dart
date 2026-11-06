@@ -201,4 +201,11 @@ void main() {
       '477ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f',
     );
   });
+
+  test('explorer errors have localized text with the same English', () {
+    for (final issue in ExplorerUrlIssue.values) {
+      final error = ExplorerUrlFormatException(issue);
+      expect(explorerUrlErrorText(testL10n, error), error.message);
+    }
+  });
 }

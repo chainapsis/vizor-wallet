@@ -3299,6 +3299,57 @@ abstract class AppLocalizations {
   /// **'Custom endpoint'**
   String get endpointCustom;
 
+  /// Endpoint settings error when automatic endpoint selection cannot run.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic selection is unavailable.'**
+  String get endpointErrorAutomaticUnavailable;
+
+  /// Endpoint field error when the field is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an endpoint.'**
+  String get endpointErrorEmpty;
+
+  /// Endpoint field error when the text is not a host name with a port.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid hostname and port.'**
+  String get endpointErrorHost;
+
+  /// Endpoint field error when the endpoint is not https. Keep https:// as is.
+  ///
+  /// In en, this message translates to:
+  /// **'Use an https:// endpoint.'**
+  String get endpointErrorHttps;
+
+  /// Endpoint settings error when Update is pressed with no endpoint chosen in the list.
+  ///
+  /// In en, this message translates to:
+  /// **'Select an endpoint.'**
+  String get endpointErrorNoSelection;
+
+  /// Endpoint field error when the port is missing or out of range. Keep the example host and port as is.
+  ///
+  /// In en, this message translates to:
+  /// **'Include a valid port, for example us.zec.stardust.rest:443.'**
+  String get endpointErrorPort;
+
+  /// Endpoint field error when the text contains a space.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoint cannot contain spaces.'**
+  String get endpointErrorSpaces;
+
+  /// Endpoint error when the server serves another Zcash network. {endpointNetwork} and {walletNetwork} are network names the server reports, such as main or test; keep them as is.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoint is for {endpointNetwork}, but this wallet uses {walletNetwork}.'**
+  String endpointErrorWrongNetwork(
+    String endpointNetwork,
+    String walletNetwork,
+  );
+
   /// Toast when the wallet switched back to the selected server endpoint after it recovered.
   ///
   /// In en, this message translates to:
@@ -15496,6 +15547,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Any explorer you prefer'**
   String get settingsExplorerCustomSubtitle;
+
+  /// Settings > Explorer field error when the field is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an explorer URL.'**
+  String get settingsExplorerErrorEmpty;
+
+  /// Settings > Explorer field error when the URL has no host. Keep explorer.example as is.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a host, like explorer.example.'**
+  String get settingsExplorerErrorHost;
+
+  /// Settings > Explorer field error when the URL is not http or https.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an http or https URL.'**
+  String get settingsExplorerErrorScheme;
 
   /// [security] Privacy note under the block explorer setting: opening a public explorer can link the user's IP address to a transaction.
   ///
