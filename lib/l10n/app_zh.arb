@@ -871,6 +871,7 @@
   "ledgerKeepZcashOpen": "请保持 Zcash 应用处于打开状态。",
   "ledgerMacosBluetoothPrompt": "macOS 可能会请求蓝牙权限。如果出现提示，请允许 Vizor 访问。",
   "ledgerMismatchChooseHolder": "请选择保存此账户的 Ledger。已保存的连接未更改。",
+  "ledgerMismatchChooseHolderMobile": "请选择保存此账户的 Ledger。已保存的连接未更改。",
   "ledgerMismatchConnectHolder": "请连接保存此账户的 Ledger。已保存的连接未更改。",
   "ledgerMobileAnotherRequestActive": "另一个 Ledger 请求仍在进行。请在 Ledger 上完成或拒绝该请求，然后重试。",
   "ledgerMobileCheckBluetoothBelow": "请在下方检查蓝牙权限，然后重新尝试连接 Ledger。",

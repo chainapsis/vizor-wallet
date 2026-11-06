@@ -2992,6 +2992,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 계⁠정⁠이 있⁠는 Ledger⁠를 선⁠택⁠해 주⁠세⁠요. 저⁠장⁠된 연⁠결⁠은 변⁠경⁠되⁠지 않⁠았⁠어⁠요.';
 
   @override
+  String get ledgerMismatchChooseHolderMobile =>
+      '이 계⁠정⁠이 있⁠는 Ledger⁠를 선⁠택⁠해 주⁠세⁠요. 저⁠장⁠된 연⁠결⁠은 변⁠경⁠되⁠지 않⁠았⁠어⁠요.';
+
+  @override
   String get ledgerMismatchConnectHolder =>
       '이 계⁠정⁠이 있⁠는 Ledger⁠를 연⁠결⁠해 주⁠세⁠요. 저⁠장⁠된 연⁠결⁠은 변⁠경⁠되⁠지 않⁠았⁠어⁠요.';
 

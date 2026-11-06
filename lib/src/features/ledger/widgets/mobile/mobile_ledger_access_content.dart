@@ -140,7 +140,7 @@ class _MobileLedgerAccessContentState
           LedgerPairingStage.saving => l10n.ledgerSavingVerified,
           LedgerPairingStage.saved => l10n.ledgerSavedMatchesFindAgain,
           LedgerPairingStage.ready => l10n.ledgerReadyReviewOnLedger,
-          LedgerPairingStage.mismatch => l10n.ledgerMismatchChooseHolder,
+          LedgerPairingStage.mismatch => l10n.ledgerMismatchChooseHolderMobile,
           LedgerPairingStage.failed =>
             c.pairingInvalid
                 ? l10n.ledgerPairingNoLongerRecognized

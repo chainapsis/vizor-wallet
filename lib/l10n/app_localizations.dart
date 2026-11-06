@@ -5336,6 +5336,12 @@ abstract class AppLocalizations {
   /// **'Choose the Ledger that holds this account. Your saved connection has not changed.'**
   String get ledgerMismatchChooseHolder;
 
+  /// [security] Mobile message when the connected Ledger is not the one that holds this account.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the Ledger that holds this account. Your saved connection hasn’t changed.'**
+  String get ledgerMismatchChooseHolderMobile;
+
   /// [security] Message when the connected Ledger is not the one that holds this account.
   ///
   /// In en, this message translates to:

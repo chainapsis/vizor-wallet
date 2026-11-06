@@ -2832,6 +2832,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerMismatchChooseHolder => '请选择保存此账户的 Ledger。已保存的连接未更改。';
 
   @override
+  String get ledgerMismatchChooseHolderMobile => '请选择保存此账户的 Ledger。已保存的连接未更改。';
+
+  @override
   String get ledgerMismatchConnectHolder => '请连接保存此账户的 Ledger。已保存的连接未更改。';
 
   @override

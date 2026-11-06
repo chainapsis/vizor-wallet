@@ -3034,6 +3034,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Choose the Ledger that holds this account. Your saved connection has not changed.';
 
   @override
+  String get ledgerMismatchChooseHolderMobile =>
+      'Choose the Ledger that holds this account. Your saved connection hasn’t changed.';
+
+  @override
   String get ledgerMismatchConnectHolder =>
       'Connect the Ledger that holds this account. Your saved connection hasn’t changed.';
 

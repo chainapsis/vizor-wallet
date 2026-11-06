@@ -871,6 +871,7 @@
   "ledgerKeepZcashOpen": "Zcash 앱을 열어 둔 채로 유지하세요.",
   "ledgerMacosBluetoothPrompt": "macOS에서 블루투스 접근 권한을 요청할 수 있어요. 요청이 나타나면 Vizor에 접근을 허용해 주세요.",
   "ledgerMismatchChooseHolder": "이 계정이 있는 Ledger를 선택해 주세요. 저장된 연결은 변경되지 않았어요.",
+  "ledgerMismatchChooseHolderMobile": "이 계정이 있는 Ledger를 선택해 주세요. 저장된 연결은 변경되지 않았어요.",
   "ledgerMismatchConnectHolder": "이 계정이 있는 Ledger를 연결해 주세요. 저장된 연결은 변경되지 않았어요.",
   "ledgerMobileAnotherRequestActive": "다른 Ledger 요청이 아직 진행 중이에요. Ledger에서 완료하거나 거부한 뒤 다시 시도해 주세요.",
   "ledgerMobileCheckBluetoothBelow": "아래에서 Bluetooth 접근 권한을 확인한 뒤 Ledger에 다시 연결해 보세요.",

@@ -871,6 +871,7 @@
   "ledgerKeepZcashOpen": "Zcash 앱⁠을 열⁠어 둔 채⁠로 유⁠지⁠하⁠세⁠요.",
   "ledgerMacosBluetoothPrompt": "macOS⁠에⁠서 블⁠루⁠투⁠스 접⁠근 권⁠한⁠을 요⁠청⁠할 수 있⁠어⁠요. 요⁠청⁠이 나⁠타⁠나⁠면 Vizor⁠에 접⁠근⁠을 허⁠용⁠해 주⁠세⁠요.",
   "ledgerMismatchChooseHolder": "이 계⁠정⁠이 있⁠는 Ledger⁠를 선⁠택⁠해 주⁠세⁠요. 저⁠장⁠된 연⁠결⁠은 변⁠경⁠되⁠지 않⁠았⁠어⁠요.",
+  "ledgerMismatchChooseHolderMobile": "이 계⁠정⁠이 있⁠는 Ledger⁠를 선⁠택⁠해 주⁠세⁠요. 저⁠장⁠된 연⁠결⁠은 변⁠경⁠되⁠지 않⁠았⁠어⁠요.",
   "ledgerMismatchConnectHolder": "이 계⁠정⁠이 있⁠는 Ledger⁠를 연⁠결⁠해 주⁠세⁠요. 저⁠장⁠된 연⁠결⁠은 변⁠경⁠되⁠지 않⁠았⁠어⁠요.",
   "ledgerMobileAnotherRequestActive": "다⁠른 Ledger 요⁠청⁠이 아⁠직 진⁠행 중⁠이⁠에⁠요. Ledger⁠에⁠서 완⁠료⁠하⁠거⁠나 거⁠부⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.",
   "ledgerMobileCheckBluetoothBelow": "아⁠래⁠에⁠서 Bluetooth 접⁠근 권⁠한⁠을 확⁠인⁠한 뒤 Ledger⁠에 다⁠시 연⁠결⁠해 보⁠세⁠요.",

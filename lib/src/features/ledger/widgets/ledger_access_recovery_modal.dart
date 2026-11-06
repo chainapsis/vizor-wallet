@@ -270,7 +270,7 @@ class _LedgerAccessRecoveryModalState
         ),
         label: c.label,
         action: c.onAction,
-        closeFooter: c.restricted,
+        closeFooter: c.restricted && !c.busy,
       ),
     );
     if (_transport == null) {
