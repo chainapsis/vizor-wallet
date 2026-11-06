@@ -16,6 +16,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/one_time_ivk.dart'
     show ReceiveError, ReceiveErrorKind;
 import 'swap_activity_tracker.dart';
+import 'swap_address_wait_provider.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
 import 'swap_max_amount_estimator.dart';
@@ -31,8 +32,17 @@ export 'swap_provider_config.dart';
 /// Shown when a private incoming quote still gets no receive address after
 /// the recovery round before its retry failed.
 const kPrivateSwapAddressUnavailableMessage =
-    'Private swap addresses are unavailable right now. Try again later, or '
-    'turn off NEAR swap privacy to swap now.';
+    "Private swaps aren't available right now. Try again in a few minutes.";
+
+/// Shown when open quotes hold every one-time receive address, with a link
+/// to the swaps holding them.
+const kPrivateSwapAddressLimitMessage =
+    'Too many swaps are waiting. Try again after one finishes or expires.';
+
+/// Shown when a quote waits for NEAR swap privacy to be chosen again because
+/// its saved setting couldn't be read.
+const kNearSwapPrivacyUnknownMessage =
+    "Vizor couldn't read NEAR swap privacy. Set it again in Settings.";
 
 final swapInitialIntentsProvider = Provider<List<SwapIntent>>((ref) {
   return const [];
@@ -1010,6 +1020,24 @@ class SwapNotifier extends Notifier<SwapState> {
           retry: false,
           recoveryFailure: recoveryFailure,
         );
+      }
+      // A payout address the wallet is still checking waits for the next
+      // recovery round, which the button shows, rather than an error.
+      if (kind == ReceiveErrorKind.receiveHistory &&
+          !state.payMode &&
+          !state.direction.sendsZec &&
+          ref.read(swapUsesOneTimeAddressProvider) &&
+          _addressRecoveryFailureMessage(recoveryFailure) == null) {
+        ref
+            .read(swapAddressHistoryPendingProvider.notifier)
+            .quoteRefused(accountUuid);
+        state = state.copyWith(
+          reviewVisible: false,
+          quoteLoading: false,
+          clearQuoteError: true,
+          clearReview: true,
+        );
+        return;
       }
       state = state.copyWith(
         reviewVisible: false,
@@ -2616,17 +2644,23 @@ class SwapNotifier extends Notifier<SwapState> {
     null ||
     ReceiveError(kind: ReceiveErrorKind.waitingForSync) ||
     ReceiveError(kind: ReceiveErrorKind.waitingForService) => null,
-    ReceiveError(kind: ReceiveErrorKind.upgradeRequired, :final message) =>
-      message,
+    ReceiveError(kind: ReceiveErrorKind.upgradeRequired) =>
+      kSwapRecoveryUpdateMessage,
     _ => kPrivateSwapAddressUnavailableMessage,
   };
 
   String _friendlyQuoteError(Object error) {
     if (_receiveError(error) case final receiveError?) {
-      return receiveError.message;
+      return switch (receiveError.kind) {
+        ReceiveErrorKind.limit => kPrivateSwapAddressLimitMessage,
+        ReceiveErrorKind.upgradeRequired => kSwapRecoveryUpdateMessage,
+        _ => receiveError.message,
+      };
     }
-    if (error is SwapZecStagingAddressUnavailableException ||
-        error is NearSwapPrivacyUnknownException) {
+    if (error is NearSwapPrivacyUnknownException) {
+      return kNearSwapPrivacyUnknownMessage;
+    }
+    if (error is SwapZecStagingAddressUnavailableException) {
       return error.toString();
     }
     return _providerFailureMessage(

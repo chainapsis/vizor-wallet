@@ -51,7 +51,7 @@ void main() {
     expect(find.byType(SwapDepositTokensPageContent), findsOneWidget);
   });
 
-  testWidgets('a swap that never finished starting stays hidden', (
+  testWidgets('a swap whose start was not confirmed stays hidden', (
     tester,
   ) async {
     await _pumpDetail(

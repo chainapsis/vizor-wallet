@@ -1362,6 +1362,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     if (!ref.mounted) return;
     final current = generation == _swapRecoveryGeneration;
+    if (current) ref.read(swapFilterStepsProvider.notifier).ended();
     // A step that wasn't cancelled followed a completed sync, at the tip.
     _runOwedSwapRecovery(atTip: current);
     // A waiter that joined the step waits for the round it owed, if one
@@ -1540,12 +1541,30 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           if (manual) throw StateError('Swap history check was cancelled.');
           return null;
         }
+        if (!manual && ref.mounted) {
+          // Waiting for sync or for the service is progress, not a failure.
+          final waiting = switch (error) {
+            rust_swap.ReceiveError(
+              kind: rust_swap.ReceiveErrorKind.waitingForSync ||
+                  rust_swap.ReceiveErrorKind.waitingForService,
+            ) =>
+              true,
+            _ => false,
+          };
+          ref.read(swapRecoveryRoundFailedProvider.notifier).set(!waiting);
+        }
         // A round can commit results and then fail (see
         // `SwapRecoveryRound.changed`), such as a payment that now waits for
         // sync to admit it.
         await _refreshAfterSwapRecovery();
         await _syncIfAwaitingAdmission();
         rethrow;
+      }
+      if (!manual && ref.mounted && generation == _swapRecoveryGeneration) {
+        ref.read(swapRecoveryRoundFailedProvider.notifier).set(false);
+        ref
+            .read(swapRecoveryNeedsServerProvider.notifier)
+            .set(round?.wait == rust_swap.SwapRecoveryWait.server);
       }
       if (round == null) return null;
       if (round.rescan) startSync();
@@ -1630,14 +1649,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final account = _getActiveAccountUuid();
     if (account == null || _requiresUnlock) return true;
     try {
-      final readiness = await _trackedWalletCall(
-        _existingWalletDbPathResolver,
-        (path) => rust_swap.getSwapAccountReadiness(
-          dbPath: path,
-          networkName: _endpointConfig.networkName,
-          accountUuid: account,
-        ),
-      );
+      final readiness = await swapAccountReadiness(account);
       return readiness == null ||
           !(readiness.seedWalk ||
               readiness.lookups ||
@@ -2944,6 +2956,34 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     return status;
   }
+
+  /// Reads `getSwapAccountReadiness` for `accountUuid` without network
+  /// access, or null without a wallet (see [_trackedWalletCall]).
+  Future<rust_swap.SwapAccountReadiness?> swapAccountReadiness(
+    String accountUuid,
+  ) => _trackedWalletCall(
+    _existingWalletDbPathResolver,
+    (path) => rust_swap.getSwapAccountReadiness(
+      dbPath: path,
+      networkName: _endpointConfig.networkName,
+      accountUuid: accountUuid,
+    ),
+  );
+
+  /// Reads `accountUuid`'s rows for `txidHexes` without network access, or
+  /// null without a wallet (see [_trackedWalletCall]).
+  Future<List<rust_sync.TransactionInfo>?> transactionRowsForTxids(
+    String accountUuid,
+    List<String> txidHexes,
+  ) => _trackedWalletCall(
+    _existingWalletDbPathResolver,
+    (path) => rust_sync.getTransactionRowsForTxids(
+      dbPath: path,
+      network: _endpointConfig.networkName,
+      accountUuid: accountUuid,
+      txidHexes: txidHexes,
+    ),
+  );
 
   /// Runs `call`, a native call on the wallet DB at the path `resolvePath`
   /// gives, or returns null when it gives none. Every native wallet call of the
@@ -4871,6 +4911,50 @@ class SwapRecoveryRounds extends Notifier<int> {
 
   /// Records that a round finished.
   void ended() => state++;
+}
+
+/// Counts finished swap filter steps that weren't cancelled. Filters catching
+/// up can make a one-time payout address usable without a recovery round.
+final swapFilterStepsProvider = NotifierProvider<SwapFilterSteps, int>(
+  SwapFilterSteps.new,
+);
+
+/// See [swapFilterStepsProvider].
+class SwapFilterSteps extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  /// Records that a step finished.
+  void ended() => state++;
+}
+
+/// Shown wherever private swaps need a newer app: under the quote and in the
+/// swap history check.
+const kSwapRecoveryUpdateMessage = 'Update Vizor to keep using private swaps.';
+
+/// Whether the last automatic swap recovery round failed, such as when the
+/// receiver service can't be reached. The next round that succeeds clears it.
+final swapRecoveryRoundFailedProvider =
+    NotifierProvider<SwapRecoveryRoundOutcome, bool>(
+      SwapRecoveryRoundOutcome.new,
+    );
+
+/// Whether the last automatic swap recovery round waited for a private query
+/// server (`SwapRecoveryWait.server`). The next round that succeeds, or
+/// choosing a server, clears it.
+final swapRecoveryNeedsServerProvider =
+    NotifierProvider<SwapRecoveryRoundOutcome, bool>(
+      SwapRecoveryRoundOutcome.new,
+    );
+
+/// One fact about the latest automatic swap recovery round, false until a
+/// round reports it.
+class SwapRecoveryRoundOutcome extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  /// Records the fact for the latest round.
+  void set(bool value) => state = value;
 }
 
 /// Reads the wallet's saved swap recovery state without network access, or

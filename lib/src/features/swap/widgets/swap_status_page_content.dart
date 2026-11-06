@@ -14,6 +14,7 @@ import '../../address_book/widgets/address_book_network_icon.dart';
 import '../models/swap_detail_tooltips.dart';
 import '../models/swap_models.dart';
 import '../models/swap_status_presentation.dart';
+import 'one_time_address_label.dart';
 import 'swap_review_info.dart';
 import 'swap_progress_explorer_footer.dart';
 
@@ -51,6 +52,7 @@ class SwapStatusPageContent extends StatefulWidget {
     this.progressTabLabel = 'Swap progress',
     this.paymentMode = false,
     this.showTabs = true,
+    this.oneTimeAddress,
     this.onTabChanged,
     this.onCopy,
     this.explorerUri,
@@ -58,6 +60,10 @@ class SwapStatusPageContent extends StatefulWidget {
   });
 
   final String title;
+
+  /// Set when the swap's ZEC side uses a one-time address (see
+  /// [SwapActivityStatusPresentation.oneTimeAddress]).
+  final OneTimeAddressRole? oneTimeAddress;
   final SwapAsset payAsset;
   final SwapAsset receiveAsset;
   final String payAmountText;
@@ -253,6 +259,10 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
                 amountText: widget.payAmountText,
                 detailText: widget.payDetailText,
                 detailCopyText: widget.payDetailCopyText,
+                oneTimeAddress:
+                    widget.oneTimeAddress == OneTimeAddressRole.refund
+                    ? OneTimeAddressRole.refund
+                    : null,
               ),
               receive: SwapReviewInfoSideData(
                 asset: widget.receiveAsset,
@@ -260,6 +270,10 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
                 amountText: widget.receiveAmountText,
                 detailText: widget.receiveDetailText,
                 detailCopyText: widget.receiveDetailCopyText,
+                oneTimeAddress:
+                    widget.oneTimeAddress == OneTimeAddressRole.payout
+                    ? OneTimeAddressRole.payout
+                    : null,
               ),
               onCopy: widget.onCopy,
             ),

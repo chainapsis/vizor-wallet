@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../swap/models/swap_models.dart';
+import '../swap/models/swap_payout_discovery.dart';
 import 'activity_amount_text.dart';
 import 'activity_row_mapper.dart';
 import 'models/activity_row_data.dart';
@@ -33,6 +34,7 @@ class SwapActivityRowItem {
     this.refundedAmountText,
     this.payMode = false,
     this.startPending = false,
+    this.privateAddress = false,
   });
 
   factory SwapActivityRowItem.fromRecord(SwapIntentRecord record) {
@@ -79,6 +81,7 @@ class SwapActivityRowItem {
       refundedAmountText: record.providerRefundInfo?.refundedAmountText,
       payMode: record.payMode,
       startPending: record.startPending,
+      privateAddress: record.privateAddress,
     );
   }
 
@@ -120,6 +123,21 @@ class SwapActivityRowItem {
 
   /// See [SwapIntent.startPending].
   final bool startPending;
+
+  /// See [SwapIntent.privateAddress].
+  final bool privateAddress;
+
+  /// The [ActivityRowData.stableId] of this swap's row.
+  String get stableId => 'swap:$intentId';
+
+  /// The payout the wallet may still be finding (see
+  /// [swapPayoutAwaitingDiscovery]).
+  String? get payoutAwaitingDiscovery => swapPayoutAwaitingDiscovery(
+    privateAddress: privateAddress,
+    direction: direction,
+    status: status,
+    walletTxid: receiveWalletTxidHex,
+  );
 }
 
 List<SwapActivityRowItem> swapActivityRowItemsFromRecords(
@@ -136,6 +154,7 @@ ActivityRowData buildSwapActivityRow({
   VoidCallback? onTap,
   String? receivedAmountText,
   VoidCallback? onReceivedLegTap,
+  bool findingPayout = false,
 }) {
   final colors = context.colors;
   final failed = _swapActivityFailed(item.status);
@@ -149,9 +168,12 @@ ActivityRowData buildSwapActivityRow({
   final payMode = item.payMode && item.direction == SwapDirection.zecToExternal;
 
   return ActivityRowData(
-    stableId: 'swap:${item.intentId}',
+    stableId: item.stableId,
+    // Until the wallet finds the payout, the swap reads as in progress.
     title: payMode
         ? _payActivityTitle(item.status)
+        : findingPayout
+        ? _swapActivityTitle(SwapIntentStatus.processing)
         : _swapActivityTitle(item.status),
     leadingIconName: payMode ? AppIcons.coins : AppIcons.swapArrows,
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
@@ -175,8 +197,12 @@ ActivityRowData buildSwapActivityRow({
     amountSubtitleIconColor: timedOut ? colors.text.secondary : null,
     statusText: item.startPending && !item.status.isTerminal
         ? swapStartingText
+        : findingPayout
+        ? kSwapFindingPayoutLabel
         : _swapActivityStatusText(item.status, progress),
-    statusIconName: failed
+    statusIconName: findingPayout
+        ? null
+        : failed
         ? AppIcons.skull
         : item.status == SwapIntentStatus.refunded
         ? AppIcons.uturnUp
@@ -202,6 +228,7 @@ ActivityRowData buildSwapActivityRow({
       receivedAmountText: receivedAmountText,
       onReceivedLegTap: onReceivedLegTap,
       dateOnlyTimestamp: dateOnlyTimestamp,
+      findingPayout: findingPayout,
     ),
     onTap: onTap,
   );
@@ -217,13 +244,17 @@ List<ActivityRowData> _swapActivityChildRows({
   required String? receivedAmountText,
   required VoidCallback? onReceivedLegTap,
   required bool dateOnlyTimestamp,
+  required bool findingPayout,
 }) {
   final direction = item.direction;
   if (direction == null || receiveAsset == null) return const [];
   if (item.payMode && direction == SwapDirection.zecToExternal) {
     return const [];
   }
-  if (item.status != SwapIntentStatus.complete) return const [];
+  // A payout the wallet hasn't found yet isn't settled.
+  if (item.status != SwapIntentStatus.complete || findingPayout) {
+    return const [];
+  }
 
   final colors = context.colors;
   final receivesZec = direction == SwapDirection.externalToZec;

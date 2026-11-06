@@ -5,9 +5,11 @@ import 'swap_deposit_broadcast_result.dart';
 /// pending (see [SwapIntent.startPending]).
 const swapStartingText = 'Starting swap…';
 
-/// Shown for a swap whose wallet start never finished.
+/// Shown for a swap whose wallet start couldn't be confirmed. Its deposit
+/// instructions may have been shown, so the user may already have paid it.
 const swapStartFailedText =
-    "This swap didn't finish starting. Start a new swap if you still want one.";
+    "Vizor couldn't confirm this swap started. Check whether you already sent "
+    'its deposit before starting another.';
 
 class SwapIntentRecord {
   const SwapIntentRecord({

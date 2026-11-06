@@ -50,6 +50,7 @@ import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
 import '../../../activity/gift_card_activity_index.dart';
+import '../../../activity/models/activity_row_data.dart';
 import '../../../activity/activity_eta_provider.dart';
 import '../../../activity/activity_row_mapper.dart';
 import '../../../activity/screens/mobile/mobile_transaction_status_screen.dart';
@@ -63,6 +64,7 @@ import '../../../migration/widgets/mobile/mobile_ironwood_migration_attention.da
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
+import '../../../swap/providers/swap_payout_discovery_provider.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_balance_display.dart';
@@ -1156,6 +1158,36 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             transactions: sync.recentTransactions,
           );
     final swapReceiveTxByIntent = absorption.receiveTxByIntent;
+    // Home checks the payout only of a swap it shows, so it builds that row
+    // again with the check once sorting shows which rows those are.
+    ActivityRowData swapRow(SwapActivityRowItem item, {bool shown = false}) =>
+        buildSwapActivityRow(
+          context: context,
+          item: item,
+          privacyModeEnabled: privacyModeEnabled,
+          dateOnlyTimestamp: true,
+          onTap: () => _pushUsedScreen(
+            swapActivityDetailUri(
+              intentId: item.intentId,
+              returnTarget: SwapActivityReturnTarget.home,
+            ).toString(),
+          ),
+          receivedAmountText: _absorbedReceiveAmountText(
+            swapReceiveTxByIntent[item.intentId],
+          ),
+          onReceivedLegTap: switch (swapReceiveTxByIntent[item.intentId]) {
+            null => null,
+            final tx => () => _openLoadedTransactionStatus(tx),
+          },
+          findingPayout:
+              shown &&
+              swapReceiveTxByIntent[item.intentId] == null &&
+              watchSwapFindingPayout(
+                ref,
+                accountUuid: uuid,
+                awaitingTxid: item.payoutAwaitingDiscovery,
+              ),
+        );
     final entries = <ActivityEntry>[
       for (final tx in giftCardActivityIndex.withPendingClaims(
         sync.recentTransactions,
@@ -1172,32 +1204,17 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             privacyModeEnabled: privacyModeEnabled,
           ),
       for (final item in swapItems)
-        ActivityEntry(
-          timestamp: item.activityTimestamp,
-          row: buildSwapActivityRow(
-            context: context,
-            item: item,
-            privacyModeEnabled: privacyModeEnabled,
-            dateOnlyTimestamp: true,
-            onTap: () => _pushUsedScreen(
-              swapActivityDetailUri(
-                intentId: item.intentId,
-                returnTarget: SwapActivityReturnTarget.home,
-              ).toString(),
-            ),
-            receivedAmountText: _absorbedReceiveAmountText(
-              swapReceiveTxByIntent[item.intentId],
-            ),
-            onReceivedLegTap: switch (swapReceiveTxByIntent[item.intentId]) {
-              null => null,
-              final tx => () => _openLoadedTransactionStatus(tx),
-            },
-          ),
-        ),
+        ActivityEntry(timestamp: item.activityTimestamp, row: swapRow(item)),
     ]..sort(compareActivityEntries);
+    final swapItemsByRowId = {
+      for (final item in swapItems) item.stableId: item,
+    };
     final recentRows = [
       for (final entry in entries.take(MobileHomeScreen._recentActivityLimit))
-        entry.row,
+        switch (swapItemsByRowId[entry.row.stableId]) {
+          final item? => swapRow(item, shown: true),
+          null => entry.row,
+        },
     ];
 
     final initialPresentation = ref.watch(

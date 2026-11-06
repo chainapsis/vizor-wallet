@@ -13,6 +13,7 @@ import '../../models/swap_address_formatting.dart';
 import '../../models/swap_detail_tooltips.dart';
 import '../swap_review_page_content.dart' show swapReviewSlippageToleranceText;
 import '../swap_amount_text.dart' show compactSwapAmountText;
+import '../one_time_address_label.dart';
 import 'mobile_swap_review_header.dart';
 
 /// Mobile swap review — Figma `Review Qoute` (4731:85401): the serif
@@ -85,6 +86,9 @@ class MobileSwapReviewContent extends StatelessWidget {
       ),
       asset: quote.sellAsset,
       bottomText: sendsZec ? payFiatTextOverride : null,
+      oneTimeAddress: sendsZec && addressPlan.oneTimeZecAddress
+          ? OneTimeAddressRole.refund
+          : null,
     );
     final receiveRow = MobileSwapReviewHeaderRow(
       label: "You're receiving",
@@ -94,6 +98,9 @@ class MobileSwapReviewContent extends StatelessWidget {
       asset: quote.receiveAsset,
       bottomText: sendsZec ? externalBottom : receiveFiatTextOverride,
       fullAddress: sendsZec ? externalAddress : null,
+      oneTimeAddress: !sendsZec && addressPlan.oneTimeZecAddress
+          ? OneTimeAddressRole.payout
+          : null,
     );
 
     return Column(

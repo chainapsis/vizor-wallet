@@ -53,6 +53,7 @@ import '../../migration/widgets/ironwood_migration_announcement_modal.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../../swap/providers/swap_payout_discovery_provider.dart';
 import '../widgets/desktop_home_setup_carousel.dart';
 import '../../swap/providers/swap_state_provider.dart';
 import '../services/transparent_balance_display.dart';
@@ -792,17 +793,22 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       for (final item in swapItems)
         _HomeActivityEntry(
           timestamp: item.activityTimestamp,
-          row: buildSwapActivityRow(
+          row: () => buildSwapActivityRow(
             context: context,
             item: item,
             privacyModeEnabled: widget.privacyModeEnabled,
             onTap: () => _openSwapStatus(item.intentId),
+            findingPayout: watchSwapFindingPayout(
+              ref,
+              accountUuid: accountUuid,
+              awaitingTxid: item.payoutAwaitingDiscovery,
+            ),
           ),
         ),
     ]..sort(_compareHomeActivityEntries);
     return entries
         .take(_recentActivityLimit)
-        .map((entry) => entry.row)
+        .map((entry) => entry.row())
         .toList(growable: false);
   }
 
@@ -815,7 +821,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       timestamp:
           giftCard?.activityTimestamp ??
           transactionActivityTimestamp(transaction),
-      row: buildTransactionActivityRow(
+      row: () => buildTransactionActivityRow(
         context: context,
         transaction: transaction,
         privateQueriesEnabled: ref.watch(enhancePirProvider),
@@ -884,7 +890,10 @@ class _HomeActivityEntry {
   const _HomeActivityEntry({required this.timestamp, required this.row});
 
   final DateTime? timestamp;
-  final ActivityRowData row;
+
+  /// Builds the row, which Home does only for the entries it shows, so a swap
+  /// it doesn't show starts no payout check.
+  final ActivityRowData Function() row;
 }
 
 class _HomeFullPageBackground extends StatelessWidget {

@@ -72,6 +72,7 @@ abstract final class AppIcons {
   static const ledger = 'ledger';
   static const ledgerBrand = 'ledger_brand';
   static const link = 'link';
+  static const linkOff = 'link_off';
   static const loader = 'loader';
   static const lock = 'lock';
   static const logOut = 'log_out';

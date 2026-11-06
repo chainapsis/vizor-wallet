@@ -73,6 +73,52 @@ void main() {
     },
   );
 
+  testWidgets('privacy mode masks the Ironwood balance in a private '
+      'payment shortfall', (tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final router = GoRouter(
+      initialLocation: '/pay/review',
+      routes: [
+        GoRoute(
+          path: '/pay/review',
+          builder: (_, _) => const MobileSwapReviewScreen(payMode: true),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      _app(
+        router,
+        quoteLifetime: const Duration(minutes: 5),
+        swapNotifier: () => _ExpiringPayReviewNotifier(
+          const Duration(minutes: 5),
+          oneTimeZecAddress: true,
+        ),
+        privacyMode: true,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          spendableBalance: BigInt.from(10000000000),
+          totalBalance: BigInt.from(10000000000),
+          ironwoodBalance: BigInt.from(1000000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Private payments use Ironwood ZEC only. '
+        'You have ******\u00A0ZEC there.',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets(
     'payment review renders the explicitly selected duplicate contact',
     (tester) async {
@@ -384,10 +430,13 @@ Widget _app(
   SwapNotifier Function()? swapNotifier,
   SyncState? syncState,
   List<AddressBookContact> contacts = const [],
+  bool privacyMode = false,
 }) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(privacyMode: privacyMode),
+      ),
       addressBookRepositoryProvider.overrideWithValue(
         _TestAddressBookRepository(contacts),
       ),
@@ -413,7 +462,7 @@ Widget _app(
   );
 }
 
-final _bootstrap = AppBootstrapState(
+AppBootstrapState _bootstrap({bool privacyMode = false}) => AppBootstrapState(
   initialLocation: '/pay/review',
   initialAccountState: const AccountState(
     accounts: [
@@ -431,16 +480,20 @@ final _bootstrap = AppBootstrapState(
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
   themeMode: ThemeMode.light,
-  privacyModeEnabled: false,
+  privacyModeEnabled: privacyMode,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
 );
 
 class _ExpiringPayReviewNotifier extends SwapNotifier {
-  _ExpiringPayReviewNotifier(this.quoteLifetime);
+  _ExpiringPayReviewNotifier(
+    this.quoteLifetime, {
+    this.oneTimeZecAddress = false,
+  });
 
   final Duration quoteLifetime;
+  final bool oneTimeZecAddress;
 
   @override
   SwapState build() {
@@ -465,13 +518,14 @@ class _ExpiringPayReviewNotifier extends SwapNotifier {
       payMode: true,
     ).copyWith(
       reviewQuote: quote,
-      reviewAddressPlan: const SwapAddressPlan(
+      reviewAddressPlan: SwapAddressPlan(
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.usdc,
         userExternalAddress: _recipient,
         walletZecAddress: 'u1payreview',
         oneClickRecipient: _recipient,
         oneClickRefundTo: 'u1payreview',
+        oneTimeZecAddress: oneTimeZecAddress,
       ),
       reviewAccountUuid: 'account-1',
     );
