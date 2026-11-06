@@ -29,7 +29,11 @@ void runSwapActivityCaptures(AppFormFactor formFactor) {
         overrideConfiguration: FigmaCompareConfiguration(
           scenarioId: 'activity-$flow-processing',
           themeMode: theme,
-          outputPath: '$output/$lane-$flow-$screen-${theme.name}.png',
+          // Without --update-goldens (the mobile lane) the screen is still
+          // rendered and checked, but nothing is compared or written.
+          outputPath: autoUpdateGoldenFiles
+              ? '$output/$lane-$flow-$screen-${theme.name}.png'
+              : '',
           logicalSize: viewport,
           pixelRatio: 1,
         ),
