@@ -36,6 +36,8 @@ Lock still clears sensitive sync data and rejects late reads through the
 existing epoch checks. Deletion removes the entry; a successful reset clears
 all entries. No account JSON, database schema, Rust API, RPC budget, periodic
 timer, scan range or birthday changes. Desktop, mobile and sidebar labels use
-the same presentation. Sidebar navigation retains its original operational
-importing restrictions and also stays blocked while showing restoration.
+the same presentation. The Home/Importing entry remains clickable so Settings
+can return to Home. Other sidebar tasks retain their operational importing
+restrictions and stay blocked while showing restoration. Explicit route and
+protected-operation navigation guards still apply to Home.
 Mobile keep-awake and authoritative spendability continue to use sync truth.

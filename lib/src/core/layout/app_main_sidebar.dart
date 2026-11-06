@@ -578,7 +578,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                             : AppIcons.home,
                         iconAnimated: !showImporting,
                         active: _homeShouldBeActive,
-                        onTap: isImporting ? null : () => _navigateTo('/home'),
+                        onTap: () => _navigateTo('/home'),
                       ),
                     if (swapFeatureEnabled) ...[
                       const SizedBox(height: AppSpacing.xs),
