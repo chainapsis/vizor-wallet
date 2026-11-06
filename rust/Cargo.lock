@@ -862,7 +862,7 @@ checksum = "17933e749f2502cfcd1c27519292fbbea22e8fc64ce680e863f855e8cd8cce23"
 dependencies = [
  "heck 0.5.0",
  "indexmap",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -3169,13 +3169,17 @@ dependencies = [
  "zakura-client-sqlite",
  "zakura-jubjub",
  "zakura-keys",
+ "zakura-near-intents",
  "zakura-note-encryption",
+ "zakura-one-time-ivk",
  "zakura-orchard",
  "zakura-pasta-curves",
  "zakura-pczt",
  "zakura-pir-client",
  "zakura-pir-config",
  "zakura-pir-protocol",
+ "zakura-pir-publisher",
+ "zakura-pir-query-server",
  "zakura-primitives",
  "zakura-proofs",
  "zakura-protocol",
@@ -4979,6 +4983,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "zakura-near-intents"
+version = "0.0.1-rc5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "369ad79bd33667bd3a4a80508a51433b3ac5391aa64c65441b08d981527733b1"
+dependencies = [
+ "zakura-one-time-ivk",
+ "zakura-protocol",
+]
+
+[[package]]
 name = "zakura-note-encryption"
 version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5153,6 +5167,7 @@ dependencies = [
  "base64",
  "hex",
  "http",
+ "incrementalmerkletree",
  "rand 0.8.8",
  "rand_chacha 0.3.1",
  "reinspiring",
@@ -5160,7 +5175,10 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.21",
+ "zakura-address",
  "zakura-filters",
+ "zakura-note-encryption",
+ "zakura-orchard",
  "zakura-protocol",
  "zakura-transparent",
 ]
@@ -5171,8 +5189,10 @@ version = "0.0.1-rc5"
 source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=0074b990a635a3e53258c298ad976043a8d42c3e#0074b990a635a3e53258c298ad976043a8d42c3e"
 dependencies = [
  "hex",
+ "incrementalmerkletree",
  "sha2 0.10.9",
  "thiserror 2.0.21",
+ "zakura-orchard",
  "zakura-pir-protocol",
  "zakura-pir-server-core",
 ]
@@ -5184,6 +5204,7 @@ source = "git+https://github.com/zakura-core/wallet-libraries.git?rev=0074b990a6
 dependencies = [
  "rayon",
  "reinspiring",
+ "sha2 0.10.9",
  "zakura-pir-protocol",
  "zakura-pir-server-core",
 ]

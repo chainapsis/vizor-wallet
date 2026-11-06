@@ -2,6 +2,7 @@ pub mod balance_cache;
 pub mod keystone;
 pub mod ledger;
 pub mod network_privacy;
+pub mod one_time_ivk;
 pub mod pir_config;
 pub mod secret;
 pub mod simple;
