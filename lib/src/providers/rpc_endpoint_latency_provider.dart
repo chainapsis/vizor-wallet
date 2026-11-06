@@ -92,7 +92,11 @@ class RpcEndpointLatencyNotifier extends Notifier<RpcEndpointLatencyState> {
 
   Future<void> refresh(String networkName) async {
     final generation = ++_generation;
-    final presets = rpcEndpointPresetsForNetwork(networkName);
+    // Automatic is a policy row, not a second physical server. Its
+    // compatibility URL is measured by the explicit US preset only.
+    final presets = rpcEndpointPresetsForNetwork(
+      networkName,
+    ).where((preset) => !preset.isAutomatic).toList();
     final getProbe = ref.read(rpcEndpointProbeGetterProvider);
 
     var nextState = state;

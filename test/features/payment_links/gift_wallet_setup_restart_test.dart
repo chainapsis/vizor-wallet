@@ -9,12 +9,14 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/security/password_policy.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/gift_wallet_setup.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as wallet;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -69,6 +71,7 @@ void main() {
           appBootstrapProvider.overrideWithValue(
             bootstrap ?? AppBootstrapState.empty,
           ),
+          rpcEndpointProvider.overrideWith(_FixedRpcEndpoint.new),
           accountProvider.overrideWith(
             () => AccountNotifier.testing(store: store),
           ),
@@ -389,6 +392,20 @@ void main() {
       });
     },
   );
+}
+
+// Restart tests control the birthday request directly. Keep discovery out of
+// that boundary so the delayed request remains the operation under test.
+class _FixedRpcEndpoint extends RpcEndpointNotifier {
+  @override
+  RpcEndpointConfig build() {
+    final endpoint = defaultRpcEndpointConfig(
+      ref.read(appBootstrapProvider).network,
+    );
+    return endpoint.network == ZcashNetwork.mainnet
+        ? endpoint.copyWith(presetId: kManualUsRpcEndpointPresetId)
+        : endpoint;
+  }
 }
 
 class _IdleSync extends FakeSyncNotifier {

@@ -616,7 +616,9 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  rpcEndpointConfig: defaultRpcEndpointConfig(
+    'main',
+  ).copyWith(presetId: kManualUsRpcEndpointPresetId),
   themeMode: ThemeMode.light,
   privacyModeEnabled: false,
   isPasswordConfigured: true,

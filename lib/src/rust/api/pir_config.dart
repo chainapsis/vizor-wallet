@@ -4,7 +4,6 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `apply_server`, `network`, `profile`, `view`
@@ -92,8 +91,8 @@ String? selectedWalletPirServer() =>
 /// Dart pauses sync before calling this and restarts it afterwards. Display
 /// services tied to the old server are dropped. Enhance, Status and Transparent
 /// sessions are rebuilt from the selected base; wallet keys and history stay
-/// unchanged. Receiver routing remains in the shared config, but this app base
-/// has no Receiver recovery integration.
+/// unchanged. Receiver recovery notices the change on its next round or filter
+/// step and forgets the old server's history (see `swap_private::adopt_server`).
 Future<bool> applyWalletPirServer({String? baseUrl}) => RustLib.instance.api
     .crateApiPirConfigApplyWalletPirServer(baseUrl: baseUrl);
 
