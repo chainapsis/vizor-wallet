@@ -27,6 +27,7 @@ const TXID_DISPLAY: &str = "bc1b6edb46d71b925b7106055a9f9799ee7e0b867ccccc90d742
 const HEIGHT: u64 = 3_460_000;
 const RECIPIENT: &str = "t1Ku2KLyndDPsR32jwnrTMd3yvi9tfFP8ML";
 const AMOUNT: u64 = 228_420_040;
+const DIRECTORY_QUERIES: usize = 1;
 
 fn protocol_order(display: &str) -> [u8; 32] {
     let mut bytes: [u8; 32] = hex::decode(display).unwrap().try_into().unwrap();
@@ -91,19 +92,18 @@ async fn txid_live() {
     assert_eq!(answer.transparent_input_count, 1);
     assert_eq!(answer.outputs, [(AMOUNT, Some(RECIPIENT.to_owned()))]);
     let sent = queries(&observer);
-    // The canonical route reaches the one-query display site.
-    assert!(sent >= 1, "at least one private query");
+    assert_eq!(sent, DIRECTORY_QUERIES, "one directory query per lookup");
     eprintln!(
         "txid_live: found via {} in {:.1}s, {sent} private queries, shard {shard} ({tier})",
         if tor { "Tor" } else { "direct" },
         took.as_secs_f64(),
     );
 
-    // Absent: an unpublished txid in the same shard sends as many queries
-    // and finds nothing.
+    // Absent: an unpublished txid in the same shard sends the same one
+    // directory query and finds nothing.
     let (absent, _) = lookup([0x5a; 32], HEIGHT).await.unwrap();
     assert!(matches!(absent, Ok(TxidLookup::Absent)), "{absent:?}");
-    assert_eq!(queries(&observer), 2 * sent);
+    assert_eq!(queries(&observer), sent + DIRECTORY_QUERIES);
 
     // Placement unknown: a height below the published window sends no query.
     // The window starts at height 1, so only genesis is below it.
@@ -112,7 +112,7 @@ async fn txid_live() {
         matches!(unplaced, Ok(TxidLookup::PlacementUnknown(Placement::Below))),
         "{unplaced:?}"
     );
-    assert_eq!(queries(&observer), 2 * sent);
+    assert_eq!(queries(&observer), sent + DIRECTORY_QUERIES);
 
     // Every request used a txid display route, and none carried the txid.
     assert_private(&observer.requests(), &[txid.to_vec(), [0x5a; 32].to_vec()]);
