@@ -442,7 +442,11 @@ void main() {
         candidates
             .map((entry) => explicitRpcEndpointPresetFor(entry)?.region)
             .toSet(),
-        containsAll(['Americas', 'Europe', 'Asia Pacific']),
+        containsAll([
+          RpcEndpointRegion.americas,
+          RpcEndpointRegion.europe,
+          RpcEndpointRegion.asiaPacific,
+        ]),
       );
     });
 
