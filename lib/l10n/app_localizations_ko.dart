@@ -1307,6 +1307,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonEnterAmountInUsd => 'USD 단⁠위⁠로 금⁠액 입⁠력';
 
   @override
+  String commonErrorWithDetails(String message, String details) {
+    return '$message\n세⁠부 정⁠보: $details';
+  }
+
+  @override
   String get commonFailed => '실⁠패';
 
   @override
@@ -6226,6 +6231,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 Keystone 계⁠정⁠은 이⁠미 지⁠갑⁠에 있⁠어⁠요.';
 
   @override
+  String get onboardingDuplicateLedgerAccount =>
+      '이 Ledger 계⁠정⁠은 이⁠미 지⁠갑⁠에 있⁠어⁠요.';
+
+  @override
   String get onboardingEditBip39Passphrase => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈 수⁠정';
 
   @override
@@ -6595,6 +6604,10 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get onboardingStorageStartupFailureDetail =>
       'Vizor⁠가 시⁠작 상⁠태⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get onboardingSubmitFailed =>
+      '이 단⁠계⁠를 마⁠치⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get onboardingTellMeHowZcashWorks => 'Zcash 작⁠동 방⁠식 알⁠아⁠보⁠기';
@@ -8230,11 +8243,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get receiveCopyTransparentAddress => '투⁠명 주⁠소 복⁠사';
 
   @override
-  String receiveErrorWithDetails(String message, String details) {
-    return '$message\n세⁠부 정⁠보: $details';
-  }
-
-  @override
   String get receiveGenerateNewShieldedAddress => '새 차⁠폐 주⁠소 만⁠들⁠기';
 
   @override
@@ -8369,9 +8377,17 @@ class AppLocalizationsKo extends AppLocalizations {
   String get receiveShareTransparentAddress => '투⁠명 주⁠소 공⁠유';
 
   @override
+  String get receiveShieldedAddressLoadFailed =>
+      '차⁠폐 주⁠소⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
   String receiveTitle(String ticker) {
     return '$ticker 받⁠기';
   }
+
+  @override
+  String get receiveTransparentAddressLoadFailed =>
+      '투⁠명 주⁠소⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get secretPassphraseCopy => '복⁠구 문⁠구 복⁠사';

@@ -144,9 +144,6 @@ silently stops matching.
 
 | Dart site | Rust source | ko/zh now | Suggested fix |
 | --- | --- | --- | --- |
-| `receive_screen.dart` `_loadAddresses`, `_loadTransparentReceiveAddress`, main warning text | `get_unified_address`, `get_transparent_receive_address` (`String`) | English | Localized headline, with the Rust text as detail (the renew path already uses `receiveErrorWithDetails`) |
-| `onboarding_error_messages.dart` `onboardingSubmitErrorMessage` | create/import FRB functions in `api/wallet.rs` | Duplicate → English `kDuplicate*` constants; anything else raw | Duplicate → localized copy; other errors → localized headline + detail |
-| migration `keystone_signing.dart` `ironwoodMigrationKeystoneProofFailureMessage` | `keystone_migration_proof_status`, `keystone_requests.rs` `proof_error` | English | Proof-status code, or a localized headline with the message as detail |
 | `voting_config_settings_panel.dart` `_messageFromError` fallback | `resolve_static_voting_config` / `resolve_voting_config_from_attempts` (`VotingErrorView`) | Shows "Instance of 'VotingErrorView'" in every language (no `toString`) | Voting owner: map `VotingErrorView` to copy |
 
 ## Stays English by design (secondary detail)
@@ -154,7 +151,9 @@ silently stops matching.
 | Dart site | Rust source | Shown as |
 | --- | --- | --- |
 | `home_screen.dart` shield notice `shieldBalanceErrorDetails` | shielding errors | Detail under the localized `friendlyShieldBalanceError` headline |
-| `receive_screen.dart` renew-address error | `get_next_available_address` | Detail inside `receiveErrorWithDetails` |
+| `receive_screen.dart` renew-address, shielded and transparent address load errors | `get_next_available_address`, `get_unified_address`, `get_transparent_receive_address` | Detail inside `commonErrorWithDetails` |
+| `onboarding_error_messages.dart` `onboardingSubmitErrorMessage`, errors other than the three duplicates | create/import FRB functions in `api/wallet.rs` | Detail under `onboardingSubmitFailed` |
+| migration `keystone_signing.dart` `ironwoodMigrationKeystoneProofFailureMessage` | `keystone_migration_proof_status`, `keystone_requests.rs` `proof_error` | Detail under `migrationKeystoneProofFailed` |
 | `mobile_ironwood_migration_review.dart` Fast migration warning | `IronwoodMigrationResult.message` ("The Immediate migration broadcast response was unavailable …") | Line under the localized `migrationMobileFastSubmittedBody` |
 | Logs, `rpc_endpoint_failover_provider.dart` `lastFailure`, `NetworkPrivacyState.error` | various | Not displayed |
 

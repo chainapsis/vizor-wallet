@@ -2249,6 +2249,12 @@ abstract class AppLocalizations {
   /// **'Enter amount in USD'**
   String get commonEnterAmountInUsd;
 
+  /// An error summary line, then a technical details line. {details} is raw error text and is not translated. Shared by: receive, onboarding, migration, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'{message}\nDetails: {details}'**
+  String commonErrorWithDetails(String message, String details);
+
   /// Status value of a transaction or swap that failed. Shared by: activity, send, settings, swap.
   ///
   /// In en, this message translates to:
@@ -10325,6 +10331,12 @@ abstract class AppLocalizations {
   /// **'This Keystone account is already in your wallet.'**
   String get onboardingDuplicateKeystoneAccount;
 
+  /// Error on the Ledger import screen when that hardware account is already in this wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'This Ledger account is already in your wallet.'**
+  String get onboardingDuplicateLedgerAccount;
+
   /// [security] Accessibility label of the bar that reopens the BIP39 passphrase dialog for editing.
   ///
   /// In en, this message translates to:
@@ -10978,6 +10990,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Vizor could not load its startup state.'**
   String get onboardingStorageStartupFailureDetail;
+
+  /// Summary line of an onboarding error when creating or importing an account failed for a reason Vizor has no message for; a technical details line follows.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t finish this step. Try again.'**
+  String get onboardingSubmitFailed;
 
   /// Primary button on the Zcash education steps that continues to the next explanation.
   ///
@@ -13649,12 +13667,6 @@ abstract class AppLocalizations {
   /// **'Copy transparent address'**
   String get receiveCopyTransparentAddress;
 
-  /// Inline error on the Receive screen: a summary line, then a technical details line. {details} is raw error text and is not translated.
-  ///
-  /// In en, this message translates to:
-  /// **'{message}\nDetails: {details}'**
-  String receiveErrorWithDetails(String message, String details);
-
   /// Accessibility label of the renew button that generates a new shielded address.
   ///
   /// In en, this message translates to:
@@ -13877,11 +13889,23 @@ abstract class AppLocalizations {
   /// **'Share transparent address'**
   String get receiveShareTransparentAddress;
 
+  /// Summary line of the inline Receive error when the shielded address could not be read; a technical details line follows.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t load your shielded address. Try again in a moment.'**
+  String get receiveShieldedAddressLoadFailed;
+
   /// Title of the Receive screen. {ticker} is the currency ticker such as ZEC.
   ///
   /// In en, this message translates to:
   /// **'Receive {ticker}'**
   String receiveTitle(String ticker);
+
+  /// Summary line of the inline Receive error when the transparent address could not be read; a technical details line follows.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t load your transparent address. Try again in a moment.'**
+  String get receiveTransparentAddressLoadFailed;
 
   /// [security] Button that copies the seed phrase to the clipboard.
   ///

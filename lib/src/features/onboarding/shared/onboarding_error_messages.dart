@@ -46,6 +46,8 @@ const kDuplicateKeystoneAccountImportErrorMessage =
     'This Keystone account is already in your wallet.'; // l10n-ignore: context-free producer
 const kDuplicateAccountImportErrorMessage =
     'This account is already in your wallet.'; // l10n-ignore: context-free producer
+const kDuplicateLedgerAccountImportErrorMessage =
+    'This Ledger account is already in your wallet.'; // l10n-ignore: Rust text matched exactly
 
 String onboardingSubmitErrorMessage(AppLocalizations l10n, Object error) {
   if (error is WalletCreationCurrentBlockHeightException) {
@@ -62,7 +64,7 @@ String onboardingSubmitErrorMessage(AppLocalizations l10n, Object error) {
   if (anyhowMatch != null) {
     message = anyhowMatch.group(1)!;
   }
-  // Rust words these two duplicates; the matching keeps their English.
+  // Rust words these duplicates; the matching keeps their English.
   if (message == kDuplicateSecretPassphraseImportErrorMessage ||
       _isAccountCollisionMessage(message)) {
     return l10n.onboardingDuplicateAccount;
@@ -70,7 +72,10 @@ String onboardingSubmitErrorMessage(AppLocalizations l10n, Object error) {
   if (message == kDuplicateKeystoneAccountImportErrorMessage) {
     return l10n.onboardingDuplicateKeystoneAccount;
   }
-  return message;
+  if (message == kDuplicateLedgerAccountImportErrorMessage) {
+    return l10n.onboardingDuplicateLedgerAccount;
+  }
+  return l10n.commonErrorWithDetails(l10n.onboardingSubmitFailed, message);
 }
 
 bool _isAccountCollisionMessage(String message) {

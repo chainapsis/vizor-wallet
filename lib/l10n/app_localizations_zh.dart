@@ -1274,6 +1274,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonEnterAmountInUsd => '以 USD 输入金额';
 
   @override
+  String commonErrorWithDetails(String message, String details) {
+    return '$message\n详细信息：$details';
+  }
+
+  @override
   String get commonFailed => '失败';
 
   @override
@@ -5858,6 +5863,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingDuplicateKeystoneAccount => '此 Keystone 账户已在你的钱包中。';
 
   @override
+  String get onboardingDuplicateLedgerAccount => '此 Ledger 账户已在你的钱包中。';
+
+  @override
   String get onboardingEditBip39Passphrase => '编辑 BIP39 密码短语';
 
   @override
@@ -6204,6 +6212,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingStorageStartupFailureDetail => 'Vizor 无法加载其启动状态。';
+
+  @override
+  String get onboardingSubmitFailed => '无法完成此步骤。请重试。';
 
   @override
   String get onboardingTellMeHowZcashWorks => '了解 Zcash 如何运作';
@@ -7725,11 +7736,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveCopyTransparentAddress => '复制透明地址';
 
   @override
-  String receiveErrorWithDetails(String message, String details) {
-    return '$message\n详细信息：$details';
-  }
-
-  @override
   String get receiveGenerateNewShieldedAddress => '生成新的屏蔽地址';
 
   @override
@@ -7854,9 +7860,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveShareTransparentAddress => '分享透明地址';
 
   @override
+  String get receiveShieldedAddressLoadFailed => '无法加载你的屏蔽地址。请稍后重试。';
+
+  @override
   String receiveTitle(String ticker) {
     return '接收 $ticker';
   }
+
+  @override
+  String get receiveTransparentAddressLoadFailed => '无法加载你的透明地址。请稍后重试。';
 
   @override
   String get secretPassphraseCopy => '复制助记词';

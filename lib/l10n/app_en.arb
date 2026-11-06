@@ -1777,6 +1777,18 @@
   "@commonEnterAmountInUsd": {
     "description": "Accessibility label of the toggle that switches the mobile Pay amount input to US dollars. Shared by: pay, receive."
   },
+  "commonErrorWithDetails": "{message}\nDetails: {details}",
+  "@commonErrorWithDetails": {
+    "description": "An error summary line, then a technical details line. {details} is raw error text and is not translated. Shared by: receive, onboarding, migration, voting.",
+    "placeholders": {
+      "message": {
+        "type": "String"
+      },
+      "details": {
+        "type": "String"
+      }
+    }
+  },
   "commonFailed": "Failed",
   "@commonFailed": {
     "description": "Status value of a transaction or swap that failed. Shared by: activity, send, settings, swap."
@@ -8115,6 +8127,10 @@
   "@onboardingDuplicateKeystoneAccount": {
     "description": "Error on the Keystone import screen when that hardware account is already in this wallet."
   },
+  "onboardingDuplicateLedgerAccount": "This Ledger account is already in your wallet.",
+  "@onboardingDuplicateLedgerAccount": {
+    "description": "Error on the Ledger import screen when that hardware account is already in this wallet."
+  },
   "onboardingEditBip39Passphrase": "Edit BIP39 passphrase",
   "@onboardingEditBip39Passphrase": {
     "description": "[security] Accessibility label of the bar that reopens the BIP39 passphrase dialog for editing."
@@ -8573,6 +8589,10 @@
   "onboardingStorageStartupFailureDetail": "Vizor could not load its startup state.",
   "@onboardingStorageStartupFailureDetail": {
     "description": "Detail line on the startup failure screen."
+  },
+  "onboardingSubmitFailed": "Couldn’t finish this step. Try again.",
+  "@onboardingSubmitFailed": {
+    "description": "Summary line of an onboarding error when creating or importing an account failed for a reason Vizor has no message for; a technical details line follows."
   },
   "onboardingTellMeHowZcashWorks": "Tell me how Zcash works",
   "@onboardingTellMeHowZcashWorks": {
@@ -10645,18 +10665,6 @@
   "@receiveCopyTransparentAddress": {
     "description": "Button label and accessibility label that copies the transparent address."
   },
-  "receiveErrorWithDetails": "{message}\nDetails: {details}",
-  "@receiveErrorWithDetails": {
-    "description": "Inline error on the Receive screen: a summary line, then a technical details line. {details} is raw error text and is not translated.",
-    "placeholders": {
-      "message": {
-        "type": "String"
-      },
-      "details": {
-        "type": "String"
-      }
-    }
-  },
   "receiveGenerateNewShieldedAddress": "Generate new shielded address",
   "@receiveGenerateNewShieldedAddress": {
     "description": "Accessibility label of the renew button that generates a new shielded address."
@@ -10820,6 +10828,10 @@
   "@receiveShareTransparentAddress": {
     "description": "Tooltip and accessibility label of the button that shares the transparent address."
   },
+  "receiveShieldedAddressLoadFailed": "Couldn’t load your shielded address. Try again in a moment.",
+  "@receiveShieldedAddressLoadFailed": {
+    "description": "Summary line of the inline Receive error when the shielded address could not be read; a technical details line follows."
+  },
   "receiveTitle": "Receive {ticker}",
   "@receiveTitle": {
     "description": "Title of the Receive screen. {ticker} is the currency ticker such as ZEC.",
@@ -10828,6 +10840,10 @@
         "type": "String"
       }
     }
+  },
+  "receiveTransparentAddressLoadFailed": "Couldn’t load your transparent address. Try again in a moment.",
+  "@receiveTransparentAddressLoadFailed": {
+    "description": "Summary line of the inline Receive error when the transparent address could not be read; a technical details line follows."
   },
   "secretPassphraseCopy": "Copy secret passphrase",
   "@secretPassphraseCopy": {

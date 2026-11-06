@@ -2264,8 +2264,13 @@ String ironwoodMigrationKeystoneProofFailureMessage(
   rust_sync.KeystoneMigrationProofStatus? status,
 ) {
   final message = status?.message?.trim();
-  if (message != null && message.isNotEmpty) return message;
-  return l10n.migrationKeystoneProofFailed;
+  if (message == null || message.isEmpty) {
+    return l10n.migrationKeystoneProofFailed;
+  }
+  return l10n.commonErrorWithDetails(
+    l10n.migrationKeystoneProofFailed,
+    message,
+  );
 }
 
 @visibleForTesting

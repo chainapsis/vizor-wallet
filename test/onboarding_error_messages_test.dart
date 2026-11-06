@@ -24,10 +24,23 @@ void main() {
     );
   });
 
-  test('strips default Exception prefix from onboarding submit errors', () {
+  test('puts other errors under a localized headline', () {
     expect(
       onboardingSubmitErrorMessage(testL10n, Exception('bad input')),
-      'bad input',
+      testL10n.commonErrorWithDetails(
+        testL10n.onboardingSubmitFailed,
+        'bad input',
+      ),
+    );
+    expect(
+      onboardingSubmitErrorMessage(
+        testL10n,
+        const _FakeAnyhowException('database is locked'),
+      ),
+      testL10n.commonErrorWithDetails(
+        testL10n.onboardingSubmitFailed,
+        'database is locked',
+      ),
     );
   });
 

@@ -1326,6 +1326,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonEnterAmountInUsd => 'Enter amount in USD';
 
   @override
+  String commonErrorWithDetails(String message, String details) {
+    return '$message\nDetails: $details';
+  }
+
+  @override
   String get commonFailed => 'Failed';
 
   @override
@@ -6320,6 +6325,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'This Keystone account is already in your wallet.';
 
   @override
+  String get onboardingDuplicateLedgerAccount =>
+      'This Ledger account is already in your wallet.';
+
+  @override
   String get onboardingEditBip39Passphrase => 'Edit BIP39 passphrase';
 
   @override
@@ -6697,6 +6706,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get onboardingStorageStartupFailureDetail =>
       'Vizor could not load its startup state.';
+
+  @override
+  String get onboardingSubmitFailed => 'Couldn’t finish this step. Try again.';
 
   @override
   String get onboardingTellMeHowZcashWorks => 'Tell me how Zcash works';
@@ -8361,11 +8373,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiveCopyTransparentAddress => 'Copy transparent address';
 
   @override
-  String receiveErrorWithDetails(String message, String details) {
-    return '$message\nDetails: $details';
-  }
-
-  @override
   String get receiveGenerateNewShieldedAddress =>
       'Generate new shielded address';
 
@@ -8500,9 +8507,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiveShareTransparentAddress => 'Share transparent address';
 
   @override
+  String get receiveShieldedAddressLoadFailed =>
+      'Couldn’t load your shielded address. Try again in a moment.';
+
+  @override
   String receiveTitle(String ticker) {
     return 'Receive $ticker';
   }
+
+  @override
+  String get receiveTransparentAddressLoadFailed =>
+      'Couldn’t load your transparent address. Try again in a moment.';
 
   @override
   String get secretPassphraseCopy => 'Copy secret passphrase';

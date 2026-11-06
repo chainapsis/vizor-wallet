@@ -1396,7 +1396,8 @@ void main() {
     );
     expect(
       ironwoodMigrationKeystoneProofFailureMessage(testL10n, failed),
-      'Proof generation failed.',
+      'Vizor could not prepare local proofs. Go back and prepare this request '
+      'again.\nDetails: Proof generation failed.',
     );
   });
 
