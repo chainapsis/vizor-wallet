@@ -7181,6 +7181,31 @@ class AppLocalizationsEn extends AppLocalizations {
       'Available balance is still loading. Try again after wallet sync.';
 
   @override
+  String get paymentLinkBatchRejectedKeystoneSapling =>
+      'This group would spend older Sapling funds, which your Keystone can’t sign. Try fewer cards or a smaller amount per card.';
+
+  @override
+  String get paymentLinkBatchRejectedKeystoneSignatureLimit =>
+      'This group needs more inputs than your Keystone can sign at once. Try fewer cards or a smaller amount per card.';
+
+  @override
+  String paymentLinkBatchRejectedLedgerRecipientLimit(String max) {
+    return 'This group has more shielded recipients than your Ledger can display (maximum $max). Try fewer cards or a smaller amount per card.';
+  }
+
+  @override
+  String get paymentLinkBatchRejectedLedgerSapling =>
+      'This group would spend older Sapling funds, which your Ledger can’t sign. Try fewer cards or a smaller amount per card.';
+
+  @override
+  String get paymentLinkBatchRejectedLedgerTooLarge =>
+      'This group is too large for your Ledger to sign. Try fewer cards or a smaller amount per card.';
+
+  @override
+  String get paymentLinkBatchRejectedNotOneTransaction =>
+      'This group can’t be funded in one transaction. Try fewer cards or a smaller amount per card.';
+
+  @override
   String get paymentLinkBatchRemoveCard => 'Remove a card';
 
   @override

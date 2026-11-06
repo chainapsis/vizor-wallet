@@ -11,7 +11,10 @@ import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
+import '../../../core/zcash/wallet_error_code.dart';
+import '../../ledger/ledger_capability.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -284,23 +287,49 @@ class PaymentLinkBatchPreSubmissionFailure implements Exception {
 }
 
 /// A batch the wallet cannot fund as asked (a signer limit or the
-/// one-transaction rule). [message] is written for the user; retrying the same
-/// batch will not help.
+/// one-transaction rule). Retrying the same batch will not help.
 class PaymentLinkBatchRejected implements Exception {
-  const PaymentLinkBatchRejected(this.message);
+  const PaymentLinkBatchRejected(this.code, this.message);
 
+  final rust_sync.ApiWalletErrorCode code;
+
+  /// Rust's English wording, for logs.
   final String message;
 
-  /// Rust prefixes every user-facing batch rejection with this.
-  static const _prefix =
-      'This group '; // l10n-ignore: Rust error prefix matched with indexOf
+  static const _codes = {
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchNotOneTransaction,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchKeystoneSapling,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchKeystoneSignatureLimit,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchLedgerRecipientLimit,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchLedgerSapling,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchLedgerTooLarge,
+  };
 
   static PaymentLinkBatchRejected? from(Object error) {
-    final text = error.toString();
-    final start = text.indexOf(_prefix);
-    if (start < 0) return null;
-    return PaymentLinkBatchRejected(text.substring(start).split('\n').first);
+    final code = walletErrorCode(error);
+    if (code == null || !_codes.contains(code)) return null;
+    return PaymentLinkBatchRejected(code, error.toString());
   }
+
+  /// What to tell the user.
+  String text(AppLocalizations l10n) => switch (code) {
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchKeystoneSapling =>
+      l10n.paymentLinkBatchRejectedKeystoneSapling,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchKeystoneSignatureLimit =>
+      l10n.paymentLinkBatchRejectedKeystoneSignatureLimit,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchLedgerRecipientLimit =>
+      l10n.paymentLinkBatchRejectedLedgerRecipientLimit(
+        kLedgerMaxExternalShieldedOutputs.toString(),
+      ),
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchLedgerSapling =>
+      l10n.paymentLinkBatchRejectedLedgerSapling,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchLedgerTooLarge =>
+      l10n.paymentLinkBatchRejectedLedgerTooLarge,
+    _ => l10n.paymentLinkBatchRejectedNotOneTransaction,
+  };
+
+  @override
+  String toString() => message;
 }
 
 /// Whether [error] ends a group's funding before any signing: the fee moved

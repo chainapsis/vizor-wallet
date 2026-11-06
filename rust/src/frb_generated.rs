@@ -2837,7 +2837,7 @@ fn wire__crate__api__sync__estimate_payment_link_batch_fee_impl(
             let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::sync::ApiWalletError>((move || {
                     let output_ok = crate::api::sync::estimate_payment_link_batch_fee(
                         api_db_path,
                         api_network,
@@ -7565,7 +7565,7 @@ fn wire__crate__api__sync__propose_payment_link_batch_impl(
             let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::sync::ApiWalletError>((move || {
                     let output_ok = crate::api::sync::propose_payment_link_batch(
                         api_db_path,
                         api_network,
@@ -11660,6 +11660,12 @@ impl SseDecode for crate::api::sync::ApiWalletErrorCode {
             8 => crate::api::sync::ApiWalletErrorCode::UrSessionReset,
             9 => crate::api::sync::ApiWalletErrorCode::KeystoneBatchSignatureLimit,
             10 => crate::api::sync::ApiWalletErrorCode::KeystoneBatchUnsupportedInput,
+            11 => crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchNotOneTransaction,
+            12 => crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchKeystoneSapling,
+            13 => crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchKeystoneSignatureLimit,
+            14 => crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchLedgerRecipientLimit,
+            15 => crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchLedgerSapling,
+            16 => crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchLedgerTooLarge,
             _ => unreachable!("Invalid variant for ApiWalletErrorCode: {}", inner),
         };
     }
@@ -17586,6 +17592,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiWalletErrorCode {
             Self::UrSessionReset => 8.into_dart(),
             Self::KeystoneBatchSignatureLimit => 9.into_dart(),
             Self::KeystoneBatchUnsupportedInput => 10.into_dart(),
+            Self::PaymentLinkBatchNotOneTransaction => 11.into_dart(),
+            Self::PaymentLinkBatchKeystoneSapling => 12.into_dart(),
+            Self::PaymentLinkBatchKeystoneSignatureLimit => 13.into_dart(),
+            Self::PaymentLinkBatchLedgerRecipientLimit => 14.into_dart(),
+            Self::PaymentLinkBatchLedgerSapling => 15.into_dart(),
+            Self::PaymentLinkBatchLedgerTooLarge => 16.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -22232,6 +22244,12 @@ impl SseEncode for crate::api::sync::ApiWalletErrorCode {
                 crate::api::sync::ApiWalletErrorCode::UrSessionReset => 8,
                 crate::api::sync::ApiWalletErrorCode::KeystoneBatchSignatureLimit => 9,
                 crate::api::sync::ApiWalletErrorCode::KeystoneBatchUnsupportedInput => 10,
+                crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchNotOneTransaction => 11,
+                crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchKeystoneSapling => 12,
+                crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchKeystoneSignatureLimit => 13,
+                crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchLedgerRecipientLimit => 14,
+                crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchLedgerSapling => 15,
+                crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchLedgerTooLarge => 16,
                 _ => {
                     unimplemented!("");
                 }

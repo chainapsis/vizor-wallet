@@ -45,6 +45,24 @@ pub enum FailureCode {
     /// The transaction spends transparent or Sapling inputs, which the
     /// Keystone signatures-only batch response cannot sign.
     KeystoneBatchUnsupportedInput,
+    /// A Gift Card group the wallet would fund with more than one
+    /// transaction. Fewer cards or smaller amounts fit in one.
+    PaymentLinkBatchNotOneTransaction,
+    /// A Gift Card group that would spend Sapling funds, which the Keystone
+    /// cannot sign.
+    PaymentLinkBatchKeystoneSapling,
+    /// A Gift Card group needing more spend signatures than one Keystone
+    /// batch round can return.
+    PaymentLinkBatchKeystoneSignatureLimit,
+    /// A Gift Card group with more shielded recipients than the Ledger can
+    /// display for review.
+    PaymentLinkBatchLedgerRecipientLimit,
+    /// A Gift Card group that would spend Sapling funds, which the Ledger
+    /// cannot sign.
+    PaymentLinkBatchLedgerSapling,
+    /// A Gift Card group with more actions in one pool than the Ledger can
+    /// sign.
+    PaymentLinkBatchLedgerTooLarge,
 }
 
 /// An error message, and what the caller should do about it when that is

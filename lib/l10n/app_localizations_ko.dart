@@ -7073,6 +7073,31 @@ class AppLocalizationsKo extends AppLocalizations {
       '사⁠용 가⁠능⁠한 잔⁠액⁠을 아⁠직 불⁠러⁠오⁠는 중⁠이⁠에⁠요. 지⁠갑 동⁠기⁠화 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
+  String get paymentLinkBatchRejectedKeystoneSapling =>
+      '이 그⁠룹⁠은 Keystone⁠이 서⁠명⁠할 수 없⁠는 예⁠전 Sapling 자⁠금⁠을 써⁠야 해⁠요. 카⁠드 수⁠를 줄⁠이⁠거⁠나 카⁠드⁠당 금⁠액⁠을 낮⁠춰 보⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchRejectedKeystoneSignatureLimit =>
+      '이 그⁠룹⁠은 Keystone⁠이 한 번⁠에 서⁠명⁠할 수 있⁠는 것⁠보⁠다 많⁠은 입⁠력⁠이 필⁠요⁠해⁠요. 카⁠드 수⁠를 줄⁠이⁠거⁠나 카⁠드⁠당 금⁠액⁠을 낮⁠춰 보⁠세⁠요.';
+
+  @override
+  String paymentLinkBatchRejectedLedgerRecipientLimit(String max) {
+    return '이 그⁠룹⁠의 차⁠폐 수⁠신⁠자⁠가 Ledger⁠가 표⁠시⁠할 수 있⁠는 수(최⁠대 $max⁠명)보⁠다 많⁠아⁠요. 카⁠드 수⁠를 줄⁠이⁠거⁠나 카⁠드⁠당 금⁠액⁠을 낮⁠춰 보⁠세⁠요.';
+  }
+
+  @override
+  String get paymentLinkBatchRejectedLedgerSapling =>
+      '이 그⁠룹⁠은 Ledger⁠가 서⁠명⁠할 수 없⁠는 예⁠전 Sapling 자⁠금⁠을 써⁠야 해⁠요. 카⁠드 수⁠를 줄⁠이⁠거⁠나 카⁠드⁠당 금⁠액⁠을 낮⁠춰 보⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchRejectedLedgerTooLarge =>
+      '이 그⁠룹⁠은 Ledger⁠가 서⁠명⁠하⁠기⁠에 너⁠무 커⁠요. 카⁠드 수⁠를 줄⁠이⁠거⁠나 카⁠드⁠당 금⁠액⁠을 낮⁠춰 보⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchRejectedNotOneTransaction =>
+      '이 그⁠룹⁠은 거⁠래 한 번⁠으⁠로 충⁠전⁠할 수 없⁠어⁠요. 카⁠드 수⁠를 줄⁠이⁠거⁠나 카⁠드⁠당 금⁠액⁠을 낮⁠춰 보⁠세⁠요.';
+
+  @override
   String get paymentLinkBatchRemoveCard => '카⁠드 한 장 빼⁠기';
 
   @override

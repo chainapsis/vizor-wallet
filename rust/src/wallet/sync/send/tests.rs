@@ -4917,11 +4917,17 @@ fn validate_batch(
     let result = validate_payment_link_batch_proposal(proposal, WalletNetwork::Regtest, signer);
     if let Err(error) = &result {
         assert!(
-            error.starts_with(PAYMENT_LINK_BATCH_REJECTION_PREFIX),
-            "Dart shows only prefixed batch errors: {error}"
+            error.message.starts_with(PAYMENT_LINK_BATCH_REJECTION_PREFIX),
+            "older builds show only prefixed batch errors: {}",
+            error.message
+        );
+        assert!(
+            error.code.is_some(),
+            "the app picks its copy by code: {}",
+            error.message
         );
     }
-    result
+    result.map_err(String::from)
 }
 
 #[test]

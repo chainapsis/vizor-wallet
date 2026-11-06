@@ -11810,6 +11810,42 @@ abstract class AppLocalizations {
   /// **'Available balance is still loading. Try again after wallet sync.'**
   String get paymentLinkBatchQuoteNotReady;
 
+  /// Shown when a Gift Card group cannot be funded from a Keystone account because it would spend Sapling funds. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This group would spend older Sapling funds, which your Keystone can’t sign. Try fewer cards or a smaller amount per card.'**
+  String get paymentLinkBatchRejectedKeystoneSapling;
+
+  /// Shown when a Gift Card group needs more spend signatures than one Keystone signing round. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This group needs more inputs than your Keystone can sign at once. Try fewer cards or a smaller amount per card.'**
+  String get paymentLinkBatchRejectedKeystoneSignatureLimit;
+
+  /// Shown when a Gift Card group has more card recipients than a Ledger can show for review. {max} is that limit, such as 4. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This group has more shielded recipients than your Ledger can display (maximum {max}). Try fewer cards or a smaller amount per card.'**
+  String paymentLinkBatchRejectedLedgerRecipientLimit(String max);
+
+  /// Shown when a Gift Card group cannot be funded from a Ledger account because it would spend Sapling funds. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This group would spend older Sapling funds, which your Ledger can’t sign. Try fewer cards or a smaller amount per card.'**
+  String get paymentLinkBatchRejectedLedgerSapling;
+
+  /// Shown when a Gift Card group has more actions in one pool than a Ledger can sign. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This group is too large for your Ledger to sign. Try fewer cards or a smaller amount per card.'**
+  String get paymentLinkBatchRejectedLedgerTooLarge;
+
+  /// Shown when a Gift Card group would need more than one funding transaction. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This group can’t be funded in one transaction. Try fewer cards or a smaller amount per card.'**
+  String get paymentLinkBatchRejectedNotOneTransaction;
+
   /// Screen reader label of the button that decreases the number of cards in a batch.
   ///
   /// In en, this message translates to:

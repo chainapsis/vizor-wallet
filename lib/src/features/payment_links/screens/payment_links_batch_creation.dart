@@ -296,7 +296,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       if (!mounted || generation != _batchPreparationGeneration) return;
       setState(
         () => _batchQuote = error is PaymentLinkBatchRejected
-            ? _BatchQuoteFailed(error.message)
+            ? _BatchQuoteFailed(error.text(context.l10n))
             : _BatchQuoteFailed(
                 context.l10n.paymentLinkBatchPrepareFailed,
                 retryable: true,
@@ -341,7 +341,9 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     } on PaymentLinkBatchRejected catch (rejected) {
       // Rejected while proposing: nothing reached the network.
       if (!mounted) return;
-      setState(() => _batchQuote = _BatchQuoteFailed(rejected.message));
+      setState(
+        () => _batchQuote = _BatchQuoteFailed(rejected.text(context.l10n)),
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -487,7 +489,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     if (!mounted || _hardwareBatchSigning != draft) return;
     setState(() {
       _batchQuote = refusal is PaymentLinkBatchRejected
-          ? _BatchQuoteFailed(refusal.message)
+          ? _BatchQuoteFailed(refusal.text(context.l10n))
           : const _BatchQuoteEmpty();
       _batchSubmission = uncertain
           ? const _BatchUncertain()

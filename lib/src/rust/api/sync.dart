@@ -1851,6 +1851,24 @@ enum ApiWalletErrorCode {
   /// Transparent or Sapling inputs, which Keystone batch signing cannot
   /// sign.
   keystoneBatchUnsupportedInput,
+
+  /// A Gift Card group that needs more than one funding transaction.
+  paymentLinkBatchNotOneTransaction,
+
+  /// A Gift Card group spending Sapling funds a Keystone cannot sign.
+  paymentLinkBatchKeystoneSapling,
+
+  /// A Gift Card group needing more signatures than one Keystone batch.
+  paymentLinkBatchKeystoneSignatureLimit,
+
+  /// A Gift Card group with more shielded recipients than a Ledger shows.
+  paymentLinkBatchLedgerRecipientLimit,
+
+  /// A Gift Card group spending Sapling funds a Ledger cannot sign.
+  paymentLinkBatchLedgerSapling,
+
+  /// A Gift Card group too large for a Ledger to sign.
+  paymentLinkBatchLedgerTooLarge,
 }
 
 class BlockMetaInfo {

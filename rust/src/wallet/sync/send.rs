@@ -970,6 +970,7 @@ pub(crate) fn propose_send_for_purpose(
         },
         purpose,
     )
+    .map_err(String::from)
 }
 
 pub(crate) fn propose_payment_link_batch(
@@ -978,7 +979,7 @@ pub(crate) fn propose_payment_link_batch(
     account_uuid: &str,
     send_flow_id: &str,
     payments: &[(String, u64)],
-) -> Result<ProposalResult, String> {
+) -> Result<ProposalResult, WalletFailure> {
     propose_send_with_request(
         db_path,
         network,
@@ -996,11 +997,11 @@ fn propose_send_with_request(
     send_flow_id: &str,
     request: SendRequest<'_>,
     purpose: SendPurpose,
-) -> Result<ProposalResult, String> {
+) -> Result<ProposalResult, WalletFailure> {
     use zcash_protocol::{PoolType, ShieldedPool as SP};
 
     if send_flow_id.is_empty() {
-        return Err("Send flow id is required".to_string());
+        return Err("Send flow id is required".to_string().into());
     }
 
     with_wallet_db_write_lock("send.propose_send", || {
@@ -1089,6 +1090,7 @@ pub fn estimate_fee(
             memo_str,
         },
     )
+    .map_err(String::from)
 }
 
 pub fn estimate_payment_link_batch_fee(
@@ -1096,7 +1098,7 @@ pub fn estimate_payment_link_batch_fee(
     network: WalletNetwork,
     account_uuid: &str,
     payments: &[(String, u64)],
-) -> Result<u64, String> {
+) -> Result<u64, WalletFailure> {
     estimate_fee_with_request(
         db_path,
         network,
@@ -1110,7 +1112,7 @@ fn estimate_fee_with_request(
     network: WalletNetwork,
     account_uuid: &str,
     request: SendRequest<'_>,
-) -> Result<u64, String> {
+) -> Result<u64, WalletFailure> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let (proposal, _) = propose_request(
@@ -1166,7 +1168,7 @@ fn propose_request(
     request: SendRequest<'_>,
     purpose: SendPurpose,
     context: &str,
-) -> Result<(Proposal<WalletFeeRule, ReceivedNoteId>, Option<TxVersion>), String> {
+) -> Result<(Proposal<WalletFeeRule, ReceivedNoteId>, Option<TxVersion>), WalletFailure> {
     if purpose == SendPurpose::PaymentLinkClaim {
         if let Some(source) = gift_card_input::CardInput::load(db, db_path, account_id)? {
             let proposal = source.propose(network, request.build()?)?;
@@ -4213,8 +4215,16 @@ const PAYMENT_LINK_BATCH_REJECTION_PREFIX: &str = "This group ";
 /// the signer limits and the older funds a signer cannot spend.
 const PAYMENT_LINK_BATCH_ADVICE: &str = "Try fewer cards or a smaller amount per card.";
 
-fn payment_link_batch_rejection(reason: impl std::fmt::Display) -> String {
-    format!("{PAYMENT_LINK_BATCH_REJECTION_PREFIX}{reason}")
+/// A user-facing batch rejection: `code` picks the app's translated copy and
+/// the English message stays for logs and older builds.
+fn payment_link_batch_rejection(
+    code: FailureCode,
+    reason: impl std::fmt::Display,
+) -> WalletFailure {
+    WalletFailure::coded(
+        code,
+        format!("{PAYMENT_LINK_BATCH_REJECTION_PREFIX}{reason} {PAYMENT_LINK_BATCH_ADVICE}"),
+    )
 }
 
 fn build_payment_link_batch_request(
@@ -4256,31 +4266,34 @@ fn validate_payment_link_batch_proposal<NoteRef>(
     proposal: &Proposal<WalletFeeRule, NoteRef>,
     network: WalletNetwork,
     signer: Option<crate::wallet::keys::HardwareSignerKind>,
-) -> Result<(), String> {
+) -> Result<(), WalletFailure> {
     use crate::wallet::keys::HardwareSignerKind;
     use orchard::ValuePool;
 
     if proposal.steps().len() != 1 {
-        return Err(payment_link_batch_rejection(format_args!(
-            "can’t be funded in one transaction. {PAYMENT_LINK_BATCH_ADVICE}"
-        )));
+        return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchNotOneTransaction,
+                    format_args!("can’t be funded in one transaction."),
+                ));
     }
     let Some(signer) = signer else { return Ok(()) };
     let step = proposal.steps().first();
     match signer {
         HardwareSignerKind::Keystone => {
             if step.input_count_in_pool(PoolType::SAPLING) > 0 {
-                return Err(payment_link_batch_rejection(format_args!(
-                    "would spend older Sapling funds, which your Keystone can’t sign. {PAYMENT_LINK_BATCH_ADVICE}"
-                )));
+                return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchKeystoneSapling,
+                    format_args!("would spend older Sapling funds, which your Keystone can’t sign."),
+                ));
             }
             let signatures = step.input_count_in_pool(PoolType::ORCHARD)
                 + step.input_count_in_pool(PoolType::IRONWOOD);
             let max = crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES;
             if signatures > max {
-                return Err(payment_link_batch_rejection(format_args!(
-                    "needs more inputs than your Keystone can sign at once. {PAYMENT_LINK_BATCH_ADVICE}"
-                )));
+                return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchKeystoneSignatureLimit,
+                    format_args!("needs more inputs than your Keystone can sign at once."),
+                ));
             }
         }
         HardwareSignerKind::Ledger => {
@@ -4293,14 +4306,16 @@ fn validate_payment_link_batch_proposal<NoteRef>(
             .is_err()
             {
                 let max = crate::wallet::ledger::limits::MAX_EXTERNAL_SHIELDED_OUTPUTS;
-                return Err(payment_link_batch_rejection(format_args!(
-                    "has more shielded recipients than your Ledger can display (maximum {max}). {PAYMENT_LINK_BATCH_ADVICE}"
-                )));
+                return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchLedgerRecipientLimit,
+                    format_args!("has more shielded recipients than your Ledger can display (maximum {max})."),
+                ));
             }
             if step.input_count_in_pool(PoolType::SAPLING) > 0 {
-                return Err(payment_link_batch_rejection(format_args!(
-                    "would spend older Sapling funds, which your Ledger can’t sign. {PAYMENT_LINK_BATCH_ADVICE}"
-                )));
+                return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchLedgerSapling,
+                    format_args!("would spend older Sapling funds, which your Ledger can’t sign."),
+                ));
             }
             let branch = consensus::BranchId::for_height(
                 &network,
@@ -4319,9 +4334,10 @@ fn validate_payment_link_batch_proposal<NoteRef>(
                     payment_link_ledger_action_count(branch, value_pool, spends, outputs)?;
                 let max = crate::wallet::ledger::limits::MAX_SHIELDED_ACTIONS_PER_POOL;
                 if actions > max {
-                    return Err(payment_link_batch_rejection(format_args!(
-                        "is too large for your Ledger to sign. {PAYMENT_LINK_BATCH_ADVICE}"
-                    )));
+                    return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchLedgerTooLarge,
+                    format_args!("is too large for your Ledger to sign."),
+                ));
                 }
             }
         }

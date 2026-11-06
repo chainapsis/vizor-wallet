@@ -100,6 +100,18 @@ pub enum ApiWalletErrorCode {
     /// Transparent or Sapling inputs, which Keystone batch signing cannot
     /// sign.
     KeystoneBatchUnsupportedInput,
+    /// A Gift Card group that needs more than one funding transaction.
+    PaymentLinkBatchNotOneTransaction,
+    /// A Gift Card group spending Sapling funds a Keystone cannot sign.
+    PaymentLinkBatchKeystoneSapling,
+    /// A Gift Card group needing more signatures than one Keystone batch.
+    PaymentLinkBatchKeystoneSignatureLimit,
+    /// A Gift Card group with more shielded recipients than a Ledger shows.
+    PaymentLinkBatchLedgerRecipientLimit,
+    /// A Gift Card group spending Sapling funds a Ledger cannot sign.
+    PaymentLinkBatchLedgerSapling,
+    /// A Gift Card group too large for a Ledger to sign.
+    PaymentLinkBatchLedgerTooLarge,
 }
 
 /// An error from a call whose failures the app acts on. Its Dart
@@ -134,6 +146,24 @@ impl From<WalletFailure> for ApiWalletError {
                 }
                 Some(FailureCode::KeystoneBatchUnsupportedInput) => {
                     ApiWalletErrorCode::KeystoneBatchUnsupportedInput
+                }
+                Some(FailureCode::PaymentLinkBatchNotOneTransaction) => {
+                    ApiWalletErrorCode::PaymentLinkBatchNotOneTransaction
+                }
+                Some(FailureCode::PaymentLinkBatchKeystoneSapling) => {
+                    ApiWalletErrorCode::PaymentLinkBatchKeystoneSapling
+                }
+                Some(FailureCode::PaymentLinkBatchKeystoneSignatureLimit) => {
+                    ApiWalletErrorCode::PaymentLinkBatchKeystoneSignatureLimit
+                }
+                Some(FailureCode::PaymentLinkBatchLedgerRecipientLimit) => {
+                    ApiWalletErrorCode::PaymentLinkBatchLedgerRecipientLimit
+                }
+                Some(FailureCode::PaymentLinkBatchLedgerSapling) => {
+                    ApiWalletErrorCode::PaymentLinkBatchLedgerSapling
+                }
+                Some(FailureCode::PaymentLinkBatchLedgerTooLarge) => {
+                    ApiWalletErrorCode::PaymentLinkBatchLedgerTooLarge
                 }
             },
             message: failure.message,
@@ -1545,7 +1575,7 @@ pub fn estimate_payment_link_batch_fee(
     account_uuid: String,
     addresses: Vec<String>,
     amount_zatoshi: u64,
-) -> Result<u64, String> {
+) -> Result<u64, ApiWalletError> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         wallet_sync::estimate_payment_link_batch_fee(
@@ -1554,6 +1584,7 @@ pub fn estimate_payment_link_batch_fee(
             &account_uuid,
             &payment_link_batch_pairs(addresses, amount_zatoshi),
         )
+        .map_err(ApiWalletError::from)
     })
 }
 
@@ -1565,7 +1596,7 @@ pub fn propose_payment_link_batch(
     send_flow_id: String,
     addresses: Vec<String>,
     amount_zatoshi: u64,
-) -> Result<ProposalResult, String> {
+) -> Result<ProposalResult, ApiWalletError> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         wallet_sync::propose_payment_link_batch(
@@ -1576,6 +1607,7 @@ pub fn propose_payment_link_batch(
             &payment_link_batch_pairs(addresses, amount_zatoshi),
         )
         .map(api_proposal_result)
+        .map_err(ApiWalletError::from)
     })
 }
 

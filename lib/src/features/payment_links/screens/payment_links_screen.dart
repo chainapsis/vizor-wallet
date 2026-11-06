@@ -1953,7 +1953,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     if (refusal is PaymentLinkBatchQuoteChanged) {
       _showError(context.l10n.paymentLinkBatchFeeChanged);
     } else if (refusal is PaymentLinkBatchRejected) {
-      _showError(refusal.message);
+      _showError(refusal.text(context.l10n));
     }
     await _cancelHardwareFunding();
   }

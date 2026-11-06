@@ -38,6 +38,7 @@ Rules for new code:
 | `recoveryIncomplete`, `optOutUnfinished` | `sync/send.rs` shielding refusal | `create_shield_transparent_pczt`, `shield_transparent_balance*` | `friendlyShieldBalanceError` |
 | `invalidUr`, `unexpectedUrType`, `urSessionReset` (new) | `wallet/keystone.rs` `decode_ur_part` | `decode_ur_part` | `services/qr_scanner.dart` (skip the frame, reset the session); `isUnexpectedUrTypeError` on the Keystone scan screens below |
 | `keystoneBatchSignatureLimit`, `keystoneBatchUnsupportedInput` (new) | `sync/pczt.rs` `prepare_pczt_for_keystone_batch`, `checked_keystone_batch_signature_count` | `prepare_pczt_for_keystone_batch` | `keystoneBatchSigningFriendlyError` (send review, mobile Keystone send, swap desktop and mobile) |
+| `paymentLinkBatchNotOneTransaction`, `paymentLinkBatchKeystoneSapling`, `paymentLinkBatchKeystoneSignatureLimit`, `paymentLinkBatchLedgerRecipientLimit`, `paymentLinkBatchLedgerSapling`, `paymentLinkBatchLedgerTooLarge` (new) | `sync/send.rs` `validate_payment_link_batch_proposal` | `estimate_payment_link_batch_fee`, `propose_payment_link_batch` | `PaymentLinkBatchRejected.text` (`payment_links_batch_creation.dart`, `payment_links_screen.dart`) |
 
 `ExecuteProposalResult.broadcastFailureKind` (`rejected` / `unknown`) is a
 result code too. `_broadcastStatusMessage` in `send_flow.dart` reads it
@@ -55,6 +56,7 @@ pick the same copy.
 | `keystone_send_scan_screen.dart`, `mobile_keystone_pczt_signing_flow.dart`, `mobile_keystone_shield_screen.dart`, `keystone_scan_qr_screen.dart`, `mobile_keystone_screens.dart`, `keystone_voting_scan_screen.dart`, migration `keystone_signing.dart` `ironwoodMigrationKeystoneScanErrorMessage` | "Unexpected UR type: got …, expected …" | `unexpectedUrType`. Migration still reads the received UR type (`zcash-sign-result`) from the message: it is protocol data, not copy. |
 | `keystone/services/keystone_batch_signing.dart` `keystoneBatchSigningFriendlyError` | "Keystone batch signing supports at most 96 …", "… does not support transparent/Sapling transaction inputs" | `keystoneBatchSignatureLimit`, `keystoneBatchUnsupportedInput`. `send_review_screen.dart` now passes the error object, not its string. |
 | `send/services/send_flow.dart` `_broadcastStatusMessage` | "Broadcast failed after n/m txs sent (…). Error: Broadcast rejected: …" | `broadcastFailureKind == 'rejected'` |
+| `payment_link_service.dart` `PaymentLinkBatchRejected.from` | the "This group " prefix | `paymentLinkBatch*` codes; the six messages are ARB keys with the same English |
 
 Upstream commit `0d3ec376e` (core messages) localized three things that also
 come from Rust text:
@@ -142,7 +144,6 @@ silently stops matching.
 
 | Dart site | Rust source | ko/zh now | Suggested fix |
 | --- | --- | --- | --- |
-| `payment_link_service.dart` `PaymentLinkBatchRejected`, shown as main text by `payment_links_screen.dart` and `payment_links_batch_creation.dart` | `sync/send.rs` `validate_payment_link_batch_proposal`, user-facing "This group …" sentences | English | A `FailureCode` per rejection; `propose_payment_link_batch` and `estimate_payment_link_batch_fee` return `ApiWalletError` |
 | `receive_screen.dart` `_loadAddresses`, `_loadTransparentReceiveAddress`, main warning text | `get_unified_address`, `get_transparent_receive_address` (`String`) | English | Localized headline, with the Rust text as detail (the renew path already uses `receiveErrorWithDetails`) |
 | `onboarding_error_messages.dart` `onboardingSubmitErrorMessage` | create/import FRB functions in `api/wallet.rs` | Duplicate → English `kDuplicate*` constants; anything else raw | Duplicate → localized copy; other errors → localized headline + detail |
 | migration `keystone_signing.dart` `ironwoodMigrationKeystoneProofFailureMessage` | `keystone_migration_proof_status`, `keystone_requests.rs` `proof_error` | English | Proof-status code, or a localized headline with the message as detail |

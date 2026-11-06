@@ -9194,6 +9194,36 @@
   "@paymentLinkBatchQuoteNotReady": {
     "description": "Error shown when a group cannot be created yet because the balance is still loading."
   },
+  "paymentLinkBatchRejectedKeystoneSapling": "This group would spend older Sapling funds, which your Keystone can’t sign. Try fewer cards or a smaller amount per card.",
+  "@paymentLinkBatchRejectedKeystoneSapling": {
+    "description": "Shown when a Gift Card group cannot be funded from a Keystone account because it would spend Sapling funds. Nothing was sent."
+  },
+  "paymentLinkBatchRejectedKeystoneSignatureLimit": "This group needs more inputs than your Keystone can sign at once. Try fewer cards or a smaller amount per card.",
+  "@paymentLinkBatchRejectedKeystoneSignatureLimit": {
+    "description": "Shown when a Gift Card group needs more spend signatures than one Keystone signing round. Nothing was sent."
+  },
+  "paymentLinkBatchRejectedLedgerRecipientLimit": "This group has more shielded recipients than your Ledger can display (maximum {max}). Try fewer cards or a smaller amount per card.",
+  "@paymentLinkBatchRejectedLedgerRecipientLimit": {
+    "description": "Shown when a Gift Card group has more card recipients than a Ledger can show for review. {max} is that limit, such as 4. Nothing was sent.",
+    "placeholders": {
+      "max": {
+        "type": "String",
+        "example": "4"
+      }
+    }
+  },
+  "paymentLinkBatchRejectedLedgerSapling": "This group would spend older Sapling funds, which your Ledger can’t sign. Try fewer cards or a smaller amount per card.",
+  "@paymentLinkBatchRejectedLedgerSapling": {
+    "description": "Shown when a Gift Card group cannot be funded from a Ledger account because it would spend Sapling funds. Nothing was sent."
+  },
+  "paymentLinkBatchRejectedLedgerTooLarge": "This group is too large for your Ledger to sign. Try fewer cards or a smaller amount per card.",
+  "@paymentLinkBatchRejectedLedgerTooLarge": {
+    "description": "Shown when a Gift Card group has more actions in one pool than a Ledger can sign. Nothing was sent."
+  },
+  "paymentLinkBatchRejectedNotOneTransaction": "This group can’t be funded in one transaction. Try fewer cards or a smaller amount per card.",
+  "@paymentLinkBatchRejectedNotOneTransaction": {
+    "description": "Shown when a Gift Card group would need more than one funding transaction. Nothing was sent."
+  },
   "paymentLinkBatchRemoveCard": "Remove a card",
   "@paymentLinkBatchRemoveCard": {
     "description": "Screen reader label of the button that decreases the number of cards in a batch."

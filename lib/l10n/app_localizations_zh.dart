@@ -6655,6 +6655,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkBatchQuoteNotReady => '可用余额仍在加载。请在钱包同步后重试。';
 
   @override
+  String get paymentLinkBatchRejectedKeystoneSapling =>
+      '此卡片组需要花费较早的 Sapling 资金，而你的 Keystone 无法签署。请减少卡片数量或降低每张卡片的金额。';
+
+  @override
+  String get paymentLinkBatchRejectedKeystoneSignatureLimit =>
+      '此卡片组所需的输入超过你的 Keystone 一次可签署的数量。请减少卡片数量或降低每张卡片的金额。';
+
+  @override
+  String paymentLinkBatchRejectedLedgerRecipientLimit(String max) {
+    return '此卡片组的屏蔽收款方超过你的 Ledger 可显示的数量（最多 $max 个）。请减少卡片数量或降低每张卡片的金额。';
+  }
+
+  @override
+  String get paymentLinkBatchRejectedLedgerSapling =>
+      '此卡片组需要花费较早的 Sapling 资金，而你的 Ledger 无法签署。请减少卡片数量或降低每张卡片的金额。';
+
+  @override
+  String get paymentLinkBatchRejectedLedgerTooLarge =>
+      '此卡片组过大，你的 Ledger 无法签署。请减少卡片数量或降低每张卡片的金额。';
+
+  @override
+  String get paymentLinkBatchRejectedNotOneTransaction =>
+      '此卡片组无法通过一笔交易完成充值。请减少卡片数量或降低每张卡片的金额。';
+
+  @override
   String get paymentLinkBatchRemoveCard => '减少一张卡片';
 
   @override

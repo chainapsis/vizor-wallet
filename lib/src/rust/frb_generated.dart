@@ -4421,7 +4421,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_64,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_api_wallet_error,
         ),
         constMeta: kCrateApiSyncEstimatePaymentLinkBatchFeeConstMeta,
         argValues: [dbPath, network, accountUuid, addresses, amountZatoshi],
@@ -9335,7 +9335,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_proposal_result,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_api_wallet_error,
         ),
         constMeta: kCrateApiSyncProposePaymentLinkBatchConstMeta,
         argValues: [
