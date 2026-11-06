@@ -30,8 +30,8 @@ Future<void> sendNativeAppLanguage(String tag) async {
 /// changes.
 ///
 /// It reads the locale `MaterialApp` resolved rather than the saved
-/// preference, so "follow the device", a device language change and builds
-/// that offer English only all send what the user actually sees.
+/// preference, so a build that offers English only sends what the user
+/// actually sees.
 class NativeLanguageSync extends StatefulWidget {
   const NativeLanguageSync({
     super.key,

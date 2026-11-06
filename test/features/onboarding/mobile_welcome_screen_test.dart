@@ -719,7 +719,7 @@ void main() {
     testWidgets('the language button opens the sheet and saves the choice', (
       tester,
     ) async {
-      final saved = <AppLanguage?>[];
+      final saved = <AppLanguage>[];
       await pumpWelcome(
         tester,
         extraOverrides: languagePreviewOverrides(saved),

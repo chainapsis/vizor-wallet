@@ -3393,17 +3393,6 @@
   "@keystoneTryAgainWithKeystone": {
     "description": "Subtitle of the signing flow after a failure."
   },
-  "languageSystemOption": "System ({language})",
-  "@languageSystemOption": {
-    "description": "Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.",
-    "placeholders": {
-      "language": {
-        "type": "String",
-        "example": "English",
-        "description": "The resolved language, written in its own script."
-      }
-    }
-  },
   "ledgerAccountIndexFieldLabel": "Ledger account index (0–100)",
   "@ledgerAccountIndexFieldLabel": {
     "description": "Label of the account index field in Ledger onboarding."

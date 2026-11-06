@@ -89,8 +89,8 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
         current: current,
         available: ref.read(availableAppLanguagesProvider),
       );
-      if (choice == null || choice.language == current) return;
-      await ref.read(appLanguageProvider.notifier).set(choice.language);
+      if (choice == null || choice == current) return;
+      await ref.read(appLanguageProvider.notifier).set(choice);
     } catch (_) {
       if (mounted) {
         showAppToast(context, context.l10n.settingsLanguageUpdateFailed);

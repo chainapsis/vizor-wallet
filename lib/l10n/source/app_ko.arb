@@ -723,7 +723,6 @@
   "keystoneTipTapFullScreen": "Keystone의 QR 코드를 눌러 전체 화면으로 표시해 보세요. 가장 쉬운 해결 방법이에요.",
   "keystoneTroubleScanning": "스캔이 안 되나요?",
   "keystoneTryAgainWithKeystone": "Keystone으로 다시 시도",
-  "languageSystemOption": "시스템 ({language})",
   "ledgerAccountIndexFieldLabel": "Ledger 계정 인덱스 (0–100)",
   "ledgerAccountIndexHint": "이 Ledger 계정에 다른 인덱스를 사용한 적이 없다면 0으로 두세요.",
   "ledgerAccountIndexLabel": "계정 인덱스 (0–100)",

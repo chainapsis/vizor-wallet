@@ -198,9 +198,10 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
   `--dart-define=VIZOR_I18N_PREVIEW=true`. Without it `supportedLocales` is
   English only, so Korean and Chinese devices keep the English UI. Widgetbook
   previews every language.
-- The preference (`zcash_app_language`: `system` or a language tag) is plain
-  storage read during bootstrap, like the theme mode. Nothing stored, or an
-  unknown value, is English; only an explicit `system` follows the device.
+- The preference (`zcash_app_language`, a language tag) is plain storage read
+  during bootstrap, like the theme mode. Nothing stored, or an unknown value,
+  is English. There is no "follow the device" option: on a device in a
+  language Vizor lacks, it would look like that language.
 - Every `MaterialApp` root passes `appSupportedLocales()` and
   `appLocalizationsDelegates`. A new root must too.
 - Widgets read strings through `context.l10n` (`lib/src/core/l10n/l10n.dart`),

@@ -2461,11 +2461,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneTryAgainWithKeystone => '使用 Keystone 重试';
 
   @override
-  String languageSystemOption(String language) {
-    return '系统（$language）';
-  }
-
-  @override
   String get ledgerAccountIndexFieldLabel => 'Ledger 账户索引（0–100）';
 
   @override

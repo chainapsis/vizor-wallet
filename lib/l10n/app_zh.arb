@@ -723,7 +723,6 @@
   "keystoneTipTapFullScreen": "点按 Keystone 上的二维码即可全屏显示。这是最简单的解决办法。",
   "keystoneTroubleScanning": "扫描遇到问题？",
   "keystoneTryAgainWithKeystone": "使用 Keystone 重试",
-  "languageSystemOption": "系统（{language}）",
   "ledgerAccountIndexFieldLabel": "Ledger 账户索引（0–100）",
   "ledgerAccountIndexHint": "除非此 Ledger 账户使用过其他索引，否则请保持为 0。",
   "ledgerAccountIndexLabel": "账户索引（0–100）",

@@ -79,9 +79,8 @@ class AppBootstrapState {
   final String explorerUrlTemplate;
   final ThemeMode themeMode;
 
-  /// The saved language preference; `null` follows the device language.
-  /// English when nothing is saved or the preference cannot be read.
-  final AppLanguage? appLanguage;
+  /// The saved language; English when nothing is saved or it cannot be read.
+  final AppLanguage appLanguage;
   final bool privacyModeEnabled;
   final bool swapEnabledOverrideCachedForRelease;
   final bool syncKeepAwakeEnabled;
@@ -655,7 +654,7 @@ Future<ThemeMode> _readThemeMode(AppSecureStore storage) async {
   }
 }
 
-Future<AppLanguage?> _readAppLanguage(AppSecureStore storage) async {
+Future<AppLanguage> _readAppLanguage(AppSecureStore storage) async {
   try {
     return decodeAppLanguagePreference(
       await storage.readString(kAppLanguageKey),

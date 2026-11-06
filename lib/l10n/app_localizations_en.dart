@@ -2601,11 +2601,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneTryAgainWithKeystone => 'Try again with Keystone';
 
   @override
-  String languageSystemOption(String language) {
-    return 'System ($language)';
-  }
-
-  @override
   String get ledgerAccountIndexFieldLabel => 'Ledger account index (0–100)';
 
   @override

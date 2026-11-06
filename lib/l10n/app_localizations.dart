@@ -4469,12 +4469,6 @@ abstract class AppLocalizations {
   /// **'Try again with Keystone'**
   String get keystoneTryAgainWithKeystone;
 
-  /// Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.
-  ///
-  /// In en, this message translates to:
-  /// **'System ({language})'**
-  String languageSystemOption(String language);
-
   /// Label of the account index field in Ledger onboarding.
   ///
   /// In en, this message translates to:

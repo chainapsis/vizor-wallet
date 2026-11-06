@@ -2563,11 +2563,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get keystoneTryAgainWithKeystone => 'Keystone‍으‍로 다‍시 시‍도';
 
   @override
-  String languageSystemOption(String language) {
-    return '시‍스‍템 ($language)';
-  }
-
-  @override
   String get ledgerAccountIndexFieldLabel => 'Ledger 계‍정 인‍덱‍스 (0–100)';
 
   @override
