@@ -150,6 +150,11 @@ terms:
     en: private queries
     ko: {term: 비공개 조회, status: candidate}
     zh: {term: 隐私查询, status: candidate}
+  - id: migration
+    en: migration
+    definition: Moving funds from the Orchard pool to Ironwood.
+    ko: {term: 마이그레이션, status: confirmed, forbidden: [이전], note: "이전 keeps its everyday meaning, previous."}
+    zh: {term: 迁移, status: candidate}
 
   # Security. Every message with one of these terms is a [security] string.
   - id: secret_passphrase
