@@ -640,6 +640,7 @@ class IronwoodMigrationService {
     bool Function()? isRequestCurrent,
     IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
     IronwoodMigrationEndpointGetter? getEndpoint,
+    this.resolveEndpoint,
     IronwoodMigrationPasswordGetter? getSessionPassword,
     IronwoodMigrationMnemonicBytesGetter? getMnemonicBytesForAccount,
     IronwoodMigrationPlatformCheck? isMacOS,
@@ -855,6 +856,7 @@ class IronwoodMigrationService {
   final bool Function() isRequestCurrent;
   final IronwoodMigrationBackgroundCredentialStore backgroundCredentialStore;
   final IronwoodMigrationEndpointGetter getEndpoint;
+  final Future<RpcEndpointConfig> Function()? resolveEndpoint;
   final IronwoodMigrationPasswordGetter getSessionPassword;
   final IronwoodMigrationMnemonicBytesGetter getMnemonicBytesForAccount;
   final IronwoodMigrationPlatformCheck isMacOS;
@@ -935,6 +937,9 @@ class IronwoodMigrationService {
   bool get _usesNativePreparation => isIOS() && !isAndroid();
   bool get _usesNativeMigrationLifecycle =>
       _usesNativeMigrationOutbox || _usesNativePreparation;
+
+  Future<RpcEndpointConfig> _readyEndpoint() async =>
+      resolveEndpoint == null ? getEndpoint() : await resolveEndpoint!();
 
   /// Reads durable migration state without credential or outbox reconciliation.
   ///
@@ -1522,7 +1527,7 @@ class IronwoodMigrationService {
   }) async {
     final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -1589,7 +1594,7 @@ class IronwoodMigrationService {
   }) async {
     final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -1640,7 +1645,7 @@ class IronwoodMigrationService {
   }) async {
     final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -1821,7 +1826,7 @@ class IronwoodMigrationService {
     }
 
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2129,7 +2134,7 @@ class IronwoodMigrationService {
     required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     return operationRegistry.run(
       network: endpoint.networkName,
       accountUuid: accountUuid,
@@ -2149,7 +2154,7 @@ class IronwoodMigrationService {
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2176,7 +2181,7 @@ class IronwoodMigrationService {
     required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2209,7 +2214,7 @@ class IronwoodMigrationService {
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2257,7 +2262,7 @@ class IronwoodMigrationService {
     required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -3105,6 +3110,8 @@ final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
     keyringCoordinator: ref.read(linuxKeyringCoordinatorProvider),
     isRequestCurrent: () => ref.mounted,
     getEndpoint: () => ref.read(rpcEndpointFailoverProvider).current,
+    resolveEndpoint: () =>
+        ref.read(rpcEndpointFailoverProvider.notifier).ensureReady(),
     getSessionPassword: () => ref
         .read(appSecurityProvider.notifier)
         .requireSessionPasswordForNativeSecretUse(),

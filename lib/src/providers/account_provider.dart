@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'account_initialization_provider.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -242,6 +243,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     return bootstrap.initialAccountState;
   }
 
+  void _registerInitialAccounts(
+    Iterable<String> uuids,
+    AccountInitializationKind kind,
+  ) {
+    final existing = {
+      for (final account in state.value?.accounts ?? const <AccountInfo>[])
+        account.uuid,
+    };
+    final initialization = ref.read(accountInitializationProvider.notifier);
+    for (final uuid in uuids) {
+      if (!existing.contains(uuid)) initialization.register(uuid, kind);
+    }
+  }
+
   /// Create a new wallet with a fresh mnemonic. Returns the mnemonic.
   Future<String> createAccount({String? name}) => ref
       .read(linuxKeyringCoordinatorProvider)
@@ -305,6 +320,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _saveAccounts(updatedAccounts);
       await _storage.writeString(_activeAccountKey, accountUuid);
 
+      _registerInitialAccounts([
+        accountUuid,
+      ], AccountInitializationKind.created);
       state = AsyncData(
         AccountState(
           accounts: updatedAccounts,
@@ -422,6 +440,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _saveAccounts(updatedAccounts);
       await _storage.writeString(_activeAccountKey, accountUuid);
 
+      _registerInitialAccounts([
+        accountUuid,
+      ], AccountInitializationKind.created);
       state = AsyncData(
         AccountState(
           accounts: updatedAccounts,
@@ -675,6 +696,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String name,
     String profilePictureId,
   ) {
+    _registerInitialAccounts([uuid], AccountInitializationKind.created);
     state = AsyncData(
       AccountState(
         accounts: [
@@ -951,6 +973,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         await _storage.writeString(_activeAccountKey, activeAccountUuid);
       }
 
+      _registerInitialAccounts(
+        importedAccounts.map((a) => a.uuid),
+        AccountInitializationKind.restored,
+      );
       state = AsyncData(
         AccountState(
           accounts: updatedAccounts,
@@ -1307,7 +1333,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }) async {
     try {
       final dbPath = await _getDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
       final network = isFirstWalletAccount
@@ -1338,7 +1366,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }) async {
     try {
       final dbPath = await _getDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
       final network = isFirstWalletAccount
@@ -1847,6 +1877,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _storage.writeString(_activeAccountKey, nextActiveUuid);
     }
 
+    ref.read(accountInitializationProvider.notifier).remove(uuid);
     state = AsyncData(
       AccountState(
         accounts: updated,
@@ -1908,8 +1939,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     var restoreAfterFailure = false;
     var resumeClaimLifecycle = false;
     var resetCompleted = false;
-    final cacheDrained = balanceCache.suspendAndDrain();
+    final automaticEndpoints = ref.read(rpcEndpointFailoverProvider.notifier);
+    automaticEndpoints.pauseAutomaticSelection();
     try {
+      final cacheDrained = balanceCache.suspendAndDrain();
       await cacheDrained;
       await ledgerLifecycle.quiesceAndDrain();
       await publicLoads.quiesceAndDrain();
@@ -1937,6 +1970,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // reuses this registry; stale registrations re-read the now-empty store.
       if (resetCompleted || restoreAfterFailure) giftTracking.resume();
       shareTracking.resume();
+      automaticEndpoints.resumeAutomaticSelection();
       if (restoreAfterFailure) shareTracking.requestRestore();
     }
   }
@@ -2048,6 +2082,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _resetVotingProcessStateForAccount(account.uuid, dbPath: dbPath);
     }
 
+    // Cancel selection and drain its cache writes before destroying wallet state.
+    await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .clearAutomaticSelectionCache();
+
     var dbDeleted = false;
     try {
       await _deleteExistingDb(dbPath);
@@ -2156,6 +2195,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     // router derives requiresUnlock from hasWallet && !isUnlocked, so the
     // reverse order bounces a locked-start session to /unlock mid-uninstall
     // (the /settings/uninstall exemption only covers the no-wallet branch).
+    ref.read(accountInitializationProvider.notifier).clear();
     state = const AsyncData(AccountState());
     try {
       ref.read(appSecurityProvider.notifier).reset();
@@ -2401,6 +2441,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _saveAccounts(updated);
       await _storage.writeString(_activeAccountKey, accountUuid);
 
+      _registerInitialAccounts([
+        accountUuid,
+      ], AccountInitializationKind.restored);
       state = AsyncData(
         AccountState(
           accounts: updated,
@@ -2548,6 +2591,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _saveAccounts(updated);
       await _storage.writeString(_activeAccountKey, accountUuid);
 
+      _registerInitialAccounts([
+        accountUuid,
+      ], AccountInitializationKind.restored);
       state = AsyncData(
         AccountState(
           accounts: updated,
@@ -2711,6 +2757,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         await _storage.writeString(_activeAccountKey, activeAccountUuid);
       }
 
+      _registerInitialAccounts(
+        importedAccounts.map((a) => a.uuid),
+        AccountInitializationKind.restored,
+      );
       state = AsyncData(
         AccountState(
           accounts: updated,
@@ -2907,7 +2957,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     try {
       return await ref
           .read(rpcEndpointFailoverProvider.notifier)
-          .getLatestBlockHeight();
+          .getCreationBirthdayHeight();
     } catch (e, st) {
       Error.throwWithStackTrace(
         WalletCreationCurrentBlockHeightException(e),

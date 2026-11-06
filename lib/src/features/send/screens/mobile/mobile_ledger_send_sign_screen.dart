@@ -216,7 +216,10 @@ class _MobileLedgerSendSignScreenState
 
       // PCZT creation consumes the proposal; select the live route once and
       // never retry the consumed proposal through a generic failover runner.
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
+      if (!_isCurrent(generation)) return;
       final basePczts = await _getOrCreateBasePczts(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,

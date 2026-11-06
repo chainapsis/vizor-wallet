@@ -7,6 +7,7 @@ pub(crate) mod balance_cache;
 pub(crate) mod block_times;
 pub(crate) mod bounded_runtime;
 pub(crate) mod db;
+pub(crate) mod endpoint_selection;
 pub mod failure;
 pub(crate) mod fees;
 pub(crate) mod gift_card_tracking;

@@ -5,7 +5,6 @@
 
 import '../frb_generated.dart';
 import '../wallet/gift_card_tracking.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 Future<String> registerGiftCardObserver({

@@ -1260,6 +1260,10 @@ void main() {
     });
     final container = ProviderContainer(
       overrides: [
+        votingReadyRpcEndpointProvider.overrideWith(
+          (ref) =>
+              () async => ref.read(votingRpcEndpointConfigProvider),
+        ),
         votingRpcEndpointConfigProvider.overrideWithValue(
           const RpcEndpointConfig(
             networkName: 'main',
@@ -1319,6 +1323,10 @@ void main() {
       });
       final container = ProviderContainer(
         overrides: [
+          votingReadyRpcEndpointProvider.overrideWith(
+            (ref) =>
+                () async => ref.read(votingRpcEndpointConfigProvider),
+          ),
           votingRpcEndpointConfigProvider.overrideWithValue(
             const RpcEndpointConfig(
               networkName: 'main',
@@ -1377,6 +1385,10 @@ void main() {
       });
       final container = ProviderContainer(
         overrides: [
+          votingReadyRpcEndpointProvider.overrideWith(
+            (ref) =>
+                () async => ref.read(votingRpcEndpointConfigProvider),
+          ),
           votingRpcEndpointConfigProvider.overrideWithValue(
             const RpcEndpointConfig(
               networkName: 'main',
@@ -1436,6 +1448,10 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
+        votingReadyRpcEndpointProvider.overrideWith(
+          (ref) =>
+              () async => ref.read(votingRpcEndpointConfigProvider),
+        ),
         votingRpcEndpointConfigProvider.overrideWithValue(
           const RpcEndpointConfig(
             networkName: 'main',
@@ -1538,6 +1554,10 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
+        votingReadyRpcEndpointProvider.overrideWith(
+          (ref) =>
+              () async => ref.read(votingRpcEndpointConfigProvider),
+        ),
         votingRpcEndpointConfigProvider.overrideWithValue(
           const RpcEndpointConfig(
             networkName: 'main',
@@ -1619,6 +1639,10 @@ void main() {
       final http = FakeVotingHttpClient(responses: responses);
       final container = ProviderContainer(
         overrides: [
+          votingReadyRpcEndpointProvider.overrideWith(
+            (ref) =>
+                () async => ref.read(votingRpcEndpointConfigProvider),
+          ),
           votingRpcEndpointConfigProvider.overrideWithValue(
             const RpcEndpointConfig(
               networkName: 'main',
@@ -1724,6 +1748,10 @@ void main() {
       );
       final container = ProviderContainer(
         overrides: [
+          votingReadyRpcEndpointProvider.overrideWith(
+            (ref) =>
+                () async => ref.read(votingRpcEndpointConfigProvider),
+          ),
           votingRpcEndpointConfigProvider.overrideWithValue(
             const RpcEndpointConfig(
               networkName: 'main',
@@ -1956,6 +1984,10 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
+        votingReadyRpcEndpointProvider.overrideWith(
+          (ref) =>
+              () async => ref.read(votingRpcEndpointConfigProvider),
+        ),
         votingRpcEndpointConfigProvider.overrideWithValue(
           const RpcEndpointConfig(
             networkName: 'main',
@@ -2106,6 +2138,10 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
+        votingReadyRpcEndpointProvider.overrideWith(
+          (ref) =>
+              () async => ref.read(votingRpcEndpointConfigProvider),
+        ),
         votingRpcEndpointConfigProvider.overrideWithValue(
           const RpcEndpointConfig(
             networkName: 'main',
@@ -7590,6 +7626,10 @@ void main() {
     await persistence.save(key, const VotingDraftState(choices: {7: 1, 8: 0}));
     final container = ProviderContainer(
       overrides: [
+        votingReadyRpcEndpointProvider.overrideWith(
+          (ref) =>
+              () async => ref.read(votingRpcEndpointConfigProvider),
+        ),
         votingRpcEndpointConfigProvider.overrideWithValue(
           const RpcEndpointConfig(
             networkName: 'main',
@@ -12221,6 +12261,44 @@ void main() {
     expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
   });
 
+  test(
+    'background PIR cache warmup rechecks account after endpoint selection',
+    () async {
+      final rust = FakeVotingRustApi();
+      final selection = Completer<RpcEndpointConfig>();
+      final selecting = Completer<void>();
+      final activeAccountProvider =
+          NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+            _ActiveVotingAccountNotifier.new,
+          );
+      final container = _sessionContainer(
+        rust: rust,
+        http: FakeVotingHttpClient(responses: warmupHttpResponses()),
+        activeAccountUuidListenable: activeAccountProvider,
+        resolveRpcEndpoint: () {
+          selecting.complete();
+          return selection.future;
+        },
+      );
+      addTearDown(container.dispose);
+
+      final warmup = container
+          .read(votingPirWarmupProvider)
+          .maybeWarmActiveRounds();
+      await selecting.future;
+      container.read(activeAccountProvider.notifier).set('account-2');
+      selection.complete(
+        const RpcEndpointConfig(
+          networkName: 'main',
+          lightwalletdUrl: 'https://selected.example:443',
+        ),
+      );
+      await warmup;
+
+      expect(rust.warmPirProofCacheSnapshotHeights, isEmpty);
+    },
+  );
+
   test('background PIR cache warmup skips hidden [TEST] rounds', () async {
     final rust = FakeVotingRustApi();
     final testRound = roundStatusJson(roundId: kRoundId)
@@ -12288,6 +12366,10 @@ ProviderContainer _container({
 }) {
   return ProviderContainer(
     overrides: [
+      votingReadyRpcEndpointProvider.overrideWith(
+        (ref) =>
+            () async => ref.read(votingRpcEndpointConfigProvider),
+      ),
       votingRpcEndpointConfigProvider.overrideWithValue(
         const RpcEndpointConfig(
           networkName: 'main',
@@ -12462,6 +12544,7 @@ PirSnapshotResolution _pirResolution(Uri selected, List<Uri> matches) {
 ProviderContainer _sessionContainer({
   VotingHomeCacheStore? homeCacheStore,
   RpcEndpointConfig Function()? readRpcEndpoint,
+  Future<RpcEndpointConfig> Function()? resolveRpcEndpoint,
   List<Override> extraOverrides = const [],
   FakeVotingHttpClient? http,
   FakeVotingRustApi? rust,
@@ -12574,6 +12657,11 @@ ProviderContainer _sessionContainer({
         (uuid) => effectiveHardwareAccountUuids.contains(uuid)
             ? hardwareSignerKind
             : null,
+      ),
+      votingReadyRpcEndpointProvider.overrideWith(
+        (ref) =>
+            resolveRpcEndpoint ??
+            () async => ref.read(votingRpcEndpointConfigProvider),
       ),
       votingRpcEndpointConfigProvider.overrideWith(
         (ref) =>

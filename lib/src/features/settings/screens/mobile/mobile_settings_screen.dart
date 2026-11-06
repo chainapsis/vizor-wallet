@@ -11,6 +11,7 @@ import '../../../payment_links/providers/payment_link_cards_provider.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/app_version_config.dart';
 import '../../../../core/config/zcash_explorer.dart';
+import '../../../../core/config/rpc_endpoint_config.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -49,7 +50,9 @@ class MobileSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final account = ref.watch(accountProvider).value?.activeAccount;
     final endpointConfig = ref.watch(rpcEndpointProvider);
-    final endpoint = endpointConfig.hostPort;
+    final endpoint = isAutomaticRpcEndpointConfig(endpointConfig)
+        ? 'Automatic'
+        : endpointConfig.hostPort;
     final explorer = explorerSettingsLabel(
       ref.watch(zcashExplorerProvider),
       networkName: endpointConfig.networkName,
