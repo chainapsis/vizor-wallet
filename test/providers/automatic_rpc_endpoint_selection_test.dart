@@ -1320,23 +1320,13 @@ void main() {
     },
   );
 
-  for (final caseName in [
-    'small improvement',
-    'current failed',
-    'height conflict',
-    'failure',
-  ]) {
+  for (final caseName in ['small improvement', 'current failed', 'failure']) {
     test('optional full comparison retains current on $caseName', () async {
       final harness = _Harness()
         ..respond = (_) async => [_sample(_eu, 1000), _sample(_kr, 1500)];
       harness.fullRespond = (_) async => switch (caseName) {
         'small improvement' => [_sample(_eu, 1000), _sample(_kr, 900)],
         'current failed' => [_sample(_kr, 100), _sample(_us, 300)],
-        'height conflict' => [
-          _sample(_eu, 1000),
-          _sample(_kr, 100, 110),
-          _sample(_us, 300, 110),
-        ],
         _ => throw StateError('optional timeout'),
       };
       await harness.notifier.ensureReady();
@@ -1354,6 +1344,282 @@ void main() {
       );
     });
   }
+
+  group('full-pool height correction', () {
+    _Harness harness({
+      NetworkPrivacyState route = const NetworkPrivacyState.off(),
+      int height = 100,
+    }) {
+      final h = _Harness(route: route)
+        ..respond = (_) async => [_sample(_eu, 20), _sample(_kr, 30)];
+      h.fullRespond = (_) async => [
+        _sample(_eu, 20, height),
+        _sample(_kr, 1500, 110),
+        _sample(_us, 2000, 110),
+      ];
+      return h;
+    }
+
+    Future<void> compare(_Harness h) async {
+      await h.notifier.ensureReady();
+      h.notifier.startInitialComparisonAfterSyncStart();
+      await _flush();
+    }
+
+    for (final tor in [false, true]) {
+      for (final height in [100, 10000]) {
+        test(
+          '${tor ? 'Tor' : 'direct'} height $height defers correction to a slower corroborated peer',
+          () async {
+            final h = harness(
+              route: tor ? _torReady : const NetworkPrivacyState.off(),
+              height: height,
+            );
+            await compare(h);
+            expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+            expect(h.notifier.hasPendingHeightCorrection, isTrue);
+            expect(
+              h.container
+                  .read(rpcEndpointFailoverProvider)
+                  .automaticProvisional,
+              isTrue,
+            );
+            expect(h.store.values[('main', tor)]!.presetId, 'kr-zec-stardust');
+            h.notifier.applyPendingInitialComparison();
+            expect(h.notifier.currentEndpoint.lightwalletdUrl, _kr);
+            expect(h.notifier.hasPendingHeightCorrection, isFalse);
+            expect(
+              h.container
+                  .read(rpcEndpointFailoverProvider)
+                  .automaticProvisional,
+              isFalse,
+            );
+            expect(h.calls, hasLength(1));
+            expect(h.fullCalls, hasLength(1));
+          },
+        );
+      }
+    }
+
+    for (final samples in <List<RpcEndpointCandidateSample>>[
+      [
+        _sample(_eu, 20),
+        _sample(_kr, 30),
+        _sample(_us, 200, 110),
+        _sample('https://eu.zec.rocks:443', 300, 110),
+      ],
+      [_sample(_eu, 20, 100), _sample(_kr, 30, 102), _sample(_us, 40, 104)],
+      [_sample(_eu, 20), _sample(_kr, 30, 110)],
+    ]) {
+      test(
+        'inconclusive clusters ${samples.map((s) => s.height).join(',')} retain current',
+        () async {
+          final h = harness()..fullRespond = (_) async => samples;
+          await compare(h);
+          expect(h.notifier.hasPendingHeightCorrection, isFalse);
+          h.notifier.applyPendingInitialComparison();
+          expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+          expect(h.store.values[('main', false)]!.presetId, 'eu-zec-stardust');
+        },
+      );
+    }
+
+    test(
+      'single current successes cannot replace the saved correction or renew its proof',
+      () async {
+        final h = harness();
+        await compare(h);
+        final proofAt = h.store.values[('main', false)]!.lastPeerValidatedAt;
+        h.now = h.now.add(const Duration(minutes: 1));
+        expect(await h.notifier.getLatestBlockHeight(), BigInt.from(100));
+        await _flush();
+        expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+        expect(h.notifier.hasPendingHeightCorrection, isTrue);
+        expect(h.store.values[('main', false)]!.presetId, 'kr-zec-stardust');
+        expect(h.store.values[('main', false)]!.lastPeerValidatedAt, proofAt);
+        expect(
+          h.calls,
+          hasLength(1),
+          reason: 'optional validation must not consume a pending correction',
+        );
+      },
+    );
+
+    test(
+      'catching up before applying cancels correction and restores the corroborated current cache',
+      () async {
+        final h = harness();
+        await compare(h);
+        final proofAt = h.store.values[('main', false)]!.lastPeerValidatedAt;
+        h.now = h.now.add(const Duration(seconds: 6));
+        h.readHeight = () async => BigInt.from(110);
+        expect(await h.notifier.getLatestBlockHeight(), BigInt.from(110));
+        await _flush();
+        expect(h.notifier.hasPendingHeightCorrection, isFalse);
+        h.notifier.applyPendingInitialComparison();
+        expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+        expect(
+          h.container.read(rpcEndpointFailoverProvider).automaticProvisional,
+          isFalse,
+        );
+        expect(h.store.values[('main', false)]!.presetId, 'eu-zec-stardust');
+        expect(h.store.values[('main', false)]!.lastPeerValidatedAt, proofAt);
+        expect(h.calls, hasLength(1));
+      },
+    );
+
+    test(
+      'a newer current response during the sweep overrides the old batch observation',
+      () async {
+        final h = harness();
+        final full = Completer<List<RpcEndpointCandidateSample>>();
+        h.fullRespond = (_) => full.future;
+        await compare(h);
+        final startedAt = h.now;
+        h.now = h.now.add(const Duration(seconds: 6));
+        h.readHeight = () async => BigInt.from(110);
+        await h.notifier.getLatestBlockHeight();
+        full.complete([
+          for (final url in [_eu, _kr, _us])
+            RpcEndpointCandidateSample(
+              url: url,
+              height: BigInt.from(url == _eu ? 100 : 110),
+              latency: const Duration(seconds: 2),
+              observedAt: startedAt,
+            ),
+        ]);
+        await _flush();
+        expect(h.notifier.hasPendingHeightCorrection, isFalse);
+        h.notifier.applyPendingInitialComparison();
+        expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+      },
+    );
+
+    test(
+      'restart reuses the corroborated replacement without probing the outlier',
+      () async {
+        final h = harness();
+        await compare(h);
+        var warmReads = 0;
+        final restarted = _Harness(
+          store: h.store,
+          warmRead:
+              ({
+                required endpoint,
+                required selectionId,
+                required timeout,
+              }) async {
+                warmReads++;
+                return _sample(endpoint.normalizedLightwalletdUrl, 50, 110);
+              },
+        );
+        expect((await restarted.notifier.ensureReady()).lightwalletdUrl, _kr);
+        expect(warmReads, 1);
+        expect(restarted.calls, isEmpty);
+      },
+    );
+
+    test(
+      'a delayed sweep retains actual observation age and cannot refresh old correction proof',
+      () async {
+        final h = harness();
+        final observedAt = h.now;
+        h.fullRespond = (_) async {
+          h.now = h.now.add(const Duration(minutes: 4));
+          return [
+            for (final url in [_eu, _kr, _us])
+              RpcEndpointCandidateSample(
+                url: url,
+                height: BigInt.from(url == _eu ? 100 : 110),
+                latency: const Duration(milliseconds: 100),
+                observedAt: observedAt,
+              ),
+          ];
+        };
+        await compare(h);
+        expect(h.notifier.hasPendingHeightCorrection, isTrue);
+        h.notifier.applyPendingInitialComparison();
+        await _flush();
+        expect(h.notifier.currentEndpoint.lightwalletdUrl, _kr);
+        expect(
+          h.store.values[('main', false)]!.lastPeerValidatedAt,
+          observedAt,
+        );
+        expect(
+          h.store.values[('main', false)]!.lastNetworkVerifiedAt,
+          observedAt,
+        );
+      },
+    );
+
+    test(
+      'expired correction is discarded without trusting the outlier',
+      () async {
+        final h = harness();
+        await compare(h);
+        h.now = h.now.add(const Duration(minutes: 5));
+        expect(h.notifier.hasPendingHeightCorrection, isFalse);
+        h.notifier.applyPendingInitialComparison();
+        await _flush();
+        expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+        expect(h.store.values[('main', false)]!.lastPeerValidatedAt, isNull);
+      },
+    );
+
+    for (final offset in [
+      const Duration(minutes: -6),
+      const Duration(seconds: 1),
+    ]) {
+      test(
+        'invalid observation time $offset cannot establish a correction',
+        () async {
+          final h = harness();
+          h.fullRespond = (_) async => [
+            for (final url in [_eu, _kr, _us])
+              RpcEndpointCandidateSample(
+                url: url,
+                height: BigInt.from(url == _eu ? 100 : 110),
+                latency: const Duration(milliseconds: 100),
+                observedAt: h.now.add(offset),
+              ),
+          ];
+          await compare(h);
+          expect(h.notifier.hasPendingHeightCorrection, isFalse);
+        },
+      );
+    }
+
+    for (final action in ['lock', 'background', 'manual', 'Tor', 'reset']) {
+      test('a pending correction is revoked by $action', () async {
+        final h = harness();
+        await compare(h);
+        expect(h.notifier.hasPendingHeightCorrection, isTrue);
+        switch (action) {
+          case 'lock':
+            h.security.publish(
+              const AppSecurityState(
+                isPasswordConfigured: true,
+                isUnlocked: false,
+              ),
+            );
+          case 'background':
+            h.notifier.cancelAutomaticSelection();
+          case 'manual':
+            h.endpoint.publish(_custom);
+          case 'Tor':
+            h.privacy.publish(_torReady);
+          case 'reset':
+            await h.notifier.clearAutomaticSelectionCache();
+        }
+        expect(h.notifier.hasPendingHeightCorrection, isFalse);
+        h.notifier.applyPendingInitialComparison();
+        expect(
+          h.notifier.currentEndpoint.lightwalletdUrl,
+          action == 'manual' ? _custom.lightwalletdUrl : _eu,
+        );
+      });
+    }
+  });
 
   for (final action in ['lock', 'background', 'manual', 'Tor', 'reset']) {
     test('late complete comparison is discarded after $action', () async {

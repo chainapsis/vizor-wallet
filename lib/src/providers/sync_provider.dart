@@ -2742,6 +2742,19 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         !hasAccounts) {
       return;
     }
+    // A frozen current height would never trigger the normal new-block path.
+    // Start only at this idle boundary; startSync coalesces behind a stream that
+    // is still releasing its Rust guard and applies the recommendation there.
+    if (ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .hasPendingHeightCorrection) {
+      // Resume may have consumed the timer for this immediate check. Keep a
+      // periodic retry if a native guard or operation lease defers admission.
+      _resumeTipCheckPending = false;
+      startSync();
+      if (gen == _syncGen && !_requiresUnlock) _startPolling();
+      return;
+    }
     _pollCheckInFlight = true;
     _resumeTipCheckPending = false;
     _stopPolling();

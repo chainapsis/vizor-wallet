@@ -136,6 +136,11 @@ class _Tip extends RpcEndpointFailoverNotifier {
 
   final List<String>? events;
   RpcEndpointConfig? pendingComparison;
+  bool heightCorrection = false;
+
+  @override
+  bool get hasPendingHeightCorrection =>
+      heightCorrection && pendingComparison != null;
   Object? preflightError;
   Object? comparisonAdmissionError;
 
@@ -319,6 +324,88 @@ void main() {
         'compare',
       ]);
       expect(api.syncUrls, [original, selectedUrl]);
+    },
+  );
+
+  test(
+    'idle height correction starts another sync without a new polled block',
+    () async {
+      final (sync, endpoints) = await comparisonHarness();
+      const selected = RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://kr.zec.stardust.rest:443',
+        presetId: 'kr-zec-stardust',
+      );
+      endpoints.pendingComparison = selected;
+      endpoints.heightCorrection = true;
+      await sync.checkTipForTesting();
+      await pumpEventQueue();
+      expect(api.syncUrls, [selected.normalizedLightwalletdUrl]);
+      expect(api.events.take(3), [
+        'apply',
+        'tip:${selected.normalizedLightwalletdUrl}',
+        'start:${selected.normalizedLightwalletdUrl}',
+      ]);
+      expect(endpoints.hasPendingHeightCorrection, isFalse);
+    },
+  );
+
+  test(
+    'height correction waits for the active stream and coalesces after completion',
+    () async {
+      final (sync, endpoints) = await comparisonHarness();
+      sync.startSync();
+      await pumpEventQueue();
+      const selected = RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://kr.zec.stardust.rest:443',
+        presetId: 'kr-zec-stardust',
+      );
+      endpoints.pendingComparison = selected;
+      endpoints.heightCorrection = true;
+      await sync.checkTipForTesting();
+      expect(api.syncs, hasLength(1));
+      expect(api.running, isTrue);
+      api.syncs[0].add(_complete());
+      await pumpEventQueue();
+      await sync.checkTipForTesting();
+      await sync.checkTipForTesting();
+      expect(api.syncs, hasLength(1), reason: 'the Rust guard is still held');
+      expect(sync.queuedSyncStartForTesting, isNotNull);
+      await api.finish(0);
+      await pumpEventQueue();
+      expect(api.syncs, hasLength(2));
+      expect(api.syncUrls.last, selected.normalizedLightwalletdUrl);
+      expect(sync.queuedSyncStartForTesting, isNull);
+    },
+  );
+
+  testWidgets(
+    'resume retries a correction after an unowned Rust guard releases',
+    (tester) async {
+      final (sync, endpoints) = await comparisonHarness();
+      const selected = RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://kr.zec.stardust.rest:443',
+        presetId: 'kr-zec-stardust',
+      );
+      endpoints.pendingComparison = selected;
+      endpoints.heightCorrection = true;
+      api.running = true;
+      sync.handleAppResumeForTesting();
+      await tester.pump();
+      expect(api.syncs, isEmpty);
+      expect(
+        sync.queuedSyncStartForTesting,
+        isNull,
+        reason: 'this notifier owns no stream',
+      );
+      api.running = false;
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pump();
+      expect(api.syncUrls, [selected.normalizedLightwalletdUrl]);
+      expect(endpoints.hasPendingHeightCorrection, isFalse);
+      sync.stopTipChecksForTesting();
     },
   );
 

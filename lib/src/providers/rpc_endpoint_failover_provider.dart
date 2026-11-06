@@ -280,7 +280,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   bool _selectionIsWarmRead = false;
   bool _initialComparisonPending = false;
   bool _initialComparisonAllowed = false;
-  _InitialEndpointImprovement? _initialImprovement;
+  _PendingEndpointComparison? _initialImprovement;
   bool _needsWarmTipRead = false;
   DateTime? _lastSuccessAt;
   DateTime? _lastPeerValidatedAt;
@@ -302,6 +302,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   DateTime? _retryAt;
   int _failedSelections = 0;
   int _slowResponses = 0;
+  int _tipObservationVersion = 0;
   final Map<String, DateTime> _cooldowns = {};
   bool _inForeground = true;
   AppLifecycleListener? _automaticLifecycle;
@@ -600,7 +601,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     _startInitialComparisonIfDue();
   }
 
-  /// A performance correction takes effect at the next sync boundary. It does
+  /// A comparison recommendation takes effect at the next sync boundary. It does
   /// not interrupt a stream or inherit the periodic check's minimum residence.
   void applyPendingInitialComparison() {
     final pending = _initialImprovement;
@@ -618,10 +619,30 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       tor: pending.tor,
       epoch: _automaticEpoch,
       provisional: false,
+      observationTime: pending.measuredAt,
     );
   }
 
-  bool _isUsableInitialImprovement(_InitialEndpointImprovement pending) {
+  /// Only a measured height disagreement warrants another idle sync cycle.
+  bool get hasPendingHeightCorrection {
+    final pending = _initialImprovement;
+    return pending != null &&
+        pending.correctsHeight &&
+        _isUsableInitialImprovement(pending);
+  }
+
+  bool _currentCaughtUp(_PendingEndpointComparison pending) {
+    final height = state.lastObservedHeight;
+    return pending.correctsHeight &&
+        _tipObservationVersion > pending.currentObservationVersion &&
+        height != null &&
+        height > BigInt.zero &&
+        height <= BigInt.from(0xffffffff) &&
+        height >= pending.clusterHigh - BigInt.from(2) &&
+        height <= pending.clusterLow + BigInt.from(2);
+  }
+
+  bool _isUsableInitialImprovement(_PendingEndpointComparison pending) {
     final route = ref.read(networkPrivacyProvider);
     return isAutomaticRpcEndpointConfig(state.primary) &&
         state.automaticReady &&
@@ -630,6 +651,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         (route.status == NetworkPrivacyConnectionStatus.off ||
             route.status == NetworkPrivacyConnectionStatus.connected) &&
         route.torEnabled == pending.tor &&
+        !_currentCaughtUp(pending) &&
         isRecentEndpointObservation(
           pending.measuredAt,
           ref.read(rpcEndpointFailoverClockProvider)(),
@@ -699,6 +721,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
               !(_cooldowns[c.normalizedLightwalletdUrl]?.isAfter(now) ?? false),
         )
         .toList();
+    final currentObservationVersion = _tipObservationVersion;
     final concurrency = tor ? 2 : 4;
     final timeout = tor
         ? settings.torProbeTimeout
@@ -719,37 +742,114 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       throw _automaticSelectionStopped();
     }
     _requireAutomaticEligibility();
+    final finishedAt = ref.read(rpcEndpointFailoverClockProvider)();
+    final observations = <String, RpcEndpointCandidateSample>{
+      for (final sample in samples)
+        if (sample.height > BigInt.zero &&
+            sample.height <= BigInt.from(0xffffffff) &&
+            isRecentEndpointObservation(
+              sample.observedAt ?? now,
+              finishedAt,
+              settings.warmReuseMaxAge,
+            ))
+          sample.url: sample,
+    };
+    final currentUrl = context.current.normalizedLightwalletdUrl;
+    var measuredCurrent = observations[currentUrl];
+    // A live read that arrived during the sweep may already have repaired the
+    // apparent lag. Never replace a newer observation with an old batch reply.
+    final latestAt = state.lastObservedAt;
+    if (measuredCurrent != null &&
+        _tipObservationVersion > currentObservationVersion &&
+        latestAt != null &&
+        state.lastObservedHeight != null &&
+        state.lastObservedHeight! > BigInt.zero &&
+        state.lastObservedHeight! <= BigInt.from(0xffffffff) &&
+        !latestAt.isBefore(measuredCurrent.observedAt ?? now) &&
+        isRecentEndpointObservation(
+          latestAt,
+          finishedAt,
+          settings.warmReuseMaxAge,
+        )) {
+      measuredCurrent = RpcEndpointCandidateSample(
+        url: currentUrl,
+        height: state.lastObservedHeight!,
+        latency: _selectedLatency ?? measuredCurrent.latency,
+        observedAt: latestAt,
+      );
+      observations[currentUrl] = measuredCurrent;
+    }
     final ranked = rankAutomaticRpcEndpointSamples(
-      samples,
+      observations.values.toList(),
       requireCorroboration: true,
     );
-    final current = ranked
-        .where((s) => s.url == context.current.normalizedLightwalletdUrl)
-        .firstOrNull;
-    // An optional performance comparison never replaces an unmeasured or
-    // uncorroborated current server; normal health recovery owns that case.
-    if (current == null || ranked.isEmpty) return state.current;
-    final winner = ranked.first;
-    final improvement =
-        current.latency.inMilliseconds - winner.latency.inMilliseconds;
-    if (winner.url == current.url ||
-        improvement < 150 ||
-        winner.latency.inMicroseconds > current.latency.inMicroseconds * 0.7) {
+    if (ranked.isEmpty || measuredCurrent == null) return state.current;
+    final current = ranked.where((s) => s.url == currentUrl).firstOrNull;
+    final correctsHeight = current == null;
+    if (correctsHeight &&
+        !_hasUniqueHeightCluster(observations.values, ranked)) {
       return state.current;
     }
-    _initialImprovement = _InitialEndpointImprovement(
+    final winner = ranked.first;
+    if (!correctsHeight) {
+      final improvement =
+          current.latency.inMilliseconds - winner.latency.inMilliseconds;
+      if (winner.url == current.url ||
+          improvement < 150 ||
+          winner.latency.inMicroseconds >
+              current.latency.inMicroseconds * 0.7) {
+        return state.current;
+      }
+    }
+    final heights = ranked.map((s) => s.height).toList()..sort();
+    final evidenceTimes = [
+      measuredCurrent.observedAt ?? now,
+      for (final sample in ranked) sample.observedAt ?? now,
+    ]..sort();
+    _initialImprovement = _PendingEndpointComparison(
       context: context,
       endpoint: targets.firstWhere(
         (c) => c.normalizedLightwalletdUrl == winner.url,
       ),
       sample: winner,
-      measuredAt: ref.read(rpcEndpointFailoverClockProvider)(),
+      measuredAt: evidenceTimes.first,
       tor: tor,
+      correctsHeight: correctsHeight,
+      clusterLow: heights.first,
+      clusterHigh: heights.last,
+      currentObservationVersion: _tipObservationVersion,
     );
+    if (correctsHeight) {
+      _lastPeerValidatedAt = null;
+      state = state.copyWith(automaticProvisional: true);
+    }
     // Persist the recommendation for a restart, while the active stream and
     // current endpoint keep using their original server until the next sync.
     _queueAutomaticCacheWrite(epoch, force: true);
     return state.current;
+  }
+
+  // A tied or overlapping equally large cluster is inconclusive. This only
+  // governs full-pool correction; ordinary ranking keeps its existing policy.
+  bool _hasUniqueHeightCluster(
+    Iterable<RpcEndpointCandidateSample> samples,
+    List<RpcEndpointCandidateSample> ranked,
+  ) {
+    final chosen = ranked.map((s) => s.url).toSet();
+    for (final anchor in samples) {
+      final cluster = samples
+          .where(
+            (s) =>
+                s.height >= anchor.height &&
+                s.height <= anchor.height + BigInt.from(2),
+          )
+          .map((s) => s.url)
+          .toSet();
+      if (cluster.length >= chosen.length && !chosen.containsAll(cluster)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// A single network boundary for all automatic-mode consumers. Reading the
@@ -789,6 +889,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       state = state.copyWith(automaticProvisional: true);
     }
     if (_creationHeightFlight == null &&
+        !hasPendingHeightCorrection &&
         !_needsWarmTipRead &&
         (_checkedAt == null ||
             now.difference(_checkedAt!) >= settings.recheckInterval)) {
@@ -800,7 +901,9 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           },
         ),
       );
-    } else if (_creationHeightFlight == null && state.automaticProvisional) {
+    } else if (_creationHeightFlight == null &&
+        !hasPendingHeightCorrection &&
+        state.automaticProvisional) {
       _startProvisionalValidationIfDue();
     }
     return state.current;
@@ -1501,6 +1604,25 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         !isAutomaticRpcEndpointConfig(state.primary)) {
       return;
     }
+    ++_tipObservationVersion;
+    final pending = _initialImprovement;
+    final caughtUp =
+        pending != null &&
+        pending.correctsHeight &&
+        _isCurrentContext(pending.context) &&
+        isRecentEndpointObservation(
+          pending.measuredAt,
+          observedAt,
+          ref.read(automaticRpcEndpointSettingsProvider).warmReuseMaxAge,
+        ) &&
+        sample.height > BigInt.zero &&
+        sample.height <= BigInt.from(0xffffffff) &&
+        sample.height >= pending.clusterHigh - BigInt.from(2) &&
+        sample.height <= pending.clusterLow + BigInt.from(2);
+    if (caughtUp) {
+      _initialImprovement = null;
+      _lastPeerValidatedAt = pending.measuredAt;
+    }
     _lastSuccessAt = observedAt;
     _evaluatedTor = tor;
     _selectedLatency = sample.latency;
@@ -1510,7 +1632,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       automaticProvisional: !_hasFreshPeerProof(observedAt),
     );
     _rememberCreationTips([sample], observedAt);
-    _queueAutomaticCacheWrite(epoch);
+    _queueAutomaticCacheWrite(epoch, force: caughtUp);
   }
 
   Future<List<RpcEndpointCandidateSample>> _probeAutomaticCandidates({
@@ -1571,16 +1693,19 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     required int epoch,
     required bool provisional,
     bool benchmark = true,
+    DateTime? observationTime,
   }) {
-    final observedAt = ref.read(rpcEndpointFailoverClockProvider)();
+    final now = ref.read(rpcEndpointFailoverClockProvider)();
+    final observedAt = observationTime ?? now;
+    ++_tipObservationVersion;
     final changed = !_sameEndpointIdentity(selected, state.current);
     if (changed) {
       _initialImprovement = null;
-      _selectedAt = observedAt;
+      _selectedAt = now;
       _lastPeerValidatedAt = null;
       _pendingTip = null;
     }
-    _selectedAt ??= observedAt;
+    _selectedAt ??= now;
     _selectedLatency = sample.latency;
     _lastSuccessAt = observedAt;
     _evaluatedTor = tor;
@@ -1660,6 +1785,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         _automaticSelection != null ||
         !state.automaticReady ||
         _needsWarmTipRead ||
+        hasPendingHeightCorrection ||
         state.lastObservedHeight == null ||
         !state.automaticProvisional ||
         _selectionPauseCount > 0 ||
@@ -2274,6 +2400,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     }
 
     if (isAutomaticRpcEndpointConfig(context.primary)) {
+      if (hasPendingHeightCorrection) return null;
       try {
         final requiredHeight =
             height + BigInt.from(settings.slowFallbackLeadBlocks);
@@ -2396,6 +2523,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         !_isCurrentEndpoint(endpoint)) {
       return;
     }
+    if (hasPendingHeightCorrection) return;
     final settings = ref.read(automaticRpcEndpointSettingsProvider);
     final tor = ref.read(networkPrivacyProvider).torEnabled;
     if (elapsed < (tor ? settings.slowTorResponse : settings.slowResponse)) {
@@ -2483,13 +2611,17 @@ class _CreationTipObservation {
   final DateTime observedAt;
 }
 
-class _InitialEndpointImprovement {
-  const _InitialEndpointImprovement({
+class _PendingEndpointComparison {
+  const _PendingEndpointComparison({
     required this.context,
     required this.endpoint,
     required this.sample,
     required this.measuredAt,
     required this.tor,
+    required this.correctsHeight,
+    required this.clusterLow,
+    required this.clusterHigh,
+    required this.currentObservationVersion,
   });
 
   final _FailoverContext context;
@@ -2497,6 +2629,10 @@ class _InitialEndpointImprovement {
   final RpcEndpointCandidateSample sample;
   final DateTime measuredAt;
   final bool tor;
+  final bool correctsHeight;
+  final BigInt clusterLow;
+  final BigInt clusterHigh;
+  final int currentObservationVersion;
 }
 
 final rpcEndpointFailoverProvider =

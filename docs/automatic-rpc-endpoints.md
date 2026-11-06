@@ -172,6 +172,31 @@ Two slow successful tip reads (2s direct / 5s Tor) also request a recheck withou
 holding up the successful read. A failed exploratory recheck preserves a working
 connection.
 
+The one-shot full-pool pass distinguishes a latency improvement from a measured
+height disagreement. If the current server replied outside a uniquely largest
+height cluster (at least two distinct URLs within two blocks), the fastest member
+of that cluster is recommended even when slower than the current server. Tied
+or overlapping equally large clusters, missing current replies, and an absent
+cluster remain inconclusive; they do not mark a host failed or add cooldowns.
+This correction retains the active stream and applies at the next sync boundary.
+The existing idle poll starts that next cycle even if the old server's tip has
+stopped advancing, and repeated requests coalesce behind a still-open stream.
+If an unowned native guard or an operation lease defers the start, periodic
+polling remains active for another attempt without a recursive resume check.
+A performance-only recommendation continues to use the 150ms / 30% thresholds.
+
+A measured height disagreement removes the current route's peer confidence.
+While a usable correction is pending, optional rechecks yield to it and single
+successful reads preserve the saved replacement without extending its evidence.
+A newer current tip that fits the winning cluster cancels the correction; peer
+confidence then retains the comparison's original observation time. Observations
+use actual receipt times (or the sweep's start when absent), including on
+restart and application, rather than refreshing evidence at sweep completion.
+The existing five-minute recommendation lifetime and route/epoch checks apply.
+Lock, mobile background, preference changes, and reset revoke pending changes.
+Normal starts and successful warm restores require no additional RPCs or timers.
+This endpoint correction does not rewrite an already persisted wallet chain tip.
+
 Transient failures of ordinary RPC operations exclude the attempted endpoint
 for one minute and run another bounded selection. Complete selection failure backs off
 from 5 to 60 seconds. A route change clears route-specific failure/backoff state.
