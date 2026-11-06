@@ -8,9 +8,9 @@
    `docs/i18n/style-<tag>.md`.
 4. Add the language to `nativeLanguageSources` in
    `tool/l10n/native_strings.dart` and run
-   `fvm dart run tool/l10n/native_strings.dart`. iOS and Android then show
-   their own copy (notifications, background-task captions, system prompts)
-   in it. See [Native copy](#native-copy).
+   `fvm dart run tool/l10n/native_strings.dart`. iOS, Android and macOS then
+   show their own copy (notifications, background-task captions, system
+   prompts, the macOS update alerts) in it. See [Native copy](#native-copy).
 5. Check fonts: the language's script needs a system font on every platform.
    A CJK language also gets its own list in `fontFamilyFallbackFor`
    (`lib/src/core/l10n/locale_typography.dart`).
@@ -30,8 +30,9 @@ Text that Swift or Kotlin draws outside Flutter lives in the ARB files under
 `native*` keys, translated like every other key.
 `tool/l10n/native_strings.dart` copies them into
 `ios/Runner/NativeStrings.swift` and
-`android/app/src/main/kotlin/com/keplr/vizor/NativeStrings.kt`. The gate test
-fails when those files are stale. Native strings take plain `{name}`
+`android/app/src/main/kotlin/com/keplr/vizor/NativeStrings.kt`. The macOS
+target compiles the iOS Swift file too, for its Tor update alerts. The gate
+test fails when those files are stale. Native strings take plain `{name}`
 placeholders only, no ICU plurals or selects.
 
 Native code follows the app language, not the device language: Dart sends the
@@ -78,9 +79,6 @@ Same steps for the macOS target. Its usage descriptions differ from iOS:
 | --- | --- | --- | --- |
 | `NSCameraUsageDescription` | Vizor uses the camera to scan Keystone QR codes. | Vizor는 Keystone QR 코드를 스캔하는 데 카메라를 사용해요. | Vizor 使用相机扫描 Keystone 二维码。 |
 | `NSBluetoothAlwaysUsageDescription` | Vizor uses Bluetooth to connect to your Ledger hardware wallet. | Vizor는 Ledger 하드웨어 지갑에 연결하는 데 Bluetooth를 사용해요. | Vizor 使用蓝牙连接你的 Ledger 硬件钱包。 |
-
-The macOS Tor update alerts in `macos/Runner/AppDelegate.swift` are still
-English literals and are not covered by the native string tables yet.
 
 ### Android (`android/app`)
 

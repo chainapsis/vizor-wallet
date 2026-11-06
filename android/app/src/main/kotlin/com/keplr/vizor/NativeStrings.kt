@@ -53,6 +53,16 @@ enum class NativeString {
     nativePrepTrackingPausedBody,
     nativePrepTrackingPausedTitle,
     nativePrepUpdatesTitle,
+    nativeTorUpdateBody,
+    nativeTorUpdateCancel,
+    nativeTorUpdateClose,
+    nativeTorUpdateContinue,
+    nativeTorUpdateDisableFailedBody,
+    nativeTorUpdateDisableFailedTitle,
+    nativeTorUpdateRestartFailedBody,
+    nativeTorUpdateRestartFailedTitle,
+    nativeTorUpdateTitle,
+    nativeTorUpdateTurnOff,
 }
 
 object NativeStrings {
@@ -129,6 +139,16 @@ object NativeStrings {
         NativeString.nativePrepTrackingPausedBody -> "Open Vizor to resume migration preparation."
         NativeString.nativePrepTrackingPausedTitle -> "Preparation tracking paused"
         NativeString.nativePrepUpdatesTitle -> "Migration preparation updates"
+        NativeString.nativeTorUpdateBody -> "Updating over Tor may take longer. Turning Tor off switches all Vizor network requests to a direct connection."
+        NativeString.nativeTorUpdateCancel -> "Cancel"
+        NativeString.nativeTorUpdateClose -> "Close"
+        NativeString.nativeTorUpdateContinue -> "Continue with Tor"
+        NativeString.nativeTorUpdateDisableFailedBody -> "Tor remains on. Turn it off in Settings, then check for updates again."
+        NativeString.nativeTorUpdateDisableFailedTitle -> "Couldn’t turn off Tor"
+        NativeString.nativeTorUpdateRestartFailedBody -> "Tor is off. Check for updates again to continue with a direct connection."
+        NativeString.nativeTorUpdateRestartFailedTitle -> "Couldn’t restart the update"
+        NativeString.nativeTorUpdateTitle -> "Use Tor for this update?"
+        NativeString.nativeTorUpdateTurnOff -> "Turn off Tor and update"
     }
 
     private val ko: Map<NativeString, String> = mapOf(
@@ -173,6 +193,16 @@ object NativeStrings {
         NativeString.nativePrepTrackingPausedBody to "마이그레이션 준비를 다시 시작하려면 Vizor를 열어 주세요.",
         NativeString.nativePrepTrackingPausedTitle to "준비 추적이 일시 중지됐어요",
         NativeString.nativePrepUpdatesTitle to "마이그레이션 준비 업데이트",
+        NativeString.nativeTorUpdateBody to "Tor로 업데이트하면 시간이 더 걸릴 수 있어요. Tor를 끄면 Vizor의 모든 네트워크 요청이 직접 연결로 바뀌어요.",
+        NativeString.nativeTorUpdateCancel to "취소",
+        NativeString.nativeTorUpdateClose to "닫기",
+        NativeString.nativeTorUpdateContinue to "Tor로 계속",
+        NativeString.nativeTorUpdateDisableFailedBody to "Tor가 아직 켜져 있어요. 설정에서 끈 다음 업데이트를 다시 확인해 주세요.",
+        NativeString.nativeTorUpdateDisableFailedTitle to "Tor를 끄지 못했어요",
+        NativeString.nativeTorUpdateRestartFailedBody to "Tor가 꺼졌어요. 직접 연결로 계속하려면 업데이트를 다시 확인해 주세요.",
+        NativeString.nativeTorUpdateRestartFailedTitle to "업데이트를 다시 시작하지 못했어요",
+        NativeString.nativeTorUpdateTitle to "이번 업데이트에 Tor를 사용할까요?",
+        NativeString.nativeTorUpdateTurnOff to "Tor 끄고 업데이트",
     )
 
     private val zh: Map<NativeString, String> = mapOf(
@@ -217,5 +247,15 @@ object NativeStrings {
         NativeString.nativePrepTrackingPausedBody to "打开 Vizor 以恢复迁移准备。",
         NativeString.nativePrepTrackingPausedTitle to "准备跟踪已暂停",
         NativeString.nativePrepUpdatesTitle to "迁移准备动态",
+        NativeString.nativeTorUpdateBody to "通过 Tor 更新可能需要更长时间。关闭 Tor 后，Vizor 的所有网络请求都会改为直接连接。",
+        NativeString.nativeTorUpdateCancel to "取消",
+        NativeString.nativeTorUpdateClose to "关闭",
+        NativeString.nativeTorUpdateContinue to "继续使用 Tor",
+        NativeString.nativeTorUpdateDisableFailedBody to "Tor 仍处于开启状态。请在设置中将其关闭，然后再次检查更新。",
+        NativeString.nativeTorUpdateDisableFailedTitle to "无法关闭 Tor",
+        NativeString.nativeTorUpdateRestartFailedBody to "Tor 已关闭。请再次检查更新，以通过直接连接继续。",
+        NativeString.nativeTorUpdateRestartFailedTitle to "无法重新开始更新",
+        NativeString.nativeTorUpdateTitle to "此次更新要使用 Tor 吗？",
+        NativeString.nativeTorUpdateTurnOff to "关闭 Tor 并更新",
     )
 }

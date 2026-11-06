@@ -229,8 +229,9 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
 - Copy that Swift or Kotlin draws (notifications, background-task captions,
   system prompts, native error messages Dart shows) uses `native*` ARB keys.
   `fvm dart run tool/l10n/native_strings.dart` regenerates
-  `ios/Runner/NativeStrings.swift` and `android/.../NativeStrings.kt`; never
-  edit them by hand. `NativeLanguageSync` in the app root sends the shown
+  `ios/Runner/NativeStrings.swift` (also compiled into the macOS target) and
+  `android/.../NativeStrings.kt`; never edit them by hand.
+  `NativeLanguageSync` in the app root sends the shown
   language over `com.zcash.wallet/native_strings`, and native code stores it
   for background work (English until it arrives). Do not add `.lproj`,
   `values-<lang>` or `localeConfig` before a language ships; the release

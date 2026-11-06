@@ -5985,6 +5985,40 @@ class AppLocalizationsKo extends AppLocalizations {
   String get nativePrepUpdatesTitle => '마⁠이⁠그⁠레⁠이⁠션 준⁠비 업⁠데⁠이⁠트';
 
   @override
+  String get nativeTorUpdateBody =>
+      'Tor⁠로 업⁠데⁠이⁠트⁠하⁠면 시⁠간⁠이 더 걸⁠릴 수 있⁠어⁠요. Tor⁠를 끄⁠면 Vizor⁠의 모⁠든 네⁠트⁠워⁠크 요⁠청⁠이 직⁠접 연⁠결⁠로 바⁠뀌⁠어⁠요.';
+
+  @override
+  String get nativeTorUpdateCancel => '취⁠소';
+
+  @override
+  String get nativeTorUpdateClose => '닫⁠기';
+
+  @override
+  String get nativeTorUpdateContinue => 'Tor⁠로 계⁠속';
+
+  @override
+  String get nativeTorUpdateDisableFailedBody =>
+      'Tor⁠가 아⁠직 켜⁠져 있⁠어⁠요. 설⁠정⁠에⁠서 끈 다⁠음 업⁠데⁠이⁠트⁠를 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get nativeTorUpdateDisableFailedTitle => 'Tor⁠를 끄⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get nativeTorUpdateRestartFailedBody =>
+      'Tor⁠가 꺼⁠졌⁠어⁠요. 직⁠접 연⁠결⁠로 계⁠속⁠하⁠려⁠면 업⁠데⁠이⁠트⁠를 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get nativeTorUpdateRestartFailedTitle =>
+      '업⁠데⁠이⁠트⁠를 다⁠시 시⁠작⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get nativeTorUpdateTitle => '이⁠번 업⁠데⁠이⁠트⁠에 Tor⁠를 사⁠용⁠할⁠까⁠요?';
+
+  @override
+  String get nativeTorUpdateTurnOff => 'Tor 끄⁠고 업⁠데⁠이⁠트';
+
+  @override
   String get navActivity => '활⁠동';
 
   @override

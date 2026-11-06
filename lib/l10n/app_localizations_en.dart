@@ -6074,6 +6074,39 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nativePrepUpdatesTitle => 'Migration preparation updates';
 
   @override
+  String get nativeTorUpdateBody =>
+      'Updating over Tor may take longer. Turning Tor off switches all Vizor network requests to a direct connection.';
+
+  @override
+  String get nativeTorUpdateCancel => 'Cancel';
+
+  @override
+  String get nativeTorUpdateClose => 'Close';
+
+  @override
+  String get nativeTorUpdateContinue => 'Continue with Tor';
+
+  @override
+  String get nativeTorUpdateDisableFailedBody =>
+      'Tor remains on. Turn it off in Settings, then check for updates again.';
+
+  @override
+  String get nativeTorUpdateDisableFailedTitle => 'Couldn’t turn off Tor';
+
+  @override
+  String get nativeTorUpdateRestartFailedBody =>
+      'Tor is off. Check for updates again to continue with a direct connection.';
+
+  @override
+  String get nativeTorUpdateRestartFailedTitle => 'Couldn’t restart the update';
+
+  @override
+  String get nativeTorUpdateTitle => 'Use Tor for this update?';
+
+  @override
+  String get nativeTorUpdateTurnOff => 'Turn off Tor and update';
+
+  @override
   String get navActivity => 'Activity';
 
   @override

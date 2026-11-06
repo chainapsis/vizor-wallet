@@ -9908,6 +9908,66 @@ abstract class AppLocalizations {
   /// **'Migration preparation updates'**
   String get nativePrepUpdatesTitle;
 
+  /// Body of the macOS alert shown before downloading an app update while Tor is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating over Tor may take longer. Turning Tor off switches all Vizor network requests to a direct connection.'**
+  String get nativeTorUpdateBody;
+
+  /// Button in the macOS update alert: skip this update.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get nativeTorUpdateCancel;
+
+  /// Button that dismisses the macOS update failure alerts.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get nativeTorUpdateClose;
+
+  /// Button in the macOS update alert: download the update over Tor.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue with Tor'**
+  String get nativeTorUpdateContinue;
+
+  /// Body of the macOS alert when turning Tor off for an update failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor remains on. Turn it off in Settings, then check for updates again.'**
+  String get nativeTorUpdateDisableFailedBody;
+
+  /// Title of the macOS alert when turning Tor off for an update failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t turn off Tor'**
+  String get nativeTorUpdateDisableFailedTitle;
+
+  /// Body of the macOS alert when Tor was turned off but the direct update check could not start.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor is off. Check for updates again to continue with a direct connection.'**
+  String get nativeTorUpdateRestartFailedBody;
+
+  /// Title of the macOS alert when Tor was turned off but the direct update check could not start.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t restart the update'**
+  String get nativeTorUpdateRestartFailedTitle;
+
+  /// Title of the macOS alert shown before downloading an app update while Tor is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Tor for this update?'**
+  String get nativeTorUpdateTitle;
+
+  /// Button in the macOS update alert: turn Tor off for every request, then download the update directly.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off Tor and update'**
+  String get nativeTorUpdateTurnOff;
+
   /// Sidebar and tab bar destination: transaction history. Shared by: activity, nav.
   ///
   /// In en, this message translates to:

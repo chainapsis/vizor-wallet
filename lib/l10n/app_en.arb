@@ -7811,6 +7811,46 @@
   "@nativePrepUpdatesTitle": {
     "description": "Title of the iOS notification shown by the OS when the preparation transactions of several accounts confirmed."
   },
+  "nativeTorUpdateBody": "Updating over Tor may take longer. Turning Tor off switches all Vizor network requests to a direct connection.",
+  "@nativeTorUpdateBody": {
+    "description": "Body of the macOS alert shown before downloading an app update while Tor is on."
+  },
+  "nativeTorUpdateCancel": "Cancel",
+  "@nativeTorUpdateCancel": {
+    "description": "Button in the macOS update alert: skip this update."
+  },
+  "nativeTorUpdateClose": "Close",
+  "@nativeTorUpdateClose": {
+    "description": "Button that dismisses the macOS update failure alerts."
+  },
+  "nativeTorUpdateContinue": "Continue with Tor",
+  "@nativeTorUpdateContinue": {
+    "description": "Button in the macOS update alert: download the update over Tor."
+  },
+  "nativeTorUpdateDisableFailedBody": "Tor remains on. Turn it off in Settings, then check for updates again.",
+  "@nativeTorUpdateDisableFailedBody": {
+    "description": "Body of the macOS alert when turning Tor off for an update failed."
+  },
+  "nativeTorUpdateDisableFailedTitle": "Couldn’t turn off Tor",
+  "@nativeTorUpdateDisableFailedTitle": {
+    "description": "Title of the macOS alert when turning Tor off for an update failed."
+  },
+  "nativeTorUpdateRestartFailedBody": "Tor is off. Check for updates again to continue with a direct connection.",
+  "@nativeTorUpdateRestartFailedBody": {
+    "description": "Body of the macOS alert when Tor was turned off but the direct update check could not start."
+  },
+  "nativeTorUpdateRestartFailedTitle": "Couldn’t restart the update",
+  "@nativeTorUpdateRestartFailedTitle": {
+    "description": "Title of the macOS alert when Tor was turned off but the direct update check could not start."
+  },
+  "nativeTorUpdateTitle": "Use Tor for this update?",
+  "@nativeTorUpdateTitle": {
+    "description": "Title of the macOS alert shown before downloading an app update while Tor is on."
+  },
+  "nativeTorUpdateTurnOff": "Turn off Tor and update",
+  "@nativeTorUpdateTurnOff": {
+    "description": "Button in the macOS update alert: turn Tor off for every request, then download the update directly."
+  },
   "navActivity": "Activity",
   "@navActivity": {
     "description": "Sidebar and tab bar destination: transaction history. Shared by: activity, nav."

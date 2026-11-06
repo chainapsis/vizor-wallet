@@ -5631,6 +5631,38 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nativePrepUpdatesTitle => '迁移准备动态';
 
   @override
+  String get nativeTorUpdateBody =>
+      '通过 Tor 更新可能需要更长时间。关闭 Tor 后，Vizor 的所有网络请求都会改为直接连接。';
+
+  @override
+  String get nativeTorUpdateCancel => '取消';
+
+  @override
+  String get nativeTorUpdateClose => '关闭';
+
+  @override
+  String get nativeTorUpdateContinue => '继续使用 Tor';
+
+  @override
+  String get nativeTorUpdateDisableFailedBody =>
+      'Tor 仍处于开启状态。请在设置中将其关闭，然后再次检查更新。';
+
+  @override
+  String get nativeTorUpdateDisableFailedTitle => '无法关闭 Tor';
+
+  @override
+  String get nativeTorUpdateRestartFailedBody => 'Tor 已关闭。请再次检查更新，以通过直接连接继续。';
+
+  @override
+  String get nativeTorUpdateRestartFailedTitle => '无法重新开始更新';
+
+  @override
+  String get nativeTorUpdateTitle => '此次更新要使用 Tor 吗？';
+
+  @override
+  String get nativeTorUpdateTurnOff => '关闭 Tor 并更新';
+
+  @override
   String get navActivity => '活动';
 
   @override
