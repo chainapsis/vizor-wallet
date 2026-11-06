@@ -531,7 +531,9 @@ where
             _ = tokio::time::sleep_until(finish_at) => break,
             result = probes.next() => {
                 match result {
-                    Some(Ok(Ok(result))) => {
+                    Some(Ok(Ok(result)))
+                        if (1..=u64::from(u32::MAX)).contains(&result.height) =>
+                    {
                         if !wait_for_all && results.is_empty() {
                             finish_at = overall_deadline.min(tokio::time::Instant::now() + COMPARISON_WINDOW);
                         }
@@ -586,6 +588,93 @@ mod tests {
             rpc_ms: 7,
             observed_at_ms: observation_time_ms(),
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn invalid_fast_tips_do_not_start_the_comparison_window_or_hide_queued_peers() {
+        for invalid in [0, u64::from(u32::MAX) + 1, u64::MAX] {
+            let signal = CancellationSignal::default();
+            let started = tokio::time::Instant::now();
+            let probes = run_probe_batch(
+                vec!["invalid".into(), "healthy".into()],
+                1,
+                Duration::from_secs(2),
+                Duration::from_secs(3),
+                false,
+                &signal,
+                || true,
+                |url| async move {
+                    tokio::time::sleep(Duration::from_millis(if url == "invalid" {
+                        10
+                    } else {
+                        500
+                    }))
+                    .await;
+                    let mut sample = result(url.clone());
+                    if url == "invalid" {
+                        sample.height = invalid;
+                    }
+                    Ok(sample)
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(probes.len(), 1);
+            assert_eq!(probes[0].url, "healthy");
+            assert_eq!(started.elapsed(), Duration::from_millis(510));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn invalid_only_tip_reads_and_complete_batches_have_no_healthy_candidates() {
+        for wait_for_all in [false, true] {
+            for invalid in [0, u64::from(u32::MAX) + 1] {
+                let signal = CancellationSignal::default();
+                let outcome = run_probe_batch(
+                    vec!["invalid".into()],
+                    1,
+                    Duration::from_secs(1),
+                    Duration::from_secs(2),
+                    wait_for_all,
+                    &signal,
+                    || true,
+                    |url| async move {
+                        let mut sample = result(url);
+                        sample.height = invalid;
+                        Ok(sample)
+                    },
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(outcome, NO_HEALTHY_CANDIDATES);
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn positive_u32_boundary_tips_are_accepted() {
+        let signal = CancellationSignal::default();
+        let probes = run_probe_batch(
+            vec!["min".into(), "max".into()],
+            2,
+            Duration::from_secs(1),
+            Duration::from_secs(2),
+            false,
+            &signal,
+            || true,
+            |url| async move {
+                let mut sample = result(url.clone());
+                sample.height = if url == "min" { 1 } else { u64::from(u32::MAX) };
+                Ok(sample)
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(probes.len(), 2);
+        assert!(probes.iter().any(|sample| sample.height == 1));
+        assert!(probes
+            .iter()
+            .any(|sample| sample.height == u64::from(u32::MAX)));
     }
 
     #[tokio::test(start_paused = true)]
@@ -795,7 +884,9 @@ mod tests {
     async fn only_complete_comparison_accepts_an_extended_but_bounded_total_budget() {
         let _registry = registry_test_lock();
         let _route = network_privacy::test_route_policy::lock_route_policy();
-        let server = super::super::sync_engine::test_lwd::CapturingLwd::start(Vec::new()).await;
+        let server =
+            super::super::sync_engine::test_lwd::CapturingLwd::start_with(Vec::new(), 100, |_| {})
+                .await;
         for (id, wait_for_all, budget) in [
             ("initial-extended-budget", false, 30_001),
             ("complete-over-budget", true, 120_001),
@@ -957,8 +1048,12 @@ mod tests {
     #[tokio::test]
     async fn complete_batch_preserves_each_local_response_receipt_time() {
         let _route = network_privacy::test_route_policy::lock_route_policy();
-        let fast = super::super::sync_engine::test_lwd::CapturingLwd::start(Vec::new()).await;
-        let slow = super::super::sync_engine::test_lwd::CapturingLwd::start(Vec::new()).await;
+        let fast =
+            super::super::sync_engine::test_lwd::CapturingLwd::start_with(Vec::new(), 100, |_| {})
+                .await;
+        let slow =
+            super::super::sync_engine::test_lwd::CapturingLwd::start_with(Vec::new(), 100, |_| {})
+                .await;
         let gate = slow.hold_responses("/GetLatestBlock");
         let first_completed = tokio::sync::Notify::new();
         let signal = CancellationSignal::default();

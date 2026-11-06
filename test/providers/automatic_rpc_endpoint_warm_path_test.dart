@@ -657,6 +657,26 @@ void main() {
     }
   }
 
+  for (final tor in [false, true]) {
+    for (final height in [0, -1, 0x100000000]) {
+      test(
+        '${tor ? 'Tor' : 'direct'} malformed warm height $height selects a valid replacement',
+        () async {
+          final h = _WarmHarness(
+            route: tor ? _tor : const NetworkPrivacyState.off(),
+          )..seedTrusted('eu-zec-stardust', tor: tor);
+          h.warmRead = (_) async => _sample(_eu, height);
+          expect(await h.notifier.getLatestBlockHeight(), BigInt.from(110));
+          expect(h.warmReads, hasLength(1));
+          expect(h.probes.first.urls, isNot(contains(_eu)));
+          expect(h.state.current.lightwalletdUrl, _kr);
+          expect(h.state.lastObservedHeight, BigInt.from(110));
+          expect(h.ordinaryReads, isEmpty);
+        },
+      );
+    }
+  }
+
   test(
     'failed first actual warm tip falls through to bounded candidate selection',
     () async {

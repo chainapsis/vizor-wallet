@@ -324,6 +324,10 @@ final automaticRpcEndpointStoreProvider = Provider<AutomaticRpcEndpointStore>(
   (_) => const SecureAutomaticRpcEndpointStore(),
 );
 
+/// Automatic uses positive heights representable by the wallet's BlockHeight.
+bool isValidAutomaticRpcEndpointHeight(BigInt height) =>
+    height > BigInt.zero && height <= BigInt.from(0xffffffff);
+
 /// Prefer the fastest member of a plausible height cluster. One high outlier
 /// must not evict all agreeing servers; an isolated success remains provisional.
 List<RpcEndpointCandidateSample> rankAutomaticRpcEndpointSamples(
@@ -331,10 +335,13 @@ List<RpcEndpointCandidateSample> rankAutomaticRpcEndpointSamples(
   BigInt? minimumHeight,
   bool requireCorroboration = false,
 }) {
-  if (samples.isEmpty) return const [];
+  final valid = samples.where(
+    (s) => isValidAutomaticRpcEndpointHeight(s.height),
+  );
+  if (valid.isEmpty) return const [];
   // A repeated response from one host is not an independent observation.
   final distinct = {
-    for (final sample in samples) sample.url: sample,
+    for (final sample in valid) sample.url: sample,
   }.values.toList();
   final byHeight = [...distinct]..sort((a, b) => a.height.compareTo(b.height));
   final tolerance = BigInt.from(2);

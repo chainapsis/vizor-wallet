@@ -189,7 +189,15 @@ Future<RpcEndpointHealth> checkRpcEndpointHealth({
   return RpcEndpointHealth(chainName: chainName, height: height);
 }
 
+class _InvalidAutomaticTipHeight implements Exception {
+  const _InvalidAutomaticTipHeight();
+
+  @override
+  String toString() => 'Automatic endpoint returned an invalid block height.';
+}
+
 bool shouldFallbackFromLightwalletdError(Object error) {
+  if (error is _InvalidAutomaticTipHeight) return true;
   final message = error.toString().toLowerCase();
   // Route policy and cancelled route-scoped work say nothing about host health.
   if (message.contains('network privacy blocked') ||
@@ -576,16 +584,14 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     for (final sample in samples) {
       final receivedAt = sample.observedAt ?? observedAt;
       if (allowed.contains(sample.url) &&
-          sample.height > BigInt.zero &&
-          sample.height <= BigInt.from(0xffffffff) &&
+          isValidAutomaticRpcEndpointHeight(sample.height) &&
           isRecentEndpointObservation(
             receivedAt,
             now,
             settings.tipReuseMaxAge,
           )) {
         _creationTips[sample.url] = _CreationTipObservation(sample, receivedAt);
-      } else if (sample.height <= BigInt.zero ||
-          sample.height > BigInt.from(0xffffffff)) {
+      } else if (!isValidAutomaticRpcEndpointHeight(sample.height)) {
         _creationTips.remove(sample.url);
       }
     }
@@ -761,8 +767,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     final finishedAt = ref.read(rpcEndpointFailoverClockProvider)();
     final observations = <String, RpcEndpointCandidateSample>{
       for (final sample in samples)
-        if (sample.height > BigInt.zero &&
-            sample.height <= BigInt.from(0xffffffff) &&
+        if (isValidAutomaticRpcEndpointHeight(sample.height) &&
             isRecentEndpointObservation(
               sample.observedAt ?? now,
               finishedAt,
@@ -1540,6 +1545,9 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       if (sample.url != endpoint.normalizedLightwalletdUrl) {
         throw StateError('Cached endpoint returned a different route.');
       }
+      if (!isValidAutomaticRpcEndpointHeight(sample.height)) {
+        throw const _InvalidAutomaticTipHeight();
+      }
       final now = ref.read(rpcEndpointFailoverClockProvider)();
       _needsWarmTipRead = false;
       _recordAutomaticTipSuccess(endpoint, sample, epoch, tor, now);
@@ -1693,7 +1701,11 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         );
     final allowed = targets.map((c) => c.normalizedLightwalletdUrl).toSet();
     final filtered = samples
-        .where((sample) => allowed.contains(sample.url))
+        .where(
+          (sample) =>
+              allowed.contains(sample.url) &&
+              isValidAutomaticRpcEndpointHeight(sample.height),
+        )
         .toList();
     if (ref.mounted && epoch == _automaticEpoch && !cancelled.isCompleted) {
       _rememberCreationTips(filtered, startedAt);
@@ -1992,6 +2004,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     await maybeProbePrimary();
     final endpoint = state.current;
     final operationEpoch = _automaticEpoch;
+    final endpointPreference = state.primary;
     final getLatestBlockHeight = ref.read(
       rpcEndpointFailoverLatestBlockHeightGetterProvider,
     );
@@ -2008,6 +2021,10 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
             endpoint.normalizedLightwalletdUrl,
             endpoint.networkName,
           );
+      if (isAutomaticRpcEndpointConfig(endpointPreference) &&
+          !isValidAutomaticRpcEndpointHeight(height)) {
+        throw const _InvalidAutomaticTipHeight();
+      }
       if (!ref.mounted || operationEpoch != _automaticEpoch) return height;
       _recordEndpointSuccess(endpoint);
       if (reuse == null) {
@@ -2059,6 +2076,10 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
               fallbackEndpoint.normalizedLightwalletdUrl,
               fallbackEndpoint.networkName,
             );
+        if (isAutomaticRpcEndpointConfig(endpointPreference) &&
+            !isValidAutomaticRpcEndpointHeight(fallbackHeight)) {
+          throw const _InvalidAutomaticTipHeight();
+        }
         if (!ref.mounted || fallbackEpoch != _automaticEpoch) {
           return fallbackHeight;
         }

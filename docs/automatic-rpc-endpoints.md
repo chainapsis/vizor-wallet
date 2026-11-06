@@ -23,6 +23,14 @@ Rust channel used by foreground wallet traffic, then requests only
 `GetLightdInfo` and `GetLatestBlock`. No addresses, transaction IDs, or wallet
 birthday heights are sent to candidates.
 
+Automatic accepts only positive-u32 tip heights (`1..0xffffffff`). Rust rejects
+malformed results before they can start the first-success comparison window,
+so slower or queued healthy candidates still get an attempt. Dart applies the
+same range check before ranking, warm readiness and ordinary tip-read success.
+Malformed warm replies use the existing bounded replacement path; ordinary
+Automatic reads treat an invalid server height as a specific endpoint failure
+without broadening the classifier for unrelated parse errors.
+
 Direct selection has a 6-second total network budget, 3-second per-candidate
 budget, and at most four concurrent candidates. Tor uses 15 seconds, 8 seconds,
 and two candidates. Once a valid candidate finishes, the batch waits at most

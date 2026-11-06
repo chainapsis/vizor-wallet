@@ -94,6 +94,62 @@ void main() {
     },
   );
 
+  for (final invalid in [0, -1, 0x100000000]) {
+    test(
+      'selection rejects malformed fast height $invalid and uses a valid peer',
+      () async {
+        final h = _Harness()
+          ..respond = (_) async => [
+            _sample(_eu, 1, invalid),
+            _sample(_kr, 500, 100),
+          ];
+        expect((await h.notifier.ensureReady()).lightwalletdUrl, _kr);
+        expect(await h.notifier.getLatestBlockHeight(), BigInt.from(100));
+        expect(
+          h.container.read(rpcEndpointFailoverProvider).lastObservedHeight,
+          BigInt.from(100),
+        );
+        expect(h.store.values[('main', false)]?.presetId, 'kr-zec-stardust');
+      },
+    );
+
+    test(
+      'no malformed height $invalid is published when all candidates are invalid',
+      () async {
+        final h = _Harness()..respond = (_) async => [_sample(_eu, 1, invalid)];
+        await expectLater(h.notifier.ensureReady(), throwsStateError);
+        expect(
+          h.container.read(rpcEndpointFailoverProvider).automaticReady,
+          isFalse,
+        );
+        expect(h.store.values, isEmpty);
+      },
+    );
+  }
+
+  for (final height in [1, 0xffffffff]) {
+    test('selection accepts positive u32 boundary $height', () async {
+      final h = _Harness()..respond = (_) async => [_sample(_eu, 1, height)];
+      expect(await h.notifier.getLatestBlockHeight(), BigInt.from(height));
+    });
+  }
+
+  test(
+    'ordinary automatic height read recovers from a malformed current server',
+    () async {
+      final h = _Harness();
+      await h.notifier
+          .getLatestBlockHeight(); // Consume the selection observation.
+      h.readHeight = () async => BigInt.from(0x100000000);
+      h.respond = (call) async => [
+        if (call.urls.contains(_kr)) _sample(_kr, 200, 101),
+      ];
+      expect(await h.notifier.getLatestBlockHeight(), BigInt.from(101));
+      expect(h.notifier.currentEndpoint.lightwalletdUrl, _kr);
+      expect(h.calls.last.urls, isNot(contains(_eu)));
+    },
+  );
+
   test('concurrent callers share a single selection', () async {
     final response = Completer<List<RpcEndpointCandidateSample>>();
     final harness = _Harness()..respond = (_) => response.future;
@@ -1982,7 +2038,14 @@ void main() {
       'a missing selected height cannot fall back to a peer or a default',
       () async {
         final h = birthdayHarness();
-        h.respond = (_) async => [_sample(_eu, 100, 0)];
+        h.respond = (_) async => [
+          RpcEndpointCandidateSample(
+            url: _eu,
+            height: BigInt.from(100),
+            latency: const Duration(milliseconds: 100),
+            observedAt: h.now.subtract(const Duration(seconds: 10)),
+          ),
+        ];
         h.birthdayRespond = (_) async => [];
         await expectLater(
           h.notifier.getCreationBirthdayHeight(),
@@ -1994,7 +2057,14 @@ void main() {
 
     test('selected height retrieval failure remains a hard error', () async {
       final h = birthdayHarness();
-      h.respond = (_) async => [_sample(_eu, 100, 0)];
+      h.respond = (_) async => [
+        RpcEndpointCandidateSample(
+          url: _eu,
+          height: BigInt.from(100),
+          latency: const Duration(milliseconds: 100),
+          observedAt: h.now.subtract(const Duration(seconds: 10)),
+        ),
+      ];
       h.birthdayRespond = (_) async =>
           throw TimeoutException('selected request timed out');
       await expectLater(
