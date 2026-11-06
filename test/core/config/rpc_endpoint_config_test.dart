@@ -455,23 +455,43 @@ void main() {
   });
 
   group('fallbackRpcEndpointCandidatesFor', () {
-    test('uses preset order when the mainnet default is primary', () {
-      final candidates = fallbackRpcEndpointCandidatesFor(
-        defaultRpcEndpointConfig('main'),
-      );
-
-      expect(candidates.first.presetId, 'eu-zec-stardust');
-      expect(
-        candidates.first.lightwalletdUrl,
-        'https://eu.zec.stardust.rest:443',
-      );
-    });
+    test(
+      'Automatic fallbacks contain exactly its public pool including the compatibility host',
+      () {
+        final primary = defaultRpcEndpointConfig('main');
+        final candidates = fallbackRpcEndpointCandidatesFor(primary);
+        expect(
+          candidates.map((c) => c.presetId),
+          automaticRpcEndpointCandidatesFor(primary).map((c) => c.presetId),
+        );
+        expect(candidates, hasLength(8));
+        expect(candidates.any(isAutomaticRpcEndpointConfig), isFalse);
+        expect(
+          candidates.map((c) => c.normalizedLightwalletdUrl).toSet(),
+          hasLength(8),
+        );
+        expect(
+          candidates.any(
+            (c) =>
+                findRpcEndpointPresetById('main', c.presetId!)!.region ==
+                'Community',
+          ),
+          isFalse,
+        );
+        expect(
+          candidates.map((c) => c.presetId),
+          contains(kManualUsRpcEndpointPresetId),
+        );
+      },
+    );
 
     test(
       'orders Stardust Korea after Zec Rocks global, Americas, and Europe',
       () {
         final presetIds = fallbackRpcEndpointCandidatesFor(
-          defaultRpcEndpointConfig('main'),
+          defaultRpcEndpointConfig(
+            'main',
+          ).copyWith(presetId: kManualUsRpcEndpointPresetId),
         ).map((candidate) => candidate.presetId).toList();
 
         expect(presetIds.sublist(0, 7), [

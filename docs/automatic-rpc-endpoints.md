@@ -21,7 +21,11 @@ The automatic pool is an explicit subset of the presets. Selection rotates the
 candidate ordering and limits parallelism. A probe opens the same policy-aware
 Rust channel used by foreground wallet traffic, then requests only
 `GetLightdInfo` and `GetLatestBlock`. No addresses, transaction IDs, or wallet
-birthday heights are sent to candidates.
+birthday heights are sent to candidates. Automatic fallback lists, including
+Gift Card capability checks, use this same eight-server pool. Claim checks remove
+the actual current server and duplicate URLs; the preference's compatibility URL
+does not remove an otherwise eligible US server. Explicit/manual and custom
+capability fallback behavior stays unchanged.
 
 Automatic accepts only positive-u32 tip heights (`1..0xffffffff`). Rust rejects
 malformed results before they can start the first-success comparison window,

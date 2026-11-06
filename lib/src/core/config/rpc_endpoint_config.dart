@@ -270,6 +270,11 @@ RpcEndpointPreset? explicitRpcEndpointPresetFor(RpcEndpointConfig config) {
 List<RpcEndpointConfig> fallbackRpcEndpointCandidatesFor(
   RpcEndpointConfig primary,
 ) {
+  if (isAutomaticRpcEndpointConfig(primary)) {
+    // Automatic's stored compatibility URL is not the resolved current server.
+    // Consumers remove their actual current URL from this fixed public pool.
+    return automaticRpcEndpointCandidatesFor(primary);
+  }
   final primaryPreset = _selectedFallbackPrimaryPreset(primary);
   if (primaryPreset == null) return const [];
 
