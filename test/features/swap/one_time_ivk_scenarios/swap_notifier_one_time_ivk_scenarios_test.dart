@@ -482,7 +482,11 @@ final _bootstrap = AppBootstrapState(
   initialAccountState: _accounts,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  // The scenarios fake one endpoint's tip; Automatic endpoint selection is
+  // covered separately.
+  rpcEndpointConfig: defaultRpcEndpointConfig(
+    'main',
+  ).copyWith(presetId: kManualUsRpcEndpointPresetId),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
   isPasswordConfigured: true,
