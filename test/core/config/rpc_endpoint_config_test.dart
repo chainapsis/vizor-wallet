@@ -2,6 +2,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 
 void main() {
+  test(
+    'birthday operator identity groups the fixed pool without suffix guesses',
+    () {
+      final candidates = automaticRpcEndpointCandidatesFor(
+        defaultRpcEndpointConfig('main'),
+      );
+      expect(
+        candidates
+            .map((c) => automaticRpcEndpointOperatorForUrl(c.lightwalletdUrl))
+            .toSet(),
+        {'stardust', 'zec-rocks'},
+      );
+      expect(
+        automaticRpcEndpointOperatorForUrl('https://eu.zec.stardust.rest:443'),
+        automaticRpcEndpointOperatorForUrl('https://kr.zec.stardust.rest:443'),
+      );
+      for (final url in [
+        'https://zec.rocks.example:443',
+        'https://unknown.zec.rocks:443',
+        'https://custom.example:443',
+      ]) {
+        expect(automaticRpcEndpointOperatorForUrl(url), isNull);
+      }
+    },
+  );
+
   group('normalizeRpcEndpointUrl', () {
     test('normalizes host and explicit port with an https scheme', () {
       expect(normalizeRpcEndpointUrl('zec.rocks:443'), 'https://zec.rocks:443');

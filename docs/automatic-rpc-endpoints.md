@@ -52,8 +52,10 @@ verification within twelve hours permit the bounded warm read. The real first
 `GetLatestBlock` runs directly against that server, with no selection-only
 `GetLightdInfo`. Generic operations still await this public read before consuming
 proposals or entering their native network operation. Concurrent first readers
-share one read. Native tip caching also lets subsequent transaction preparation
-reuse the tip under the existing fifteen-second native cache policy.
+share one read. Selection and warm probes do not publish their responses to the
+native transaction-tip cache. Transaction preparation can still reuse tips
+recorded by ordinary sync/RPC reads under the existing fifteen-second policy;
+without such an observation it performs its own public tip read.
 
 The warm read adapts to the recent successful latency on the selected route.
 Its deadline is three times that latency plus 500ms direct / one second Tor,
@@ -96,6 +98,34 @@ one `GetLatestBlock` call, zero candidate probes and zero selection-only
 `GetLightdInfo` calls. If peer confidence is fresh, no immediate peer sweep is
 needed. The same request-count contract applies after a short lock/foreground
 cycle, with all stale-result and privacy-route guards still enforced.
+
+## New-account birthday confirmation
+
+Connecting to an Automatic candidate does not authorize its height as a new
+account's durable birthday. `getCreationBirthdayHeight` requires observations
+from the selected server and a different public operator, no more than two
+blocks apart, and returns the lower height. Regional hosts under one operator
+do not supply independent confirmation. The observations must be at most five
+seconds old on the same network, route and cancellation epoch. Their local
+receipt timestamps come from Rust immediately after each tip response, so an
+early result in a long batch does not become fresh again at batch completion.
+No height evidence is restored from the durable route cache.
+
+Fresh observations already collected for selection are reused. Otherwise only
+the missing selected/peer observation is requested. An unavailable peer can be
+retried through another region of that operator within the same six-second
+direct or fifteen-second Tor wall budget, starting after route readiness.
+Height disagreement, expiry, cancellation or exhausted budget fails before
+account creation, existing DB replacement or secret persistence. Concurrent
+confirmation callers share the work; optional performance/peer rechecks give
+way while this boundary is checked. Ordinary connection and warm paths keep
+their existing request-count policy. Manual/custom choices retain their
+single-server policy, and Rust rejects zero or out-of-u32 birthdays for every
+mode instead of truncating or underflowing them.
+
+This is bounded public-server corroboration, not header-chain or consensus
+verification. The existing Rust sync policy for adopting its own tip RPC into
+the wallet DB is separate from this birthday and probe-cache boundary.
 
 ## Rechecks and failures
 

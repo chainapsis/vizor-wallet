@@ -270,6 +270,10 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   static int _selectionSequence = 0;
   Future<RpcEndpointConfig>? _automaticSelection;
   Future<BigInt>? _automaticTipFlight;
+  Future<BigInt>? _creationHeightFlight;
+  Completer<void>? _creationCancelled;
+  String? _creationSelectionId;
+  final Map<String, _CreationTipObservation> _creationTips = {};
   bool _selectionIsValidation = false;
   bool _selectionIsWarmRead = false;
   bool _initialComparisonPending = false;
@@ -359,6 +363,224 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
 
   RpcEndpointConfig get currentEndpoint => state.current;
 
+  /// Automatic can connect on one usable response, but a new account's durable
+  /// birthday needs fresh, agreeing observations from two public operators.
+  Future<BigInt> getCreationBirthdayHeight() {
+    if (!isAutomaticRpcEndpointConfig(state.primary)) {
+      return getLatestBlockHeight();
+    }
+    final pending = _creationHeightFlight;
+    if (pending != null) return pending;
+    final cancelled = Completer<void>();
+    _creationCancelled = cancelled;
+    _cancelProbe = ref.read(rpcEndpointSelectionCancelProvider);
+    late final Future<BigInt> confirmation;
+    confirmation = _confirmCreationBirthdayHeight(cancelled).whenComplete(() {
+      if (identical(_creationHeightFlight, confirmation)) {
+        _creationHeightFlight = null;
+        _creationCancelled = null;
+        _creationSelectionId = null;
+        _startInitialComparisonIfDue();
+      }
+    });
+    _creationHeightFlight = confirmation;
+    return confirmation;
+  }
+
+  Future<BigInt> _confirmCreationBirthdayHeight(
+    Completer<void> cancelled,
+  ) async {
+    final epoch = _automaticEpoch;
+    final tor = await _waitForRoute(cancelled);
+    final settings = ref.read(automaticRpcEndpointSettingsProvider);
+    final budget = tor ? settings.torBudget : settings.directBudget;
+    final watch = Stopwatch()..start();
+    Duration remaining() {
+      final value = budget - watch.elapsed;
+      if (value <= Duration.zero) {
+        throw TimeoutException(
+          'Could not confirm the current block height.',
+          budget,
+        );
+      }
+      return value;
+    }
+
+    void requireCurrent([_FailoverContext? context]) {
+      if (!ref.mounted ||
+          epoch != _automaticEpoch ||
+          cancelled.isCompleted ||
+          !_sameAutomaticRoute(tor) ||
+          (context != null && !_isCurrentContext(context))) {
+        throw _automaticSelectionStopped();
+      }
+      _requireAutomaticEligibility();
+    }
+
+    requireCurrent();
+    final readyBudget = remaining();
+    await Future.any([
+      ensureReady(),
+      cancelled.future.then<RpcEndpointConfig>(
+        (_) => throw _automaticSelectionStopped(),
+      ),
+    ]).timeout(readyBudget);
+    requireCurrent();
+    final context = _captureContext();
+    final selectedUrl = context.current.normalizedLightwalletdUrl;
+    final operator = automaticRpcEndpointOperatorForUrl(selectedUrl);
+    if (operator == null) {
+      throw StateError(
+        'Automatic birthday endpoint is not in the public pool.',
+      );
+    }
+    final candidates = automaticRpcEndpointCandidatesFor(context.primary);
+    final peers = candidates
+        .where(
+          (candidate) =>
+              automaticRpcEndpointOperatorForUrl(
+                candidate.normalizedLightwalletdUrl,
+              ) !=
+              operator,
+        )
+        .toList();
+    final attempts = <String, int>{};
+
+    while (true) {
+      requireCurrent(context);
+      final now = ref.read(rpcEndpointFailoverClockProvider)();
+      _creationTips.removeWhere(
+        (_, observation) => !isRecentEndpointObservation(
+          observation.observedAt,
+          now,
+          settings.tipReuseMaxAge,
+        ),
+      );
+      final current = _creationTips[selectedUrl];
+      final observations = _creationTips.values.where(
+        (entry) =>
+            automaticRpcEndpointOperatorForUrl(entry.sample.url) != operator,
+      );
+      if (current != null) {
+        for (final peer in observations) {
+          if ((peer.sample.height - current.sample.height).abs() <=
+              BigInt.from(2)) {
+            requireCurrent(context);
+            return peer.sample.height < current.sample.height
+                ? peer.sample.height
+                : current.sample.height;
+          }
+        }
+        if (observations.isNotEmpty) {
+          throw StateError(
+            'Servers disagree on the current block height. Try again.',
+          );
+        }
+      }
+      final peer = peers
+          .where((p) => !attempts.containsKey(p.normalizedLightwalletdUrl))
+          .firstOrNull;
+      if ((current == null && (attempts[selectedUrl] ?? 0) >= 2) ||
+          (observations.isEmpty && peer == null)) {
+        throw StateError(
+          'Could not confirm the current block height with another server. Try again.',
+        );
+      }
+      final targets = [
+        if (current == null) context.current,
+        if (observations.isEmpty) peer!,
+      ];
+      for (final target in targets) {
+        attempts.update(
+          target.normalizedLightwalletdUrl,
+          (count) => count + 1,
+          ifAbsent: () => 1,
+        );
+      }
+      _cancelOptionalSelectionForBirthday();
+      final id =
+          '${DateTime.now().microsecondsSinceEpoch}-birthday-${_selectionSequence++}';
+      _creationSelectionId = id;
+      final startedAt = ref.read(rpcEndpointFailoverClockProvider)();
+      try {
+        final timeout = remaining();
+        final samples = await Future.any([
+          ref.read(rpcEndpointFullCandidatesProbeProvider)(
+            urls: targets.map((c) => c.normalizedLightwalletdUrl).toList(),
+            network: context.primary.networkName,
+            selectionId: id,
+            probeTimeout:
+                (tor ? settings.torProbeTimeout : settings.directProbeTimeout) <
+                    timeout
+                ? (tor ? settings.torProbeTimeout : settings.directProbeTimeout)
+                : timeout,
+            totalTimeout: timeout,
+            maxConcurrency: tor ? 2 : 4,
+          ),
+          cancelled.future.then<List<RpcEndpointCandidateSample>>(
+            (_) => throw _automaticSelectionStopped(),
+          ),
+        ]).timeout(timeout);
+        requireCurrent(context);
+        final allowed = targets.map((c) => c.normalizedLightwalletdUrl).toSet();
+        _rememberCreationTips(
+          samples.where((s) => allowed.contains(s.url)),
+          startedAt,
+        );
+      } catch (_) {
+        requireCurrent(context);
+        // A failed optional peer is not evidence that the selected server is
+        // unhealthy. Try the next regional host within the same wall budget.
+      } finally {
+        _cancelProbe?.call(id);
+        if (_creationSelectionId == id) _creationSelectionId = null;
+      }
+    }
+  }
+
+  void _rememberCreationTips(
+    Iterable<RpcEndpointCandidateSample> samples,
+    DateTime observedAt,
+  ) {
+    final now = ref.read(rpcEndpointFailoverClockProvider)();
+    final settings = ref.read(automaticRpcEndpointSettingsProvider);
+    for (final sample in samples) {
+      final receivedAt = sample.observedAt ?? observedAt;
+      if (automaticRpcEndpointOperatorForUrl(sample.url) != null &&
+          sample.height > BigInt.zero &&
+          sample.height <= BigInt.from(0xffffffff) &&
+          isRecentEndpointObservation(
+            receivedAt,
+            now,
+            settings.tipReuseMaxAge,
+          )) {
+        _creationTips[sample.url] = _CreationTipObservation(sample, receivedAt);
+      } else if (sample.height <= BigInt.zero ||
+          sample.height > BigInt.from(0xffffffff)) {
+        _creationTips.remove(sample.url);
+      }
+    }
+  }
+
+  void _cancelOptionalSelectionForBirthday() {
+    if (_automaticSelection == null ||
+        !state.automaticReady ||
+        _selectionIsWarmRead ||
+        (!_selectionIsValidation &&
+            (_selectionExcludeUrl != null ||
+                _selectionMinimumHeight != null))) {
+      return;
+    }
+    final id = _selectionId;
+    if (id != null) _cancelProbe?.call(id);
+    final signal = _selectionCancelled;
+    if (signal != null && !signal.isCompleted) signal.complete();
+    _automaticSelection = null;
+    _selectionCancelled = null;
+    _selectionId = null;
+    _selectionIsValidation = false;
+  }
+
   /// Called only after a foreground sync stream has started. Startup never
   /// waits for this complete-pool comparison, and warm starts never schedule it.
   void startInitialComparisonAfterSyncStart() {
@@ -407,6 +629,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     if (!ref.mounted ||
         !_initialComparisonPending ||
         !_initialComparisonAllowed ||
+        _creationHeightFlight != null ||
         _automaticSelection != null ||
         !state.automaticReady ||
         _needsWarmTipRead ||
@@ -552,7 +775,8 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     if (!_hasFreshPeerProof(now)) {
       state = state.copyWith(automaticProvisional: true);
     }
-    if (!_needsWarmTipRead &&
+    if (_creationHeightFlight == null &&
+        !_needsWarmTipRead &&
         (_checkedAt == null ||
             now.difference(_checkedAt!) >= settings.recheckInterval)) {
       unawaited(
@@ -563,7 +787,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           },
         ),
       );
-    } else if (state.automaticProvisional) {
+    } else if (_creationHeightFlight == null && state.automaticProvisional) {
       _startProvisionalValidationIfDue();
     }
     return state.current;
@@ -628,6 +852,14 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     _selectionId = null;
     _automaticSelection = null;
     _automaticTipFlight = null;
+    final creationId = _creationSelectionId;
+    if (creationId != null) _cancelProbe?.call(creationId);
+    final creation = _creationCancelled;
+    if (creation != null && !creation.isCompleted) creation.complete();
+    _creationSelectionId = null;
+    _creationCancelled = null;
+    _creationHeightFlight = null;
+    _creationTips.clear();
     _selectionIsValidation = false;
     _selectionIsWarmRead = false;
     _selectionCancelled = null;
@@ -764,6 +996,17 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       return Future.error(
         StateError('Automatic endpoint selection is paused.'),
       );
+    }
+    if (_creationHeightFlight != null &&
+        state.automaticReady &&
+        force &&
+        excludeUrl == null &&
+        minimumHeight == null) {
+      return Future.value(state.current);
+    }
+    if (_creationHeightFlight != null &&
+        (excludeUrl != null || minimumHeight != null)) {
+      _cancelAutomaticWork();
     }
     final pending = _automaticSelection;
     if (pending != null) {
@@ -1248,6 +1491,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       lastObservedAt: observedAt,
       automaticProvisional: !_hasFreshPeerProof(observedAt),
     );
+    _rememberCreationTips([sample], observedAt);
     _queueAutomaticCacheWrite(epoch);
   }
 
@@ -1267,6 +1511,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     final id =
         '${DateTime.now().microsecondsSinceEpoch}-${_selectionSequence++}';
     _selectionId = id;
+    final startedAt = ref.read(rpcEndpointFailoverClockProvider)();
     final samples =
         await Future.any([
           probe(
@@ -1291,7 +1536,13 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           },
         );
     final allowed = targets.map((c) => c.normalizedLightwalletdUrl).toSet();
-    return samples.where((sample) => allowed.contains(sample.url)).toList();
+    final filtered = samples
+        .where((sample) => allowed.contains(sample.url))
+        .toList();
+    if (ref.mounted && epoch == _automaticEpoch && !cancelled.isCompleted) {
+      _rememberCreationTips(filtered, startedAt);
+    }
+    return filtered;
   }
 
   RpcEndpointConfig _publishAutomaticEndpoint({
@@ -1387,6 +1638,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
 
   void _startProvisionalValidationIfDue() {
     if (!ref.mounted ||
+        _creationHeightFlight != null ||
         _automaticSelection != null ||
         !state.automaticReady ||
         _needsWarmTipRead ||
@@ -2205,6 +2457,12 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       state = state.copyWith(primaryFailureCount: 0, clearLastFailure: true);
     }
   }
+}
+
+class _CreationTipObservation {
+  const _CreationTipObservation(this.sample, this.observedAt);
+  final RpcEndpointCandidateSample sample;
+  final DateTime observedAt;
 }
 
 class _InitialEndpointImprovement {

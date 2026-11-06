@@ -813,12 +813,16 @@ class LightwalletdCandidateProbe {
   final int connectMs;
   final int rpcMs;
 
+  /// Local GetLatestBlock receipt time, in UNIX epoch milliseconds.
+  final BigInt observedAtMs;
+
   const LightwalletdCandidateProbe({
     required this.url,
     required this.height,
     required this.latencyMs,
     required this.connectMs,
     required this.rpcMs,
+    required this.observedAtMs,
   });
 
   @override
@@ -827,7 +831,8 @@ class LightwalletdCandidateProbe {
       height.hashCode ^
       latencyMs.hashCode ^
       connectMs.hashCode ^
-      rpcMs.hashCode;
+      rpcMs.hashCode ^
+      observedAtMs.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -838,7 +843,8 @@ class LightwalletdCandidateProbe {
           height == other.height &&
           latencyMs == other.latencyMs &&
           connectMs == other.connectMs &&
-          rpcMs == other.rpcMs;
+          rpcMs == other.rpcMs &&
+          observedAtMs == other.observedAtMs;
 }
 
 /// A chain-info response timed inside Rust, excluding bridge execution queues.

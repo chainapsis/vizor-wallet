@@ -2908,7 +2908,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     try {
       return await ref
           .read(rpcEndpointFailoverProvider.notifier)
-          .getLatestBlockHeight();
+          .getCreationBirthdayHeight();
     } catch (e, st) {
       Error.throwWithStackTrace(
         WalletCreationCurrentBlockHeightException(e),

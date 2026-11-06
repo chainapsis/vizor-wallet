@@ -83,9 +83,11 @@ pub(crate) use lwd::{
     transparent_lookup::TransparentLookupGate,
 };
 use lwd::{download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block};
+#[cfg(test)]
+pub(crate) use tip_cache::record_latest_block;
 pub(crate) use tip_cache::{
     get_latest_block_recorded, latest_block_for_transaction,
-    latest_block_for_transaction_with_client, record_latest_block,
+    latest_block_for_transaction_with_client,
 };
 
 /// What a [`SyncProgressEvent`] reports.

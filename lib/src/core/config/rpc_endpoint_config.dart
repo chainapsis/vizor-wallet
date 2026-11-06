@@ -241,6 +241,21 @@ bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
   return config.presetId == kCustomRpcEndpointPresetId;
 }
 
+/// Operator identity for the fixed Automatic pool, not arbitrary custom hosts.
+/// Used by birthday confirmation; regional URLs are not independent operators.
+String? automaticRpcEndpointOperatorForUrl(String url) =>
+    switch (Uri.tryParse(url)?.host.toLowerCase()) {
+      'us.zec.stardust.rest' ||
+      'eu.zec.stardust.rest' ||
+      'kr.zec.stardust.rest' => 'stardust',
+      'zec.rocks' ||
+      'eu.zec.rocks' ||
+      'ap.zec.rocks' ||
+      'na.zec.rocks' ||
+      'sa.zec.rocks' => 'zec-rocks',
+      _ => null,
+    };
+
 RpcEndpointPreset? explicitRpcEndpointPresetFor(RpcEndpointConfig config) {
   final presetId = config.presetId?.trim();
   if (presetId == null ||

@@ -273,6 +273,8 @@ pub struct LightwalletdCandidateProbe {
     pub latency_ms: u32,
     pub connect_ms: u32,
     pub rpc_ms: u32,
+    /// Local GetLatestBlock receipt time, in UNIX epoch milliseconds.
+    pub observed_at_ms: u64,
 }
 
 /// Probe a bounded set of public candidates. Initial selection may stop after
@@ -308,6 +310,7 @@ pub fn probe_lightwalletd_candidates(
                     latency_ms: probe.latency_ms,
                     connect_ms: probe.connect_ms,
                     rpc_ms: probe.rpc_ms,
+                    observed_at_ms: probe.observed_at_ms,
                 })
                 .collect()
         })
@@ -337,6 +340,7 @@ pub fn read_lightwalletd_tip(
             latency_ms: probe.latency_ms,
             connect_ms: probe.connect_ms,
             rpc_ms: probe.rpc_ms,
+            observed_at_ms: probe.observed_at_ms,
         })
     })
 }

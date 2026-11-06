@@ -10,7 +10,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, LazyLock, Mutex,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use futures::{stream, StreamExt};
@@ -39,6 +39,7 @@ pub(crate) struct CandidateProbe {
     pub latency_ms: u32,
     pub connect_ms: u32,
     pub rpc_ms: u32,
+    pub observed_at_ms: u64,
 }
 
 #[derive(Default)]
@@ -402,7 +403,7 @@ async fn request_candidate_tip(
     route_revision: u64,
     verify_chain: bool,
 ) -> Result<CandidateProbe, String> {
-    let network = keys::parse_network(expected_network)?;
+    keys::parse_network(expected_network)?;
     require_current_selection(cancellation, route_revision)?;
     let started = Instant::now();
     let mut client =
@@ -427,19 +428,25 @@ async fn request_candidate_tip(
         .await
         .map_err(|error| error.to_string())?
         .into_inner();
+    let observed_at_ms = observation_time_ms();
     require_current_selection(cancellation, route_revision)?;
-    // The endpoint's network was verified above (or by the caller's fresh
-    // verification cache on the warm path). Reuse this same public response
-    // for native transaction preparation instead of issuing another tip RPC.
     let height = tip.height;
-    super::sync_engine::record_latest_block(&url, network, tip);
     Ok(CandidateProbe {
         url,
         height,
         latency_ms: millis(started.elapsed()),
         connect_ms: millis(connected.duration_since(started)),
         rpc_ms: millis(connected.elapsed()),
+        observed_at_ms,
     })
+}
+
+fn observation_time_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64
 }
 
 fn millis(duration: Duration) -> u32 {
@@ -536,6 +543,7 @@ mod tests {
             latency_ms: 10,
             connect_ms: 3,
             rpc_ms: 7,
+            observed_at_ms: observation_time_ms(),
         }
     }
 
@@ -882,9 +890,17 @@ mod tests {
         assert_eq!(cached.height, 3_000_000);
         assert_eq!(
             server.requests().len(),
-            2,
-            "verified full probe should seed native transaction tip cache"
+            3,
+            "candidate observation must not seed the transaction tip cache"
         );
+        let reused = super::super::sync_engine::latest_block_for_transaction(
+            &server.url,
+            super::super::network::WalletNetwork::Main,
+        )
+        .await
+        .unwrap();
+        assert_eq!(reused.height, 3_000_000);
+        assert_eq!(server.requests().len(), 3, "ordinary tip reads still cache");
     }
 
     async fn wait_for_tip_request(server: &super::super::sync_engine::test_lwd::CapturingLwd) {
@@ -898,7 +914,65 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn warm_tip_sends_one_latest_block_and_seeds_native_transaction_cache() {
+    async fn complete_batch_preserves_each_local_response_receipt_time() {
+        let _route = network_privacy::test_route_policy::lock_route_policy();
+        let fast = super::super::sync_engine::test_lwd::CapturingLwd::start(Vec::new()).await;
+        let slow = super::super::sync_engine::test_lwd::CapturingLwd::start(Vec::new()).await;
+        let gate = slow.hold_responses("/GetLatestBlock");
+        let first_completed = tokio::sync::Notify::new();
+        let signal = CancellationSignal::default();
+        let revision = ready_route_revision().unwrap();
+        let probe = run_probe_batch(
+            vec![fast.url.clone(), slow.url.clone()],
+            2,
+            Duration::from_secs(2),
+            Duration::from_secs(3),
+            true,
+            &signal,
+            || true,
+            |url| {
+                let is_fast = url == fast.url;
+                let signal = &signal;
+                let first_completed = &first_completed;
+                async move {
+                    let sample = probe_candidate(url, "main", signal, revision).await?;
+                    if is_fast {
+                        first_completed.notify_one();
+                    }
+                    Ok(sample)
+                }
+            },
+        );
+        let release = async {
+            first_completed.notified().await;
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let released_at = observation_time_ms();
+            gate.notify_one();
+            released_at
+        };
+        let (samples, released_at) = tokio::join!(probe, release);
+        let samples = samples.unwrap();
+        assert_eq!(samples.len(), 2);
+        assert!(
+            samples
+                .iter()
+                .find(|sample| sample.url == fast.url)
+                .unwrap()
+                .observed_at_ms
+                < released_at
+        );
+        assert!(
+            samples
+                .iter()
+                .find(|sample| sample.url == slow.url)
+                .unwrap()
+                .observed_at_ms
+                >= released_at
+        );
+    }
+
+    #[tokio::test]
+    async fn warm_tip_sends_one_latest_block_without_seeding_transaction_cache() {
         let _registry = registry_test_lock();
         let _route = network_privacy::test_route_policy::lock_route_policy();
         let server = super::super::sync_engine::test_lwd::CapturingLwd::start_with(
@@ -910,6 +984,7 @@ mod tests {
         let url = server.url.clone();
         let id = "warm-tip-one-rpc";
         begin_selection(id).unwrap();
+        let requested_at = observation_time_ms();
         let probe = tokio::task::spawn_blocking(move || {
             crate::api::wallet::read_lightwalletd_tip(
                 url,
@@ -923,6 +998,8 @@ mod tests {
         .unwrap();
         assert_eq!(probe.url, server.url);
         assert_eq!(probe.height, 3_000_100);
+        assert!(probe.observed_at_ms >= requested_at);
+        assert!(probe.observed_at_ms <= observation_time_ms());
         assert_eq!(server.count("/GetLatestBlock"), 1);
         assert_eq!(server.count("/GetLightdInfo"), 0);
         assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
@@ -935,9 +1012,58 @@ mod tests {
         assert_eq!(cached.height, 3_000_100);
         assert_eq!(
             server.requests().len(),
-            1,
-            "native transaction preparation must reuse the public tip"
+            2,
+            "warm observation must not seed the transaction tip cache"
         );
+    }
+
+    #[tokio::test]
+    async fn candidate_and_warm_observations_do_not_overwrite_an_existing_sync_tip() {
+        let _registry = registry_test_lock();
+        let _route = network_privacy::test_route_policy::lock_route_policy();
+        let server = super::super::sync_engine::test_lwd::CapturingLwd::start_with(
+            Vec::new(),
+            3_000_200,
+            |_| {},
+        )
+        .await;
+        let network = super::super::network::WalletNetwork::Main;
+        let existing = zcash_client_backend::proto::service::BlockId {
+            height: 3_000_100,
+            hash: vec![7; 32],
+        };
+        super::super::sync_engine::record_latest_block(&server.url, network, existing.clone());
+        let signal = CancellationSignal::default();
+        let probe = probe_candidate(
+            server.url.clone(),
+            "main",
+            &signal,
+            ready_route_revision().unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(probe.height, 3_000_200);
+        let retained =
+            super::super::sync_engine::latest_block_for_transaction(&server.url, network)
+                .await
+                .unwrap();
+        assert_eq!(retained, existing);
+        assert_eq!(server.count("/GetLatestBlock"), 1);
+
+        let id = "warm-tip-preserves-sync-cache";
+        begin_selection(id).unwrap();
+        let url = server.url.clone();
+        let warm = tokio::task::spawn_blocking(move || read_tip(url, "main", id, 1_000))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(warm.height, 3_000_200);
+        let retained =
+            super::super::sync_engine::latest_block_for_transaction(&server.url, network)
+                .await
+                .unwrap();
+        assert_eq!(retained, existing);
+        assert_eq!(server.count("/GetLatestBlock"), 2);
     }
 
     #[tokio::test]

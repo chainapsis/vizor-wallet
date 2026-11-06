@@ -13,11 +13,15 @@ class RpcEndpointCandidateSample {
     required this.url,
     required this.height,
     required this.latency,
+    this.observedAt,
   });
 
   final String url;
   final BigInt height;
   final Duration latency;
+
+  /// Local receipt time, not a timestamp supplied by the endpoint.
+  final DateTime? observedAt;
 }
 
 typedef RpcEndpointCandidatesProbe =
@@ -67,6 +71,10 @@ RpcEndpointCandidatesProbe _candidateProbe({required bool waitForAll}) =>
             url: result.url,
             height: result.height,
             latency: Duration(milliseconds: result.latencyMs),
+            observedAt: DateTime.fromMillisecondsSinceEpoch(
+              result.observedAtMs.toInt(),
+              isUtc: true,
+            ),
           ),
       ];
     };
@@ -97,6 +105,10 @@ final rpcEndpointWarmTipReaderProvider = Provider<RpcEndpointWarmTipReader>(
       url: result.url,
       height: result.height,
       latency: Duration(milliseconds: result.latencyMs),
+      observedAt: DateTime.fromMillisecondsSinceEpoch(
+        result.observedAtMs.toInt(),
+        isUtc: true,
+      ),
     );
   },
 );

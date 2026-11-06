@@ -1372,6 +1372,268 @@ void main() {
     expect(harness.notifier.currentEndpoint.lightwalletdUrl, _eu);
     expect(harness.store.values[('main', false)]?.presetId, 'eu-zec-stardust');
   });
+  group('creation birthday confirmation', () {
+    const rocks = 'https://eu.zec.rocks:443';
+
+    test(
+      'reuses a fresh two-operator pair and chooses the lower height',
+      () async {
+        final h = _Harness();
+        h.respond = (_) async => [
+          _sample(_eu, 100, 102),
+          _sample(rocks, 300, 100),
+        ];
+        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
+        expect(h.calls, hasLength(1));
+        expect(h.fullCalls, isEmpty);
+        expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+      },
+    );
+
+    test('same-operator regions require a different operator', () async {
+      final h = _Harness();
+      h.fullRespond = (call) async => [
+        for (final url in call.urls) _sample(url, 100, 99),
+      ];
+      expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(99));
+      expect(h.fullCalls, hasLength(1));
+      expect(h.fullCalls.single.urls, [rocks]);
+      expect(h.calls, hasLength(1));
+    });
+
+    test('a singleton future height cannot become a birthday', () async {
+      final h = _Harness();
+      h.respond = (_) async => [_sample(_eu, 20, 4000000000)];
+      h.fullRespond = (call) async => [
+        for (final url in call.urls) _sample(url, 100, 3500000),
+      ];
+      await expectLater(
+        h.notifier.getCreationBirthdayHeight(),
+        throwsStateError,
+      );
+      expect(h.fullCalls, hasLength(1));
+      expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+      expect(
+        h.container.read(rpcEndpointFailoverProvider).automaticReady,
+        isTrue,
+      );
+    });
+
+    for (final value in [0, -1, 0x100000000]) {
+      test('rejects out-of-range birthday $value', () async {
+        final h = _Harness();
+        h.respond = (_) async => [_sample(_eu, 20, value)];
+        h.fullRespond = (call) async => [
+          for (final url in call.urls) _sample(url, 100, value),
+        ];
+        await expectLater(
+          h.notifier.getCreationBirthdayHeight(),
+          throwsStateError,
+        );
+      });
+    }
+
+    test(
+      'cached route and peer timestamps are not current-height proof',
+      () async {
+        final h = _Harness(
+          warmRead:
+              ({
+                required endpoint,
+                required selectionId,
+                required timeout,
+              }) async => _sample(_eu),
+        );
+        h.store.values[('main', false)] = AutomaticRpcEndpointCache(
+          presetId: 'eu-zec-stardust',
+          endpointUrl: _eu,
+          observedAt: h.now,
+          lastSuccessAt: h.now,
+          lastPeerValidatedAt: h.now,
+          lastNetworkVerifiedAt: h.now,
+          lastBenchmarkAt: h.now,
+        );
+        h.fullRespond = (call) async => [
+          for (final url in call.urls) _sample(url),
+        ];
+        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
+        expect(h.calls, isEmpty);
+        expect(h.fullCalls.single.urls, [rocks]);
+      },
+    );
+
+    for (final future in [false, true]) {
+      test('ignores ${future ? 'future' : 'old'} receipt times', () async {
+        final h = _Harness();
+        h.respond = (_) async => [
+          for (final url in [_eu, rocks])
+            RpcEndpointCandidateSample(
+              url: url,
+              height: BigInt.from(900),
+              latency: const Duration(milliseconds: 100),
+              observedAt: h.now.add(Duration(seconds: future ? 10 : -10)),
+            ),
+        ];
+        h.fullRespond = (call) async => [
+          for (final url in call.urls) _sample(url, 100, 100),
+        ];
+        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
+        expect(h.fullCalls.single.urls, [_eu, rocks]);
+      });
+    }
+
+    test(
+      'uses actual receipt time for a slow Tor response and refreshes only the expired observation',
+      () async {
+        final h = _Harness(route: _torReady);
+        h.fullRespond = (call) async {
+          if (h.fullCalls.length == 1) {
+            h.now = h.now.add(const Duration(seconds: 8));
+          }
+          return [
+            for (final url in call.urls)
+              RpcEndpointCandidateSample(
+                url: url,
+                height: BigInt.from(100),
+                latency: const Duration(seconds: 8),
+                observedAt: h.now,
+              ),
+          ];
+        };
+        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
+        expect(h.fullCalls, hasLength(2));
+        expect(h.fullCalls.first.urls, [rocks]);
+        expect(h.fullCalls.last.urls, [_eu]);
+        expect(h.fullCalls.every((c) => c.maxConcurrency == 2), isTrue);
+      },
+    );
+
+    test(
+      'peer failure tries another region without cooling the current host',
+      () async {
+        final h = _Harness();
+        h.fullRespond = (call) async {
+          if (h.fullCalls.length == 1) throw StateError('peer timeout');
+          return [for (final url in call.urls) _sample(url)];
+        };
+        expect(await h.notifier.getCreationBirthdayHeight(), BigInt.from(100));
+        expect(h.fullCalls, hasLength(2));
+        expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+        expect((await h.notifier.ensureReady()).lightwalletdUrl, _eu);
+      },
+    );
+
+    for (final tor in [false, true]) {
+      test(
+        '${tor ? 'Tor' : 'direct'} confirmation has a single bounded deadline',
+        () async {
+          final h = _Harness(
+            route: tor ? _torReady : const NetworkPrivacyState.off(),
+            settings: const AutomaticRpcEndpointSettings(
+              directBudget: Duration(milliseconds: 100),
+              torBudget: Duration(milliseconds: 120),
+            ),
+          );
+          final peer = Completer<List<RpcEndpointCandidateSample>>();
+          h.fullRespond = (_) => peer.future;
+          final watch = Stopwatch()..start();
+          await expectLater(
+            h.notifier.getCreationBirthdayHeight(),
+            throwsA(anyOf(isA<TimeoutException>(), isA<StateError>())),
+          );
+          expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+          expect(h.cancelled, isNotEmpty);
+          peer.complete([_sample(rocks)]);
+          await _flush();
+          expect(h.notifier.currentEndpoint.lightwalletdUrl, _eu);
+        },
+      );
+    }
+
+    test(
+      'concurrent birthday callers share a confirmation but ordinary work stays fast',
+      () async {
+        final peer = Completer<List<RpcEndpointCandidateSample>>();
+        final h = _Harness();
+        h.fullRespond = (_) => peer.future;
+        final first = h.notifier.getCreationBirthdayHeight();
+        final second = h.notifier.getCreationBirthdayHeight();
+        await _flush();
+        expect(h.fullCalls, hasLength(1));
+        expect((await h.notifier.ensureReady()).lightwalletdUrl, _eu);
+        peer.complete([_sample(rocks)]);
+        expect(await first, BigInt.from(100));
+        expect(await second, BigInt.from(100));
+      },
+    );
+
+    for (final action in [
+      'lock',
+      'background',
+      'route',
+      'manual',
+      'reset',
+      'dispose',
+    ]) {
+      test(
+        'cancels birthday confirmation on $action and ignores a late peer',
+        () async {
+          final peer = Completer<List<RpcEndpointCandidateSample>>();
+          final h = _Harness();
+          h.fullRespond = (_) => peer.future;
+          final result = h.notifier.getCreationBirthdayHeight();
+          final rejection = expectLater(result, throwsStateError);
+          await _flush();
+          switch (action) {
+            case 'lock':
+              h.security.publish(
+                const AppSecurityState(
+                  isPasswordConfigured: true,
+                  isUnlocked: false,
+                ),
+              );
+            case 'background':
+              h.notifier.cancelAutomaticSelection();
+            case 'route':
+              h.privacy.publish(_torReady);
+            case 'manual':
+              h.endpoint.publish(_custom);
+            case 'reset':
+              await h.notifier.clearAutomaticSelectionCache();
+            case 'dispose':
+              h.container.dispose();
+          }
+          await rejection;
+          peer.complete([_sample(rocks)]);
+          await _flush();
+          expect(h.cancelled, isNotEmpty);
+        },
+      );
+    }
+
+    test(
+      'manual and custom selections retain their single-server policy',
+      () async {
+        for (final endpoint in [
+          _custom,
+          const RpcEndpointConfig(
+            networkName: 'main',
+            lightwalletdUrl: _eu,
+            presetId: 'eu-zec-stardust',
+          ),
+        ]) {
+          final h = _Harness(endpoint: endpoint);
+          h.readHeight = () async => BigInt.from(123);
+          expect(
+            await h.notifier.getCreationBirthdayHeight(),
+            BigInt.from(123),
+          );
+          expect(h.calls, isEmpty);
+          expect(h.fullCalls, isEmpty);
+        }
+      },
+    );
+  });
 }
 
 class _Call {

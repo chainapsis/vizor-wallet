@@ -12833,12 +12833,14 @@ impl SseDecode for crate::api::wallet::LightwalletdCandidateProbe {
         let mut var_latencyMs = <u32>::sse_decode(deserializer);
         let mut var_connectMs = <u32>::sse_decode(deserializer);
         let mut var_rpcMs = <u32>::sse_decode(deserializer);
+        let mut var_observedAtMs = <u64>::sse_decode(deserializer);
         return crate::api::wallet::LightwalletdCandidateProbe {
             url: var_url,
             height: var_height,
             latency_ms: var_latencyMs,
             connect_ms: var_connectMs,
             rpc_ms: var_rpcMs,
+            observed_at_ms: var_observedAtMs,
         };
     }
 }
@@ -19177,6 +19179,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::wallet::LightwalletdCandidate
             self.latency_ms.into_into_dart().into_dart(),
             self.connect_ms.into_into_dart().into_dart(),
             self.rpc_ms.into_into_dart().into_dart(),
+            self.observed_at_ms.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -23123,6 +23126,7 @@ impl SseEncode for crate::api::wallet::LightwalletdCandidateProbe {
         <u32>::sse_encode(self.latency_ms, serializer);
         <u32>::sse_encode(self.connect_ms, serializer);
         <u32>::sse_encode(self.rpc_ms, serializer);
+        <u64>::sse_encode(self.observed_at_ms, serializer);
     }
 }
 

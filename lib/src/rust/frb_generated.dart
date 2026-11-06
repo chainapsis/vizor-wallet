@@ -14328,14 +14328,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return LightwalletdCandidateProbe(
       url: dco_decode_String(arr[0]),
       height: dco_decode_u_64(arr[1]),
       latencyMs: dco_decode_u_32(arr[2]),
       connectMs: dco_decode_u_32(arr[3]),
       rpcMs: dco_decode_u_32(arr[4]),
+      observedAtMs: dco_decode_u_64(arr[5]),
     );
   }
 
@@ -18961,12 +18962,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_latencyMs = sse_decode_u_32(deserializer);
     var var_connectMs = sse_decode_u_32(deserializer);
     var var_rpcMs = sse_decode_u_32(deserializer);
+    var var_observedAtMs = sse_decode_u_64(deserializer);
     return LightwalletdCandidateProbe(
       url: var_url,
       height: var_height,
       latencyMs: var_latencyMs,
       connectMs: var_connectMs,
       rpcMs: var_rpcMs,
+      observedAtMs: var_observedAtMs,
     );
   }
 
@@ -24280,6 +24283,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.latencyMs, serializer);
     sse_encode_u_32(self.connectMs, serializer);
     sse_encode_u_32(self.rpcMs, serializer);
+    sse_encode_u_64(self.observedAtMs, serializer);
   }
 
   @protected
