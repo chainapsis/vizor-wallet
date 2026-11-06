@@ -1429,9 +1429,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonOnAMacYouCanUse => '在 Mac 上，你也可以使用连续互通相机，改用 iPhone 进行扫描。';
 
   @override
-  String get commonOnYourKeystone => 'on your Keystone,';
-
-  @override
   String get commonOpenSettings => '打开设置';
 
   @override
@@ -1680,12 +1677,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonSyncing => '正在同步';
-
-  @override
-  String get commonTap => 'Tap';
-
-  @override
-  String get commonThenScanThisQRCode => 'then scan this QR code';
 
   @override
   String get commonThisQRCodeCouldNotBe => '无法将此二维码解码为 Keystone 签名。';
@@ -2354,10 +2345,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String keystoneFirmwareUpdate(String link) {
     return '请更新到最新的 Keystone 固件：$link';
   }
-
-  @override
-  String get keystoneFirmwareUpdatePrefix =>
-      'Update to the latest Keystone firmware at ';
 
   @override
   String get keystoneImReadyNow => '我已准备好';
@@ -3897,16 +3884,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationImmediateTradeoffEmphasis =>
-      'easier to associate with your wallet.';
-
-  @override
   String get migrationImmediateTradeoffHighlight => '更容易与你的钱包关联';
-
-  @override
-  String migrationImmediateTradeoffLead(String amount) {
-    return 'Crosses in one visible step — your $amount and timing are ';
-  }
 
   @override
   String get migrationImmediateTradeoffLedger => '\nLedger 账户无法使用私密迁移。';
@@ -4355,10 +4333,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationMobileFastPlanUnavailable => '不可用';
-
-  @override
-  String get migrationMobileFastPrivacyBodyHighlight =>
-      'easier to associate with your wallet';
 
   @override
   String get migrationMobileFastPrivacyConsiderPrivate => '建议选择私密迁移选项。';
@@ -4842,9 +4816,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileStatusNotesLead => 'Migration ';
-
-  @override
   String migrationMobileStatusNotesTitle(String notes) {
     return '迁移 $notes';
   }
@@ -4873,13 +4844,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileWaitKeystoneAgain => '这些确认完成后，还需要再次在 Keystone 上批准。';
 
   @override
-  String get migrationMobileWaitLoopBatch => ' the batch of transactions';
-
-  @override
   String get migrationMobileWaitLoopCaption => '需重复多次，\n等待可能需要 2–10\n小时';
-
-  @override
-  String get migrationMobileWaitLoopForWindow => ' for the window';
 
   @override
   String get migrationMobileWaitLoopSign => '签署';
@@ -8958,10 +8923,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsSeedScreenshotBodyLead => '截图并不可靠';
-
-  @override
-  String get settingsSeedScreenshotBodyRest =>
-      '. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
 
   @override
   String get settingsSeedScreenshotTitle => '请勿截取助记词的屏幕截图';

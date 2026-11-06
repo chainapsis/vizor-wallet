@@ -1982,10 +1982,6 @@
   "@commonOnAMacYouCanUse": {
     "description": "Scanning tip on QR scanners. 'Continuity Camera' is an Apple feature name. Shared by: keystone, send."
   },
-  "commonOnYourKeystone": "on your Keystone,",
-  "@commonOnYourKeystone": {
-    "description": "Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon. Shared by: keystone, migration."
-  },
   "commonOpenSettings": "Open settings",
   "@commonOpenSettings": {
     "description": "Button that opens the system settings page for the camera permission. Shared by: address, keystone, ledger."
@@ -2324,14 +2320,6 @@
   "commonSyncing": "Syncing",
   "@commonSyncing": {
     "description": "Value of the estimated completion row while the migration progress is syncing. Shared by: migration, settings."
-  },
-  "commonTap": "Tap",
-  "@commonTap": {
-    "description": "Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon. Shared by: keystone, migration."
-  },
-  "commonThenScanThisQRCode": "then scan this QR code",
-  "@commonThenScanThisQRCode": {
-    "description": "End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'. Shared by: keystone, migration."
   },
   "commonThisQRCodeCouldNotBe": "This QR code could not be decoded as a Keystone signature.",
   "@commonThisQRCodeCouldNotBe": {
@@ -3243,10 +3231,6 @@
         "type": "String"
       }
     }
-  },
-  "keystoneFirmwareUpdatePrefix": "Update to the latest Keystone firmware at ",
-  "@keystoneFirmwareUpdatePrefix": {
-    "description": "Text before the keyst.one/firmware link in the scanning help. Keep the trailing space; the link follows directly."
   },
   "keystoneImReadyNow": "I'm ready now",
   "@keystoneImReadyNow": {
@@ -5330,22 +5314,9 @@
       }
     }
   },
-  "migrationImmediateTradeoffEmphasis": "easier to associate with your wallet.",
-  "@migrationImmediateTradeoffEmphasis": {
-    "description": "[security] Highlighted second part of the privacy notice, continuing the previous message."
-  },
   "migrationImmediateTradeoffHighlight": "easier to associate with your wallet",
   "@migrationImmediateTradeoffHighlight": {
     "description": "[security] Emphasized phrase inserted into the privacy notice sentence as its highlight; it completes 'your amount and timing are …'."
-  },
-  "migrationImmediateTradeoffLead": "Crosses in one visible step — your {amount} and timing are ",
-  "@migrationImmediateTradeoffLead": {
-    "description": "[security] First part of the privacy notice; {amount} is the ZEC amount. The sentence continues in the next message, so it must end with a space.",
-    "placeholders": {
-      "amount": {
-        "type": "String"
-      }
-    }
   },
   "migrationImmediateTradeoffLedger": "\nPrivate migration is not available for Ledger accounts.",
   "@migrationImmediateTradeoffLedger": {
@@ -5953,10 +5924,6 @@
   "migrationMobileFastPlanUnavailable": "Unavailable",
   "@migrationMobileFastPlanUnavailable": {
     "description": "Placeholder value of the amount and fee rows on the Immediate migration review when no plan could be made."
-  },
-  "migrationMobileFastPrivacyBodyHighlight": "easier to associate with your wallet",
-  "@migrationMobileFastPrivacyBodyHighlight": {
-    "description": "[security] Highlighted middle part of the sentence in the privacy warning card; it follows the lead part and ends the sentence."
   },
   "migrationMobileFastPrivacyConsiderPrivate": "Consider choosing a Private Migration option.",
   "@migrationMobileFastPrivacyConsiderPrivate": {
@@ -6623,10 +6590,6 @@
       }
     }
   },
-  "migrationMobileStatusNotesLead": "Migration ",
-  "@migrationMobileStatusNotesLead": {
-    "description": "Bold first words of the heading row above the migration parts; followed by the note count such as 3 notes. Keep the trailing space."
-  },
   "migrationMobileStatusNotesTitle": "Migration {notes}",
   "@migrationMobileStatusNotesTitle": {
     "description": "Heading row above the migration parts. {notes} is the muted note count such as '3 notes' and can be moved anywhere.",
@@ -6672,17 +6635,9 @@
   "@migrationMobileWaitKeystoneAgain": {
     "description": "Note under the note split card for Keystone accounts: another signing on the device is required afterwards."
   },
-  "migrationMobileWaitLoopBatch": " the batch of transactions",
-  "@migrationMobileWaitLoopBatch": {
-    "description": "Second fragment of the bottom text on the animated loop; keep the leading space."
-  },
   "migrationMobileWaitLoopCaption": "Repeat several times,\nwaiting could take 2–10\nhours",
   "@migrationMobileWaitLoopCaption": {
     "description": "Caption in the middle of the animated loop that explains the sign-and-wait cycle; the line breaks are intentional and the dash is an en dash."
-  },
-  "migrationMobileWaitLoopForWindow": " for the window",
-  "@migrationMobileWaitLoopForWindow": {
-    "description": "Second fragment of the top text on the animated loop; keep the leading space."
   },
   "migrationMobileWaitLoopSign": "Sign",
   "@migrationMobileWaitLoopSign": {
@@ -12338,10 +12293,6 @@
   "settingsSeedScreenshotBodyLead": "Screenshots are not reliable",
   "@settingsSeedScreenshotBodyLead": {
     "description": "[security] Bold phrase inserted into the screenshot warning body, where it starts the first sentence."
-  },
-  "settingsSeedScreenshotBodyRest": ". Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.",
-  "@settingsSeedScreenshotBodyRest": {
-    "description": "[security] Rest of the screenshot warning body; it directly follows the bold lead and so starts with a period."
   },
   "settingsSeedScreenshotTitle": "Don’t take screenshots of your Secret Passphrase",
   "@settingsSeedScreenshotTitle": {

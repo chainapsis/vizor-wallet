@@ -2549,12 +2549,6 @@ abstract class AppLocalizations {
   /// **'On a Mac, you can use Continuity Camera to scan with your iPhone instead.'**
   String get commonOnAMacYouCanUse;
 
-  /// Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon. Shared by: keystone, migration.
-  ///
-  /// In en, this message translates to:
-  /// **'on your Keystone,'**
-  String get commonOnYourKeystone;
-
   /// Button that opens the system settings page for the camera permission. Shared by: address, keystone, ledger.
   ///
   /// In en, this message translates to:
@@ -3040,18 +3034,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Syncing'**
   String get commonSyncing;
-
-  /// Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon. Shared by: keystone, migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Tap'**
-  String get commonTap;
-
-  /// End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'. Shared by: keystone, migration.
-  ///
-  /// In en, this message translates to:
-  /// **'then scan this QR code'**
-  String get commonThenScanThisQRCode;
 
   /// Hint under the mobile Keystone scanner when the scanned QR is not a valid signature. Shared by: home, keystone.
   ///
@@ -4276,12 +4258,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Update to the latest Keystone firmware at {link}'**
   String keystoneFirmwareUpdate(String link);
-
-  /// Text before the keyst.one/firmware link in the scanning help. Keep the trailing space; the link follows directly.
-  ///
-  /// In en, this message translates to:
-  /// **'Update to the latest Keystone firmware at '**
-  String get keystoneFirmwareUpdatePrefix;
 
   /// Primary button on the Keystone how-to-connect screen; continues to the QR scan step once the user has followed the instructions.
   ///
@@ -6964,23 +6940,11 @@ abstract class AppLocalizations {
   /// **'Crosses in one visible step — your {amount} and timing are {highlight}.'**
   String migrationImmediateTradeoffBody(String amount, String highlight);
 
-  /// [security] Highlighted second part of the privacy notice, continuing the previous message.
-  ///
-  /// In en, this message translates to:
-  /// **'easier to associate with your wallet.'**
-  String get migrationImmediateTradeoffEmphasis;
-
   /// [security] Emphasized phrase inserted into the privacy notice sentence as its highlight; it completes 'your amount and timing are …'.
   ///
   /// In en, this message translates to:
   /// **'easier to associate with your wallet'**
   String get migrationImmediateTradeoffHighlight;
-
-  /// [security] First part of the privacy notice; {amount} is the ZEC amount. The sentence continues in the next message, so it must end with a space.
-  ///
-  /// In en, this message translates to:
-  /// **'Crosses in one visible step — your {amount} and timing are '**
-  String migrationImmediateTradeoffLead(String amount);
 
   /// [security] Last line of the privacy notice for Ledger accounts; starts with a line break.
   ///
@@ -7719,12 +7683,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unavailable'**
   String get migrationMobileFastPlanUnavailable;
-
-  /// [security] Highlighted middle part of the sentence in the privacy warning card; it follows the lead part and ends the sentence.
-  ///
-  /// In en, this message translates to:
-  /// **'easier to associate with your wallet'**
-  String get migrationMobileFastPrivacyBodyHighlight;
 
   /// Last sentence of the privacy warning card suggesting the Private migration option.
   ///
@@ -8566,12 +8524,6 @@ abstract class AppLocalizations {
   /// **'{count} notes'**
   String migrationMobileStatusNotesCount(int count);
 
-  /// Bold first words of the heading row above the migration parts; followed by the note count such as 3 notes. Keep the trailing space.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration '**
-  String get migrationMobileStatusNotesLead;
-
   /// Heading row above the migration parts. {notes} is the muted note count such as '3 notes' and can be moved anywhere.
   ///
   /// In en, this message translates to:
@@ -8620,23 +8572,11 @@ abstract class AppLocalizations {
   /// **'Another Keystone approval will be needed after these confirmations.'**
   String get migrationMobileWaitKeystoneAgain;
 
-  /// Second fragment of the bottom text on the animated loop; keep the leading space.
-  ///
-  /// In en, this message translates to:
-  /// **' the batch of transactions'**
-  String get migrationMobileWaitLoopBatch;
-
   /// Caption in the middle of the animated loop that explains the sign-and-wait cycle; the line breaks are intentional and the dash is an en dash.
   ///
   /// In en, this message translates to:
   /// **'Repeat several times,\nwaiting could take 2–10\nhours'**
   String get migrationMobileWaitLoopCaption;
-
-  /// Second fragment of the top text on the animated loop; keep the leading space.
-  ///
-  /// In en, this message translates to:
-  /// **' for the window'**
-  String get migrationMobileWaitLoopForWindow;
 
   /// Highlighted verb inserted into the bottom text of the animated loop, which reads 'Sign the batch of transactions'.
   ///
@@ -15910,12 +15850,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Screenshots are not reliable'**
   String get settingsSeedScreenshotBodyLead;
-
-  /// [security] Rest of the screenshot warning body; it directly follows the bold lead and so starts with a period.
-  ///
-  /// In en, this message translates to:
-  /// **'. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.'**
-  String get settingsSeedScreenshotBodyRest;
 
   /// [security] Heading of the warning sheet shown when a screenshot is taken while the secret passphrase is visible.
   ///

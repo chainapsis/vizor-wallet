@@ -1470,9 +1470,6 @@ class AppLocalizationsKo extends AppLocalizations {
       'Mac⁠에⁠서⁠는 연⁠속⁠성 카⁠메⁠라⁠를 사⁠용⁠해 iPhone⁠으⁠로 대⁠신 스⁠캔⁠할 수 있⁠어⁠요.';
 
   @override
-  String get commonOnYourKeystone => 'on your Keystone,';
-
-  @override
   String get commonOpenSettings => '설⁠정 열⁠기';
 
   @override
@@ -1724,12 +1721,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonSyncing => '동⁠기⁠화 중';
-
-  @override
-  String get commonTap => 'Tap';
-
-  @override
-  String get commonThenScanThisQRCode => 'then scan this QR code';
 
   @override
   String get commonThisQRCodeCouldNotBe =>
@@ -2448,10 +2439,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String keystoneFirmwareUpdate(String link) {
     return '최⁠신 Keystone 펌⁠웨⁠어⁠로 업⁠데⁠이⁠트⁠하⁠세⁠요: $link';
   }
-
-  @override
-  String get keystoneFirmwareUpdatePrefix =>
-      'Update to the latest Keystone firmware at ';
 
   @override
   String get keystoneImReadyNow => '준⁠비 완⁠료';
@@ -4120,16 +4107,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationImmediateTradeoffEmphasis =>
-      'easier to associate with your wallet.';
-
-  @override
   String get migrationImmediateTradeoffHighlight => '내 지⁠갑⁠과 더 쉽⁠게 연⁠결⁠돼⁠요';
-
-  @override
-  String migrationImmediateTradeoffLead(String amount) {
-    return 'Crosses in one visible step — your $amount and timing are ';
-  }
 
   @override
   String get migrationImmediateTradeoffLedger =>
@@ -4608,10 +4586,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileFastPlanUnavailable => '사⁠용⁠할 수 없⁠음';
-
-  @override
-  String get migrationMobileFastPrivacyBodyHighlight =>
-      'easier to associate with your wallet';
 
   @override
   String get migrationMobileFastPrivacyConsiderPrivate =>
@@ -5124,9 +5098,6 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileStatusNotesLead => 'Migration ';
-
-  @override
   String migrationMobileStatusNotesTitle(String notes) {
     return '이⁠전 $notes';
   }
@@ -5158,14 +5129,8 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 확⁠인⁠이 끝⁠나⁠면 Keystone⁠에⁠서 한 번 더 승⁠인⁠해⁠야 해⁠요.';
 
   @override
-  String get migrationMobileWaitLoopBatch => ' the batch of transactions';
-
-  @override
   String get migrationMobileWaitLoopCaption =>
       '여⁠러 번 반⁠복⁠되⁠며\n기⁠다⁠리⁠는 데 2~10⁠시⁠간\n걸⁠릴 수 있⁠어⁠요';
-
-  @override
-  String get migrationMobileWaitLoopForWindow => ' for the window';
 
   @override
   String get migrationMobileWaitLoopSign => '서⁠명⁠하⁠기';
@@ -9539,10 +9504,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsSeedScreenshotBodyLead => '스⁠크⁠린⁠샷⁠은 안⁠전⁠하⁠지 않⁠아⁠요';
-
-  @override
-  String get settingsSeedScreenshotBodyRest =>
-      '. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
 
   @override
   String get settingsSeedScreenshotTitle => '복⁠구 문⁠구⁠를 스⁠크⁠린⁠샷⁠으⁠로 남⁠기⁠지 마⁠세⁠요';

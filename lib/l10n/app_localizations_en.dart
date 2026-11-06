@@ -1490,9 +1490,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'On a Mac, you can use Continuity Camera to scan with your iPhone instead.';
 
   @override
-  String get commonOnYourKeystone => 'on your Keystone,';
-
-  @override
   String get commonOpenSettings => 'Open settings';
 
   @override
@@ -1746,12 +1743,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonSyncing => 'Syncing';
-
-  @override
-  String get commonTap => 'Tap';
-
-  @override
-  String get commonThenScanThisQRCode => 'then scan this QR code';
 
   @override
   String get commonThisQRCodeCouldNotBe =>
@@ -2487,10 +2478,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String keystoneFirmwareUpdate(String link) {
     return 'Update to the latest Keystone firmware at $link';
   }
-
-  @override
-  String get keystoneFirmwareUpdatePrefix =>
-      'Update to the latest Keystone firmware at ';
 
   @override
   String get keystoneImReadyNow => 'I\'m ready now';
@@ -4176,17 +4163,8 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationImmediateTradeoffEmphasis =>
-      'easier to associate with your wallet.';
-
-  @override
   String get migrationImmediateTradeoffHighlight =>
       'easier to associate with your wallet';
-
-  @override
-  String migrationImmediateTradeoffLead(String amount) {
-    return 'Crosses in one visible step — your $amount and timing are ';
-  }
 
   @override
   String get migrationImmediateTradeoffLedger =>
@@ -4685,10 +4663,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationMobileFastPlanUnavailable => 'Unavailable';
-
-  @override
-  String get migrationMobileFastPrivacyBodyHighlight =>
-      'easier to associate with your wallet';
 
   @override
   String get migrationMobileFastPrivacyConsiderPrivate =>
@@ -5217,9 +5191,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileStatusNotesLead => 'Migration ';
-
-  @override
   String migrationMobileStatusNotesTitle(String notes) {
     return 'Migration $notes';
   }
@@ -5251,14 +5222,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'Another Keystone approval will be needed after these confirmations.';
 
   @override
-  String get migrationMobileWaitLoopBatch => ' the batch of transactions';
-
-  @override
   String get migrationMobileWaitLoopCaption =>
       'Repeat several times,\nwaiting could take 2–10\nhours';
-
-  @override
-  String get migrationMobileWaitLoopForWindow => ' for the window';
 
   @override
   String get migrationMobileWaitLoopSign => 'Sign';
@@ -9719,10 +9684,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsSeedScreenshotBodyLead => 'Screenshots are not reliable';
-
-  @override
-  String get settingsSeedScreenshotBodyRest =>
-      '. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
 
   @override
   String get settingsSeedScreenshotTitle =>
