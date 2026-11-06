@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -24,6 +25,9 @@ const _second = 'account-2';
 
 /// The time the notifier's swap recovery deadlines read.
 var _clock = DateTime(2026);
+
+/// How many times the notifier read the chain tip.
+var _tipReads = 0;
 
 /// Whether tip requests fail, as during a lightwalletd outage.
 var _tipFails = false;
@@ -452,10 +456,13 @@ class _Tip extends RpcEndpointFailoverNotifier {
   );
 
   /// Reports the chain tip the initial state already scanned, or fails while
-  /// [_tipFails] is set.
+  /// [_tipFails] is set, counting each read in [_tipReads].
   @override
-  Future<BigInt> getLatestBlockHeight() async =>
-      _tipFails ? throw StateError('lightwalletd is down') : BigInt.from(100);
+  Future<BigInt> getLatestBlockHeight() async {
+    _tipReads++;
+    if (_tipFails) throw StateError('lightwalletd is down');
+    return BigInt.from(100);
+  }
 }
 
 class _Upgrade extends ChainUpgradeStatusNotifier {
@@ -708,6 +715,44 @@ void main() {
       expect(api.recoveries, hasLength(1));
       expect(await pollStartsRound(sync), isFalse);
       await settle(sync);
+    });
+
+    /// Seven hours of real scheduling on a fake clock: tip polling runs every
+    /// 10 seconds at the tip, and any other timer the notifier set would fire
+    /// too, yet an idle wallet that owes nothing starts no round.
+    test('an idle wallet at the tip starts no round in seven hours of '
+        'polling', () {
+      fakeAsync((async) {
+        // Drives `work` on the fake clock until it completes.
+        T run<T>(Future<T> work) {
+          (T,)? result;
+          Object? error;
+          work.then((value) => result = (value,), onError: (e) => error = e);
+          for (var i = 0; result == null && error == null; i++) {
+            if (i > 100000) fail('the work never completed');
+            async.elapse(const Duration(milliseconds: 1));
+          }
+          if (error case final error?) throw error;
+          return result!.$1;
+        }
+
+        final sync = run(atTip());
+        final rounds = api.recoveries.length;
+        final tips = _tipReads;
+        // A tip check restarts the polling the setup stopped.
+        run(sync.checkTipForTesting());
+        for (var i = 0; i < 7 * 60 * 6; i++) {
+          _clock = _clock.add(const Duration(seconds: 10));
+          async.elapse(const Duration(seconds: 10));
+        }
+        expect(
+          _tipReads - tips,
+          greaterThan(7 * 60 * 6 - 10),
+          reason: 'tip polling ran throughout',
+        );
+        expect(api.recoveries, hasLength(rounds), reason: 'no timer owes one');
+        run(settle(sync));
+      });
     });
 
     test('a cold start owes one round, which runs once the first sync '
