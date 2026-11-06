@@ -173,8 +173,14 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
       if (!mounted) return;
       setState(() {
         _connection = null;
+        // Readiness text is English for logs; show its localized guidance.
         _error = error is LedgerAppReadinessException
-            ? error.message
+            ? ledgerFailureGuidance(
+                    context.l10n,
+                    error,
+                    requestKind: LedgerRequestKind.viewingKey,
+                  )?.message ??
+                  _friendlyError(error)
             : _friendlyError(error);
       });
     }

@@ -1078,7 +1078,7 @@ void main() {
     );
 
     testWidgets('a language applies only after Update', (tester) async {
-      final saved = <AppLanguage?>[];
+      final saved = <AppLanguage>[];
       await tester.pumpWidget(
         _settingsHarness(extraOverrides: languagePreviewOverrides(saved)),
       );
@@ -1087,15 +1087,19 @@ void main() {
       final row = find.byKey(const ValueKey('settings_language_row'));
       await tester.ensureVisible(row);
       expect(
-        find.descendant(of: row, matching: find.text('System (English)')),
+        find.descendant(of: row, matching: find.text('English')),
         findsOneWidget,
       );
       await tester.tap(row);
       await tester.pumpAndSettle();
 
-      for (final option in ['system', 'en', 'ko', 'zh']) {
+      for (final option in ['en', 'ko', 'zh']) {
         expect(find.byKey(ValueKey('language_option_$option')), findsOneWidget);
       }
+      expect(
+        find.byKey(const ValueKey('language_option_system')),
+        findsNothing,
+      );
       expect(find.text('简体中文'), findsOneWidget);
 
       // Update stays disabled until the choice differs from the saved one.

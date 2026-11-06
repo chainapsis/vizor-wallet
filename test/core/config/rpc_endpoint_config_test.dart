@@ -1,5 +1,10 @@
+import 'dart:ui' show Locale;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/l10n/l10n.dart';
+
+import '../../support/test_l10n.dart';
 
 void main() {
   test(
@@ -644,6 +649,32 @@ void main() {
 
     test('keeps https endpoints compact for custom endpoint editing', () {
       expect(rpcEndpointInputText('https://zec.rocks:443'), 'zec.rocks:443');
+    });
+  });
+
+  group('error text', () {
+    test('English matches the text the exceptions carry', () {
+      for (final issue in RpcEndpointIssue.values) {
+        final error = RpcEndpointFormatException(issue);
+        expect(rpcEndpointErrorText(testL10n, error), error.message);
+      }
+      final mismatch = RpcEndpointNetworkMismatch(
+        endpointNetwork: 'test',
+        walletNetwork: 'main',
+      );
+      expect(rpcEndpointErrorText(testL10n, mismatch), mismatch.message);
+    });
+
+    test('Korean screens get Korean text, not the English message', () {
+      final ko = lookupAppLocalizations(const Locale('ko'));
+      try {
+        normalizeRpcEndpointUrl('http://zec.rocks:443', allowLocalHttp: false);
+        fail('expected a refused endpoint');
+      } on FormatException catch (error) {
+        expect(error.message, 'Use an https:// endpoint.');
+        expect(rpcEndpointErrorText(ko, error), ko.endpointErrorHttps);
+        expect(rpcEndpointErrorText(ko, error), isNot(error.message));
+      }
     });
   });
 }

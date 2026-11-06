@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../tool/l10n/korean_arb.dart' show wordJoiner;
 import '../../tool/l10n/native_strings.dart';
 
 NativeStringTable parse({
@@ -19,7 +20,7 @@ void main() {
         'natives': 'Not a native key',
         '@nativeA': {'description': 'A.'},
       },
-      ko: {'nativeA': '첫⁠번⁠째'},
+      ko: {'nativeA': '첫$wordJoiner번$wordJoiner째'},
     );
     expect(table.keys, ['nativeA', 'nativeB']);
     expect(table.messages['ko'], {'nativeA': '첫번째'});

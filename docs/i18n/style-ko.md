@@ -29,6 +29,6 @@
 ## Line breaks
 
 Flutter can break Korean lines inside a word. `tool/l10n/korean_arb.dart`
-inserts invisible word joiners into the shipped translations, so write normal
+inserts invisible joiners (U+200D) into the shipped translations, so write normal
 text with ordinary spaces in `lib/l10n/source/app_ko.arb` and never insert
 joiners or manual line breaks yourself.

@@ -1889,6 +1889,37 @@ class AppLocalizationsEn extends AppLocalizations {
   String get endpointCustom => 'Custom endpoint';
 
   @override
+  String get endpointErrorAutomaticUnavailable =>
+      'Automatic selection is unavailable.';
+
+  @override
+  String get endpointErrorEmpty => 'Enter an endpoint.';
+
+  @override
+  String get endpointErrorHost => 'Enter a valid hostname and port.';
+
+  @override
+  String get endpointErrorHttps => 'Use an https:// endpoint.';
+
+  @override
+  String get endpointErrorNoSelection => 'Select an endpoint.';
+
+  @override
+  String get endpointErrorPort =>
+      'Include a valid port, for example us.zec.stardust.rest:443.';
+
+  @override
+  String get endpointErrorSpaces => 'Endpoint cannot contain spaces.';
+
+  @override
+  String endpointErrorWrongNetwork(
+    String endpointNetwork,
+    String walletNetwork,
+  ) {
+    return 'Endpoint is for $endpointNetwork, but this wallet uses $walletNetwork.';
+  }
+
+  @override
   String get endpointFailoverSwitchedBack =>
       'Selected endpoint recovered. Switched back.';
 
@@ -2599,11 +2630,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get keystoneTryAgainWithKeystone => 'Try again with Keystone';
-
-  @override
-  String languageSystemOption(String language) {
-    return 'System ($language)';
-  }
 
   @override
   String get ledgerAccountIndexFieldLabel => 'Ledger account index (0–100)';
@@ -9490,6 +9516,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsExplorerCustomSubtitle => 'Any explorer you prefer';
+
+  @override
+  String get settingsExplorerErrorEmpty => 'Enter an explorer URL.';
+
+  @override
+  String get settingsExplorerErrorHost =>
+      'Enter a host, like explorer.example.';
+
+  @override
+  String get settingsExplorerErrorScheme => 'Enter an http or https URL.';
 
   @override
   String get settingsExplorerPrivacyCopy =>

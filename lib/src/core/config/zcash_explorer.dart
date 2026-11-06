@@ -40,6 +40,40 @@ String explorerSettingsLabel(
   }
 }
 
+/// Why an explorer URL was refused. Screens show [message]; the exception
+/// keeps the English [logText].
+enum ExplorerUrlIssue {
+  empty('Enter an explorer URL.'), // l10n-ignore: log text
+  scheme('Enter an http or https URL.'), // l10n-ignore: log text
+  host('Enter a host, like explorer.example.'); // l10n-ignore: log text
+
+  const ExplorerUrlIssue(this.logText);
+
+  final String logText;
+
+  String message(AppLocalizations l10n) => switch (this) {
+    ExplorerUrlIssue.empty => l10n.settingsExplorerErrorEmpty,
+    ExplorerUrlIssue.scheme => l10n.settingsExplorerErrorScheme,
+    ExplorerUrlIssue.host => l10n.settingsExplorerErrorHost,
+  };
+}
+
+/// An explorer URL the user cannot use. A [FormatException], so existing
+/// handlers still catch it.
+class ExplorerUrlFormatException extends FormatException {
+  ExplorerUrlFormatException(this.issue) : super(issue.logText);
+
+  final ExplorerUrlIssue issue;
+}
+
+/// The text a screen shows for an explorer URL error.
+String explorerUrlErrorText(AppLocalizations l10n, FormatException error) {
+  return switch (error) {
+    ExplorerUrlFormatException(:final issue) => issue.message(l10n),
+    _ => ExplorerUrlIssue.host.message(l10n),
+  };
+}
+
 /// Normalize user input into a stored explorer URL template.
 ///
 /// Accepts an origin (`https://explorer.example`), a path that already
@@ -47,7 +81,7 @@ String explorerSettingsLabel(
 String normalizeExplorerUrlTemplate(String input) {
   var raw = input.trim();
   if (raw.isEmpty) {
-    throw const FormatException('Enter an explorer URL.');
+    throw ExplorerUrlFormatException(ExplorerUrlIssue.empty);
   }
 
   final lower = raw.toLowerCase();
@@ -55,7 +89,7 @@ String normalizeExplorerUrlTemplate(String input) {
       lower.startsWith('data:') ||
       lower.startsWith('file:') ||
       lower.startsWith('vbscript:')) {
-    throw const FormatException('Enter an http or https URL.');
+    throw ExplorerUrlFormatException(ExplorerUrlIssue.scheme);
   }
 
   if (!raw.contains('://')) {
@@ -64,10 +98,10 @@ String normalizeExplorerUrlTemplate(String input) {
 
   final parsed = Uri.tryParse(raw);
   if (parsed == null || !parsed.hasScheme || parsed.host.isEmpty) {
-    throw const FormatException('Enter a host, like explorer.example.');
+    throw ExplorerUrlFormatException(ExplorerUrlIssue.host);
   }
   if (parsed.scheme != 'http' && parsed.scheme != 'https') {
-    throw const FormatException('Enter an http or https URL.');
+    throw ExplorerUrlFormatException(ExplorerUrlIssue.scheme);
   }
 
   return _decodeTxidPlaceholders(_ensureTxidPlaceholder(parsed).toString());
@@ -80,7 +114,7 @@ Uri applyExplorerUrlTemplate(String template, String txidHex) {
   ).replaceAllMapped(_txidPlaceholderPattern, (_) => txidHex);
   final uri = Uri.parse(filled);
   if (uri.scheme != 'http' && uri.scheme != 'https') {
-    throw const FormatException('Enter an http or https URL.');
+    throw ExplorerUrlFormatException(ExplorerUrlIssue.scheme);
   }
   return uri;
 }

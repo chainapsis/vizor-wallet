@@ -36,6 +36,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../../tool/l10n/korean_arb.dart' show wordJoiner;
 import '../../fakes/fake_zec_market_data_cache.dart';
 import '../../support/test_l10n.dart';
 
@@ -629,7 +630,7 @@ void main() {
         find.byWidgetPredicate(
           (widget) =>
               widget is Text &&
-              (widget.data ?? '').replaceAll('\u2060', '').contains(sentence),
+              (widget.data ?? '').replaceAll(wordJoiner, '').contains(sentence),
         ),
         findsOneWidget,
       );

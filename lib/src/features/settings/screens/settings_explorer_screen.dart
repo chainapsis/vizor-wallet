@@ -74,7 +74,7 @@ class _SettingsExplorerScreenState
       normalizeExplorerUrlTemplate(_customController.text);
       return null;
     } on FormatException catch (e) {
-      return e.message;
+      return explorerUrlErrorText(context.l10n, e);
     }
   }
 
@@ -103,7 +103,7 @@ class _SettingsExplorerScreenState
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() {
-        _submitError = e.message;
+        _submitError = explorerUrlErrorText(context.l10n, e);
         _isSubmitting = false;
       });
     } catch (e, st) {

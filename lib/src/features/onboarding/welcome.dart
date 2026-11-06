@@ -98,7 +98,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
     _networkSettings.setPresented(false);
   }
 
-  Future<void> _updateLanguage(AppLanguage? language) async {
+  Future<void> _updateLanguage(AppLanguage language) async {
     await ref.read(appLanguageProvider.notifier).set(language);
     if (mounted) _dismissLanguagePicker();
   }

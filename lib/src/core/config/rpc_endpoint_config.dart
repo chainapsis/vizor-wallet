@@ -415,6 +415,69 @@ RpcEndpointPreset? findRpcEndpointPresetByUrl(
   return null;
 }
 
+/// Why an endpoint was refused. Screens show [message]; the exception keeps
+/// the English [logText], which logs and failover matching read.
+enum RpcEndpointIssue {
+  empty('Enter an endpoint.'), // l10n-ignore: log text
+  spaces('Endpoint cannot contain spaces.'), // l10n-ignore: log text
+  host('Enter a valid hostname and port.'), // l10n-ignore: log text
+  https('Use an https:// endpoint.'), // l10n-ignore: log text
+  port(
+    'Include a valid port, for example us.zec.stardust.rest:443.', // l10n-ignore: log text
+  ),
+  noSelection('Select an endpoint.'), // l10n-ignore: log text
+  automaticUnavailable(
+    'Automatic selection is unavailable.', // l10n-ignore: log text
+  );
+
+  const RpcEndpointIssue(this.logText);
+
+  final String logText;
+
+  String message(AppLocalizations l10n) => switch (this) {
+    RpcEndpointIssue.empty => l10n.endpointErrorEmpty,
+    RpcEndpointIssue.spaces => l10n.endpointErrorSpaces,
+    RpcEndpointIssue.host => l10n.endpointErrorHost,
+    RpcEndpointIssue.https => l10n.endpointErrorHttps,
+    RpcEndpointIssue.port => l10n.endpointErrorPort,
+    RpcEndpointIssue.noSelection => l10n.endpointErrorNoSelection,
+    RpcEndpointIssue.automaticUnavailable =>
+      l10n.endpointErrorAutomaticUnavailable,
+  };
+}
+
+/// An endpoint the user cannot use. A [FormatException], so existing handlers
+/// still catch it.
+class RpcEndpointFormatException extends FormatException {
+  RpcEndpointFormatException(this.issue) : super(issue.logText);
+
+  final RpcEndpointIssue issue;
+}
+
+/// The endpoint serves another Zcash network. The English message is what
+/// `shouldFallbackFromLightwalletdError` matches.
+class RpcEndpointNetworkMismatch extends FormatException {
+  RpcEndpointNetworkMismatch({
+    required this.endpointNetwork,
+    required this.walletNetwork,
+  }) : super(
+         'Endpoint is for $endpointNetwork, but this wallet uses $walletNetwork.', // l10n-ignore: matched by failover
+       );
+
+  final String endpointNetwork;
+  final String walletNetwork;
+}
+
+/// The text a screen shows for an endpoint error.
+String rpcEndpointErrorText(AppLocalizations l10n, FormatException error) {
+  return switch (error) {
+    RpcEndpointFormatException(:final issue) => issue.message(l10n),
+    RpcEndpointNetworkMismatch(:final endpointNetwork, :final walletNetwork) =>
+      l10n.endpointErrorWrongNetwork(endpointNetwork, walletNetwork),
+    _ => RpcEndpointIssue.host.message(l10n),
+  };
+}
+
 String normalizeRpcEndpointUrl(
   String input, {
   bool allowDefaultPort = false,
@@ -422,34 +485,30 @@ String normalizeRpcEndpointUrl(
 }) {
   final trimmed = input.trim();
   if (trimmed.isEmpty) {
-    throw const FormatException('Enter an endpoint.');
+    throw RpcEndpointFormatException(RpcEndpointIssue.empty);
   }
   if (trimmed.contains(RegExp(r'\s'))) {
-    throw const FormatException('Endpoint cannot contain spaces.');
+    throw RpcEndpointFormatException(RpcEndpointIssue.spaces);
   }
 
   final candidate = trimmed.contains('://') ? trimmed : 'https://$trimmed';
   final uri = Uri.tryParse(candidate);
   if (uri == null || uri.host.isEmpty) {
-    throw const FormatException('Enter a valid hostname and port.');
+    throw RpcEndpointFormatException(RpcEndpointIssue.host);
   }
   if (uri.scheme != 'https' && uri.scheme != 'http') {
-    throw const FormatException('Use an https:// endpoint.');
+    throw RpcEndpointFormatException(RpcEndpointIssue.https);
   }
   if (uri.scheme == 'http' && !(allowLocalHttp && _isLocalhost(uri.host))) {
-    throw const FormatException('Use an https:// endpoint.');
+    throw RpcEndpointFormatException(RpcEndpointIssue.https);
   }
   final hasExplicitPort = _hasExplicitPort(candidate);
   if (!hasExplicitPort && !allowDefaultPort) {
-    throw const FormatException(
-      'Include a valid port, for example us.zec.stardust.rest:443.',
-    );
+    throw RpcEndpointFormatException(RpcEndpointIssue.port);
   }
   final port = hasExplicitPort ? uri.port : _defaultPortForScheme(uri.scheme);
   if (port <= 0 || port > 65535) {
-    throw const FormatException(
-      'Include a valid port, for example us.zec.stardust.rest:443.',
-    );
+    throw RpcEndpointFormatException(RpcEndpointIssue.port);
   }
 
   return '${uri.scheme}://${_formatRpcHost(uri.host)}:$port';
