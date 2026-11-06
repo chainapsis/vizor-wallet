@@ -15,8 +15,8 @@
    A CJK language also gets its own list in `fontFamilyFallbackFor`
    (`lib/src/core/l10n/locale_typography.dart`).
 6. Review it on screen with `--dart-define=VIZOR_I18N_PREVIEW=true`.
-7. Set `released: true` once every message is translated and a native
-   reviewer approved the `[security]` strings. The gate test then requires
+7. Set `released: true` once every message is translated and an in-house
+   native reviewer approved the `[security]` strings. The gate test then requires
    complete coverage.
 8. Add the [native resources at release](#native-resources-at-release).
 

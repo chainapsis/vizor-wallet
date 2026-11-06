@@ -23,7 +23,9 @@ adds invisible word joiners so lines break between words.
 2. A translation draft is written from the glossary, the style guide, the
    description and, where available, a screenshot of the screen.
 3. A native reviewer for the language approves it. A `[security]` string
-   always needs that approval.
+   always needs that approval, and only an in-house native reviewer gives
+   it: a translator or community contributor may propose `[security]` copy
+   but not approve it.
 4. The language is checked on screen: truncation, wrapping and fonts.
 
 Unreleased languages stay hidden behind `--dart-define=VIZOR_I18N_PREVIEW=true`
