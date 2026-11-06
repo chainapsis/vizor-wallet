@@ -13,6 +13,7 @@ import '../../../core/widgets/mobile_text_field.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../settings/widgets/mobile/mobile_private_queries_control.dart';
 import '../../settings/widgets/mobile/mobile_tor_control.dart';
 import '../../settings/widgets/private_queries_turn_off.dart';
@@ -76,9 +77,10 @@ class _MobileNetworkSettingsSheetState
   @override
   void initState() {
     super.initState();
-    _controller.text = rpcEndpointInputText(
-      ref.read(rpcEndpointProvider).lightwalletdUrl,
-    );
+    final endpoint = ref.read(rpcEndpointProvider);
+    if (!isAutomaticRpcEndpointConfig(endpoint)) {
+      _controller.text = rpcEndpointInputText(endpoint.lightwalletdUrl);
+    }
     _focus.addListener(_revealInput);
     _updateDismissal();
     ref.listenManual(
@@ -170,7 +172,8 @@ class _MobileNetworkSettingsSheetState
       return false;
     }
     return normalizeRpcEndpointUrl(_controller.text, allowDefaultPort: true) !=
-        current.normalizedLightwalletdUrl;
+            current.normalizedLightwalletdUrl ||
+        current.effectivePresetId != kCustomRpcEndpointPresetId;
   }
 
   Future<void> _submit() async {
@@ -193,15 +196,35 @@ class _MobileNetworkSettingsSheetState
       _finishWithError(OnboardingSubmitError.text(error.message));
     } on RpcEndpointSaveException {
       _finishWithError(
-        OnboardingSubmitError.localized(
-          (l10n) => l10n.onboardingNetworkSaveFailed,
-        ),
+        OnboardingSubmitError.localized((l10n) => l10n.endpointSaveFailed),
       );
     } catch (_) {
       _finishWithError(
         OnboardingSubmitError.localized(
           (l10n) => l10n.onboardingNetworkVerifyFailed,
         ),
+      );
+    }
+  }
+
+  Future<void> _useAutomatic() async {
+    if (!widget.dismissal.value) return;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    _updateDismissal();
+    try {
+      await ref.read(rpcEndpointProvider.notifier).setAutomatic();
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      _updateDismissal();
+      if (!widget.dismissal.value) return;
+      Navigator.of(context).pop();
+      widget.onUpdated?.call();
+    } catch (_) {
+      _finishWithError(
+        OnboardingSubmitError.localized((l10n) => l10n.endpointSaveFailed),
       );
     }
   }
@@ -227,6 +250,15 @@ class _MobileNetworkSettingsSheetState
   Widget build(BuildContext context) {
     final state = ref.watch(networkPrivacyProvider);
     final current = ref.watch(rpcEndpointProvider);
+    final automatic = isAutomaticRpcEndpointConfig(current);
+    final effective = automatic ? ref.watch(rpcEndpointFailoverProvider) : null;
+    final currentLabel = automatic
+        ? effective!.automaticReady
+              ? context.l10n.endpointAutomaticWithHost(
+                  effective.current.hostPort,
+                )
+              : context.l10n.endpointAutomatic
+        : current.hostPort;
     final changingPrivateQueries =
         ref.watch(enhancePirTransitionProvider) ==
         EnhancePirTransition.changing;
@@ -251,6 +283,12 @@ class _MobileNetworkSettingsSheetState
           onRequest: _requestPrivateQueries,
         ),
         current: current,
+        currentEndpointLabel: currentLabel,
+        onUseAutomatic: current.network == ZcashNetwork.mainnet && !automatic
+            ? canDismiss
+                  ? _useAutomatic
+                  : null
+            : null,
         controller: _controller,
         focusNode: _focus,
         fieldRegion: _fieldRegion,
@@ -280,6 +318,8 @@ class MobileNetworkSettingsContent extends StatelessWidget {
     required this.submitting,
     this.fieldRegion,
     this.error,
+    this.currentEndpointLabel,
+    this.onUseAutomatic,
     super.key,
   });
 
@@ -295,6 +335,8 @@ class MobileNetworkSettingsContent extends StatelessWidget {
   final bool canUpdate;
   final bool submitting;
   final String? error;
+  final String? currentEndpointLabel;
+  final VoidCallback? onUseAutomatic;
 
   @override
   Widget build(BuildContext context) {
@@ -330,11 +372,26 @@ class MobileNetworkSettingsContent extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    context.l10n.endpointCurrent(current.hostPort),
+                    context.l10n.endpointCurrent(
+                      currentEndpointLabel ??
+                          (isAutomaticRpcEndpointConfig(current)
+                              ? context.l10n.endpointAutomatic
+                              : current.hostPort),
+                    ),
                     style: AppTypography.bodySmall.copyWith(
                       color: colors.text.secondary,
                     ),
                   ),
+                  if (current.network == ZcashNetwork.mainnet &&
+                      !isAutomaticRpcEndpointConfig(current)) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    AppButton(
+                      key: const ValueKey('welcome_endpoint_automatic'),
+                      variant: AppButtonVariant.secondary,
+                      onPressed: onUseAutomatic,
+                      child: Text(context.l10n.endpointUseAutomatic),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.sm),
                   Column(
                     key: fieldRegion,

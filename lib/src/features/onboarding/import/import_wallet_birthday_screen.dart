@@ -162,16 +162,17 @@ class _ImportWalletBirthdayScreenState
     });
 
     try {
-      final estimatedHeight = await ref
-          .read(rpcEndpointFailoverProvider.notifier)
-          .runWithEndpointFallback(
-            operation:
-                'import birthday estimate', // l10n-ignore: operation label
-            action: (endpoint) =>
-                ImportBirthdayEstimator.estimateBirthdayHeight(
-                  endpoint: endpoint,
-                  selectedDate: date,
-                  metadata: _metadata,
+      final estimatedHeight =
+          await ImportBirthdayEstimator.estimateBirthdayHeight(
+            endpoint: ref.read(rpcEndpointProvider),
+            selectedDate: date,
+            metadata: _metadata,
+            runWithEndpoint: (action) => ref
+                .read(rpcEndpointFailoverProvider.notifier)
+                .runWithEndpointFallback(
+                  operation:
+                      'import birthday estimate', // l10n-ignore: operation label
+                  action: action,
                 ),
           );
       if (!mounted || seq != _estimateSeq) return;

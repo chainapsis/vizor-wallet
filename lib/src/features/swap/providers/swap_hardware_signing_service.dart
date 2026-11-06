@@ -106,7 +106,9 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
           accountUuid: accountUuid,
           operation: () async {
             final dbPath = await getWalletDbPath();
-            final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+            final endpoint = await _ref
+                .read(rpcEndpointFailoverProvider.notifier)
+                .ensureReady();
             BigInt? proposalId;
             var proposalConsumed = false;
 
@@ -280,7 +282,9 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
     String? outputParamsPath,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final endpoint = await _ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .ensureReady();
     final stored = await rust_sync
         .storeAndBroadcastPcztsWithKeystoneSignaturesForProposal(
           dbPath: dbPath,

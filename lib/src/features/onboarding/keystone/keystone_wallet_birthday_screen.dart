@@ -11,6 +11,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../import/import_birthday_calendar_overlay.dart';
 import '../import/import_birthday_estimator.dart';
 import '../import/import_birthday_unknown_height_modal.dart';
@@ -88,10 +89,18 @@ class _KeystoneWalletBirthdayScreenState
     });
 
     try {
-      final endpoint = ref.read(rpcEndpointProvider);
-      final metadata = await ImportBirthdayEstimator.loadMetadata(
-        endpoint: endpoint,
-      );
+      final metadata = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .runWithEndpointFallback(
+            operation:
+                'import birthday metadata', // l10n-ignore: operation label
+            action: (endpoint) {
+              if (!mounted) {
+                throw StateError('Birthday metadata load cancelled.');
+              }
+              return ImportBirthdayEstimator.loadMetadata(endpoint: endpoint);
+            },
+          );
       if (!mounted) return;
       setState(() {
         _metadata = metadata;
@@ -119,12 +128,18 @@ class _KeystoneWalletBirthdayScreenState
     });
 
     try {
-      final endpoint = ref.read(rpcEndpointProvider);
       final estimatedHeight =
           await ImportBirthdayEstimator.estimateBirthdayHeight(
-            endpoint: endpoint,
+            endpoint: ref.read(rpcEndpointProvider),
             selectedDate: date,
             metadata: _metadata,
+            runWithEndpoint: (action) => ref
+                .read(rpcEndpointFailoverProvider.notifier)
+                .runWithEndpointFallback(
+                  operation:
+                      'import birthday estimate', // l10n-ignore: operation label
+                  action: action,
+                ),
           );
       if (!mounted || seq != _estimateSeq) return;
       setState(() {

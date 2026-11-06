@@ -1802,6 +1802,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get donationThanksTitle => '感谢你支持 Vizor';
 
   @override
+  String get endpointAutomatic => '自动';
+
+  @override
+  String get endpointAutomaticSelecting => '自动 · 正在选择...';
+
+  @override
+  String endpointAutomaticWithHost(String endpoint) {
+    return '自动 · $endpoint';
+  }
+
+  @override
   String endpointCurrent(String endpoint) {
     return '当前：$endpoint';
   }
@@ -1838,10 +1849,19 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get endpointSaveFailed => '无法保存节点。请重试。';
+
+  @override
+  String get endpointSelecting => '正在选择节点…';
+
+  @override
   String get endpointUpdate => '更新节点';
 
   @override
   String get endpointUpdated => '节点已更新';
+
+  @override
+  String get endpointUseAutomatic => '使用自动选择';
 
   @override
   String get enhancePirChanging => '正在更改设置…';
@@ -6092,9 +6112,6 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get onboardingNetworkEndpointHelper =>
       '请使用适用于此钱包所在网络的 lightwalletd 服务器。';
-
-  @override
-  String get onboardingNetworkSaveFailed => '无法保存节点。请重试。';
 
   @override
   String get onboardingNetworkVerifyFailed => '无法验证该节点。请检查地址后重试。';

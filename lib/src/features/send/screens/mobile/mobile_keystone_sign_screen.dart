@@ -11,7 +11,7 @@ import '../../../../../main.dart' show log;
 import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/storage/wallet_paths.dart';
-import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../../rust/api/sync.dart' as rust_sync;
@@ -192,7 +192,6 @@ class _MobileKeystoneSignScreenState
     if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
       throw const MobileKeystonePcztSigningAborted();
     }
-    final endpoint = ref.read(rpcEndpointProvider);
     var saplingParams = await loadSaplingParamsStatus();
     if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
       throw const MobileKeystonePcztSigningAborted();
@@ -213,6 +212,12 @@ class _MobileKeystoneSignScreenState
       saplingParams = await loadSaplingParamsStatus();
     }
 
+    if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
+      throw const MobileKeystonePcztSigningAborted();
+    }
+    final endpoint = await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .ensureReady();
     if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
       throw const MobileKeystonePcztSigningAborted();
     }

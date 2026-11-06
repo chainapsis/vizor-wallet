@@ -291,7 +291,12 @@ class VotingPirWarmupCoordinator {
       }
 
       // Sync/PIR discovery may have switched routes while this warmup waited.
-      final currentEndpoint = _ref.read(votingRpcEndpointConfigProvider);
+      final currentEndpoint = await _ref.read(votingReadyRpcEndpointProvider)();
+      final activeAfterSelection = await _ref
+          .read(votingActiveAccountUuidProvider)
+          .call();
+      if (activeAfterSelection != accountUuid) return false;
+      if (_isWalletMutationInProgress(accountUuid)) return false;
       if (currentEndpoint.networkName != endpoint.networkName) return false;
 
       final result = await _ref

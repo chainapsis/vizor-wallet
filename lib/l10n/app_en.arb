@@ -2493,6 +2493,25 @@
   "@donationThanksTitle": {
     "description": "Headline of the desktop screen shown after a donation succeeded."
   },
+  "endpointAutomatic": "Automatic",
+  "@endpointAutomatic": {
+    "description": "Name of the automatic endpoint selection option, and the Settings value while it is on."
+  },
+  "endpointAutomaticSelecting": "Automatic · Selecting...",
+  "@endpointAutomaticSelecting": {
+    "description": "Current endpoint while automatic selection is still choosing a server."
+  },
+  "endpointAutomaticWithHost": "Automatic · {endpoint}",
+  "@endpointAutomaticWithHost": {
+    "description": "Current endpoint once automatic selection has picked a server.",
+    "placeholders": {
+      "endpoint": {
+        "type": "String",
+        "example": "na.zec.rocks:443",
+        "description": "Host and port of the chosen server."
+      }
+    }
+  },
   "endpointCurrent": "Current: {endpoint}",
   "@endpointCurrent": {
     "description": "Shows the lightwalletd endpoint in use.",
@@ -2531,6 +2550,14 @@
       }
     }
   },
+  "endpointSaveFailed": "Couldn't save the endpoint. Try again.",
+  "@endpointSaveFailed": {
+    "description": "Error when saving an endpoint failed. Shared by: the onboarding network settings sheet and the endpoint settings panel."
+  },
+  "endpointSelecting": "Selecting an endpoint…",
+  "@endpointSelecting": {
+    "description": "Detail under the Automatic option while no server has been chosen yet."
+  },
   "endpointUpdate": "Update endpoint",
   "@endpointUpdate": {
     "description": "Button that saves a new lightwalletd endpoint."
@@ -2538,6 +2565,10 @@
   "endpointUpdated": "Endpoint updated",
   "@endpointUpdated": {
     "description": "Toast after the lightwalletd endpoint changed."
+  },
+  "endpointUseAutomatic": "Use automatic selection",
+  "@endpointUseAutomatic": {
+    "description": "Button that switches the endpoint back to automatic selection."
   },
   "enhancePirChanging": "Changing setting…",
   "@enhancePirChanging": {
@@ -8432,10 +8463,6 @@
   "onboardingNetworkEndpointHelper": "Use a lightwalletd server for this wallet’s network.",
   "@onboardingNetworkEndpointHelper": {
     "description": "Helper text under the custom endpoint field; the server must be a lightwalletd server for the wallet's Zcash network."
-  },
-  "onboardingNetworkSaveFailed": "Couldn't save the endpoint. Try again.",
-  "@onboardingNetworkSaveFailed": {
-    "description": "Error on the network settings sheet when saving the custom endpoint failed."
   },
   "onboardingNetworkVerifyFailed": "Couldn't verify that endpoint. Check the address and try again.",
   "@onboardingNetworkVerifyFailed": {

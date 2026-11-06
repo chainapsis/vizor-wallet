@@ -49,6 +49,43 @@ const LIGHTWALLETD_UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(20);
 const LIGHTWALLETD_STREAM_START_TIMEOUT: Duration = Duration::from_secs(20);
 const LIGHTWALLETD_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
+const SLOW_DOWNLOAD_PREFIX: &str = "get_block_range: endpoint download too slow";
+
+/// A network-body budget independent of local scanning and DB time. The
+/// initial allowance tolerates cold connections and small batches; bytes
+/// received buy additional time so a large block is not mistaken for a stalled
+/// server. A ceiling still bounds trickling arbitrarily large responses.
+#[derive(Clone, Copy)]
+struct DownloadBudget {
+    grace: Duration,
+    min_bytes_per_second: u64,
+    ceiling: Duration,
+}
+
+impl DownloadBudget {
+    const FOREGROUND: Self = Self {
+        grace: Duration::from_secs(60),
+        min_bytes_per_second: 4 * 1024,
+        ceiling: Duration::from_secs(5 * 60),
+    };
+
+    fn allowance(self, byte_count: usize) -> Duration {
+        let transfer =
+            Duration::from_secs_f64(byte_count as f64 / self.min_bytes_per_second.max(1) as f64);
+        self.grace.saturating_add(transfer).min(self.ceiling)
+    }
+}
+
+pub(super) fn is_slow_endpoint_error(error: &SyncError) -> bool {
+    matches!(error, SyncError::Network(message) if message.starts_with(SLOW_DOWNLOAD_PREFIX))
+}
+
+fn slow_download_error() -> SyncError {
+    SyncError::net(format!(
+        "{SLOW_DOWNLOAD_PREFIX}: sustained transfer budget exceeded"
+    ))
+}
+
 fn timed_request<T>(message: T, timeout: Duration) -> Request<T> {
     let mut request = Request::new(message);
     request.set_timeout(timeout);
@@ -889,12 +926,13 @@ pub(super) async fn download_blocks(
     .await
     .map_err(|e| status_to_network_error("get_block_range", e))?;
 
-    let blocks = collect_compact_blocks_bounded(
+    let blocks = collect_compact_blocks_with_budget(
         &mut stream,
         start_height,
         end_height,
         LIGHTWALLETD_STREAM_IDLE_TIMEOUT,
         None,
+        Some(DownloadBudget::FOREGROUND),
     )
     .await?;
 
@@ -911,6 +949,28 @@ async fn collect_compact_blocks_bounded<S>(
 where
     S: Stream<Item = Result<CompactBlock, Status>> + Unpin,
 {
+    collect_compact_blocks_with_budget(
+        stream,
+        start_height,
+        end_height,
+        idle_timeout,
+        byte_limit,
+        None,
+    )
+    .await
+}
+
+async fn collect_compact_blocks_with_budget<S>(
+    stream: &mut S,
+    start_height: u64,
+    end_height: u64,
+    idle_timeout: Duration,
+    byte_limit: Option<usize>,
+    download_budget: Option<DownloadBudget>,
+) -> Result<Vec<CompactBlock>, SyncError>
+where
+    S: Stream<Item = Result<CompactBlock, Status>> + Unpin,
+{
     let expected_count = expected_block_count(start_height, end_height)?;
     let mut blocks = Vec::new();
     blocks
@@ -918,15 +978,30 @@ where
         .map_err(|_| SyncError::other("get_block_range request is too large"))?;
 
     let mut byte_count = 0usize;
+    let mut network_wait = Duration::ZERO;
     loop {
-        let next = await_stream_message("get_block_range stream", idle_timeout, async {
+        let read_message = await_stream_message("get_block_range stream", idle_timeout, async {
             match stream.next().await {
                 Some(Ok(block)) => Ok(Some(block)),
                 Some(Err(status)) => Err(status),
                 None => Ok(None),
             }
-        })
-        .await?;
+        });
+        let started_waiting = tokio::time::Instant::now();
+        let next = if let Some(budget) = download_budget {
+            let remaining = budget.allowance(byte_count).saturating_sub(network_wait);
+            if remaining.is_zero() {
+                return Err(slow_download_error());
+            }
+            tokio::time::timeout(remaining, read_message)
+                .await
+                .map_err(|_| slow_download_error())??
+        } else {
+            read_message.await?
+        };
+        // Only wait time in this network collector counts. The scanner and
+        // wallet writer run after it returns and cannot consume its budget.
+        network_wait = network_wait.saturating_add(started_waiting.elapsed());
         let Some(block) = next else {
             break;
         };
@@ -1282,6 +1357,114 @@ mod tests {
         .await
         .unwrap_err();
         assert!(error.to_string().contains("range exceeds memory limit"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn foreground_compact_blocks_reject_a_trickle_that_never_hits_the_idle_timeout() {
+        let stream = futures::stream::unfold(10u64, |height| async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            Some((Ok(compact_block(height)), height + 1))
+        });
+        let mut stream = Box::pin(stream);
+        let started = tokio::time::Instant::now();
+        let error = collect_compact_blocks_with_budget(
+            &mut stream,
+            10,
+            109,
+            Duration::from_millis(30),
+            None,
+            Some(DownloadBudget {
+                grace: Duration::from_millis(60),
+                min_bytes_per_second: 4096,
+                ceiling: Duration::from_millis(200),
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(is_slow_endpoint_error(&error), "{error}");
+        assert!(started.elapsed() < Duration::from_millis(70));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn foreground_download_budget_allows_larger_responsive_blocks_more_transfer_time() {
+        let stream = futures::stream::unfold(10u64, |height| async move {
+            match height {
+                10 => {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                    Some((
+                        Ok(CompactBlock {
+                            hash: vec![0; 64 * 1024],
+                            ..compact_block(height)
+                        }),
+                        height + 1,
+                    ))
+                }
+                11 => {
+                    tokio::time::sleep(Duration::from_millis(60)).await;
+                    Some((Ok(compact_block(height)), height + 1))
+                }
+                _ => None,
+            }
+        });
+        let mut stream = Box::pin(stream);
+        let blocks = collect_compact_blocks_with_budget(
+            &mut stream,
+            10,
+            11,
+            Duration::from_millis(100),
+            None,
+            Some(DownloadBudget {
+                grace: Duration::from_millis(20),
+                min_bytes_per_second: 4096,
+                ceiling: Duration::from_millis(200),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(blocks.len(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn foreground_download_ceiling_bounds_a_stream_even_when_bytes_buy_more_time() {
+        let stream = futures::stream::unfold(10u64, |height| async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            Some((
+                Ok(CompactBlock {
+                    hash: vec![0; 64 * 1024],
+                    ..compact_block(height)
+                }),
+                height + 1,
+            ))
+        });
+        let mut stream = Box::pin(stream);
+        let started = tokio::time::Instant::now();
+        let error = collect_compact_blocks_with_budget(
+            &mut stream,
+            10,
+            109,
+            Duration::from_millis(30),
+            None,
+            Some(DownloadBudget {
+                grace: Duration::from_millis(20),
+                min_bytes_per_second: 4096,
+                ceiling: Duration::from_millis(50),
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(is_slow_endpoint_error(&error), "{error}");
+        assert_eq!(started.elapsed(), Duration::from_millis(50));
+    }
+
+    #[test]
+    fn only_sustained_slow_download_errors_bypass_same_endpoint_retries() {
+        assert!(is_slow_endpoint_error(&slow_download_error()));
+        assert!(!is_slow_endpoint_error(&SyncError::net(
+            "get_block_range: unavailable"
+        )));
+        assert!(!is_slow_endpoint_error(&SyncError::other(
+            SLOW_DOWNLOAD_PREFIX
+        )));
     }
 
     #[tokio::test]

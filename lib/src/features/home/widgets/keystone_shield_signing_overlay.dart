@@ -137,7 +137,11 @@ class _KeystoneShieldSigningOverlayState
       final dbPath = await getWalletDbPath();
       if (!mounted || _closed) return;
       _requireOriginalAccount();
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
+      if (!mounted || _closed) return;
+      _requireOriginalAccount();
       final shieldPczt = await session.prepare(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -238,7 +242,11 @@ class _KeystoneShieldSigningOverlayState
       final dbPath = await getWalletDbPath();
       if (!mounted || _closed) return;
       _requireOriginalAccount();
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
+      if (!mounted || _closed) return;
+      _requireOriginalAccount();
       attemptedEndpoint = endpoint;
       final result = await _session!.broadcast(
         dbPath: dbPath,

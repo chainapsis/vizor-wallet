@@ -845,7 +845,11 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
     );
     final dbPath = await getWalletDbPath();
     secretGuard.check();
-    final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+    final endpoint = await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .ensureReady();
+    secretGuard.check();
+    if (await abortRequested()) return aborted();
     var saplingParams = await loadSaplingParamsStatus();
 
     if (args.needsSaplingParams) {

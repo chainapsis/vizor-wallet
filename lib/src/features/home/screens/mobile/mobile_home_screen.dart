@@ -1,5 +1,6 @@
 import '../../../../core/l10n/l10n.dart';
 import '../../providers/home_activity_state.dart';
+import '../../providers/home_initialization_provider.dart';
 import '../../widgets/home_activity_skeleton.dart';
 import '../../../activity/widgets/deferred_gift_card_recovery.dart';
 import 'dart:async';
@@ -94,7 +95,9 @@ class MobileHomeScreen extends ConsumerWidget {
     );
     final isCurrentHomeRoute = GoRouterState.of(context).uri.path == '/home';
 
-    final isImporting = activeAccountUuid != null && sync.isImportingAccount;
+    final isImporting = ref
+        .watch(homeInitializationPresentationProvider)
+        .showImporting;
 
     return SwapActivityStatusAutoRefresh(
       child: Stack(
@@ -1196,12 +1199,18 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         entry.row,
     ];
 
-    final activityState = homeActivityState(
-      accountUuid: activeAccountUuid,
-      sync: sync,
-      hasRows: recentRows.isNotEmpty,
-      localSources: [?giftCardSource, ?swapSource],
+    final initialPresentation = ref.watch(
+      homeInitializationPresentationProvider,
     );
+    final activityState =
+        initialPresentation.activityUnavailable && recentRows.isEmpty
+        ? HomeActivityState.unavailable
+        : homeActivityState(
+            accountUuid: activeAccountUuid,
+            sync: sync,
+            hasRows: recentRows.isNotEmpty,
+            localSources: [?giftCardSource, ?swapSource],
+          );
     final activityLoading = activityState == HomeActivityState.loading;
 
     final content = ListView(

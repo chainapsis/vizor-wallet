@@ -78,6 +78,8 @@ class _PreviewRpc extends RpcEndpointNotifier {
   @override
   RpcEndpointConfig build() => defaultRpcEndpointConfig('main');
   @override
+  Future<void> setAutomatic() async => state = defaultRpcEndpointConfig('main');
+  @override
   Future<void> setCustom(String input) async {
     state = state.copyWith(
       lightwalletdUrl: normalizeRpcEndpointUrl(input, allowDefaultPort: true),

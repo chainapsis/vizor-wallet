@@ -2472,13 +2472,20 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
         network,
         expected_run_id,
     )?;
+    let tip_scope = sync_engine::TipRequestScope::capture();
     let transport = sync_engine::open_lwd_transport(lightwalletd_url)
         .await
         .map_err(|e| format!("Open migration recovery endpoint: {e}"))?;
     let mut client = zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient::new(transport.clone());
-    let chain_tip = sync_engine::get_latest_block_recorded(&mut client, lightwalletd_url, network)
-        .await
-        .map_err(|e| format!("Read migration recovery chain tip: {e}"))?;
+    let chain_tip = sync_engine::get_latest_block_recorded(
+        &mut client,
+        lightwalletd_url,
+        network,
+        tip_scope,
+        || false,
+    )
+    .await
+    .map_err(|e| format!("Read migration recovery chain tip: {e}"))?;
     let chain_tip_height =
         u32::try_from(chain_tip.height).map_err(|_| "Migration recovery chain tip exceeds u32")?;
     validate_unbroadcast_migration_recovery_candidates(&candidates, chain_tip_height)?;
@@ -2745,46 +2752,57 @@ trait MigrationStopChain {
 struct LightwalletdStopChain<'a> {
     url: &'a str,
     network: WalletNetwork,
-    client: Option<
+    // A retained channel must never be relabelled with a later route's scope.
+    client: Option<(
         zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<
             tonic::transport::Channel,
         >,
-    >,
+        sync_engine::TipRequestScope,
+    )>,
 }
 
 impl LightwalletdStopChain<'_> {
     async fn client(
         &mut self,
     ) -> Result<
-        &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<
-            tonic::transport::Channel,
-        >,
+        (
+            &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<
+                tonic::transport::Channel,
+            >,
+            sync_engine::TipRequestScope,
+        ),
         String,
     >{
-        let client = match self.client.take() {
-            Some(client) => client,
-            None => sync_engine::open_lwd_channel(self.url)
+        if self.client.is_none() {
+            let scope = sync_engine::TipRequestScope::capture();
+            let client = sync_engine::open_lwd_channel(self.url)
                 .await
-                .map_err(|e| format!("Open migration stop reconciliation endpoint: {e}"))?,
-        };
-        Ok(self.client.insert(client))
+                .map_err(|e| format!("Open migration stop reconciliation endpoint: {e}"))?;
+            self.client = Some((client, scope));
+        }
+        let (client, scope) = self.client.as_mut().expect("client initialized above");
+        Ok((client, *scope))
     }
 }
 
 impl MigrationStopChain for LightwalletdStopChain<'_> {
     async fn tip_height(&mut self) -> Result<u32, String> {
         let (url, network) = (self.url, self.network);
-        let chain_tip = sync_engine::get_latest_block_recorded(self.client().await?, url, network)
-            .await
-            .map_err(|e| format!("Read migration stop reconciliation chain tip: {e}"))?;
+        let (client, scope) = self.client().await?;
+        let chain_tip =
+            sync_engine::get_latest_block_recorded(client, url, network, scope, || false)
+                .await
+                .map_err(|e| format!("Read migration stop reconciliation chain tip: {e}"))?;
         u32::try_from(chain_tip.height)
             .map_err(|_| "Migration stop reconciliation chain tip exceeds u32".to_string())
     }
 
     async fn block_hash(&mut self, height: u32) -> Result<BlockHash, String> {
-        sync_engine::get_compact_block_hash(self.client().await?, u64::from(height))
-            .await
-            .map_err(|e| format!("Read the current chain at scanned height {height}: {e}"))
+        let (client, scope) = self.client().await?;
+        scope.ensure_current(|| false).map_err(|e| e.to_string())?;
+        let result = sync_engine::get_compact_block_hash(client, u64::from(height)).await;
+        scope.ensure_current(|| false).map_err(|e| e.to_string())?;
+        result.map_err(|e| format!("Read the current chain at scanned height {height}: {e}"))
     }
 }
 
@@ -7592,3 +7610,34 @@ impl OutputProver for NoOpOutputProver {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tip_request_scope_tests {
+    use super::*;
+    use crate::network_privacy;
+
+    #[tokio::test]
+    async fn migration_stop_retained_client_keeps_its_original_route_scope() {
+        let _route = network_privacy::test_route_policy::lock_route_policy();
+        let server =
+            sync_engine::test_lwd::CapturingLwd::start_with(Vec::new(), 3_000_000, |_| {}).await;
+        let mut chain = LightwalletdStopChain {
+            url: &server.url,
+            network: WalletNetwork::Main,
+            client: None,
+        };
+        assert_eq!(chain.tip_height().await.unwrap(), 3_000_000);
+        assert_eq!(server.count("/GetLatestBlock"), 1);
+
+        // Returning to the same direct URL does not make its old channel part
+        // of the new route generation.
+        network_privacy::begin_tor_enable();
+        network_privacy::disable_tor();
+        let error = chain.tip_height().await.unwrap_err();
+        assert!(error.contains("tip request route changed"), "{error}");
+        let error = chain.block_hash(3_000_000).await.unwrap_err();
+        assert!(error.contains("tip request route changed"), "{error}");
+        assert_eq!(server.count("/GetLatestBlock"), 1);
+        assert_eq!(server.requests().len(), 1);
+    }
+}

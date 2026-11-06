@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/config/zcash_explorer.dart';
+import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -226,7 +227,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // With English alone there is nothing to choose.
     final showLanguage = languages.length > 1;
     final endpoint = ref.watch(rpcEndpointProvider);
-    final endpointLabel = endpoint.hostPort;
+    final endpointLabel = isAutomaticRpcEndpointConfig(endpoint)
+        ? context.l10n.endpointAutomatic
+        : endpoint.hostPort;
     final explorerLabel = explorerSettingsLabel(
       context.l10n,
       ref.watch(zcashExplorerProvider),

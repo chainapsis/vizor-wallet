@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_latency_provider.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart'
     show LightwalletdEndpointProbe;
 import '../support/test_l10n.dart';
@@ -59,6 +60,37 @@ void main() {
   });
 
   group('RpcEndpointLatencyNotifier', () {
+    test(
+      'automatic policy does not duplicate its compatibility host probe',
+      () async {
+        final urls = <String>[];
+        final container = ProviderContainer(
+          overrides: [
+            rpcEndpointProbeGetterProvider.overrideWithValue((url) async {
+              urls.add(url);
+              return const LightwalletdEndpointProbe(
+                chainName: 'main',
+                latencyMs: 123,
+              );
+            }),
+          ],
+        );
+        addTearDown(container.dispose);
+        await container
+            .read(rpcEndpointLatencyProvider.notifier)
+            .refresh('main');
+        expect(
+          urls.where(
+            (url) =>
+                url ==
+                defaultRpcEndpointConfig('main').normalizedLightwalletdUrl,
+          ),
+          hasLength(1),
+        );
+        expect(urls.toSet().length, urls.length);
+      },
+    );
+
     test('marks presets checking before resolving measured latency', () async {
       final completer = Completer<LightwalletdEndpointProbe>();
       final container = ProviderContainer(

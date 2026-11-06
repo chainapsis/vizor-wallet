@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/linux_secret_operation_guard.dart';
@@ -59,6 +61,7 @@ void main() {
     container = ProviderContainer(
       overrides: [
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        rpcEndpointProvider.overrideWith(_FixedEndpoint.new),
         linuxSecretOperationStoreProvider.overrideWithValue(store),
         linuxKeyringCoordinatorProvider.overrideWithValue(coordinator),
         accountProvider.overrideWith(() => accounts),
@@ -483,4 +486,16 @@ class _RecordingLinkClient extends WalletLinkApiClient {
 
   @override
   Future<void> revokePackage(String packageId) async {}
+}
+
+// Credential lifecycle tests use one deterministic endpoint; automatic endpoint
+// discovery has its own transport tests and must not delay mnemonic reads here.
+class _FixedEndpoint extends RpcEndpointNotifier {
+  @override
+  RpcEndpointConfig build() {
+    final endpoint = defaultRpcEndpointConfig(kZcashDefaultNetworkName);
+    return endpoint.network == ZcashNetwork.mainnet
+        ? endpoint.copyWith(presetId: kManualUsRpcEndpointPresetId)
+        : endpoint;
+  }
 }

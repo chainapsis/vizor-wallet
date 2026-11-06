@@ -1870,6 +1870,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get donationThanksTitle => 'Thank you for supporting Vizor';
 
   @override
+  String get endpointAutomatic => 'Automatic';
+
+  @override
+  String get endpointAutomaticSelecting => 'Automatic · Selecting...';
+
+  @override
+  String endpointAutomaticWithHost(String endpoint) {
+    return 'Automatic · $endpoint';
+  }
+
+  @override
   String endpointCurrent(String endpoint) {
     return 'Current: $endpoint';
   }
@@ -1908,10 +1919,19 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get endpointSaveFailed => 'Couldn\'t save the endpoint. Try again.';
+
+  @override
+  String get endpointSelecting => 'Selecting an endpoint…';
+
+  @override
   String get endpointUpdate => 'Update endpoint';
 
   @override
   String get endpointUpdated => 'Endpoint updated';
+
+  @override
+  String get endpointUseAutomatic => 'Use automatic selection';
 
   @override
   String get enhancePirChanging => 'Changing setting…';
@@ -6569,10 +6589,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get onboardingNetworkEndpointHelper =>
       'Use a lightwalletd server for this wallet’s network.';
-
-  @override
-  String get onboardingNetworkSaveFailed =>
-      'Couldn\'t save the endpoint. Try again.';
 
   @override
   String get onboardingNetworkVerifyFailed =>

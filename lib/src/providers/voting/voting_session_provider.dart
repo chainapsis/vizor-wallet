@@ -3747,7 +3747,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final hardwareSignerKind = isHardwareAccount
         ? ref.read(votingAccountHardwareSignerKindProvider)(accountUuid)
         : null;
-    final endpoint = ref.read(votingRpcEndpointConfigProvider);
+    final endpoint = await ref.read(votingReadyRpcEndpointProvider)();
+    checkAction();
     final dbPath = await ref.read(votingWalletDbPathProvider).call();
     checkAction();
     final proposals = proposalsFromRound(round);

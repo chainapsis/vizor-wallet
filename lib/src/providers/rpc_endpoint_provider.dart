@@ -23,6 +23,10 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
       ref.watch(appBootstrapProvider).rpcEndpointConfig;
 
   Future<void> setPreset(RpcEndpointPreset preset) async {
+    if (preset.isAutomatic) {
+      await setAutomatic();
+      return;
+    }
     final normalized = normalizeRpcEndpointUrl(
       preset.url,
       allowDefaultPort: true,
@@ -31,6 +35,14 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
     await _persist(
       state.copyWith(lightwalletdUrl: normalized, presetId: preset.id),
     );
+  }
+
+  Future<void> setAutomatic() async {
+    final config = defaultRpcEndpointConfig(state.networkName);
+    if (!isAutomaticRpcEndpointConfig(config)) {
+      throw const FormatException('Automatic selection is unavailable.');
+    }
+    await _persist(config);
   }
 
   Future<void> setCustom(String input) async {

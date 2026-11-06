@@ -95,25 +95,32 @@ class PaymentLinkClaimWallet {
             }
             try {
               final failover = _ref.read(rpcEndpointFailoverProvider);
+              final fallbackCandidates =
+                  isAutomaticRpcEndpointConfig(failover.primary)
+                  ? automaticRpcEndpointCandidatesFor(failover.primary)
+                  : [
+                      ...failover.fallbackCandidates,
+                      for (final preset in rpcEndpointPresetsForNetwork(
+                        link.network,
+                      ))
+                        RpcEndpointConfig(
+                          networkName: link.network,
+                          lightwalletdUrl: preset.url,
+                        ),
+                    ];
               rust_sync.ApiGiftCardCheckProgress? last;
               var paused = false;
               await for (final event in rust_sync.runPaymentLinkClaimCheck(
                 claimId: paymentLinkClaimWalletDirectoryName(link),
                 dbPath: dbPath,
                 lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-                // Capability fallback also works for custom endpoints. Preserve
-                // configured transport routing; these are public chain queries.
+                // Automatic stays in its public pool. Manual/custom retain
+                // their existing capability fallbacks and transport routing.
                 fallbackUrls:
                     {
-                          ...failover.fallbackCandidates
-                              .where((e) => e.networkName == link.network)
-                              .map((e) => e.normalizedLightwalletdUrl),
-                          ...rpcEndpointPresetsForNetwork(link.network).map(
-                            (e) => RpcEndpointConfig(
-                              networkName: link.network,
-                              lightwalletdUrl: e.url,
-                            ).normalizedLightwalletdUrl,
-                          ),
+                          for (final candidate in fallbackCandidates)
+                            if (candidate.networkName == link.network)
+                              candidate.normalizedLightwalletdUrl,
                         }
                         .where(
                           (url) => url != endpoint.normalizedLightwalletdUrl,

@@ -3269,6 +3269,24 @@ abstract class AppLocalizations {
   /// **'Thank you for supporting Vizor'**
   String get donationThanksTitle;
 
+  /// Name of the automatic endpoint selection option, and the Settings value while it is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic'**
+  String get endpointAutomatic;
+
+  /// Current endpoint while automatic selection is still choosing a server.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic · Selecting...'**
+  String get endpointAutomaticSelecting;
+
+  /// Current endpoint once automatic selection has picked a server.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic · {endpoint}'**
+  String endpointAutomaticWithHost(String endpoint);
+
   /// Shows the lightwalletd endpoint in use.
   ///
   /// In en, this message translates to:
@@ -3311,6 +3329,18 @@ abstract class AppLocalizations {
   /// **'{region, select, standard{Default} europe{Europe} global{Global} americas{Americas} asiaPacific{Asia Pacific} community{Community} testnet{Testnet} regtest{Regtest} other{Other}}'**
   String endpointRegionName(String region);
 
+  /// Error when saving an endpoint failed. Shared by: the onboarding network settings sheet and the endpoint settings panel.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the endpoint. Try again.'**
+  String get endpointSaveFailed;
+
+  /// Detail under the Automatic option while no server has been chosen yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Selecting an endpoint…'**
+  String get endpointSelecting;
+
   /// Button that saves a new lightwalletd endpoint.
   ///
   /// In en, this message translates to:
@@ -3322,6 +3352,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Endpoint updated'**
   String get endpointUpdated;
+
+  /// Button that switches the endpoint back to automatic selection.
+  ///
+  /// In en, this message translates to:
+  /// **'Use automatic selection'**
+  String get endpointUseAutomatic;
 
   /// Status line under the Private queries switch while the setting is being changed.
   ///
@@ -10762,12 +10798,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Use a lightwalletd server for this wallet’s network.'**
   String get onboardingNetworkEndpointHelper;
-
-  /// Error on the network settings sheet when saving the custom endpoint failed.
-  ///
-  /// In en, this message translates to:
-  /// **'Couldn\'t save the endpoint. Try again.'**
-  String get onboardingNetworkSaveFailed;
 
   /// Error on the network settings sheet when the custom endpoint did not respond as a valid lightwalletd server.
   ///
