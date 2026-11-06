@@ -100,6 +100,96 @@ abstract class AppLocalizations {
     Locale('zh'),
   ];
 
+  /// Body of the first paragraph of the About screen.
+  ///
+  /// In en, this message translates to:
+  /// **'We built Keplr, the wallet used by millions across Cosmos, Ethereum, and Bitcoin. Vizor is our take on what a Zcash wallet should feel like.'**
+  String get aboutBuiltByBody;
+
+  /// Heading of the first paragraph of the About screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Built by the Keplr team'**
+  String get aboutBuiltByHeading;
+
+  /// Body of the placeholder paragraphs on the Terms and Privacy Policy screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount.'**
+  String get aboutLegalPlaceholderBody;
+
+  /// Heading of the placeholder paragraphs on the Terms and Privacy Policy screens.
+  ///
+  /// In en, this message translates to:
+  /// **'From the team that brought you Keplr Wallet.'**
+  String get aboutLegalPlaceholderHeading;
+
+  /// Accessibility label of a link button on mobile About; {label} is the visible button label.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} link'**
+  String aboutLinkSemantics(String label);
+
+  /// Accessibility label of the button that opens the Vizor GitHub page.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor GitHub'**
+  String get aboutOpenGithub;
+
+  /// Body of the third paragraph of the About screen; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is Apache licensed. Your keys stay on your device.\nWe don\'t see your balances or your transactions.'**
+  String get aboutOpenSourceBody;
+
+  /// Heading of the third paragraph of the About screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open source, self-custodied'**
+  String get aboutOpenSourceHeading;
+
+  /// Accessibility label of the button that opens the Vizor website.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor website'**
+  String get aboutOpenWebsite;
+
+  /// Body of the second paragraph of the About screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is built around shielded transactions, where the sender, recipient, and amount stay private. Transparent Zcash works too, but private is the default.'**
+  String get aboutShieldedBody;
+
+  /// Heading of the second paragraph of the About screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Designed for shielded Zcash'**
+  String get aboutShieldedHeading;
+
+  /// Title of the Terms of Usage legal screen on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Terms of Usage'**
+  String get aboutTermsTitle;
+
+  /// Title of the About screen, also its top-bar title on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'About Vizor Wallet'**
+  String get aboutTitle;
+
+  /// Version line under the title of the About and legal screens; {version} is the app release number such as 1.2.3.
+  ///
+  /// In en, this message translates to:
+  /// **'Version: {version} Public Beta'**
+  String aboutVersionLabel(String version);
+
+  /// Label of the link button that opens the Vizor website.
+  ///
+  /// In en, this message translates to:
+  /// **'Website'**
+  String get aboutWebsite;
+
   /// Label of the account name field or row.
   ///
   /// In en, this message translates to:
@@ -267,6 +357,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t check this account for active swaps. Try again before removing it.'**
   String get accountsRemoveSwapsCheckFailed;
+
+  /// [security] Toast when an account cannot be deleted because gift cards are still being received into it.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait for incoming gift cards to finish before deleting this account.'**
+  String get accountsRemoveWaitForGiftCards;
 
   /// [security] Label of the confirm button in the desktop remove-account dialog while the account is removed.
   ///
@@ -549,18 +645,6 @@ abstract class AppLocalizations {
   /// **'Gift card redemption failed'**
   String get activityGiftRedemptionFailed;
 
-  /// Status of a gift card receipt after the card was created.
-  ///
-  /// In en, this message translates to:
-  /// **'Created'**
-  String get activityGiftStatusCreated;
-
-  /// Status of a gift card receipt while the card is being created.
-  ///
-  /// In en, this message translates to:
-  /// **'Creating…'**
-  String get activityGiftStatusCreating;
-
   /// Status of a gift card receipt after the card was redeemed.
   ///
   /// In en, this message translates to:
@@ -711,12 +795,6 @@ abstract class AppLocalizations {
   /// **'Card fee'**
   String get activityReceiptCardFee;
 
-  /// Label of a row on a transaction receipt: the number of gift cards in a batch.
-  ///
-  /// In en, this message translates to:
-  /// **'Cards'**
-  String get activityReceiptCards;
-
   /// Label of a row on a transaction receipt: a notice about transaction details.
   ///
   /// In en, this message translates to:
@@ -771,12 +849,6 @@ abstract class AppLocalizations {
   /// **'Net change'**
   String get activityReceiptNetChange;
 
-  /// Label of a row on a transaction receipt: the total network fee of the transaction.
-  ///
-  /// In en, this message translates to:
-  /// **'Network fee'**
-  String get activityReceiptNetworkFee;
-
   /// Label of a row on a transaction receipt: one transparent output of the transaction, followed by its address and amount.
   ///
   /// In en, this message translates to:
@@ -800,12 +872,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Total fee for this transaction. Your account\'s share of this fee is unknown.'**
   String get activityReceiptUnattributedFeeHelp;
-
-  /// Shown as the fee of a transaction whose fee the wallet has not recorded. An unknown fee is never zero.
-  ///
-  /// In en, this message translates to:
-  /// **'Unknown'**
-  String get activityReceiptUnknownFee;
 
   /// Timestamp of an activity row from today on desktop.
   ///
@@ -950,12 +1016,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Receive in progress...'**
   String get activityTitleReceiveInProgress;
-
-  /// Title of an activity row or receipt for an incoming transaction.
-  ///
-  /// In en, this message translates to:
-  /// **'Received'**
-  String get activityTitleReceived;
 
   /// Title of the desktop receipt of an incoming transaction that completed.
   ///
@@ -1341,23 +1401,11 @@ abstract class AppLocalizations {
   /// **'Close scanner'**
   String get addressScanCloseScanner;
 
-  /// Fallback name of the camera in the desktop QR scanner footer.
-  ///
-  /// In en, this message translates to:
-  /// **'Default camera'**
-  String get addressScanDefaultCamera;
-
   /// Title in the desktop QR scanner when the camera permission was denied.
   ///
   /// In en, this message translates to:
   /// **'You\'ve denied Camera access'**
   String get addressScanDeniedTitle;
-
-  /// Title in the desktop QR scanner when Windows blocks the camera.
-  ///
-  /// In en, this message translates to:
-  /// **'Enable Windows camera access'**
-  String get addressScanEnableWindowsAccess;
 
   /// Title of the desktop QR scanner while waiting for the camera permission.
   ///
@@ -1365,47 +1413,11 @@ abstract class AppLocalizations {
   /// **'Grant access to your camera'**
   String get addressScanGrantAccess;
 
-  /// Footer label of the desktop QR scanner while cameras are being listed.
-  ///
-  /// In en, this message translates to:
-  /// **'Loading camera...'**
-  String get addressScanLoadingCamera;
-
-  /// Label next to a spinner in the mobile QR scanner while the camera starts.
-  ///
-  /// In en, this message translates to:
-  /// **'Loading...'**
-  String get addressScanLoadingEllipsis;
-
-  /// Footer label of the desktop QR scanner when the device has no camera.
-  ///
-  /// In en, this message translates to:
-  /// **'No camera found'**
-  String get addressScanNoCamera;
-
-  /// Description in the desktop QR scanner when the camera cannot be opened.
-  ///
-  /// In en, this message translates to:
-  /// **'No camera could be opened. Check that a camera is connected and not in use by another app.'**
-  String get addressScanNoCameraOpened;
-
-  /// Button that opens the system settings page for the camera permission.
-  ///
-  /// In en, this message translates to:
-  /// **'Open settings'**
-  String get addressScanOpenSettings;
-
   /// Title of the QR scanner that reads an address.
   ///
   /// In en, this message translates to:
   /// **'Scan the address QR code'**
   String get addressScanTitle;
-
-  /// Description telling the user which two switches to turn on in Windows Settings. Use the Windows setting names.
-  ///
-  /// In en, this message translates to:
-  /// **'Turn on Camera access and Let desktop apps access your camera in Windows Settings.'**
-  String get addressScanWindowsAccessHint;
 
   /// Caption under the viewfinder of the mobile QR scanner.
   ///
@@ -1437,12 +1449,6 @@ abstract class AppLocalizations {
   /// **'Receive'**
   String get appBackReceive;
 
-  /// Back-link name of the voting results screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Results'**
-  String get appBackResults;
-
   /// Back-link name of a review step (send, swap, vote).
   ///
   /// In en, this message translates to:
@@ -1473,23 +1479,11 @@ abstract class AppLocalizations {
   /// **'Transaction'**
   String get appBackTransaction;
 
-  /// Back-link name of a coinholder voting round screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Voting round'**
-  String get appBackVotingRound;
-
   /// Hint shown on Android after the first Back press at the root, telling the user to press Back again to exit the app.
   ///
   /// In en, this message translates to:
   /// **'Go back again to exit'**
   String get appExitBackHint;
-
-  /// Toast shown when cancelling a gift card claim during wallet setup fails.
-  ///
-  /// In en, this message translates to:
-  /// **'Couldn’t close the card. Try again.'**
-  String get appGiftCloseCardFailed;
 
   /// Snackbar on Linux announcing a new version is available.
   ///
@@ -1580,12 +1574,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Downloading update'**
   String get appUpdateDownloadingTitle;
-
-  /// Title of the in-app update prompt when the update failed.
-  ///
-  /// In en, this message translates to:
-  /// **'Update failed'**
-  String get appUpdateFailedTitle;
 
   /// Button on the in-app update prompt that postpones the update.
   ///
@@ -1682,7 +1670,7 @@ abstract class AppLocalizations {
   /// **'Address label'**
   String get commonAddressLabel;
 
-  /// Label of a row on a transaction receipt: the transferred amount. Shared by: activity, app, pay, receive, send, swap.
+  /// Label of a row on a transaction receipt: the transferred amount. Shared by: activity, app, pay, receive, send, swap. Shared by: common, migration.
   ///
   /// In en, this message translates to:
   /// **'Amount'**
@@ -1705,6 +1693,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Back to wallet'**
   String get commonBackToWallet;
+
+  /// Placeholder shown for the amount, fee or button while the Immediate migration plan is being calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating…'**
+  String get commonCalculatingEllipsis;
+
+  /// Shown instead of the overall progress while the total number of migration transactions is not known yet. Shared by: migration, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating total'**
+  String get commonCalculatingTotal;
+
+  /// Label of the camera row on the Keystone scanner and the camera picker. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera'**
+  String get commonCamera;
 
   /// Title in the mobile QR scanner when the camera permission was denied. Shared by: address, keystone.
   ///
@@ -1754,6 +1760,12 @@ abstract class AppLocalizations {
   /// **'Could not finish cancelling. Please try again.'**
   String get commonCancelFailedRetry;
 
+  /// Screen-reader label of the close button on the mobile Ledger shield panel while shielding can still be cancelled. Shared by: home, ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel shielding'**
+  String get commonCancelShielding;
+
   /// Toast when leaving a flow could not cancel its pending work.
   ///
   /// In en, this message translates to:
@@ -1772,6 +1784,12 @@ abstract class AppLocalizations {
   /// **'This cannot be undone.'**
   String get commonCannotBeUndone;
 
+  /// Label of a row on a transaction receipt: the number of gift cards in a batch. Shared by: activity, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Cards'**
+  String get commonCards;
+
   /// Section label above the network selector and address field in the contact dialog. Shared by: address, pay.
   ///
   /// In en, this message translates to:
@@ -1784,13 +1802,19 @@ abstract class AppLocalizations {
   /// **'Change contact picture'**
   String get commonChangeContactPicture;
 
+  /// Button label to re-check Bluetooth access. Shared by: ledger, payment, send, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get commonCheckAgain;
+
   /// Status while Vizor checks something.
   ///
   /// In en, this message translates to:
   /// **'Checking...'**
   String get commonChecking;
 
-  /// Label of the primary button on the payment request card while the request is being checked. Shared by: send, settings.
+  /// Label of the primary button on the payment request card while the request is being checked. Shared by: send, settings. Shared by: common, payment.
   ///
   /// In en, this message translates to:
   /// **'Checking…'**
@@ -1801,6 +1825,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Checking status'**
   String get commonCheckingStatus;
+
+  /// Title while Vizor checks that the Zcash app is ready on the Ledger. Shared by: ledger, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking your Ledger'**
+  String get commonCheckingYourLedger;
 
   /// Button that clears the secret passphrase words entered so far. Shared by: onboarding, send.
   ///
@@ -1844,6 +1874,36 @@ abstract class AppLocalizations {
   /// **'Completed'**
   String get commonCompleted;
 
+  /// Title asking the user to confirm on the Ledger that the Zcash app may open. Shared by: ledger, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm opening Zcash'**
+  String get commonConfirmOpeningZcash;
+
+  /// [security] Subtitle of the second step: the user confirms on the Keystone and scans its signature QR code. Shared by: keystone, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm with Keystone'**
+  String get commonConfirmWithKeystone;
+
+  /// Status label while migration transfers wait for network confirmations. Shared by: migration, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming'**
+  String get commonConfirming;
+
+  /// Title of the Ledger connection dialog. Shared by: ledger, onboarding.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect Ledger'**
+  String get commonConnectLedger;
+
+  /// Status while connecting to the saved Ledger. Shared by: ledger, settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting…'**
+  String get commonConnecting;
+
   /// Placeholder of the contact name field in the desktop dialog. Shared by: address, pay.
   ///
   /// In en, this message translates to:
@@ -1861,6 +1921,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Continue'**
   String get commonContinue;
+
+  /// [security] Destructive button on the Immediate migration review that broadcasts the less private migration after the privacy warning. Shared by: migration, onboarding.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue anyway'**
+  String get commonContinueAnyway;
+
+  /// Primary button label on the mobile swap screen that opens the review. Shared by: swap, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue to review'**
+  String get commonContinueToReview;
 
   /// Toast after a value is copied to the clipboard.
   ///
@@ -1880,11 +1952,59 @@ abstract class AppLocalizations {
   /// **'Copy address'**
   String get commonCopyAddress;
 
+  /// Button that copies the Gift Card link to the clipboard. Shared by: payment, receive.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy link'**
+  String get commonCopyLink;
+
   /// Button label and accessibility label that copies the shielded address. Shared by: receive, sidebar.
   ///
   /// In en, this message translates to:
   /// **'Copy shielded address'**
   String get commonCopyShieldedAddress;
+
+  /// Toast shown when cancelling a gift card claim during wallet setup fails. Shared by: app, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t close the card. Try again.'**
+  String get commonCouldnTCloseTheCardTry;
+
+  /// Status of a gift card receipt after the card was created. Shared by: activity, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Created'**
+  String get commonCreated;
+
+  /// Status of a gift card receipt while the card is being created. Shared by: activity, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating…'**
+  String get commonCreating;
+
+  /// Heading of the step where the user names the account and picks a profile picture; also the back label pointing to it. Shared by: onboarding, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Customise Account'**
+  String get commonCustomiseAccount;
+
+  /// Onboarding step for naming the wallet and picking a picture. Shared by: onboarding, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Customise wallet'**
+  String get commonCustomiseWallet;
+
+  /// Detail tag in the camera picker for the default camera. Shared by: keystone, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get commonDefault;
+
+  /// Fallback name of the camera in the desktop QR scanner footer. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Default camera'**
+  String get commonDefaultCamera;
 
   /// Screen-reader label of the close button on a toast.
   ///
@@ -1922,6 +2042,24 @@ abstract class AppLocalizations {
   /// **'Edit'**
   String get commonEdit;
 
+  /// Title in the desktop QR scanner when Windows blocks the camera. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Windows camera access'**
+  String get commonEnableWindowsCameraAccess;
+
+  /// Placeholder of the Gift Card amount field. Shared by: payment, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount'**
+  String get commonEnterAmount;
+
+  /// Screen reader label of a currency toggle on the Gift Card amount field; {currency} is ZEC or USD. Shared by: payment, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in {currency}'**
+  String commonEnterAmountIn(String currency);
+
   /// Accessibility label of the toggle that switches the mobile Pay amount input to US dollars. Shared by: pay, receive.
   ///
   /// In en, this message translates to:
@@ -1946,7 +2084,7 @@ abstract class AppLocalizations {
   /// **'Full address'**
   String get commonFullAddress;
 
-  /// [security] Primary button in the desktop Keystone modal that opens the scanner to read the signature QR code from the device. Shared by: send, swap.
+  /// [security] Primary button in the desktop Keystone modal that opens the scanner to read the signature QR code from the device. Shared by: send, swap. Shared by: common, migration.
   ///
   /// In en, this message translates to:
   /// **'Get signature'**
@@ -1957,6 +2095,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Go back'**
   String get commonGoBack;
+
+  /// Button that leaves the migration screen and returns to the home screen. Shared by: migration, payment, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Go home'**
+  String get commonGoHome;
 
   /// Label of a status detail row with the minimum amount the swap is guaranteed to deliver.
   ///
@@ -1988,7 +2132,7 @@ abstract class AppLocalizations {
   /// **'just now'**
   String get commonJustNow;
 
-  /// Hint while scanning a QR code from a device screen. Shared by: common, pay.
+  /// Hint while scanning a QR code from a device screen. Shared by: common, pay. Shared by: common, migration, voting.
   ///
   /// In en, this message translates to:
   /// **'Keep the QR code steady and fully visible.'**
@@ -2000,7 +2144,13 @@ abstract class AppLocalizations {
   /// **'Keep screen awake'**
   String get commonKeepScreenAwake;
 
-  /// [security] Instruction in the desktop Keystone modal after proofs are ready. Shared by: send, swap.
+  /// Instruction in the desktop Keystone shield dialog while the transaction is being sent. Shared by: home, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open while the transaction is sent.'**
+  String get commonKeepVizorOpenWhileTheTransaction;
+
+  /// [security] Instruction in the desktop Keystone modal after proofs are ready. Shared by: send, swap. Shared by: common, migration.
   ///
   /// In en, this message translates to:
   /// **'After you scanned, click Get signature.'**
@@ -2017,6 +2167,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.'**
   String get commonKeystoneScanTransaction;
+
+  /// Error on the Keystone shield screens when the scanned signature could not be added to the transaction. Shared by: home, migration, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signature could not be applied.'**
+  String get commonKeystoneSignatureCouldNotBeApplied;
+
+  /// Error on the mobile Keystone shield screen when the signing request was not ready when the user started scanning. Shared by: home, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing could not be prepared.'**
+  String get commonKeystoneSigningCouldNotBePrepared;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers. Shared by: payment, settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Knight'**
+  String get commonKnight;
+
+  /// Title of the failure panel when the Ledger device needs the user to act (unlock, open the app, reconnect). Shared by: send, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger needs attention'**
+  String get commonLedgerNeedsAttention;
+
+  /// Message on the Ledger signing screen when signing failed for another reason. Shared by: payment, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger signing could not be completed. Check your device and try again.'**
+  String get commonLedgerSigningCouldNotBeCompleted;
 
   /// Title of the Ledger shield failure panel after an error. Shared by: home, send.
   ///
@@ -2036,6 +2216,36 @@ abstract class AppLocalizations {
   /// **'Loading activity'**
   String get commonLoadingActivity;
 
+  /// Footer label of the desktop QR scanner while cameras are being listed. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading camera...'**
+  String get commonLoadingCamera;
+
+  /// Label next to a spinner in the mobile QR scanner while the camera starts. Shared by: address, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading...'**
+  String get commonLoadingDots;
+
+  /// Status while the transaction QR code is prepared. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading QR code ...'**
+  String get commonLoadingQRCode;
+
+  /// Scanning tip on QR scanners. Shared by: keystone, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Make sure the room is well-lit and the QR code isn\'t reflecting glare.'**
+  String get commonMakeSureTheRoomIsWell;
+
+  /// Button on the migration schedule that opens the Manage Migration dialog. Shared by: migration, sidebar.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage'**
+  String get commonManage;
+
   /// Label of a status detail row holding the deposit memo the user must include.
   ///
   /// In en, this message translates to:
@@ -2054,11 +2264,53 @@ abstract class AppLocalizations {
   /// **'Message is too long'**
   String get commonMessageIsTooLong;
 
+  /// Desktop Home button that starts the Ironwood pool migration. Shared by: home, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrate to Ironwood'**
+  String get commonMigrateToIronwood;
+
+  /// Heading of the migration status screen while the migration transaction is sent or confirming. Shared by: migration, sidebar.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrating...'**
+  String get commonMigrating;
+
+  /// Text of the Home migration banner when the migration was stopped by a network upgrade. Shared by: migration, sidebar.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration stopped'**
+  String get commonMigrationStopped;
+
+  /// Desktop Home migration button text after a network upgrade stopped the Ironwood migration. Shared by: home, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration stopped by network upgrade'**
+  String get commonMigrationStoppedByNetworkUpgrade;
+
+  /// Scanning tip on the gift card QR scanner. Shared by: keystone, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Move the QR code a few inches further from the camera so it can focus.'**
+  String get commonMoveTheQRCodeAFew;
+
   /// Label of a status detail row with the network and conversion fees of a payment in progress.
   ///
   /// In en, this message translates to:
   /// **'Network + conversion fees'**
   String get commonNetworkConversionFees;
+
+  /// Label of a row on a transaction receipt: the total network fee of the transaction. Shared by: activity, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Network fee'**
+  String get commonNetworkFee;
+
+  /// Mobile shield footer button that moves from the transaction QR to scanning the Keystone signature. Shared by: home, keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Next step'**
+  String get commonNextStep;
 
   /// Error shown on the Receive screen when no wallet account is selected. Shared by: receive, send.
   ///
@@ -2071,6 +2323,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No active account.'**
   String get commonNoActiveAccountSentence;
+
+  /// Description in the desktop QR scanner when the camera cannot be opened. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'No camera could be opened. Check that a camera is connected and not in use by another app.'**
+  String get commonNoCameraCouldBeOpenedCheck;
+
+  /// Footer label of the desktop QR scanner when the device has no camera. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'No camera found'**
+  String get commonNoCameraFound;
 
   /// Title of the sheet for a feature that is not available on this platform yet.
   ///
@@ -2089,6 +2353,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'OK'**
   String get commonOk;
+
+  /// Scanning tip on QR scanners. 'Continuity Camera' is an Apple feature name. Shared by: keystone, send.
+  ///
+  /// In en, this message translates to:
+  /// **'On a Mac, you can use Continuity Camera to scan with your iPhone instead.'**
+  String get commonOnAMacYouCanUse;
+
+  /// Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'on your Keystone,'**
+  String get commonOnYourKeystone;
+
+  /// Button that opens the system settings page for the camera permission. Shared by: address, keystone, ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Open settings'**
+  String get commonOpenSettings;
+
+  /// Hint when the scanned QR code is not the signed transaction. Shared by: keystone, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the signed transaction QR on Keystone, then scan again.'**
+  String get commonOpenTheSignedTransactionQROn;
 
   /// Error on the Pay recipient step when the quote costs more ZEC than is spendable. Shared by: pay, swap.
   ///
@@ -2126,6 +2414,42 @@ abstract class AppLocalizations {
   /// **'Payment request'**
   String get commonPaymentRequest;
 
+  /// Status of a migration transfer that has not been sent yet. Shared by: migration, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get commonPending;
+
+  /// Short status chip while waiting. Shared by: ledger, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait'**
+  String get commonPleaseWait;
+
+  /// Subtitle under the Keystone connect, scan and select-account headings, asking the user to get their Keystone device ready. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Prepare your Keystone wallet'**
+  String get commonPrepareYourKeystoneWallet;
+
+  /// Disabled button label while the Keystone request is being prepared. Shared by: migration, send, wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing'**
+  String get commonPreparing;
+
+  /// Heading of the migration status screen while the balance is being split. Shared by: migration, send, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing...'**
+  String get commonPreparingDots;
+
+  /// Button label while a Gift Card claim is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing…'**
+  String get commonPreparingEllipsis;
+
   /// Line under the paid amount on a payment status screen, saying the payment is spent privately from the shielded balance.
   ///
   /// In en, this message translates to:
@@ -2155,6 +2479,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Rate'**
   String get commonRate;
+
+  /// Status while the signature QR code from the Keystone is decoded. Shared by: keystone, migration, send, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading signature...'**
+  String get commonReadingSignature;
+
+  /// Status text on the mobile Keystone scanner while the scanned signature QR is decoded. Shared by: home, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading signature…'**
+  String get commonReadingSignatureEllipsis;
+
+  /// Title of an activity row or receipt for an incoming transaction. Shared by: activity, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Received'**
+  String get commonReceived;
 
   /// Label of the amount the payment recipient will receive, on an in-progress payment status screen.
   ///
@@ -2210,6 +2552,18 @@ abstract class AppLocalizations {
   /// **'Reset Vizor'**
   String get commonResetVizor;
 
+  /// Back-link name of the voting results screen. Shared by: app, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Results'**
+  String get commonResults;
+
+  /// Button on the migration progress screen that resumes a paused migration. Shared by: migration, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume'**
+  String get commonResume;
+
   /// Button that retries a failed step.
   ///
   /// In en, this message translates to:
@@ -2264,17 +2618,53 @@ abstract class AppLocalizations {
   /// **'Save contact'**
   String get commonSaveContact;
 
+  /// Disabled button label while saving. Shared by: ledger, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving'**
+  String get commonSaving;
+
+  /// Button that reopens the QR scanner after a failed scan. Shared by: payment, wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan again'**
+  String get commonScanAgain;
+
   /// Button that opens the camera to scan the requester's original payment request QR code.
   ///
   /// In en, this message translates to:
   /// **'Scan original QR'**
   String get commonScanOriginalQr;
 
-  /// Title of a QR code scanning screen.
+  /// Title of a QR code scanning screen. Shared by: common, migration.
   ///
   /// In en, this message translates to:
   /// **'Scan QR Code'**
   String get commonScanQrCode;
+
+  /// Accessibility label of the button that opens the QR scanner on the Pay recipient step. Shared by: pay, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan QR code'**
+  String get commonScanQrCodeSentenceCase;
+
+  /// Subtitle of the Keystone signing screen that shows the QR code to scan. Shared by: payment, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan to sign'**
+  String get commonScanToSign;
+
+  /// Subtitle of the first step: the Keystone scans the QR code shown by Vizor. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan with Keystone'**
+  String get commonScanWithKeystone;
+
+  /// [security] Subtitle of the Keystone signing modal asking the user to scan the QR with Keystone. Shared by: migration, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan with your Keystone'**
+  String get commonScanWithYourKeystone;
 
   /// Title of a screen that picks one account to import.
   ///
@@ -2360,6 +2750,12 @@ abstract class AppLocalizations {
   /// **'Show full address'**
   String get commonShowFullAddress;
 
+  /// Screen-reader label of the button that returns to the transaction QR code. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Show transaction QR'**
+  String get commonShowTransactionQR;
+
   /// Error shown when the user declined the proving-parameter download during Keystone signing. Shared by: send, swap.
   ///
   /// In en, this message translates to:
@@ -2377,6 +2773,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Slippage tolerance'**
   String get commonSlippageTolerance;
+
+  /// Step indicator in the mobile Keystone signing flow (first of two steps). Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Step 1/2'**
+  String get commonStepOneOfTwo;
+
+  /// Step indicator in the mobile Keystone signing flow (second of two steps). Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Step 2/2'**
+  String get commonStepTwoOfTwo;
+
+  /// Subtitle of the desktop Keystone shield dialog while the transaction is being sent. Shared by: home, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting transaction'**
+  String get commonSubmittingTransaction;
 
   /// Back link label on the donation review screen. Shared by: send, settings.
   ///
@@ -2420,6 +2834,42 @@ abstract class AppLocalizations {
   /// **'{symbol} refund address'**
   String commonSymbolRefundAddress(String symbol);
 
+  /// Value of the estimated completion row while the migration progress is syncing. Shared by: migration, settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing'**
+  String get commonSyncing;
+
+  /// Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap'**
+  String get commonTap;
+
+  /// End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'then scan this QR code'**
+  String get commonThenScanThisQRCode;
+
+  /// Hint under the mobile Keystone scanner when the scanned QR is not a valid signature. Shared by: home, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code could not be decoded as a Keystone signature.'**
+  String get commonThisQRCodeCouldNotBe;
+
+  /// Error on the Keystone signing screen when the scanned QR code belongs to a different request. Shared by: payment, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code does not match the current Keystone request.'**
+  String get commonThisQRCodeDoesNotMatch;
+
+  /// Heading on the swap timeout screen shown when the quote deposit window has expired. Shared by: swap, wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Time’s up'**
+  String get commonTimeSUp;
+
   /// Label of a row on a transaction receipt: the date and time of the transaction. Shared by: activity, send, swap.
   ///
   /// In en, this message translates to:
@@ -2443,6 +2893,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Toggle flashlight'**
   String get commonToggleFlashlight;
+
+  /// Label of the last row on the mobile donation summary showing amount plus fee. Shared by: donation, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Total'**
+  String get commonTotal;
 
   /// Title of the Ledger failure panel when the transaction proposal expired before it could be signed. Shared by: send, swap.
   ///
@@ -2468,11 +2924,23 @@ abstract class AppLocalizations {
   /// **'Try again'**
   String get commonTryAgain;
 
+  /// Description telling the user which two switches to turn on in Windows Settings. Use the Windows setting names. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Camera access and Let desktop apps access your camera in Windows Settings.'**
+  String get commonTurnOnCameraAccessAndLet;
+
   /// Label of a row on a transaction receipt: the transaction ID, tapping it opens a block explorer. Shared by: activity, send, swap.
   ///
   /// In en, this message translates to:
   /// **'Tx ID'**
   String get commonTxId;
+
+  /// Shown as the fee of a transaction whose fee the wallet has not recorded. An unknown fee is never zero. Shared by: activity, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get commonUnknown;
 
   /// [security] Button and system biometric prompt reason for unlocking the wallet.
   ///
@@ -2486,17 +2954,59 @@ abstract class AppLocalizations {
   /// **'Update'**
   String get commonUpdate;
 
+  /// Title of the in-app update prompt when the update failed. Shared by: app, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Update failed'**
+  String get commonUpdateFailed;
+
   /// The Update button label while the change is being saved.
   ///
   /// In en, this message translates to:
   /// **'Updating...'**
   String get commonUpdating;
 
+  /// Link on the legacy migration card that opens the batch schedule. Shared by: migration, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'View'**
+  String get commonView;
+
+  /// Message while Vizor checks that the Zcash app on the Ledger is ready. Shared by: ledger, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is checking whether the Zcash app is ready.'**
+  String get commonVizorIsCheckingWhetherTheZcash;
+
+  /// Back-link name of a coinholder voting round screen. Shared by: app, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting round'**
+  String get commonVotingRound;
+
+  /// Desktop Home migration button text while a migration transaction waits for confirmations. Shared by: home, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for confirmation...'**
+  String get commonWaitingForConfirmation;
+
+  /// Ring sub-caption: migration cannot continue until the wallet finishes syncing. Shared by: migration, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for wallet sync'**
+  String get commonWaitingForWalletSync;
+
   /// Title of the unlock screen.
   ///
   /// In en, this message translates to:
   /// **'Welcome Back'**
   String get commonWelcomeBack;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers. Shared by: payment, settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Wizard'**
+  String get commonWizard;
 
   /// Label of the amount the user pays, on a payment status screen before the payment completes.
   ///
@@ -2521,6 +3031,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Zcash address'**
   String get commonZcashAddress;
+
+  /// Label of the review row that names the donation recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Donating to'**
+  String get donationDonatingTo;
+
+  /// Placeholder prompt next to the unit selector on the donation amount screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your amount'**
+  String get donationEnterAmount;
+
+  /// Shown under the donation amount field on mobile when the live ZEC price is unavailable, so the USD conversion cannot be shown.
+  ///
+  /// In en, this message translates to:
+  /// **'Price unavailable'**
+  String get donationPriceUnavailable;
+
+  /// Title of the desktop donation review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Review Amount'**
+  String get donationReviewAmountTitle;
+
+  /// Label of the review row on the mobile donation summary that names the balance used for the donation.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending from'**
+  String get donationSendingFrom;
+
+  /// Lead-in of a line on the desktop donation screen, followed by a shield icon and the words 'Shielded balance'.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending from your'**
+  String get donationSendingFromYour;
+
+  /// Accessibility label of the button that toggles the donation amount between ZEC and USD.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch between ZEC and USD'**
+  String get donationSwitchCurrency;
+
+  /// Headline of the desktop screen shown after a donation succeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Thank you for supporting Vizor'**
+  String get donationThanksTitle;
 
   /// Shows the lightwalletd endpoint in use.
   ///
@@ -2678,12 +3236,6 @@ abstract class AppLocalizations {
   /// **'The shield transaction may have reached the network. Check activity before trying again.'**
   String get homeLedgerBroadcastUnknown;
 
-  /// Screen-reader label of the close button on the mobile Ledger shield panel while shielding can still be cancelled.
-  ///
-  /// In en, this message translates to:
-  /// **'Cancel shielding'**
-  String get homeLedgerCancelShielding;
-
   /// Ledger shield dialog message when the user switched account or network while shielding was in progress.
   ///
   /// In en, this message translates to:
@@ -2774,12 +3326,6 @@ abstract class AppLocalizations {
   /// **'Something went wrong. Try again in a moment.\n\nDetails: {details}'**
   String homeLoadFailed(String details);
 
-  /// Desktop Home button that starts the Ironwood pool migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Migrate to Ironwood'**
-  String get homeMigrateToIronwood;
-
   /// Pill on the mobile Home balance card shown when the Ironwood migration needs the user to act.
   ///
   /// In en, this message translates to:
@@ -2797,18 +3343,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{amount} still migrating'**
   String homeMigrationStillMigrating(String amount);
-
-  /// Desktop Home migration button text after a network upgrade stopped the Ironwood migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration stopped by network upgrade'**
-  String get homeMigrationStoppedByUpgrade;
-
-  /// Desktop Home migration button text while a migration transaction waits for confirmations.
-  ///
-  /// In en, this message translates to:
-  /// **'Waiting for confirmation...'**
-  String get homeMigrationWaitingConfirmation;
 
   /// Body of the first NU7 announcement point; s means seconds.
   ///
@@ -3032,18 +3566,6 @@ abstract class AppLocalizations {
   /// **'Secret Passphrase isn\'t available for this account.'**
   String get homeShieldErrorSeedUnavailable;
 
-  /// Error on the Keystone shield screens when the scanned signature could not be added to the transaction.
-  ///
-  /// In en, this message translates to:
-  /// **'Keystone signature could not be applied.'**
-  String get homeShieldErrorSignatureNotApplied;
-
-  /// Error on the mobile Keystone shield screen when the signing request was not ready when the user started scanning.
-  ///
-  /// In en, this message translates to:
-  /// **'Keystone signing could not be prepared.'**
-  String get homeShieldErrorSigningNotPrepared;
-
   /// Error on the Keystone and Ledger shield dialogs when the wallet is not synced yet.
   ///
   /// In en, this message translates to:
@@ -3074,23 +3596,11 @@ abstract class AppLocalizations {
   /// **'Get Signature'**
   String get homeShieldGetSignature;
 
-  /// Instruction in the desktop Keystone shield dialog while the transaction is being sent.
-  ///
-  /// In en, this message translates to:
-  /// **'Keep Vizor open while the transaction is sent.'**
-  String get homeShieldKeepOpen;
-
   /// Screen-reader label of the transaction QR code the Keystone device scans.
   ///
   /// In en, this message translates to:
   /// **'Keystone transaction QR'**
   String get homeShieldKeystoneQrSemantics;
-
-  /// Mobile shield footer button that moves from the transaction QR to scanning the Keystone signature.
-  ///
-  /// In en, this message translates to:
-  /// **'Next step'**
-  String get homeShieldNextStep;
 
   /// Label of the desktop Home button that shields the transparent balance.
   ///
@@ -3110,23 +3620,11 @@ abstract class AppLocalizations {
   /// **'Shielding queued'**
   String get homeShieldQueuedTitle;
 
-  /// Status text on the mobile Keystone scanner while the scanned signature QR is decoded.
-  ///
-  /// In en, this message translates to:
-  /// **'Reading signature…'**
-  String get homeShieldReadingSignature;
-
   /// Button in the desktop Keystone shield dialog that cancels shielding.
   ///
   /// In en, this message translates to:
   /// **'Reject'**
   String get homeShieldReject;
-
-  /// Hint under the mobile Keystone scanner when the scanned QR is not a valid signature.
-  ///
-  /// In en, this message translates to:
-  /// **'This QR code could not be decoded as a Keystone signature.'**
-  String get homeShieldScanDecodeFailed;
 
   /// Title of the mobile Keystone shield screen while the camera scans the signature QR.
   ///
@@ -3169,12 +3667,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The shield transaction status is uncertain. Check activity before trying again.'**
   String get homeShieldStatusUncertain;
-
-  /// Subtitle of the desktop Keystone shield dialog while the transaction is being sent.
-  ///
-  /// In en, this message translates to:
-  /// **'Submitting transaction'**
-  String get homeShieldSubmitting;
 
   /// Message when a Keystone shield must wait for private recovery; the signature is kept for the retry.
   ///
@@ -3374,6 +3866,36 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 account found} other{{count} accounts found}}'**
   String keystoneAccountsFound(int count);
 
+  /// Button that asks for camera permission again.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow camera'**
+  String get keystoneAllowCamera;
+
+  /// Error shown when a swap deposit has inputs Keystone batch signing does not support.
+  ///
+  /// In en, this message translates to:
+  /// **'This deposit uses inputs that Keystone batch signing cannot sign.'**
+  String get keystoneBatchCannotSignDeposit;
+
+  /// Error shown when a transaction has inputs Keystone batch signing does not support.
+  ///
+  /// In en, this message translates to:
+  /// **'This transaction uses inputs that Keystone batch signing cannot sign.'**
+  String get keystoneBatchCannotSignTx;
+
+  /// Error shown when a swap deposit needs more signatures than one Keystone batch can hold.
+  ///
+  /// In en, this message translates to:
+  /// **'This deposit uses too many inputs for Keystone batch signing. Try a smaller amount.'**
+  String get keystoneBatchTooManyInputsDeposit;
+
+  /// Error shown when a transaction needs more signatures than one Keystone batch can hold.
+  ///
+  /// In en, this message translates to:
+  /// **'This transaction uses too many inputs for Keystone batch signing. Try a smaller amount.'**
+  String get keystoneBatchTooManyInputsTx;
+
   /// Inline error under the block height field when the typed number is not a usable block height.
   ///
   /// In en, this message translates to:
@@ -3385,6 +3907,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'It helps us import your wallet faster.'**
   String get keystoneBirthdaySubtitle;
+
+  /// Title when camera access was denied.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve denied the Camera access'**
+  String get keystoneCameraDeniedTitle;
 
   /// Two-line description under the enable camera access title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short.
   ///
@@ -3398,11 +3926,59 @@ abstract class AppLocalizations {
   /// **'Enable camera access'**
   String get keystoneCameraEnableTitle;
 
+  /// Detail tag in the camera picker for an external camera.
+  ///
+  /// In en, this message translates to:
+  /// **'External'**
+  String get keystoneCameraExternal;
+
+  /// Detail tag in the camera picker for a front camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Front'**
+  String get keystoneCameraFront;
+
+  /// Permission explanation on the gift card QR scanner; the two lines are separated by a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'A camera is required to scan the gift card QR code.\nYou can revert this in settings anytime later.'**
+  String get keystoneCameraGiftBody;
+
+  /// Camera name followed by a marker that it is the default camera. {name} is the camera's own name.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} (Default)'**
+  String keystoneCameraNameDefault(String name);
+
+  /// Detail tag in the camera picker for a normal lens.
+  ///
+  /// In en, this message translates to:
+  /// **'Normal'**
+  String get keystoneCameraNormal;
+
+  /// Shown on the mobile signature scanner when camera permission is denied.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera access is off. Allow it in Settings to scan Keystone signatures.'**
+  String get keystoneCameraOffAllow;
+
   /// Two-line description under the camera unavailable title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short.
   ///
   /// In en, this message translates to:
   /// **'Keystone import uses camera QR scanning only.\nConnect a camera and try again.'**
   String get keystoneCameraUnavailableBody;
+
+  /// Detail tag in the camera picker for a wide-angle lens.
+  ///
+  /// In en, this message translates to:
+  /// **'Wide'**
+  String get keystoneCameraWide;
+
+  /// Detail tag in the camera picker for a zoom lens.
+  ///
+  /// In en, this message translates to:
+  /// **'Zoom'**
+  String get keystoneCameraZoom;
 
   /// Button that confirms the chosen Keystone account and continues the import.
   ///
@@ -3428,11 +4004,23 @@ abstract class AppLocalizations {
   /// **'link'**
   String get keystoneFirmwareLinkLabel;
 
+  /// Screen-reader label of the keyst.one/firmware link.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Keystone firmware page'**
+  String get keystoneFirmwareOpenPage;
+
   /// Title of instruction step 1 on the Keystone how-to-connect screen. The step number is added by the app before this text.
   ///
   /// In en, this message translates to:
   /// **'Check Keystone firmware'**
   String get keystoneFirmwareTitle;
+
+  /// Text before the keyst.one/firmware link in the scanning help. Keep the trailing space; the link follows directly.
+  ///
+  /// In en, this message translates to:
+  /// **'Update to the latest Keystone firmware at '**
+  String get keystoneFirmwareUpdatePrefix;
 
   /// Primary button on the Keystone how-to-connect screen; continues to the QR scan step once the user has followed the instructions.
   ///
@@ -3452,17 +4040,23 @@ abstract class AppLocalizations {
   /// **'On your Keystone'**
   String get keystoneOnYourKeystone;
 
-  /// Subtitle under the Keystone connect, scan and select-account headings, asking the user to get their Keystone device ready.
-  ///
-  /// In en, this message translates to:
-  /// **'Prepare your Keystone wallet'**
-  String get keystonePrepareSubtitle;
-
   /// Title of instruction step 2 on the Keystone how-to-connect screen. The step number is added by the app before this text.
   ///
   /// In en, this message translates to:
   /// **'Prepare to connect'**
   String get keystonePrepareToConnectTitle;
+
+  /// Screen-reader label of the loading spinner while the signing QR code is prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing QR'**
+  String get keystonePreparingQr;
+
+  /// Status while a scanned Keystone QR code is decoded.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading QR...'**
+  String get keystoneReadingQr;
 
   /// Message shown instead of the scanner when no camera is available on this device.
   ///
@@ -3476,11 +4070,29 @@ abstract class AppLocalizations {
   /// **'Scan the Keystone account QR'**
   String get keystoneScanCaption;
 
+  /// [security] Caption on the mobile signing scanner asking the user to scan the signed-transaction QR code on the Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code on your Keystone to confirm'**
+  String get keystoneScanCaptionConfirm;
+
   /// Error under the Keystone QR scanner when the scanned QR cannot be decoded as a Zcash account.
   ///
   /// In en, this message translates to:
   /// **'This QR code could not be decoded as a Keystone Zcash account.'**
   String get keystoneScanDecodeFailed;
+
+  /// Screen-reader label of the close button of the scanning help tooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Close scan help'**
+  String get keystoneScanHelpClose;
+
+  /// Title of the tooltip with Keystone scanning help.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanning issues?'**
+  String get keystoneScanIssuesTitle;
 
   /// Error under the Keystone QR scanner when the scanned QR contains no Zcash accounts.
   ///
@@ -3505,6 +4117,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reading accounts...'**
   String get keystoneScanReadingAccounts;
+
+  /// Title of the camera picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Camera'**
+  String get keystoneSelectCamera;
 
   /// Sidebar step label and back-link text for the first Keystone onboarding step (how to connect the device). Title Case is intentional.
   ///
@@ -3536,11 +4154,53 @@ abstract class AppLocalizations {
   /// **'Select Vizor (or ZODL)'**
   String get keystoneStepSelectVizor;
 
+  /// Label next to a spinner while a signed transaction is submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting the transaction'**
+  String get keystoneSubmittingTransaction;
+
+  /// Scanning tip on the gift card QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the gift card QR code full screen on another device.'**
+  String get keystoneTipGiftFullScreen;
+
+  /// Scanning tip on the Keystone QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Move your Keystone a few inches further from the camera so it can focus.'**
+  String get keystoneTipMoveKeystoneFurther;
+
+  /// Scanning tip on the Keystone QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap the QR code on your Keystone to show it full screen. This is the easiest fix.'**
+  String get keystoneTipTapFullScreen;
+
+  /// Title of the scanning tips popover.
+  ///
+  /// In en, this message translates to:
+  /// **'Trouble scanning?'**
+  String get keystoneTroubleScanning;
+
+  /// Subtitle of the signing flow after a failure.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again with Keystone'**
+  String get keystoneTryAgainWithKeystone;
+
   /// Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.
   ///
   /// In en, this message translates to:
   /// **'System ({language})'**
   String languageSystemOption(String language);
+
+  /// Label of the account index field in Ledger onboarding.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger account index (0–100)'**
+  String get ledgerAccountIndexFieldLabel;
 
   /// Helper text in the advanced options explaining the Ledger account index field.
   ///
@@ -3553,6 +4213,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Account index (0–100)'**
   String get ledgerAccountIndexLabel;
+
+  /// Validation error under the Ledger account index field.
+  ///
+  /// In en, this message translates to:
+  /// **'Account index must be between 0 and 100.'**
+  String get ledgerAccountIndexOutOfRange;
 
   /// [security] Note under the Add account step explaining that the Ledger account can only be viewed in Vizor; spending still requires device approval.
   ///
@@ -3571,6 +4237,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Advanced options'**
   String get ledgerAdvancedOptions;
+
+  /// Screen-reader label of the app icon in the Ledger prompt. {appName} is the device app name, normally Zcash.
+  ///
+  /// In en, this message translates to:
+  /// **'{appName} app'**
+  String ledgerAppSemanticsLabel(String appName);
+
+  /// Title shown when the Zcash app on the Ledger must be updated before signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger app update required'**
+  String get ledgerAppUpdateRequiredTitle;
+
+  /// [security] Instruction to approve on the Ledger sharing the viewing key with Vizor.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve sharing your viewing key with Vizor.'**
+  String get ledgerApproveShareViewingKey;
+
+  /// [security] Instruction to approve on the Ledger sharing the viewing key. {number} is the account number shown on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve sharing the viewing key for Account #{number}.'**
+  String ledgerApproveShareViewingKeyForAccount(String number);
 
   /// Two-line note under the Connect Ledger form explaining that Vizor shows balance and activity while transactions are approved on the device. Keep the line break.
   ///
@@ -3608,11 +4298,287 @@ abstract class AppLocalizations {
   /// **'Bluetooth connection'**
   String get ledgerBluetoothConnection;
 
+  /// List of Ledger models that support Bluetooth. Product model names stay in Latin script.
+  ///
+  /// In en, this message translates to:
+  /// **'Nano X, Flex, Stax, and Nano Gen5'**
+  String get ledgerBluetoothModelsList;
+
   /// Error in the mobile device sheet when the Bluetooth permission was not granted.
   ///
   /// In en, this message translates to:
   /// **'Bluetooth permission is required to find your Ledger. Allow it in Settings, then try again.'**
   String get ledgerBluetoothPermissionRequired;
+
+  /// Shown in the Bluetooth access checker when permission is granted.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission is allowed. Try again when ready.'**
+  String get ledgerBtAccessAllowed;
+
+  /// Shown before the Bluetooth permission is requested. 'Allow permission' is a button label.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Allow permission to connect to your Ledger. If no prompt appears, open Settings.'**
+  String get ledgerBtAccessBluetoothRequestable;
+
+  /// Shown when Bluetooth access is denied on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow Bluetooth access for Vizor in your device settings.'**
+  String get ledgerBtAccessBluetoothSettings;
+
+  /// Permission name 'Location' inserted into the restricted-access sentence.
+  ///
+  /// In en, this message translates to:
+  /// **'Location'**
+  String get ledgerBtAccessKindLocation;
+
+  /// Shown on Android before the location permission is requested. 'Allow permission' is a button label.
+  ///
+  /// In en, this message translates to:
+  /// **'This Android version needs location permission to find your Ledger. Choose Allow permission, or open Settings if no prompt appears.'**
+  String get ledgerBtAccessLocationRequestable;
+
+  /// Shown on Android when location permission is denied and must be changed in Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'This Android version needs location permission to find your Ledger. Allow location access for Vizor in Settings.'**
+  String get ledgerBtAccessLocationSettings;
+
+  /// Shown on macOS when Bluetooth access is denied. 'System Settings', 'Privacy & Security' and 'Bluetooth' are macOS menu names; use the localized macOS names.
+  ///
+  /// In en, this message translates to:
+  /// **'Open System Settings > Privacy & Security > Bluetooth and allow access for Vizor.'**
+  String get ledgerBtAccessMacosSettings;
+
+  /// Shown in the access checker when the permission is restricted. {kind} is the permission name, Location or Bluetooth.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind} access is restricted by your device settings or administrator.'**
+  String ledgerBtAccessRestricted(String kind);
+
+  /// Shown in the Bluetooth access checker when Bluetooth is off.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Bluetooth, then check access again.'**
+  String get ledgerBtAccessTurnOnBluetooth;
+
+  /// Shown in the Bluetooth access checker when location services are off.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on location services, then check access again.'**
+  String get ledgerBtAccessTurnOnLocation;
+
+  /// Error when checking Bluetooth access failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not check access. Open Settings manually, then check again.'**
+  String get ledgerBtCouldNotCheckAccess;
+
+  /// Error when the system settings could not be opened.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open Settings. Open your device settings manually and allow access for Vizor.'**
+  String get ledgerBtCouldNotOpenSettingsAllow;
+
+  /// Error when the system settings could not be opened while Bluetooth access is restricted.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open Settings. Open your device settings manually to review access for Vizor.'**
+  String get ledgerBtCouldNotOpenSettingsRestricted;
+
+  /// Button label that asks the system to show the permission prompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow access'**
+  String get ledgerBtLabelAllowAccess;
+
+  /// Button label while access is being checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking access'**
+  String get ledgerBtLabelChecking;
+
+  /// Button label to reconnect to the Ledger once access is granted.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect'**
+  String get ledgerBtLabelReconnect;
+
+  /// Message explaining why Bluetooth access is needed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor needs Bluetooth access to connect to your Ledger.'**
+  String get ledgerBtMsgBluetoothNeeded;
+
+  /// Message while Vizor checks if it can connect to the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking whether Vizor can connect to your Ledger.'**
+  String get ledgerBtMsgChecking;
+
+  /// Message explaining why Android asks for location access.
+  ///
+  /// In en, this message translates to:
+  /// **'This Android version needs location access to find your Ledger.'**
+  String get ledgerBtMsgLocationNeeded;
+
+  /// Message when Bluetooth access is fine; the user must turn on and unlock the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on your Ledger and unlock it to continue.'**
+  String get ledgerBtMsgReady;
+
+  /// Help when Bluetooth access is restricted.
+  ///
+  /// In en, this message translates to:
+  /// **'Check Vizor’s Bluetooth access in Settings. Device restrictions or your administrator may prevent changes.'**
+  String get ledgerBtRestrictedGeneric;
+
+  /// Help on Android when location access is restricted.
+  ///
+  /// In en, this message translates to:
+  /// **'Check location access for Vizor in Settings. Device restrictions or your administrator may prevent changes.'**
+  String get ledgerBtRestrictedLocation;
+
+  /// Help on macOS when Bluetooth access is restricted. Use the localized macOS menu names.
+  ///
+  /// In en, this message translates to:
+  /// **'Check Privacy & Security > Bluetooth in System Settings. This restriction may need to be changed by your administrator.'**
+  String get ledgerBtRestrictedMacos;
+
+  /// Help on Android when Nearby devices access is restricted.
+  ///
+  /// In en, this message translates to:
+  /// **'Check Nearby devices access for Vizor in Settings. Device restrictions or your administrator may prevent changes.'**
+  String get ledgerBtRestrictedNearby;
+
+  /// Message in the mobile Bluetooth sheet when permission is denied during account import.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow Bluetooth access for Vizor in your phone settings to add your account.'**
+  String get ledgerBtSheetAllowAddAccount;
+
+  /// Generic message in the mobile Bluetooth sheet when permission is denied.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow Bluetooth access for Vizor in your phone settings to continue.'**
+  String get ledgerBtSheetAllowContinue;
+
+  /// Message in the mobile Bluetooth sheet when permission is denied and signing was interrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow Bluetooth access for Vizor in your phone settings to continue signing.'**
+  String get ledgerBtSheetAllowSigning;
+
+  /// Message in the mobile Bluetooth sheet during account import.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth is available. Unlock your Ledger to add your account.'**
+  String get ledgerBtSheetReadyAddAccount;
+
+  /// Generic message in the mobile Bluetooth sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth is available. Unlock your Ledger to continue.'**
+  String get ledgerBtSheetReadyContinue;
+
+  /// Message in the mobile Bluetooth sheet when signing was interrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth is available. Unlock your Ledger to continue signing.'**
+  String get ledgerBtSheetReadySigning;
+
+  /// Message in the mobile Bluetooth sheet when Bluetooth is off during account import.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Bluetooth on your phone to add your account.'**
+  String get ledgerBtSheetTurnOnAddAccount;
+
+  /// Generic message in the mobile Bluetooth sheet when Bluetooth is off.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Bluetooth on your phone to continue.'**
+  String get ledgerBtSheetTurnOnContinue;
+
+  /// Message in the mobile Bluetooth sheet when Bluetooth is off and signing was interrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Bluetooth on your phone to continue signing.'**
+  String get ledgerBtSheetTurnOnSigning;
+
+  /// Title asking the user to allow Bluetooth access.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow Bluetooth access'**
+  String get ledgerBtTitleAllowBluetooth;
+
+  /// Title asking the user to allow Bluetooth in system Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow Bluetooth in Settings'**
+  String get ledgerBtTitleAllowBluetoothSettings;
+
+  /// Title asking the user to allow location access (Android).
+  ///
+  /// In en, this message translates to:
+  /// **'Allow location access'**
+  String get ledgerBtTitleAllowLocation;
+
+  /// Title asking the user to allow location in system Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow location in Settings'**
+  String get ledgerBtTitleAllowLocationSettings;
+
+  /// Title while Vizor checks Bluetooth permission for the Ledger connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking Bluetooth access'**
+  String get ledgerBtTitleChecking;
+
+  /// Title when Bluetooth access is fine and the user can reconnect the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to reconnect'**
+  String get ledgerBtTitleReady;
+
+  /// Title when Bluetooth or location access is restricted by the device or an administrator.
+  ///
+  /// In en, this message translates to:
+  /// **'Access is restricted'**
+  String get ledgerBtTitleRestricted;
+
+  /// Title asking the user to turn on Bluetooth.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Bluetooth'**
+  String get ledgerBtTitleTurnOnBluetooth;
+
+  /// Title asking the user to turn on location services (needed on Android to find Bluetooth devices).
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on location services'**
+  String get ledgerBtTitleTurnOnLocation;
+
+  /// Disabled button label while verifying the account.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking account'**
+  String get ledgerButtonCheckingAccount;
+
+  /// Disabled button label while connecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting'**
+  String get ledgerButtonConnecting;
+
+  /// Disabled button label while searching.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching'**
+  String get ledgerButtonSearching;
 
   /// Error in the mobile Add Ledger account sheet when cancelling the Ledger request failed.
   ///
@@ -3632,11 +4598,35 @@ abstract class AppLocalizations {
   /// **'Cancelling the Ledger request…'**
   String get ledgerCancellingTheRequest;
 
+  /// Shown when Ledger is not available on the selected network.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger is currently supported only for Zcash mainnet.'**
+  String get ledgerCapabilityMainnetOnly;
+
+  /// Shown when Ledger is not available on this operating system.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger is supported on Vizor for macOS, Windows, Linux, iOS, and Android.'**
+  String get ledgerCapabilityUnsupportedPlatform;
+
+  /// Message when a different Ledger or app was found than the one verified earlier.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger changed. Keep one Ledger connected and try again.'**
+  String get ledgerChangedKeepOne;
+
   /// Status text while Vizor checks the Bluetooth permission on desktop.
   ///
   /// In en, this message translates to:
   /// **'Checking Bluetooth access…'**
   String get ledgerCheckingBluetoothAccess;
+
+  /// Status while Vizor checks the USB connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking USB connection…'**
+  String get ledgerCheckingUsb;
 
   /// Back-link text in the desktop dialog that returns to the device picker.
   ///
@@ -3644,17 +4634,65 @@ abstract class AppLocalizations {
   /// **'Choose another Ledger'**
   String get ledgerChooseAnother;
 
+  /// Back button label in Ledger dialogs that returns to the connection choice.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose connection'**
+  String get ledgerChooseConnection;
+
+  /// Message above the list of found Ledger devices.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a device to continue.'**
+  String get ledgerChooseDevice;
+
+  /// Message above the list of found Ledger devices.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the Ledger you want to use for this account.'**
+  String get ledgerChooseLedgerForAccount;
+
   /// Error in the desktop Bluetooth dialog when closing the Ledger session failed.
   ///
   /// In en, this message translates to:
   /// **'Could not finish cleanup. Try again.'**
   String get ledgerCleanupFailed;
 
+  /// Body of recovery step 2 in the desktop dialog. 'Find Ledger' is the button label below.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep your Ledger unlocked, then select Find Ledger below.'**
+  String get ledgerComeBackFindLedger;
+
+  /// Body of recovery step 2. 'Find my Ledger' is the button label below.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep your Ledger unlocked, then select “Find my Ledger” below.'**
+  String get ledgerComeBackFindMyLedger;
+
+  /// Title of recovery step 2.
+  ///
+  /// In en, this message translates to:
+  /// **'Come back and reconnect'**
+  String get ledgerComeBackReconnect;
+
+  /// [security] Message while verifying a new Ledger: the user approves sharing the viewing key on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete pairing if prompted, then open the Zcash app and approve sharing the viewing key.'**
+  String get ledgerCompletePairingOpenZcash;
+
   /// Message asking the user to confirm on the Ledger device that the Zcash app may open. 'Zcash' is the app name on the device.
   ///
   /// In en, this message translates to:
   /// **'Confirm opening Zcash on Ledger.'**
   String get ledgerConfirmOpeningZcash;
+
+  /// Instruction to choose how to connect the Ledger for this account.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect the Ledger for this account.'**
+  String get ledgerConnectForAccount;
 
   /// Subtitle under the Connect Ledger heading, asking the user to get their Ledger ready.
   ///
@@ -3680,11 +4718,29 @@ abstract class AppLocalizations {
   /// **'Connection help'**
   String get ledgerConnectionHelp;
 
+  /// Button label to continue signing after the Ledger is connected.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue signing'**
+  String get ledgerContinueSigning;
+
   /// Title of the desktop dialog after connecting to the Ledger failed.
   ///
   /// In en, this message translates to:
   /// **'Could not connect Ledger'**
   String get ledgerCouldNotConnect;
+
+  /// Error in the desktop Ledger recovery dialog when stopping the search failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not stop the search. Try again.'**
+  String get ledgerCouldNotStopSearchTryAgain;
+
+  /// Hint under a found Ledger that differs from the saved one.
+  ///
+  /// In en, this message translates to:
+  /// **'Different from saved connection'**
+  String get ledgerDifferentFromSaved;
 
   /// Message shown under the error title when no more specific error text is available.
   ///
@@ -3752,6 +4808,270 @@ abstract class AppLocalizations {
   /// **'The viewing-key request was rejected on your Ledger.'**
   String get ledgerErrorViewingKeyRejected;
 
+  /// Shown when the Ledger firmware and Zcash app are too old for this transaction. {version} is a version number such as 3.10.0. 'Ledger Wallet' is a product name.
+  ///
+  /// In en, this message translates to:
+  /// **'Update your Ledger and its Zcash app to {version} or newer in Ledger Wallet.'**
+  String ledgerFailureMsgAppUpdateRequired(String version);
+
+  /// Message when the Ledger is busy with another request.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger is busy. Try again in a moment.'**
+  String get ledgerFailureMsgBusy;
+
+  /// Message after a Ledger request was cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Request cancelled. Try again when ready.'**
+  String get ledgerFailureMsgCancelledTryAgain;
+
+  /// Generic message asking the user to check the Ledger and open the Zcash app.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your Ledger and open the Zcash app, then try again.'**
+  String get ledgerFailureMsgCheckOpenZcash;
+
+  /// Message under a Ledger failure card after the user declined the request on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Declined on your Ledger. Try again when ready.'**
+  String get ledgerFailureMsgDeclined;
+
+  /// Message when the Ledger could not accept a gift card request; nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger couldn’t accept this request. Create a new gift card. Nothing was sent.'**
+  String get ledgerFailureMsgGiftCardRejected;
+
+  /// Message when a gift card is too large for the Ledger to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Too large for your Ledger. Create a gift card with a smaller amount.'**
+  String get ledgerFailureMsgGiftCardTooLarge;
+
+  /// Message asking the user to install the Zcash app using the Ledger Wallet desktop app. 'Ledger Wallet' is a product name.
+  ///
+  /// In en, this message translates to:
+  /// **'Install the Zcash app with Ledger Wallet.'**
+  String get ledgerFailureMsgInstallZcash;
+
+  /// Shown when the Zcash app on the Ledger is too old to sign a memo with non-English characters.
+  ///
+  /// In en, this message translates to:
+  /// **'Update the Ledger Zcash app to sign non-English memos'**
+  String get ledgerFailureMsgMemoHashUnsupported;
+
+  /// Message when a migration step is too large for the Ledger to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'This migration step is too large for your Ledger to sign. Vizor can’t split it yet.'**
+  String get ledgerFailureMsgMigrationTooLarge;
+
+  /// Message asking the user to open the Zcash app on the Ledger. 'Zcash' is the app name shown on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the Zcash app on your Ledger.'**
+  String get ledgerFailureMsgOpenZcash;
+
+  /// Shown when a transaction would keep change in the Orchard pool, which the Ledger cannot sign. 'Orchard' and 'Ironwood' are Zcash pool names.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger can\'t sign a transaction that keeps change in Orchard. Migrate your Orchard balance to Ironwood first.'**
+  String get ledgerFailureMsgOrchardChange;
+
+  /// Message when a payment is too large for the Ledger to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a new payment. Don’t send a smaller amount to this address.'**
+  String get ledgerFailureMsgPaymentTooLarge;
+
+  /// Message asking the user to reconnect and unlock the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect and unlock your Ledger.'**
+  String get ledgerFailureMsgReconnectUnlock;
+
+  /// Message when the Ledger could not accept a request Vizor built; nothing was broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger couldn’t accept this request. Create a new one. Nothing was sent.'**
+  String get ledgerFailureMsgRejectedNewRequest;
+
+  /// Message asking the user to close and reopen the Zcash app on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Close and reopen the Zcash app.'**
+  String get ledgerFailureMsgReopenZcash;
+
+  /// Message when a Ledger cannot send to a Sapling address. 'Sapling' is a Zcash pool name.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger can’t send to a Sapling address. Create a new request.'**
+  String get ledgerFailureMsgSaplingRecipient;
+
+  /// [security] Message asking the user to set a PIN on the Ledger device.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up a PIN on your Ledger, then try again.'**
+  String get ledgerFailureMsgSetPin;
+
+  /// Message when shielding has too many inputs for the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many inputs for your Ledger. Try again. Nothing was shielded.'**
+  String get ledgerFailureMsgShieldTooLarge;
+
+  /// Message when a swap is too large for the Ledger to sign; the swap is discarded.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a new swap with a smaller amount. This one is discarded.'**
+  String get ledgerFailureMsgSwapTooLarge;
+
+  /// Message when a send has more inputs than the Ledger can sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many inputs for your Ledger. Try a smaller amount.'**
+  String get ledgerFailureMsgTooManyInputs;
+
+  /// Message for an unexpected Ledger device error.
+  ///
+  /// In en, this message translates to:
+  /// **'Unexpected Ledger error. Reopen the Zcash app and try again.'**
+  String get ledgerFailureMsgUnexpected;
+
+  /// Message for an unexpected Ledger device error. {code} is empty or a status code in parentheses with a leading space, such as ' (0x6e00)'.
+  ///
+  /// In en, this message translates to:
+  /// **'Unexpected Ledger error{code}. Reopen the Zcash app and try again.'**
+  String ledgerFailureMsgUnexpectedWithCode(String code);
+
+  /// Message asking the user to unlock the Ledger device.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock your Ledger, then try again.'**
+  String get ledgerFailureMsgUnlock;
+
+  /// Message when the Ledger cannot sign this kind of transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger can’t sign this transaction type. Create a new request.'**
+  String get ledgerFailureMsgUnsupportedTxType;
+
+  /// Message asking the user to update the Zcash app on the Ledger. {version} is a version number such as 3.9.3.
+  ///
+  /// In en, this message translates to:
+  /// **'Update the Zcash app to {version} or newer.'**
+  String ledgerFailureMsgUpdateZcash(String version);
+
+  /// [security] Message when the Ledger could not accept a viewing-key request.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger couldn’t accept this viewing-key request. Check the account number.'**
+  String get ledgerFailureMsgViewingKeyRejected;
+
+  /// Message when the Ledger could not accept a vote request.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger couldn’t accept this vote request. Your vote was not signed.'**
+  String get ledgerFailureMsgVoteRejected;
+
+  /// Message when a vote is too large for the Ledger to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'This vote is too large for your Ledger to sign.'**
+  String get ledgerFailureMsgVoteTooLarge;
+
+  /// [security] Message when the connected Ledger signed with a different key than this account's, asking for the right device.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect the Ledger that holds this account.'**
+  String get ledgerFailureMsgWrongLedger;
+
+  /// Title of a Ledger failure card when the device is busy with another request.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger is busy'**
+  String get ledgerFailureTitleBusy;
+
+  /// Title of a Ledger failure card when the request was cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Request cancelled'**
+  String get ledgerFailureTitleCancelled;
+
+  /// Title of a Ledger failure card for an unexpected device error.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger error'**
+  String get ledgerFailureTitleError;
+
+  /// Generic title of a Ledger failure card.
+  ///
+  /// In en, this message translates to:
+  /// **'Request failed'**
+  String get ledgerFailureTitleFailed;
+
+  /// Title of a Ledger failure card when the device is locked.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger locked'**
+  String get ledgerFailureTitleLocked;
+
+  /// Title of a Ledger failure card when the device cannot be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger not reachable'**
+  String get ledgerFailureTitleNotReachable;
+
+  /// Title of a Ledger failure card asking the user to open the Zcash app on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the Zcash app'**
+  String get ledgerFailureTitleOpenZcash;
+
+  /// Title of a Ledger failure card when no PIN is set on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'PIN required'**
+  String get ledgerFailureTitlePinRequired;
+
+  /// Title of a Ledger failure card when the Zcash app refused a request Vizor built.
+  ///
+  /// In en, this message translates to:
+  /// **'Request not accepted'**
+  String get ledgerFailureTitleRejected;
+
+  /// Title of a Ledger failure card when the Zcash app is in an unexpected state.
+  ///
+  /// In en, this message translates to:
+  /// **'Reopen the Zcash app'**
+  String get ledgerFailureTitleReopenZcash;
+
+  /// Title of a Ledger failure card when the request exceeds what the device can sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Request too large'**
+  String get ledgerFailureTitleTooLarge;
+
+  /// Title of a Ledger failure card when the Zcash app on the device is too old.
+  ///
+  /// In en, this message translates to:
+  /// **'Update the Zcash app'**
+  String get ledgerFailureTitleUpdateZcash;
+
+  /// Title of a Ledger failure card when the connected device does not hold the account.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong Ledger'**
+  String get ledgerFailureTitleWrongLedger;
+
+  /// Title of a Ledger failure card when the Zcash app is not installed on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash app missing'**
+  String get ledgerFailureTitleZcashMissing;
+
   /// Title of the desktop Bluetooth device picker and label of the button that restarts the Bluetooth search.
   ///
   /// In en, this message translates to:
@@ -3763,6 +5083,204 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Find my Ledger'**
   String get ledgerFindMyLedger;
+
+  /// Status while the user must act on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow the prompts on Ledger.'**
+  String get ledgerFollowPromptsOnLedger;
+
+  /// Third check in the Ledger connection help.
+  ///
+  /// In en, this message translates to:
+  /// **'Close other wallet apps and disconnect Ledger from other phones or computers.'**
+  String get ledgerHelpChecksCloseOtherApps;
+
+  /// Second check in the Ledger connection help.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave Ledger on its home screen. Open the Zcash app when Vizor asks.'**
+  String get ledgerHelpChecksHomeScreen;
+
+  /// First check in the Ledger connection help.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Ledger, turn on Bluetooth, and keep it close to your phone.'**
+  String get ledgerHelpChecksUnlockClose;
+
+  /// Placeholder of the Ledger model dropdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose your model'**
+  String get ledgerHelpChooseModel;
+
+  /// Intro of step 2 in the Ledger pairing reset help.
+  ///
+  /// In en, this message translates to:
+  /// **'Find your Ledger in your phone’s Bluetooth settings.'**
+  String get ledgerHelpFindInPhoneBluetooth;
+
+  /// Android menu path to forget the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth settings > the settings button next to your Ledger > Forget or Unpair'**
+  String get ledgerHelpForgetAndroid;
+
+  /// iOS menu path to forget the Ledger. Use the localized iOS names.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings > Bluetooth > the info button next to your Ledger > Forget This Device'**
+  String get ledgerHelpForgetIos;
+
+  /// First instruction of the last step in the Ledger help.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Ledger unlocked with Bluetooth on, and leave it on its home screen.'**
+  String get ledgerHelpKeepUnlockedHome;
+
+  /// Label above the Ledger model dropdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger model'**
+  String get ledgerHelpModelLabel;
+
+  /// [security] Instruction to confirm on the Ledger and enter the PIN on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm on Ledger and enter your PIN on the device.'**
+  String get ledgerHelpNanoXConfirm;
+
+  /// Instruction for Ledger Nano X; the menu path follows on the next line.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Ledger. Hold both buttons to open its controls, then choose:'**
+  String get ledgerHelpNanoXControls;
+
+  /// Menu path shown on the Ledger Nano X. Keep it in English, exactly as the device shows it.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings > Security > Reset pairings'**
+  String get ledgerHelpNanoXMenuPath;
+
+  /// Help text explaining how to find the Ledger Nano X name. 'Device Name' is the menu item shown on the device and stays in English.
+  ///
+  /// In en, this message translates to:
+  /// **'On your Nano X, hold both buttons for 2 seconds, then find Device Name.'**
+  String get ledgerHelpNanoXName;
+
+  /// Button label that moves to the phone step of the Ledger help.
+  ///
+  /// In en, this message translates to:
+  /// **'Next: phone settings'**
+  String get ledgerHelpNextPhoneSettings;
+
+  /// Button label that moves to the last step of the Ledger help.
+  ///
+  /// In en, this message translates to:
+  /// **'Next: search in Vizor'**
+  String get ledgerHelpNextSearchInVizor;
+
+  /// Title of the first and last step of the Ledger help.
+  ///
+  /// In en, this message translates to:
+  /// **'Find your Ledger'**
+  String get ledgerHelpNextSearchTitle;
+
+  /// [security] Warning not to choose Reset device on the Ledger. 'Reset device' is the menu item shown on the device and stays in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the Bluetooth pairing option, not Reset device. Your wallet and accounts stay unchanged.'**
+  String get ledgerHelpNotResetDevice;
+
+  /// Button label that opens the phone's Bluetooth settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Bluetooth settings'**
+  String get ledgerHelpOpenBluetoothSettings;
+
+  /// Help text explaining how to find the Ledger name. {model} is a product model such as Flex or Stax and stays in Latin script. 'Settings > Name' is the menu path shown on the device and stays in English.
+  ///
+  /// In en, this message translates to:
+  /// **'On your {model}, check Settings > Name.'**
+  String ledgerHelpOtherModelName(String model);
+
+  /// Intro of step 1 in the Ledger pairing reset help.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the saved pairing on Ledger, then remove it on your phone.'**
+  String get ledgerHelpRemovePairingOnLedger;
+
+  /// Last-resort advice in the Ledger help.
+  ///
+  /// In en, this message translates to:
+  /// **'If it still does not appear, restart both devices and check Ledger’s official Bluetooth troubleshooting guide.'**
+  String get ledgerHelpRestartBothGuide;
+
+  /// Second instruction of the last step in the Ledger help.
+  ///
+  /// In en, this message translates to:
+  /// **'Search in Vizor and select your Ledger. Open the Zcash app when Vizor asks.'**
+  String get ledgerHelpSearchSelectOpenZcash;
+
+  /// Hint shown until a Ledger model is selected.
+  ///
+  /// In en, this message translates to:
+  /// **'Select your model to see its pairing removal instructions.'**
+  String get ledgerHelpSelectModelHint;
+
+  /// Hint about how the Ledger appears in the phone's Bluetooth list.
+  ///
+  /// In en, this message translates to:
+  /// **'If you haven’t named your Ledger, it may appear as a short ID, such as 01AB. Otherwise, look for the name you set.'**
+  String get ledgerHelpShortIdName;
+
+  /// Hint to skip the step when the Ledger is not in the phone's Bluetooth list.
+  ///
+  /// In en, this message translates to:
+  /// **'If Ledger is not listed, skip this step and continue.'**
+  String get ledgerHelpSkipIfNotListed;
+
+  /// Step indicator in the Ledger connection help; this step is done back in the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {step} of 3 · Back in Vizor'**
+  String ledgerHelpStepBackInVizor(String step);
+
+  /// Step indicator in the Ledger connection help; this step is done on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {step} of 3 · On your Ledger'**
+  String ledgerHelpStepOnLedger(String step);
+
+  /// Step indicator in the Ledger connection help; this step is done on the phone.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {step} of 3 · On your phone'**
+  String ledgerHelpStepOnPhone(String step);
+
+  /// Heading above extra troubleshooting advice.
+  ///
+  /// In en, this message translates to:
+  /// **'Still not showing?'**
+  String get ledgerHelpStillNotShowing;
+
+  /// Instruction for touchscreen Ledger models; the menu path follows on the next line.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Ledger. From its home screen, tap the settings icon, then choose:'**
+  String get ledgerHelpTouchControls;
+
+  /// Menu path shown on touchscreen Ledger models. Keep it in English, exactly as the device shows it.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth > Remove pairing'**
+  String get ledgerHelpTouchMenuPath;
+
+  /// Troubleshooting advice when the Ledger is not found.
+  ///
+  /// In en, this message translates to:
+  /// **'Try restarting Ledger. If it stays missing, removing the saved Bluetooth pairing on both devices may help.'**
+  String get ledgerHelpTryRestart;
 
   /// Note under the Open app step: do not close the named app on the Ledger. {appName} is the app name shown on the device, normally Zcash, and stays in Latin script.
   ///
@@ -3782,11 +5300,23 @@ abstract class AppLocalizations {
   /// **'Keep Ledger connected while Vizor checks the app.'**
   String get ledgerKeepConnectedWhileChecking;
 
+  /// Hint under the open-the-app instruction.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep it open on your Ledger.'**
+  String get ledgerKeepItOpen;
+
   /// Message under the first connection step in the desktop dialog.
   ///
   /// In en, this message translates to:
   /// **'Keep your Ledger nearby and unlocked, with Bluetooth turned on.'**
   String get ledgerKeepNearbyUnlocked;
+
+  /// Message while searching for the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep your Ledger nearby and unlocked.'**
+  String get ledgerKeepNearbyUnlockedShort;
 
   /// Note under the Open Zcash step: do not close the Zcash app on the Ledger.
   ///
@@ -3799,6 +5329,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'macOS may ask for Bluetooth access. If prompted, allow access for Vizor.'**
   String get ledgerMacosBluetoothPrompt;
+
+  /// [security] Message when the connected Ledger is not the one that holds this account.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the Ledger that holds this account. Your saved connection has not changed.'**
+  String get ledgerMismatchChooseHolder;
+
+  /// [security] Mobile message when the connected Ledger is not the one that holds this account.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the Ledger that holds this account. Your saved connection hasn’t changed.'**
+  String get ledgerMismatchChooseHolderMobile;
+
+  /// [security] Message when the connected Ledger is not the one that holds this account.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect the Ledger that holds this account. Your saved connection hasn’t changed.'**
+  String get ledgerMismatchConnectHolder;
+
+  /// Guidance when the device still shows a previous request.
+  ///
+  /// In en, this message translates to:
+  /// **'Another Ledger request is still active. Complete or reject it on your Ledger, then try again.'**
+  String get ledgerMobileAnotherRequestActive;
+
+  /// Guidance when Bluetooth permission was denied; a Bluetooth access checker is shown below.
+  ///
+  /// In en, this message translates to:
+  /// **'Check Bluetooth access below, then try connecting to your Ledger again.'**
+  String get ledgerMobileCheckBluetoothBelow;
+
+  /// Guidance when the Bluetooth connection failed or dropped.
+  ///
+  /// In en, this message translates to:
+  /// **'The Bluetooth connection to your Ledger was lost or could not be established. Turn on and unlock your Ledger, keep it nearby, then try again.'**
+  String get ledgerMobileConnectionLost;
+
+  /// Guidance when the stored Bluetooth pairing with the Ledger is stale and must be removed in system settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.'**
+  String get ledgerMobilePairingInvalid;
+
+  /// Guidance when the user did not complete the Bluetooth pairing prompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth pairing was not completed. Reconnect your Ledger and approve the pairing request, then try again.'**
+  String get ledgerMobilePairingNotCompleted;
+
+  /// Guidance when the Ledger request was cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'The Ledger request was cancelled. Try again when ready.'**
+  String get ledgerMobileRequestCancelled;
+
+  /// Guidance when the user rejected the request on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'The request was rejected on your Ledger. Try again when ready.'**
+  String get ledgerMobileRequestRejected;
+
+  /// Guidance when Bluetooth is turned off.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Bluetooth, then try again.'**
+  String get ledgerMobileTurnOnBluetooth;
+
+  /// Guidance on Android when location services are off, which this Android version needs to find Bluetooth devices.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on location services to find your Ledger on this Android version, then try again.'**
+  String get ledgerMobileTurnOnLocation;
 
   /// Title of the status block when the search found no Ledger device.
   ///
@@ -3824,6 +5426,18 @@ abstract class AppLocalizations {
   /// **'On your Ledger'**
   String get ledgerOnYourLedger;
 
+  /// Instruction to open an app on the Ledger. {appName} is the device app name, normally Zcash, and stays in Latin script.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the {appName} app'**
+  String ledgerOpenAppInstruction(String appName);
+
+  /// Instruction to open an app on the Ledger. {appName} is the device app name, normally Zcash.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the {appName} app on your Ledger.'**
+  String ledgerOpenAppOnLedger(String appName);
+
   /// Error in the mobile connection help when the Bluetooth settings could not be opened automatically.
   ///
   /// In en, this message translates to:
@@ -3836,11 +5450,149 @@ abstract class AppLocalizations {
   /// **'Open the Zcash app, then try again.'**
   String get ledgerOpenZcashThenTryAgain;
 
+  /// Status while the mobile Ledger connection help is prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening connection help…'**
+  String get ledgerOpeningConnectionHelp;
+
+  /// Message when the Ledger forgot the stored Bluetooth pairing.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger no longer recognizes this Bluetooth pairing.'**
+  String get ledgerPairingNoLongerRecognized;
+
+  /// Message when the Ledger forgot the stored Bluetooth pairing and the old pairing must be removed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger no longer recognizes this Bluetooth pairing. Remove the old pairing, then reconnect.'**
+  String get ledgerPairingNoLongerRecognizedRemove;
+
+  /// Screen-reader label of a step in the Ledger procedure list.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {step} of {total}'**
+  String ledgerProcedureStep(String step, String total);
+
+  /// Screen-reader label of a finished step in the Ledger procedure list.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {step} of {total}, complete'**
+  String ledgerProcedureStepComplete(String step, String total);
+
+  /// Ledger error when the Zcash app version could not be read. 'Zcash' is the device app name.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not verify the Ledger Zcash app. Try again.'**
+  String get ledgerReadinessAppNotVerified;
+
+  /// Fallback message when preparing the Zcash app on the Ledger failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not prepare the Ledger Zcash app. Try again.'**
+  String get ledgerReadinessCouldNotPrepare;
+
+  /// Ledger error when another app or the dashboard is open on the device. 'Zcash' is the device app name.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the Zcash app on your Ledger, then try again.'**
+  String get ledgerReadinessOpenZcashApp;
+
+  /// Message when a Ledger operation was cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger operation was cancelled.'**
+  String get ledgerReadinessOperationCancelled;
+
+  /// Message asking the user to reconnect and unlock the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect and unlock your Ledger, then try again.'**
+  String get ledgerReadinessReconnectUnlockTryAgain;
+
+  /// [security] Ledger error when the Zcash device app is too old. {version} is a version number such as 3.10.0.
+  ///
+  /// In en, this message translates to:
+  /// **'Update the Ledger Zcash app to version {version} or newer.'**
+  String ledgerReadinessUpdateApp(String version);
+
+  /// Message when Vizor has no USB permission to reach the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect and unlock your Ledger over USB. If it is connected, install the Ledger udev rules on Linux, then unplug and reconnect it.'**
+  String get ledgerReadinessUsbPermission;
+
+  /// Message when the Ledger is connected and signing can continue.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger is ready. Continue signing when you’re ready.'**
+  String get ledgerReadyContinueSigning;
+
+  /// [security] Message when the Ledger is connected; the user will review the transaction on the device next.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue when you’re ready to review the transaction on your Ledger.'**
+  String get ledgerReadyReviewOnLedger;
+
+  /// Title of the mobile Bluetooth sheet when access is fine and the user can reconnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect Ledger'**
+  String get ledgerReconnectTitle;
+
+  /// Title of recovery step 1.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the old pairing'**
+  String get ledgerRemoveOldPairing;
+
+  /// Recovery step on iOS. Use the localized iOS names for Settings and Bluetooth.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device.'**
+  String get ledgerRemovePairingIos;
+
+  /// Recovery step on macOS. Use the localized macOS names.
+  ///
+  /// In en, this message translates to:
+  /// **'Open System Settings > Bluetooth. If your Ledger is listed, remove its saved pairing.'**
+  String get ledgerRemovePairingMacos;
+
+  /// Recovery step on other platforms.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Bluetooth settings. If your Ledger is listed, remove its saved pairing.'**
+  String get ledgerRemovePairingOther;
+
+  /// Button and title in the mobile Ledger help that guides the user to remove the saved Bluetooth pairing.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset Bluetooth pairing'**
+  String get ledgerResetBluetoothPairing;
+
   /// Status text while the desktop dialog returns to the connection options after stopping the search.
   ///
   /// In en, this message translates to:
   /// **'Returning to connection options…'**
   String get ledgerReturningToOptions;
+
+  /// Message after the Ledger was verified; the user must search again to continue.
+  ///
+  /// In en, this message translates to:
+  /// **'This Ledger matches your account. Find it again to continue.'**
+  String get ledgerSavedFindAgain;
+
+  /// Message after the Ledger was verified and stored.
+  ///
+  /// In en, this message translates to:
+  /// **'This Ledger matches your account and is now saved. Find it again to continue.'**
+  String get ledgerSavedMatchesFindAgain;
+
+  /// Message while the verified Ledger connection is stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account matches. Saving the verified connection.'**
+  String get ledgerSavingVerified;
 
   /// Button that restarts the search for Ledger devices when none were found.
   ///
@@ -3890,6 +5642,252 @@ abstract class AppLocalizations {
   /// **'Request declined'**
   String get ledgerSheetDeclinedTitle;
 
+  /// Note under the review step when several transactions are signed in a row.
+  ///
+  /// In en, this message translates to:
+  /// **'You will approve the next transaction separately.'**
+  String get ledgerSigningApproveNextSeparately;
+
+  /// [security] Note under the review step on mobile asking the user to approve or reject on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve to sign, or reject to cancel.'**
+  String get ledgerSigningApproveOrReject;
+
+  /// [security] Note under the review step asking the user to approve signing on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve to sign.'**
+  String get ledgerSigningApproveToSign;
+
+  /// [security] Note under the review step when several transactions are signed in a row; the two paragraphs are separated by a blank line.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve to sign.\n\nYou will approve the next transaction separately.'**
+  String get ledgerSigningApproveToSignNext;
+
+  /// Step message after the user approved on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Approved on Ledger. Vizor is finishing the transaction.'**
+  String get ledgerSigningApprovedFinishing;
+
+  /// Back button label in the Ledger signing dialog that returns to the connection options.
+  ///
+  /// In en, this message translates to:
+  /// **'Change connection'**
+  String get ledgerSigningChangeConnection;
+
+  /// [security] Step message asking the user to verify the amount and recipient on the Ledger screen before approving.
+  ///
+  /// In en, this message translates to:
+  /// **'When prompted, check the amount and recipient on Ledger.'**
+  String get ledgerSigningCheckAmountRecipient;
+
+  /// Screen-reader label of the close button on the mobile Ledger signing surface.
+  ///
+  /// In en, this message translates to:
+  /// **'Close Ledger'**
+  String get ledgerSigningCloseSemantics;
+
+  /// [security] Message asking the user to confirm on the Ledger; Vizor reconnects by itself afterwards.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm the request on your Ledger. Vizor will reconnect automatically.'**
+  String get ledgerSigningConfirmRequestReconnect;
+
+  /// [security] Step message in the Ledger signing dialog after the user declined signing on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing was declined on Ledger. Try again when you’re ready.'**
+  String get ledgerSigningDeclined;
+
+  /// Step message while the Ledger request is being finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing the Ledger request.'**
+  String get ledgerSigningFinishingRequest;
+
+  /// Reminder in the Ledger signing dialog to leave the device connected.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Ledger connected.'**
+  String get ledgerSigningKeepLedgerConnected;
+
+  /// Message while the Ledger request is being cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open while the Ledger request is cancelled.'**
+  String get ledgerSigningKeepOpenWhileCancelling;
+
+  /// Reminder not to close Vizor while a Ledger operation finishes.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open.'**
+  String get ledgerSigningKeepVizorOpen;
+
+  /// Status chip reminding the user not to close Vizor while the transaction finishes.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open'**
+  String get ledgerSigningKeepVizorOpenShort;
+
+  /// Body while Vizor prepares a transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait while Vizor prepares your transaction.'**
+  String get ledgerSigningMsgPreparing;
+
+  /// [security] Body asking the user to review and approve on the Ledger when prompted.
+  ///
+  /// In en, this message translates to:
+  /// **'Review and approve when prompted on your Ledger.'**
+  String get ledgerSigningMsgReviewing;
+
+  /// Body during Ledger signing. {wait} is the sentence 'Ledger is preparing to sign. It may seem unresponsive for a few seconds.' translated separately.
+  ///
+  /// In en, this message translates to:
+  /// **'{wait} Keep your Ledger connected.'**
+  String ledgerSigningMsgSending(String wait);
+
+  /// Step message in the Ledger signing dialog while the signed transaction is stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving the signed transaction.'**
+  String get ledgerSigningSaving;
+
+  /// Status chip while Vizor checks the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking device'**
+  String get ledgerSigningStatusCheckingDevice;
+
+  /// Status chip while the Zcash app opens on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening Zcash'**
+  String get ledgerSigningStatusOpeningZcash;
+
+  /// Short status chip while the Ledger prepares to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing to sign'**
+  String get ledgerSigningStatusPreparing;
+
+  /// [security] Short status chip asking the user to review on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Review on device'**
+  String get ledgerSigningStatusReview;
+
+  /// [security] Mobile status chip while waiting for the user to approve on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for your approval'**
+  String get ledgerSigningStatusWaitingApproval;
+
+  /// Third step label of the Ledger signing procedure.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish transaction'**
+  String get ledgerSigningStepFinish;
+
+  /// First step label of the Ledger signing procedure.
+  ///
+  /// In en, this message translates to:
+  /// **'Prepare transaction'**
+  String get ledgerSigningStepPrepare;
+
+  /// [security] Second step label of the Ledger signing procedure: review and approve on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Review on Ledger'**
+  String get ledgerSigningStepReview;
+
+  /// [security] Mobile title asking the user to confirm the transaction on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm on your Ledger'**
+  String get ledgerSigningTitleConfirmOnLedger;
+
+  /// Title while Vizor finishes a signed transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing transaction'**
+  String get ledgerSigningTitleFinishing;
+
+  /// Title while Vizor prepares a transaction for Ledger signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing transaction'**
+  String get ledgerSigningTitlePreparing;
+
+  /// [security] Title asking the user to review and approve the transaction on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your Ledger'**
+  String get ledgerSigningTitleReviewing;
+
+  /// Title while the Ledger processes the signing request.
+  ///
+  /// In en, this message translates to:
+  /// **'Processing with Ledger'**
+  String get ledgerSigningTitleSending;
+
+  /// Title of the Ledger dialog while the signed transaction is broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending transaction'**
+  String get ledgerSigningTitleSendingTx;
+
+  /// Title of the Ledger signing dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign transaction'**
+  String get ledgerSigningTitleSign;
+
+  /// Shows which transaction of a batch is being signed on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction {current} of {total}'**
+  String ledgerSigningTransactionProgress(String current, String total);
+
+  /// Explains that the Ledger may look frozen for a few seconds while preparing to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger is preparing to sign. It may seem unresponsive for a few seconds.'**
+  String get ledgerSigningWaitInstruction;
+
+  /// Status while the user must act on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow the prompts on your Ledger'**
+  String get ledgerStatusFollowPrompts;
+
+  /// Status while opening the system Bluetooth settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening Bluetooth settings…'**
+  String get ledgerStatusOpeningBluetoothSettings;
+
+  /// Status while the Ledger connection is stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving connection…'**
+  String get ledgerStatusSavingConnection;
+
+  /// Status while searching for Ledger devices.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching nearby…'**
+  String get ledgerStatusSearchingNearby;
+
+  /// Status while the search continues.
+  ///
+  /// In en, this message translates to:
+  /// **'Still searching nearby…'**
+  String get ledgerStatusStillSearching;
+
   /// [security] Procedure step label: the user approves sharing the viewing key on the Ledger device.
   ///
   /// In en, this message translates to:
@@ -3908,6 +5906,12 @@ abstract class AppLocalizations {
   /// **'Open Zcash'**
   String get ledgerStepOpenZcash;
 
+  /// Error shown in the mobile Ledger connection help when stopping the Bluetooth search failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not stop the search. Try opening connection help again.'**
+  String get ledgerStopSearchFailedHelp;
+
   /// Title of the desktop dialog while the Bluetooth device search is being stopped.
   ///
   /// In en, this message translates to:
@@ -3919,6 +5923,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Supported devices'**
   String get ledgerSupportedDevices;
+
+  /// Title while connecting to the saved Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting to your Ledger'**
+  String get ledgerTitleConnectingToLedger;
+
+  /// Title while Vizor searches for the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Finding your Ledger'**
+  String get ledgerTitleFindingLedger;
+
+  /// Title when the Ledger is connected.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger is connected'**
+  String get ledgerTitleLedgerConnected;
+
+  /// Title after the Ledger connection was stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger saved'**
+  String get ledgerTitleLedgerSaved;
+
+  /// [security] Title when the connected Ledger does not hold the account.
+  ///
+  /// In en, this message translates to:
+  /// **'This Ledger doesn’t match'**
+  String get ledgerTitleMismatch;
+
+  /// Title asking the user to pair the Ledger again.
+  ///
+  /// In en, this message translates to:
+  /// **'Pair your Ledger again'**
+  String get ledgerTitlePairAgain;
+
+  /// Title while the Ledger connection is stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving your connection'**
+  String get ledgerTitleSavingConnection;
+
+  /// Title above the list of found Ledger devices.
+  ///
+  /// In en, this message translates to:
+  /// **'Select your Ledger'**
+  String get ledgerTitleSelectYourLedger;
 
   /// Name of the Bluetooth connection option for a Ledger device (choice button or connection summary).
   ///
@@ -3938,17 +5990,101 @@ abstract class AppLocalizations {
   /// **'Unlock Ledger, turn on Bluetooth, and keep it nearby.'**
   String get ledgerUnlockBluetoothNearby;
 
+  /// Message while searching for Ledger devices over Bluetooth.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Ledger, enable Bluetooth and keep it nearby.'**
+  String get ledgerUnlockEnableBluetoothNearby;
+
+  /// [security] Message while verifying the saved Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock your Ledger and open the Zcash app. Approve opening it if prompted.'**
+  String get ledgerUnlockOpenZcashApprove;
+
   /// [security] Step 1 of the Ledger preparation list (the number is added by the app); the user unlocks the Ledger with its PIN.
   ///
   /// In en, this message translates to:
   /// **'Unlock with your PIN.'**
   String get ledgerUnlockWithPin;
 
+  /// [security] Message asking the user to approve opening the Zcash app on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve opening the Zcash app on your Ledger.'**
+  String get ledgerUsbApproveOpening;
+
+  /// Fallback message for a USB connection problem.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the USB cable, unlock your Ledger, and open the Zcash app.'**
+  String get ledgerUsbCheckCableOpenApp;
+
+  /// Instruction for connecting over USB.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect your Ledger with a USB cable, unlock it, and open the Zcash app.'**
+  String get ledgerUsbConnectUnlockOpen;
+
+  /// Identity chip showing the Ledger is connected over USB.
+  ///
+  /// In en, this message translates to:
+  /// **'USB connection'**
+  String get ledgerUsbConnection;
+
+  /// USB error when another app may be holding the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor found your Ledger but could not open it. Close other wallet apps that use the Ledger, reconnect it, then try again.'**
+  String get ledgerUsbCouldNotOpen;
+
+  /// USB error when the USB stack failed to start.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not start USB access for your Ledger. Reconnect the device, then try again.'**
+  String get ledgerUsbCouldNotStart;
+
+  /// USB error after the connection dropped. {instruction} is a full sentence produced elsewhere, such as 'Open the Zcash app on your Ledger.'.
+  ///
+  /// In en, this message translates to:
+  /// **'The USB connection to your Ledger was interrupted. Reconnect and unlock your Ledger. {instruction}'**
+  String ledgerUsbInterrupted(String instruction);
+
+  /// Linux USB permission error. Keep the URL github.com/LedgerHQ/udev-rules unchanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor cannot access your Ledger over USB. Install Ledger\'s udev rules for Linux (github.com/LedgerHQ/udev-rules), then reconnect your Ledger and try again.'**
+  String get ledgerUsbPermissionLinux;
+
+  /// USB permission error on macOS and Windows.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor cannot access your Ledger over USB. Check USB device permissions, then reconnect and try again.'**
+  String get ledgerUsbPermissionOther;
+
+  /// [security] Message while verifying a new Ledger: the user approves sharing the viewing key on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete pairing if prompted, then approve sharing your viewing key.'**
+  String get ledgerVerifyingNewDevice;
+
+  /// [security] Message while verifying the saved Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Ledger and confirm opening Zcash if prompted.'**
+  String get ledgerVerifyingSavedDevice;
+
   /// Status message while Vizor checks whether the Zcash app is open on the Ledger.
   ///
   /// In en, this message translates to:
   /// **'Vizor is checking the Zcash app.'**
   String get ledgerVizorCheckingZcash;
+
+  /// [security] Status while waiting for the user to approve on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for approval…'**
+  String get ledgerWaitingForApproval;
 
   /// [security] Body of the passcode entry screen after sync was interrupted.
   ///
@@ -4021,6 +6157,3231 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unlock Vizor to continue.'**
   String get lockUnlockToContinuePausedBody;
+
+  /// Approximate time left before the next migration step, without 'in' (shown as a value, e.g. in a status row).
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{~1 minute} other{~{count} minutes}}'**
+  String migrationAboutMinutes(int count);
+
+  /// Rotating status message while the private migration plan is being computed.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing your balance...'**
+  String get migrationAnalyzingBalance;
+
+  /// Caption under the analysis animation, split over two lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is working hard to find a perfect balance\nof safety, privacy, and speed for your migration'**
+  String get migrationAnalyzingCaption;
+
+  /// Rotating status message while the private migration plan is being computed.
+  ///
+  /// In en, this message translates to:
+  /// **'Finding private batches...'**
+  String get migrationAnalyzingFindingBatches;
+
+  /// Rotating status message while the private migration plan is being computed.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing your migration plan...'**
+  String get migrationAnalyzingPreparingPlan;
+
+  /// Screen-reader label of the progress ring shown while the private migration plan is computed.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing private migration plan'**
+  String get migrationAnalyzingSemanticsLabel;
+
+  /// Body of the announcement modal about the new Ironwood pool, split over three lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood is the latest Zcash shielded pool.\nIt\'s the first formally verified pool with\ncutting edge cryptography.'**
+  String get migrationAnnouncementBody;
+
+  /// Button in the announcement modal that opens the official release note.
+  ///
+  /// In en, this message translates to:
+  /// **'Official Release Note'**
+  String get migrationAnnouncementReleaseNote;
+
+  /// Button in the announcement modal that starts the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Start Migration'**
+  String get migrationAnnouncementStart;
+
+  /// Back-link label that returns to the migration introduction.
+  ///
+  /// In en, this message translates to:
+  /// **'About Migration'**
+  String get migrationBackAbout;
+
+  /// Button that returns to the home screen from a migration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Back home'**
+  String get migrationBackHome;
+
+  /// Back-link label that returns to the "How the Migration Works" screen.
+  ///
+  /// In en, this message translates to:
+  /// **'How Migration Works'**
+  String get migrationBackHowItWorks;
+
+  /// Back-link label that returns to the list of migration options.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Options'**
+  String get migrationBackOptions;
+
+  /// Status of the current migration batch while it is being sent to the network.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasting...'**
+  String get migrationBatchBroadcasting;
+
+  /// Title of the card above the sign button: batch number and how many notes it contains.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch #{number} ({count} notes)'**
+  String migrationBatchCardTitle(String number, String count);
+
+  /// Status of the current migration batch while it waits for confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming...'**
+  String get migrationBatchConfirming;
+
+  /// Estimated arrival of a migration batch, given as the block height at which it is sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Block {height}'**
+  String migrationBlockHeight(String height);
+
+  /// Approximate wait expressed as a number of blocks.
+  ///
+  /// In en, this message translates to:
+  /// **'~{blocks} blocks'**
+  String migrationBlocksEstimate(String blocks);
+
+  /// Approximate time until a scheduled migration transfer is sent, in hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{~in 1 hr} other{~in {count} hrs}}'**
+  String migrationBroadcastApproxInHours(int count);
+
+  /// Approximate time until a scheduled migration transfer is sent, in minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'~in {count} min'**
+  String migrationBroadcastApproxInMinutes(int count);
+
+  /// Status of a scheduled migration transfer that the network confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmed'**
+  String get migrationBroadcastConfirmed;
+
+  /// Status of a scheduled migration transfer whose send time has arrived.
+  ///
+  /// In en, this message translates to:
+  /// **'Due now'**
+  String get migrationBroadcastDueNow;
+
+  /// When a scheduled migration transfer will be sent, in hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{in 1 hr} other{in {count} hrs}}'**
+  String migrationBroadcastInHours(int count);
+
+  /// When a scheduled migration transfer will be sent, in minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'in {count} min'**
+  String migrationBroadcastInMinutes(int count);
+
+  /// Status of a migration transfer that was sent to the network.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitted'**
+  String get migrationBroadcastSubmitted;
+
+  /// Screen-reader label for the carousel of tips shown during migration preparation.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration preparation information'**
+  String get migrationCarouselPreparationLabel;
+
+  /// Screen-reader label for the carousel of tips shown during migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration information'**
+  String get migrationCarouselProgressLabel;
+
+  /// Body text of the migration-complete screen, split over two lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration completed successfully and you can\nspend your funds as usual.'**
+  String get migrationCompleteBody;
+
+  /// Headline of the migration-complete screen, split over three lines; {amount} is the migrated ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Your\n{amount} ZEC\nare on Ironwood!'**
+  String migrationCompleteTitle(String amount);
+
+  /// Button that continues the migration with its next step.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue migration'**
+  String get migrationContinueMigration;
+
+  /// Label of the action button while the migration is continuing.
+  ///
+  /// In en, this message translates to:
+  /// **'Continuing...'**
+  String get migrationContinuing;
+
+  /// Label of the home call-to-action that starts the Ironwood migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrate to Ironwood Pool'**
+  String get migrationCtaStart;
+
+  /// Label on the legacy migration card for the batch currently being processed.
+  ///
+  /// In en, this message translates to:
+  /// **'Current Batch'**
+  String get migrationCurrentBatch;
+
+  /// Approximate duration in days.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{~1 day} other{~{count} days}}'**
+  String migrationDurationDays(int count);
+
+  /// Approximate duration of a whole number of hours plus a half hour, for example "~2.5 hrs".
+  ///
+  /// In en, this message translates to:
+  /// **'~{hours}.5 hrs'**
+  String migrationDurationHalfHours(String hours);
+
+  /// Approximate duration in hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{~1 hr} other{~{count} hrs}}'**
+  String migrationDurationHours(int count);
+
+  /// Approximate duration in minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{~1 min} other{~{count} mins}}'**
+  String migrationDurationMinutes(int count);
+
+  /// Error shown when sending a migration transaction to the network failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t broadcast the migration transaction. Try again.'**
+  String get migrationErrorBroadcast;
+
+  /// Error shown when continuing the migration failed for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t continue migration. Try again.'**
+  String get migrationErrorContinue;
+
+  /// [security] Error shown when the transaction could not be prepared for signing on Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t prepare Keystone signing.'**
+  String get migrationErrorKeystonePrepare;
+
+  /// Error shown when a Ledger account tries the private migration, which needs batched signing the Ledger flow does not support.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger private migration is excluded because the current flow requires batched signing.'**
+  String get migrationErrorLedgerExcluded;
+
+  /// Error shown when the migration amount or fee changed after the user reviewed the plan.
+  ///
+  /// In en, this message translates to:
+  /// **'The amount or fee changed. Review the updated details.'**
+  String get migrationErrorPlanChanged;
+
+  /// Error shown when starting the migration failed for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t start migration. Try again.'**
+  String get migrationErrorStart;
+
+  /// [security] Error shown when migration cannot continue because the wallet is locked.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Vizor before continuing migration.'**
+  String get migrationErrorUnlockBeforeContinue;
+
+  /// [security] Error shown when migration cannot start because the wallet is locked.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Vizor before starting migration.'**
+  String get migrationErrorUnlockBeforeStart;
+
+  /// Error shown when a migration action needs the wallet to finish syncing first.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait for sync to finish, then try again.'**
+  String get migrationErrorWaitForSync;
+
+  /// Estimated completion shown while migration is waiting for the user to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'After signing'**
+  String get migrationEstimateAfterSigning;
+
+  /// Estimated completion shown when no preparation transactions remain.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete'**
+  String get migrationEstimateComplete;
+
+  /// Estimated completion phrased as a sentence; {estimate} is an approximate duration such as "~5 mins".
+  ///
+  /// In en, this message translates to:
+  /// **'in {estimate}'**
+  String migrationEstimateIn(String estimate);
+
+  /// Estimated time until the migration completes, in days.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{in ~1 day} other{in ~{count} days}}'**
+  String migrationEstimateInDays(int count);
+
+  /// Estimated time until the migration completes; {hours} is a number such as "2" or "2.5".
+  ///
+  /// In en, this message translates to:
+  /// **'in ~{hours} hours'**
+  String migrationEstimateInHours(String hours);
+
+  /// Estimated time until the migration completes, in minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{in ~1 minute} other{in ~{count} minutes}}'**
+  String migrationEstimateInMinutes(int count);
+
+  /// Estimated time until the migration completes: about one hour.
+  ///
+  /// In en, this message translates to:
+  /// **'in ~1 hour'**
+  String get migrationEstimateInOneHour;
+
+  /// Label on the legacy migration card for when the batch is expected to arrive.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated arrival time'**
+  String get migrationEstimatedArrivalTime;
+
+  /// [security] Explains that the computer must stay unlocked with Vizor running so the next migration transaction can be sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Your computer needs to be unlocked with Vizor running so we can send the next migration transaction'**
+  String get migrationExpectKeepRunningBody;
+
+  /// Explains that the duration depends on the migrated amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood migrations can take anywhere from several hours up to a couple days depending on your migration amount.'**
+  String get migrationExpectLongBody;
+
+  /// Heading of a "what to expect" item about the migration duration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrations can take a long time'**
+  String get migrationExpectLongTitle;
+
+  /// Explains that confirmed Ironwood amounts are spendable while the migration continues.
+  ///
+  /// In en, this message translates to:
+  /// **'Each confirmed Ironwood amount is available to spend while the rest of the migration continues.'**
+  String get migrationExpectSpendBody;
+
+  /// Heading of a "what to expect" item about spending migrated funds early.
+  ///
+  /// In en, this message translates to:
+  /// **'You can spend as funds arrive'**
+  String get migrationExpectSpendTitle;
+
+  /// Title of the screen that lists what to expect during the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'What to expect'**
+  String get migrationExpectTitle;
+
+  /// Recommends running the migration behind a trustworthy VPN or network privacy layer.
+  ///
+  /// In en, this message translates to:
+  /// **'It’s recommended to run the migration behind a trustable VPN/network privacy layer'**
+  String get migrationExpectVpnBody;
+
+  /// Heading of a "what to expect" item recommending a VPN.
+  ///
+  /// In en, this message translates to:
+  /// **'Use VPN for an extra privacy'**
+  String get migrationExpectVpnTitle;
+
+  /// Title of the Ironwood migration screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood Migration'**
+  String get migrationFlowTitle;
+
+  /// Explains that parts are sent slowly at staggered times to make tracing harder.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor slowly sends parts at staggered intervals across multiple batches to reduce traceability.'**
+  String get migrationHowDelayedBody;
+
+  /// Heading of the third step of "How the Migration Works".
+  ///
+  /// In en, this message translates to:
+  /// **'Delayed and randomized migrations'**
+  String get migrationHowDelayedTitle;
+
+  /// Explains that a one-time migration is needed to spend the Orchard balance.
+  ///
+  /// In en, this message translates to:
+  /// **'A one-time migration to Ironwood is required to spend your existing shielded balance.'**
+  String get migrationHowFrozenBody;
+
+  /// Heading of the first step of "How the Migration Works".
+  ///
+  /// In en, this message translates to:
+  /// **'Orchard (legacy shielded) balance is frozen'**
+  String get migrationHowFrozenTitle;
+
+  /// Explains that the balance is split into smaller standard notes before migrating.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor splits your total balance into many smaller notes (e.g. 0.1 ZEC / 1 ZEC / 5 ZEC) before migrating.'**
+  String get migrationHowPreparationBody;
+
+  /// Heading of the second step of "How the Migration Works".
+  ///
+  /// In en, this message translates to:
+  /// **'Pre-migration preparations'**
+  String get migrationHowPreparationTitle;
+
+  /// Small label on a card of the "How the Migration Works" carousel.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {number}'**
+  String migrationHowStepLabel(String number);
+
+  /// Screen-reader label of the current card of the migration steps carousel.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration step {number} of {total}. {title}. {body}'**
+  String migrationHowStepSemanticsCurrent(
+    String number,
+    String total,
+    String title,
+    String body,
+  );
+
+  /// Screen-reader label of a button that shows another card of the migration steps carousel.
+  ///
+  /// In en, this message translates to:
+  /// **'Show migration step {number} of {total}'**
+  String migrationHowStepSemanticsShow(String number, String total);
+
+  /// Title of the "How the Migration Works" screen.
+  ///
+  /// In en, this message translates to:
+  /// **'How the Migration Works'**
+  String get migrationHowTitle;
+
+  /// [security] Button that authorises the one-step migration despite its privacy trade-off.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorise anyway'**
+  String get migrationImmediateAuthoriseAnyway;
+
+  /// [security] Label of the confirm button while the one-step migration is being authorised.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorising…'**
+  String get migrationImmediateAuthorising;
+
+  /// [security] Screen-reader label of the spinner shown while the one-step migration is being authorised.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorising migration'**
+  String get migrationImmediateAuthorisingSemantics;
+
+  /// Button on the one-step migration review that goes back to the list of migration options.
+  ///
+  /// In en, this message translates to:
+  /// **'Consider another option'**
+  String get migrationImmediateConsiderOther;
+
+  /// Row label for the estimated network fee of the one-step migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Fees (estimate)'**
+  String get migrationImmediateFees;
+
+  /// Message shown when there is no spendable Orchard balance to move with the one-step migration.
+  ///
+  /// In en, this message translates to:
+  /// **'No spendable Orchard balance is available for Immediate migration.'**
+  String get migrationImmediateNoBalance;
+
+  /// Error shown when the plan for the one-step ("Immediate") migration could not be calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t calculate the Immediate migration plan. Sync and try again.'**
+  String get migrationImmediatePlanFailed;
+
+  /// Button that recalculates the one-step migration plan after a failure.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry calculation'**
+  String get migrationImmediateRetryCalculation;
+
+  /// Title of the review screen for the one-step ("Immediate") migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Review Migration Plan'**
+  String get migrationImmediateReviewTitle;
+
+  /// [security] Highlighted second part of the privacy notice, continuing the previous message.
+  ///
+  /// In en, this message translates to:
+  /// **'easier to associate with your wallet.'**
+  String get migrationImmediateTradeoffEmphasis;
+
+  /// [security] First part of the privacy notice; {amount} is the ZEC amount. The sentence continues in the next message, so it must end with a space.
+  ///
+  /// In en, this message translates to:
+  /// **'Crosses in one visible step — your {amount} and timing are '**
+  String migrationImmediateTradeoffLead(String amount);
+
+  /// [security] Last line of the privacy notice for Ledger accounts; starts with a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'\nPrivate migration is not available for Ledger accounts.'**
+  String get migrationImmediateTradeoffLedger;
+
+  /// [security] Last line of the privacy notice suggesting the private migration; starts with a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'\nConsider choosing a Private Migration option.'**
+  String get migrationImmediateTradeoffPrivate;
+
+  /// [security] Heading of the notice that the one-step migration is less private.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy trade-off'**
+  String get migrationImmediateTradeoffTitle;
+
+  /// Placeholder shown for the amount, fee or button when the Immediate migration plan is not available.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get migrationImmediateUnavailable;
+
+  /// Approximate time until the next migration step, in minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{~in 1 minute} other{~in {count} minutes}}'**
+  String migrationInMinutes(int count);
+
+  /// Button on the migration introduction screen that opens the official announcement.
+  ///
+  /// In en, this message translates to:
+  /// **'Official Announcement'**
+  String get migrationIntroAnnouncement;
+
+  /// Badge on the migration introduction screen naming the network upgrade.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash Network Upgrade'**
+  String get migrationIntroBadge;
+
+  /// Body of the migration introduction screen; {amount} is the ZEC amount still in the Orchard pool. The first sentence ends with a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'Your {amount} ZEC is currently in Orchard.\nTo keep using these funds for shielded payments, you will need to move them to Ironwood. You will review the migration plan before any funds move.'**
+  String migrationIntroBody(String amount);
+
+  /// Tagline on the migration introduction screen.
+  ///
+  /// In en, this message translates to:
+  /// **'A new shielded pool for Zcash.'**
+  String get migrationIntroTagline;
+
+  /// [security] Status while the Keystone signature is being applied.
+  ///
+  /// In en, this message translates to:
+  /// **'Applying the Keystone signature.'**
+  String get migrationKeystoneApplyingSignature;
+
+  /// [security] Status while the signature is being applied to the migration plan.
+  ///
+  /// In en, this message translates to:
+  /// **'Applying the Keystone signature to your migration plan.'**
+  String get migrationKeystoneApplyingToPlan;
+
+  /// Button that leaves Keystone signing and returns to the migration review.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to review'**
+  String get migrationKeystoneBackToReview;
+
+  /// Button that leaves Keystone signing and returns to the migration status.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to status'**
+  String get migrationKeystoneBackToStatus;
+
+  /// [security] Button that starts the Keystone signing rounds.
+  ///
+  /// In en, this message translates to:
+  /// **'Begin signing'**
+  String get migrationKeystoneBeginSigning;
+
+  /// Shown when the camera is unavailable; asks for camera access to scan the signed QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow camera access to scan the signed Keystone QR.'**
+  String get migrationKeystoneCameraAccess;
+
+  /// Shown when no camera is available; Keystone migration signing needs a camera to scan QR codes.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone migration signing uses camera QR scanning only. Connect a camera and try again.'**
+  String get migrationKeystoneCameraOnly;
+
+  /// [security] Error shown when cancelling the Keystone signing request failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not cancel the signing request. Try again.'**
+  String get migrationKeystoneCancelFailed;
+
+  /// Hint under the request QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Click QR to enlarge'**
+  String get migrationKeystoneClickToEnlarge;
+
+  /// [security] Title of the Keystone signing step that confirms the one-step migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Migration with Keystone'**
+  String get migrationKeystoneConfirmTitle;
+
+  /// Screen-reader label of the button that enlarges the request QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Enlarge Keystone request QR'**
+  String get migrationKeystoneEnlargeQr;
+
+  /// Screen-reader label of the enlarged Keystone request QR dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Enlarged Keystone request QR'**
+  String get migrationKeystoneEnlargedQr;
+
+  /// [security] Error shown when the Keystone firmware is too old to sign Ironwood migrations.
+  ///
+  /// In en, this message translates to:
+  /// **'Update Keystone firmware to sign Ironwood migrations, then try again.'**
+  String get migrationKeystoneFirmwareUpdate;
+
+  /// Title of the mobile Keystone migration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone migration'**
+  String get migrationKeystoneMobileTitle;
+
+  /// [security] Error shown when the active account is not a Keystone account.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a Keystone account to sign this migration.'**
+  String get migrationKeystoneNotKeystone;
+
+  /// [security] Error shown when the scanned QR is not the signed migration QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the signed migration QR on Keystone, then scan again.'**
+  String get migrationKeystoneOpenSignedQr;
+
+  /// [security] Explains that each signing round shows one animated request QR and reads one signed response QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Each round uses one animated request QR and one signed response QR.'**
+  String get migrationKeystonePlanBody;
+
+  /// [security] Heading of the screen that previews how many QR rounds Keystone signing needs.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing plan'**
+  String get migrationKeystonePlanTitle;
+
+  /// [security] Error shown when the Keystone signing request could not be prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing could not be prepared. Try again.'**
+  String get migrationKeystonePrepareFailed;
+
+  /// Disabled button label while QR codes are prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing QR codes...'**
+  String get migrationKeystonePreparingQr;
+
+  /// [security] Error shown when local proof preparation failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not prepare local proofs. Go back and prepare this request again.'**
+  String get migrationKeystoneProofFailed;
+
+  /// [security] Message after the signature was captured while proofs are being prepared; asks the user to keep the screen open.
+  ///
+  /// In en, this message translates to:
+  /// **'Signature captured. Vizor is still preparing local proofs. Keep this screen open.'**
+  String get migrationKeystoneProofWaiting;
+
+  /// [security] Message after the signature was captured while proofs are being prepared; asks the user to keep the screen open.
+  ///
+  /// In en, this message translates to:
+  /// **'Signature captured. Vizor is still preparing local proofs ({ready}/{total}). Keep this screen open.'**
+  String migrationKeystoneProofWaitingProgress(String ready, String total);
+
+  /// Status while the wallet prepares zero-knowledge proofs on this device.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing local proofs'**
+  String get migrationKeystoneProofsPreparing;
+
+  /// Label shown while the signed QR is decoded and local proofs are being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing local proofs...'**
+  String get migrationKeystoneProofsPreparingEllipsis;
+
+  /// Progress while the wallet prepares proofs on this device; {ready} of {total} are done.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing local proofs {ready}/{total}'**
+  String migrationKeystoneProofsProgress(String ready, String total);
+
+  /// [security] Instruction under the request QR: Keystone signs the preparation transactions and migration batches together.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan this request with Keystone to sign the preparation transactions and migration batches together.'**
+  String get migrationKeystoneQrBodyCombined;
+
+  /// [security] Instruction under the request QR: scan it with Keystone to confirm the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code with your Keystone wallet to confirm migration.'**
+  String get migrationKeystoneQrBodyImmediate;
+
+  /// [security] Instruction under the request QR: after signing, Keystone shows a new signed QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.'**
+  String get migrationKeystoneQrBodyRound;
+
+  /// [security] Error shown after the Keystone signing request was cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'This signing request was cancelled. Prepare it again.'**
+  String get migrationKeystoneRequestCancelled;
+
+  /// [security] Error shown when the Keystone signing request expired.
+  ///
+  /// In en, this message translates to:
+  /// **'This Keystone signing request expired. Prepare it again.'**
+  String get migrationKeystoneRequestExpired;
+
+  /// Toolbar label while the request QR code for Keystone is shown.
+  ///
+  /// In en, this message translates to:
+  /// **'Request QR'**
+  String get migrationKeystoneRequestQr;
+
+  /// [security] Error: the Keystone signing request is no longer valid and must be prepared again.
+  ///
+  /// In en, this message translates to:
+  /// **'This Keystone signing request can no longer be used. Prepare it again.'**
+  String get migrationKeystoneRequestUnusable;
+
+  /// Label showing which signing round (QR) is on screen, for example "Round 1 of 3".
+  ///
+  /// In en, this message translates to:
+  /// **'Round {current} of {total}'**
+  String migrationKeystoneRound(String current, String total);
+
+  /// Summary of how many QR signing rounds Keystone needs.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 QR signing round} other{{count} QR signing rounds}}'**
+  String migrationKeystoneRoundCount(int count);
+
+  /// [security] Help dialog text suggesting the user update the Keystone Cypherpunk firmware.
+  ///
+  /// In en, this message translates to:
+  /// **'There may be a newer version of Keystone Cypherpunk firmware available. Check if you have the latest version.'**
+  String get migrationKeystoneScanIssuesBody;
+
+  /// Button that closes the Keystone scan help dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Ok, I will check'**
+  String get migrationKeystoneScanIssuesConfirm;
+
+  /// [security] Heading of the help dialog shown when scanning the signed Keystone QR code keeps failing.
+  ///
+  /// In en, this message translates to:
+  /// **'Having issues with scanning the QR code?'**
+  String get migrationKeystoneScanIssuesTitle;
+
+  /// [security] Instruction to scan the new signed QR code displayed by Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the new signed QR shown on Keystone.'**
+  String get migrationKeystoneScanNewQr;
+
+  /// [security] Heading above the request QR asking the user to scan it with Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan request with Keystone'**
+  String get migrationKeystoneScanRequest;
+
+  /// [security] Heading and button for scanning the signed QR shown on Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan Keystone signature'**
+  String get migrationKeystoneScanSignature;
+
+  /// [security] Title of the Keystone signing step that signs one batch of Ironwood migration transfers.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign Ironwood batch'**
+  String get migrationKeystoneSignBatch;
+
+  /// [security] Title of the Keystone signing step that signs the whole migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign migration'**
+  String get migrationKeystoneSignMigration;
+
+  /// [security] Title of the Keystone signing step that signs the note-splitting transactions.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign private split'**
+  String get migrationKeystoneSignPrivateSplit;
+
+  /// Label under the request QR: it signs all the listed transactions; {transactions} is a count such as "3 transactions".
+  ///
+  /// In en, this message translates to:
+  /// **'Signs {transactions}'**
+  String migrationKeystoneSignsAll(String transactions);
+
+  /// Label under the request QR: it signs {count} of the total transactions; {transactions} is the total such as "7 transactions".
+  ///
+  /// In en, this message translates to:
+  /// **'Signs {count} of {transactions}'**
+  String migrationKeystoneSignsSome(String count, String transactions);
+
+  /// Back-link label that returns to the migration review screen from Keystone signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Review migration'**
+  String get migrationKeystoneToolbarReview;
+
+  /// Back-link label that returns to the migration status screen from Keystone signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration status'**
+  String get migrationKeystoneToolbarStatus;
+
+  /// Summary of how many transactions Keystone signs in total.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 transaction total} other{{count} transactions total}}'**
+  String migrationKeystoneTransactionTotal(int count);
+
+  /// Number of transactions, used inside the signing summary.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 transaction} other{{count} transactions}}'**
+  String migrationKeystoneTransactions(int count);
+
+  /// Message shown when Keystone signing is unavailable until sync finishes.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again after sync finishes.'**
+  String get migrationKeystoneTryAfterSync;
+
+  /// Heading shown when Keystone signing cannot be started.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing unavailable'**
+  String get migrationKeystoneUnavailableTitle;
+
+  /// [security] Error shown when the wallet is locked while signing the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Vizor before signing migration.'**
+  String get migrationKeystoneUnlockFirst;
+
+  /// [security] Status after the signature was captured; Vizor continues once local proofs are ready.
+  ///
+  /// In en, this message translates to:
+  /// **'Signature captured. Vizor will continue when local proofs are ready.'**
+  String get migrationKeystoneWaitingForProofsLong;
+
+  /// [security] Status after the Keystone signature was captured while proofs are still being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Signature captured. Waiting for local proofs.'**
+  String get migrationKeystoneWaitingForProofsShort;
+
+  /// [security] Error shown when the scanned signed QR belongs to a different signing round.
+  ///
+  /// In en, this message translates to:
+  /// **'This signed QR is from another round. Go back, scan the current request with Keystone, then scan its new signed QR.'**
+  String get migrationKeystoneWrongRound;
+
+  /// Error shown when the signed migration transaction could not be sent to the network.
+  ///
+  /// In en, this message translates to:
+  /// **'The migration transaction could not be broadcast.'**
+  String get migrationLedgerBroadcast;
+
+  /// [security] Error shown when the Ledger is not reachable; asks the user to connect, unlock and open the Zcash app.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect and unlock your Ledger, then open the Zcash app.'**
+  String get migrationLedgerConnect;
+
+  /// Error shown when the migration with a Ledger failed for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger migration could not be completed.'**
+  String get migrationLedgerFailed;
+
+  /// Title of the Ledger signing dialog after the migration failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger migration failed'**
+  String get migrationLedgerFailedTitle;
+
+  /// Error shown when the migration amount or fee changed while the Ledger was signing.
+  ///
+  /// In en, this message translates to:
+  /// **'The amount or fee changed. Return and review the updated plan.'**
+  String get migrationLedgerPlanChanged;
+
+  /// Error shown when the local proofs for the Ledger migration could not be prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not finish preparing migration proofs.'**
+  String get migrationLedgerProofs;
+
+  /// [security] Error shown when the user rejected the migration transaction on the Ledger device.
+  ///
+  /// In en, this message translates to:
+  /// **'The migration transaction was rejected on your Ledger.'**
+  String get migrationLedgerRejected;
+
+  /// Title of the mobile screen where the migration is signed with a Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrate with Ledger'**
+  String get migrationLedgerTitle;
+
+  /// Line on the legacy migration screen; {amount} is a ZEC amount, possibly starting with "~".
+  ///
+  /// In en, this message translates to:
+  /// **'Left to transfer: {amount}'**
+  String migrationLeftToTransfer(String amount);
+
+  /// Label of the confirm button while the migration is being cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelling...'**
+  String get migrationManageCancelling;
+
+  /// Error in the Manage Migration dialog when the migration is past the point where it can be stopped.
+  ///
+  /// In en, this message translates to:
+  /// **'This migration can no longer be cancelled.'**
+  String get migrationManageCannotCancel;
+
+  /// Confirm button of the Manage Migration dialogs.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm'**
+  String get migrationManageConfirm;
+
+  /// [security] Warning bullet: switching to Immediate slightly reduces privacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Remaining split notes will be processed as an immediate migration, slightly increasing traceability'**
+  String get migrationManageImmediateBullet1;
+
+  /// [security] Warning bullet: transactions that were already sent stay as they are.
+  ///
+  /// In en, this message translates to:
+  /// **'Transactions already broadcast will not be reverted'**
+  String get migrationManageImmediateBullet2;
+
+  /// [security] Warning bullet: an Immediate migration is irreversible.
+  ///
+  /// In en, this message translates to:
+  /// **'There’s no way to revert an immediate migration'**
+  String get migrationManageImmediateBullet3;
+
+  /// [security] Intro line of the dialog that switches the remaining migration to Immediate.
+  ///
+  /// In en, this message translates to:
+  /// **'Process the remaining migration immediately.'**
+  String get migrationManageImmediateIntro;
+
+  /// Error in the Manage Migration dialog when nothing is left to migrate.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no remaining Orchard balance to migrate.'**
+  String get migrationManageNoBalance;
+
+  /// Option for cancelling the remaining scheduled migration transactions.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop Migration'**
+  String get migrationManageStop;
+
+  /// [security] Explains that stopping cancels the remaining scheduled transactions and that migration can be restarted from the home screen.
+  ///
+  /// In en, this message translates to:
+  /// **'This cancels the remaining scheduled migration transactions. You can re-start the migration from the home page.'**
+  String get migrationManageStopBody;
+
+  /// [security] Title of the dialog that confirms stopping the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to stop?'**
+  String get migrationManageStopTitle;
+
+  /// Label of the confirm button while the switch to Immediate migration is being processed.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopping...'**
+  String get migrationManageStopping;
+
+  /// Option and title for finishing the remaining private migration as an Immediate (one-step) migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch to Immediate'**
+  String get migrationManageSwitchImmediate;
+
+  /// Title of the dialog for switching to Immediate migration or stopping the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Migration'**
+  String get migrationManageTitle;
+
+  /// Error in the Manage Migration dialog when changing the migration failed.
+  ///
+  /// In en, this message translates to:
+  /// **'The migration could not be updated. Please try again.'**
+  String get migrationManageUpdateFailed;
+
+  /// Label of the signing summary row when every migration transaction is signed in one Keystone step.
+  ///
+  /// In en, this message translates to:
+  /// **'All transactions'**
+  String get migrationMobileActionAllTransactions;
+
+  /// Label of the signing summary row naming the migration batch. {number} starts at 1.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch #{number}'**
+  String migrationMobileActionBatch(int number);
+
+  /// Screen reader label of the spinner on the migration action button.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration action in progress'**
+  String get migrationMobileActionInProgress;
+
+  /// Label of the signing summary row listing the migration transactions that need to be signed again.
+  ///
+  /// In en, this message translates to:
+  /// **'Transactions needing signature'**
+  String get migrationMobileActionNeedSignature;
+
+  /// Action button that prepares the next migration batch. {number} starts at 1.
+  ///
+  /// In en, this message translates to:
+  /// **'Prepare batch #{number}'**
+  String migrationMobileActionPrepareBatch(int number);
+
+  /// Label of the action button while the next migration batch is being prepared. {number} starts at 1.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing batch #{number}...'**
+  String migrationMobileActionPreparingBatch(int number);
+
+  /// [security] Button label on the migration progress screen asking the user to sign the rebuilt migration transactions again on the Keystone device.
+  ///
+  /// In en, this message translates to:
+  /// **'Re-sign migration transactions'**
+  String get migrationMobileActionResign;
+
+  /// [security] Button label on the migration progress screen asking the user to sign the migration transactions on the Keystone device.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign migration transactions'**
+  String get migrationMobileActionSign;
+
+  /// [security] Default label of the button that signs a migration batch. {number} starts at 1.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign batch #{number}'**
+  String migrationMobileActionSignBatch(int number);
+
+  /// Action button that submits a scheduled migration transaction whose time has passed.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit scheduled transaction'**
+  String get migrationMobileActionSubmitScheduled;
+
+  /// Label of the action button while the late scheduled transaction is being submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting scheduled transaction...'**
+  String get migrationMobileActionSubmittingScheduled;
+
+  /// Body of the bottom sheet announcing the Ironwood pool; two paragraphs separated by a blank line. The apostrophe is a curly one.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash’s latest shielded pool, bringing cutting-edge cryptography and formal verification.\n\nYour shielded balance needs a one-time migration to Ironwood.'**
+  String get migrationMobileAnnouncementBody;
+
+  /// Ghost button of the Ironwood announcement sheet that opens the official announcement in the browser.
+  ///
+  /// In en, this message translates to:
+  /// **'Official announcement'**
+  String get migrationMobileAnnouncementOfficial;
+
+  /// Primary button of the Ironwood announcement sheet that starts the migration flow.
+  ///
+  /// In en, this message translates to:
+  /// **'Upgrade to Ironwood'**
+  String get migrationMobileAnnouncementUpgrade;
+
+  /// Title of the Home sheet asking the user to continue the Ironwood migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue your migration'**
+  String get migrationMobileAttentionContinueTitle;
+
+  /// Title of the Home sheet saying a scheduled migration transaction is late and needs the user.
+  ///
+  /// In en, this message translates to:
+  /// **'A migration transaction needs attention'**
+  String get migrationMobileAttentionLateTitle;
+
+  /// Ghost button of the Home sheet that dismisses it until later. The apostrophe is a curly one.
+  ///
+  /// In en, this message translates to:
+  /// **'I’ll visit later'**
+  String get migrationMobileAttentionLater;
+
+  /// Primary button of the Home sheet that opens the migration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Go to migration page'**
+  String get migrationMobileAttentionOpen;
+
+  /// Title of the Home sheet saying the next migration batch can be prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Your next migration batch is ready'**
+  String get migrationMobileAttentionProofTitle;
+
+  /// Title of the Home sheet telling the user that migration notes wait for their signature. {count} is the number of notes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 note is ready for your signature} other{{count} notes are ready for your signature}}'**
+  String migrationMobileAttentionSignatureSheet(int count);
+
+  /// Button on the migration progress screen that returns to Home.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to home'**
+  String get migrationMobileBackToHome;
+
+  /// Text of the Home migration banner when a migration transaction is late.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration needs attention'**
+  String get migrationMobileBannerLate;
+
+  /// Text of the Home migration banner when the next batch is ready.
+  ///
+  /// In en, this message translates to:
+  /// **'Next migration batch is ready'**
+  String get migrationMobileBannerProof;
+
+  /// Text of the Home migration banner showing the amount that is still migrating. {amount} is the formatted amount without the ZEC unit.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} ZEC still migrating'**
+  String migrationMobileBannerRemaining(String amount);
+
+  /// Text of the Home migration banner when notes wait for a signature. {count} is the number of notes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 note is ready for signing} other{{count} notes are ready for signing}}'**
+  String migrationMobileBannerSignature(int count);
+
+  /// Label inside the progress ring showing completed batches out of the total.
+  ///
+  /// In en, this message translates to:
+  /// **'{completed}/{total} Batch'**
+  String migrationMobileBatchProgress(int completed, int total);
+
+  /// First line on the mobile migration progress screens saying the user may leave the screen.
+  ///
+  /// In en, this message translates to:
+  /// **'You can leave this screen.'**
+  String get migrationMobileCanLeave;
+
+  /// Body of the migration complete screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration went successfully and you can spend your funds as usual.'**
+  String get migrationMobileCompleteBody;
+
+  /// Large heading of the migration complete screen; line breaks are intentional. {amount} is the migrated amount with the ZEC unit.
+  ///
+  /// In en, this message translates to:
+  /// **'Your\n{amount}\nare on Ironwood!'**
+  String migrationMobileCompleteHeading(String amount);
+
+  /// Top bar title of the screen shown when the migration completed. The apostrophe is curly.
+  ///
+  /// In en, this message translates to:
+  /// **'You’re all set!'**
+  String get migrationMobileCompleteTitle;
+
+  /// Message on the migration progress screen when continuing the migration failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t continue this migration. Try again.'**
+  String get migrationMobileContinueThisError;
+
+  /// [security] Message on the migration progress screen when the saved migration credentials must be restored first.
+  ///
+  /// In en, this message translates to:
+  /// **'Your migration credentials need to be restored before continuing.'**
+  String get migrationMobileCredentialsRestore;
+
+  /// Error under the Immediate migration review when the plan or fee could not be calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t calculate the Immediate migration fee. Sync and try again.'**
+  String get migrationMobileFastPlanError;
+
+  /// Placeholder value of the amount and fee rows on the Immediate migration review when no plan could be made.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get migrationMobileFastPlanUnavailable;
+
+  /// [security] Highlighted middle part of the sentence in the privacy warning card; it follows the lead part and ends the sentence.
+  ///
+  /// In en, this message translates to:
+  /// **'easier to associate with your wallet'**
+  String get migrationMobileFastPrivacyBodyHighlight;
+
+  /// Last sentence of the privacy warning card suggesting the Private migration option.
+  ///
+  /// In en, this message translates to:
+  /// **'Consider choosing a Private Migration option.'**
+  String get migrationMobileFastPrivacyConsiderPrivate;
+
+  /// Last sentence of the privacy warning card for Ledger accounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Private migration is not available for Ledger accounts.'**
+  String get migrationMobileFastPrivacyLedger;
+
+  /// Body of the success screen after the Immediate migration was broadcast. {amount} is the migrated amount with the ZEC unit, such as 1.50 ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} is on its way to Ironwood.'**
+  String migrationMobileFastSubmittedBody(String amount);
+
+  /// Heading of the success screen after the Immediate migration was broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration submitted'**
+  String get migrationMobileFastSubmittedTitle;
+
+  /// Title-case top bar title of the mobile Immediate (fast) migration success screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Fast Migration'**
+  String get migrationMobileFastTitle;
+
+  /// Top bar title of the mobile screen that explains the migration steps.
+  ///
+  /// In en, this message translates to:
+  /// **'About'**
+  String get migrationMobileHowItWorksNavTitle;
+
+  /// Body on the first mobile migration screen explaining that the user's funds must move from the Orchard pool to the Ironwood pool. {amount} is the formatted Orchard balance without the ZEC unit.
+  ///
+  /// In en, this message translates to:
+  /// **'Your {amount} ZEC is currently in Orchard. To keep using these funds for shielded payments, you\'ll need to move them to Ironwood. You\'ll review the migration plan before any funds move.'**
+  String migrationMobileIntroBody(String amount);
+
+  /// Ghost button on the first mobile migration screen that opens the official Ironwood release note in the browser.
+  ///
+  /// In en, this message translates to:
+  /// **'Official release note'**
+  String get migrationMobileIntroReleaseNote;
+
+  /// Title-case top bar title of the first mobile Ironwood migration screen, which announces the network update.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash Network Update'**
+  String get migrationMobileIntroTitle;
+
+  /// [security] First line on the mobile migration progress screen telling the user to keep the app open and unlocked so a step needing input can proceed.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open & unlocked.'**
+  String get migrationMobileKeepOpenUnlocked;
+
+  /// [security] Second line on the mobile migration progress screens telling the user to keep the app open and running so the migration continues.
+  ///
+  /// In en, this message translates to:
+  /// **'But keep Vizor open & running.'**
+  String get migrationMobileKeepRunning;
+
+  /// [security] Screen reader label of the Keystone request screen for the preparation (note split) signing round.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm migration preparation with Keystone'**
+  String get migrationMobileKeystoneConfirmPrepSemantics;
+
+  /// [security] Screen reader label of the Keystone request screen for the migration transfer signing round.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm migration transfer with Keystone'**
+  String get migrationMobileKeystoneConfirmTransferSemantics;
+
+  /// Instruction text of the Keystone scanning help preview; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap QR on your Keystone,\nthen scan this QR code.'**
+  String get migrationMobileKeystoneHelpPrompt;
+
+  /// Screen reader label of the help button on the Keystone request screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone QR scanning help'**
+  String get migrationMobileKeystoneHelpSemantics;
+
+  /// Screen reader label of the placeholder shown while the Keystone request QR code loads.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading QR code'**
+  String get migrationMobileKeystoneLoadingQrSemantics;
+
+  /// [security] Message on the migration progress screen telling the user to reconnect or re-import the Keystone account to continue.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect or re-import your Keystone account to continue this migration.'**
+  String get migrationMobileKeystoneReconnect;
+
+  /// [security] Screen reader label of the QR code that the Keystone device scans to sign the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone request QR code'**
+  String get migrationMobileKeystoneRequestQrSemantics;
+
+  /// Status value on the migration progress screen when the Keystone account is missing from the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone account required'**
+  String get migrationMobileKeystoneRequiredStatus;
+
+  /// [security] Message on the migration progress screen telling the user to sign the rebuilt migration transactions with the Keystone device.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign the rebuilt migration transactions with Keystone to continue.'**
+  String get migrationMobileKeystoneResignMessage;
+
+  /// [security] Default caption on the scanner screen; the line break after 'your' is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code on your\nKeystone to confirm'**
+  String get migrationMobileKeystoneScanCaption;
+
+  /// [security] Screen reader label of the scanner screen for the signed preparation round.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the signed migration preparation from Keystone'**
+  String get migrationMobileKeystoneScanPrepSemantics;
+
+  /// Screen reader label of the progress bar for the animated QR code the user scans from the Keystone device.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan progress'**
+  String get migrationMobileKeystoneScanProgress;
+
+  /// [security] Screen reader label of the scanner screen for the signed migration transfer round.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the signed migration transfer from Keystone'**
+  String get migrationMobileKeystoneScanTransferSemantics;
+
+  /// Message in the mobile manage-migration dialog when the migration status could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check the migration status. Please try again.'**
+  String get migrationMobileManageCheckError;
+
+  /// Message in the mobile manage-migration dialog while the migration status is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking migration status...'**
+  String get migrationMobileManageChecking;
+
+  /// [security] Note in the manage-migration dialog that transactions already sent to the network are not undone.
+  ///
+  /// In en, this message translates to:
+  /// **'Transactions already broadcast will not be reverted.'**
+  String get migrationMobileManageNoRevert;
+
+  /// Button in the manage-migration dialog that reloads the migration status after a failure.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry status check'**
+  String get migrationMobileManageRetryStatus;
+
+  /// [security] Button in the manage-migration dialog that starts stopping the remaining migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop migration'**
+  String get migrationMobileManageStopAction;
+
+  /// [security] Explanation in the manage-migration dialog before stopping the migration: funds already moved stay in Ironwood.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop the remaining migration. Funds already migrated will stay in Ironwood.'**
+  String get migrationMobileManageStopBody;
+
+  /// [security] Title of the manage-migration dialog confirmation step for stopping the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop migration?'**
+  String get migrationMobileManageStopTitle;
+
+  /// Button in the manage-migration dialog that starts switching to the Fast migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch to Fast'**
+  String get migrationMobileManageSwitchAction;
+
+  /// [security] Warning in the manage-migration dialog before switching to Fast migration: it lowers privacy and cannot be undone after it is submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop the private schedule and review a Fast migration for your remaining balance. Fast migration increases traceability and cannot be reversed once submitted.'**
+  String get migrationMobileManageSwitchBody;
+
+  /// Title of the manage-migration dialog confirmation step for switching to the Fast migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch to Fast?'**
+  String get migrationMobileManageSwitchTitle;
+
+  /// Title of the mobile dialog that lets the user switch to Fast migration or stop the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage migration'**
+  String get migrationMobileManageTitle;
+
+  /// Message in the mobile manage-migration dialog when the migration can no longer be stopped or changed.
+  ///
+  /// In en, this message translates to:
+  /// **'This migration is no longer available to manage.'**
+  String get migrationMobileManageUnavailable;
+
+  /// Note in the manage-migration dialog while it waits for a transaction being broadcast to finish before stopping.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for any active broadcast to finish before stopping the remaining migration.'**
+  String get migrationMobileManageWaitingBroadcast;
+
+  /// Migration status text while transactions wait for confirmations; the second sentence is on its own line.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmations are still arriving.\nYou can leave Vizor and check again later.'**
+  String get migrationMobileNextConfirmationsArriving;
+
+  /// First lines of the migration status text; the timing is on its own line. {timing} is an estimated duration such as ~in 5 minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Next migration step expected in\n{timing}.'**
+  String migrationMobileNextExpectedIn(String timing);
+
+  /// [security] Status text when notifications are off: the user must open the app after the given block and approve the next batch. {height} is a block height; {timing} is an estimated time such as ~in 5 minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications are disabled. Open Vizor after block {height} ({timing}) and approve the next migration batch.'**
+  String migrationMobileNextNotificationsOffBlock(int height, String timing);
+
+  /// [security] Status text when notifications are off and the next step's timing is not known: the user must open the app again and approve the next batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications are disabled. Open Vizor again when the timing is available and approve the next migration batch.'**
+  String get migrationMobileNextNotificationsOffNoTiming;
+
+  /// [security] Line of the migration status text saying notifications are off, so the user must reopen the app to continue.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications are disabled. Open Vizor again to continue.'**
+  String get migrationMobileNextNotificationsOffOpen;
+
+  /// Line of the migration status text saying notifications are on, so the user may leave the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications are on. You can leave Vizor and check back later.'**
+  String get migrationMobileNextNotificationsOnLeave;
+
+  /// First line of the migration status text while a step is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Next migration step is on the way.'**
+  String get migrationMobileNextOnTheWay;
+
+  /// [security] Migration status text when the scheduled transaction is ready to be sent automatically; the app must stay open.
+  ///
+  /// In en, this message translates to:
+  /// **'The scheduled transaction is ready for automatic submission. Keep Vizor open.'**
+  String get migrationMobileNextReadyAuto;
+
+  /// [security] Migration status text when the next step is ready now; the app must stay open.
+  ///
+  /// In en, this message translates to:
+  /// **'The next migration step is ready. Keep Vizor open to continue.'**
+  String get migrationMobileNextStepReady;
+
+  /// Migration status text with the wait until the next step; the notification sentence is on its own line. {timing} is an estimate such as ~in 5 minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{timing} until the next migration step.\nNotifications are on; you can leave Vizor and check back later.'**
+  String migrationMobileNextTimingUntil(String timing);
+
+  /// [security] Sentence for iOS users with Tor on, appended on a new line to the migration status text: the background migration uses a direct connection, not Tor, while the app is closed.
+  ///
+  /// In en, this message translates to:
+  /// **'While Vizor is closed, migration continues over a direct connection.'**
+  String get migrationMobileNextTorDisclosure;
+
+  /// Button that asks the system permission for notifications, or opens Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow notifications'**
+  String get migrationMobileNotifyAllow;
+
+  /// Body of the notification permission screen explaining why notifications help. The apostrophes are curly.
+  ///
+  /// In en, this message translates to:
+  /// **'Some migration steps require approval. We’ll notify you when it’s time, so you can respond quickly and avoid unnecessary delays.'**
+  String get migrationMobileNotifyBody;
+
+  /// [security] Body of the confirmation shown when the user declines notifications: they must open the app regularly to approve steps. The apostrophes are curly.
+  ///
+  /// In en, this message translates to:
+  /// **'Without notifications, you’ll need to remember to open Vizor regularly and approve the next migration step when it’s ready.'**
+  String get migrationMobileNotifyConfirmBody;
+
+  /// Second paragraph of the confirmation shown when the user declines notifications.
+  ///
+  /// In en, this message translates to:
+  /// **'Otherwise, your migration may take longer.'**
+  String get migrationMobileNotifyConfirmNote;
+
+  /// Heading of the confirmation shown when the user declines notifications for the private migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue without notifications?'**
+  String get migrationMobileNotifyConfirmTitle;
+
+  /// Ghost button of the confirmation that continues the private migration without notifications.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue without notifications'**
+  String get migrationMobileNotifyContinueWithout;
+
+  /// Heading of the notification permission screen of the private migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep your migration on schedule'**
+  String get migrationMobileNotifyHeading;
+
+  /// Error shown on the notification permission screen after the system dialog was dismissed and notifications are still off.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications are still off. Allow them from Settings, or continue without notifications.'**
+  String get migrationMobileNotifyStillOff;
+
+  /// Top bar title of the mobile screen that asks the user to allow notifications for the private migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable notifications'**
+  String get migrationMobileNotifyTitle;
+
+  /// Body of the Immediate migration option card. {estimate} is a short completion time estimate such as ~2 hours.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrates your entire balance in one batch. Fast ({estimate}) but less private.'**
+  String migrationMobileOptionImmediateBody(String estimate);
+
+  /// Body of the Private migration option card.
+  ///
+  /// In en, this message translates to:
+  /// **'Splits transactions into multiple parts to minimize traceability but will take several hours to days.'**
+  String get migrationMobileOptionPrivateBody;
+
+  /// Body of the disabled Private migration option card on Android.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available on Android.'**
+  String get migrationMobileOptionPrivateUnavailableAndroid;
+
+  /// Title-case top bar title of the mobile screen where the user chooses between Private and Immediate migration.
+  ///
+  /// In en, this message translates to:
+  /// **'How to Migrate'**
+  String get migrationMobileOptionsNavTitle;
+
+  /// Error under the Continue button of the migration options screen when the private migration preparation screen could not be opened.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open migration preparation. Try again.'**
+  String get migrationMobileOptionsOpenError;
+
+  /// Subtitle of the migration options screen on Android, where private migration is temporarily unavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Private migration is temporarily unavailable on Android. Choose immediate to continue.'**
+  String get migrationMobileOptionsSubtitleAndroid;
+
+  /// Subtitle of the migration options screen on Android when part of the balance is already migrated. {amount} is the remaining Orchard balance without the ZEC unit.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} ZEC is still in Orchard. Private migration is temporarily unavailable on Android. Choose immediate to continue.'**
+  String migrationMobileOptionsSubtitleAndroidRest(String amount);
+
+  /// Subtitle of the migration options screen for a Ledger account. Immediate is the name of the fast option.
+  ///
+  /// In en, this message translates to:
+  /// **'Private migration is not available for Ledger accounts. Choose Immediate to continue.'**
+  String get migrationMobileOptionsSubtitleLedger;
+
+  /// Subtitle of the migration options screen for a Ledger account when part of the balance is already migrated. Immediate is the name of the fast option. {amount} is the remaining Orchard balance without the ZEC unit.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} ZEC is still in Orchard. Private migration is not available for Ledger accounts. Choose Immediate to continue.'**
+  String migrationMobileOptionsSubtitleLedgerRest(String amount);
+
+  /// Title-case heading of the migration options screen where the user picks Private or Immediate migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose How to Migrate'**
+  String get migrationMobileOptionsTitle;
+
+  /// Title-case heading of the migration options screen when part of the balance has already been migrated and the rest remains.
+  ///
+  /// In en, this message translates to:
+  /// **'How to Move the Rest'**
+  String get migrationMobileOptionsTitleRest;
+
+  /// Status of a migration part waiting for network confirmations. {count} is the confirmations so far and {target} the number needed.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming · {count}/{target}'**
+  String migrationMobilePartConfirming(int count, int target);
+
+  /// Label of one migration part (one transaction of the split migration) in the progress list. {number} starts at 1.
+  ///
+  /// In en, this message translates to:
+  /// **'Part {number}'**
+  String migrationMobilePartLabel(int number);
+
+  /// Screen reader label of a migration part's progress bar. {part} is the part label such as Part 2; {percent} is a whole number.
+  ///
+  /// In en, this message translates to:
+  /// **'{part} progress {percent}%'**
+  String migrationMobilePartProgress(String part, int percent);
+
+  /// Status of a migration part that is waiting for its turn and has no time estimate yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Queued'**
+  String get migrationMobilePartQueued;
+
+  /// Placeholder on the mobile migration progress screen while the list of migration parts is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration parts will appear as transactions are prepared.'**
+  String get migrationMobilePartsPlaceholder;
+
+  /// [security] Text inside the preparation ring while the next preparation transactions are being made; the app must stay open.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing the next transactions. Keep Vizor open.'**
+  String get migrationMobilePrepAdvancing;
+
+  /// Text inside the preparation ring while confirmations are tracked in the background; keep it two short sentences.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming in the background. You can close Vizor.'**
+  String get migrationMobilePrepBackgroundTracking;
+
+  /// [security] Text inside the preparation ring on a device that cannot track preparation while the app is closed; the app must stay open. The apostrophe is curly.
+  ///
+  /// In en, this message translates to:
+  /// **'This device can’t confirm in the background. Keep Vizor open.'**
+  String get migrationMobilePrepBackgroundUnsupported;
+
+  /// Button that resumes a paused preparation.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue preparation'**
+  String get migrationMobilePrepContinue;
+
+  /// [security] Button that continues the preparation by signing again on the Keystone device.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue with Keystone'**
+  String get migrationMobilePrepContinueKeystone;
+
+  /// Body of the modal shown when the balance preparation finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation is complete. Check your migration status for progress and any action needed.'**
+  String get migrationMobilePrepDoneBody;
+
+  /// Heading of the modal shown when the balance preparation finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation is done'**
+  String get migrationMobilePrepDoneTitle;
+
+  /// Text inside the preparation ring giving the typical preparation time; the line break is intentional and the dash is an en dash.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation will\ntake 10–20 min'**
+  String get migrationMobilePrepDuration;
+
+  /// Second line of the info card under the preparation ring.
+  ///
+  /// In en, this message translates to:
+  /// **'Once preparation finishes, your migration can begin.'**
+  String get migrationMobilePrepInfoThenBegin;
+
+  /// [security] Text inside the preparation ring when the preparation needs another signature from the Keystone device.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation needs another Keystone signature.'**
+  String get migrationMobilePrepKeystoneSignature;
+
+  /// [security] Text inside the preparation ring when notifications are off and the preparation cannot continue in the background.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow notifications to continue in the background, or keep Vizor open.'**
+  String get migrationMobilePrepNotificationsDisabled;
+
+  /// Text inside the preparation ring when the preparation paused because the user left the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation was paused because you left.'**
+  String get migrationMobilePrepPausedLeft;
+
+  /// Text inside the preparation ring while the wallet syncs before preparation continues.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing your wallet…'**
+  String get migrationMobilePrepSyncingWallet;
+
+  /// Subtitle on the mobile migration preparation status screen while the balance is split into parts.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing your balance for migration. This step usually takes 10-20 mins.'**
+  String get migrationMobilePreparingBody;
+
+  /// Top bar title of the mobile private migration preparation screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing your migration'**
+  String get migrationMobilePreparingTitle;
+
+  /// Body of step 1 on the how migration works screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Compare a privacy-optimized schedule with a faster migration.'**
+  String get migrationMobileProcessChooseBody;
+
+  /// Title of step 1 on the how migration works screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose how you migrate'**
+  String get migrationMobileProcessChooseTitle;
+
+  /// Body of step 3 on the how migration works screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy-optimized migrations send parts at staggered times to reduce linkability.'**
+  String get migrationMobileProcessMoveBody;
+
+  /// Title of step 3 on the how migration works screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to Ironwood'**
+  String get migrationMobileProcessMoveTitle;
+
+  /// Body of step 2 on the how migration works screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor reorganizes your balance into common-sized parts before migration begins.'**
+  String get migrationMobileProcessPrepareBody;
+
+  /// Title of step 2 on the how migration works screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Prepare your balance'**
+  String get migrationMobileProcessPrepareTitle;
+
+  /// Body of the note below the steps explaining confirmed Ironwood funds can be spent while the migration continues.
+  ///
+  /// In en, this message translates to:
+  /// **'Each confirmed Ironwood amount is available to spend while the rest continues.'**
+  String get migrationMobileProcessSpendBody;
+
+  /// Title of the note below the steps explaining funds can be spent as they arrive.
+  ///
+  /// In en, this message translates to:
+  /// **'Spend as funds arrive'**
+  String get migrationMobileProcessSpendTitle;
+
+  /// Title of the status card for a software account while the migration is processed.
+  ///
+  /// In en, this message translates to:
+  /// **'All clear. Migration is in progress'**
+  String get migrationMobileProgressAllClear;
+
+  /// Title of the status card for a Keystone account while the migration batch is processed. {number} starts at 1.
+  ///
+  /// In en, this message translates to:
+  /// **'All clear. Processing batch #{number}'**
+  String migrationMobileProgressAllClearBatch(int number);
+
+  /// Body of the status card when a migration batch waits for the user's confirmation. {number} starts at 1.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch #{number} is ready.'**
+  String migrationMobileProgressBatchReady(int number);
+
+  /// Title and value text shown while the migration waits for its next step.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for next migration step'**
+  String get migrationMobileProgressNextStep;
+
+  /// Title of the status card when the scheduled transaction is ready now.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready now'**
+  String get migrationMobileProgressReadyNow;
+
+  /// Value of the estimated completion row when a scheduled transaction is ready to submit.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduled transaction ready'**
+  String get migrationMobileProgressScheduledReady;
+
+  /// Body of the status card while the migration progress is syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking the latest confirmations and migration status.'**
+  String get migrationMobileProgressSyncingBody;
+
+  /// Title of the status card while the migration progress is syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing migration progress'**
+  String get migrationMobileProgressSyncingTitle;
+
+  /// Body of the status card when preparation is complete and notifications are on; the line breaks are intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation is complete, but we are waiting\nfor the next available signing window.\nWe’ll let you know when it’s time to take action.'**
+  String get migrationMobileProgressWaitingWindowBody;
+
+  /// [security] Title and value text shown while the migration waits for the user to confirm a step.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for your confirmation'**
+  String get migrationMobileProgressYourConfirmation;
+
+  /// Confirm button of the rebuild migration dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild'**
+  String get migrationMobileRebuildAction;
+
+  /// Body of the rebuild migration confirmation dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor will first check that the pending transactions were not sent. It will then rebuild the migration for only your remaining balance. Any confirmed transfers will stay unchanged.'**
+  String get migrationMobileRebuildBody;
+
+  /// Title of the confirmation dialog for rebuilding the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild migration?'**
+  String get migrationMobileRebuildTitle;
+
+  /// Button on the mobile migration progress screen that starts rebuilding the migration from saved transactions.
+  ///
+  /// In en, this message translates to:
+  /// **'Recover'**
+  String get migrationMobileRecover;
+
+  /// Label of the Recover button while the migration is being rebuilt.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovering...'**
+  String get migrationMobileRecovering;
+
+  /// First line on the mobile migration progress screen when saved transactions must be rebuilt.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration recovery required.'**
+  String get migrationMobileRecoveryRequired;
+
+  /// Label of the action button on the migration progress screen while a paused migration resumes.
+  ///
+  /// In en, this message translates to:
+  /// **'Resuming...'**
+  String get migrationMobileResuming;
+
+  /// Second line on the mobile migration progress screen saying the app retries on its own.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor will retry automatically.'**
+  String get migrationMobileRetryAutomatically;
+
+  /// Second line on the mobile migration progress screen explaining why recovery is required.
+  ///
+  /// In en, this message translates to:
+  /// **'Two saved transactions couldn\'t be reopened.'**
+  String get migrationMobileSavedTxError;
+
+  /// Label of a split output that is change returned to the wallet, in the preparation schedule.
+  ///
+  /// In en, this message translates to:
+  /// **'Change'**
+  String get migrationMobileScheduleChange;
+
+  /// Status of a transaction waiting for network confirmations. {count} is confirmations so far and {target} the number needed.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming {count}/{target}'**
+  String migrationMobileScheduleConfirming(int count, int target);
+
+  /// Footer label on the migration schedule screen for the time left until the migration completes.
+  ///
+  /// In en, this message translates to:
+  /// **'Duration'**
+  String get migrationMobileScheduleDuration;
+
+  /// Screen reader label of the loading indicator on the mobile migration schedule screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading migration schedule'**
+  String get migrationMobileScheduleLoading;
+
+  /// Status of a migration part that is being sent, in the migration schedule list (with a single ellipsis character).
+  ///
+  /// In en, this message translates to:
+  /// **'Migrating…'**
+  String get migrationMobileScheduleMigrating;
+
+  /// Label of a split output that will be migrated, in the preparation schedule.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration note'**
+  String get migrationMobileScheduleMigrationNote;
+
+  /// Status of a preparation transaction that waits for the previous round, and label of an output that feeds the next round.
+  ///
+  /// In en, this message translates to:
+  /// **'Next round'**
+  String get migrationMobileScheduleNextRound;
+
+  /// Progress of split rounds. {current} is the current round or completed count and {total} the total.
+  ///
+  /// In en, this message translates to:
+  /// **'{current} of {total}'**
+  String migrationMobileScheduleOf(int current, int total);
+
+  /// Status of a scheduled migration part whose block has passed beyond the grace period.
+  ///
+  /// In en, this message translates to:
+  /// **'Overdue'**
+  String get migrationMobileScheduleOverdue;
+
+  /// Footer label on the preparation schedule screen for how many split transactions are done.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation progress'**
+  String get migrationMobileSchedulePreparationProgress;
+
+  /// Footer label on the preparation schedule screen for the time left until preparation is ready.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready in'**
+  String get migrationMobileScheduleReadyIn;
+
+  /// Button on the migration schedule screens that goes back to the migration status.
+  ///
+  /// In en, this message translates to:
+  /// **'Return'**
+  String get migrationMobileScheduleReturn;
+
+  /// Label of a split output that feeds a later round. {round} is the round number.
+  ///
+  /// In en, this message translates to:
+  /// **'Round {round}'**
+  String migrationMobileScheduleRound(int round);
+
+  /// Label of the summary row on the preparation schedule showing the current round out of the total.
+  ///
+  /// In en, this message translates to:
+  /// **'Rounds remaining'**
+  String get migrationMobileScheduleRoundsRemaining;
+
+  /// Footer label on the migration schedule screen for the already migrated, spendable Ironwood amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood spendable'**
+  String get migrationMobileScheduleSpendable;
+
+  /// Heading of one round of note-splitting transactions on the preparation schedule screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Split round {round}'**
+  String migrationMobileScheduleSplitRound(int round);
+
+  /// Body of the error state of the migration schedule screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t load the latest schedule. Your saved migration state is unchanged.'**
+  String get migrationMobileScheduleUnavailableBody;
+
+  /// Label of the row showing the balance that can be spent right now while a migration is running.
+  ///
+  /// In en, this message translates to:
+  /// **'Currently spendable balance'**
+  String get migrationMobileSpendableBalance;
+
+  /// Body of the error state of the private migration preparation screen when there is no specific error message.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again when you are ready.'**
+  String get migrationMobileStartErrorFallback;
+
+  /// Heading of the error state of the private migration preparation screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t prepare your migration'**
+  String get migrationMobileStartErrorTitle;
+
+  /// Body under the loading indicator while Vizor prepares the private migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is preparing your migration. This may take a moment.'**
+  String get migrationMobileStartLoadingBody;
+
+  /// Second rotating loading message on the mobile private migration preparation screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Organizing migration batches...'**
+  String get migrationMobileStartMessageOrganizing;
+
+  /// First rotating loading message on the mobile private migration preparation screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing your migration...'**
+  String get migrationMobileStartMessagePreparing;
+
+  /// [security] Body explaining that the user will sign the preparation transactions and all migration batches in one Keystone signing step.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue to sign the preparation transactions and migration batches together with Keystone.'**
+  String get migrationMobileStartReadyBody;
+
+  /// Muted number of notes (migration parts) after the word Migration in the heading row of the progress screens.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} notes'**
+  String migrationMobileStatusNotesCount(int count);
+
+  /// Bold first words of the heading row above the migration parts; followed by the note count such as 3 notes. Keep the trailing space.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration '**
+  String get migrationMobileStatusNotesLead;
+
+  /// Message under the loading indicator while the migration progress is syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing the migration progress.'**
+  String get migrationMobileSyncingProgress;
+
+  /// Placeholder used as the timing of the next migration step while the estimate is not available.
+  ///
+  /// In en, this message translates to:
+  /// **'Timing is updating'**
+  String get migrationMobileTimingUpdating;
+
+  /// Small button and its screen reader label that opens the migration schedule.
+  ///
+  /// In en, this message translates to:
+  /// **'View schedule'**
+  String get migrationMobileViewSchedule;
+
+  /// Note under the note split card for software accounts: the migration starts by itself.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration will start automatically once note split is complete.'**
+  String get migrationMobileWaitAutoStart;
+
+  /// Progress of the confirmation wait. {count} is confirmed blocks and {target} the number needed.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}/{target} blocks'**
+  String migrationMobileWaitBlocks(int count, int target);
+
+  /// Second step of the note split card: wait for blocks to confirm the split.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait for confirmation'**
+  String get migrationMobileWaitConfirmation;
+
+  /// Note under the note split card for Keystone accounts: another signing on the device is required afterwards.
+  ///
+  /// In en, this message translates to:
+  /// **'Another Keystone approval will be needed after these confirmations.'**
+  String get migrationMobileWaitKeystoneAgain;
+
+  /// Second fragment of the bottom text on the animated loop; keep the leading space.
+  ///
+  /// In en, this message translates to:
+  /// **' the batch of transactions'**
+  String get migrationMobileWaitLoopBatch;
+
+  /// Caption in the middle of the animated loop that explains the sign-and-wait cycle; the line breaks are intentional and the dash is an en dash.
+  ///
+  /// In en, this message translates to:
+  /// **'Repeat several times,\nwaiting could take 2–10\nhours'**
+  String get migrationMobileWaitLoopCaption;
+
+  /// Second fragment of the top text on the animated loop; keep the leading space.
+  ///
+  /// In en, this message translates to:
+  /// **' for the window'**
+  String get migrationMobileWaitLoopForWindow;
+
+  /// Highlighted first word of the bottom text on the animated loop; followed by the next fragment to read 'Sign the batch of transactions'.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign'**
+  String get migrationMobileWaitLoopSign;
+
+  /// Highlighted first word of the top text on the animated loop; followed by the next fragment to read 'Wait for the window'.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait'**
+  String get migrationMobileWaitLoopWait;
+
+  /// Title-case heading of the card on the preparation screen that shows the note split steps.
+  ///
+  /// In en, this message translates to:
+  /// **'Note Split'**
+  String get migrationMobileWaitNoteSplit;
+
+  /// First line on the mobile migration progress screen while the next step waits for a block that is safe to use.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for a safe block to continue.'**
+  String get migrationMobileWaitSafeBlock;
+
+  /// Title-case first step of the note split card. {count} is the number of migration parts.
+  ///
+  /// In en, this message translates to:
+  /// **'Split Notes into {count} Migration Parts'**
+  String migrationMobileWaitSplitInto(int count);
+
+  /// Ring sub-caption: every note has been migrated.
+  ///
+  /// In en, this message translates to:
+  /// **'All notes completed'**
+  String get migrationNextActionDetailAllNotesCompleted;
+
+  /// Ring sub-caption shown just before a block height, as in "at 3,428,143".
+  ///
+  /// In en, this message translates to:
+  /// **'at'**
+  String get migrationNextActionDetailAt;
+
+  /// Ring sub-caption shown just before the block height at which the next window is expected.
+  ///
+  /// In en, this message translates to:
+  /// **'Expected at'**
+  String get migrationNextActionDetailExpectedAt;
+
+  /// Ring sub-caption while the migration transfer is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing migration'**
+  String get migrationNextActionDetailPreparing;
+
+  /// Ring sub-caption: the next migration transfer is waiting for the user to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to sign'**
+  String get migrationNextActionDetailReadyToSign;
+
+  /// Ring sub-caption: the migration transfer is being sent right now.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending now'**
+  String get migrationNextActionDetailSendingNow;
+
+  /// Ring sub-caption: all transfers are sent and waiting for network confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for confirmations'**
+  String get migrationNextActionDetailWaitingForConfirmations;
+
+  /// Ring caption while broadcast migration transfers wait to be mined into a block.
+  ///
+  /// In en, this message translates to:
+  /// **'Awaiting mining'**
+  String get migrationNextActionLabelAwaitingMining;
+
+  /// Ring caption when every migration transfer has completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration complete'**
+  String get migrationNextActionLabelComplete;
+
+  /// Ring caption while the last migration transfers finish confirming.
+  ///
+  /// In en, this message translates to:
+  /// **'Finalizing migration'**
+  String get migrationNextActionLabelFinalizing;
+
+  /// Ironwood migration ring caption naming the next transfer to be sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Next migration'**
+  String get migrationNextActionLabelNext;
+
+  /// Ring caption naming the upcoming migration time window.
+  ///
+  /// In en, this message translates to:
+  /// **'Next migration window'**
+  String get migrationNextActionLabelNextWindow;
+
+  /// Ring caption while the wallet waits for the migration time window to open.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening migration window'**
+  String get migrationNextActionLabelOpeningWindow;
+
+  /// Ring caption while a due migration transfer is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending migration'**
+  String get migrationNextActionLabelSending;
+
+  /// Ring caption when the migration time window is open.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration window ready'**
+  String get migrationNextActionLabelWindowReady;
+
+  /// Shown in place of a completion duration when no migration transfers are scheduled.
+  ///
+  /// In en, this message translates to:
+  /// **'Not scheduled'**
+  String get migrationNotScheduled;
+
+  /// Count of migration notes waiting for network confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 note awaiting confirmation} other{{count} notes awaiting confirmation}}'**
+  String migrationNotesAwaitingConfirmation(int count);
+
+  /// Count of migration notes that were broadcast and are waiting to be mined.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 note broadcast} other{{count} notes broadcast}}'**
+  String migrationNotesBroadcast(int count);
+
+  /// Count of migration notes that still need to finish.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 note remaining} other{{count} notes remaining}}'**
+  String migrationNotesRemaining(int count);
+
+  /// Name of the immediate (one-step, faster) migration option.
+  ///
+  /// In en, this message translates to:
+  /// **'Immediate'**
+  String get migrationOptionImmediate;
+
+  /// Describes the immediate migration option.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrates your entire balance in one batch. Fast but less private.'**
+  String get migrationOptionImmediateBody;
+
+  /// Name of the private (slower, split) migration option.
+  ///
+  /// In en, this message translates to:
+  /// **'Private'**
+  String get migrationOptionPrivate;
+
+  /// Describes the private migration option.
+  ///
+  /// In en, this message translates to:
+  /// **'Splits transactions into multiple parts to minimize traceability, but will take longer.'**
+  String get migrationOptionPrivateBody;
+
+  /// Shown instead of the private option description for Ledger accounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available for Ledger accounts.'**
+  String get migrationOptionPrivateLedger;
+
+  /// Badge on the recommended migration option.
+  ///
+  /// In en, this message translates to:
+  /// **'Recommended'**
+  String get migrationOptionRecommended;
+
+  /// Body of the migration options screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose between more privacy over time or a faster migration. You can review the details before anything moves.'**
+  String get migrationOptionsBody;
+
+  /// Body of the options screen when part of the balance is already migrated; {amount} is the remaining ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} ZEC is still in Orchard. Choose between more privacy over time or a faster migration.'**
+  String migrationOptionsBodyMoveRest(String amount);
+
+  /// Button on the migration options screen that opens the review of the selected option.
+  ///
+  /// In en, this message translates to:
+  /// **'Select & review'**
+  String get migrationOptionsSelectReview;
+
+  /// Title of the migration options screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose how to migrate'**
+  String get migrationOptionsTitle;
+
+  /// Title of the options screen when part of the balance was already migrated.
+  ///
+  /// In en, this message translates to:
+  /// **'How to move the rest'**
+  String get migrationOptionsTitleMoveRest;
+
+  /// Overall migration progress, for example "3 of 9 complete".
+  ///
+  /// In en, this message translates to:
+  /// **'{completed} of {total} complete'**
+  String migrationOverallProgress(String completed, String total);
+
+  /// Heading of the legacy migration card; {count} is the number of planned batches.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} Planned batches'**
+  String migrationPlannedBatches(String count);
+
+  /// Name of the Ironwood pool in the migration illustration.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood Pool'**
+  String get migrationPoolIronwood;
+
+  /// Small caption above the Orchard pool name in the migration illustration.
+  ///
+  /// In en, this message translates to:
+  /// **'(Legacy)'**
+  String get migrationPoolLegacy;
+
+  /// Name of the Orchard pool in the migration illustration.
+  ///
+  /// In en, this message translates to:
+  /// **'Orchard Pool'**
+  String get migrationPoolOrchard;
+
+  /// Progress label for confirmations received by the split transactions.
+  ///
+  /// In en, this message translates to:
+  /// **'{confirmed} of {target} confirmations'**
+  String migrationPreparationConfirmations(String confirmed, String target);
+
+  /// Progress label naming which split transaction is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing split {current} of {total}'**
+  String migrationPreparationSplitProgress(String current, String total);
+
+  /// Progress label naming which split transaction is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Split {current} of {total}'**
+  String migrationPreparationSplitStep(String current, String total);
+
+  /// Progress label while the balance is split into standard-sized notes before migrating.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing split transactions'**
+  String get migrationPreparationSplitTransactions;
+
+  /// Carousel tip on the Ironwood migration preparation screen about the deliberate wait before transfers start.
+  ///
+  /// In en, this message translates to:
+  /// **'Once preparation finishes, your migration will begin automatically after a long intentional delay.'**
+  String get migrationPreparationTipDelay;
+
+  /// Carousel tip explaining that the balance is split into common-sized notes so the migration is harder to link.
+  ///
+  /// In en, this message translates to:
+  /// **'We’re organizing your balance into common-sized parts. This makes your migration harder to link.'**
+  String get migrationPreparationTipOrganizing;
+
+  /// Carousel tip saying the note splitting can take several rounds.
+  ///
+  /// In en, this message translates to:
+  /// **'We may have to do multiple rounds of note splitting depending on your balance.'**
+  String get migrationPreparationTipRounds;
+
+  /// [security] Button label while a migration batch is being prepared for signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing batch...'**
+  String get migrationPreparingBatch;
+
+  /// [security] Text on the lock screen shown during a running migration, explaining that the wallet auto-locked after inactivity.
+  ///
+  /// In en, this message translates to:
+  /// **'We auto-locked Vizor after 10 minutes of inactivity.'**
+  String get migrationPrivacyLockDescription;
+
+  /// Carousel tip about block time; {seconds} is the average number of seconds per block.
+  ///
+  /// In en, this message translates to:
+  /// **'Each Zcash block takes about {seconds} seconds to create, but timing can vary with network conditions.'**
+  String migrationProgressTipBlockTime(String seconds);
+
+  /// [security] Carousel tip on the migration progress screen: closing the app pauses the migration and it can be resumed later.
+  ///
+  /// In en, this message translates to:
+  /// **'You can close Vizor anytime. Migration will pause, and you can restart it when you return.'**
+  String get migrationProgressTipClose;
+
+  /// [security] Carousel tip: leaving Vizor open lets the migration continue automatically in the background.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor running and the migration will automatically run in the background.'**
+  String get migrationProgressTipKeepRunning;
+
+  /// Lowercase status: the migration step can start now.
+  ///
+  /// In en, this message translates to:
+  /// **'ready now'**
+  String get migrationReadyNow;
+
+  /// Button that retries a migration that hit a recoverable error.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry migration'**
+  String get migrationRetryMigration;
+
+  /// Label of the retry button while the retry is running.
+  ///
+  /// In en, this message translates to:
+  /// **'Retrying...'**
+  String get migrationRetrying;
+
+  /// Label above the ZEC amount that the private migration will move.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount to migrate'**
+  String get migrationReviewAmountToMigrate;
+
+  /// Title of the error shown when the private migration plan could not be computed for the balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t analyze this balance'**
+  String get migrationReviewAnalyzeErrorTitle;
+
+  /// Label of the estimated time until the private migration is complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration complete in'**
+  String get migrationReviewCompleteIn;
+
+  /// [security] Notice body: preparation keeps going while the app is minimized, then the migration starts on its own.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation continues while the app is minimized, then migration starts automatically.'**
+  String get migrationReviewKeepRunningBody;
+
+  /// [security] Heading of a notice asking the user to keep Vizor open while the migration runs.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor running'**
+  String get migrationReviewKeepRunningTitle;
+
+  /// Button that starts the private migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Start migration'**
+  String get migrationReviewStart;
+
+  /// Label of the start button while the migration is being started.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting…'**
+  String get migrationReviewStarting;
+
+  /// Ring detail when all note-splitting transactions have completed.
+  ///
+  /// In en, this message translates to:
+  /// **'All splits completed'**
+  String get migrationRingAllSplitsCompleted;
+
+  /// Ring caption while a split transaction collects confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming split'**
+  String get migrationRingConfirmingSplit;
+
+  /// Ring caption naming the next note-splitting transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Next split'**
+  String get migrationRingNextSplit;
+
+  /// Ring caption when every note-splitting transaction has completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation complete'**
+  String get migrationRingPreparationComplete;
+
+  /// Ring sub-caption while the split schedule is being computed.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing schedule'**
+  String get migrationRingPreparingSchedule;
+
+  /// Ring detail for a split transaction that is scheduled for a future block.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduled'**
+  String get migrationRingScheduled;
+
+  /// Ring caption while a split transaction has been sent and is not yet mined.
+  ///
+  /// In en, this message translates to:
+  /// **'Split in progress'**
+  String get migrationRingSplitInProgress;
+
+  /// Lowercase screen-reader state of a migration note that is done.
+  ///
+  /// In en, this message translates to:
+  /// **'completed'**
+  String get migrationRingStatusCompleted;
+
+  /// Lowercase screen-reader state of a migration note waiting for confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'confirming'**
+  String get migrationRingStatusConfirming;
+
+  /// Lowercase screen-reader state of a migration note being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'migrating'**
+  String get migrationRingStatusMigrating;
+
+  /// Lowercase screen-reader state of a migration note that needs the user to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'needs input'**
+  String get migrationRingStatusNeedsInput;
+
+  /// Lowercase screen-reader state of a migration note that has not started.
+  ///
+  /// In en, this message translates to:
+  /// **'not started'**
+  String get migrationRingStatusNotStarted;
+
+  /// Lowercase screen-reader state of a migration note being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'preparing'**
+  String get migrationRingStatusPreparing;
+
+  /// Lowercase screen-reader state of a migration note that is scheduled.
+  ///
+  /// In en, this message translates to:
+  /// **'scheduled'**
+  String get migrationRingStatusScheduled;
+
+  /// Ring detail: the split transaction is waiting to be included in a block.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for block'**
+  String get migrationRingWaitingForBlock;
+
+  /// Ring detail: this split cannot start until the previous split is confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for previous split'**
+  String get migrationRingWaitingForPreviousSplit;
+
+  /// Toast shown when the user opens the migration but the account cannot migrate.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration is not available for this account.'**
+  String get migrationRouteNotAvailable;
+
+  /// Toast shown when the account has nothing to migrate.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration is not needed for this account.'**
+  String get migrationRouteNotNeeded;
+
+  /// Toast shown when the migration state could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t verify migration status.'**
+  String get migrationRouteStatusFailed;
+
+  /// Toast shown when the migration cannot start because the wallet sync failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync could not finish. Try again once Vizor is synced.'**
+  String get migrationRouteSyncFailed;
+
+  /// Status of a split transaction that is being sent to the network.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasting'**
+  String get migrationScheduleBroadcasting;
+
+  /// Value shown while the preparation completion block is being computed.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating'**
+  String get migrationScheduleCalculating;
+
+  /// Status of a migration transfer that was mined; {height} is the block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed at block {height}'**
+  String migrationScheduleCompletedAtBlock(String height);
+
+  /// Status of a migration transfer collecting confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming {count}/{target}'**
+  String migrationScheduleConfirmingProgress(String count, String target);
+
+  /// Summary row label for the note-splitting round currently running.
+  ///
+  /// In en, this message translates to:
+  /// **'Current round'**
+  String get migrationScheduleCurrentRound;
+
+  /// Expected block height of a split transaction that waits for the previous split.
+  ///
+  /// In en, this message translates to:
+  /// **'Expected #{height}'**
+  String migrationScheduleExpected(String height);
+
+  /// Destination of a split output: it stays in the Orchard pool.
+  ///
+  /// In en, this message translates to:
+  /// **'Stays in Orchard'**
+  String get migrationScheduleOutputChange;
+
+  /// Destination of a split output: it is split again in the given round.
+  ///
+  /// In en, this message translates to:
+  /// **'Used in round {round}'**
+  String migrationScheduleOutputContinuation(String round);
+
+  /// Destination of a split output: it will be migrated.
+  ///
+  /// In en, this message translates to:
+  /// **'For migration'**
+  String get migrationScheduleOutputMigration;
+
+  /// Placeholder shown where a migration time or duration is not yet scheduled.
+  ///
+  /// In en, this message translates to:
+  /// **'Schedule pending'**
+  String get migrationSchedulePending;
+
+  /// Summary row label for the block height at which preparation is expected to finish.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to migrate'**
+  String get migrationScheduleReadyToMigrate;
+
+  /// Status of a split transaction whose expected time is being recalculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Recalculating'**
+  String get migrationScheduleRecalculating;
+
+  /// Status of a migration transfer that moved to a later block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Rescheduled #{height}'**
+  String migrationScheduleRescheduled(String height);
+
+  /// Current split round out of all rounds, for example "2 of 3".
+  ///
+  /// In en, this message translates to:
+  /// **'{current} of {total}'**
+  String migrationScheduleRoundProgress(String current, String total);
+
+  /// Status of a migration transfer scheduled for a block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduled #{height}'**
+  String migrationScheduleScheduledAt(String height);
+
+  /// Lowercase screen-reader state of a split transaction waiting for the previous split.
+  ///
+  /// In en, this message translates to:
+  /// **'waiting for previous split, expected at block {height}'**
+  String migrationScheduleSemanticsAwaiting(String height);
+
+  /// Lowercase screen-reader state of a split transaction that was sent and awaits mining.
+  ///
+  /// In en, this message translates to:
+  /// **'broadcast, waiting to be mined, projected completion at block {height}'**
+  String migrationScheduleSemanticsBroadcast(String height);
+
+  /// Lowercase screen-reader state of a transaction completed at a block height.
+  ///
+  /// In en, this message translates to:
+  /// **'completed at block {height}'**
+  String migrationScheduleSemanticsCompletedAt(String height);
+
+  /// Lowercase screen-reader state of a note that is due.
+  ///
+  /// In en, this message translates to:
+  /// **'due now'**
+  String get migrationScheduleSemanticsDue;
+
+  /// Lowercase screen-reader state of a note that was sent and awaits mining.
+  ///
+  /// In en, this message translates to:
+  /// **'broadcast, waiting to be mined'**
+  String get migrationScheduleSemanticsMigrating;
+
+  /// Screen-reader description of one migration note row.
+  ///
+  /// In en, this message translates to:
+  /// **'Note {number}, {amount} ZEC, {state}.'**
+  String migrationScheduleSemanticsNote(
+    String number,
+    String amount,
+    String state,
+  );
+
+  /// Lowercase screen-reader state of a note collecting confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'confirming, {count} of {target} confirmations'**
+  String migrationScheduleSemanticsNoteConfirming(String count, String target);
+
+  /// Lowercase screen-reader state of a mined note collecting confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'confirming, {count} of {target} confirmations, mined at block {height}'**
+  String migrationScheduleSemanticsNoteConfirmingMined(
+    String count,
+    String target,
+    String height,
+  );
+
+  /// Screen-reader description of one split output: its ZEC amount and where it goes.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} ZEC, {destination}'**
+  String migrationScheduleSemanticsOutput(String amount, String destination);
+
+  /// Lowercase screen-reader destination of a split output: it stays in Orchard.
+  ///
+  /// In en, this message translates to:
+  /// **'stays in Orchard'**
+  String get migrationScheduleSemanticsOutputChange;
+
+  /// Lowercase screen-reader destination of a split output that is split again.
+  ///
+  /// In en, this message translates to:
+  /// **'used in round {round}'**
+  String migrationScheduleSemanticsOutputContinuation(String round);
+
+  /// Lowercase screen-reader destination of a split output: it will be migrated.
+  ///
+  /// In en, this message translates to:
+  /// **'for migration'**
+  String get migrationScheduleSemanticsOutputMigration;
+
+  /// Screen-reader description of the outputs of a split transaction; {outputs} is a semicolon-separated list.
+  ///
+  /// In en, this message translates to:
+  /// **'Outputs: {outputs}.'**
+  String migrationScheduleSemanticsOutputs(String outputs);
+
+  /// Lowercase screen-reader state of a note whose schedule is not set yet.
+  ///
+  /// In en, this message translates to:
+  /// **'schedule pending'**
+  String get migrationScheduleSemanticsPending;
+
+  /// Lowercase screen-reader state of a note waiting for the user to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'ready to sign'**
+  String get migrationScheduleSemanticsReadyToSign;
+
+  /// Lowercase screen-reader state of a note that moved to a later block.
+  ///
+  /// In en, this message translates to:
+  /// **'rescheduled from block {from} to block {to}'**
+  String migrationScheduleSemanticsRescheduled(String from, String to);
+
+  /// Lowercase screen-reader state of a transaction scheduled for a block height.
+  ///
+  /// In en, this message translates to:
+  /// **'scheduled at block {height}'**
+  String migrationScheduleSemanticsScheduled(String height);
+
+  /// Screen-reader description of one split transaction row.
+  ///
+  /// In en, this message translates to:
+  /// **'Split {number}, {amount} ZEC, {state}.'**
+  String migrationScheduleSemanticsSplit(
+    String number,
+    String amount,
+    String state,
+  );
+
+  /// Lowercase screen-reader state of a split transaction collecting confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'confirming, {count} of {target} confirmations, projected completion at block {height}'**
+  String migrationScheduleSemanticsSplitConfirming(
+    String count,
+    String target,
+    String height,
+  );
+
+  /// Lowercase screen-reader state of a note waiting for its migration window.
+  ///
+  /// In en, this message translates to:
+  /// **'waiting for window at block {height}'**
+  String migrationScheduleSemanticsWaitingWindow(String height);
+
+  /// Heading above the split transactions of one round.
+  ///
+  /// In en, this message translates to:
+  /// **'Split round {number}'**
+  String migrationScheduleSplitRound(String number);
+
+  /// Title of the migration schedule screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Schedule'**
+  String get migrationScheduleTitle;
+
+  /// Title of the screen listing the note-splitting transactions.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation Schedule'**
+  String get migrationScheduleTitlePreparation;
+
+  /// [security] Explains that the schedule could not be loaded and the saved migration state is unchanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t load the latest migration schedule. Your saved migration state is unchanged.'**
+  String get migrationScheduleUnavailableBody;
+
+  /// Heading shown when the migration schedule cannot be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration schedule unavailable'**
+  String get migrationScheduleUnavailableTitle;
+
+  /// Status of a migration transfer that was sent and awaits mining.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting to be mined'**
+  String get migrationScheduleWaitingToBeMined;
+
+  /// Status of a migration transfer waiting for its time window at a block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Window #{height}'**
+  String migrationScheduleWindow(String height);
+
+  /// Screen-reader description of one note in the migration ring; {status} is a short state such as "completed".
+  ///
+  /// In en, this message translates to:
+  /// **'Note {number}: {amount} ZEC, {status}.'**
+  String migrationSemanticsNote(String number, String amount, String status);
+
+  /// Screen-reader description of the migration ring: notes are listed in processing order.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration notes in expected processing order.'**
+  String get migrationSemanticsNotesOrder;
+
+  /// Screen-reader description of the migration ring while notes are being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing migration notes.'**
+  String get migrationSemanticsPreparingNotes;
+
+  /// [security] Button that starts signing one batch of migration transfers; {number} is the batch number.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign Batch #{number}'**
+  String migrationSignBatch(String number);
+
+  /// [security] Button that starts signing the next migration batch on the Keystone hardware wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign with Keystone'**
+  String get migrationSignWithKeystone;
+
+  /// Step label in the migration progress header: the final stage.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish'**
+  String get migrationStageFinish;
+
+  /// Step label in the migration progress header: the migration stage.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration'**
+  String get migrationStageMigration;
+
+  /// Step label in the migration progress header: the preparation stage.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation'**
+  String get migrationStagePreparation;
+
+  /// Explains that a recoverable error interrupted the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor hit a recoverable migration error before completing the Ironwood transition.'**
+  String get migrationStatusAttentionBody;
+
+  /// [security] Reassures that no funds are lost and tells the user to retry once Vizor is synced and online.
+  ///
+  /// In en, this message translates to:
+  /// **'No funds are lost. Retry migration after checking that Vizor is synced and online.'**
+  String get migrationStatusAttentionFooter;
+
+  /// Heading of the migration status screen after a recoverable error.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Needs Attention'**
+  String get migrationStatusAttentionTitle;
+
+  /// Row label showing how many migration transactions were sent to the network.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasted'**
+  String get migrationStatusBroadcasted;
+
+  /// Explains that Vizor is sending the prepared migration transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is broadcasting the prepared Ironwood migration transaction.'**
+  String get migrationStatusBroadcastingBody;
+
+  /// Confirms the funds were moved into the Ironwood pool.
+  ///
+  /// In en, this message translates to:
+  /// **'Your funds have moved into the Ironwood pool.'**
+  String get migrationStatusCompleteBody;
+
+  /// Footer note after migration completes.
+  ///
+  /// In en, this message translates to:
+  /// **'You can return home and continue using Vizor.'**
+  String get migrationStatusCompleteFooter;
+
+  /// Heading of the migration status screen when migration is finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Complete'**
+  String get migrationStatusCompleteTitle;
+
+  /// Explains that the migration transaction was sent and is waiting for confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'The migration transaction was broadcast. Vizor is waiting for network confirmations.'**
+  String get migrationStatusConfirmingBody;
+
+  /// Explains that Vizor is tracking the migration state.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is tracking the current Ironwood migration state.'**
+  String get migrationStatusDefaultBody;
+
+  /// Disabled button label in an unrecognized migration state.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration in progress'**
+  String get migrationStatusDefaultButton;
+
+  /// Footer note: this fallback state is shown only for diagnostics.
+  ///
+  /// In en, this message translates to:
+  /// **'This state is visible for diagnostics while the migration flow is being connected.'**
+  String get migrationStatusDefaultFooter;
+
+  /// Heading of the migration status screen in an unrecognized state.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Status'**
+  String get migrationStatusDefaultTitle;
+
+  /// [security] Footer note: the user may leave the screen but must keep the app open so the migration continues.
+  ///
+  /// In en, this message translates to:
+  /// **'You can leave this screen.\nBut keep Vizor open & running.'**
+  String get migrationStatusLeaveFooter;
+
+  /// Footer note on the migration status screen for Ledger accounts, whose device flow cannot do batched signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger private migration is not supported because this flow requires batched signing.'**
+  String get migrationStatusLedgerUnsupported;
+
+  /// Explains that the private migration is paused before its next step.
+  ///
+  /// In en, this message translates to:
+  /// **'The private migration is paused before the next action.'**
+  String get migrationStatusPausedBody;
+
+  /// Disabled button label while the migration is paused.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get migrationStatusPausedButton;
+
+  /// Footer note: nothing new happens until the migration is resumed.
+  ///
+  /// In en, this message translates to:
+  /// **'No new transaction will be prepared until migration execution is resumed.'**
+  String get migrationStatusPausedFooter;
+
+  /// Heading of the migration status screen when the migration is paused.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Paused'**
+  String get migrationStatusPausedTitle;
+
+  /// Row label showing how many migration transactions still have to be sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending broadcasts'**
+  String get migrationStatusPendingBroadcasts;
+
+  /// Explains how long each note-splitting step usually takes.
+  ///
+  /// In en, this message translates to:
+  /// **'This usually takes around 30 minutes per split.'**
+  String get migrationStatusPreparingBody;
+
+  /// Explains that the next step prepares the Ironwood migration batch.
+  ///
+  /// In en, this message translates to:
+  /// **'The private split is ready. The next step will prepare the Ironwood migration batch.'**
+  String get migrationStatusReadyBody;
+
+  /// Footer note telling the user to continue so the Ironwood transaction is prepared and sent when due.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue migration to prepare and broadcast the Ironwood transaction when it is due.'**
+  String get migrationStatusReadyFooter;
+
+  /// Heading of the migration status screen when the split is done and migration can start.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to Migrate'**
+  String get migrationStatusReadyTitle;
+
+  /// Explains that the migration transaction is ready and waits for its send time.
+  ///
+  /// In en, this message translates to:
+  /// **'Your migration transaction is prepared and waiting for its scheduled broadcast window.'**
+  String get migrationStatusScheduledBody;
+
+  /// [security] Footer note: scheduled sends only progress while Vizor is open.
+  ///
+  /// In en, this message translates to:
+  /// **'When Vizor is open, scheduled broadcasts will be advanced by the migration worker.'**
+  String get migrationStatusScheduledFooter;
+
+  /// Heading of the migration status screen when the transaction waits for its send time.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcast Scheduled'**
+  String get migrationStatusScheduledTitle;
+
+  /// Row label showing how many note-splitting transactions are done.
+  ///
+  /// In en, this message translates to:
+  /// **'Split progress'**
+  String get migrationStatusSplitProgress;
+
+  /// Explains that the migration state could not be verified and no new migration will start meanwhile.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t verify the current Ironwood migration state. No new migration will start until the status can be checked.'**
+  String get migrationStatusUnavailableBody;
+
+  /// Advice on the migration-status-unavailable screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Return home and try again after sync refreshes. If a migration is already in progress, Vizor will continue from the saved state after it can be read.'**
+  String get migrationStatusUnavailableHint;
+
+  /// Heading of the screen shown when the migration state cannot be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration status unavailable'**
+  String get migrationStatusUnavailableTitle;
+
+  /// Label of the summary row showing the current block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Current block'**
+  String get migrationSummaryCurrentBlock;
+
+  /// Label of the summary row showing the estimated completion time of the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Est. completion'**
+  String get migrationSummaryEstCompletion;
+
+  /// Label of the summary row showing the ZEC amount that is not migrated yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Left to migrate'**
+  String get migrationSummaryLeftToMigrate;
+
+  /// Label of the summary row showing how many migration transactions are complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Overall progress'**
+  String get migrationSummaryOverallProgress;
+
+  /// Ring caption naming which transaction of the migration is shown, when the total is not known yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction {ordinal}'**
+  String migrationTransactionOrdinal(String ordinal);
+
+  /// Ring caption naming which transaction of the migration is shown, for example "Transaction 2 of 7".
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction {ordinal} of {total}'**
+  String migrationTransactionOrdinalOfTotal(String ordinal, String total);
+
+  /// Explains that migration transfers signed before the network upgrade can no longer be sent, and that no funds were lost.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfers signed before the upgrade can’t be sent after it. Your funds are safe.'**
+  String get migrationUpgradeStopBody;
+
+  /// Button that starts a new migration of the balance left after the network upgrade stopped the previous one.
+  ///
+  /// In en, this message translates to:
+  /// **'Move remaining balance'**
+  String get migrationUpgradeStopMoveRemainingLabel;
+
+  /// Label for the amount already migrated when a network upgrade stopped the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Moved to Ironwood'**
+  String get migrationUpgradeStopMovedLabel;
+
+  /// Label for the amount that remains in the Orchard pool after a network upgrade stopped the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Still in Orchard'**
+  String get migrationUpgradeStopRemainingLabel;
+
+  /// Ironwood migration ring message, split over two lines, shown when the network upgrade stopped a migration partway.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped by the\nnetwork upgrade'**
+  String get migrationUpgradeStopRingMessage;
+
+  /// Button that opens the schedule of migration transfers.
+  ///
+  /// In en, this message translates to:
+  /// **'View Schedule'**
+  String get migrationViewSchedule;
 
   /// Sidebar and tab bar destination: transaction history. Shared by: activity, nav.
   ///
@@ -4367,35 +9728,17 @@ abstract class AppLocalizations {
   /// **'Connect Keystone'**
   String get onboardingConnectKeystone;
 
-  /// Import method and screen title for connecting a Ledger device.
-  ///
-  /// In en, this message translates to:
-  /// **'Connect Ledger'**
-  String get onboardingConnectLedger;
-
   /// Confirm button of the desktop unknown-birthday dialog.
   ///
   /// In en, this message translates to:
   /// **'Continue Anyway'**
   String get onboardingContinueAnywayDesktop;
 
-  /// Confirm button of the mobile unknown-birthday sheet.
-  ///
-  /// In en, this message translates to:
-  /// **'Continue anyway'**
-  String get onboardingContinueAnywayMobile;
-
   /// Disabled primary button label while the new wallet is being created.
   ///
   /// In en, this message translates to:
   /// **'Creating wallet...'**
   String get onboardingCreatingWallet;
-
-  /// Heading of the step where the user names the account and picks a profile picture; also the back label pointing to it.
-  ///
-  /// In en, this message translates to:
-  /// **'Customise Account'**
-  String get onboardingCustomiseAccount;
 
   /// Subtitle under the customise-account heading.
   ///
@@ -4985,12 +10328,6 @@ abstract class AppLocalizations {
   /// **'Address types'**
   String get onboardingStepAddressTypes;
 
-  /// Onboarding step for naming the wallet and picking a picture.
-  ///
-  /// In en, this message translates to:
-  /// **'Customise wallet'**
-  String get onboardingStepCustomiseWallet;
-
   /// Step and screen title for importing contacts from a linked wallet.
   ///
   /// In en, this message translates to:
@@ -5363,12 +10700,6 @@ abstract class AppLocalizations {
   /// **'Recipient address'**
   String get payRecipientAddressLabel;
 
-  /// Accessibility label of the button that opens the QR scanner on the Pay recipient step.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan QR code'**
-  String get payRecipientScanQr;
-
   /// Disabled button label on the Pay review step while a new quote is loading.
   ///
   /// In en, this message translates to:
@@ -5434,12 +10765,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t save this contact. Try again.'**
   String get paySaveContactError;
-
-  /// Button label while the Pay add-contact card is saving.
-  ///
-  /// In en, this message translates to:
-  /// **'Saving'**
-  String get paySaving;
 
   /// Accessibility label of the tappable area that dismisses the mobile Pay modal.
   ///
@@ -5554,6 +10879,2034 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Pay in {symbol}'**
   String payTitleAmount(String symbol);
+
+  /// Error under the Gift Card amount when it is larger than the available balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Above your maximum ZEC'**
+  String get paymentLinkAboveMaximumZec;
+
+  /// Message shown when the active account changed while redeeming a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Active account changed. Redeem this gift card again to receive it in the new account.'**
+  String get paymentLinkAccountChangedRedeemAgain;
+
+  /// Message shown when the active account changed while creating a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Active account changed. Review the gift card amount and fees again.'**
+  String get paymentLinkAccountChangedReviewAmount;
+
+  /// Error shown when the active account changed while a Gift Card was being created.
+  ///
+  /// In en, this message translates to:
+  /// **'The active account changed. Review the amount and try again.'**
+  String get paymentLinkActiveAccountChangedReviewAmount;
+
+  /// Two-line heading shown while a Gift Card is still being prepared; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift Card is\nalmost ready!'**
+  String get paymentLinkAlmostReadyHeading;
+
+  /// Two-line heading shown while a received Gift Card is being prepared; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Gift Card\nis almost ready!'**
+  String get paymentLinkAlmostReadyReceivedHeading;
+
+  /// Screen reader label of a disabled currency toggle on the Gift Card amount field; {currency} is USD and {reason} explains why it is unavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in {currency}. {reason}'**
+  String paymentLinkAmountCurrencyDisabledSemantic(
+    String currency,
+    String reason,
+  );
+
+  /// Placeholder of the Gift Card amount field when the amount is entered in US dollars.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter dollars'**
+  String get paymentLinkAmountEnterDollars;
+
+  /// Screen reader label of the Gift Card amount text field.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card amount input'**
+  String get paymentLinkAmountInputSemantic;
+
+  /// Subtitle of the first steps of desktop Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount & select the design.'**
+  String get paymentLinkAmountStepSubtitleDesktop;
+
+  /// Subtitle of the mobile amount step of Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount & pick a design.'**
+  String get paymentLinkAmountStepSubtitleMobile;
+
+  /// Button that approves the funding and creates the Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve & create'**
+  String get paymentLinkApproveAndCreate;
+
+  /// Heading of the collapsible list of archived Gift Cards; {count} is how many cards are archived.
+  ///
+  /// In en, this message translates to:
+  /// **'Archived ({count})'**
+  String paymentLinkArchivedCount(int count);
+
+  /// Heading above the list of archived Gift Cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Archived'**
+  String get paymentLinkArchivedHeading;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Chest in crystal cave'**
+  String get paymentLinkArtworkChestCave;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Chest in lava cave'**
+  String get paymentLinkArtworkChestLava;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash coin'**
+  String get paymentLinkArtworkCoin;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Crystal'**
+  String get paymentLinkArtworkCrystal;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Diamond'**
+  String get paymentLinkArtworkDiamond;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Dragon'**
+  String get paymentLinkArtworkDragon;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift box'**
+  String get paymentLinkArtworkGift;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Magic knight'**
+  String get paymentLinkArtworkKnightMagic;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Rogue cat'**
+  String get paymentLinkArtworkRogueCat;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Ruby'**
+  String get paymentLinkArtworkRuby;
+
+  /// Explanation shown while the result of claiming a received Gift Card is not yet confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your claim result is not confirmed yet. Check again shortly.'**
+  String get paymentLinkAvailabilityCheckingDescription;
+
+  /// Status label of a received Gift Card whose claim result is being checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking result'**
+  String get paymentLinkAvailabilityCheckingResult;
+
+  /// Status label of a received Gift Card that is ready to be claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim'**
+  String get paymentLinkAvailabilityClaim;
+
+  /// Status label of a received Gift Card whose claim did not complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim failed'**
+  String get paymentLinkAvailabilityClaimFailed;
+
+  /// Explanation shown when claiming a received Gift Card did not complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Your claim did not complete. Check the card before trying again.'**
+  String get paymentLinkAvailabilityFailedDescription;
+
+  /// Status label of a received Gift Card that currently holds no balance.
+  ///
+  /// In en, this message translates to:
+  /// **'No balance'**
+  String get paymentLinkAvailabilityNoBalance;
+
+  /// Explanation shown for a received Gift Card that holds no balance.
+  ///
+  /// In en, this message translates to:
+  /// **'There is currently no balance available to claim.'**
+  String get paymentLinkAvailabilityNoBalanceDescription;
+
+  /// Explanation shown for a received Gift Card that is ready to be claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card is ready to claim.'**
+  String get paymentLinkAvailabilityReadyDescription;
+
+  /// Explanation shown when the network rejected the claim of a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'The network did not accept this claim. Check its status before trying again.'**
+  String get paymentLinkAvailabilityRejectedDescription;
+
+  /// Button on the signing screens that returns to the Gift Card being created.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to gift card'**
+  String get paymentLinkBackToGiftCard;
+
+  /// Screen reader label of the button that increases the number of cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a card'**
+  String get paymentLinkBatchAddCard;
+
+  /// Heading above the list of cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Cards in this group'**
+  String get paymentLinkBatchCardsInGroup;
+
+  /// Status line of a batch when the usage of some cards could not be checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t check every card'**
+  String get paymentLinkBatchCheckFailed;
+
+  /// Status line of a batch while the usage of its cards is being checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking card use…'**
+  String get paymentLinkBatchCheckingUse;
+
+  /// Confirm button of the file-save dialog for Gift Card links.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose location'**
+  String get paymentLinkBatchChooseLocation;
+
+  /// Screen reader label of the button that copies the link of one card in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy link for card {number}'**
+  String paymentLinkBatchCopyLinkSemantic(String number);
+
+  /// Screen reader label of the field holding the number of cards in a batch; {max} is the largest allowed count.
+  ///
+  /// In en, this message translates to:
+  /// **'Number of cards, 2 to {max}'**
+  String paymentLinkBatchCountSemantic(int max);
+
+  /// Subtitle of a batch detail page; {date} is the creation date.
+  ///
+  /// In en, this message translates to:
+  /// **'Created {date}'**
+  String paymentLinkBatchCreated(String date);
+
+  /// Error shown when the details of the cards in a group could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Card details could not be saved. Try again.'**
+  String get paymentLinkBatchDetailsNotSaved;
+
+  /// Error shown when the network fee of a group changed after the quote.
+  ///
+  /// In en, this message translates to:
+  /// **'The network fee changed. Review the new total.'**
+  String get paymentLinkBatchFeeChanged;
+
+  /// [security] Error shown when the funding for a group was sent but the cards could not be saved; the user must retry before closing the app or the links are lost.
+  ///
+  /// In en, this message translates to:
+  /// **'Funding was sent, but the cards could not be saved. Try again before closing Vizor.'**
+  String get paymentLinkBatchFundedNotSaved;
+
+  /// Title of a batch detail page; {count} is the number of cards in the group.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} gift cards'**
+  String paymentLinkBatchGiftCardsCount(int count);
+
+  /// [security] Note on a batch whose payment is still confirming; its links must not be shared yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Links become shareable once the payment confirms.'**
+  String get paymentLinkBatchLinksShareableLater;
+
+  /// Hint of the message field in batch Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Message (optional)'**
+  String get paymentLinkBatchMessageOptional;
+
+  /// Hint of the message field in batch Gift Card creation; the message is printed on every card.
+  ///
+  /// In en, this message translates to:
+  /// **'Message (optional), appears on every card'**
+  String get paymentLinkBatchMessageOptionalEveryCard;
+
+  /// Error shown when none of the cards in a group was funded.
+  ///
+  /// In en, this message translates to:
+  /// **'No cards were funded. Review the amount and try again.'**
+  String get paymentLinkBatchNoneFunded;
+
+  /// [security] Warning on a batch where some cards are not ready; none of the links should be shared until all cards are ready.
+  ///
+  /// In en, this message translates to:
+  /// **'Not every card in this group is ready. Don’t share any links until they all are.'**
+  String get paymentLinkBatchNotAllReady;
+
+  /// Error shown when the group costs more than the available balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Reduce the amount or number of cards to fit your available balance.'**
+  String get paymentLinkBatchOverBalance;
+
+  /// [security] Warning on a batch whose payment could not be confirmed; the links must not be shared until the payment is confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor hasn’t confirmed that the payment was sent. Keep these cards and check again before sharing any links.'**
+  String get paymentLinkBatchPaymentUnconfirmed;
+
+  /// Error shown when preparing the cards of a group failed.
+  ///
+  /// In en, this message translates to:
+  /// **'These cards could not be prepared.'**
+  String get paymentLinkBatchPrepareFailed;
+
+  /// Message shown when the cards of a group were created under the previous account.
+  ///
+  /// In en, this message translates to:
+  /// **'Cards were created under the previous account. Switch back to view them.'**
+  String get paymentLinkBatchPreviousAccount;
+
+  /// Error shown when a group cannot be created yet because the balance is still loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Available balance is still loading. Try again after wallet sync.'**
+  String get paymentLinkBatchQuoteNotReady;
+
+  /// Screen reader label of the button that decreases the number of cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove a card'**
+  String get paymentLinkBatchRemoveCard;
+
+  /// Screen reader label of a card row in a batch; {number} is the zero-padded card number, {status} its usage status, and {failed} is true when refreshing the status failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Card {number}, {status}{failed, select, true{, update failed} other{}}'**
+  String paymentLinkBatchRowSemantic(
+    String number,
+    String status,
+    String failed,
+  );
+
+  /// Title of a card row in a batch; {number} is the zero-padded card number.
+  ///
+  /// In en, this message translates to:
+  /// **'Card {number}'**
+  String paymentLinkBatchRowTitle(String number);
+
+  /// Note on a card row in a batch when refreshing its usage failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t update'**
+  String get paymentLinkBatchRowUpdateFailed;
+
+  /// Button that saves the links of all Gift Cards in a batch to a CSV file.
+  ///
+  /// In en, this message translates to:
+  /// **'Save all links as CSV'**
+  String get paymentLinkBatchSaveAllCsv;
+
+  /// Title of the file-save dialog for the links of all Gift Cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Save gift card links'**
+  String get paymentLinkBatchSaveLinksTitle;
+
+  /// [security] Warning in the file-save dialog for Gift Card links: the file holds secrets that let anyone who has it claim the funds, so it must be stored privately.
+  ///
+  /// In en, this message translates to:
+  /// **'Anyone with this file can claim these cards. Save it somewhere private.'**
+  String get paymentLinkBatchSaveLinksWarning;
+
+  /// Screen reader label of the button that shows the QR code of one card in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Show QR code for card {number}'**
+  String paymentLinkBatchShowQrSemantic(String number);
+
+  /// [security] Error shown when Vizor could not confirm that the funding payment for a group was sent; the user must check before creating another group.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn’t confirm the payment was sent. Check this group in Gift Cards before creating another.'**
+  String get paymentLinkBatchUncertain;
+
+  /// Status line of a batch whose cards have not been checked yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Card use not checked yet'**
+  String get paymentLinkBatchUseNotChecked;
+
+  /// Label of the field holding the amount of each card in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount per card'**
+  String get paymentLinkBulkAmountPerCard;
+
+  /// Screen reader label shown while the wallet balance next to the batch amount loads.
+  ///
+  /// In en, this message translates to:
+  /// **'Balance loading'**
+  String get paymentLinkBulkBalanceLoading;
+
+  /// Label of the section where the user picks the artwork of the cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Card design'**
+  String get paymentLinkBulkCardDesign;
+
+  /// Screen reader label of a preset button that sets the number of cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} cards'**
+  String paymentLinkBulkCountSemantic(int count);
+
+  /// Button that creates a batch of Gift Cards; {count} is the number of cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Create {count} cards'**
+  String paymentLinkBulkCreateCards(int count);
+
+  /// Title of the batch creation page for Ledger accounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Create multiple cards'**
+  String get paymentLinkBulkCreateMultiple;
+
+  /// Label of the option that gives every card in a batch a different design.
+  ///
+  /// In en, this message translates to:
+  /// **'Different design on each card'**
+  String get paymentLinkBulkDifferentDesign;
+
+  /// Breadcrumb label for editing the cards of a batch before creating them.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit cards'**
+  String get paymentLinkBulkEditCards;
+
+  /// Subtitle of the batch creation page for Ledger accounts; {max} is the maximum number of cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Create up to {max} cards at once with Ledger.'**
+  String paymentLinkBulkLedgerLimit(int max);
+
+  /// Title and button of the batch review step; {count} is the number of cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Review {count} cards'**
+  String paymentLinkBulkReviewCards(int count);
+
+  /// Screen reader label of the spendable balance next to the batch amount; {amount} is the formatted amount.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} ZEC available'**
+  String paymentLinkBulkZecAvailable(String amount);
+
+  /// Label of the Gift Card amount row in the review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Card amount'**
+  String get paymentLinkCardAmountLabel;
+
+  /// Toast shown when checking the balance of a received Gift Card failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Card balance could not be checked. Try again.'**
+  String get paymentLinkCardBalanceCheckFailed;
+
+  /// Screen reader label of a Gift Card artwork choice; {design} is the artwork name, for example Knight or Dragon.
+  ///
+  /// In en, this message translates to:
+  /// **'{design} card design'**
+  String paymentLinkCardDesignSemantic(String design);
+
+  /// Help text explaining the Gift Card fee: the creation fee plus the fee reserved for the recipient to claim.
+  ///
+  /// In en, this message translates to:
+  /// **'Includes the creation fee and the fee reserved for claiming.'**
+  String get paymentLinkCardFeeHelpText;
+
+  /// Label of the row showing the combined fee to fund a Gift Card and the fee reserved for the recipient to redeem it.
+  ///
+  /// In en, this message translates to:
+  /// **'Card fee (deposit + redeem)'**
+  String get paymentLinkCardFeeLabel;
+
+  /// Toast shown when removing a Gift Card from the list failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Card could not be removed. Try again.'**
+  String get paymentLinkCardRemoveFailed;
+
+  /// Toast shown when checking the status of a Gift Card failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Card status could not be checked. Try again.'**
+  String get paymentLinkCardStatusCheckFailed;
+
+  /// Title shown when a scanned Gift Card QR code could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'This card could not be read.'**
+  String get paymentLinkCardUnreadable;
+
+  /// Toast shown when archiving or restoring a Gift Card failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Card could not be updated. Try again.'**
+  String get paymentLinkCardUpdateFailed;
+
+  /// Error shown in place of the Gift Cards list when loading it failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift cards could not be loaded.'**
+  String get paymentLinkCardsLoadFailed;
+
+  /// Progress text while the app checks a received Gift Card; {phase} is finding or checking and {percent} is the percentage done.
+  ///
+  /// In en, this message translates to:
+  /// **'{phase, select, finding{Finding the gift} other{Checking the gift}}… {percent}%'**
+  String paymentLinkCheckProgress(String phase, String percent);
+
+  /// Button that checks the current status of a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Check status'**
+  String get paymentLinkCheckStatus;
+
+  /// Caption showing that the Gift Card usage was checked {hours} hours ago.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked {hours}h ago'**
+  String paymentLinkCheckedHoursAgo(int hours);
+
+  /// Caption showing that the Gift Card usage was checked less than a minute ago.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked just now'**
+  String get paymentLinkCheckedJustNow;
+
+  /// Caption showing that the Gift Card usage was checked {minutes} minutes ago.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked {minutes}m ago'**
+  String paymentLinkCheckedMinutesAgo(int minutes);
+
+  /// Caption showing the date the Gift Card usage was last checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checked {date}'**
+  String paymentLinkCheckedOnDate(String date);
+
+  /// Status text while the app checks a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking the gift…'**
+  String get paymentLinkCheckingGiftEllipsis;
+
+  /// Invisible sizing placeholder that reserves the width of the Gift Card check progress text.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking the gift… 100%'**
+  String get paymentLinkCheckingGiftFull;
+
+  /// Title and screen reader label of the sheet where the user picks which account receives a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose receiving account'**
+  String get paymentLinkChooseReceivingAccount;
+
+  /// Error in the receiving-account sheet when preparing the Gift Card claim failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t prepare this gift. Try again or choose another account.'**
+  String get paymentLinkClaimAccountPrepareFailed;
+
+  /// Button that creates a new account to claim a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Create an account to claim'**
+  String get paymentLinkClaimActionCreateAccount;
+
+  /// Button that creates a new wallet to claim a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a wallet to claim'**
+  String get paymentLinkClaimActionCreateWallet;
+
+  /// Button that claims a received Gift Card with a wallet the user already has.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim with an existing wallet'**
+  String get paymentLinkClaimActionExistingWallet;
+
+  /// Two-line description shown while the app checks whether a received Gift Card was already claimed; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking whether this gift card\nhas already been claimed.'**
+  String get paymentLinkClaimCheckingDescription;
+
+  /// Two-line heading shown while a received Gift Card is checked; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking your\ngift card'**
+  String get paymentLinkClaimCheckingHeading;
+
+  /// Message shown when claiming a Gift Card failed; the card may still be confirming or may already have been claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card claim failed. It may still be waiting for confirmation or may already be spent.'**
+  String get paymentLinkClaimFailedMaybePending;
+
+  /// Toast shown when redeeming a received Gift Card failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t redeem your gift card.'**
+  String get paymentLinkClaimFailureToast;
+
+  /// Button in the receiving-account sheet that claims the Gift Card into the selected account.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim gift'**
+  String get paymentLinkClaimGiftButton;
+
+  /// Toast shown when a received Gift Card cannot be saved because too many other cards are already waiting to be redeemed.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many gift cards are waiting. Finish another card first.'**
+  String get paymentLinkClaimQueueFull;
+
+  /// Message shown when the result of claiming a Gift Card is not confirmed yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim result is not confirmed. Check its status.'**
+  String get paymentLinkClaimResultNotConfirmed;
+
+  /// Toast shown when a received Gift Card could not be saved before account setup.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t save the card. Try again.'**
+  String get paymentLinkClaimSaveFailed;
+
+  /// Status shown when a received Gift Card was already claimed by someone else.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift has already been claimed.'**
+  String get paymentLinkClaimStatusAlreadyClaimed;
+
+  /// Detail under the already-claimed status suggesting the user ask the sender for a new Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask the sender for a new one.'**
+  String get paymentLinkClaimStatusAskSender;
+
+  /// Detail under the network error while checking a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your connection and try again.'**
+  String get paymentLinkClaimStatusCheckConnection;
+
+  /// Detail while the Gift Card deposit confirms, for a user who already has a wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'You can create your account now.'**
+  String get paymentLinkClaimStatusCreateAccountNow;
+
+  /// Detail under Gift found for a user who already has a wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Create an account or use one you have to claim it.'**
+  String get paymentLinkClaimStatusCreateAccountOrUseOne;
+
+  /// Detail while the Gift Card deposit confirms, for a user who has no wallet yet.
+  ///
+  /// In en, this message translates to:
+  /// **'You can create your wallet now.'**
+  String get paymentLinkClaimStatusCreateWalletNow;
+
+  /// Detail under Gift found for a user who has no wallet yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a wallet or use one you have to claim it.'**
+  String get paymentLinkClaimStatusCreateWalletOrUseOne;
+
+  /// Status title shown when a received Gift Card holds a balance that can be claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift found'**
+  String get paymentLinkClaimStatusGiftFound;
+
+  /// Detail under the no-balance status of a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'The sender may not have funded it yet.'**
+  String get paymentLinkClaimStatusMayNotBeFunded;
+
+  /// Status shown when the app could not reach the network while checking a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn’t reach the network.'**
+  String get paymentLinkClaimStatusNetworkUnreachable;
+
+  /// Status shown when a received Gift Card was created for a different Zcash network than the wallet uses.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card is for a different network.'**
+  String get paymentLinkClaimStatusOtherNetwork;
+
+  /// Status shown while the Gift Card funding deposit is confirming; {count} is the confirmations seen and {target} the number needed.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the deposit to confirm · {count} of {target}'**
+  String paymentLinkClaimStatusWaitingDeposit(int count, int target);
+
+  /// Title shown after a Gift Card claim was submitted to the network.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift claim submitted'**
+  String get paymentLinkClaimSubmitted;
+
+  /// Button that claims a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim the gift'**
+  String get paymentLinkClaimTheGift;
+
+  /// Button that claims a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim the gift card'**
+  String get paymentLinkClaimTheGiftCard;
+
+  /// Description while a received Gift Card is not yet ready to claim.
+  ///
+  /// In en, this message translates to:
+  /// **'Your gift will be ready to claim shortly.'**
+  String get paymentLinkClaimWaitingDescription;
+
+  /// Explanation shown when a received Gift Card was already claimed in another wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'This card was claimed in another wallet first. Your balance hasn\'t changed.'**
+  String get paymentLinkClaimedElsewhereDescription;
+
+  /// Status label of a received Gift Card that someone claimed in another wallet before the user.
+  ///
+  /// In en, this message translates to:
+  /// **'Claimed elsewhere'**
+  String get paymentLinkClaimedElsewhereLabel;
+
+  /// Button label while a Gift Card is being claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Claiming…'**
+  String get paymentLinkClaiming;
+
+  /// [security] Button that clears the clipboard after a Gift Card link was pasted, so the bearer link does not stay copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear clipboard'**
+  String get paymentLinkClearClipboardLabel;
+
+  /// Hint under a received Gift Card on desktop explaining how to read its message.
+  ///
+  /// In en, this message translates to:
+  /// **'Click on the card to reveal the message.'**
+  String get paymentLinkClickToRevealMessage;
+
+  /// Hint under a received Gift Card on desktop; the message is revealed by clicking the card.
+  ///
+  /// In en, this message translates to:
+  /// **'Click on the card to reveal'**
+  String get paymentLinkClickToRevealShort;
+
+  /// Title of the hardware wallet signing screen for creating a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Gift Card'**
+  String get paymentLinkConfirmGiftCardTitle;
+
+  /// Hint on the Gift Card ready screen that the link can be copied again later from the settings.
+  ///
+  /// In en, this message translates to:
+  /// **'You can copy this link again from Settings → My gift cards.'**
+  String get paymentLinkCopyLinkAgainHint;
+
+  /// Screen reader label of the button that copies a Gift Card link.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy gift card link'**
+  String get paymentLinkCopyLinkSemanticLabel;
+
+  /// Button label while a Gift Card link is being copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Copying…'**
+  String get paymentLinkCopying;
+
+  /// Label of the cost row showing how much more ZEC the user needs for the batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Additional ZEC needed'**
+  String get paymentLinkCostAdditionalZecNeeded;
+
+  /// Value of the additional-ZEC row when the total is not known yet; {amount} is the formatted minimum shortfall.
+  ///
+  /// In en, this message translates to:
+  /// **'At least {amount}'**
+  String paymentLinkCostAtLeast(String amount);
+
+  /// Screen reader label shown while the network fee of a batch is calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating network fee'**
+  String get paymentLinkCostCalculatingFee;
+
+  /// Label of the cost row showing the number of cards the per-card cost is multiplied by.
+  ///
+  /// In en, this message translates to:
+  /// **'× {count} cards'**
+  String paymentLinkCostCardsMultiplier(int count);
+
+  /// Label of the row showing the message printed on every card in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Message on every card'**
+  String get paymentLinkCostMessageOnEveryCard;
+
+  /// Label of the cost row showing the cost of one card.
+  ///
+  /// In en, this message translates to:
+  /// **'Per card'**
+  String get paymentLinkCostPerCard;
+
+  /// Caption under the per-card cost; {amount} is the card amount and {fee} the fee reserved for redeeming, or a dash if unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} ZEC + {fee} ZEC redeem fee'**
+  String paymentLinkCostPerCardBreakdown(String amount, String fee);
+
+  /// Shown in place of the network fee while the wallet is still syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for sync'**
+  String get paymentLinkCostWaitingForSync;
+
+  /// Label of the row showing the total the user will spend on a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'You will spend'**
+  String get paymentLinkCostYouWillSpend;
+
+  /// Button that creates the Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Create card'**
+  String get paymentLinkCreateCardButton;
+
+  /// Button or entry label that starts creating a Gift Card to send to someone.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a card'**
+  String get paymentLinkCreateCardLabel;
+
+  /// Title of the desktop page and wizard where the user creates a single Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Create Gift Card'**
+  String get paymentLinkCreateGiftCardTitle;
+
+  /// Button that starts creating a new Gift Card on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Create new card'**
+  String get paymentLinkCreateNewCard;
+
+  /// Error shown when creating a Gift Card failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card creation failed. Try again.'**
+  String get paymentLinkCreationFailed;
+
+  /// Screen reader label of the button that clears the message on a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete gift card message'**
+  String get paymentLinkDeleteMessageSemantic;
+
+  /// Title of the empty state shown on the Gift Cards page when the user has no cards.
+  ///
+  /// In en, this message translates to:
+  /// **'No Gift Cards yet'**
+  String get paymentLinkEmptyTitle;
+
+  /// Error shown when the Gift Card amount is missing or invalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid gift card amount.'**
+  String get paymentLinkEnterValidAmount;
+
+  /// Explanation on the desktop redeem screen when redeeming creates a new account in the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeem the card to create a new account with the card’s balance in your wallet.'**
+  String get paymentLinkEntryExplainAccountDesktop;
+
+  /// Explanation on the desktop redeem screen when redeeming creates a new wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Once the card is redeemed, we will create a new Vizor wallet with the card’s balance.'**
+  String get paymentLinkEntryExplainWalletDesktop;
+
+  /// Explanation on the redeem screen when redeeming creates a new account in an existing wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a new account to receive the card’s balance.'**
+  String get paymentLinkEntryExplanationAccount;
+
+  /// Explanation on the redeem screen when redeeming creates a new wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a new Vizor wallet to receive the card’s balance.'**
+  String get paymentLinkEntryExplanationWallet;
+
+  /// Two-line instruction to paste the received Gift Card link; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy the card link you’ve\nreceived, and paste it below.'**
+  String get paymentLinkEntrySubtitle;
+
+  /// Title of the screen shown before an account exists; redeeming a Gift Card creates a new account.
+  ///
+  /// In en, this message translates to:
+  /// **'Create account by redeeming Vizor Gift Card'**
+  String get paymentLinkEntryTitleAccount;
+
+  /// Title of the screen shown to a user with no wallet; redeeming a Gift Card creates a new wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Create wallet by redeeming Vizor Gift Card'**
+  String get paymentLinkEntryTitleWallet;
+
+  /// [security] Message shown when exporting links of a group is not possible because not every card is ready.
+  ///
+  /// In en, this message translates to:
+  /// **'All cards must be ready before exporting links.'**
+  String get paymentLinkExportNotReady;
+
+  /// Message shown when the account or card status changed while exporting links.
+  ///
+  /// In en, this message translates to:
+  /// **'The account or card status changed. Check the cards and try again.'**
+  String get paymentLinkExportStatusChanged;
+
+  /// Error under the Gift Card amount when the fee could not be estimated.
+  ///
+  /// In en, this message translates to:
+  /// **'Card fee could not be estimated. Try again.'**
+  String get paymentLinkFeeEstimateFailed;
+
+  /// Supporting text under the Gift Card amount while the wallet is still syncing and the fee cannot be estimated.
+  ///
+  /// In en, this message translates to:
+  /// **'Card fee will be estimated when wallet sync completes.'**
+  String get paymentLinkFeeEstimatedAfterSync;
+
+  /// Screen reader label of the info button next to the Gift Card fee on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'About the gift card fee'**
+  String get paymentLinkFeeHelpSemantic;
+
+  /// Help text of the info icon next to the total Gift Card amount; explains the funding fee and the fee reserved for the recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Includes the fee to fund the gift card and the fee reserved for the recipient to claim it.'**
+  String get paymentLinkFeeHelpTextLong;
+
+  /// Error shown when the fee of a Gift Card could not be updated.
+  ///
+  /// In en, this message translates to:
+  /// **'Card fee could not be updated. Return to the amount step and try again.'**
+  String get paymentLinkFeeUpdateFailed;
+
+  /// Screen reader label shown while the fiat value of the Gift Card amount loads.
+  ///
+  /// In en, this message translates to:
+  /// **'Fiat value loading'**
+  String get paymentLinkFiatLoadingSemantic;
+
+  /// Screen reader label of the control that flips a Gift Card over.
+  ///
+  /// In en, this message translates to:
+  /// **'Flip gift card'**
+  String get paymentLinkFlipCardSemanticLabel;
+
+  /// [security] Message shown when the funding of a Gift Card expired before it was sent; the user must create the card again.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card funding expired. Create it again.'**
+  String get paymentLinkFundingExpired;
+
+  /// Status label of a Gift Card whose funding payment did not complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Funding incomplete'**
+  String get paymentLinkFundingIncompleteStatus;
+
+  /// Title of the Ledger signing screen when the funding needs the user's attention.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card funding needs attention'**
+  String get paymentLinkFundingNeedsAttention;
+
+  /// [security] Error shown when the funding transaction was sent but the Gift Card could not be saved; the user must retry before closing the app or the card link is lost.
+  ///
+  /// In en, this message translates to:
+  /// **'Funding was sent, but the gift card could not be saved. Try again before closing Vizor.'**
+  String get paymentLinkFundingSentCardNotSaved;
+
+  /// Message shown while the Gift Card funding transaction is still being verified.
+  ///
+  /// In en, this message translates to:
+  /// **'Funding is still being verified. Vizor will keep checking it.'**
+  String get paymentLinkFundingStillVerifying;
+
+  /// Message shown when the funding transaction was sent but the wallet has not yet stored it locally.
+  ///
+  /// In en, this message translates to:
+  /// **'Funding was sent, but local transaction storage needs to sync.'**
+  String get paymentLinkFundingStorageNeedsSync;
+
+  /// Label above the amount of a received Gift Card in the sheet where the user picks the receiving account.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift amount'**
+  String get paymentLinkGiftAmountLabel;
+
+  /// Screen reader label of the front of a Gift Card; {design} is the artwork name.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card, {design} design'**
+  String paymentLinkGiftCardDesignSemantic(String design);
+
+  /// Screen reader label of the message side of a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card message'**
+  String get paymentLinkGiftCardMessageSemantic;
+
+  /// Breadcrumb label of the Gift Cards section on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift cards'**
+  String get paymentLinkGiftCardsLowerBreadcrumb;
+
+  /// Title of the Gift Cards page and its breadcrumb.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift Cards'**
+  String get paymentLinkGiftCardsTitle;
+
+  /// Label of the message attached to a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift message'**
+  String get paymentLinkGiftMessageLabel;
+
+  /// Status of a group of Gift Cards while its payment is confirming.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming payment'**
+  String get paymentLinkGroupConfirmingPayment;
+
+  /// Title of the batch-creation entry shown for non-Ledger accounts.
+  ///
+  /// In en, this message translates to:
+  /// **'For a group'**
+  String get paymentLinkGroupEntryForGroup;
+
+  /// Screen reader label and title of the button that opens batch Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Create cards for a group'**
+  String get paymentLinkGroupEntryGroupSemantic;
+
+  /// Screen reader label of the button that opens batch Gift Card creation for a Ledger account; {max} is the maximum number of cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Create multiple cards, up to {max} with Ledger'**
+  String paymentLinkGroupEntryLedgerSemantic(int max);
+
+  /// Title of the batch-creation entry shown for Ledger accounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Multiple cards'**
+  String get paymentLinkGroupEntryMultipleCards;
+
+  /// Subtitle of the batch-creation entry for Ledger accounts; {max} is the maximum number of cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Up to {max} with Ledger'**
+  String paymentLinkGroupEntryUpToWithLedger(int max);
+
+  /// Message shown when a group of Gift Cards was never funded.
+  ///
+  /// In en, this message translates to:
+  /// **'This group wasn’t funded. Create it again.'**
+  String get paymentLinkGroupNotFunded;
+
+  /// Message shown for a group of Gift Cards that was created under another account.
+  ///
+  /// In en, this message translates to:
+  /// **'This group belongs to another account. Switch accounts to view it.'**
+  String get paymentLinkGroupOtherAccount;
+
+  /// Status of a group of Gift Cards whose payment status is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment status pending'**
+  String get paymentLinkGroupPaymentPending;
+
+  /// Status of a group of Gift Cards when some cards are not ready.
+  ///
+  /// In en, this message translates to:
+  /// **'Some cards aren’t ready'**
+  String get paymentLinkGroupSomeNotReady;
+
+  /// Heading above the list of Gift Card groups.
+  ///
+  /// In en, this message translates to:
+  /// **'Groups'**
+  String get paymentLinkGroupsHeading;
+
+  /// Button that moves a Gift Card to the archive list.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide card'**
+  String get paymentLinkHideCard;
+
+  /// First step of the Gift Cards explainer on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount to gift, pick a design, add a message (optional) and create your Card with a single click.'**
+  String get paymentLinkHowDesktopStepCreate;
+
+  /// Third step of the Gift Cards explainer on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient can redeem the Card in their Vizor wallet using the Link. The sender covers the deposit and redeem fees, so the recipient receives the full Card amount.'**
+  String get paymentLinkHowDesktopStepRedeem;
+
+  /// [security] Second step of the Gift Cards explainer on desktop; the link contains a secret that gives access to the funds and must only be sent to the recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'After the card is created, you will get a unique Link containing its claim secret. Send it only to the intended recipient.'**
+  String get paymentLinkHowDesktopStepShare;
+
+  /// Breadcrumb and button label that open the Gift Cards explainer on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'How gift cards work'**
+  String get paymentLinkHowGiftCardsWork;
+
+  /// Subtitle under the Gift Cards explainer title; a friendly tagline.
+  ///
+  /// In en, this message translates to:
+  /// **'A great way to celebrate anything.'**
+  String get paymentLinkHowItWorksSubtitle;
+
+  /// Title of the explainer that describes how Gift Cards are created and redeemed.
+  ///
+  /// In en, this message translates to:
+  /// **'How Gift Cards work'**
+  String get paymentLinkHowItWorksTitle;
+
+  /// First step of the Gift Cards explainer on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an amount, pick a design, and add an optional message.'**
+  String get paymentLinkHowStepCreate;
+
+  /// Third step of the Gift Cards explainer on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'The recipient opens the link in Vizor and claims the full card amount. The sender covers both fees.'**
+  String get paymentLinkHowStepRedeem;
+
+  /// [security] Second step of the Gift Cards explainer on mobile; warns that the link is a secret that gives access to the funds and must only be sent to the recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Once funding reaches the network, copy the unique link and send it only to the intended recipient.'**
+  String get paymentLinkHowStepShare;
+
+  /// Label of the link that opens the Gift Cards explainer on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'How the gift card works'**
+  String get paymentLinkHowTheCardWorks;
+
+  /// Toast shown when an incoming Gift Card link could not be read or opened.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment link could not be opened.'**
+  String get paymentLinkIntakeCouldNotOpen;
+
+  /// Toast shown when an incoming Gift Card link is rejected because too many links are already queued to open.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many payment links are waiting to open.'**
+  String get paymentLinkIntakeQueueFull;
+
+  /// Error shown when checking a received Gift Card was interrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Card check was interrupted. Try again.'**
+  String get paymentLinkInterruptedCheckMessage;
+
+  /// Hint under the invalid-link title telling the user to copy the link again.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy the link & try again'**
+  String get paymentLinkInvalidSubtitle;
+
+  /// Title shown when the pasted Gift Card link is not valid.
+  ///
+  /// In en, this message translates to:
+  /// **'The link doesn’t look legit.'**
+  String get paymentLinkInvalidTitle;
+
+  /// Error on the Keystone signing screen when the funding transaction could not be sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card funding could not be broadcast.'**
+  String get paymentLinkKeystoneBroadcastFailed;
+
+  /// Title of the Keystone signing screen while the funding transaction is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasting gift card funding'**
+  String get paymentLinkKeystoneBroadcastingTitle;
+
+  /// Status on the mobile Keystone signing screen while the Gift Card is created after signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating your gift card…'**
+  String get paymentLinkKeystoneCreatingGiftCard;
+
+  /// Error on the Keystone signing screen when the network response did not confirm the funding transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'The funding status is uncertain. Check activity before trying again.'**
+  String get paymentLinkKeystoneFundingUncertain;
+
+  /// Caption on the mobile Keystone signing screen asking the user to scan the signature QR code shown on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code on your Keystone to finish creating'**
+  String get paymentLinkKeystoneScanCaption;
+
+  /// Title of the Keystone signing screen on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign gift card on Keystone'**
+  String get paymentLinkKeystoneSignTitle;
+
+  /// Error on the Keystone signing screen when signing failed for another reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card signing could not be completed.'**
+  String get paymentLinkKeystoneSigningFailed;
+
+  /// [security] Warning that the newly created Gift Card links must be saved or copied before the user leaves, otherwise the funds are lost.
+  ///
+  /// In en, this message translates to:
+  /// **'Save these gift cards before leaving this screen.'**
+  String get paymentLinkLeaveSaveMany;
+
+  /// [security] Warning that the newly created Gift Card link must be saved or copied before the user leaves, otherwise the funds are lost.
+  ///
+  /// In en, this message translates to:
+  /// **'Save this gift card before leaving this screen.'**
+  String get paymentLinkLeaveSaveOne;
+
+  /// Error shown on the Gift Card signing screen when the funding transaction expired or the network rejected it.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card transaction expired or was rejected. Go back to create a new gift card.'**
+  String get paymentLinkLedgerFundingExpired;
+
+  /// Message on the Ledger signing screen when the user rejected the funding transaction on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'The gift card funding was rejected on your Ledger.'**
+  String get paymentLinkLedgerFundingRejected;
+
+  /// Message on the Ledger signing screen when the funding transaction was already saved and the user should retry to finish.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card funding is saved for recovery. Try again to check its status and finish saving.'**
+  String get paymentLinkLedgerSavedForRecovery;
+
+  /// Toast shown after a Gift Card link was copied to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift link copied'**
+  String get paymentLinkLinkCopied;
+
+  /// Toast shown after a Gift Card link was copied but its shared status could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift link copied, but its status could not be updated.'**
+  String get paymentLinkLinkCopiedStatusFailed;
+
+  /// Toast shown when copying a Gift Card link failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift link could not be copied.'**
+  String get paymentLinkLinkCopyFailed;
+
+  /// Toast shown when saving the links of a group of Gift Cards to a file failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card links could not be saved. Try again.'**
+  String get paymentLinkLinksSaveFailed;
+
+  /// Toast shown after the links of a group of Gift Cards were saved to a file.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card links saved'**
+  String get paymentLinkLinksSaved;
+
+  /// Screen reader label shown while a Gift Card is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading gift card'**
+  String get paymentLinkLoadingGiftCard;
+
+  /// Body of the long-scan warning shown before checking a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor needs to scan more history than usual before it can verify the balance. This is safe, but it may take a long time.'**
+  String get paymentLinkLongSyncBody;
+
+  /// Button in the long-scan warning that starts checking the Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Check gift card'**
+  String get paymentLinkLongSyncConfirm;
+
+  /// Reassurance in the long-scan warning that the user can leave without starting the scan.
+  ///
+  /// In en, this message translates to:
+  /// **'You can go back without starting the scan.'**
+  String get paymentLinkLongSyncSupporting;
+
+  /// Title of the warning shown before checking a Gift Card that needs a long wallet scan.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card may take a while'**
+  String get paymentLinkLongSyncTitle;
+
+  /// Subtitle of the message step and the review step of mobile Gift Card creation; the message is stored as an encrypted memo.
+  ///
+  /// In en, this message translates to:
+  /// **'Attach a short encrypted memo (optional).'**
+  String get paymentLinkMemoOptionalSubtitle;
+
+  /// Title shown when a gift message is attached to a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Message attached.'**
+  String get paymentLinkMessageAttachedTitle;
+
+  /// Screen reader label of the text field for a Gift Card message.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card message input'**
+  String get paymentLinkMessageInputSemantic;
+
+  /// Title of the message step of mobile Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a message'**
+  String get paymentLinkMessageStepTitle;
+
+  /// Error under the Gift Card message field when the message does not fit in the memo.
+  ///
+  /// In en, this message translates to:
+  /// **'This message is too large. Try using fewer complex emoji.'**
+  String get paymentLinkMessageTooLarge;
+
+  /// Title of the page listing the user's own Gift Cards on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'My Cards'**
+  String get paymentLinkMyCards;
+
+  /// Status label on the Ledger signing screen when the request cannot be retried and a new gift card must be created.
+  ///
+  /// In en, this message translates to:
+  /// **'New gift card required'**
+  String get paymentLinkNewGiftCardRequired;
+
+  /// Error shown when no account is active while creating a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'No active account is available.'**
+  String get paymentLinkNoActiveAccountAvailable;
+
+  /// Empty-state text on the Created tab of the Gift Cards page.
+  ///
+  /// In en, this message translates to:
+  /// **'No created cards yet.'**
+  String get paymentLinkNoCreatedCardsText;
+
+  /// Empty-state text on the Received tab of the Gift Cards page.
+  ///
+  /// In en, this message translates to:
+  /// **'No received cards yet.'**
+  String get paymentLinkNoReceivedCardsText;
+
+  /// Screen reader label of a batch row that is being checked, read as the last part of the description.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking'**
+  String get paymentLinkOpenGroupChecking;
+
+  /// Screen reader label of a batch row; {date} is the creation date.
+  ///
+  /// In en, this message translates to:
+  /// **'created {date}'**
+  String paymentLinkOpenGroupCreated(String date);
+
+  /// Screen reader label of a batch row; {amount} is the amount of one card.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} each'**
+  String paymentLinkOpenGroupEach(String amount);
+
+  /// Screen reader label of a batch row; first part of the description, {count} is the number of cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Open group of {count} gift cards'**
+  String paymentLinkOpenGroupSemantic(int count);
+
+  /// Button that pastes the Gift Card link from the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste card link'**
+  String get paymentLinkPasteLabel;
+
+  /// Tooltip and screen reader label of the button that turns privacy mode off, which hides amounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off privacy mode'**
+  String get paymentLinkPrivacyModeOff;
+
+  /// Tooltip and screen reader label of the button that turns privacy mode on, which hides amounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on privacy mode'**
+  String get paymentLinkPrivacyModeOn;
+
+  /// Two-line heading on the shareable Gift Card QR image; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'You’ve\ngot ZEC'**
+  String get paymentLinkQrCardHeading;
+
+  /// Caption on the shareable Gift Card QR image telling the recipient to scan it.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan to redeem'**
+  String get paymentLinkQrCardScanToRedeem;
+
+  /// Screen reader label of the shareable Gift Card QR image.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card QR code'**
+  String get paymentLinkQrCardSemantic;
+
+  /// Message shown in place of the Gift Card QR image when it could not be drawn.
+  ///
+  /// In en, this message translates to:
+  /// **'QR code could not be generated'**
+  String get paymentLinkQrCouldNotBeGenerated;
+
+  /// Toast shown when saving the Gift Card QR image failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card QR could not be saved.'**
+  String get paymentLinkQrSaveFailed;
+
+  /// Toast shown after the Gift Card QR image was saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card QR saved'**
+  String get paymentLinkQrSaved;
+
+  /// Toast shown after the Gift Card QR image was saved but its shared status could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card QR saved, but its status could not be updated.'**
+  String get paymentLinkQrSavedStatusFailed;
+
+  /// Heading shown when a created Gift Card is ready to be shared.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to share'**
+  String get paymentLinkReadyHeading;
+
+  /// Message shown when finishing the receipt of a Gift Card failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t finish receiving this gift. Try again to check its status.'**
+  String get paymentLinkReceiveFinishFailed;
+
+  /// Label above the account that will receive a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive to'**
+  String get paymentLinkReceiveToLabel;
+
+  /// Error shown in place of the received Gift Cards list when loading it failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Received gift cards could not be loaded.'**
+  String get paymentLinkReceivedCardsLoadFailed;
+
+  /// Heading shown when a Gift Card was received.
+  ///
+  /// In en, this message translates to:
+  /// **'You’ve received a gift!'**
+  String get paymentLinkReceivedGiftHeading;
+
+  /// Two-line heading on the desktop screen for a received Gift Card; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'You’ve received\na gift card!'**
+  String get paymentLinkReceivedHeadingDesktop;
+
+  /// Message shown when the receiving account changed while a Gift Card was being claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving account changed. Open the gift card again to continue.'**
+  String get paymentLinkReceivingAccountChangedReopen;
+
+  /// Message shown when the receiving account changed while a Gift Card was being checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving account changed. Try again to check this gift.'**
+  String get paymentLinkReceivingAccountChangedRetry;
+
+  /// Status label of a received Gift Card while it is being received.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving…'**
+  String get paymentLinkReceivingStatus;
+
+  /// Button or entry label that starts redeeming a Gift Card someone sent the user.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeem a card'**
+  String get paymentLinkRedeemCardLabel;
+
+  /// Title of the desktop setup steps shown while redeeming a Gift Card into a new account.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeem the card'**
+  String get paymentLinkRedeemCardStepTitle;
+
+  /// Subtitle of the mobile redeem screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste a card link or scan its QR code.'**
+  String get paymentLinkRedeemPasteOrScan;
+
+  /// Instruction on the redeem screen asking the user to paste the received Gift Card link.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy the card link you’ve received, and paste it below.'**
+  String get paymentLinkRedeemSubtitle;
+
+  /// Title of the screen where a recipient redeems a received Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeem the Card'**
+  String get paymentLinkRedeemTheCardTitle;
+
+  /// [security] Warning in the remove-account and reset dialogs when the app could not check for funded Gift Card links that were never shared; {action} is reset or remove.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check for unshared gift card links. Copy any links you still need before {action, select, reset{resetting Vizor} other{removing this account}}.'**
+  String paymentLinkRemovalWarningCheckFailed(String action);
+
+  /// [security] Warning in the remove-account and reset dialogs that funded Gift Card links which were never shared will be permanently lost; {count} is how many, {subject} is reset or remove.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 funded gift card link has not been shared. {subject, select, reset{Resetting Vizor} other{Removing this account}} loses it. Copy the link first.} other{{count} funded gift card links have not been shared. {subject, select, reset{Resetting Vizor} other{Removing this account}} loses them. Copy the links first.}}'**
+  String paymentLinkRemovalWarningUnshared(int count, String subject);
+
+  /// Confirm button of the dialog for removing a Gift Card from the list.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove card'**
+  String get paymentLinkRemoveCardLabel;
+
+  /// [security] Warning in the remove-card dialog that removing the card, and with it access to its link, is irreversible.
+  ///
+  /// In en, this message translates to:
+  /// **'This can\'t be undone.'**
+  String get paymentLinkRemoveCardSupporting;
+
+  /// Title of the confirmation dialog for removing a Gift Card from the list.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove this card?'**
+  String get paymentLinkRemoveCardTitle;
+
+  /// Button that moves an archived Gift Card back to the active list.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore card'**
+  String get paymentLinkRestoreCard;
+
+  /// Screen reader label of the control that reveals the message on a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Reveal gift card message'**
+  String get paymentLinkRevealMessageSemanticLabel;
+
+  /// Button that continues to the review step of Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Review & confirm'**
+  String get paymentLinkReviewAndConfirm;
+
+  /// Title of the review step of mobile Gift Card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Review a Card'**
+  String get paymentLinkReviewCardTitle;
+
+  /// Button that saves the Gift Card QR code image.
+  ///
+  /// In en, this message translates to:
+  /// **'Save QR code'**
+  String get paymentLinkSaveQrCode;
+
+  /// Button label while a Gift Card is being saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving…'**
+  String get paymentLinkSaving;
+
+  /// Hint shown when a scanned Gift Card QR code could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan again or paste another card link.'**
+  String get paymentLinkScanAgainOrPaste;
+
+  /// Message shown on the desktop scan screen when no camera is available.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect a camera to scan the gift card QR code, or go back to paste the card link.'**
+  String get paymentLinkScanCameraHint;
+
+  /// Screen reader label of the camera preview in the Gift Card QR scanner sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the gift card QR code'**
+  String get paymentLinkScanSheetSemantic;
+
+  /// Title of the Gift Card QR scanner sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan gift card QR'**
+  String get paymentLinkScanSheetTitle;
+
+  /// Instruction on the desktop scan screen to hold the Gift Card QR code in front of the camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the gift card QR code to your camera'**
+  String get paymentLinkScanShowQrToCamera;
+
+  /// Screen reader label of the back of a received Gift Card, which shows the sender's message; {message} is the sender's text.
+  ///
+  /// In en, this message translates to:
+  /// **'Sender message: {message}; Show gift card front'**
+  String paymentLinkSenderMessageSemantic(String message);
+
+  /// Button that shares the Gift Card image and link through the system share sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Share card'**
+  String get paymentLinkShareCard;
+
+  /// Toast shown when sharing a Gift Card link failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift link could not be shared.'**
+  String get paymentLinkShareFailed;
+
+  /// Toast shown when sharing a Gift Card failed and copying the link is suggested.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t share this gift card. Copy the link instead.'**
+  String get paymentLinkShareFailedCopyInstead;
+
+  /// Title of the desktop dialog where a created Gift Card is shared.
+  ///
+  /// In en, this message translates to:
+  /// **'Share Gift Card'**
+  String get paymentLinkShareGiftCardTitle;
+
+  /// [security] Instruction on the Gift Card ready screen; the link is a secret that gives access to the funds and must only be shared with the intended recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Share this link with the intended recipient so they can claim the Card using their Vizor app.'**
+  String get paymentLinkShareLinkInstruction;
+
+  /// [security] Two-line instruction on the desktop Gift Card ready screen; the link is a secret that gives access to the funds and must only be shared with the intended recipient. The line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Share this link with the intended recipient so they\ncan claim the Card using their Vizor app.'**
+  String get paymentLinkShareLinkInstructionDesktop;
+
+  /// Title of the sheet where a created Gift Card is shared.
+  ///
+  /// In en, this message translates to:
+  /// **'Share gift card'**
+  String get paymentLinkShareSheetTitle;
+
+  /// Description while the created Gift Card is not yet ready to share.
+  ///
+  /// In en, this message translates to:
+  /// **'We’re getting your gift card ready to share.'**
+  String get paymentLinkShareWaitingDescription;
+
+  /// Toast shown after a Gift Card was shared but its shared status could not be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card shared, but its status could not be updated.'**
+  String get paymentLinkSharedStatusFailed;
+
+  /// Button label while a Gift Card is being shared.
+  ///
+  /// In en, this message translates to:
+  /// **'Sharing…'**
+  String get paymentLinkSharing;
+
+  /// Screen reader label of the control that turns a Gift Card back to its front.
+  ///
+  /// In en, this message translates to:
+  /// **'Show gift card front'**
+  String get paymentLinkShowCardFrontSemantic;
+
+  /// Screen reader label of the button that opens the Gift Cards explainer.
+  ///
+  /// In en, this message translates to:
+  /// **'Show how gift cards work'**
+  String get paymentLinkShowHowCardsWork;
+
+  /// Screen reader label of the button that shows the QR code of a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Show gift card QR code'**
+  String get paymentLinkShowQrSemantic;
+
+  /// Button that skips adding a message to a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip message'**
+  String get paymentLinkSkipMessage;
+
+  /// Placeholder of the message field on the back of a Gift Card being written.
+  ///
+  /// In en, this message translates to:
+  /// **'Start typing…'**
+  String get paymentLinkStartTyping;
+
+  /// Screen reader label of the button that starts writing a message on a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Start writing gift card message'**
+  String get paymentLinkStartWritingMessage;
+
+  /// Label of the second step in the Gift Card creation stepper.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Message'**
+  String get paymentLinkStepAddMessage;
+
+  /// Label of the first step in the Gift Card creation stepper.
+  ///
+  /// In en, this message translates to:
+  /// **'Create'**
+  String get paymentLinkStepCreate;
+
+  /// Label of the third step in the Gift Card creation stepper.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get paymentLinkStepReview;
+
+  /// [security] Error shown when saving a Gift Card failed again; the user must retry before closing the app or the card link is lost.
+  ///
+  /// In en, this message translates to:
+  /// **'The gift card still could not be saved. Try again before closing Vizor.'**
+  String get paymentLinkStillNotSaved;
+
+  /// Hint under a received Gift Card on touch devices explaining how to read its message.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap on the card to reveal the message.'**
+  String get paymentLinkTapToRevealMessage;
+
+  /// Two-line hint under a received Gift Card on mobile explaining how to read its message; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap on the card to reveal\nthe message.'**
+  String get paymentLinkTapToRevealMessageTwoLines;
+
+  /// Screen reader label of the info button next to the total Gift Card amount on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'About the total gift card amount'**
+  String get paymentLinkTotalAmountHelpSemantic;
+
+  /// Label of the row showing the total amount taken from the wallet to create a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'Total amount deducted'**
+  String get paymentLinkTotalDeductedLabel;
+
+  /// Button that retries saving a Gift Card after saving failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Try saving again'**
+  String get paymentLinkTrySavingAgain;
+
+  /// Section heading above Gift Cards that nobody has claimed yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Unused'**
+  String get paymentLinkUnusedSectionLabel;
+
+  /// Summary of a group of Gift Cards when every card has been used.
+  ///
+  /// In en, this message translates to:
+  /// **'All used'**
+  String get paymentLinkUsageAllUsed;
+
+  /// Explanation of the Unverified usage status: the funded amount differs from the card amount.
+  ///
+  /// In en, this message translates to:
+  /// **'The observed funding amount does not match the expected card funding.'**
+  String get paymentLinkUsageAmountMismatch;
+
+  /// Explanation under the usage status of a new Gift Card: the link can be shared while the funding payment confirms.
+  ///
+  /// In en, this message translates to:
+  /// **'Your link is ready to share. Usage tracking will begin once the funding transaction is confirmed.'**
+  String get paymentLinkUsageAwaitingConfirmation;
+
+  /// Tooltip and caption showing the usage status of a Gift Card; {label} is the status and {suffix} is checking, failed or none to append the refresh state.
+  ///
+  /// In en, this message translates to:
+  /// **'Card use: {label}{suffix, select, checking{ · Checking…} failed{ · Update failed} other{}}'**
+  String paymentLinkUsageCardUse(String label, String suffix);
+
+  /// Explanation of the Unverified usage status: the funding transaction was not found in the scanned history.
+  ///
+  /// In en, this message translates to:
+  /// **'The funding transaction could not yet be verified in the tracking history.'**
+  String get paymentLinkUsageFundingNotObserved;
+
+  /// Caption showing when the Gift Card usage was last checked; {time} is a formatted date and time.
+  ///
+  /// In en, this message translates to:
+  /// **'Last checked: {time}'**
+  String paymentLinkUsageLastChecked(String time);
+
+  /// Explanation of the Unverified usage status: the saved funding details are missing.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved funding information is incomplete, so usage could not be verified.'**
+  String get paymentLinkUsageMissingFundingInfo;
+
+  /// Explanation of the Unverified usage status when no specific reason is known.
+  ///
+  /// In en, this message translates to:
+  /// **'There is not enough information yet to verify whether this card has been used.'**
+  String get paymentLinkUsageNotEnoughInfo;
+
+  /// Explanation of the Unverified usage status: the wallet scan has not yet reached the funding transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'The tracking history has not yet reached the funding transaction.'**
+  String get paymentLinkUsageScanIncomplete;
+
+  /// Screen reader description of the inline Gift Card usage status; {state} is checking, failed or none, and {explanation} is the usage explanation when {hasExplanation} is true.
+  ///
+  /// In en, this message translates to:
+  /// **'Card use: {label}{state, select, checking{. Checking} failed{. Update failed} other{}}{hasExplanation, select, true{. {explanation}} other{}}'**
+  String paymentLinkUsageSemantics(
+    String label,
+    String state,
+    String hasExplanation,
+    String explanation,
+  );
+
+  /// Summary of a group of Gift Cards; {unused} is how many cards are unused out of {count}.
+  ///
+  /// In en, this message translates to:
+  /// **'{unused} of {count} unused'**
+  String paymentLinkUsageUnusedOfCount(int unused, int count);
+
+  /// Usage status of a Gift Card whose usage could not be verified.
+  ///
+  /// In en, this message translates to:
+  /// **'Unverified'**
+  String get paymentLinkUsageUnverified;
+
+  /// Usage status of a Gift Card when the app saw funds leave the card but has not confirmed the claim.
+  ///
+  /// In en, this message translates to:
+  /// **'Use detected'**
+  String get paymentLinkUsageUseDetected;
+
+  /// Summary of a group of Gift Cards; {used} is how many cards were used out of {count}.
+  ///
+  /// In en, this message translates to:
+  /// **'{used} of {count} used'**
+  String paymentLinkUsageUsedOfCount(int used, int count);
+
+  /// Reason shown on the disabled USD toggle when the amount is too small to enter in US dollars.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount is too small for USD input.'**
+  String get paymentLinkUsdAmountTooSmall;
+
+  /// Reason shown on the disabled USD toggle while the ZEC price in US dollars is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetching USD price…'**
+  String get paymentLinkUsdFetchingPrice;
+
+  /// Reason shown on the disabled USD toggle when the ZEC price in US dollars could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'USD price unavailable'**
+  String get paymentLinkUsdPriceUnavailable;
+
+  /// Screen reader label of the control that fills in the maximum Gift Card amount; {amount} is the formatted maximum and {currency} its currency symbol.
+  ///
+  /// In en, this message translates to:
+  /// **'Use max: {amount} {currency}'**
+  String paymentLinkUseMaxCurrencySemantic(String amount, String currency);
+
+  /// Visible text and screen reader label of the control that fills in the maximum Gift Card amount; {amount} is the formatted maximum.
+  ///
+  /// In en, this message translates to:
+  /// **'Use max: {amount}'**
+  String paymentLinkUseMaxSemantic(String amount);
+
+  /// Section heading above Gift Cards that have already been claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Used'**
+  String get paymentLinkUsedSectionLabel;
+
+  /// Action button on a toast or row that opens a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'View card'**
+  String get paymentLinkViewCardAction;
+
+  /// Status label of a received Gift Card telling the user how long until it can be claimed; {minutes}:{seconds} is a countdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait {minutes}:{seconds} to claim'**
+  String paymentLinkWaitToClaim(int minutes, String seconds);
+
+  /// Sample status label (preview only) telling the user how long to wait before a received Gift Card can be claimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait 3:45 to claim'**
+  String get paymentLinkWaitToClaimSample;
+
+  /// Status label of a created Gift Card telling the user how long until the link is available; {minutes}:{seconds} is a countdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait {minutes}:{seconds} to get the link'**
+  String paymentLinkWaitToGetLink(int minutes, String seconds);
+
+  /// Secondary line shown while a Gift Card is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'This may take a little while.'**
+  String get paymentLinkWaitingDescription;
+
+  /// Sample status label (preview only) telling the user how long to wait before the Gift Card link is available.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait 1:15 to get the link'**
+  String get paymentLinkWaitingStatusLabel;
+
+  /// Error shown on the account setup screen after redeeming a Gift Card when saving the new wallet could not be finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t finish saving your wallet. Try again.'**
+  String get paymentLinkWalletSaveRecoveryFailed;
 
   /// Toast shown when a payment request link waited too long before it could be opened.
   ///
@@ -5801,12 +13154,6 @@ abstract class AppLocalizations {
   /// **'Couldn\'t copy the request link. Try sharing it instead.'**
   String get receiveRequestCopyFailed;
 
-  /// Button and accessibility label on the mobile payment request result that copies the request link.
-  ///
-  /// In en, this message translates to:
-  /// **'Copy link'**
-  String get receiveRequestCopyLink;
-
   /// Button on the desktop payment request result that copies the request link.
   ///
   /// In en, this message translates to:
@@ -6047,12 +13394,6 @@ abstract class AppLocalizations {
   /// **'Enter address to continue'**
   String get sendEnterAddressToContinue;
 
-  /// Accessibility label of the control that switches the amount input to {currency}, such as ZEC or USD.
-  ///
-  /// In en, this message translates to:
-  /// **'Enter amount in {currency}'**
-  String sendEnterAmountInCurrency(String currency);
-
   /// [security] Error shown when the user tries to continue without a valid recipient address.
   ///
   /// In en, this message translates to:
@@ -6221,12 +13562,6 @@ abstract class AppLocalizations {
   /// **'Invalid amount'**
   String get sendInvalidAmount;
 
-  /// [security] Title of the desktop Keystone signing modal and label of the review button for a Keystone account.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirm with Keystone'**
-  String get sendKeystoneConfirmTitle;
-
   /// Error on the mobile review screen when the Keystone signing request could not be prepared.
   ///
   /// In en, this message translates to:
@@ -6238,12 +13573,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Keystone signing could not be prepared. Return to Send and try again.'**
   String get sendKeystonePrepareFailedReturnToSend;
-
-  /// Disabled primary button label in the desktop Keystone modal while proofs are being prepared.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing'**
-  String get sendKeystonePreparing;
 
   /// [security] Error when the scanned signature QR code does not belong to the signing request currently displayed.
   ///
@@ -6275,29 +13604,11 @@ abstract class AppLocalizations {
   /// **'Scan now. Signature import unlocks after proofs are ready.'**
   String get sendKeystoneScanNow;
 
-  /// Label shown over the scanner while the signature QR code is being decoded.
-  ///
-  /// In en, this message translates to:
-  /// **'Reading signature...'**
-  String get sendKeystoneScanReading;
-
-  /// [security] Subtitle of the desktop Keystone signing modal asking the user to scan the QR code with the device.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan with your Keystone'**
-  String get sendKeystoneScanSubtitle;
-
   /// Caption under the camera view asking the user to scan the signature QR code shown on the Keystone to finish sending.
   ///
   /// In en, this message translates to:
   /// **'Scan the QR code on your Keystone to finish sending'**
   String get sendKeystoneScanToFinish;
-
-  /// Hint when the scanned QR code is of the wrong type; asks to open the signed transaction QR code on the Keystone device.
-  ///
-  /// In en, this message translates to:
-  /// **'Open the signed transaction QR on Keystone, then scan again.'**
-  String get sendKeystoneScanUnexpectedTransaction;
 
   /// [security] Instruction on the mobile Keystone screen for a TEX send that needs two device approvals; {index} is 1 or 2.
   ///
@@ -6365,12 +13676,6 @@ abstract class AppLocalizations {
   /// **'Keep Vizor open and retry saving. No new Ledger approval needed.'**
   String get sendLedgerKeepOpenRetrySaving;
 
-  /// Title of the failure panel when the Ledger device needs the user to act (unlock, open the app, reconnect).
-  ///
-  /// In en, this message translates to:
-  /// **'Ledger needs attention'**
-  String get sendLedgerNeedsAttentionTitle;
-
   /// [security] Failure message when the user declined the transaction on their Ledger device.
   ///
   /// In en, this message translates to:
@@ -6388,12 +13693,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Signed transaction needs attention'**
   String get sendLedgerSignedNeedsAttentionTitle;
-
-  /// Generic Ledger failure message asking the user to check the device and retry.
-  ///
-  /// In en, this message translates to:
-  /// **'Ledger signing could not be completed. Check your device and try again.'**
-  String get sendLedgerSigningIncomplete;
 
   /// Title of the failure panel when the Ledger cannot sign this kind of transaction.
   ///
@@ -6515,12 +13814,6 @@ abstract class AppLocalizations {
   /// **'Amount not specified'**
   String get sendPaymentRequestAmountNotSpecified;
 
-  /// Label of the primary button on the payment request card that reruns the check.
-  ///
-  /// In en, this message translates to:
-  /// **'Check again'**
-  String get sendPaymentRequestCheckAgain;
-
   /// [security] Warning that a payment request link can be altered by other apps, so the address or amount may not be what the requester intended.
   ///
   /// In en, this message translates to:
@@ -6586,12 +13879,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Confirm the details with the person who sent it.'**
   String get sendPaymentRequestConfirmWithSender;
-
-  /// Label of the primary button on the payment request card for a request without an amount.
-  ///
-  /// In en, this message translates to:
-  /// **'Enter amount'**
-  String get sendPaymentRequestEnterAmount;
 
   /// Accessibility label of the control that collapses the full recipient address.
   ///
@@ -6875,24 +14162,6 @@ abstract class AppLocalizations {
   /// **'Show the requester’s original QR code to your camera'**
   String get sendRequestScanSubtitle;
 
-  /// Troubleshooting tip suggesting Continuity Camera on a Mac.
-  ///
-  /// In en, this message translates to:
-  /// **'On a Mac, you can use Continuity Camera to scan with your iPhone instead.'**
-  String get sendRequestScanTipContinuity;
-
-  /// Troubleshooting tip when the QR code cannot be scanned.
-  ///
-  /// In en, this message translates to:
-  /// **'Move the QR code a few inches further from the camera so it can focus.'**
-  String get sendRequestScanTipDistance;
-
-  /// Troubleshooting tip when the QR code cannot be scanned.
-  ///
-  /// In en, this message translates to:
-  /// **'Make sure the room is well-lit and the QR code isn\'t reflecting glare.'**
-  String get sendRequestScanTipLight;
-
   /// Troubleshooting tip when the payment request QR code cannot be scanned.
   ///
   /// In en, this message translates to:
@@ -6958,12 +14227,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Finishing wallet sync...'**
   String get sendReviewFinishingSyncButton;
-
-  /// Label of the review button while the transaction is being prepared.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing...'**
-  String get sendReviewPreparing;
 
   /// Line under the amount on the payment-request review screen showing the amount the requester asked for; {amount} is a formatted amount with currency.
   ///
@@ -7613,12 +14876,6 @@ abstract class AppLocalizations {
   /// **'Couldn\'t update your password. Please try again.'**
   String get settingsPasswordUpdateFailed;
 
-  /// Name of a built-in profile picture (a knight character).
-  ///
-  /// In en, this message translates to:
-  /// **'Knight'**
-  String get settingsPfpKnight;
-
   /// Name of a built-in profile picture (a samurai character).
   ///
   /// In en, this message translates to:
@@ -7630,12 +14887,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Viking'**
   String get settingsPfpViking;
-
-  /// Name of a built-in profile picture (a wizard character).
-  ///
-  /// In en, this message translates to:
-  /// **'Wizard'**
-  String get settingsPfpWizard;
 
   /// Status while the server list is being refreshed.
   ///
@@ -7906,12 +15157,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Personal'**
   String get settingsSectionPersonal;
-
-  /// Heading of the Settings card that holds the keep-screen-awake option.
-  ///
-  /// In en, this message translates to:
-  /// **'Syncing'**
-  String get settingsSectionSyncing;
 
   /// Heading of the Settings group with endpoint, explorer, theme and language.
   ///
@@ -8188,12 +15433,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connected'**
   String get settingsTorStatusConnected;
-
-  /// Tor status label while the Tor connection is being established.
-  ///
-  /// In en, this message translates to:
-  /// **'Connecting…'**
-  String get settingsTorStatusConnecting;
 
   /// Tor status label when connecting to Tor failed (desktop).
   ///
@@ -8711,29 +15950,11 @@ abstract class AppLocalizations {
   /// **'Hide balance'**
   String get sidebarHideBalance;
 
-  /// Button in the sidebar account menu that opens account management.
-  ///
-  /// In en, this message translates to:
-  /// **'Manage'**
-  String get sidebarManageAccounts;
-
-  /// Sidebar Ironwood migration item while the migration runs.
-  ///
-  /// In en, this message translates to:
-  /// **'Migrating...'**
-  String get sidebarMigrating;
-
   /// Sidebar Ironwood migration item when the user must act.
   ///
   /// In en, this message translates to:
   /// **'Needs input'**
   String get sidebarMigrationNeedsInput;
-
-  /// Sidebar Ironwood migration item after a network upgrade stopped it.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration stopped'**
-  String get sidebarMigrationStopped;
 
   /// Heading of the sidebar account menu.
   ///
@@ -8764,12 +15985,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add refund address'**
   String get swapActionAddRefundAddress;
-
-  /// Primary button label on the mobile swap screen that opens the review.
-  ///
-  /// In en, this message translates to:
-  /// **'Continue to review'**
-  String get swapActionContinueToReview;
 
   /// Primary button label on the swap screen while a quote is loading.
   ///
@@ -9519,6 +16734,162 @@ abstract class AppLocalizations {
   /// **'Dismiss'**
   String get swapDismissBarrierLabel;
 
+  /// Swap or Pay quote error: the amount has more decimal places than the token supports.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount has too many decimal places.\nUse fewer decimals and try again.'**
+  String get swapFailureAmountPrecision;
+
+  /// Pay error under the amount field: the payment provider rejected the amount as below its minimum.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount is too low for this payment.\nTry a larger amount.'**
+  String get swapFailureAmountTooLowPay;
+
+  /// Swap error under the amount field: the swap provider rejected the amount as below its minimum.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount is too low for this swap.\nTry a larger amount.'**
+  String get swapFailureAmountTooLowSwap;
+
+  /// Swap or Pay error: the provider does not currently offer the chosen asset.
+  ///
+  /// In en, this message translates to:
+  /// **'This asset is not available for swap right now.\nChoose another asset or try again later.'**
+  String get swapFailureAssetUnavailable;
+
+  /// Swap status panel: the provider has not seen the deposit transaction yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit is not indexed yet.\nCheck again in a few minutes.'**
+  String get swapFailureDepositNotIndexed;
+
+  /// [security] Swap status panel: the provider rejected the submitted deposit transaction. Tells the user which deposit details to check.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.'**
+  String get swapFailureDepositRejected;
+
+  /// Swap status panel: telling the provider about the deposit transaction failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit status could not be submitted.\nTry again later.'**
+  String get swapFailureDepositSubmitFailed;
+
+  /// Swap or Pay quote error: no provider can fill this route or amount.
+  ///
+  /// In en, this message translates to:
+  /// **'No quote is available for this route or amount.\nAdjust the amount, slippage, or asset and try again.'**
+  String get swapFailureNoQuote;
+
+  /// Swap or Pay error: the quote request to the provider timed out.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote request timed out.\nCheck your connection and try again.'**
+  String get swapFailureQuoteTimeout;
+
+  /// Swap or Pay error: requesting a quote failed for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote is unavailable right now.\nTry again later.'**
+  String get swapFailureQuoteUnavailable;
+
+  /// Swap or Pay error: the provider's quote did not match the request or was malformed, so the wallet refused it.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote response could not be verified.\nTry again later.'**
+  String get swapFailureQuoteUnverified;
+
+  /// Swap status panel: checking the swap status with the provider failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not refresh swap status.\nTry again later.'**
+  String get swapFailureRefreshFailed;
+
+  /// Swap or Pay error: a request to the swap provider timed out.
+  ///
+  /// In en, this message translates to:
+  /// **'Request timed out.\nCheck your connection and try again.'**
+  String get swapFailureRequestTimeout;
+
+  /// Swap or Pay error: a provider response was malformed, so the wallet refused it.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap response could not be verified.\nTry again later.'**
+  String get swapFailureResponseUnverified;
+
+  /// Swap or Pay error: the provider rejected the asset route or the destination/refund address.
+  ///
+  /// In en, this message translates to:
+  /// **'This route or address was rejected.\nEdit the details and request a new quote.'**
+  String get swapFailureRouteRejected;
+
+  /// Swap or Pay error: the swap provider is down or refused the request.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap service is temporarily unavailable.\nTry again later.'**
+  String get swapFailureServiceUnavailable;
+
+  /// Swap or Pay error on review: starting the swap with the provider failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap could not be started.\nTry again later.'**
+  String get swapFailureStartFailed;
+
+  /// [security] Swap status panel: the provider reports a status for an asset pair this wallet does not support. Warns the user not to send the deposit again.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap status uses an unsupported asset pair.\nDo not resend funds. Try again later.'**
+  String get swapFailureStatusAssetUnsupported;
+
+  /// Swap or Pay status panel: the provider status check failed for a temporary reason; the screen keeps retrying. Two lines: what happened, then what happens next.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t refresh the latest status.\nWe\'ll keep trying and update this screen automatically.'**
+  String get swapFailureStatusAutoRefresh;
+
+  /// Swap or Pay error: the provider asked the wallet to retry later (busy or rate limited).
+  ///
+  /// In en, this message translates to:
+  /// **'Swap service is still processing.\nWait a moment and try again.'**
+  String get swapFailureStillProcessing;
+
+  /// Swap or Pay error: the list of supported tokens failed to load.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap tokens could not be loaded.\nTry again later.'**
+  String get swapFailureTokensUnavailable;
+
+  /// Pay error: the payment provider blocks requests from Tor exit nodes. Tells the user how to pay anyway.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay is unavailable over Tor because the service blocked this connection.\nTurn off Tor in Settings to pay.'**
+  String get swapFailureTorBlockedPay;
+
+  /// Swap error: the swap provider blocks requests from Tor exit nodes. Tells the user how to swap anyway.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap is unavailable over Tor because the service blocked this connection.\nTurn off Tor in Settings to use swap.'**
+  String get swapFailureTorBlockedSwap;
+
+  /// Swap error when preparing the ZEC deposit: the spendable balance cannot cover the amount plus the network fee. Max is the button that fills the largest amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Not enough spendable ZEC to cover this swap and its network fee.\nTry a smaller amount or use Max.'**
+  String get swapFailureZecDepositFunding;
+
+  /// Swap error: the wallet could not build the ZEC deposit transaction before starting the swap.
+  ///
+  /// In en, this message translates to:
+  /// **'ZEC deposit could not be prepared.\nCheck your balance and try again.'**
+  String get swapFailureZecDepositPreflight;
+
+  /// Swap or Pay error: sending the ZEC deposit transaction failed.
+  ///
+  /// In en, this message translates to:
+  /// **'ZEC deposit could not be sent.\nTry again later.'**
+  String get swapFailureZecDepositSendFailed;
+
   /// [security] Error in swap Keystone signing when broadcasting failed.
   ///
   /// In en, this message translates to:
@@ -9555,23 +16926,11 @@ abstract class AppLocalizations {
   /// **'Keystone does not support TEX sends yet.'**
   String get swapKeystoneNoTex;
 
-  /// [security] Error in the swap Keystone signing overlay when the scanned signature QR belongs to another request.
-  ///
-  /// In en, this message translates to:
-  /// **'This QR code does not match the current Keystone request.'**
-  String get swapKeystoneQrMismatch;
-
   /// [security] Caption under the signature scanner on the mobile swap Keystone screen.
   ///
   /// In en, this message translates to:
   /// **'Scan the QR code on your Keystone to finish the ZEC deposit'**
   String get swapKeystoneScanCaption;
-
-  /// [security] Subtitle of the swap Keystone signing overlay above the QR code.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan to sign'**
-  String get swapKeystoneScanToSign;
 
   /// [security] Title of the swap Keystone signing overlay asking the user to scan and sign the ZEC deposit.
   ///
@@ -9651,12 +17010,6 @@ abstract class AppLocalizations {
   /// **'Saving transaction'**
   String get swapLedgerStatusSaving;
 
-  /// [security] Status chip in the swap Ledger modal while another operation finishes the transaction.
-  ///
-  /// In en, this message translates to:
-  /// **'Please wait'**
-  String get swapLedgerStatusWait;
-
   /// [security] Title of the swap Ledger recovery modal when it is unknown whether the transaction was sent.
   ///
   /// In en, this message translates to:
@@ -9675,6 +17028,12 @@ abstract class AppLocalizations {
   /// **'Transaction sent'**
   String get swapLedgerTitleSent;
 
+  /// Swap or Pay review error: the user switched accounts after the quote was made, so the quote must be reviewed again.
+  ///
+  /// In en, this message translates to:
+  /// **'Active account changed. Review the quote again before starting.'**
+  String get swapNoticeAccountChanged;
+
   /// Heading of the list of networks affected by an incident.
   ///
   /// In en, this message translates to:
@@ -9687,11 +17046,47 @@ abstract class AppLocalizations {
   /// **'All chains'**
   String get swapNoticeAllChains;
 
+  /// [security] Swap or Pay deposit notice: the deposit was broadcast but the wallet failed to save it. Warns against sending again until the status is confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.'**
+  String get swapNoticeBroadcastNotStored;
+
+  /// [security] Swap or Pay deposit notice: only part of a multi-transaction deposit was broadcast. Warns against sending again before checking.
+  ///
+  /// In en, this message translates to:
+  /// **'Some deposit transactions may have reached the network. Check activity before trying again.'**
+  String get swapNoticeBroadcastPartial;
+
+  /// [security] Swap or Pay deposit notice: the deposit transaction was built but never reached the network. Warns against sending again before checking.
+  ///
+  /// In en, this message translates to:
+  /// **'The deposit was created locally but could not be broadcast. Check activity before trying again.'**
+  String get swapNoticeBroadcastPending;
+
+  /// [security] Swap or Pay deposit notice: the deposit broadcast ended in a state the wallet cannot classify. Warns against sending again before checking.
+  ///
+  /// In en, this message translates to:
+  /// **'The deposit status is uncertain. Check activity before trying again.'**
+  String get swapNoticeBroadcastUncertain;
+
+  /// [security] Swap or Pay deposit notice: the broadcast result is unknown because confirmation timed out. Warns against sending again before checking.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction may have reached the network, but confirmation timed out. Check activity before trying again.'**
+  String get swapNoticeBroadcastUnknown;
+
   /// Accessibility label of the close button on the NEAR Intents service notice.
   ///
   /// In en, this message translates to:
   /// **'Close service notice'**
   String get swapNoticeCloseLabel;
+
+  /// [security] Swap or Pay error after sending: the deposit reached the network but the wallet lost its record of the swap. The user must copy the transaction hash to track the funds.
+  ///
+  /// In en, this message translates to:
+  /// **'ZEC deposit was broadcast, but the saved swap intent was not found. Copy the transaction hash before leaving this screen.'**
+  String get swapNoticeDepositIntentMissing;
 
   /// Service notice line with the expected end time of a maintenance window; {time} is a formatted local date and UTC offset.
   ///
@@ -9734,6 +17129,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Payments may not work right now.'**
   String get swapNoticePaymentsMayFail;
+
+  /// Swap or Pay quote error: the wallet could not reserve a new receive address for the swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not prepare a fresh wallet receive address. Retry after wallet sync or close older pending swaps before requesting a new quote.'**
+  String get swapNoticeReceiveAddressUnavailable;
 
   /// Title of the NEAR Intents service banner when an incident affects swaps.
   ///
@@ -9818,6 +17219,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Powered by'**
   String get swapPoweredByLabel;
+
+  /// Swap and Pay review, value of the row that says how long the quote holds. {time} is a 24-hour local time such as 14:05.
+  ///
+  /// In en, this message translates to:
+  /// **'Expires {time}'**
+  String swapQuoteExpiresAt(String time);
+
+  /// Swap and Pay review, value of the row that says how long the quote holds, when the provider gave no expiry time.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote expiry pending'**
+  String get swapQuoteExpiryPending;
+
+  /// Swap review, value of the exchange rate row when the provider quote has no usable rate yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate pending'**
+  String get swapQuoteRatePending;
 
   /// Back link label on the review screen that returns to the Pay composer.
   ///
@@ -9993,12 +17412,6 @@ abstract class AppLocalizations {
   /// **'Restart swap'**
   String get swapTimeoutRestart;
 
-  /// Heading on the swap timeout screen shown when the quote deposit window has expired.
-  ///
-  /// In en, this message translates to:
-  /// **'Time’s up'**
-  String get swapTimeoutTitle;
-
   /// Button label on the swap progress footer that opens the swap in the NEAR Intents explorer.
   ///
   /// In en, this message translates to:
@@ -10161,6 +17574,1254 @@ abstract class AppLocalizations {
   /// **'Restart'**
   String get updateRestart;
 
+  /// Label of the bottom button that re-checks whether the account may vote.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry eligibility'**
+  String get votingActionRetryEligibility;
+
+  /// Button on a voting round card that shows the answers already submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get votingActionReview;
+
+  /// Button that opens the screen to review answers before submitting the vote.
+  ///
+  /// In en, this message translates to:
+  /// **'Review answers'**
+  String get votingActionReviewAnswers;
+
+  /// Label of the bottom button of a voting round when voting is not available for this account.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get votingActionUnavailable;
+
+  /// Button on a voting round card that opens the results of a closed round.
+  ///
+  /// In en, this message translates to:
+  /// **'View results'**
+  String get votingActionViewResults;
+
+  /// Meta line of a voting round that is open when its end date is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting active'**
+  String get votingActive;
+
+  /// Notice on the voting round page when this account's funds were already used to vote in this round.
+  ///
+  /// In en, this message translates to:
+  /// **'These funds were already used for this round. Voting cannot be restarted on this device.'**
+  String get votingAlreadyUsedNotice;
+
+  /// Accessibility label of the small spinner shown while the vote screen moves on to the next unanswered question.
+  ///
+  /// In en, this message translates to:
+  /// **'Moving to the next unanswered question'**
+  String get votingAutoAdvanceSemantics;
+
+  /// Detail under the casting step while votes are being proved and cast.
+  ///
+  /// In en, this message translates to:
+  /// **'Casting votes'**
+  String get votingBallotCasting;
+
+  /// Detail under the casting step while vote shares are delivered to the voting servers.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivering your responses'**
+  String get votingBallotDelivering;
+
+  /// Detail under the casting step while the ballot is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing your ballot'**
+  String get votingBallotPreparing;
+
+  /// Detail under the casting step while waiting for the votes to confirm on chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for chain confirmation'**
+  String get votingBallotWaitingChain;
+
+  /// Accessibility label of the Beta badge image next to the Vote title.
+  ///
+  /// In en, this message translates to:
+  /// **'Beta'**
+  String get votingBetaSemantics;
+
+  /// Number of voting bundles one Keystone request signs.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 voting bundle} other{{count} voting bundles}}'**
+  String votingBundleCount(int count);
+
+  /// Pager label for one bundle on the mobile Keystone signing screen; a bundle is a group of notes signed together.
+  ///
+  /// In en, this message translates to:
+  /// **'Bundle {number} of {total}'**
+  String votingBundleOf(int number, int total);
+
+  /// Label of an answer option whose name is unknown; {number} is the option number.
+  ///
+  /// In en, this message translates to:
+  /// **'Choice {number}'**
+  String votingChoiceFallback(int number);
+
+  /// Button or title for adding a custom voting config source URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Add custom source'**
+  String get votingConfigAddCustomSource;
+
+  /// Accessibility label of the close button of the voting config panel.
+  ///
+  /// In en, this message translates to:
+  /// **'Close voting config settings'**
+  String get votingConfigCloseSettings;
+
+  /// Accessibility label of the button that copies a voting config source URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy source URL'**
+  String get votingConfigCopyUrl;
+
+  /// Name of the active voting config source when it is a URL the user added but did not save.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom source'**
+  String get votingConfigCustomSource;
+
+  /// Accessibility label of the delete button of a saved voting config source; {name} is the source's title.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {name}'**
+  String votingConfigDeleteNamed(String name);
+
+  /// Accessibility label of the button that deletes a saved voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete saved source'**
+  String get votingConfigDeleteSaved;
+
+  /// Validation error when the custom voting config source URL already exists.
+  ///
+  /// In en, this message translates to:
+  /// **'This source URL is already added.'**
+  String get votingConfigDuplicate;
+
+  /// Title of the form for editing a custom voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit custom source'**
+  String get votingConfigEditCustomSource;
+
+  /// Accessibility label of the edit button of a saved voting config source; {name} is the source's title.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit {name}'**
+  String votingConfigEditNamed(String name);
+
+  /// Accessibility label of the button that edits a saved voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit saved source'**
+  String get votingConfigEditSaved;
+
+  /// Validation error on mobile when the title or URL of a custom voting config source is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a title and source URL.'**
+  String get votingConfigEnterTitleAndUrl;
+
+  /// Label of the URL field of a custom voting config source on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Static config URL'**
+  String get votingConfigFieldStaticUrl;
+
+  /// Label of the title field of a custom voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get votingConfigFieldTitle;
+
+  /// Error shown when the custom voting config source could not be fetched.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load voting config from that source.'**
+  String get votingConfigLoadFailed;
+
+  /// Label of the URL field of a custom voting config source on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Source URL'**
+  String get votingConfigMobileFieldUrl;
+
+  /// Intro text in the mobile voting config sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose where Vizor gets authenticated voting rounds.'**
+  String get votingConfigMobileIntro;
+
+  /// Button on the mobile voting config sheet that saves the custom source.
+  ///
+  /// In en, this message translates to:
+  /// **'Save source'**
+  String get votingConfigMobileSave;
+
+  /// Explanation under the Show test rounds switch on mobile; [TEST] is a literal title marker.
+  ///
+  /// In en, this message translates to:
+  /// **'Include authenticated rounds marked [TEST].'**
+  String get votingConfigMobileTestRoundsHint;
+
+  /// Title of the mobile bottom sheet for choosing the voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote config'**
+  String get votingConfigMobileTitle;
+
+  /// Error on mobile when saving the voting config source failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update voting config. Check the source and try again.'**
+  String get votingConfigMobileUpdateFailed;
+
+  /// Label of the save button while the voting config source choice is being saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving...'**
+  String get votingConfigSaving;
+
+  /// Accessibility label of the settings button on the voting list that opens the voting configuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting config settings'**
+  String get votingConfigSettings;
+
+  /// Title and accessibility label of the switch that shows test voting rounds.
+  ///
+  /// In en, this message translates to:
+  /// **'Show test rounds'**
+  String get votingConfigShowTestRounds;
+
+  /// Explanation under the Show test rounds switch on desktop; [TEST] is a literal title prefix.
+  ///
+  /// In en, this message translates to:
+  /// **'Display authenticated rounds whose titles begin with [TEST].'**
+  String get votingConfigShowTestRoundsHint;
+
+  /// Heading above the list of voting config sources on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Sources'**
+  String get votingConfigSources;
+
+  /// Error shown when changing the Show test rounds setting failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update the test round visibility setting.'**
+  String get votingConfigTestVisibilityFailed;
+
+  /// Validation error under the title field when adding a custom voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Title must be {max} characters or less.'**
+  String votingConfigTitleTooLong(int max);
+
+  /// Tooltip of the settings icon on the voting list that opens the voting configuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting config'**
+  String get votingConfigTooltip;
+
+  /// Error shown when saving the voting config source failed without a specific reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update voting config.'**
+  String get votingConfigUpdateFailed;
+
+  /// Toast shown after copying a voting config source URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Source URL copied.'**
+  String get votingConfigUrlCopied;
+
+  /// Label of the save button while the custom source is being validated.
+  ///
+  /// In en, this message translates to:
+  /// **'Validating...'**
+  String get votingConfigValidating;
+
+  /// Message on the voting confirmation screen while eligibility is checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking voting eligibility for this account.'**
+  String get votingConfirmationCheckingEligibility;
+
+  /// [security] Body of the voting confirmation screen after the vote was published; votes are final.
+  ///
+  /// In en, this message translates to:
+  /// **'Your vote was successfully published and cannot be changed.'**
+  String get votingConfirmationConfirmedBody;
+
+  /// Title of the voting confirmation screen after the vote was published.
+  ///
+  /// In en, this message translates to:
+  /// **'Submission confirmed!'**
+  String get votingConfirmationConfirmedTitle;
+
+  /// Message on the voting confirmation screen when eligibility could not be confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting eligibility has not been confirmed for this account.'**
+  String get votingConfirmationEligibilityUnconfirmed;
+
+  /// Title of the voting confirmation screen when the vote was not fully submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Submission not complete'**
+  String get votingConfirmationIncompleteTitle;
+
+  /// Message on the voting confirmation screen when details could not be loaded; {error} is the reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load submission details: {error}'**
+  String votingConfirmationLoadFailed(String error);
+
+  /// Message on the voting confirmation screen when this account did not finish submitting its vote.
+  ///
+  /// In en, this message translates to:
+  /// **'This account has not completed submission for this voting round.'**
+  String get votingConfirmationNotCompleted;
+
+  /// Error on the voting confirmation screen when refreshing the voting rounds list failed after Done was pressed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update voting rounds. Try again.'**
+  String get votingConfirmationUpdateFailed;
+
+  /// Shown on the voting confirmation screen while the voting rounds list refreshes after Done was pressed.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating voting rounds...'**
+  String get votingConfirmationUpdatingRounds;
+
+  /// Button that resumes an unfinished vote submission.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue voting'**
+  String get votingContinueVoting;
+
+  /// Time left in a voting round; zero means it ends today.
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =0{Ends today} =1{1 day left} other{{days} days left}}'**
+  String votingDaysLeft(int days);
+
+  /// Title of the error shown on the voting round page when the round could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load voting round'**
+  String get votingDetailLoadFailedTitle;
+
+  /// Body shown on the voting round page when the selected round does not exist.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected voting round could not be loaded.'**
+  String get votingDetailUnavailableBody;
+
+  /// Title shown on the voting round page when the selected round does not exist.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting round unavailable'**
+  String get votingDetailUnavailableTitle;
+
+  /// Meta line of an open voting round; {date} is the end date such as Jan 5, 2026.
+  ///
+  /// In en, this message translates to:
+  /// **'Ends {date}'**
+  String votingEnds(String date);
+
+  /// Error shown when the user cancelled approving a vote on their Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger voting approval was cancelled.'**
+  String get votingErrorLedgerCancelled;
+
+  /// Error shown when the Ledger is locked during voting; {instruction} is a sentence telling the user to open the Zcash app on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock your Ledger. {instruction}'**
+  String votingErrorLedgerLocked(String instruction);
+
+  /// Error shown when the user rejected the vote signature on their Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'The vote signature was rejected on your Ledger. Retry to sign again.'**
+  String get votingErrorLedgerRejected;
+
+  /// Error shown when the wrong app is open on the Ledger during voting; {instruction} is a sentence telling the user to open the Zcash app.
+  ///
+  /// In en, this message translates to:
+  /// **'{instruction} Then retry.'**
+  String votingErrorLedgerWrongApp(String instruction);
+
+  /// Error shown when the account's eligible shielded balance is below the round's minimum; {amount} is a ZEC amount and {snapshot} names the snapshot block.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting requires at least one eligible shielded note bundle with {amount} at {snapshot}. Switch to an eligible account to vote.'**
+  String votingErrorMinimumWeight(String amount, String snapshot);
+
+  /// Error shown when the account had no shielded funds at the snapshot; {snapshot} is a phrase naming the snapshot block.
+  ///
+  /// In en, this message translates to:
+  /// **'This account is not eligible for this voting round. It had no eligible shielded funds at {snapshot}. Switch to an eligible account to vote.'**
+  String votingErrorNoSpendableNotes(String snapshot);
+
+  /// Generic error shown when a voting action failed without a more specific message.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting session action failed.'**
+  String get votingErrorSessionFailed;
+
+  /// Label of the link button that opens the forum discussion of a voting round or proposal.
+  ///
+  /// In en, this message translates to:
+  /// **'Forum discussion'**
+  String get votingForumDiscussion;
+
+  /// Title of the error shown on the voting pages when the wallet account could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load account'**
+  String get votingGuardAccountLoadFailed;
+
+  /// Title of the dialog explaining that the account cannot vote in this round.
+  ///
+  /// In en, this message translates to:
+  /// **'Not eligible for this voting round'**
+  String get votingIneligibleTitle;
+
+  /// Dialog button that goes back to signing the remaining bundles on Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep signing'**
+  String get votingKeepSigning;
+
+  /// Dialog button that returns to the unanswered questions.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep voting'**
+  String get votingKeepVoting;
+
+  /// Label above the memo of one bundle on the Keystone signing panel.
+  ///
+  /// In en, this message translates to:
+  /// **'Bundle {number} of {total} memo'**
+  String votingKeystoneMemoLabel(int number, int total);
+
+  /// Message on the Keystone signing panel when a new request QR for the next group of bundles is shown.
+  ///
+  /// In en, this message translates to:
+  /// **'The next signing batch is ready'**
+  String get votingKeystoneNextBatch;
+
+  /// Tooltip of the button that shows the memo of the next bundle.
+  ///
+  /// In en, this message translates to:
+  /// **'Next bundle memo'**
+  String get votingKeystoneNextMemo;
+
+  /// Caption under the Keystone request QR when a single approval signs all bundles.
+  ///
+  /// In en, this message translates to:
+  /// **'One Keystone approval'**
+  String get votingKeystoneOneApproval;
+
+  /// Tooltip of the button that shows the memo of the previous bundle.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous bundle memo'**
+  String get votingKeystonePreviousMemo;
+
+  /// Caption under the Keystone request QR when it covers only part of the remaining bundles.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR signs {count} of {total} remaining bundles'**
+  String votingKeystoneQrPartial(int count, int total);
+
+  /// Instruction on the Keystone signing panel describing the two-way QR exchange.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan QR on this screen with Keystone. Then, scan the signed voting QR displayed on Keystone with this device\'s camera'**
+  String get votingKeystoneScanInstruction;
+
+  /// Button on the Keystone signing panel that opens the camera to scan the signed QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan signature'**
+  String get votingKeystoneScanSignature;
+
+  /// Heading of the Keystone signing panel; zero means the request is still being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{Preparing voting signatures} =1{Sign 1 voting bundle} other{Sign {count} voting bundles}}'**
+  String votingKeystoneSignLabel(int count);
+
+  /// Error shown when the scanned QR is not the signed voting result.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the signed voting QR on Keystone, then scan again.'**
+  String get votingKeystoneUnexpectedUr;
+
+  /// [security] Notice on the Ledger panel: approving on the device authorizes the delegation, and the memo must be checked in Vizor because the device may not show it verbatim.
+  ///
+  /// In en, this message translates to:
+  /// **'Approving on Ledger authorizes this voting delegation. Review the memo below in Vizor before continuing; the device may not display this memo verbatim.'**
+  String get votingLedgerApprovalNotice;
+
+  /// Body of the Ledger panel asking the user to approve opening the Zcash app on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve the request to open the Zcash app on your Ledger.'**
+  String get votingLedgerConfirmOpenBody;
+
+  /// Title of the Ledger panel while the delegation is finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing voting delegation'**
+  String get votingLedgerFinishing;
+
+  /// Heading of the desktop Ledger signing panel.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting delegation'**
+  String get votingLedgerPanelTitle;
+
+  /// Body of the Ledger panel while the request is prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait while Vizor prepares your request.'**
+  String get votingLedgerPleaseWait;
+
+  /// Title of the Ledger panel while the delegation request is prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing voting delegation'**
+  String get votingLedgerPreparing;
+
+  /// Fallback body of the Ledger panel when the device has a problem and no detail is known.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect your Ledger and try again.'**
+  String get votingLedgerReconnect;
+
+  /// Error on the mobile voting pages when the wallet account could not be loaded; {error} is the reason on a new line.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load account.\n{error}'**
+  String votingMobileAccountLoadFailed(String error);
+
+  /// Title in the sticky header of a mobile voting page.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting'**
+  String get votingMobileHeaderTitle;
+
+  /// Status on the mobile Keystone screen while the signature is verified.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking voting signature...'**
+  String get votingMobileKeystoneChecking;
+
+  /// Instruction on the mobile Keystone signing screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the voting request with Keystone, approve it, then scan the signed result with this device.'**
+  String get votingMobileKeystoneDescription;
+
+  /// Title of the mobile Keystone signing screen when the signature could not be used.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting signature failed'**
+  String get votingMobileKeystoneFailedTitle;
+
+  /// Accessibility label of the button that shows the next bundle's memo.
+  ///
+  /// In en, this message translates to:
+  /// **'Next voting bundle'**
+  String get votingMobileKeystoneNextBundle;
+
+  /// Accessibility label of the button that shows the previous bundle's memo.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous voting bundle'**
+  String get votingMobileKeystonePreviousBundle;
+
+  /// Status on the mobile Keystone screen while the scanned signature is read.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading voting signature...'**
+  String get votingMobileKeystoneReading;
+
+  /// Caption under the camera view on the mobile Keystone screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the signed voting QR shown on Keystone'**
+  String get votingMobileKeystoneScanCaption;
+
+  /// Button on the mobile Keystone screen that submits with only the bundles signed so far.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip unsigned bundles'**
+  String get votingMobileKeystoneSkipUnsigned;
+
+  /// Title of the mobile screen that shows the QR for signing the vote on Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign vote with Keystone'**
+  String get votingMobileKeystoneTitle;
+
+  /// [security] Notice on the mobile submission screen telling the user to stay on it.
+  ///
+  /// In en, this message translates to:
+  /// **'Don’t leave this window.'**
+  String get votingMobileLeaveWarning;
+
+  /// Accessibility label of the progress ring of the active submission step.
+  ///
+  /// In en, this message translates to:
+  /// **'Active voting submission step progress'**
+  String get votingMobileProgressSemantics;
+
+  /// [security] Notice on the mobile submission screen that proofs take about a minute and closing may lose their progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Generating zero-knowledge proofs can take about 60 seconds, closing now may lose in-flight proof work.'**
+  String get votingMobileProofNotice;
+
+  /// Top-bar title of the mobile screen shown while the vote is submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit vote'**
+  String get votingMobileSubmitTitle;
+
+  /// Body of the mobile screen shown after the vote was submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Your vote has been submitted and can’t be changed.'**
+  String get votingMobileSubmittedBody;
+
+  /// Top-bar title of the mobile screen shown after the vote was submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote submitted'**
+  String get votingMobileSubmittedTitle;
+
+  /// Title of the mobile screen while votes are being submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting votes...'**
+  String get votingMobileSubmittingTitle;
+
+  /// Progress label when every question has an answer.
+  ///
+  /// In en, this message translates to:
+  /// **'All questions answered'**
+  String get votingNavAllAnswered;
+
+  /// Progress label on the sticky action bar showing how many questions are answered.
+  ///
+  /// In en, this message translates to:
+  /// **'{answered} / {total} answered'**
+  String votingNavAnsweredProgress(int answered, int total);
+
+  /// Hint in the questions sheet when every question is answered.
+  ///
+  /// In en, this message translates to:
+  /// **'Your answers are ready to review.'**
+  String get votingNavReadyToReview;
+
+  /// Hint in the unanswered questions sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap a question to jump to it.'**
+  String get votingNavTapToJump;
+
+  /// Progress label with the number of unanswered questions.
+  ///
+  /// In en, this message translates to:
+  /// **'Unanswered · {count}'**
+  String votingNavUnansweredCount(int count);
+
+  /// Accessibility label of the menu listing the unanswered questions.
+  ///
+  /// In en, this message translates to:
+  /// **'Unanswered questions'**
+  String get votingNavUnansweredMenu;
+
+  /// Body shown when a voting round has no proposals.
+  ///
+  /// In en, this message translates to:
+  /// **'This voting round does not contain any proposals.'**
+  String get votingNoProposalsBody;
+
+  /// Title shown when a voting round has no proposals.
+  ///
+  /// In en, this message translates to:
+  /// **'No proposals'**
+  String get votingNoProposalsTitle;
+
+  /// Shown in place of the voting power value when it is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available'**
+  String get votingNotAvailable;
+
+  /// Label shown when the account may not vote in the round; used on a button and as a badge.
+  ///
+  /// In en, this message translates to:
+  /// **'Not eligible'**
+  String get votingNotEligible;
+
+  /// Trailing label of an answer option that can be picked.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose'**
+  String get votingOptionChoose;
+
+  /// Trailing label of the answer option the user picked.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected'**
+  String get votingOptionSelected;
+
+  /// Body shown on a voting round whose vote was started but not completed.
+  ///
+  /// In en, this message translates to:
+  /// **'You have an unfinished vote for this round. Resume to complete the submission.'**
+  String get votingPendingBody;
+
+  /// Title shown on a voting round whose vote was started but not completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote in progress'**
+  String get votingPendingTitle;
+
+  /// Error shown when the PIR servers are already past the voting round's snapshot block.
+  ///
+  /// In en, this message translates to:
+  /// **'Configured PIR endpoints are ahead of this voting round snapshot. Expected snapshot block {expected}; endpoints report {reported}.'**
+  String votingPirAhead(String expected, String reported);
+
+  /// Error shown when the PIR servers have not reached the voting round's snapshot block yet; PIR is a private information retrieval service.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting PIR data is not ready for this voting round yet. Expected snapshot block {expected}; PIR endpoints report {reported}. Retry once the PIR service catches up.'**
+  String votingPirBehind(String expected, String reported);
+
+  /// Error shown when no PIR server matches the voting round's snapshot block.
+  ///
+  /// In en, this message translates to:
+  /// **'No PIR endpoint matched this voting round snapshot. Expected snapshot block {expected}.'**
+  String votingPirNoMatch(String expected);
+
+  /// Technical error detail shown when no PIR server matches the snapshot; {diagnostics} is a machine-written list per endpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'No PIR endpoint matched this voting round snapshot. Expected snapshot block {expected}. Diagnostics: {diagnostics}.'**
+  String votingPirNoMatchDiagnostics(String expected, String diagnostics);
+
+  /// Error shown when none of the configured PIR servers could be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach any configured PIR endpoint. Check your network connection and retry.'**
+  String get votingPirUnreachable;
+
+  /// Label on a voting round card when this account's funds were already used to vote in this round.
+  ///
+  /// In en, this message translates to:
+  /// **'Already used for this round'**
+  String get votingPollAlreadyUsed;
+
+  /// Closing date on a finished voting round card; {date} is a short date such as Jan 5.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed {date}'**
+  String votingPollClosed(String date);
+
+  /// Closing date on an open voting round card; {date} is a short date such as Jan 5.
+  ///
+  /// In en, this message translates to:
+  /// **'Closes {date}'**
+  String votingPollCloses(String date);
+
+  /// Label on a voting round card when the account has no voting power in this round.
+  ///
+  /// In en, this message translates to:
+  /// **'Not eligible for this round'**
+  String get votingPollNotEligible;
+
+  /// Start date on an upcoming voting round card; {date} is a short date such as Jan 5.
+  ///
+  /// In en, this message translates to:
+  /// **'Starts {date}'**
+  String votingPollStarts(String date);
+
+  /// Body of the empty state on the voting list.
+  ///
+  /// In en, this message translates to:
+  /// **'There are no token holder voting rounds to display yet.'**
+  String get votingPollsEmptyBody;
+
+  /// Title of the empty state on the voting list.
+  ///
+  /// In en, this message translates to:
+  /// **'No voting rounds available'**
+  String get votingPollsEmptyTitle;
+
+  /// Title of the error shown on the voting list when the voting rounds could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load voting rounds'**
+  String get votingPollsLoadFailedTitle;
+
+  /// Meta line of a voting round showing the account's voting power; {amount} is a ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting power {amount}'**
+  String votingPowerMeta(String amount);
+
+  /// Message shown when the account's voting power could not be determined.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting power unavailable.'**
+  String get votingPowerUnavailableSentence;
+
+  /// Short note in the voting round summary when the account's voting power could not be determined.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting power unavailable'**
+  String get votingPowerUnavailableTitle;
+
+  /// Message shown while the wallet calculates how much voting power the account has.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing voting power.'**
+  String get votingPreparingPower;
+
+  /// Meta line of a voting round while the voting power is being calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing voting power'**
+  String get votingPreparingPowerMeta;
+
+  /// [security] Note on the voting round page: a small part of the user's voting power is withheld so the submission cannot be linked to the user; {amount} is a ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} is left out of this vote to keep your submission less identifiable.'**
+  String votingPrivacyTrimNotice(String amount);
+
+  /// Progress count under the proving step of voting submission; a bundle is a group of notes proved together.
+  ///
+  /// In en, this message translates to:
+  /// **'{proved} of {total} bundles proved'**
+  String votingProgressBundlesProved(int proved, int total);
+
+  /// Detail under the proving step once all bundles are proved; {suffix} is empty or a dash followed by a count.
+  ///
+  /// In en, this message translates to:
+  /// **'Finalizing delegation{suffix}'**
+  String votingProgressFinalizingDelegation(String suffix);
+
+  /// Detail under the proving step while a proof started earlier is reused; {suffix} is empty or a dash followed by a count.
+  ///
+  /// In en, this message translates to:
+  /// **'Reusing an in-progress proof{suffix}'**
+  String votingProgressReusingProof(String suffix);
+
+  /// Detail under the proving step while waiting for the chain; {suffix} is empty or a dash followed by a proved-bundles count.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for submission and confirmation{suffix}'**
+  String votingProgressWaitingConfirmation(String suffix);
+
+  /// Label of the receipt row showing the account's voting power in ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting power'**
+  String get votingReceiptPower;
+
+  /// Number of bundles signed by this Keystone request out of those still unsigned.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} of {total} remaining bundles'**
+  String votingRemainingBundles(int count, int total);
+
+  /// Title of the voting results screen when the round has no title.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting results'**
+  String get votingResultsFallbackTitle;
+
+  /// Button that collapses a proposal's long description on the results screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide description'**
+  String get votingResultsHideDescription;
+
+  /// Error on the voting results screen when the tally could not be loaded; {error} is the reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load results: {error}'**
+  String votingResultsLoadFailed(String error);
+
+  /// Message on the voting results screen when the round has no proposals.
+  ///
+  /// In en, this message translates to:
+  /// **'No proposals in this round.'**
+  String get votingResultsNoProposals;
+
+  /// Message on the voting results screen while the tally is not ready yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Results pending...'**
+  String get votingResultsPending;
+
+  /// Error on the voting results screen when the round details could not be loaded; {error} is the reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load voting round details: {error}'**
+  String votingResultsRoundLoadFailed(String error);
+
+  /// Button that expands a proposal's long description on the results screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Show description'**
+  String get votingResultsShowDescription;
+
+  /// Line on a proposal result with the total voting weight cast; {amount} is a ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Total: {amount}'**
+  String votingResultsTotalAmount(String amount);
+
+  /// Line on a proposal result naming the option the user voted for; {choice} is the option label from the vote data.
+  ///
+  /// In en, this message translates to:
+  /// **'Voted: {choice}'**
+  String votingResultsVotedFor(String choice);
+
+  /// Label marking the winning option in a proposal result.
+  ///
+  /// In en, this message translates to:
+  /// **'Winner'**
+  String get votingResultsWinner;
+
+  /// Label marking the option the user voted for in a proposal result.
+  ///
+  /// In en, this message translates to:
+  /// **'Your vote'**
+  String get votingResultsYourVote;
+
+  /// Message on the review screen when no question has an answer yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose at least one option before submitting.'**
+  String get votingReviewChooseOne;
+
+  /// Button on the review screen that submits the vote.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm & submit'**
+  String get votingReviewConfirmSubmit;
+
+  /// Error shown on the vote review screen when it failed to load; {error} is the reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load review: {error}'**
+  String votingReviewLoadFailed(String error);
+
+  /// Status on the review screen of a question the user did not answer.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped'**
+  String get votingReviewSkipped;
+
+  /// Title of the screen where the user checks their answers before submitting the vote.
+  ///
+  /// In en, this message translates to:
+  /// **'Review your answers'**
+  String get votingReviewTitle;
+
+  /// Instruction on the desktop screen that scans the signed voting QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Hold the Keystone QR code steady in front of your camera'**
+  String get votingScanHold;
+
+  /// Message on the desktop scan screen when no camera is available.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone voting uses camera QR scanning only. Connect a camera and try again.'**
+  String get votingScanNoCamera;
+
+  /// Title of the desktop screen that scans the signed voting QR from Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan voting signature'**
+  String get votingScanTitle;
+
+  /// Body of the dialog offering to submit with only the signed bundles.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor can submit now using only signatures already scanned from Keystone.'**
+  String get votingSignedOnlyBody;
+
+  /// Title of the dialog offering to submit the vote with only the bundles already signed on Keystone; a bundle is a group of notes signed together.
+  ///
+  /// In en, this message translates to:
+  /// **'Use signed bundles only?'**
+  String get votingSignedOnlyTitle;
+
+  /// [security] Warning in the dialog that unsigned bundles are dropped and voting power is reduced.
+  ///
+  /// In en, this message translates to:
+  /// **'Unsigned bundles are skipped, which lowers voting power for this voting round.'**
+  String get votingSignedOnlyWarning;
+
+  /// Button on the Keystone signing panel that skips the bundles still unsigned.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get votingSkip;
+
+  /// Dialog button that submits the vote without the unsigned bundles.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip bundles'**
+  String get votingSkipBundles;
+
+  /// Body of the dialog asking whether to continue while some questions are unanswered.
+  ///
+  /// In en, this message translates to:
+  /// **'You have not answered {skipped} of {total} questions. The review screen will mark them as skipped, and skipped questions will not be submitted.'**
+  String votingSkipDialogBody(int skipped, int total);
+
+  /// Title of the dialog asking whether to continue while some questions are unanswered.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip unanswered questions?'**
+  String get votingSkipDialogTitle;
+
+  /// Phrase naming the voting round's snapshot block; {height} is the formatted block number. Used inside eligibility error sentences.
+  ///
+  /// In en, this message translates to:
+  /// **'snapshot block {height}'**
+  String votingSnapshotBlock(String height);
+
+  /// Phrase naming the voting round's snapshot block when its height is unknown; used inside eligibility error sentences.
+  ///
+  /// In en, this message translates to:
+  /// **'the voting round snapshot block'**
+  String get votingSnapshotUnknown;
+
+  /// Body shown when the voting round needs a software account but a hardware account is active.
+  ///
+  /// In en, this message translates to:
+  /// **'Token holder voting requires a software account. Switch to a software account to vote in this round.'**
+  String get votingSoftwareRequiredBody;
+
+  /// Title shown when the voting round needs a software account but a hardware account is active.
+  ///
+  /// In en, this message translates to:
+  /// **'Software account required'**
+  String get votingSoftwareRequiredTitle;
+
+  /// Status badge of a voting round that is open for voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Active'**
+  String get votingStatusActive;
+
+  /// [security] Body of the voting status screen warning not to close the window while proofs are generated.
+  ///
+  /// In en, this message translates to:
+  /// **'Don\'t close the window. Generating zero-knowledge proofs can take a while; closing now may lose in-flight proof work.'**
+  String get votingStatusBodyKeepOpen;
+
+  /// Body of the voting status screen while Ledger approvals are pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open. Follow the instructions below for each voting bundle.'**
+  String get votingStatusBodyLedger;
+
+  /// Status badge of a voting round that has closed.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed'**
+  String get votingStatusClosed;
+
+  /// Fallback error on the voting status screen when no specific error text exists.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting failed.'**
+  String get votingStatusFailed;
+
+  /// Generic error on the voting status screen when voting failed without a specific reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting could not continue for this account. Retry, or switch to an eligible account if this account cannot vote in this voting round.'**
+  String get votingStatusGenericError;
+
+  /// Status badge of a voting round that closed and whose results are being counted.
+  ///
+  /// In en, this message translates to:
+  /// **'Tallying'**
+  String get votingStatusTallying;
+
+  /// Title of the desktop voting status screen while a Ledger approval is pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting with Ledger'**
+  String get votingStatusTitleLedger;
+
+  /// Title of the desktop voting status screen while votes are submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting votes'**
+  String get votingStatusTitleSubmitting;
+
+  /// Status badge of a voting round in which this account already voted.
+  ///
+  /// In en, this message translates to:
+  /// **'Voted'**
+  String get votingStatusVoted;
+
+  /// Step label of the voting progress list while votes are cast and vote shares are submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Casting votes and submitting shares'**
+  String get votingStepCasting;
+
+  /// Step label of the voting progress list for the last step.
+  ///
+  /// In en, this message translates to:
+  /// **'Finalizing submission'**
+  String get votingStepFinalizing;
+
+  /// Step label of the voting progress list while the zero-knowledge proof of voting authority is generated.
+  ///
+  /// In en, this message translates to:
+  /// **'Proving voting authority'**
+  String get votingStepProving;
+
+  /// Step label of the voting progress list while signing on a Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing with Keystone'**
+  String get votingStepSigningKeystone;
+
+  /// Step label of the voting progress list while signing on a Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing with Ledger'**
+  String get votingStepSigningLedger;
+
+  /// Dialog button that opens the account switcher so the user can pick an eligible account.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch account'**
+  String get votingSwitchAccount;
+
+  /// Closing sentence of the eligibility error messages; the screen shows it separately and it must end those messages with identical wording.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch to an eligible account to vote.'**
+  String get votingSwitchEligibleGuidance;
+
+  /// Line in the wallet sync box showing how many blocks are left to sync.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} blocks remaining'**
+  String votingSyncBlocksRemaining(int count);
+
+  /// Part of the wallet sync detail line on the voting status screen; {height} is the latest block number.
+  ///
+  /// In en, this message translates to:
+  /// **'chain tip {height}'**
+  String votingSyncChainTip(int height);
+
+  /// Part of the wallet sync detail line on the voting status screen; {height} is a block number.
+  ///
+  /// In en, this message translates to:
+  /// **'Synced to block {height}'**
+  String votingSyncSynced(int height);
+
+  /// Body of the box shown while the wallet is still syncing up to the voting snapshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.'**
+  String get votingSyncWaitingBody;
+
+  /// Names one failed delegation bundle with its reason inside the terminal delegation error.
+  ///
+  /// In en, this message translates to:
+  /// **'bundle {number} ({reason})'**
+  String votingTerminalBundle(int number, String reason);
+
+  /// [security] Error when several delegation bundles can no longer continue; warns against retrying because the transactions may already be on chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegation for {bundles} cannot continue. Do not retry it; the transaction may already be on the chain.'**
+  String votingTerminalMultiple(String bundles);
+
+  /// Reason used inside the terminal delegation error when the bundle gave no failure detail.
+  ///
+  /// In en, this message translates to:
+  /// **'it ended without confirming'**
+  String get votingTerminalReasonDefault;
+
+  /// [security] Error when one delegation bundle can no longer continue; warns against retrying because the transaction may already be on chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegation {bundle} cannot continue. Do not retry it; the transaction may already be on the chain.'**
+  String votingTerminalSingle(String bundle);
+
+  /// Fallback name of a voting round shown when the round has no title.
+  ///
+  /// In en, this message translates to:
+  /// **'Token holder voting'**
+  String get votingTokenHolderTitle;
+
+  /// Button that collapses a long description.
+  ///
+  /// In en, this message translates to:
+  /// **'View less'**
+  String get votingViewLess;
+
+  /// Button that expands a long description.
+  ///
+  /// In en, this message translates to:
+  /// **'View more'**
+  String get votingViewMore;
+
+  /// Note that a submitted vote can no longer be changed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote locked'**
+  String get votingVoteLocked;
+
+  /// Line under the title of a voting round the user already voted in; {date} is the voting date such as Jan 5, 2026.
+  ///
+  /// In en, this message translates to:
+  /// **'Voted {date}'**
+  String votingVotedOn(String date);
+
   /// Section title above the list of importable accounts.
   ///
   /// In en, this message translates to:
@@ -10202,6 +18863,156 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Deselect all'**
   String get walletLinkDeselectAll;
+
+  /// [security] Subtitle of the desktop password prompt that explains why the password is needed before linking Vizor Mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'To link Vizor Mobile.'**
+  String get walletLinkDesktopConfirmSubtitle;
+
+  /// First sentence of the privacy note on the placeholder shown before the QR code appears; followed by a bold sentence.
+  ///
+  /// In en, this message translates to:
+  /// **'The code is encrypted with a one-time key and expires after a minute.'**
+  String get walletLinkDesktopEncryptedNotice;
+
+  /// Bold second sentence of the privacy note on the QR placeholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Only your phone can decode it.'**
+  String get walletLinkDesktopEncryptedStrong;
+
+  /// Error on the desktop link screen when an account lacks the data needed to derive its keys.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet account derivation metadata is not available.'**
+  String get walletLinkDesktopErrorDerivationMissing;
+
+  /// Error on the desktop link screen when the code expired before it could be displayed.
+  ///
+  /// In en, this message translates to:
+  /// **'The mobile link expired before it could be shown.'**
+  String get walletLinkDesktopErrorExpiredBeforeShown;
+
+  /// Fallback message on the desktop link error screen when no specific reason is known.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not prepare the mobile link.'**
+  String get walletLinkDesktopErrorFallback;
+
+  /// Error on the desktop link screen when a hardware wallet account lacks its stored metadata.
+  ///
+  /// In en, this message translates to:
+  /// **'Hardware wallet metadata is not available.'**
+  String get walletLinkDesktopErrorHardwareMetadataMissing;
+
+  /// [security] Error on the desktop link screen when the wallet secrets are not available because the wallet is locked.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock this wallet before linking mobile.'**
+  String get walletLinkDesktopErrorLocked;
+
+  /// Error on the desktop link screen when the wallet has no accounts to link.
+  ///
+  /// In en, this message translates to:
+  /// **'No wallet accounts are available to link.'**
+  String get walletLinkDesktopErrorNoAccounts;
+
+  /// Generic error on the desktop link screen when preparing the link failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not prepare the mobile link. Try again.'**
+  String get walletLinkDesktopErrorPrepareFailed;
+
+  /// Error on the desktop link screen when the linking server cannot be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach the linking server. Try again.'**
+  String get walletLinkDesktopErrorServerUnreachable;
+
+  /// Body of the expired-link screen on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'For your security the link is only valid for a minute. Generate a fresh code and scan it again.'**
+  String get walletLinkDesktopExpiredBody;
+
+  /// Countdown under the QR code; {time} is the remaining time such as 0:45.
+  ///
+  /// In en, this message translates to:
+  /// **'Expires in {time}'**
+  String walletLinkDesktopExpiresIn(String time);
+
+  /// Button on the expired-link screen that creates a new one-time code.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate new code'**
+  String get walletLinkDesktopGenerateNewCode;
+
+  /// Body text on the desktop link screen before a code is generated.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect this wallet to your Vizor mobile app by scanning a one-time QR code.'**
+  String get walletLinkDesktopInitialBody;
+
+  /// Body of the success screen when the number of imported items is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor Mobile was linked to this wallet.'**
+  String get walletLinkDesktopLinkedBody;
+
+  /// Body of the success screen reporting how many accounts and contacts the phone imported.
+  ///
+  /// In en, this message translates to:
+  /// **'{accountCount, plural, =1{1 account} other{{accountCount} accounts}} and {contactCount, plural, =1{1 contact} other{{contactCount} contacts}} were imported on mobile.'**
+  String walletLinkDesktopLinkedCounts(int accountCount, int contactCount);
+
+  /// Title of the success screen after the phone finished linking.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor Mobile linked successfully'**
+  String get walletLinkDesktopLinkedTitle;
+
+  /// Status line under the QR code saying the single code is ready to be scanned.
+  ///
+  /// In en, this message translates to:
+  /// **'1/1 Ready to scan...'**
+  String get walletLinkDesktopReadyToScan;
+
+  /// Button under the QR code that creates a fresh one-time code.
+  ///
+  /// In en, this message translates to:
+  /// **'Regenerate'**
+  String get walletLinkDesktopRegenerate;
+
+  /// Instruction under the QR title; the arrows separate menu steps in the mobile app and 'Link Vizor Desktop' is a menu name.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor on your phone → Add a wallet → Link Vizor Desktop'**
+  String get walletLinkDesktopScanBody;
+
+  /// Title above the one-time QR code on the desktop link screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan with Vizor mobile'**
+  String get walletLinkDesktopScanTitle;
+
+  /// Button on the desktop link screen that generates the one-time QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Start linking'**
+  String get walletLinkDesktopStartLinking;
+
+  /// Title of the desktop screen that starts linking the desktop wallet to the Vizor mobile app.
+  ///
+  /// In en, this message translates to:
+  /// **'Link Vizor Mobile'**
+  String get walletLinkDesktopTitle;
+
+  /// Title of the desktop link error screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Link unavailable'**
+  String get walletLinkDesktopUnavailableTitle;
 
   /// Body of the expired link error; 'Generate new code' is the name of a button in the desktop app.
   ///
@@ -10299,12 +19110,6 @@ abstract class AppLocalizations {
   /// **'Reading link...'**
   String get walletLinkReadingLink;
 
-  /// Button on the scan error card that returns to the scanner.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan again'**
-  String get walletLinkScanAgain;
-
   /// Caption under the camera view and title of the camera permission card while scanning the desktop link QR code.
   ///
   /// In en, this message translates to:
@@ -10340,6 +19145,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open & unlock your Vizor desktop app'**
   String get walletLinkStepUnlockDesktop;
+
+  /// [security] Error when the device passcode check before a wallet reset failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t verify device ownership. Please try again.'**
+  String get walletResetDeviceAuthFailed;
+
+  /// [security] Error when the user skipped the device passcode check before resetting the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Device authentication is required to reset Vizor.'**
+  String get walletResetDeviceAuthRequired;
+
+  /// Error when erasing the wallet failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reset Vizor. Please try again.'**
+  String get walletResetFailed;
+
+  /// [security] Reset or account removal is refused while a gift card claim is in progress. Keep it to one short line.
+  ///
+  /// In en, this message translates to:
+  /// **'A gift card is still being received. Wait for it to finish.'**
+  String get walletResetGiftCardInFlight;
+
+  /// [security] Warning on the locked reset screens while a gift card claim is in progress; reset is still allowed.
+  ///
+  /// In en, this message translates to:
+  /// **'A gift card is still being received. Resetting loses it.'**
+  String get walletResetGiftCardWarning;
 }
 
 class _AppLocalizationsDelegate

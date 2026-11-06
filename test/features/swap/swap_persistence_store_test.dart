@@ -66,7 +66,7 @@ void main() {
         capturedAt: DateTime.utc(2026, 5, 7, 10),
       ),
       lastStatusCheckedAt: DateTime.utc(2026, 5, 7, 10, 30),
-      statusError: 'temporary status refresh failure',
+      statusError: const SwapLiteralMessage('temporary status refresh failure'),
       oneClickRecipient: '0xrecipient',
       oneClickRefundTo: 'u1refund',
       userExternalContactId: 'contact-second',
@@ -124,7 +124,10 @@ void main() {
       restored.single.lastStatusCheckedAt,
       DateTime.utc(2026, 5, 7, 10, 30),
     );
-    expect(restored.single.statusError, 'temporary status refresh failure');
+    expect(
+      restored.single.statusError,
+      const SwapLiteralMessage('temporary status refresh failure'),
+    );
     expect(restored.single.oneClickRecipient, '0xrecipient');
     expect(restored.single.oneClickRefundTo, 'u1refund');
     expect(restored.single.userExternalContactId, 'contact-second');

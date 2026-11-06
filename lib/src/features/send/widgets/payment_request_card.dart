@@ -1766,7 +1766,7 @@ class _Actions extends StatelessWidget {
   String _primaryLabel(AppLocalizations l10n) => _checking
       ? l10n.commonCheckingEllipsis
       : _recheckable
-      ? l10n.sendPaymentRequestCheckAgain
+      ? l10n.commonCheckAgain
       : hasAmount
       ? l10n.sendPaymentRequestReviewPayment
       // A blocked amount-less request is not waiting for an amount — the
@@ -1774,7 +1774,7 @@ class _Actions extends StatelessWidget {
       // the amount would point at the wrong fix.
       : _blocked
       ? l10n.commonEdit
-      : l10n.sendPaymentRequestEnterAmount;
+      : l10n.commonEnterAmount;
 
   @override
   Widget build(BuildContext context) {

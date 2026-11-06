@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/rust/api/gift_card_tracking.dart' as tracking;
 
 import 'desktop_regtest_flow.dart';
 import 'payment_link_regtest_flow.dart';
+import '../../test/support/test_l10n.dart';
 
 const trackingCaptureKey = ValueKey('tracking_e2e_capture');
 
@@ -58,7 +59,10 @@ Future<GiftCardUsage> waitForTrackedUsage(
       await pumpUntil(tester, () {
         if (status == GiftCardUsageStatus.unknown) {
           return tester.any(
-            find.descendant(of: row, matching: find.text(last!.label)),
+            find.descendant(
+              of: row,
+              matching: find.text(last!.label(testL10n)),
+            ),
           );
         }
         final label = status == GiftCardUsageStatus.unused ? 'Unused' : 'Used';

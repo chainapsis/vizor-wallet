@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -50,8 +51,8 @@ class _KeystoneVotingScanScreenState
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
     final message = error.toString().contains('Unexpected UR type')
-        ? 'Open the signed voting QR on Keystone, then scan again.'
-        : 'Keep the QR code steady and fully visible.';
+        ? context.l10n.votingKeystoneUnexpectedUr
+        : context.l10n.commonKeepQrSteady;
     if (_error == message) return;
     setState(() {
       _error = message;
@@ -85,7 +86,10 @@ class _KeystoneVotingScanScreenState
           children: [
             Align(
               alignment: Alignment.centerLeft,
-              child: AppBackLink(label: 'Back', onTap: _goBack),
+              child: AppBackLink(
+                label: context.l10n.commonBack,
+                onTap: _goBack,
+              ),
             ),
             const SizedBox(height: AppSpacing.xs),
             Expanded(
@@ -96,7 +100,7 @@ class _KeystoneVotingScanScreenState
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Scan voting signature',
+                        context.l10n.votingScanTitle,
                         style: AppTypography.displaySmall.copyWith(
                           color: colors.text.accent,
                         ),
@@ -104,7 +108,7 @@ class _KeystoneVotingScanScreenState
                       ),
                       const SizedBox(height: AppSpacing.sm),
                       Text(
-                        'Hold the Keystone QR code steady in front of your camera',
+                        context.l10n.votingScanHold,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: colors.text.accent,
                         ),
@@ -123,9 +127,8 @@ class _KeystoneVotingScanScreenState
                         },
                         onDecodeError: _handleDecodeError,
                         onComplete: _handleScanComplete,
-                        decodingLabel: 'Reading signature...',
-                        unavailableMessage:
-                            'Keystone voting uses camera QR scanning only. Connect a camera and try again.',
+                        decodingLabel: context.l10n.commonReadingSignature,
+                        unavailableMessage: context.l10n.votingScanNoCamera,
                       ),
                     ],
                   ),

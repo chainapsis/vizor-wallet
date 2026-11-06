@@ -117,9 +117,9 @@ class _PaymentRequestScanScreenState extends State<PaymentRequestScanScreen> {
                             context.l10n.sendRequestScanPermission,
                         troubleScanningTips: [
                           context.l10n.sendRequestScanTipOriginal,
-                          context.l10n.sendRequestScanTipDistance,
-                          context.l10n.sendRequestScanTipLight,
-                          context.l10n.sendRequestScanTipContinuity,
+                          context.l10n.commonMoveTheQRCodeAFew,
+                          context.l10n.commonMakeSureTheRoomIsWell,
+                          context.l10n.commonOnAMacYouCanUse,
                         ],
                       ),
                     ],

@@ -38,7 +38,7 @@ class SwapActivityRefreshResult {
 
   final List<SwapIntent> intents;
   final Set<String> requestedIds;
-  final String? refreshError;
+  final SwapMessage? refreshError;
   final bool didRefresh;
 
   List<SwapIntent> reconcileInto(List<SwapIntent> currentIntents) {
@@ -252,7 +252,7 @@ class SwapActivityTracker {
     var updatedIntents = currentIntents;
     var didRefresh = false;
     final refreshedIds = <String>{};
-    String? refreshError;
+    SwapMessage? refreshError;
 
     for (final intent in currentIntents) {
       if (!ids.contains(intent.id)) continue;

@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 import '../../support/ledger_discovery_channel.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
@@ -1208,6 +1209,7 @@ void main() {
       expect(
         find.text(
           ledgerFailureGuidance(
+            testL10n,
             const LedgerMobileException(
               LedgerMobileFailure.permissionDenied,
               'permission',
@@ -1253,7 +1255,10 @@ void main() {
 
     await tester.pump();
     expect(connectorCalls, 1);
-    expect(find.text(kLedgerViewingKeyRequestRejectedMessage), findsOneWidget);
+    expect(
+      find.text(testL10n.ledgerFailureMsgViewingKeyRejected),
+      findsOneWidget,
+    );
     expect(find.textContaining('rejected on your Ledger'), findsNothing);
   });
 
@@ -1297,12 +1302,18 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Ledger Nano X · Recovery Ledger'), findsOneWidget);
-      expect(find.text(ledgerFailureGuidance(error)!.message), findsOneWidget);
+      expect(
+        find.text(ledgerFailureGuidance(testL10n, error)!.message),
+        findsOneWidget,
+      );
       ble.pendingConnect = null;
       await tester.tap(find.text('Try again'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text(ledgerFailureGuidance(error)!.message), findsNothing);
+      expect(
+        find.text(ledgerFailureGuidance(testL10n, error)!.message),
+        findsNothing,
+      );
     });
   }
 

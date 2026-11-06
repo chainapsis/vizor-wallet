@@ -693,7 +693,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
       if (!hasPendingBundles) {
-        final terminal = terminalDelegationMessage(roundPlan);
+        final terminal = terminalDelegationMessage(
+          votingProviderL10n,
+          roundPlan,
+        );
         if (terminal != null) {
           _setError(terminal, context: context);
           return;
@@ -890,7 +893,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     VotingSessionState current,
     rust_wire.RoundPlanView? roundPlan,
   ) {
-    final terminal = terminalDelegationMessage(roundPlan);
+    final terminal = terminalDelegationMessage(votingProviderL10n, roundPlan);
     _setStateForContext(
       context,
       current.copyWith(
@@ -1301,7 +1304,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         if (storedHotkeySecret == null) {
           _setError(
             'Voting hotkey is missing. Delegate this round before casting votes.',
-            cause: const VotingHotkeyUnavailable('missing stored hotkey'),
+            cause: const VotingHotkeyUnavailable(
+              'missing stored hotkey', // l10n-ignore: reason for a logged cause
+            ),
             context: context,
           );
           return;
@@ -1433,7 +1438,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final report = await _runRound(
           session,
           context,
-          label: 'vote',
+          label: 'vote', // l10n-ignore: log label
           // "Question N of M" counts the choices the voter selected, so it
           // must not renumber when a resume picks up less than all of them.
           policy: const rust_session.ApiRoundDrivePolicy(
@@ -1925,7 +1930,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       session,
       context,
       signer: signer,
-      label: '$logLabel-delegation',
+      label: '$logLabel-delegation', // l10n-ignore: log label
       policy: const rust_session.ApiRoundDrivePolicy(
         selectedChoiceProgress: true,
       ),
@@ -3392,7 +3397,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   static String _actionErrorMessage(Object error) {
-    return friendlyVotingErrorMessage(error);
+    return friendlyVotingErrorMessage(votingProviderL10n, error);
   }
 
   static bool _needsDelegationPreparation(VotingSessionState state) {
@@ -3551,6 +3556,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _logPirSnapshotMismatch(context: context, error: e);
       _setError(
         pirSnapshotMismatchMessage(
+          votingProviderL10n,
           expectedSnapshotHeight: e.expectedSnapshotHeight,
           diagnostics: e.diagnostics,
           includeDiagnostics: true,
@@ -3658,6 +3664,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             : base.copyWith(
                 error: VotingSessionError(
                   message: minimumVotingEligibilityMessage(
+                    votingProviderL10n,
                     snapshotHeight: context.round.snapshotHeight,
                   ),
                   isEligibilityFailure: true,
@@ -3665,7 +3672,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               ),
       );
     } catch (error) {
-      final message = friendlyVotingErrorMessage(error);
+      final message = friendlyVotingErrorMessage(votingProviderL10n, error);
       final eligibilityError =
           votingRustExceptionOf(error)?.isEligibilityFailure ?? false;
       _setStateForContext(
@@ -4420,7 +4427,7 @@ class _VoteBundleBatchException
     final details = failures
         .map(
           (failure) =>
-              'bundle ${failure.bundleIndex + 1} '
+              'bundle ${failure.bundleIndex + 1} ' // l10n-ignore: exception diagnostic text
               'proposal ${failure.proposalId}: ${failure.error}',
         )
         .join('; ');
@@ -4460,8 +4467,9 @@ class _DelegationBundleBatchException
         .map(
           (failure) => switch (failure.bundleIndex) {
             final int bundleIndex =>
-              'bundle ${bundleIndex + 1} ${failure.stage}: ${failure.error}',
-            null => 'round ${failure.stage}: ${failure.error}',
+              'bundle ${bundleIndex + 1} ${failure.stage}: ${failure.error}', // l10n-ignore: exception diagnostic text
+            null =>
+              'round ${failure.stage}: ${failure.error}', // l10n-ignore: exception diagnostic text
           },
         )
         .join('; ');
@@ -4499,7 +4507,8 @@ class _VotingSessionContext {
       isHardwareAccount && hardwareSignerKind == HardwareSignerKind.keystone;
   bool get isLedgerAccount =>
       isHardwareAccount && hardwareSignerKind == HardwareSignerKind.ledger;
-  String get hardwareSignerLabel => isLedgerAccount ? 'Ledger' : 'Keystone';
+  String get hardwareSignerLabel =>
+      isLedgerAccount ? 'Ledger' : 'Keystone'; // l10n-ignore: product name
 }
 
 class _StaleVotingSessionAction implements Exception {

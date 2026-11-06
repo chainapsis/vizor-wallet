@@ -6,7 +6,6 @@ import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../payment_links/widgets/payment_link_batch_deck.dart';
 import '../../payment_links/widgets/payment_link_gift_card.dart';
-import '../../payment_links/widgets/payment_link_copy.dart';
 import '../../send/widgets/send_review_layout.dart';
 import '../gift_card_activity_index.dart';
 import '../../../core/l10n/l10n.dart';
@@ -167,7 +166,7 @@ class GiftCardActivityDetailView extends StatelessWidget {
                       ),
                       if (batch != null)
                         ReviewListRow(
-                          label: context.l10n.activityReceiptCards,
+                          label: context.l10n.commonCards,
                           value:
                               '${batch.count} × $amountText ZEC', // l10n-ignore: amount format
                         ),
@@ -200,7 +199,7 @@ class GiftCardActivityDetailView extends StatelessWidget {
                       trailingIconName: AppIcons.help,
                       trailingIconColor: context.colors.text.secondary,
                       trailingIconTooltip: kind == GiftCardActivityKind.created
-                          ? kPaymentLinkCardFeeHelpText
+                          ? context.l10n.paymentLinkCardFeeHelpText
                           : context.l10n.txFeeHelpTooltip,
                     )
                   else if (batch != null)

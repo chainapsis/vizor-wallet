@@ -525,7 +525,7 @@ class _AmountConversionRow extends StatelessWidget {
         child: Semantics(
           button: true,
           enabled: enabled,
-          label: context.l10n.sendEnterAmountInCurrency(
+          label: context.l10n.commonEnterAmountIn(
             enterUsdMode ? 'USD' : 'ZEC', // l10n-ignore: currency codes
           ),
           child: Row(

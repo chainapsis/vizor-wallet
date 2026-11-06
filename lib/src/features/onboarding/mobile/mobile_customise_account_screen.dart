@@ -337,7 +337,7 @@ class _MobileCustomiseAccountScreenState
               .value,
       onBack: _isSubmitting ? null : _backAction,
       showBackButton: _backAction != null,
-      title: context.l10n.onboardingCustomiseAccount,
+      title: context.l10n.commonCustomiseAccount,
       subtitle: context.l10n.onboardingCustomiseAccountSubtitle,
       bottomArea: AppButton(
         key: const ValueKey('mobile_customise_account_continue'),

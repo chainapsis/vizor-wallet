@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_car
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   testWidgets('mobile loop exposes one finite artwork cycle to semantics', (
@@ -65,7 +66,7 @@ void main() {
       expect(
         announcedDesigns(),
         PaymentLinkCardArtwork.values
-            .map((artwork) => '${artwork.semanticLabel} card design')
+            .map((artwork) => '${artwork.semanticLabel(testL10n)} card design')
             .toList(),
       );
       await tester.drag(

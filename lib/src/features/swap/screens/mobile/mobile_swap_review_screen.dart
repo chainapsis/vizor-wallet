@@ -391,7 +391,7 @@ class _MobileSwapReviewScreenState
                             swapState.reviewAmountDifferenceWarning(
                               context.l10n,
                             ),
-                            swapState.statusError,
+                            swapState.statusError?.text(context.l10n),
                             startBlockedReason,
                             if (inactiveReview)
                               context.l10n.swapReviewQuoteInactive,
@@ -421,7 +421,7 @@ class _MobileSwapReviewScreenState
                         amountWarning: swapState.reviewAmountDifferenceWarning(
                           context.l10n,
                         ),
-                        startError: swapState.statusError,
+                        startError: swapState.statusError?.text(context.l10n),
                         startBlockedReason: startBlockedReason,
                         inactiveMessage: inactiveReview
                             ? context.l10n.swapReviewQuoteInactive

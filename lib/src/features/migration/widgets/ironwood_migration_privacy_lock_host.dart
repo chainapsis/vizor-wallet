@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
@@ -334,7 +335,7 @@ class _IronwoodMigrationVirtualUnlockScreenState
 
     setState(() {
       _isSubmitting = false;
-      _errorText = 'Incorrect password. Try again.';
+      _errorText = context.l10n.onboardingUnlockIncorrectPassword;
     });
   }
 
@@ -364,8 +365,7 @@ class _IronwoodMigrationVirtualUnlockScreenState
                   autofocus: true,
                   showForgotPassword: false,
                   reserveForgotPasswordSpace: true,
-                  descriptionText:
-                      'We auto-locked Vizor after 10 minutes of inactivity.',
+                  descriptionText: context.l10n.migrationPrivacyLockDescription,
                   onChanged: () => setState(() => _errorText = null),
                   onSubmit: _submit,
                 ),
@@ -424,7 +424,7 @@ class _MigrationInProgressBadge extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Text(
-                'Migration in progress',
+                context.l10n.migrationStatusDefaultButton,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.positiveStrong,
                 ),
@@ -479,7 +479,7 @@ class _MigrationLoaderState extends State<_MigrationLoader>
         AppIcons.ironwoodMigrationLoader,
         size: 28,
         color: widget.color,
-        semanticLabel: 'Migration in progress',
+        semanticLabel: context.l10n.migrationStatusDefaultButton,
       ),
     );
   }

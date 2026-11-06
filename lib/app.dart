@@ -924,7 +924,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                   if (context.mounted) {
                     showAppToast(
                       context,
-                      context.l10n.appGiftCloseCardFailed,
+                      context.l10n.commonCouldnTCloseTheCardTry,
                       iconName: AppIcons.warning,
                     );
                   }
@@ -2274,14 +2274,19 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   }
 
   void _showRejectedPaymentLinkMessage() {
-    final message = ref.read(paymentLinkIntakeProvider).errorMessage;
-    if (message == null) return;
+    final error = ref.read(paymentLinkIntakeProvider).error;
+    if (error == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final toastContext = _toastScopeKey.currentContext;
       if (!mounted || toastContext == null) return;
+      final l10n = toastContext.l10n;
       showAppToast(
         toastContext,
-        message,
+        switch (error) {
+          PaymentLinkIntakeError.queueFull => l10n.paymentLinkIntakeQueueFull,
+          PaymentLinkIntakeError.couldNotOpen =>
+            l10n.paymentLinkIntakeCouldNotOpen,
+        },
         iconName: AppIcons.warning,
         tone: AppToastTone.destructive,
       );
@@ -2928,7 +2933,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
       WindowsUpdateStatus.downloading => l10n.appUpdateDownloadingTitle,
       WindowsUpdateStatus.ready => l10n.appUpdateReadyTitle,
       WindowsUpdateStatus.applying => l10n.appUpdateRestartingTitle,
-      WindowsUpdateStatus.failed => l10n.appUpdateFailedTitle,
+      WindowsUpdateStatus.failed => l10n.commonUpdateFailed,
       _ => l10n.appUpdateAvailableTitle,
     };
   }

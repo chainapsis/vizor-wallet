@@ -30,7 +30,6 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_car
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_batch_detail_desktop_view.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -822,7 +821,7 @@ void main() {
     expect(find.text('Claimed elsewhere'), findsOneWidget);
     expect(find.text('Remove'), findsOneWidget);
     expect(find.byType(PaymentLinkArchiveHeader), findsNothing);
-    expect(find.text(kPaymentLinkNoReceivedCardsText), findsNothing);
+    expect(find.text(testL10n.paymentLinkNoReceivedCardsText), findsNothing);
   });
 
   testWidgets('a refused removal shows the card as stored', (tester) async {

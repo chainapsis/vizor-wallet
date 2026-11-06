@@ -62,7 +62,7 @@ class MobilePayAmountStep extends StatelessWidget {
     final errorText =
         precisionError ??
         state.externalAssetSupportError(context.l10n) ??
-        state.quoteError;
+        state.quoteError?.text(context.l10n);
 
     return Column(
       key: const ValueKey('mobile_pay_amount_step'),

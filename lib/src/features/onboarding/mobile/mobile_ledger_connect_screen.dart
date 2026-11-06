@@ -180,6 +180,7 @@ class _MobileLedgerConnectScreenState
                 LedgerRequestFailure.declined
             ? context.l10n.ledgerErrorViewingKeyDeclined
             : ledgerFailureGuidance(
+                    context.l10n,
                     error,
                     requestKind: LedgerRequestKind.viewingKey,
                   )?.message ??
@@ -234,7 +235,7 @@ class _MobileLedgerConnectScreenState
         _closing = false;
         _cancelFailed = true;
         _error =
-            ledgerFailureGuidance(error)?.message ??
+            ledgerFailureGuidance(context.l10n, error)?.message ??
             context.l10n.ledgerCancelFailed;
       });
     }
@@ -248,6 +249,7 @@ class _MobileLedgerConnectScreenState
     final guidance = _requestError == null
         ? null
         : ledgerFailureGuidance(
+            context.l10n,
             _requestError!,
             requestKind: LedgerRequestKind.viewingKey,
           );
@@ -258,8 +260,7 @@ class _MobileLedgerConnectScreenState
         service: ref.read(ledgerMobileBleServiceProvider),
         onRetry: () => unawaited(_readAccount(reconnect: true)),
         onClose: close,
-        purpose:
-            'add your account', // l10n-ignore: sentence fragment composed by MobileLedgerBluetoothContent
+        purpose: LedgerBluetoothPurpose.addAccount,
       );
     }
     final current = _reconnectingAccount
@@ -303,7 +304,7 @@ class _MobileLedgerConnectScreenState
           currentStep: current,
           steps: [
             LedgerStep(
-              context.l10n.onboardingConnectLedger,
+              context.l10n.commonConnectLedger,
               busy: current == 0 && pending,
             ),
             LedgerStep(
@@ -331,6 +332,7 @@ class _MobileLedgerConnectScreenState
                         ? context.l10n.ledgerCancellingTheRequest
                         : _error ??
                               ledgerViewingKeyApprovalMessage(
+                                context.l10n,
                                 _accountIndex,
                                 readiness.version,
                               )
@@ -368,7 +370,7 @@ class _MobileLedgerConnectScreenState
           child: Semantics(
             liveRegion: true,
             child: Text(
-              kLedgerOnboardingAccountIndexError,
+              context.l10n.ledgerAccountIndexOutOfRange,
               key: const ValueKey('mobile_ledger_connect_error'),
               style: AppTypography.bodySmall.copyWith(
                 color: context.colors.text.destructive,
@@ -392,7 +394,7 @@ class _MobileLedgerConnectScreenState
           progress: MobileOnboardingProgressScope.of(
             context,
           ).at(OnboardingFlow.ledger, OnboardingStage.deviceConnect).value,
-          title: context.l10n.onboardingConnectLedger,
+          title: context.l10n.commonConnectLedger,
           subtitle: context.l10n.ledgerConnectSubtitle,
           onBack: () => context.pop(),
           bottomArea: AppButton(
@@ -402,7 +404,7 @@ class _MobileLedgerConnectScreenState
             constrainContent: true,
             onPressed: _sessionOpen ? null : _startSession,
             trailing: const AppIcon(AppIcons.chevronForward),
-            child: Text(context.l10n.onboardingConnectLedger),
+            child: Text(context.l10n.commonConnectLedger),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

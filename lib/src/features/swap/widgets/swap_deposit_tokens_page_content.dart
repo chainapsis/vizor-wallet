@@ -556,7 +556,7 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.xxs),
                     Text(
-                      context.l10n.swapTimeoutTitle,
+                      context.l10n.commonTimeSUp,
                       key: const ValueKey('swap_deposit_timeout_label'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

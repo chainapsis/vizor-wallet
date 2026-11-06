@@ -180,7 +180,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                       amountWarning: swapState.reviewAmountDifferenceWarning(
                         context.l10n,
                       ),
-                      startError: swapState.statusError,
+                      startError: swapState.statusError?.text(context.l10n),
                       startBlockedReason: startBlockedReason,
                       payFiatTextOverride: swapReviewFiatTextForAsset(
                         swapState,

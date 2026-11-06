@@ -1883,11 +1883,11 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
             const SizedBox(height: AppSpacing.s),
             _HomeDesktopMigrationCtaButton(
               label: migrationRequired
-                  ? context.l10n.homeMigrateToIronwood
+                  ? context.l10n.commonMigrateToIronwood
                   : migrationStopped
-                  ? context.l10n.homeMigrationStoppedByUpgrade
+                  ? context.l10n.commonMigrationStoppedByNetworkUpgrade
                   : widget.waitingForMigrationConfirmation
-                  ? context.l10n.homeMigrationWaitingConfirmation
+                  ? context.l10n.commonWaitingForConfirmation
                   : context.l10n.homeMigrationStillMigrating(
                       hideAmountIfPrivacyMode(
                         '${widget.migratingBalanceText} ZEC', // l10n-ignore: amount format

@@ -456,7 +456,7 @@ _NetworkPrivacyPresentation _presentationFor(
     ),
     (NetworkPrivacyConnectionStatus.connecting, true) =>
       _NetworkPrivacyPresentation(
-        statusLabel: l10n.settingsTorStatusConnecting,
+        statusLabel: l10n.commonConnecting,
         // Names the way out. On a network that blocks Tor the wait runs to the
         // bootstrap deadline with every request failing closed, and restarting
         // the app only starts the same wait again, so the escape has to be

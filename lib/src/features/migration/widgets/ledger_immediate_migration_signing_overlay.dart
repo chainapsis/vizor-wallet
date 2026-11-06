@@ -1,4 +1,5 @@
 import '../../ledger/services/ledger_device_selection.dart';
+import '../../../core/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -106,7 +107,7 @@ class _LedgerImmediateMigrationSigningOverlayState
       if (!mounted || _cancelled) return;
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
-        _error = _friendlyError(error);
+        _error = _friendlyError(context.l10n, error);
       });
     }
   }
@@ -135,9 +136,10 @@ class _LedgerImmediateMigrationSigningOverlayState
     }
   }
 
-  String _friendlyError(Object error) {
+  String _friendlyError(AppLocalizations l10n, Object error) {
     _requestFailure = LedgerRequestFailure.fromError(error);
     _deviceGuidance = ledgerFailureGuidance(
+      context.l10n,
       error,
       requestKind: LedgerRequestKind.migration,
     );
@@ -147,21 +149,21 @@ class _LedgerImmediateMigrationSigningOverlayState
     final message = error.toString().toLowerCase();
     if (LedgerRequestFailure.fromError(error) ==
         LedgerRequestFailure.declined) {
-      return 'The migration transaction was rejected on your Ledger.';
+      return l10n.migrationLedgerRejected;
     }
     if (isLedgerUsbTransportError(error)) {
-      return 'Connect and unlock your Ledger, then open the Zcash app.';
+      return l10n.migrationLedgerConnect;
     }
     if (message.contains('plan changed')) {
-      return 'The amount or fee changed. Return and review the updated plan.';
+      return l10n.migrationLedgerPlanChanged;
     }
     if (message.contains('proof')) {
-      return 'Vizor could not finish preparing migration proofs.';
+      return l10n.migrationLedgerProofs;
     }
     if (message.contains('broadcast') || message.contains('sendtransaction')) {
-      return 'The migration transaction could not be broadcast.';
+      return l10n.migrationLedgerBroadcast;
     }
-    return 'Ledger migration could not be completed.';
+    return l10n.migrationLedgerFailed;
   }
 
   @override
@@ -177,16 +179,18 @@ class _LedgerImmediateMigrationSigningOverlayState
               pairingInvalid: _deviceGuidance?.pairingInvalid ?? false,
               bluetoothRecovery: _deviceGuidance?.bluetoothRecovery ?? false,
               pairingRecovery: _deviceGuidance?.pairingRecovery ?? false,
-              title: 'Ledger migration failed',
-              statusLabel: 'Action needed',
-              message: _error ?? 'Ledger migration could not be completed.',
+              title: context.l10n.migrationLedgerFailedTitle,
+              statusLabel: context.l10n.commonActionNeeded,
+              message: _error ?? context.l10n.migrationLedgerFailed,
               showDeviceAppPrompt:
                   _deviceGuidance?.showDeviceAppPrompt ?? false,
-              actionLabel: _requestNeedsRebuilding ? null : 'Try again',
+              actionLabel: _requestNeedsRebuilding
+                  ? null
+                  : context.l10n.commonTryAgain,
             )
           : null,
       onCancel: _canLeave ? () => unawaited(_cancel()) : null,
-      cancelLabel: 'Back to review',
+      cancelLabel: context.l10n.migrationKeystoneBackToReview,
       onFailureAction:
           _phase == LedgerSigningModalPhase.failed && !_requestNeedsRebuilding
           ? () => unawaited(_retry())
@@ -195,7 +199,7 @@ class _LedgerImmediateMigrationSigningOverlayState
     if (widget.mobile) {
       return MobileLedgerSigningSurface(
         key: const ValueKey('mobile_ledger_immediate_migration_signing'),
-        title: 'Migrate with Ledger',
+        title: context.l10n.migrationLedgerTitle,
         canLeave: _canLeave,
         onBack: () => unawaited(_cancel()),
         child: modal,

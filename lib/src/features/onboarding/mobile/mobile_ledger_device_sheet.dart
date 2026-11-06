@@ -243,13 +243,14 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
   void _handleFailure(int generation, Object error) {
     if (!_isCurrent(generation)) return;
     final message =
-        ledgerFailureGuidance(error)?.message ??
+        ledgerFailureGuidance(context.l10n, error)?.message ??
         context.l10n.ledgerDiscoveryFailed;
     setState(() {
       _state = _DiscoveryState.failed;
       _error = message;
       _bluetoothRecovery =
-          ledgerFailureGuidance(error)?.bluetoothRecovery ?? false;
+          ledgerFailureGuidance(context.l10n, error)?.bluetoothRecovery ??
+          false;
       _connectingDeviceId = null;
     });
   }
@@ -314,8 +315,7 @@ class _MobileLedgerDeviceSheetState extends State<MobileLedgerDeviceSheet> {
                 onRetry: () => unawaited(_startDiscovery()),
                 onClose: _close,
                 retryLabel: context.l10n.ledgerFindMyLedger,
-                purpose:
-                    'continue', // l10n-ignore: sentence fragment composed by MobileLedgerBluetoothContent
+                purpose: LedgerBluetoothPurpose.continueFlow,
               )
             : MobileLedgerSheetContent(
                 key: const ValueKey('mobile_ledger_device_sheet'),

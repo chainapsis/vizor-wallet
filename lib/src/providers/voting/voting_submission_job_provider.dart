@@ -1,3 +1,6 @@
+import 'dart:ui' show Locale;
+
+import '../../core/l10n/l10n.dart';
 import '../../features/ledger/services/ledger_device_selection.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -230,7 +233,10 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
     try {
       resolvedAccountUuid = accountUuid ?? await _activeAccountUuid();
     } catch (error) {
-      state = state.setStartError(roundId, friendlyVotingErrorMessage(error));
+      state = state.setStartError(
+        roundId,
+        friendlyVotingErrorMessage(votingProviderL10n, error),
+      );
       return null;
     }
     if (resolvedAccountUuid == null) {
@@ -911,9 +917,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _failJob(
           key: key,
           generation: generation,
+          // The job state keeps display text and has no widget context.
           message: ledgerVotingErrorMessage(
+            votingProviderL10n,
             error,
             appInstruction: ledgerZcashAppOpenErrorInstruction(
+              lookupAppLocalizations(const Locale('en')),
               ref.read(rpcEndpointProvider).networkName,
             ),
           ),
@@ -1590,11 +1599,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     ];
   }
 
-  String _messageFromError(Object error) => friendlyVotingErrorMessage(error);
+  String _messageFromError(Object error) =>
+      friendlyVotingErrorMessage(votingProviderL10n, error);
 
   String? _statusErrorMessage(VotingSessionState state) {
     final error = state.error;
-    if (error != null) return friendlyVotingErrorText(error.message);
+    if (error != null) {
+      return friendlyVotingErrorText(votingProviderL10n, error.message);
+    }
     if (state.phase != VotingSessionPhase.error) return null;
     return _genericVotingStatusErrorMessage;
   }

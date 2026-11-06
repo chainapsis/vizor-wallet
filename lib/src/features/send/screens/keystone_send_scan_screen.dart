@@ -34,7 +34,7 @@ class KeystoneSendScanArgs {
   String unexpectedUrMessage(AppLocalizations l10n) =>
       expectedUrType == 'zcash-batch-sig-result'
       ? l10n.commonKeystoneScanSignatureResult
-      : l10n.sendKeystoneScanUnexpectedTransaction;
+      : l10n.commonOpenTheSignedTransactionQROn;
 
   final bool decodePcztResponse;
   final bool suppressSidebarSelection;
@@ -175,7 +175,7 @@ class _KeystoneSendScanScreenState extends ConsumerState<KeystoneSendScanScreen>
                         onDecodeError: _handleDecodeError,
                         onComplete: (result) =>
                             unawaited(_handleScanComplete(result)),
-                        decodingLabel: context.l10n.sendKeystoneScanReading,
+                        decodingLabel: context.l10n.commonReadingSignature,
                         unavailableMessage:
                             context.l10n.sendKeystoneScanCameraOnly,
                       ),

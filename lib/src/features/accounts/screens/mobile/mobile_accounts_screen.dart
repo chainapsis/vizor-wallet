@@ -533,8 +533,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       log('MobileAccounts: remove failed: $e\n$st');
       if (mounted) {
         showAppToast(context, switch (e) {
-          PaymentLinkInFlightClaimsException() => e.toString(),
-          WalletResetInFlightGiftCardClaimsException() => e.toString(),
+          PaymentLinkInFlightClaimsException() =>
+            context.l10n.accountsRemoveWaitForGiftCards,
+          WalletResetInFlightGiftCardClaimsException() =>
+            context.l10n.walletResetGiftCardInFlight,
           _ when isLastAccount => context.l10n.accountsResetFailedToast,
           _ => context.l10n.accountsRemoveFailedToast,
         }, iconName: AppIcons.cross);
@@ -792,6 +794,7 @@ class MobileAccountRemovalSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final unsharedGiftCardWarning = unsharedGiftCardRemovalWarning(
+      context.l10n,
       unsharedGiftCardCount,
       walletReset: isLastAccount,
     );

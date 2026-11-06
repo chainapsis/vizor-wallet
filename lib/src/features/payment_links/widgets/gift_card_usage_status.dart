@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_tooltip.dart';
@@ -86,33 +87,37 @@ class GiftCardUsageStatusView extends ConsumerWidget {
     final state = ref.watch(giftCardTrackingStateProvider);
     final checking = !usage.cleaned && state.checking;
     final failed = !usage.cleaned && !checking && state.failedFor(address);
+    final l10n = context.l10n;
     final label = checking && usage.status == GiftCardUsageStatus.unknown
-        ? 'Checking…'
-        : usage.label;
-    final suffix = usage.cleaned
-        ? ''
+        ? l10n.commonCheckingEllipsis
+        : usage.label(l10n);
+    final suffixState = usage.cleaned
+        ? 'none'
         : state.checking
         ? usage.status == GiftCardUsageStatus.unknown
-              ? ''
-              : ' · Checking…'
+              ? 'none'
+              : 'checking'
         : state.failedFor(address)
-        ? ' · Update failed'
-        : '';
+        ? 'failed'
+        : 'none';
     if (inline) {
-      final description =
-          'Card use: $label'
-          '${checking
-              ? '. Checking'
-              : failed
-              ? '. Update failed'
-              : ''}'
-          '${usage.explanation == null ? '' : '. ${usage.explanation}'}';
+      final explanation = usage.explanation(l10n);
+      final description = l10n.paymentLinkUsageSemantics(
+        label,
+        checking
+            ? 'checking'
+            : failed
+            ? 'failed'
+            : 'none',
+        explanation == null ? 'false' : 'true',
+        explanation ?? '',
+      );
       final visibleLabel =
           hideStableLabel && usage.status != GiftCardUsageStatus.unknown
           ? checking
-                ? 'Checking…'
+                ? l10n.commonCheckingEllipsis
                 : failed
-                ? 'Update failed'
+                ? l10n.commonUpdateFailed
                 : null
           : label;
       final date = dateText;
@@ -222,10 +227,12 @@ class GiftCardUsageStatusView extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           AppTooltip(
-            message: usage.explanation ?? 'Card use: $label$suffix',
+            message:
+                usage.explanation(l10n) ??
+                l10n.paymentLinkUsageCardUse(label, suffixState),
             tapToShow: true,
             child: Text(
-              'Card use: $label$suffix',
+              l10n.paymentLinkUsageCardUse(label, suffixState),
               style: AppTypography.bodySmall.copyWith(
                 color: context.colors.text.secondary,
               ),
@@ -233,7 +240,9 @@ class GiftCardUsageStatusView extends ConsumerWidget {
           ),
           if (showCheckedAt && checked != null)
             Text(
-              'Last checked: ${checked.toString().split('.').first}',
+              l10n.paymentLinkUsageLastChecked(
+                checked.toString().split('.').first,
+              ),
               style: AppTypography.bodySmall.copyWith(
                 color: context.colors.text.secondary,
               ),

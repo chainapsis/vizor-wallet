@@ -570,7 +570,7 @@ class _CustomiseAccountTitle extends StatelessWidget {
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
-            context.l10n.onboardingCustomiseAccount,
+            context.l10n.commonCustomiseAccount,
             textAlign: TextAlign.center,
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,

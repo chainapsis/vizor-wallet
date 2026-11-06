@@ -19,7 +19,7 @@ class _MobileMigrationIntro extends StatelessWidget {
               Transform.translate(
                 offset: const Offset(0, 20),
                 child: MobileTopNav.back(
-                  title: 'Zcash Network Update',
+                  title: context.l10n.migrationMobileIntroTitle,
                   titleStyle: AppTypography.headlineSmall.copyWith(
                     color: colors.text.accent,
                   ),
@@ -42,7 +42,7 @@ class _MobileMigrationIntro extends StatelessWidget {
                       ),
                       const SizedBox(height: 46),
                       SvgPicture.asset(
-                        'assets/illustrations/ironwood_wordmark.svg',
+                        'assets/illustrations/ironwood_wordmark.svg', // l10n-ignore: asset path
                         key: const ValueKey('mobile_ironwood_wordmark'),
                         width: 273,
                         height: 37,
@@ -53,7 +53,7 @@ class _MobileMigrationIntro extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.md),
                       Text(
-                        'A new shielded pool for Zcash.',
+                        context.l10n.migrationIntroTagline,
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: colors.text.accent,
@@ -61,10 +61,7 @@ class _MobileMigrationIntro extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.md),
                       Text(
-                        'Your ${data.amountText} ZEC is currently in Orchard. '
-                        'To keep using these funds for shielded payments, '
-                        "you'll need to move them to Ironwood. You'll review "
-                        'the migration plan before any funds move.',
+                        context.l10n.migrationMobileIntroBody(data.amountText),
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.muted,
@@ -91,7 +88,7 @@ class _MobileMigrationIntro extends StatelessWidget {
                       height: 50,
                       onPressed: () => _openIronwoodReleaseNotes(),
                       leading: const AppIcon(AppIcons.link, size: 18),
-                      child: const Text('Official release note'),
+                      child: Text(context.l10n.migrationMobileIntroReleaseNote),
                     ),
                     const SizedBox(height: AppSpacing.s),
                     AppButton(
@@ -101,7 +98,7 @@ class _MobileMigrationIntro extends StatelessWidget {
                       expand: true,
                       height: 50,
                       onPressed: () => context.go('/migration/how-it-works'),
-                      child: const Text('Next'),
+                      child: Text(context.l10n.onboardingNext),
                     ),
                   ],
                 ),
@@ -123,13 +120,13 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
       onFallback: () => context.go('/migration/intro'),
       child: _MobileMigrationStepScaffold(
         onBack: () => context.go('/migration/intro'),
-        navTitle: 'About',
+        navTitle: context.l10n.migrationMobileHowItWorksNavTitle,
         topGap: 31,
         childGap: 32,
-        title: 'How Migration Works',
+        title: context.l10n.migrationBackHowItWorks,
         bottom: _MobileMigrationPrimaryButton(
           key: const ValueKey('mobile_ironwood_steps_continue_button'),
-          label: 'Continue',
+          label: context.l10n.commonContinue,
           onPressed: () => context.go('/migration/options'),
         ),
         child: const _MobileMigrationProcessCard(),
@@ -162,7 +159,7 @@ class _MobileMigrationOptionsState
     extends ConsumerState<_MobileMigrationOptions> {
   late _MobileMigrationOption _selectedOption;
   var _isContinuing = false;
-  String? _continueError;
+  var _continueFailed = false;
 
   @override
   void initState() {
@@ -193,7 +190,7 @@ class _MobileMigrationOptionsState
 
     setState(() {
       _isContinuing = true;
-      _continueError = null;
+      _continueFailed = false;
     });
     IronwoodMigrationNotificationAuthorizationStatus authorization;
     try {
@@ -219,7 +216,7 @@ class _MobileMigrationOptionsState
       debugPrint('Failed to open private migration preparation: $error');
       if (!mounted) return;
       setState(() {
-        _continueError = "Couldn't open migration preparation. Try again.";
+        _continueFailed = true;
       });
     } finally {
       if (mounted) setState(() => _isContinuing = false);
@@ -235,45 +232,45 @@ class _MobileMigrationOptionsState
       syncProvider.select((sync) => sync.asData?.value.chainTipHeight),
     );
     final immediateEstimate = ironwoodImmediateMigrationCompletionEstimate(
+      context.l10n,
       ref.watch(blockSpacingProvider).fromTip(tipHeight ?? 0),
     );
     final backLocation = widget.movingRest
         ? '/migration/private/status'
         : '/migration/how-it-works';
-    final restIntro = widget.movingRest
-        ? '${ZecAmount.fromZatoshi(widget.data.amountZatoshi).compactBalance.amountText}'
-              ' ZEC is still in Orchard. '
-        : '';
+    final l10n = context.l10n;
+    final restAmount = ZecAmount.fromZatoshi(
+      widget.data.amountZatoshi,
+    ).compactBalance.amountText;
     return _MobileIronwoodMigrationBackScope(
       // The in-flight step saves a migration draft and then routes on. Leaving
       // in the middle would strand that work on a screen the user has left.
       onFallback: _isContinuing ? null : () => context.go(backLocation),
       child: _MobileMigrationStepScaffold(
         onBack: _isContinuing ? () {} : () => context.go(backLocation),
-        navTitle: 'How to Migrate',
+        navTitle: l10n.migrationMobileOptionsNavTitle,
         topGap: 91,
         childGap: 24,
         title: widget.movingRest
-            ? 'How to Move the Rest'
-            : 'Choose How to Migrate',
+            ? l10n.migrationMobileOptionsTitleRest
+            : l10n.migrationMobileOptionsTitle,
         subtitle: widget.privateEnabled
             ? widget.movingRest
-                  ? '${restIntro}Choose between more privacy over time or a '
-                        'faster migration.'
-                  : 'Choose between more privacy over time or a faster '
-                        'migration. You can review the details before '
-                        'anything moves.'
+                  ? l10n.migrationOptionsBodyMoveRest(restAmount)
+                  : l10n.migrationOptionsBody
             : widget.privateUnavailableForLedger
-            ? '${restIntro}Private migration is not available for Ledger '
-                  'accounts. Choose Immediate to continue.'
-            : '${restIntro}Private migration is temporarily unavailable on '
-                  'Android. Choose immediate to continue.',
+            ? widget.movingRest
+                  ? l10n.migrationMobileOptionsSubtitleLedgerRest(restAmount)
+                  : l10n.migrationMobileOptionsSubtitleLedger
+            : widget.movingRest
+            ? l10n.migrationMobileOptionsSubtitleAndroidRest(restAmount)
+            : l10n.migrationMobileOptionsSubtitleAndroid,
         bottom: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_continueError != null) ...[
+            if (_continueFailed) ...[
               Text(
-                _continueError!,
+                l10n.migrationMobileOptionsOpenError,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: context.colors.text.destructive,
@@ -283,7 +280,7 @@ class _MobileMigrationOptionsState
             ],
             _MobileMigrationPrimaryButton(
               key: const ValueKey('mobile_ironwood_options_continue_button'),
-              label: 'Continue',
+              label: l10n.commonContinue,
               busy: _isContinuing,
               onPressed: _isContinuing ? null : _continue,
             ),
@@ -293,13 +290,12 @@ class _MobileMigrationOptionsState
           children: [
             _MobileMigrationOptionCard(
               key: const ValueKey('mobile_ironwood_private_option'),
-              title: 'Private',
+              title: l10n.migrationOptionPrivate,
               body: widget.privateEnabled
-                  ? 'Splits transactions into multiple parts to minimize '
-                        'traceability but will take several hours to days.'
+                  ? l10n.migrationMobileOptionPrivateBody
                   : widget.privateUnavailableForLedger
-                  ? 'Not available for Ledger accounts.'
-                  : 'Not available on Android.',
+                  ? l10n.migrationOptionPrivateLedger
+                  : l10n.migrationMobileOptionPrivateUnavailableAndroid,
               selected: privateSelected,
               icon: _MigrationChoiceIcon.private,
               recommended: widget.privateEnabled,
@@ -310,10 +306,8 @@ class _MobileMigrationOptionsState
             const SizedBox(height: AppSpacing.sm),
             _MobileMigrationOptionCard(
               key: const ValueKey('mobile_ironwood_immediate_option'),
-              title: 'Immediate',
-              body:
-                  'Migrates your entire balance in one batch. '
-                  'Fast ($immediateEstimate) but less private.',
+              title: l10n.migrationOptionImmediate,
+              body: l10n.migrationMobileOptionImmediateBody(immediateEstimate),
               selected: immediateSelected,
               icon: _MigrationChoiceIcon.immediate,
               onTap: _isContinuing

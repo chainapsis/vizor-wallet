@@ -1,4 +1,5 @@
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
+import '../../support/test_l10n.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -696,7 +697,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
-    expect(find.text(LedgerRequestFailure.transportLost.title), findsOneWidget);
+    expect(
+      find.text(LedgerRequestFailure.transportLost.title(testL10n)),
+      findsOneWidget,
+    );
     expect(find.text('Ledger Flex'), findsNothing);
     expect(accounts.writes, 0);
   });
@@ -959,7 +963,7 @@ void expectPairingFailure({required bool retryable}) {
     retryable ? findsNothing : findsOneWidget,
   );
   expect(
-    find.text(kLedgerViewingKeyRequestRejectedMessage),
+    find.text(testL10n.ledgerFailureMsgViewingKeyRejected),
     retryable ? findsNothing : findsOneWidget,
   );
 }

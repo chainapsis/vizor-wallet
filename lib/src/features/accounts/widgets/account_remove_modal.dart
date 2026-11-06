@@ -205,6 +205,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     final passwordMessage = _passwordMessage;
     final removalBlockMessage = _removalBlockMessage;
     final unsharedGiftCardWarning = unsharedGiftCardRemovalWarning(
+      context.l10n,
       widget.unsharedGiftCardCount,
       walletReset: widget.isLastAccount,
     );

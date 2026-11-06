@@ -64,7 +64,7 @@ class ForgotPasscodeSheet extends ConsumerWidget {
             if (claimsInFlight > 0) ...[
               const SizedBox(height: AppSpacing.s),
               Text(
-                kWalletResetInFlightGiftCardWarningMessage,
+                context.l10n.walletResetGiftCardWarning,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: colors.text.destructive,
                 ),

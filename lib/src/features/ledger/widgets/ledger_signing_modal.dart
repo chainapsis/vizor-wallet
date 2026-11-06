@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import 'mobile/mobile_ledger_signing_content.dart';
 import 'desktop_ledger_signing_content.dart';
@@ -55,28 +56,30 @@ class LedgerSigningFailurePresentation {
   final LedgerRequestFailure? requestFailure;
 }
 
-const kLedgerAppUpdateRequiredTitle = 'Ledger app update required';
-
 /// A memo the connected app would show as a hash was refused because the app
 /// predates [kLedgerMemoHashAppVersion]. Retrying after an update reads the new
 /// version, so the action stays a retry.
-const ledgerMemoHashUpdateFailure = LedgerSigningFailurePresentation(
-  title: kLedgerAppUpdateRequiredTitle,
-  statusLabel: 'Action needed',
-  message: ledgerMemoHashUnsupportedError,
+LedgerSigningFailurePresentation ledgerMemoHashUpdateFailure(
+  AppLocalizations l10n,
+) => LedgerSigningFailurePresentation(
+  title: l10n.ledgerAppUpdateRequiredTitle,
+  statusLabel: l10n.commonActionNeeded,
+  message: l10n.ledgerFailureMsgMemoHashUnsupported,
   showDeviceAppPrompt: false,
-  actionLabel: 'Try again',
+  actionLabel: l10n.commonTryAgain,
 );
 
 /// An NU7 or Orchard-to-Ironwood transaction was refused because the app
 /// predates [kLedgerNu7AppVersion]; retrying after an update reads the new
 /// version.
-const ledgerAppUpdateFailure = LedgerSigningFailurePresentation(
-  title: kLedgerAppUpdateRequiredTitle,
-  statusLabel: 'Action needed',
-  message: ledgerAppUpdateRequiredError,
+LedgerSigningFailurePresentation ledgerAppUpdateFailure(
+  AppLocalizations l10n,
+) => LedgerSigningFailurePresentation(
+  title: l10n.ledgerAppUpdateRequiredTitle,
+  statusLabel: l10n.commonActionNeeded,
+  message: l10n.ledgerFailureMsgAppUpdateRequired(kLedgerNu7AppVersion),
   showDeviceAppPrompt: false,
-  actionLabel: 'Try again',
+  actionLabel: l10n.commonTryAgain,
 );
 
 class LedgerSigningModal extends ConsumerWidget {
@@ -85,7 +88,7 @@ class LedgerSigningModal extends ConsumerWidget {
     required this.failure,
     required this.onCancel,
     required this.onFailureAction,
-    this.cancelLabel = 'Cancel',
+    this.cancelLabel,
     this.accountUuid,
     this.connectionScope,
     this.signingStage,
@@ -110,7 +113,7 @@ class LedgerSigningModal extends ConsumerWidget {
   final LedgerSigningFailurePresentation? failure;
   final VoidCallback? onCancel;
   final VoidCallback? onFailureAction;
-  final String cancelLabel;
+  final String? cancelLabel;
   final String? accountUuid;
   final LedgerConnectionScope? connectionScope;
   final LedgerSigningStage? signingStage;
@@ -126,6 +129,7 @@ class LedgerSigningModal extends ConsumerWidget {
       ExternalActionGuardHold(child: _buildContent(context, ref));
 
   Widget _buildContent(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     final account = _ledgerAccount(ref, accountUuid);
     final selection = ref.watch(ledgerDeviceSelectionProvider);
@@ -181,16 +185,19 @@ class LedgerSigningModal extends ConsumerWidget {
       LedgerSigningModalPhase.broadcasting => LedgerSigningStage.finishing,
       LedgerSigningModalPhase.failed => LedgerSigningStage.preparing,
     };
-    var title = failed ? _failureTitle(failure!) : stage.title;
-    var message = failed ? failure!.message : stage.message;
-    var statusLabel = failed ? failure!.statusLabel : stage.status;
+    var title = failed ? _failureTitle(l10n, failure!) : stage.title(l10n);
+    var message = failed ? failure!.message : stage.message(l10n);
+    var statusLabel = failed ? failure!.statusLabel : stage.status(l10n);
     if (phase == LedgerSigningModalPhase.finishing) {
-      title = 'Finishing transaction';
-      message = 'Approved on Ledger. Vizor is finishing the transaction.';
-      statusLabel = 'Keep Vizor open';
+      title = l10n.ledgerSigningTitleFinishing;
+      message = l10n.ledgerSigningApprovedFinishing;
+      statusLabel = l10n.ledgerSigningKeepVizorOpenShort;
     }
     if (roundCount > 1) {
-      final progress = 'Transaction $roundNumber of $roundCount';
+      final progress = l10n.ledgerSigningTransactionProgress(
+        '$roundNumber',
+        '$roundCount',
+      );
       if (!failed) statusLabel = progress;
     }
     if ((phase == LedgerSigningModalPhase.awaitingDevice ||
@@ -198,14 +205,13 @@ class LedgerSigningModal extends ConsumerWidget {
         stage == LedgerSigningStage.preparing) {
       switch (readiness.phase) {
         case LedgerAppReadinessPhase.checkingDevice:
-          title = 'Checking your Ledger';
-          statusLabel = 'Checking device';
-          message = 'Vizor is checking whether the Zcash app is ready.';
+          title = l10n.commonCheckingYourLedger;
+          statusLabel = l10n.ledgerSigningStatusCheckingDevice;
+          message = l10n.commonVizorIsCheckingWhetherTheZcash;
         case LedgerAppReadinessPhase.confirmOpening:
-          title = 'Confirm opening Zcash';
-          statusLabel = 'Opening Zcash';
-          message =
-              'Confirm the request on your Ledger. Vizor will reconnect automatically.';
+          title = l10n.commonConfirmOpeningZcash;
+          statusLabel = l10n.ledgerSigningStatusOpeningZcash;
+          message = l10n.ledgerSigningConfirmRequestReconnect;
         case LedgerAppReadinessPhase.idle ||
             LedgerAppReadinessPhase.ready ||
             LedgerAppReadinessPhase.failed:
@@ -217,12 +223,12 @@ class LedgerSigningModal extends ConsumerWidget {
     if (kAppFormFactor == AppFormFactor.mobile) {
       return MobileLedgerSigningContent(
         title: !failed && stage == LedgerSigningStage.reviewing
-            ? 'Confirm on your Ledger'
+            ? l10n.ledgerSigningTitleConfirmOnLedger
             : title,
         message: message,
         status:
             !failed && stage == LedgerSigningStage.reviewing && roundCount == 1
-            ? 'Waiting for your approval'
+            ? l10n.ledgerSigningStatusWaitingApproval
             : statusLabel,
         active: !failed,
         failed: failed,
@@ -254,7 +260,9 @@ class LedgerSigningModal extends ConsumerWidget {
                 account?.ledgerDeviceId != null));
     final identity = selected != null
         ? ledgerDeviceLabel(selected)
-        : account?.ledgerDeviceName ?? model ?? 'Ledger';
+        : account?.ledgerDeviceName ??
+              model ??
+              'Ledger'; // l10n-ignore: product name
     return DesktopLedgerSigningContent(
       stage: stage,
       readiness: readiness.phase,
@@ -273,7 +281,8 @@ class LedgerSigningModal extends ConsumerWidget {
       actionLabel: actionLabel,
       cancelLabel: cancelLabel,
       onChangeConnection: canChangeConnection ? changeConnection : null,
-      identity: '$identity · ${bluetooth ? 'Bluetooth' : 'USB'}',
+      identity:
+          '$identity · ${bluetooth ? l10n.ledgerTransportBluetooth : l10n.ledgerTransportUsb}',
       roundNumber: roundNumber,
       roundCount: roundCount,
       roundFeeNotice: roundFeeNotice,
@@ -291,7 +300,9 @@ class LedgerSigningModal extends ConsumerWidget {
 }
 
 // Every flow names a required app update the same way.
-String _failureTitle(LedgerSigningFailurePresentation failure) =>
-    failure.requestFailure == LedgerRequestFailure.appUpdateRequired
-    ? kLedgerAppUpdateRequiredTitle
+String _failureTitle(
+  AppLocalizations l10n,
+  LedgerSigningFailurePresentation failure,
+) => failure.requestFailure == LedgerRequestFailure.appUpdateRequired
+    ? l10n.ledgerAppUpdateRequiredTitle
     : failure.title;

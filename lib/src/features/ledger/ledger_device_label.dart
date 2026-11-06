@@ -6,14 +6,17 @@ String ledgerDeviceLabel(LedgerBleDevice device) {
       value.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '');
   final modelKey = compact(device.model).replaceFirst(RegExp('^ledger'), '');
   final model = switch (modelKey) {
-    'nanox' => 'Ledger Nano X',
-    'flex' => 'Ledger Flex',
-    'stax' => 'Ledger Stax',
-    'flexstax' || 'staxflex' => 'Ledger Flex / Stax',
-    'nanogen5' || 'nanogeneration5' || 'apex' => 'Ledger Nano Gen5',
-    'nanos' => 'Ledger Nano S',
-    'nanosplus' => 'Ledger Nano S Plus',
-    _ => 'Ledger',
+    'nanox' => 'Ledger Nano X', // l10n-ignore: product name
+    'flex' => 'Ledger Flex', // l10n-ignore: product name
+    'stax' => 'Ledger Stax', // l10n-ignore: product name
+    'flexstax' ||
+    'staxflex' => 'Ledger Flex / Stax', // l10n-ignore: product name
+    'nanogen5' ||
+    'nanogeneration5' ||
+    'apex' => 'Ledger Nano Gen5', // l10n-ignore: product name
+    'nanos' => 'Ledger Nano S', // l10n-ignore: product name
+    'nanosplus' => 'Ledger Nano S Plus', // l10n-ignore: product name
+    _ => 'Ledger', // l10n-ignore: product name
   };
   final name = device.name.trim();
   final nameKey = compact(name);

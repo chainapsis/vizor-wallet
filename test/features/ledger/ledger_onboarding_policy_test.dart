@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../support/test_l10n.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_onboarding_policy.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
@@ -25,16 +26,16 @@ void main() {
   test('viewing-key approval names the account as the device shows it', () {
     // 3.10.0 numbers accounts from 1; earlier apps show the index itself.
     expect(
-      ledgerViewingKeyApprovalMessage(3, '3.10.0'),
+      ledgerViewingKeyApprovalMessage(testL10n, 3, '3.10.0'),
       'Approve sharing the viewing key for Account #4.',
     );
     expect(
-      ledgerViewingKeyApprovalMessage(3, '3.9.4'),
+      ledgerViewingKeyApprovalMessage(testL10n, 3, '3.9.4'),
       'Approve sharing the viewing key for Account #3.',
     );
     for (final version in [null, 'unknown']) {
       expect(
-        ledgerViewingKeyApprovalMessage(3, version),
+        ledgerViewingKeyApprovalMessage(testL10n, 3, version),
         'Approve sharing your viewing key with Vizor.',
       );
     }

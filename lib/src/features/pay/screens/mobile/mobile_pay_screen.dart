@@ -403,7 +403,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                             ?.localizedMessage(context.l10n),
                         quoteError:
                             swapState.externalAssetSupportError(context.l10n) ??
-                            swapState.quoteError,
+                            swapState.quoteError?.text(context.l10n),
                         contacts: contacts,
                         recents: recents,
                         busy: swapState.quoteLoading,

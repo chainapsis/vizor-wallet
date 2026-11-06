@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,7 +58,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    final instruction = find.text(kLedgerSigningWaitInstruction);
+    final instruction = find.text(testL10n.ledgerSigningWaitInstruction);
     expect(instruction, findsOneWidget);
     expect(tester.widget<Text>(instruction).maxLines, isNull);
     await tester.ensureVisible(find.text('Keep Ledger connected.'));

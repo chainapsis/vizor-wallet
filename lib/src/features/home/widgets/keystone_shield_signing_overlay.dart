@@ -370,7 +370,7 @@ class _KeystoneShieldSigningOverlayState
       return context.l10n.homeShieldErrorBroadcast;
     }
     if (lower.contains('extract') || lower.contains('pczt')) {
-      return context.l10n.homeShieldErrorSignatureNotApplied;
+      return context.l10n.commonKeystoneSignatureCouldNotBeApplied;
     }
     return context.l10n.homeShieldErrorGeneric;
   }
@@ -424,10 +424,10 @@ class _KeystoneShieldSigningOverlayState
                   ? context.l10n.homeShieldBroadcastingTitle
                   : context.l10n.homeShieldSignTitle,
               subtitle: isBroadcasting
-                  ? context.l10n.homeShieldSubmitting
+                  ? context.l10n.commonSubmittingTransaction
                   : context.l10n.homeShieldScanToSign,
               instruction: isBroadcasting
-                  ? context.l10n.homeShieldKeepOpen
+                  ? context.l10n.commonKeepVizorOpenWhileTheTransaction
                   : isFailed || isBroadcastWarning
                   ? null
                   : context.l10n.homeShieldAfterScan,

@@ -505,8 +505,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   void _setLedgerPreSignatureFailure(Object error) {
     final raw = error.toString();
     final lower = raw.toLowerCase();
-    final guidance = ledgerFailureGuidance(error);
+    final guidance = ledgerFailureGuidance(context.l10n, error);
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
+      context.l10n,
       ref.read(rpcEndpointProvider).networkName,
     );
     late final LedgerSigningFailurePresentation failure;
@@ -535,16 +536,16 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
     } else if (isLedgerMemoHashUnsupported(error)) {
-      failure = ledgerMemoHashUpdateFailure;
+      failure = ledgerMemoHashUpdateFailure(context.l10n);
       action = _LedgerSendRecoveryAction.retrySigning;
     } else if (isLedgerAppUpdateRequired(error)) {
-      failure = ledgerAppUpdateFailure;
+      failure = ledgerAppUpdateFailure(context.l10n);
       action = _LedgerSendRecoveryAction.retrySigning;
     } else if (lower.contains('sapling')) {
       failure = LedgerSigningFailurePresentation(
         title: context.l10n.sendLedgerSigningUnavailableTitle,
         statusLabel: context.l10n.sendLedgerStatusUnsupportedTransaction,
-        message: kLedgerSaplingRecipientMessage,
+        message: context.l10n.ledgerFailureMsgSaplingRecipient,
         showDeviceAppPrompt: false,
       );
       action = null;
@@ -552,7 +553,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       // Retrying the same request fails the same way on the device.
       failure = LedgerSigningFailurePresentation(
         requestFailure: LedgerRequestFailure.fromError(error),
-        title: LedgerRequestFailure.fromError(error).title,
+        title: LedgerRequestFailure.fromError(error).title(context.l10n),
         statusLabel: context.l10n.sendLedgerStatusNewTransactionRequired,
         message: guidance.message,
         showDeviceAppPrompt: false,
@@ -562,7 +563,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     } else if (guidance != null) {
       failure = LedgerSigningFailurePresentation(
         requestFailure: LedgerRequestFailure.fromError(error),
-        title: context.l10n.sendLedgerNeedsAttentionTitle,
+        title: context.l10n.commonLedgerNeedsAttention,
         statusLabel: context.l10n.commonActionNeeded,
         message: guidance.message,
         showDeviceAppPrompt: guidance.showDeviceAppPrompt,
@@ -577,9 +578,13 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         LedgerRequestFailure.declined =>
           context.l10n.sendLedgerRejectedOnDevice,
         LedgerRequestFailure.transportLost =>
-          ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
+          ledgerUsbErrorMessage(
+                context.l10n,
+                error,
+                appInstruction: appInstruction,
+              ) ??
               context.l10n.sendLedgerConnectAndUnlock(appInstruction),
-        _ => context.l10n.sendLedgerSigningIncomplete,
+        _ => context.l10n.commonLedgerSigningCouldNotBeCompleted,
       };
       failure = LedgerSigningFailurePresentation(
         requestFailure: LedgerRequestFailure.fromError(error),
@@ -980,7 +985,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         lower.contains('send flow mismatch')) {
       return context.l10n.commonSigningExpired;
     }
-    final batchError = keystoneBatchSigningFriendlyError(raw);
+    final batchError = keystoneBatchSigningFriendlyError(context.l10n, raw);
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
       return context.l10n.commonProvingParamsFailed;
@@ -1240,7 +1245,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             : isLedger
                             ? context.l10n.sendReviewConfirmWithLedger
                             : isHardware
-                            ? context.l10n.sendKeystoneConfirmTitle
+                            ? context.l10n.commonConfirmWithKeystone
                             : context.l10n.sendReviewConfirmDonation,
                         confirmIcon: isHardware
                             ? (isLedger ? AppIcons.ledger : AppIcons.qr)
@@ -1274,7 +1279,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             : isLedger
                             ? context.l10n.sendReviewConfirmWithLedger
                             : isHardware
-                            ? context.l10n.sendKeystoneConfirmTitle
+                            ? context.l10n.commonConfirmWithKeystone
                             : context.l10n.sendReviewConfirmAndSend,
                         confirmLeadingIconName: isHardware
                             ? (isLedger ? AppIcons.ledger : AppIcons.qr)
@@ -1311,19 +1316,19 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                       phase: keystonePhase,
                       urParts: _keystoneUrParts,
                       error: _keystoneError,
-                      title: context.l10n.sendKeystoneConfirmTitle,
+                      title: context.l10n.commonConfirmWithKeystone,
                       subtitle: _keystoneUrPartsByRound.length == 2
                           ? context.l10n.sendKeystoneTransactionOfTwo(
                               _keystoneRound + 1,
                             )
-                          : context.l10n.sendKeystoneScanSubtitle,
+                          : context.l10n.commonScanWithYourKeystone,
                       instruction:
                           _keystoneError ??
                           (_keystonePcztsWithProofs.isEmpty
                               ? context.l10n.sendKeystoneScanNow
                               : context.l10n.commonKeystoneAfterScan),
                       primaryLabel: _keystonePcztsWithProofs.isEmpty
-                          ? context.l10n.sendKeystonePreparing
+                          ? context.l10n.commonPreparing
                           : context.l10n.commonGetSignature,
                       onPrimary:
                           !_proposalAbandoned &&

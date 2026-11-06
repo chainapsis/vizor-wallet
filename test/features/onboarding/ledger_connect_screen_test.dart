@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../support/test_l10n.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -645,7 +646,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
     await tester.pumpAndSettle();
 
-    expect(find.text(kLedgerViewingKeyRequestRejectedMessage), findsOneWidget);
+    expect(
+      find.text(testL10n.ledgerFailureMsgViewingKeyRejected),
+      findsOneWidget,
+    );
     expect(find.textContaining('rejected on your Ledger'), findsNothing);
     expect(importCalls, 0);
   });
@@ -720,7 +724,10 @@ void main() {
         find.byKey(const ValueKey('ledger_desktop_ble_device_ledger-1')),
       );
       await tester.pumpAndSettle();
-      expect(find.text(ledgerFailureGuidance(error)!.message), findsOneWidget);
+      expect(
+        find.text(ledgerFailureGuidance(testL10n, error)!.message),
+        findsOneWidget,
+      );
       expect(find.text('Try again'), findsOneWidget);
     },
   );
@@ -1542,14 +1549,14 @@ void main() {
     expect(find.text('birthday-uview-bluetooth'), findsOneWidget);
   });
 
-  for (final (error, message) in const [
+  for (final (error, message) in [
     (
       _deviceRejected,
       'Sharing was declined on Ledger. Try again when you’re ready.',
     ),
     (
       'ledger_status_6a80: Ledger rejected the PCZT data or key path',
-      kLedgerViewingKeyRequestRejectedMessage,
+      testL10n.ledgerFailureMsgViewingKeyRejected,
     ),
   ]) {
     testWidgets(

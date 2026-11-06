@@ -9225,7 +9225,9 @@ void main() {
       expect(sessionStore.savedIntents.single.depositTxHash, 'zec-auto-txid');
       expect(
         sessionStore.savedIntents.single.broadcastNotice,
-        'Broadcast could not start after local creation',
+        const SwapLiteralMessage(
+          'Broadcast could not start after local creation',
+        ),
       );
       await _openSwapStatusDetails(tester, expand: true);
       expect(find.text('zec-auto-txid'), findsWidgets);
@@ -10182,7 +10184,10 @@ void main() {
         expect(saved.payMode, payMode);
         expect(saved.depositTxHash, 'mined-parent,expired-child');
         expect(saved.broadcastStatus, 'partial_broadcast');
-        expect(saved.broadcastNotice, 'The remaining round expired');
+        expect(
+          saved.broadcastNotice,
+          const SwapLiteralMessage('The remaining round expired'),
+        );
         // Potential funds on the network must still protect account deletion.
         expect(saved.hasConfirmedDepositEvidence, isTrue);
         expect(saved.status, SwapIntentStatus.awaitingDeposit);
@@ -10285,7 +10290,7 @@ void main() {
       );
       expect(
         sessionStore.savedIntents.single.broadcastNotice,
-        'broadcast timed out before confirmation',
+        const SwapLiteralMessage('broadcast timed out before confirmation'),
       );
       await _openSwapStatusDetails(tester, expand: true);
       expect(find.text('hardware- ... st-txid'), findsWidgets);
@@ -11107,7 +11112,7 @@ SwapIntent _persistedIntent({
   String? nextAction,
   String accountUuid = 'account-1',
 }) {
-  final effectiveNextAction = nextAction ?? status.label;
+  final effectiveNextAction = nextAction ?? status.name;
   return SwapIntent(
     id: id,
     pair: 'ZEC -> USDC',

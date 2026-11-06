@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../../support/test_l10n.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_selection.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
@@ -229,7 +230,7 @@ void main() {
     await tester.pumpWidget(
       _harness(
         phase: LedgerSigningModalPhase.failed,
-        failure: ledgerMemoHashUpdateFailure,
+        failure: ledgerMemoHashUpdateFailure(testL10n),
         onFailureAction: () => retryCount++,
       ),
     );
@@ -258,7 +259,7 @@ void main() {
       ),
     );
 
-    expect(find.text(kLedgerAppUpdateRequiredTitle), findsOneWidget);
+    expect(find.text(testL10n.ledgerAppUpdateRequiredTitle), findsOneWidget);
     expect(find.text('Ledger signing failed'), findsNothing);
     expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
   });

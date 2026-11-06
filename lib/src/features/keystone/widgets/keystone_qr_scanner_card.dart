@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -46,7 +47,7 @@ class KeystoneQrScannerCard extends StatefulWidget {
     required this.onDecodeError,
     required ValueChanged<ScanResult> onComplete,
     required this.unavailableMessage,
-    this.decodingLabel = 'Reading QR...',
+    this.decodingLabel,
     this.cardWidth,
     this.cameraHeight,
     this.fullBleedMobile = false,
@@ -59,25 +60,16 @@ class KeystoneQrScannerCard extends StatefulWidget {
        scanSessionResetToken = null,
        controller = null,
        cameraViewBuilder = null,
-       permissionDescription =
-           'A camera is required to connect Keystone.\n'
-           'You can revert this in settings anytime later.',
-       troubleScanningTips = _troubleScanningTips;
+       permissionDescription = null,
+       troubleScanningTips = null;
 
   /// Uses the existing camera card and controls for single-frame QR payloads.
   const KeystoneQrScannerCard.plain({
     required ValueChanged<String> this.onPlainComplete,
     required this.error,
     required this.unavailableMessage,
-    this.permissionDescription =
-        'A camera is required to scan the gift card QR code.\n'
-        'You can revert this in settings anytime later.',
-    this.troubleScanningTips = const [
-      'Open the gift card QR code full screen on another device.',
-      'Move the QR code a few inches further from the camera so it can focus.',
-      "Make sure the room is well-lit and the QR code isn't reflecting glare.",
-      'On a Mac, you can use Continuity Camera to scan with your iPhone instead.',
-    ],
+    this.permissionDescription,
+    this.troubleScanningTips,
     this.scanSessionResetToken,
     this.controller,
     this.cameraViewBuilder,
@@ -87,7 +79,7 @@ class KeystoneQrScannerCard extends StatefulWidget {
        onProgress = null,
        onDecodeError = null,
        _onComplete = null,
-       decodingLabel = 'Reading QR...',
+       decodingLabel = null,
        cardWidth = null,
        cameraHeight = null,
        fullBleedMobile = false,
@@ -106,15 +98,19 @@ class KeystoneQrScannerCard extends StatefulWidget {
   ValueChanged<ScanResult> get onComplete => _onComplete!;
   final ValueChanged<String>? onPlainComplete;
   final Object? scanSessionResetToken;
-  final String permissionDescription;
-  final List<String> troubleScanningTips;
+
+  /// Null shows the default explanation for this scanner kind.
+  final String? permissionDescription;
+
+  /// Null shows the default tips for this scanner kind.
+  final List<String>? troubleScanningTips;
 
   /// An injected controller remains owned by the caller.
   final MobileScannerController? controller;
   final Widget Function(BuildContext, MobileScannerController)?
   cameraViewBuilder;
   final String unavailableMessage;
-  final String decodingLabel;
+  final String? decodingLabel;
 
   /// Layout overrides for the mobile single-pane flow; the defaults keep
   /// the desktop pane dimensions.
@@ -347,14 +343,17 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   }
 
   String _cameraLabel(MobileScannerState state) {
-    if (!QrScanner.isAvailable) return 'No camera found';
-    if (_loadingCameras && _cameras.isEmpty) return 'Loading camera...';
+    final l10n = context.l10n;
+    if (!QrScanner.isAvailable) return l10n.commonNoCameraFound;
+    if (_loadingCameras && _cameras.isEmpty) return l10n.commonLoadingCamera;
 
     final selectedCamera = _cameraById(_selectedCameraId);
     final camera = selectedCamera ?? state.camera ?? _defaultCamera;
-    final name = camera?.name ?? 'Default camera';
+    final name = camera?.name ?? l10n.commonDefaultCamera;
+    // Platform camera names may already carry this English marker.
     if (camera?.isDefault == true && !name.contains('(Default)')) {
-      return '$name (Default)';
+      // l10n-ignore: matches platform camera names
+      return l10n.keystoneCameraNameDefault(name);
     }
     return name;
   }
@@ -378,16 +377,16 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   String _cameraUnavailableDescription(MobileScannerState state) {
     final message = state.error?.errorDetails?.message;
     if (message != null && message.isNotEmpty) return message;
-    return 'No camera could be opened. Check that a camera is connected and not in use by another app.';
+    return context.l10n.commonNoCameraCouldBeOpenedCheck;
   }
 
   String get _cameraDeniedTitle => Platform.isWindows
-      ? 'Enable Windows camera access'
-      : "You've denied the Camera access";
+      ? context.l10n.commonEnableWindowsCameraAccess
+      : context.l10n.keystoneCameraDeniedTitle;
 
   String get _cameraDeniedDescription => Platform.isWindows
-      ? 'Turn on Camera access and Let desktop apps access your camera in Windows Settings.'
-      : 'Request again, or enable manually\nin the System settings.';
+      ? context.l10n.commonTurnOnCameraAccessAndLet
+      : context.l10n.commonCameraRequestAgainHint;
 
   Future<void> _retryCameraStart({required bool openSettingsOnDenied}) async {
     if (!QrScanner.isAvailable ||
@@ -428,7 +427,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
         size: AppButtonSize.medium,
         minWidth: 96,
         leading: const AppIcon(AppIcons.renew),
-        child: const Text('Allow camera'),
+        child: Text(context.l10n.keystoneAllowCamera),
       );
     }
 
@@ -443,7 +442,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
           size: AppButtonSize.medium,
           minWidth: 128,
           leading: const AppIcon(AppIcons.renew),
-          child: const Text('Request again'),
+          child: Text(context.l10n.commonRequestAgain),
         ),
         const SizedBox(height: AppSpacing.xs),
         AppButton(
@@ -453,7 +452,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
           size: AppButtonSize.medium,
           minWidth: 128,
           leading: const AppIcon(AppIcons.cog),
-          child: const Text('Open settings'),
+          child: Text(context.l10n.commonOpenSettings),
         ),
       ],
     );
@@ -649,7 +648,11 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                           bottom: -2,
                                           child:
                                               KeystoneTransactionProgressOverlay(
-                                                label: widget.decodingLabel,
+                                                label:
+                                                    widget.decodingLabel ??
+                                                    context
+                                                        .l10n
+                                                        .keystoneReadingQr,
                                                 borderRadius:
                                                     BorderRadius.circular(
                                                       cameraRadius,
@@ -680,9 +683,18 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                           icon: _mobileFormFactor
                                               ? AppIcons.cameraDenied
                                               : AppIcons.camera,
-                                          title: 'Enable camera access',
+                                          title: context
+                                              .l10n
+                                              .keystoneCameraEnableTitle,
                                           description:
-                                              widget.permissionDescription,
+                                              widget.permissionDescription ??
+                                              (widget.onPlainComplete != null
+                                                  ? context
+                                                        .l10n
+                                                        .keystoneCameraGiftBody
+                                                  : context
+                                                        .l10n
+                                                        .keystoneCameraEnableBody),
                                           iconStyle: _CameraPermissionIconStyle
                                               .inverse,
                                         ),
@@ -693,11 +705,16 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                           backgroundColor: cardSurface,
                                           icon: AppIcons.cameraDenied,
                                           title: restricted
-                                              ? 'Camera access is restricted'
-                                              : 'Camera unavailable',
+                                              ? context
+                                                    .l10n
+                                                    .commonCameraRestrictedTitle
+                                              : context
+                                                    .l10n
+                                                    .commonCameraUnavailable,
                                           description: restricted
-                                              ? 'Screen Time or device management\n'
-                                                    'is blocking the camera.'
+                                              ? context
+                                                    .l10n
+                                                    .commonCameraRestrictedBody
                                               : _cameraUnavailableDescription(
                                                   scannerState,
                                                 ),
@@ -715,7 +732,9 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                             leading: const AppIcon(
                                               AppIcons.renew,
                                             ),
-                                            child: const Text('Try again'),
+                                            child: Text(
+                                              context.l10n.commonTryAgain,
+                                            ),
                                           ),
                                         ),
                                       if (accessStatus ==
@@ -822,7 +841,11 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                     onDismiss: _dismissTroubleScanning,
                     borderRadius: BorderRadius.circular(_cameraRadius),
                     child: _TroubleScanningPopover(
-                      tips: widget.troubleScanningTips,
+                      tips:
+                          widget.troubleScanningTips ??
+                          (widget.onPlainComplete != null
+                              ? _giftTroubleScanningTips(context.l10n)
+                              : _troubleScanningTips(context.l10n)),
                       onDismiss: _dismissTroubleScanning,
                     ),
                   ),
@@ -845,7 +868,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
               onPressed: null,
               variant: AppButtonVariant.primary,
               minWidth: 256,
-              child: const Text('Continue'),
+              child: Text(context.l10n.commonContinue),
             ),
           ],
         ],
@@ -854,12 +877,18 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   }
 }
 
-const _troubleScanningTips = [
-  'Tap the QR code on your Keystone to show it full screen. This is the '
-      'easiest fix.',
-  'Move your Keystone a few inches further from the camera so it can focus.',
-  "Make sure the room is well-lit and the QR code isn't reflecting glare.",
-  'On a Mac, you can use Continuity Camera to scan with your iPhone instead.',
+List<String> _troubleScanningTips(AppLocalizations l10n) => [
+  l10n.keystoneTipTapFullScreen,
+  l10n.keystoneTipMoveKeystoneFurther,
+  l10n.commonMakeSureTheRoomIsWell,
+  l10n.commonOnAMacYouCanUse,
+];
+
+List<String> _giftTroubleScanningTips(AppLocalizations l10n) => [
+  l10n.keystoneTipGiftFullScreen,
+  l10n.commonMoveTheQRCodeAFew,
+  l10n.commonMakeSureTheRoomIsWell,
+  l10n.commonOnAMacYouCanUse,
 ];
 
 class _TroubleScanningDisclosure extends StatelessWidget {
@@ -895,7 +924,7 @@ class _TroubleScanningDisclosure extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Trouble scanning?',
+                          context.l10n.keystoneTroubleScanning,
                           style: AppTypography.labelLarge.copyWith(
                             color: labelColor,
                           ),
@@ -943,7 +972,7 @@ class _TroubleScanningPopover extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Trouble scanning?',
+                  context.l10n.keystoneTroubleScanning,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: colors.text.accent,
                   ),
@@ -1133,7 +1162,7 @@ class _CameraControlRow extends StatelessWidget {
                 AppIcon(AppIcons.camera, size: 20, color: cameraIconColor),
                 const SizedBox(width: AppSpacing.xxs),
                 Text(
-                  'Camera',
+                  context.l10n.commonCamera,
                   style: AppTypography.labelLarge.copyWith(
                     color: cameraLabelColor,
                   ),
@@ -1285,7 +1314,7 @@ class _CameraPickerModal extends StatelessWidget {
             onPressed: onCancel,
             variant: AppButtonVariant.ghost,
             minWidth: _buttonWidth,
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
         ],
       ),
@@ -1319,7 +1348,7 @@ class _CameraPickerHeader extends StatelessWidget {
         const SizedBox(width: AppSpacing.xs),
         Expanded(
           child: Text(
-            'Select Camera',
+            context.l10n.keystoneSelectCamera,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
               color: colors.text.accent,
@@ -1343,31 +1372,32 @@ class _CameraOptionCard extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  String get _detailLabel {
+  String _detailLabel(AppLocalizations l10n) {
     final parts = <String>[];
-    if (camera.isDefault) parts.add('Default');
-    if (camera.isExternal) parts.add('External');
+    if (camera.isDefault) parts.add(l10n.commonDefault);
+    if (camera.isExternal || camera.facing == CameraFacing.external) {
+      parts.add(l10n.keystoneCameraExternal);
+    }
     switch (camera.facing) {
       case CameraFacing.front:
-        parts.add('Front');
+        parts.add(l10n.keystoneCameraFront);
       case CameraFacing.back:
-        parts.add('Back');
+        parts.add(l10n.commonBack);
       case CameraFacing.external:
-        if (!parts.contains('External')) parts.add('External');
       case CameraFacing.unknown:
         break;
     }
     switch (camera.lensType) {
       case CameraLensType.normal:
-        parts.add('Normal');
+        parts.add(l10n.keystoneCameraNormal);
       case CameraLensType.wide:
-        parts.add('Wide');
+        parts.add(l10n.keystoneCameraWide);
       case CameraLensType.zoom:
-        parts.add('Zoom');
+        parts.add(l10n.keystoneCameraZoom);
       case CameraLensType.any:
         break;
     }
-    return parts.isEmpty ? 'Camera' : parts.join(' / ');
+    return parts.isEmpty ? l10n.commonCamera : parts.join(' / ');
   }
 
   @override
@@ -1424,7 +1454,7 @@ class _CameraOptionCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      _detailLabel,
+                      _detailLabel(context.l10n),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelMedium.copyWith(

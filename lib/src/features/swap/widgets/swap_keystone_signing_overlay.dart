@@ -212,7 +212,7 @@ class _SwapKeystoneSigningOverlayState
       log('SwapKeystoneSigning._getSignature: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _error = context.l10n.swapKeystoneQrMismatch;
+        _error = context.l10n.commonThisQRCodeDoesNotMatch;
       });
     }
   }
@@ -360,10 +360,10 @@ class _SwapKeystoneSigningOverlayState
                 ? context.l10n.swapKeystoneBroadcastingTitle
                 : context.l10n.swapKeystoneSignTitle,
             subtitle: isBroadcasting
-                ? context.l10n.homeShieldSubmitting
-                : context.l10n.swapKeystoneScanToSign,
+                ? context.l10n.commonSubmittingTransaction
+                : context.l10n.commonScanToSign,
             instruction: isBroadcasting
-                ? context.l10n.homeShieldKeepOpen
+                ? context.l10n.commonKeepVizorOpenWhileTheTransaction
                 : _phase == _SwapKeystonePhase.failed
                 ? null
                 : _error ?? context.l10n.commonKeystoneAfterScan,
@@ -403,8 +403,9 @@ class _SwapKeystoneSigningOverlayState
       return context.l10n.swapKeystoneNoTex;
     }
     final batchError = keystoneBatchSigningFriendlyError(
+      context.l10n,
       error,
-      subject: 'deposit',
+      subject: KeystoneBatchSubject.deposit,
     );
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
@@ -417,7 +418,7 @@ class _SwapKeystoneSigningOverlayState
       return context.l10n.swapKeystoneBroadcastFailed;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
-      return context.l10n.homeShieldErrorSignatureNotApplied;
+      return context.l10n.commonKeystoneSignatureCouldNotBeApplied;
     }
     return context.l10n.swapKeystoneIncomplete;
   }

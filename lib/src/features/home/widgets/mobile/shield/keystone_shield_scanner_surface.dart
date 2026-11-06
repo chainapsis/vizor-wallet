@@ -34,7 +34,7 @@ class KeystoneShieldScannerSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final message = decoding
-        ? context.l10n.homeShieldReadingSignature
+        ? context.l10n.commonReadingSignatureEllipsis
         : hint ?? context.l10n.homeShieldScanning(progress);
     final style = AppTypography.bodyMedium.copyWith(
       color: const Color(0xFFFFFFFF),
@@ -53,7 +53,7 @@ class KeystoneShieldScannerSurface extends StatelessWidget {
     final messageHeight = math.max(
       measure(message),
       math.max(
-        measure(context.l10n.homeShieldReadingSignature),
+        measure(context.l10n.commonReadingSignatureEllipsis),
         measure(context.l10n.homeShieldScanning(100)),
       ),
     );

@@ -47,7 +47,7 @@ class PayAmountStep extends StatelessWidget {
     final quoteError =
         precisionError ??
         state.externalAssetSupportError(context.l10n) ??
-        state.quoteError;
+        state.quoteError?.text(context.l10n);
     final counterpartText = inputIsFiat
         ? (state.receiveAmountText.trim().isEmpty
               ? null

@@ -152,7 +152,10 @@ void main() {
       reviewVisible: false,
       intents: [],
       quoteMode: SwapQuoteMode.exactOutput,
-      supportedAssetsError: error,
+      supportedAssetsError: SwapFailureMessage(
+        SwapFailureOperation.tokenList,
+        SwapFailureCategory.torBlocked,
+      ),
     );
 
     expect(state.externalAssetIsSupported, isTrue);

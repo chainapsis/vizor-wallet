@@ -363,7 +363,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     final quoteError =
         swapState.quoteAmountPrecisionError(context.l10n) ??
         swapState.externalAssetSupportError(context.l10n) ??
-        swapState.quoteError;
+        swapState.quoteError?.text(context.l10n);
 
     return NearIntentsServiceNoticeHost(
       direction: swapState.direction,
@@ -521,7 +521,7 @@ class _MobileSwapReviewButton extends StatelessWidget {
                   ? context.l10n.commonNotEnoughZec
                   : state.quoteLoading
                   ? context.l10n.swapActionGettingQuote
-                  : context.l10n.swapActionContinueToReview);
+                  : context.l10n.commonContinueToReview);
 
     return AppButton(
       key: const ValueKey('mobile_swap_review_button'),

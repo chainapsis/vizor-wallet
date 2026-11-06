@@ -40,7 +40,6 @@ import 'package:zcash_wallet/src/features/payment_links/screens/gift_claim_scree
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_motion.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
@@ -59,6 +58,7 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 import '../../support/payment_link_navigation_support.dart';
+import '../../support/test_l10n.dart';
 import '../../support/payment_links_screen_support.dart'
     show
         FakePaymentLinkClipboard,
@@ -1571,7 +1571,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.bySemanticsLabel(kPaymentLinkRevealMessageSemanticLabel),
+      find.bySemanticsLabel(testL10n.paymentLinkRevealMessageSemanticLabel),
     );
     await tester.pumpAndSettle();
 
@@ -1590,7 +1590,7 @@ void main() {
     await tester.tap(back);
     await tester.pumpAndSettle();
     expect(
-      find.bySemanticsLabel(kPaymentLinkRevealMessageSemanticLabel),
+      find.bySemanticsLabel(testL10n.paymentLinkRevealMessageSemanticLabel),
       findsOneWidget,
     );
     semantics.dispose();

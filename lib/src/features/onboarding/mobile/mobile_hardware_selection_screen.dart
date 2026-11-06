@@ -32,7 +32,7 @@ class MobileHardwareSelectionScreen extends ConsumerWidget {
           MobileOnboardingSelectionCard(
             key: const ValueKey('mobile_welcome_ledger'),
             iconName: AppIcons.ledger,
-            title: context.l10n.onboardingConnectLedger,
+            title: context.l10n.commonConnectLedger,
             description: context.l10n.onboardingImportFromLedger,
             onPressed: () => context.pushOnboarding('/onboarding/ledger'),
           ),

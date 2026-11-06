@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/zcash/network_upgrade_hold.dart';
@@ -53,16 +54,15 @@ int _unknownChainHeight() => 0;
 class LedgerGiftFundingTerminalException implements Exception {
   const LedgerGiftFundingTerminalException({this.reason});
 
-  static const message =
-      'This gift card transaction expired or was rejected. Go back to create a new gift card.';
-
   /// Rust's reason for the expiry, which can be the network upgrade hold.
   final String? reason;
 
-  String get userMessage => networkUpgradeHoldMessage(reason ?? '') ?? message;
+  String userMessage(AppLocalizations l10n) =>
+      networkUpgradeHoldMessage(reason ?? '') ??
+      l10n.paymentLinkLedgerFundingExpired;
 
   @override
-  String toString() => userMessage;
+  String toString() => 'LedgerGiftFundingTerminalException($reason)';
 }
 
 /// Reuses Gift Card draft/proof storage but uses the Ledger signed outbox.

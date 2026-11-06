@@ -32,14 +32,14 @@ class _MobileIronwoodWaitingStatusCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Note Split',
+                context.l10n.migrationMobileWaitNoteSplit,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: context.colors.text.accent,
                 ),
               ),
               const SizedBox(height: AppSpacing.base),
               _MobileMigrationWaitingDetailRow(
-                label: 'Split Notes into $partCount Migration Parts',
+                label: context.l10n.migrationMobileWaitSplitInto(partCount),
                 value: '',
                 active: false,
               ),
@@ -64,8 +64,11 @@ class _MobileIronwoodWaitingStatusCard extends StatelessWidget {
                 ),
               ),
               _MobileMigrationWaitingDetailRow(
-                label: 'Wait for confirmation',
-                value: '$confirmations/$confirmationTarget blocks',
+                label: context.l10n.migrationMobileWaitConfirmation,
+                value: context.l10n.migrationMobileWaitBlocks(
+                  confirmations,
+                  confirmationTarget,
+                ),
                 active:
                     confirmationTarget <= 0 ||
                     confirmations < confirmationTarget,
@@ -76,17 +79,15 @@ class _MobileIronwoodWaitingStatusCard extends StatelessWidget {
         const SizedBox(height: AppSpacing.base),
         Text(
           requiresKeystoneApproval
-              ? 'Another Keystone approval will be needed after these '
-                    'confirmations.'
-              : 'Migration will start automatically once note split is '
-                    'complete.',
+              ? context.l10n.migrationMobileWaitKeystoneAgain
+              : context.l10n.migrationMobileWaitAutoStart,
           textAlign: TextAlign.center,
           style: AppTypography.bodyMediumStrong.copyWith(
             color: context.colors.text.accent,
           ),
         ),
         const SizedBox(height: AppSpacing.s),
-        const _MigrationCanLeaveMessage(),
+        _MigrationCanLeaveMessage(),
       ],
     );
   }

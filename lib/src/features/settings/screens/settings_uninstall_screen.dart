@@ -122,7 +122,7 @@ class _SettingsUninstallScreenState
       if (claimsInFlight > 0) {
         setState(() {
           _isCheckingSwaps = false;
-          _confirmError = kWalletResetInFlightGiftCardClaimsMessage;
+          _confirmError = context.l10n.walletResetGiftCardInFlight;
         });
         return;
       }
@@ -268,7 +268,7 @@ class _SettingsUninstallScreenState
       _progressController.stop();
       setState(() {
         _stage = SettingsUninstallStage.confirm;
-        _confirmError = kWalletResetInFlightGiftCardClaimsMessage;
+        _confirmError = context.l10n.walletResetGiftCardInFlight;
       });
     } catch (e, st) {
       log('SettingsUninstallScreen._runUninstall: ERROR: $e\n$st');

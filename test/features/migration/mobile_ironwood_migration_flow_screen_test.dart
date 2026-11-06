@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -43,7 +44,6 @@ import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
-import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -9050,7 +9050,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(kLedgerAppUpdateRequiredTitle), findsOneWidget);
+    expect(find.text(testL10n.ledgerAppUpdateRequiredTitle), findsOneWidget);
     expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
     expect(discarded, ['ledger-immediate-request']);
 

@@ -185,11 +185,7 @@ class MobileIronwoodMigrationStartScreen extends ConsumerStatefulWidget {
 
 class _MobileIronwoodMigrationStartScreenState
     extends ConsumerState<MobileIronwoodMigrationStartScreen> {
-  static const _messages = [
-    'Preparing your migration...',
-    'Organizing migration batches...',
-    'Preparing your migration plan...',
-  ];
+  static const _messageCount = 3;
   static const _messagePeriod = Duration(milliseconds: 1400);
 
   Timer? _messageTimer;
@@ -259,7 +255,7 @@ class _MobileIronwoodMigrationStartScreenState
     _messageTimer = Timer.periodic(_messagePeriod, (_) {
       if (!mounted || _phase != _MobileMigrationStartPhase.loading) return;
       setState(() {
-        _messageIndex = (_messageIndex + 1) % _messages.length;
+        _messageIndex = (_messageIndex + 1) % _messageCount;
       });
     });
   }
@@ -378,7 +374,7 @@ class _MobileIronwoodMigrationStartScreenState
       }
       setState(() {
         _phase = _MobileMigrationStartPhase.error;
-        _error = _mobilePrivateMigrationStartErrorMessage(error);
+        _error = _mobilePrivateMigrationStartErrorMessage(context.l10n, error);
       });
     } finally {
       _isPreparing = false;
@@ -405,6 +401,12 @@ class _MobileIronwoodMigrationStartScreenState
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final messages = [
+      l10n.migrationMobileStartMessagePreparing,
+      l10n.migrationMobileStartMessageOrganizing,
+      l10n.migrationAnalyzingPreparingPlan,
+    ];
     final loading = _phase == _MobileMigrationStartPhase.loading;
     final ready = _phase == _MobileMigrationStartPhase.keystoneReady;
     return _MobileIronwoodMigrationBackScope(
@@ -427,7 +429,7 @@ class _MobileIronwoodMigrationStartScreenState
         ),
       },
       child: _MigrationPreviewPage(
-        navTitle: 'Preparing your migration',
+        navTitle: context.l10n.migrationMobilePreparingTitle,
         showBackButton: _phase == _MobileMigrationStartPhase.error,
         onBack: _phase == _MobileMigrationStartPhase.error
             ? () => context.go('/migration/options')
@@ -445,7 +447,7 @@ class _MobileIronwoodMigrationStartScreenState
                     height: 50,
                     onPressed: _continueWithKeystone,
                     leading: const AppIcon(AppIcons.qr, size: 20),
-                    child: const Text('Continue'),
+                    child: Text(context.l10n.commonContinue),
                   ),
                   const SizedBox(height: AppSpacing.s),
                   AppButton(
@@ -457,7 +459,7 @@ class _MobileIronwoodMigrationStartScreenState
                     constrainContent: true,
                     height: 50,
                     onPressed: () => unawaited(_cancelKeystoneSigning()),
-                    child: const Text('Cancel'),
+                    child: Text(context.l10n.commonCancel),
                   ),
                 ],
               )
@@ -472,7 +474,7 @@ class _MobileIronwoodMigrationStartScreenState
                   constrainContent: true,
                   height: 50,
                   onPressed: _isPreparing ? null : () => unawaited(_prepare()),
-                  child: const Text('Retry'),
+                  child: Text(context.l10n.commonRetry),
                 ),
               )
             : null,
@@ -495,7 +497,7 @@ class _MobileIronwoodMigrationStartScreenState
                   : _phase == _MobileMigrationStartPhase.error
                   ? _MobileMigrationStartErrorContent(error: _error)
                   : _MobileMigrationStartLoadingContent(
-                      message: _messages[_messageIndex],
+                      message: messages[_messageIndex],
                     ),
             ),
           ),
@@ -513,7 +515,7 @@ class _MobileMigrationStartPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _MigrationPreviewPage(
-      navTitle: 'Preparing your migration',
+      navTitle: context.l10n.migrationMobilePreparingTitle,
       showBackButton: false,
       bottom: ready
           ? Column(
@@ -525,7 +527,7 @@ class _MobileMigrationStartPreview extends StatelessWidget {
                   height: 50,
                   onPressed: _noopMigrationPreviewAction,
                   leading: const AppIcon(AppIcons.qr, size: 20),
-                  child: const Text('Continue'),
+                  child: Text(context.l10n.commonContinue),
                 ),
                 const SizedBox(height: AppSpacing.s),
                 AppButton(
@@ -534,7 +536,7 @@ class _MobileMigrationStartPreview extends StatelessWidget {
                   constrainContent: true,
                   height: 50,
                   onPressed: _noopMigrationPreviewAction,
-                  child: const Text('Cancel'),
+                  child: Text(context.l10n.commonCancel),
                 ),
               ],
             )
@@ -544,8 +546,8 @@ class _MobileMigrationStartPreview extends StatelessWidget {
           width: 320,
           child: ready
               ? const _MobileMigrationStartReadyContent()
-              : const _MobileMigrationStartLoadingContent(
-                  message: 'Preparing your migration...',
+              : _MobileMigrationStartLoadingContent(
+                  message: context.l10n.migrationMobileStartMessagePreparing,
                 ),
         ),
       ),
@@ -588,7 +590,7 @@ class _MobileMigrationStartLoadingContent extends StatelessWidget {
         SizedBox(
           width: 286,
           child: Text(
-            'Vizor is preparing your migration. This may take a moment.',
+            context.l10n.migrationMobileStartLoadingBody,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.primary,
@@ -615,7 +617,7 @@ class _MobileMigrationStartReadyContent extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.base),
         Text(
-          'Ready to sign',
+          context.l10n.migrationNextActionDetailReadyToSign,
           textAlign: TextAlign.center,
           style: AppTypography.headlineSmall.copyWith(
             color: context.colors.text.accent,
@@ -625,8 +627,7 @@ class _MobileMigrationStartReadyContent extends StatelessWidget {
         SizedBox(
           width: 286,
           child: Text(
-            'Continue to sign the preparation transactions and migration '
-            'batches together with Keystone.',
+            context.l10n.migrationMobileStartReadyBody,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.primary,
@@ -655,7 +656,7 @@ class _MobileMigrationStartErrorContent extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.base),
         Text(
-          "Couldn't prepare your migration",
+          context.l10n.migrationMobileStartErrorTitle,
           textAlign: TextAlign.center,
           style: AppTypography.headlineSmall.copyWith(
             color: context.colors.text.accent,
@@ -663,7 +664,7 @@ class _MobileMigrationStartErrorContent extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          error ?? 'Try again when you are ready.',
+          error ?? context.l10n.migrationMobileStartErrorFallback,
           textAlign: TextAlign.center,
           style: AppTypography.bodyMedium.copyWith(
             color: context.colors.text.primary,

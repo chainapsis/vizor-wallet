@@ -616,7 +616,7 @@ class _ScanLoadingVeil extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.xxs),
                 Text(
-                  context.l10n.addressScanLoadingEllipsis,
+                  context.l10n.commonLoadingDots,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: const Color(0xFFFFFFFF),
                   ),

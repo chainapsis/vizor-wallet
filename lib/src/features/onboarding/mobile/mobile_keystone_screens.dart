@@ -46,7 +46,7 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
       ).at(OnboardingFlow.keystone, OnboardingStage.deviceIntro).value,
       onBack: () => Navigator.of(context).maybePop(),
       title: context.l10n.onboardingConnectKeystone,
-      subtitle: context.l10n.keystonePrepareSubtitle,
+      subtitle: context.l10n.commonPrepareYourKeystoneWallet,
       bottomArea: AppButton(
         key: const ValueKey('mobile_keystone_intro_continue'),
         expand: true,
@@ -395,7 +395,7 @@ class _MobileKeystoneScanScreenState
           ).at(OnboardingFlow.keystone, OnboardingStage.deviceScan).value,
           onBack: () => Navigator.of(context).maybePop(),
           title: context.l10n.commonScanQrCode,
-          subtitle: context.l10n.keystonePrepareSubtitle,
+          subtitle: context.l10n.commonPrepareYourKeystoneWallet,
           scrollable: false,
           child: const SizedBox.shrink(),
         ),
@@ -449,7 +449,7 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
       ).at(OnboardingFlow.keystone, OnboardingStage.accountSelection).value,
       onBack: () => Navigator.of(context).maybePop(),
       title: context.l10n.commonSelectAccount,
-      subtitle: context.l10n.keystonePrepareSubtitle,
+      subtitle: context.l10n.commonPrepareYourKeystoneWallet,
       bottomArea: AppButton(
         key: const ValueKey('mobile_keystone_select_continue'),
         expand: true,

@@ -377,7 +377,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         ? null
         : standardArgs.persona != null
         ? onboarding_chrome.OnboardingBackTarget.route(
-            label: context.l10n.onboardingCustomiseAccount,
+            label: context.l10n.commonCustomiseAccount,
             routePath: desktopImportLocation(
               context,
               standardArgs.desktopCustomiseRoutePath,

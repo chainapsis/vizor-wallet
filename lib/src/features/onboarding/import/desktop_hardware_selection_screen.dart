@@ -52,7 +52,7 @@ class DesktopHardwareSelectionScreen extends ConsumerWidget {
           DesktopMethodSelectionCard(
             key: const ValueKey('desktop_hardware_ledger_card'),
             iconName: AppIcons.ledger,
-            title: context.l10n.onboardingConnectLedger,
+            title: context.l10n.commonConnectLedger,
             description: context.l10n.onboardingImportFromLedger,
             onPressed: () => context.go(_deviceLocation('/onboarding/ledger')),
           ),

@@ -231,20 +231,6 @@ String _decimalStringToBaseUnits(String value, int decimals) {
   return raw.isEmpty ? '0' : raw;
 }
 
-String _expiryLabel(String? isoDate) {
-  if (isoDate == null) {
-    return 'Quote expiry pending';
-  }
-  final parsed = DateTime.tryParse(isoDate);
-  if (parsed == null) {
-    return 'Quote expiry pending';
-  }
-  final local = parsed.toLocal();
-  final hour = local.hour.toString().padLeft(2, '0');
-  final minute = local.minute.toString().padLeft(2, '0');
-  return 'Expires $hour:$minute';
-}
-
 DateTime? _parseIsoDateTime(String? isoDate) {
   if (isoDate == null) return null;
   return DateTime.tryParse(isoDate)?.toUtc();
@@ -257,7 +243,7 @@ String _rateText({
   required double receiveAmount,
 }) {
   if (sellAmount <= 0) {
-    return 'Rate pending';
+    return kSwapRatePendingToken;
   }
   final precision = receiveAsset == SwapAsset.zec ? 4 : 2;
   final rate = receiveAmount / sellAmount;
@@ -281,19 +267,17 @@ SwapIntentStatus _statusFromOneClick(String status, SwapQuote quote) {
   };
 }
 
-String _nextAction(SwapIntentStatus status, SwapQuote quote) {
+SwapNextAction _nextAction(SwapIntentStatus status) {
   return switch (status) {
     SwapIntentStatus.awaitingDeposit ||
-    SwapIntentStatus.awaitingExternalDeposit =>
-      'Send ${quote.sellAsset.symbol} to the one-time deposit address',
-    SwapIntentStatus.depositObserved => 'Deposit detected',
-    SwapIntentStatus.processing => 'Swap is processing',
-    SwapIntentStatus.providerStatusUnknown =>
-      'Provider returned a status this wallet does not recognize',
-    SwapIntentStatus.incompleteDeposit => 'Deposit is below the quoted amount',
-    SwapIntentStatus.complete => 'Swap complete',
-    SwapIntentStatus.refunded => 'Refund sent to your refund address',
-    SwapIntentStatus.expired => 'Start a fresh quote',
-    SwapIntentStatus.failed => 'Swap failed',
+    SwapIntentStatus.awaitingExternalDeposit => SwapNextAction.sendDeposit,
+    SwapIntentStatus.depositObserved => SwapNextAction.depositDetected,
+    SwapIntentStatus.processing => SwapNextAction.processing,
+    SwapIntentStatus.providerStatusUnknown => SwapNextAction.unrecognizedStatus,
+    SwapIntentStatus.incompleteDeposit => SwapNextAction.incompleteDeposit,
+    SwapIntentStatus.complete => SwapNextAction.complete,
+    SwapIntentStatus.refunded => SwapNextAction.refundSent,
+    SwapIntentStatus.expired => SwapNextAction.startFreshQuote,
+    SwapIntentStatus.failed => SwapNextAction.failed,
   };
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../support/test_l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -54,7 +55,7 @@ void registerLedgerWaitGuidanceTests() {
       report('sending', deviceModel: model);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text(kLedgerSigningWaitInstruction), findsOneWidget);
+      expect(find.text(testL10n.ledgerSigningWaitInstruction), findsOneWidget);
       expect(find.text('Keep Ledger connected.'), findsOneWidget);
       expect(find.text('Sign transaction'), findsOneWidget);
       expect(tester.takeException(), isNull);

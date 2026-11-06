@@ -52,20 +52,31 @@ class SwapQuoteRequest {
   String? get sellAmountText => mode.usesInputAmount ? amountText : null;
 }
 
+/// Detail values a provider may leave without an amount. Quotes and swap
+/// records store these exact words, which earlier builds also wrote and show;
+/// screens word them through `swapDetailValueText`.
+const kSwapIncludedInRateToken =
+    'Included in shown rate'; // l10n-ignore: stored token
+const kSwapNotReportedToken = 'Not reported'; // l10n-ignore: stored token
+const kSwapRatePendingToken = 'Rate pending'; // l10n-ignore: stored token
+
 class SwapDepositInstruction {
   const SwapDepositInstruction({
     required this.asset,
     required this.address,
-    required this.expiresInLabel,
-    required this.reuseWarning,
+    this.expiresInLabel,
+    this.reuseWarning,
     this.memo,
     this.deadline,
   });
 
   final SwapAsset asset;
   final String address;
-  final String expiresInLabel;
-  final String reuseWarning;
+
+  /// No screen reads these; screens word the deadline from [deadline] and
+  /// show their own reuse warning.
+  final String? expiresInLabel;
+  final String? reuseWarning;
   final String? memo;
   final DateTime? deadline;
 }
@@ -133,7 +144,7 @@ class SwapQuote {
     required this.providerLabel,
     required this.feeLabel,
     this.totalFeesText,
-    required this.expiryLabel,
+    this.expiryLabel,
     required this.depositInstruction,
     this.quoteExpiresAt,
     this.providerQuoteId,
@@ -154,7 +165,7 @@ class SwapQuote {
     double? sellAmount,
     SwapQuoteMode mode = SwapQuoteMode.exactInput,
     String providerLabel = 'NEAR Intents', // l10n-ignore: brand name
-    String expiryLabel = '07:12',
+    String? expiryLabel = '07:12',
     DateTime? quoteExpiresAt,
     DateTime? depositDeadline,
     double? externalPerZec,
@@ -191,15 +202,13 @@ class SwapQuote {
       receiveAmount: receiveAmount,
       minimumReceiveAmount: receiveAmount * (1 - slippageBps / 10000),
       providerLabel: providerLabel,
-      feeLabel: 'Included in shown rate',
+      feeLabel: kSwapIncludedInRateToken,
       expiryLabel: expiryLabel,
       quoteExpiresAt: quoteExpiresAt,
       depositInstruction: SwapDepositInstruction(
         asset: sellAsset,
         address:
             'one-time-${sellAsset.symbol.toLowerCase()}-deposit-placeholder',
-        expiresInLabel: expiryLabel,
-        reuseWarning: 'Do not reuse this address',
         deadline: depositDeadline,
       ),
       rateTextOverride: rateText,
@@ -215,9 +224,14 @@ class SwapQuote {
   final double receiveAmount;
   final double minimumReceiveAmount;
   final String providerLabel;
+
+  /// The provider's fee text, or [kSwapIncludedInRateToken].
   final String feeLabel;
   final String? totalFeesText;
-  final String expiryLabel;
+
+  /// Overrides the expiry shown in review; null words it from
+  /// [quoteExpiresAt] (`swapQuoteExpiryText`).
+  final String? expiryLabel;
   final DateTime? quoteExpiresAt;
   final SwapDepositInstruction depositInstruction;
   final String? providerQuoteId;

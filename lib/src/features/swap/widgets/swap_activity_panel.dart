@@ -786,11 +786,13 @@ class _SwapActivityFlowContent extends StatelessWidget {
         if (showStatusError) ...[
           const SizedBox(height: AppSpacing.md),
           if (mobile)
-            _ActivityStatusErrorPanel(message: statusError)
+            _ActivityStatusErrorPanel(message: statusError.text(context.l10n))
           else
             SizedBox(
               width: 400,
-              child: _ActivityStatusErrorPanel(message: statusError),
+              child: _ActivityStatusErrorPanel(
+                message: statusError.text(context.l10n),
+              ),
             ),
         ],
       ],

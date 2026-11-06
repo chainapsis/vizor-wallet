@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 // while preparing the shield PCZT.
 // ignore_for_file: depend_on_referenced_packages
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -85,7 +86,7 @@ void main() {
         ),
       );
       final accessRecovery =
-          ledgerFailureGuidance(error)?.bluetoothRecovery == true;
+          ledgerFailureGuidance(testL10n, error)?.bluetoothRecovery == true;
       final operations = _FakeLedgerSignedOperationService();
       await tester.pumpWidget(
         _harness(
@@ -99,7 +100,7 @@ void main() {
         tester,
         () => find
             .text(
-              ledgerFailureGuidance(error)?.pairingRecovery == true
+              ledgerFailureGuidance(testL10n, error)?.pairingRecovery == true
                   ? 'Try again'
                   : accessRecovery
                   ? 'Reconnect'
@@ -110,13 +111,13 @@ void main() {
       );
       expect(
         find.text(
-          ledgerFailureGuidance(error)?.pairingInvalid == true
+          ledgerFailureGuidance(testL10n, error)?.pairingInvalid == true
               ? 'Pair your Ledger again'
-              : ledgerFailureGuidance(error)?.pairingRecovery == true
+              : ledgerFailureGuidance(testL10n, error)?.pairingRecovery == true
               ? 'Request failed'
               : accessRecovery
               ? 'Ready to reconnect'
-              : ledgerFailureGuidance(error)?.message ??
+              : ledgerFailureGuidance(testL10n, error)?.message ??
                     'Ledger shielding could not be completed.',
         ),
         findsOneWidget,
@@ -447,7 +448,10 @@ void main() {
     );
     await _pumpUntil(
       tester,
-      () => find.text(kLedgerHostRequestRejectedMessage).evaluate().isNotEmpty,
+      () => find
+          .text(testL10n.ledgerFailureMsgRejectedNewRequest)
+          .evaluate()
+          .isNotEmpty,
     );
 
     expect(find.text('Ledger signing failed'), findsOneWidget);
@@ -504,7 +508,10 @@ void main() {
 
       expect(signatures, 2);
       expect(operations.broadcasts, hasLength(1));
-      expect(find.text(kLedgerHostRequestRejectedMessage), findsNothing);
+      expect(
+        find.text(testL10n.ledgerFailureMsgRejectedNewRequest),
+        findsNothing,
+      );
       expect(find.textContaining('Nothing was sent'), findsNothing);
       expect(find.text('Try again'), findsNothing);
 

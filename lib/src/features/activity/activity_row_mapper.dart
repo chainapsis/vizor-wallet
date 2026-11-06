@@ -297,7 +297,7 @@ String _pendingTxTitle(String verb) =>
 String _txTitle(AppLocalizations l10n, String kind) {
   return switch (kind) {
     'receiving' => l10n.activityTitleReceivingVerb,
-    'received' => l10n.activityTitleReceived,
+    'received' => l10n.commonReceived,
     'sent' => l10n.activityTitleSent,
     'shielded' => l10n.activityTitleShielded,
     'migration' => l10n.activityTitleMigrated,

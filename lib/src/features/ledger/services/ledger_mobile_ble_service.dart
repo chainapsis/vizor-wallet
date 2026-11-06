@@ -8,7 +8,7 @@ import 'ledger_bluetooth_access.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 
 const kLedgerPairingInvalidMessage =
-    'Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.';
+    'Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.'; // l10n-ignore: compared against error text; shown via ledgerMobilePairingInvalid
 
 bool ledgerPairingNeedsReset(Object? error) =>
     (error is LedgerMobileException &&
@@ -562,7 +562,7 @@ class MethodChannelLedgerMobileBleService
         return const LedgerDiscoveryFailed(
           LedgerMobileException(
             LedgerMobileFailure.unavailable,
-            'Ledger discovery returned an unknown event.',
+            'Ledger discovery returned an unknown event.', // l10n-ignore: exception text
           ),
         );
     }
@@ -573,7 +573,8 @@ class MethodChannelLedgerMobileBleService
       error.code,
       error.code == 'pairing_invalid'
           ? kLedgerPairingInvalidMessage
-          : error.message ?? 'Ledger mobile connection failed.',
+          : error.message ??
+                'Ledger mobile connection failed.', // l10n-ignore: exception text
       details: error.details,
     );
     if (ledgerFailureInvalidatesConnection(mapped.failure)) {

@@ -140,7 +140,7 @@ class _TitleBlock extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          context.l10n.keystonePrepareSubtitle,
+          context.l10n.commonPrepareYourKeystoneWallet,
           style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
           textAlign: TextAlign.center,
         ),

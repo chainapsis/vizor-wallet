@@ -7,6 +7,7 @@ import '../../../../services/qr_scanner.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../models/vizor_payment_link.dart';
 import '../../models/payment_link_scan_payload.dart';
+import '../../../../core/l10n/l10n.dart';
 
 class PaymentLinkScanSheet extends StatefulWidget {
   const PaymentLinkScanSheet({
@@ -75,8 +76,8 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
   Widget build(BuildContext context) {
     return MobileQrScanCard(
       controller: _controller,
-      caption: 'Scan the gift card QR code',
-      permissionTitle: 'Scan gift card QR',
+      caption: context.l10n.paymentLinkScanSheetSemantic,
+      permissionTitle: context.l10n.paymentLinkScanSheetTitle,
       error: _error,
       onClose: () {
         _finished = true;

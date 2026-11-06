@@ -62,13 +62,13 @@ class LedgerOnboardingShell extends ConsumerWidget {
             OnboardingSidebarStepData(
               label: switch (step) {
                 LedgerOnboardingStep.connect =>
-                  context.l10n.onboardingConnectLedger,
+                  context.l10n.commonConnectLedger,
                 LedgerOnboardingStep.birthday =>
                   context.l10n.onboardingStepWalletBirthdayHeight,
                 LedgerOnboardingStep.setPassword =>
                   context.l10n.onboardingStepSetPassword,
                 LedgerOnboardingStep.customiseAccount =>
-                  context.l10n.onboardingStepCustomiseWallet,
+                  context.l10n.commonCustomiseWallet,
               },
               iconName: switch (step) {
                 LedgerOnboardingStep.connect => AppIcons.ledger,
@@ -217,7 +217,10 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
   String _friendlyError(Object error) {
     final lower = '$error'.toLowerCase();
     final networkName = ref.read(rpcEndpointProvider).networkName;
-    final appInstruction = ledgerZcashAppOpenErrorInstruction(networkName);
+    final appInstruction = ledgerZcashAppOpenErrorInstruction(
+      context.l10n,
+      networkName,
+    );
     final failure = LedgerRequestFailure.fromError(error);
     if (failure == LedgerRequestFailure.declined) {
       return context.l10n.ledgerErrorViewingKeyRejected;
@@ -226,6 +229,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
       return context.l10n.ledgerErrorUnlock(appInstruction);
     }
     final guidance = ledgerFailureGuidance(
+      context.l10n,
       error,
       requestKind: LedgerRequestKind.viewingKey,
     );
@@ -374,7 +378,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
           child: Semantics(
             liveRegion: true,
             child: Text(
-              kLedgerOnboardingAccountIndexError,
+              context.l10n.ledgerAccountIndexOutOfRange,
               style: AppTypography.bodySmall.copyWith(
                 color: context.colors.text.destructive,
               ),
@@ -445,7 +449,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                 const SizedBox(height: AppSpacing.s),
                 AppTextField(
                   key: const ValueKey('ledger_account_index_field'),
-                  label: kLedgerOnboardingAccountIndexLabel,
+                  label: context.l10n.ledgerAccountIndexFieldLabel,
                   controller: _accountIndexController,
                   enabled: !_busy,
                   tone: _invalidAccountIndex
@@ -491,7 +495,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        context.l10n.onboardingConnectLedger,
+                        context.l10n.commonConnectLedger,
                         style: AppTypography.displayLarge.copyWith(
                           fontFamily: 'Young Serif',
                           fontWeight: FontWeight.w400,
@@ -598,7 +602,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                 variant: AppButtonVariant.primary,
                 growWithContent: true,
                 minWidth: 196,
-                child: Text(context.l10n.onboardingConnectLedger),
+                child: Text(context.l10n.commonConnectLedger),
               ),
             ),
           ],

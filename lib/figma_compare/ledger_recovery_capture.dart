@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/features/ledger/services/ledger_bluetooth_access.dart';
+import '../src/core/l10n/l10n.dart';
 import '../src/core/layout/app_form_factor.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
@@ -23,6 +24,7 @@ Widget _signing(
   bool locationPermission = false,
 }) {
   final guidance = ledgerFailureGuidance(
+    lookupAppLocalizations(const Locale('en')),
     LedgerMobileException(failure, 'Scripted capture failure'),
   )!;
   return Builder(

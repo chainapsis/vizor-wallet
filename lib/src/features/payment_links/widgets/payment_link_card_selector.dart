@@ -4,6 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'payment_link_action.dart';
 import 'payment_link_gift_card.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Figma `Card Design Select` option (64×48, default/hover/selected).
 class PaymentLinkCardSelector extends StatelessWidget {
@@ -47,7 +48,11 @@ class PaymentLinkCardSelector extends StatelessWidget {
     return PaymentLinkAction(
       onPressed: onSelected,
       selected: selected,
-      semanticLabel: semanticLabel ?? '${artwork.semanticLabel} card design',
+      semanticLabel:
+          semanticLabel ??
+          context.l10n.paymentLinkCardDesignSemantic(
+            artwork.semanticLabel(context.l10n),
+          ),
       builder: (context, hovered, focused) {
         final active = selected || focused;
         final opacity = selected || hovered || focused ? 1.0 : inactiveOpacity;

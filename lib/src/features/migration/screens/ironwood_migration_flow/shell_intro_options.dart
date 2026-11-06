@@ -130,14 +130,19 @@ Widget _toolbarFor(
   return AppPaneToolbar(
     leading: AppBackLink(
       label: switch (step) {
-        IronwoodMigrationFlowStep.prepare => 'Home',
-        IronwoodMigrationFlowStep.intro => 'Home',
-        IronwoodMigrationFlowStep.howItWorks => 'Ironwood Pool',
-        IronwoodMigrationFlowStep.whatToExpect => 'How Migration Works',
+        IronwoodMigrationFlowStep.prepare => context.l10n.navHome,
+        IronwoodMigrationFlowStep.intro => context.l10n.navHome,
+        IronwoodMigrationFlowStep.howItWorks =>
+          context.l10n.migrationPoolIronwood,
+        IronwoodMigrationFlowStep.whatToExpect =>
+          context.l10n.migrationBackHowItWorks,
         IronwoodMigrationFlowStep.options =>
-          movingRest ? 'Ironwood Migration' : 'About Migration',
-        IronwoodMigrationFlowStep.review => 'Migration Options',
-        IronwoodMigrationFlowStep.immediateReview => 'Migration Options',
+          movingRest
+              ? context.l10n.migrationFlowTitle
+              : context.l10n.migrationBackAbout,
+        IronwoodMigrationFlowStep.review => context.l10n.migrationBackOptions,
+        IronwoodMigrationFlowStep.immediateReview =>
+          context.l10n.migrationBackOptions,
       },
       onTap: () {
         switch (step) {
@@ -168,7 +173,7 @@ Widget _toolbarFor(
 Widget _privateStatusToolbar(BuildContext context) {
   return AppPaneToolbar(
     leading: AppBackLink(
-      label: 'Ironwood Pool',
+      label: context.l10n.migrationPoolIronwood,
       onTap: () => context.go('/home'),
     ),
   );
@@ -244,7 +249,7 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const _DarkBadge(label: 'Zcash Network Upgrade'),
+                _DarkBadge(label: context.l10n.migrationIntroBadge),
                 const SizedBox(height: 24),
                 SvgPicture.asset(
                   'assets/illustrations/ironwood_wordmark.svg',
@@ -259,7 +264,7 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
                 SizedBox(
                   width: 352,
                   child: Text(
-                    'A new shielded pool for Zcash.',
+                    context.l10n.migrationIntroTagline,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMediumStrong.copyWith(
                       color: colors.text.accent,
@@ -270,10 +275,7 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
                 SizedBox(
                   width: 328,
                   child: Text(
-                    'Your $amount ZEC is currently in Orchard.\n'
-                    'To keep using these funds for shielded payments, '
-                    'you will need to move them to Ironwood. You will '
-                    'review the migration plan before any funds move.',
+                    context.l10n.migrationIntroBody(amount),
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: isDark ? colors.text.muted : colors.text.primary,
@@ -291,9 +293,9 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
               primaryKey: const ValueKey(
                 'ironwood_migration_intro_continue_button',
               ),
-              primaryLabel: 'Next',
+              primaryLabel: context.l10n.onboardingNext,
               onPrimary: () => context.go('/migration/how-it-works'),
-              secondaryLabel: 'Official Announcement',
+              secondaryLabel: context.l10n.migrationIntroAnnouncement,
               onSecondary: onOpenReleaseNotes,
               secondaryLeading: const AppIcon(AppIcons.link, size: 16),
               secondaryFirst: true,
@@ -327,25 +329,15 @@ class _IronwoodMigrationHowItWorksContentState
   static const _viewportFraction = _pageExtent / _carouselWidth;
   static const _inactiveOpacity = 0.3;
 
-  static const _steps = [
+  static const _stepCount = 3;
+
+  List<({String title, String body})> _steps(AppLocalizations l10n) => [
+    (title: l10n.migrationHowFrozenTitle, body: l10n.migrationHowFrozenBody),
     (
-      title: 'Orchard (legacy shielded) balance is frozen',
-      body:
-          'A one-time migration to Ironwood is required to spend your existing '
-          'shielded balance.',
+      title: l10n.migrationHowPreparationTitle,
+      body: l10n.migrationHowPreparationBody,
     ),
-    (
-      title: 'Pre-migration preparations',
-      body:
-          'Vizor splits your total balance into many smaller notes '
-          '(e.g. 0.1 ZEC / 1 ZEC / 5 ZEC) before migrating.',
-    ),
-    (
-      title: 'Delayed and randomized migrations',
-      body:
-          'Vizor slowly sends parts at staggered intervals across multiple '
-          'batches to reduce traceability.',
-    ),
+    (title: l10n.migrationHowDelayedTitle, body: l10n.migrationHowDelayedBody),
   ];
 
   late final PageController _pageController;
@@ -365,7 +357,7 @@ class _IronwoodMigrationHowItWorksContentState
   }
 
   void _next() {
-    if (_page < _steps.length - 1) {
+    if (_page < _stepCount - 1) {
       _animateToPage(_page + 1);
       return;
     }
@@ -409,7 +401,7 @@ class _IronwoodMigrationHowItWorksContentState
             top: 78,
             width: 396,
             child: Text(
-              'How the Migration Works',
+              context.l10n.migrationHowTitle,
               textAlign: TextAlign.center,
               style: AppTypography.headlineLarge.copyWith(
                 color: colors.text.accent,
@@ -461,12 +453,12 @@ class _IronwoodMigrationHowItWorksContentState
                                 'ironwood_migration_how_page_view',
                               ),
                               controller: _pageController,
-                              itemCount: _steps.length,
+                              itemCount: _stepCount,
                               physics: const PageScrollPhysics(),
                               onPageChanged: (value) =>
                                   setState(() => _page = value),
                               itemBuilder: (context, index) {
-                                final step = _steps[index];
+                                final step = _steps(context.l10n)[index];
                                 return AnimatedBuilder(
                                   animation: _pageController,
                                   builder: (context, child) => Opacity(
@@ -486,12 +478,18 @@ class _IronwoodMigrationHowItWorksContentState
                                       button: index != _page,
                                       selected: index == _page,
                                       label: index == _page
-                                          ? 'Migration step ${index + 1} of '
-                                                '${_steps.length}. '
-                                                '${step.title}. ${step.body}'
-                                          : 'Show migration step '
-                                                '${index + 1} of '
-                                                '${_steps.length}',
+                                          ? context.l10n
+                                                .migrationHowStepSemanticsCurrent(
+                                                  (index + 1).toString(),
+                                                  _stepCount.toString(),
+                                                  step.title,
+                                                  step.body,
+                                                )
+                                          : context.l10n
+                                                .migrationHowStepSemanticsShow(
+                                                  (index + 1).toString(),
+                                                  _stepCount.toString(),
+                                                ),
                                       onTap: index == _page
                                           ? null
                                           : () => _animateToPage(index),
@@ -557,12 +555,14 @@ class _IronwoodMigrationHowItWorksContentState
             height: 32,
             child: Row(
               children: [
-                for (var index = 0; index < _steps.length; index++) ...[
+                for (var index = 0; index < _stepCount; index++) ...[
                   Semantics(
                     button: true,
                     selected: index == _page,
-                    label:
-                        'Show migration step ${index + 1} of ${_steps.length}',
+                    label: context.l10n.migrationHowStepSemanticsShow(
+                      (index + 1).toString(),
+                      _stepCount.toString(),
+                    ),
                     onTap: () => _animateToPage(index),
                     child: _IronwoodMigrationCarouselAction(
                       actionKey: ValueKey(
@@ -606,7 +606,7 @@ class _IronwoodMigrationHowItWorksContentState
                       ),
                     ),
                   ),
-                  if (index < _steps.length - 1) const SizedBox(width: 4),
+                  if (index < _stepCount - 1) const SizedBox(width: 4),
                 ],
               ],
             ),
@@ -624,8 +624,8 @@ class _IronwoodMigrationHowItWorksContentState
               minWidth: 230,
               expand: true,
               constrainContent: true,
-              child: const Text(
-                'Next',
+              child: Text(
+                context.l10n.onboardingNext,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -741,7 +741,9 @@ class _IronwoodMigrationHowStepCard extends StatelessWidget {
                         left: 19,
                         top: 24,
                         child: Text(
-                          'Step ${index + 1}',
+                          context.l10n.migrationHowStepLabel(
+                            (index + 1).toString(),
+                          ),
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.secondary,
                           ),
@@ -852,30 +854,18 @@ class _IronwoodMigrationHowStepIllustration extends StatelessWidget {
 class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
   const _IronwoodMigrationWhatToExpectContent();
 
-  static const _items = [
+  static const _itemCount = 4;
+
+  List<({String title, String body})> _items(AppLocalizations l10n) => [
+    (title: l10n.migrationExpectLongTitle, body: l10n.migrationExpectLongBody),
     (
-      title: 'Migrations can take a long time',
-      body:
-          'Ironwood migrations can take anywhere from several hours up to a '
-          'couple days depending on your migration amount.',
+      title: l10n.migrationExpectSpendTitle,
+      body: l10n.migrationExpectSpendBody,
     ),
+    (title: l10n.migrationExpectVpnTitle, body: l10n.migrationExpectVpnBody),
     (
-      title: 'You can spend as funds arrive',
-      body:
-          'Each confirmed Ironwood amount is available to spend while the '
-          'rest of the migration continues.',
-    ),
-    (
-      title: 'Use VPN for an extra privacy',
-      body:
-          'It’s recommended to run the migration behind a trustable '
-          'VPN/network privacy layer',
-    ),
-    (
-      title: 'Keep Vizor running',
-      body:
-          'Your computer needs to be unlocked with Vizor running so we can '
-          'send the next migration transaction',
+      title: l10n.migrationReviewKeepRunningTitle,
+      body: l10n.migrationExpectKeepRunningBody,
     ),
   ];
 
@@ -892,7 +882,7 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
             top: 60,
             width: 396,
             child: Text(
-              'What to expect',
+              context.l10n.migrationExpectTitle,
               textAlign: TextAlign.center,
               style: AppTypography.headlineLarge.copyWith(
                 color: colors.text.accent,
@@ -906,7 +896,7 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (var index = 0; index < _items.length; index++) ...[
+                for (var index = 0; index < _itemCount; index++) ...[
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -921,14 +911,14 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              _items[index].title,
+                              _items(context.l10n)[index].title,
                               style: AppTypography.bodyMediumStrong.copyWith(
                                 color: colors.text.accent,
                               ),
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              _items[index].body,
+                              _items(context.l10n)[index].body,
                               style: AppTypography.bodyMedium.copyWith(
                                 color: colors.text.secondary,
                               ),
@@ -938,7 +928,7 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
                       ),
                     ],
                   ),
-                  if (index < _items.length - 1) const SizedBox(height: 24),
+                  if (index < _itemCount - 1) const SizedBox(height: 24),
                 ],
               ],
             ),
@@ -956,7 +946,7 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
               minWidth: 230,
               expand: true,
               constrainContent: true,
-              child: const Text('Next'),
+              child: Text(context.l10n.onboardingNext),
             ),
           ),
         ],
@@ -1091,8 +1081,8 @@ class _IronwoodMigrationOptionsContentState
               children: [
                 Text(
                   widget.movingRest
-                      ? 'How to move the rest'
-                      : 'Choose how to migrate',
+                      ? context.l10n.migrationOptionsTitleMoveRest
+                      : context.l10n.migrationOptionsTitle,
                   textAlign: TextAlign.center,
                   style: AppTypography.headlineLarge.copyWith(
                     color: colors.text.accent,
@@ -1103,12 +1093,10 @@ class _IronwoodMigrationOptionsContentState
                   width: 322,
                   child: Text(
                     widget.movingRest
-                        ? '${_formatZecAmountCompact(widget.data.amountZatoshi)}'
-                              ' ZEC is still in Orchard. Choose between more '
-                              'privacy over time or a faster migration.'
-                        : 'Choose between more privacy over time or a faster '
-                              'migration. You can review the details before '
-                              'anything moves.',
+                        ? context.l10n.migrationOptionsBodyMoveRest(
+                            _formatZecAmountCompact(widget.data.amountZatoshi),
+                          )
+                        : context.l10n.migrationOptionsBody,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
@@ -1128,12 +1116,13 @@ class _IronwoodMigrationOptionsContentState
                   key: const ValueKey('ironwood_migration_private_option'),
                   mode: _MigrationMode.private,
                   selected: selected == _MigrationMode.private,
-                  title: 'Private',
-                  badge: widget.privateEnabled ? 'Recommended' : null,
+                  title: context.l10n.migrationOptionPrivate,
+                  badge: widget.privateEnabled
+                      ? context.l10n.migrationOptionRecommended
+                      : null,
                   body: widget.privateEnabled
-                      ? 'Splits transactions into multiple parts to minimize '
-                            'traceability, but will take longer.'
-                      : 'Not available for Ledger accounts.',
+                      ? context.l10n.migrationOptionPrivateBody
+                      : context.l10n.migrationOptionPrivateLedger,
                   onTap: widget.privateEnabled
                       ? () => setState(() => _selected = _MigrationMode.private)
                       : null,
@@ -1143,10 +1132,8 @@ class _IronwoodMigrationOptionsContentState
                   key: const ValueKey('ironwood_migration_fast_option'),
                   mode: _MigrationMode.fast,
                   selected: selected == _MigrationMode.fast,
-                  title: 'Immediate',
-                  body:
-                      'Migrates your entire balance in one batch. Fast but '
-                      'less private.',
+                  title: context.l10n.migrationOptionImmediate,
+                  body: context.l10n.migrationOptionImmediateBody,
                   onTap: () => setState(() => _selected = _MigrationMode.fast),
                 ),
               ],
@@ -1170,7 +1157,7 @@ class _IronwoodMigrationOptionsContentState
               expand: true,
               constrainContent: true,
               trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-              child: const Text('Select & review'),
+              child: Text(context.l10n.migrationOptionsSelectReview),
             ),
           ),
         ],

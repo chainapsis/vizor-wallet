@@ -229,7 +229,7 @@ class _MobileKeystoneShieldScreenState
       return context.l10n.commonProvingParamsFailed;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
-      return context.l10n.homeShieldErrorSignatureNotApplied;
+      return context.l10n.commonKeystoneSignatureCouldNotBeApplied;
     }
     if (lower.contains('extract')) {
       return context.l10n.homeShieldErrorNotFinalized;
@@ -335,7 +335,7 @@ class _MobileKeystoneShieldScreenState
         setState(() {
           _decoding = false;
           _stage = _ShieldSignStage.failed;
-          _error ??= context.l10n.homeShieldErrorSigningNotPrepared;
+          _error ??= context.l10n.commonKeystoneSigningCouldNotBePrepared;
         });
         return;
       }
@@ -350,7 +350,7 @@ class _MobileKeystoneShieldScreenState
       if (!mounted || _closed) return;
       setState(() {
         _decoding = false;
-        _scanHint = context.l10n.homeShieldScanDecodeFailed;
+        _scanHint = context.l10n.commonThisQRCodeCouldNotBe;
       });
     }
   }

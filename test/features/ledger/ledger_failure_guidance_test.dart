@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart' show TargetPlatform;
+import '../../support/test_l10n.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
@@ -9,8 +10,11 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_serv
 void main() {
   test('an NU7 transaction refused for an older app asks for an update', () {
     final error = StateError(ledgerAppUpdateRequiredError);
-    final guidance = ledgerFailureGuidance(error);
-    expect(guidance?.message, ledgerAppUpdateRequiredError);
+    final guidance = ledgerFailureGuidance(testL10n, error);
+    expect(
+      guidance?.message,
+      testL10n.ledgerFailureMsgAppUpdateRequired(kLedgerNu7AppVersion),
+    );
     // After the update a retry reads the new version.
     expect(guidance?.retryable, isTrue);
     expect(
@@ -21,16 +25,20 @@ void main() {
 
   test('a transaction keeping Orchard change says why it cannot be signed', () {
     final guidance = ledgerFailureGuidance(
+      testL10n,
       StateError(ledgerOrchardChangeUnsupportedError),
     );
-    expect(guidance?.message, ledgerOrchardChangeUnsupportedError);
+    expect(guidance?.message, testL10n.ledgerFailureMsgOrchardChange);
     // The same transaction fails again; the user has to change it.
     expect(guidance?.retryable, isFalse);
   });
 
   test('a Ledger swapped during a USB request asks for one Ledger', () {
-    final guidance = ledgerFailureGuidance(StateError(ledgerAppChangedError));
-    expect(guidance?.message, ledgerAppChangedError);
+    final guidance = ledgerFailureGuidance(
+      testL10n,
+      StateError(ledgerAppChangedError),
+    );
+    expect(guidance?.message, testL10n.ledgerChangedKeepOne);
     expect(guidance?.retryable, isTrue);
   });
 
@@ -186,16 +194,17 @@ void main() {
   group('ledgerFailureGuidance', () {
     test('0x6a80 is a request that must be rebuilt', () {
       final guidance = ledgerFailureGuidance(
+        testL10n,
         StateError(
           'ledger_status_6a80: Ledger rejected the PCZT data or key path',
         ),
       )!;
       expect(guidance.retryable, isFalse);
-      expect(guidance.message, kLedgerHostRequestRejectedMessage);
+      expect(guidance.message, testL10n.ledgerFailureMsgRejectedNewRequest);
       expect(guidance.message, contains('Create a new'));
       expect(guidance.showDeviceAppPrompt, isFalse);
       expect(
-        LedgerRequestFailure.requestRejected.title,
+        LedgerRequestFailure.requestRejected.title(testL10n),
         'Request not accepted',
       );
     });
@@ -208,14 +217,15 @@ void main() {
           LedgerRequestFailure.requestRejected,
           reason: code,
         );
-        final guidance = ledgerFailureGuidance(error)!;
+        final guidance = ledgerFailureGuidance(testL10n, error)!;
         expect(guidance.retryable, isFalse, reason: code);
-        expect(guidance.message, kLedgerHostRequestRejectedMessage);
+        expect(guidance.message, testL10n.ledgerFailureMsgRejectedNewRequest);
       }
     });
 
     test('running out of device memory asks for a smaller transaction', () {
       final guidance = ledgerFailureGuidance(
+        testL10n,
         'ledger_status_6a84: Ledger ran out of memory for this transaction; try a smaller amount',
       )!;
       expect(guidance.retryable, isFalse);
@@ -223,7 +233,7 @@ void main() {
       expect(
         LedgerRequestFailure.fromError(
           'ledger_status_6a84: Ledger ran out of memory',
-        ).title,
+        ).title(testL10n),
         'Request too large',
       );
     });
@@ -235,14 +245,14 @@ void main() {
         LedgerRequestFailure.deviceLocked,
       );
       expect(
-        ledgerFailureGuidance(error)!.message,
+        ledgerFailureGuidance(testL10n, error)!.message,
         'Unlock your Ledger, then try again.',
       );
     });
 
     test('0x6985 stays with the caller as a decline', () {
       const error = 'ledger_status_6985: Ledger request was rejected';
-      expect(ledgerFailureGuidance(StateError(error)), isNull);
+      expect(ledgerFailureGuidance(testL10n, StateError(error)), isNull);
       expect(
         LedgerRequestFailure.fromError(StateError(error)),
         LedgerRequestFailure.declined,
@@ -251,6 +261,7 @@ void main() {
 
     test('capacity is a non-retryable request rejection', () {
       final guidance = ledgerFailureGuidance(
+        testL10n,
         'ledger_capacity: Ledger supports at most 32 transparent inputs; found 33',
       )!;
       expect(guidance.retryable, isFalse);
@@ -259,6 +270,7 @@ void main() {
 
     test('a status inside a connection failure reaches the guidance', () {
       final guidance = ledgerFailureGuidance(
+        testL10n,
         const LedgerConnectionRequiredException(
           'Connect and unlock your Ledger with USB, then try again.',
           cause: LedgerAppReadinessException(
@@ -269,11 +281,12 @@ void main() {
         ),
       )!;
       expect(guidance.retryable, isFalse);
-      expect(guidance.message, kLedgerHostRequestRejectedMessage);
+      expect(guidance.message, testL10n.ledgerFailureMsgRejectedNewRequest);
     });
 
     test('a connection failure without a device cause keeps its message', () {
       final guidance = ledgerFailureGuidance(
+        testL10n,
         const LedgerConnectionRequiredException(
           'Connect and unlock your Ledger with USB, then try again.',
           cause: 'ledger_transport: No Ledger device found',
@@ -297,20 +310,21 @@ void main() {
           reason: error,
         );
         expect(
-          ledgerFailureGuidance(error)!.showDeviceAppPrompt,
+          ledgerFailureGuidance(testL10n, error)!.showDeviceAppPrompt,
           isTrue,
           reason: error,
         );
       }
       const notInstalled =
           'ledger_status_6807: The Zcash app is not installed on this Ledger';
-      final installGuidance = ledgerFailureGuidance(notInstalled)!;
+      final installGuidance = ledgerFailureGuidance(testL10n, notInstalled)!;
       expect(
         installGuidance.message,
-        LedgerRequestFailure.appNotInstalled.message,
+        LedgerRequestFailure.appNotInstalled.message(testL10n),
       );
       expect(installGuidance.showDeviceAppPrompt, isFalse);
       final updateGuidance = ledgerFailureGuidance(
+        testL10n,
         const LedgerAppReadinessException(
           LedgerAppReadinessFailure.unsupportedVersion,
           'Update the Ledger Zcash app to version 3.9.3 or newer.',
@@ -319,6 +333,7 @@ void main() {
       expect(updateGuidance.showDeviceAppPrompt, isFalse);
       expect(
         ledgerFailureGuidance(
+          testL10n,
           const LedgerAppReadinessException(
             LedgerAppReadinessFailure.unsupportedVersion,
             'Update the Ledger Zcash app to version 3.9.3 or newer.',
@@ -327,15 +342,15 @@ void main() {
         'Update the Ledger Zcash app to version 3.9.3 or newer.',
       );
       expect(
-        LedgerRequestFailure.appUpdateRequired.message,
+        LedgerRequestFailure.appUpdateRequired.message(testL10n),
         'Update the Zcash app to 3.9.3 or newer.',
       );
     });
 
     test('status codes map to their own guidance, not to rejection copy', () {
-      const expected = {
+      final expected = {
         'ledger_status_6986: Ledger Zcash app returned status 0x6986':
-            kLedgerHostRequestRejectedMessage,
+            testL10n.ledgerFailureMsgRejectedNewRequest,
         'ledger_status_b007: Ledger Zcash app is in the wrong state; close and reopen the app':
             'Close and reopen the Zcash app.',
         'ledger_status_6601: Ledger device is busy switching apps; retry shortly':
@@ -350,7 +365,11 @@ void main() {
             'Unlock your Ledger, then try again.',
       };
       for (final MapEntry(key: error, value: message) in expected.entries) {
-        expect(ledgerFailureGuidance(error)!.message, message, reason: error);
+        expect(
+          ledgerFailureGuidance(testL10n, error)!.message,
+          message,
+          reason: error,
+        );
         expect(message, isNot(contains('rejected')));
       }
       // Surfaces word these themselves.
@@ -362,14 +381,14 @@ void main() {
         '0x6985',
         'network unavailable',
       ]) {
-        expect(ledgerFailureGuidance(error), isNull, reason: error);
+        expect(ledgerFailureGuidance(testL10n, error), isNull, reason: error);
       }
     });
 
     test('device internal failures request an app restart with their code', () {
       for (final code in ['5223', '6f00', '6f03', '6faa', '6400']) {
         final error = 'ledger_status_$code: Ledger Zcash app returned status';
-        final guidance = ledgerFailureGuidance(error)!;
+        final guidance = ledgerFailureGuidance(testL10n, error)!;
         expect(guidance.retryable, isTrue);
         expect(
           guidance.message,
@@ -387,13 +406,14 @@ void main() {
         'ledger_signature_mismatch: Apply Orchard signature at action 0: InvalidSpendAuthSignature',
         'ledger_signature_mismatch: Validate Ledger transparent signature 1: InvalidSignature',
       ]) {
-        final guidance = ledgerFailureGuidance(error)!;
+        final guidance = ledgerFailureGuidance(testL10n, error)!;
         expect(guidance.message, 'Connect the Ledger that holds this account.');
         expect(guidance.retryable, isTrue);
       }
       // Only the Rust prefix identifies a mismatch.
       expect(
         ledgerFailureGuidance(
+          testL10n,
           'Apply Orchard signature at action 0: InvalidSpendAuthSignature',
         ),
         isNull,
@@ -403,7 +423,7 @@ void main() {
     test('an unsupported transaction format is not a smaller transfer', () {
       const derivation =
           'Ledger supports at most 1 BIP32 derivation per transparent output';
-      final guidance = ledgerFailureGuidance(derivation)!;
+      final guidance = ledgerFailureGuidance(testL10n, derivation)!;
       expect(guidance.retryable, isFalse);
       expect(guidance.message, isNot(contains('smaller amount')));
       expect(guidance.message, contains('Create a new'));
@@ -416,7 +436,11 @@ void main() {
             'ledger_capacity: Ledger supports at most 32 transparent inputs; found 33';
         final messages = {
           for (final kind in LedgerRequestKind.values)
-            kind: ledgerFailureGuidance(error, requestKind: kind)!.message,
+            kind: ledgerFailureGuidance(
+              testL10n,
+              error,
+              requestKind: kind,
+            )!.message,
         };
         expect(
           messages[LedgerRequestKind.send],
@@ -461,18 +485,20 @@ void main() {
         LedgerRequestKind.viewingKey,
       ]) {
         final message = ledgerFailureGuidance(
+          testL10n,
           error,
           requestKind: kind,
         )!.message;
         expect(
           message,
-          isNot(kLedgerHostRequestRejectedMessage),
+          isNot(testL10n.ledgerFailureMsgRejectedNewRequest),
           reason: '$kind',
         );
         expect(message, isNot(contains('rejected')), reason: '$kind');
       }
       expect(
         ledgerFailureGuidance(
+          testL10n,
           error,
           requestKind: LedgerRequestKind.giftCard,
         )!.message,
@@ -483,11 +509,13 @@ void main() {
     test('typed mobile failures keep their recovery flags', () {
       expect(
         ledgerFailureGuidance(
+          testL10n,
           const LedgerMobileException(LedgerMobileFailure.bluetoothOff, 'off'),
         )!.bluetoothRecovery,
         isTrue,
       );
       final invalid = ledgerFailureGuidance(
+        testL10n,
         const LedgerMobileException(
           LedgerMobileFailure.pairingInvalid,
           'invalid',
@@ -497,6 +525,7 @@ void main() {
       expect(invalid.pairingRecovery, isTrue);
       expect(
         ledgerFailureGuidance(
+          testL10n,
           const LedgerMobileException(LedgerMobileFailure.wrongApp, 'Open'),
         )!.showDeviceAppPrompt,
         isTrue,
@@ -509,7 +538,12 @@ void main() {
     String? usb(
       String error, {
       TargetPlatform platform = TargetPlatform.macOS,
-    }) => ledgerUsbErrorMessage(error, appInstruction: app, platform: platform);
+    }) => ledgerUsbErrorMessage(
+      testL10n,
+      error,
+      appInstruction: app,
+      platform: platform,
+    );
 
     expect(
       usb('No Ledger device found. Connect and unlock the Nano S+.'),

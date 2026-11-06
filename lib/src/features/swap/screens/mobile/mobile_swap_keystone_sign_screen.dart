@@ -456,8 +456,9 @@ class _MobileSwapKeystoneSignScreenState
       return context.l10n.swapKeystoneNoTex;
     }
     final batchError = keystoneBatchSigningFriendlyError(
+      context.l10n,
       error,
-      subject: 'deposit',
+      subject: KeystoneBatchSubject.deposit,
     );
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
@@ -467,7 +468,7 @@ class _MobileSwapKeystoneSignScreenState
       return context.l10n.commonSigningExpired;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
-      return context.l10n.homeShieldErrorSignatureNotApplied;
+      return context.l10n.commonKeystoneSignatureCouldNotBeApplied;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
       return context.l10n.swapKeystoneBroadcastFailed;

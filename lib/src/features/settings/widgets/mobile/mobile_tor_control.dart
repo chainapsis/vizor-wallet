@@ -201,7 +201,7 @@ _MobileTorPresentation _presentationFor(
   final targetTorEnabled = state.targetTorEnabled ?? state.torEnabled;
   return switch ((state.status, targetTorEnabled)) {
     (NetworkPrivacyConnectionStatus.connecting, true) => _MobileTorPresentation(
-      statusLabel: l10n.settingsTorStatusConnecting,
+      statusLabel: l10n.commonConnecting,
       // Names the way out. On a network that blocks Tor the wait runs to the
       // bootstrap deadline with every request failing closed, and relaunching
       // the app only starts the same wait again, so the escape has to be stated

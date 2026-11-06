@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -203,6 +204,7 @@ class _PaymentLinkLedgerSigningOverlayState
               ? LedgerRequestFailure.fromError(error)
               : null;
           _deviceGuidance = ledgerFailureGuidance(
+            context.l10n,
             error,
             requestKind: LedgerRequestKind.giftCard,
           );
@@ -212,9 +214,9 @@ class _PaymentLinkLedgerSigningOverlayState
               !_checkpointed &&
               _deviceGuidance?.retryable == false;
           _error = error is LedgerGiftFundingTerminalException
-              ? error.userMessage
+              ? error.userMessage(context.l10n)
               : _checkpointed
-              ? 'Gift card funding is saved for recovery. Try again to check its status and finish saving.'
+              ? context.l10n.paymentLinkLedgerSavedForRecovery
               : networkUpgradeHoldMessage(error) ??
                     _deviceGuidance?.message ??
                     _ledgerFailureMessage(error);
@@ -223,14 +225,12 @@ class _PaymentLinkLedgerSigningOverlayState
     }
   }
 
-  String _ledgerFailureMessage(
-    Object error,
-  ) => switch (LedgerRequestFailure.fromError(error)) {
-    LedgerRequestFailure.declined =>
-      'The gift card funding was rejected on your Ledger.',
-    _ =>
-      'Ledger signing could not be completed. Check your device and try again.',
-  };
+  String _ledgerFailureMessage(Object error) =>
+      switch (LedgerRequestFailure.fromError(error)) {
+        LedgerRequestFailure.declined =>
+          context.l10n.paymentLinkLedgerFundingRejected,
+        _ => context.l10n.commonLedgerSigningCouldNotBeCompleted,
+      };
 
   Future<void> _present(PaymentLinkHardwareFundingResult result) async {
     if (!_active) return;
@@ -289,7 +289,7 @@ class _PaymentLinkLedgerSigningOverlayState
         _phase = LedgerSigningModalPhase.failed;
         _deviceGuidance = null;
         _requestFailure = null;
-        _error = 'Could not finish cancelling. Please try again.';
+        _error = context.l10n.commonCancelFailedRetry;
       });
     }
   }
@@ -333,20 +333,20 @@ class _PaymentLinkLedgerSigningOverlayState
                   (_deviceGuidance?.bluetoothRecovery ?? false),
               title: upgradeHold
                   ? kNetworkUpgradeHoldActionLabel
-                  : 'Gift card funding needs attention',
+                  : context.l10n.paymentLinkFundingNeedsAttention,
               statusLabel: _requestNeedsRebuilding
-                  ? 'New gift card required'
-                  : 'Action needed',
+                  ? context.l10n.paymentLinkNewGiftCardRequired
+                  : context.l10n.commonActionNeeded,
               message: _error!,
               showDeviceAppPrompt:
                   !_checkpointed &&
                   (_deviceGuidance?.showDeviceAppPrompt ?? false),
               showConnectionPicker: !upgradeHold,
-              actionLabel: canRetry ? 'Try again' : null,
+              actionLabel: canRetry ? context.l10n.commonTryAgain : null,
             )
           : null,
       onCancel: canLeave ? () => unawaited(_cancel()) : null,
-      cancelLabel: 'Back to gift card',
+      cancelLabel: context.l10n.paymentLinkBackToGiftCard,
       onFailureAction:
           _phase == LedgerSigningModalPhase.failed && !_cancelled && canRetry
           ? _start
@@ -354,7 +354,7 @@ class _PaymentLinkLedgerSigningOverlayState
     );
     final content = kAppFormFactor == AppFormFactor.mobile
         ? MobileLedgerSigningSurface(
-            title: 'Confirm Gift Card',
+            title: context.l10n.paymentLinkConfirmGiftCardTitle,
             canLeave: canLeave,
             onBack: () => unawaited(_cancel()),
             child: modal,
