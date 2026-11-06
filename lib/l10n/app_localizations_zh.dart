@@ -5737,10 +5737,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingAddressTypesSubtitle => 'Zcash 有两种地址类型。\n一种用于隐私，一种用于透明。';
 
   @override
-  String get onboardingAddressTypesSubtitleMobile =>
-      'Zcash 有两种地址类型。\n一种用于隐私，一种用于透明。';
-
-  @override
   String get onboardingAddressTypesTitle => 'Zcash 地址类型';
 
   @override

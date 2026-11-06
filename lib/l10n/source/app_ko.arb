@@ -1658,7 +1658,6 @@
   "onboardingAddressTransparentDescription": "주소는 t로 시작하며 Bitcoin과 비슷해요. 이 주소의 잔액과 거래 내역은 누구나 볼 수 있어요.",
   "onboardingAddressTransparentTitleMobile": "투명 주소",
   "onboardingAddressTypesSubtitle": "Zcash에는 두 가지 주소 유형이 있어요.\n하나는 프라이버시용, 하나는 투명성용이에요.",
-  "onboardingAddressTypesSubtitleMobile": "Zcash에는 두 가지 주소 유형이 있어요.\n하나는 프라이버시용, 하나는 투명성용이에요.",
   "onboardingAddressTypesTitle": "Zcash 주소 유형",
   "onboardingBiometricEnableFailed": "{method}을(를) 켜지 못했어요. 설정에서 다시 시도할 수 있어요.",
   "onboardingBiometricSetUpFirst": "먼저 기기 설정에서 {method}을(를) 설정해 주세요.",

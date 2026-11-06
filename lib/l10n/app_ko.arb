@@ -1658,7 +1658,6 @@
   "onboardingAddressTransparentDescription": "주⁠소⁠는 t⁠로 시⁠작⁠하⁠며 Bitcoin⁠과 비⁠슷⁠해⁠요. 이 주⁠소⁠의 잔⁠액⁠과 거⁠래 내⁠역⁠은 누⁠구⁠나 볼 수 있⁠어⁠요.",
   "onboardingAddressTransparentTitleMobile": "투⁠명 주⁠소",
   "onboardingAddressTypesSubtitle": "Zcash⁠에⁠는 두 가⁠지 주⁠소 유⁠형⁠이 있⁠어⁠요.\n하⁠나⁠는 프⁠라⁠이⁠버⁠시⁠용, 하⁠나⁠는 투⁠명⁠성⁠용⁠이⁠에⁠요.",
-  "onboardingAddressTypesSubtitleMobile": "Zcash⁠에⁠는 두 가⁠지 주⁠소 유⁠형⁠이 있⁠어⁠요.\n하⁠나⁠는 프⁠라⁠이⁠버⁠시⁠용, 하⁠나⁠는 투⁠명⁠성⁠용⁠이⁠에⁠요.",
   "onboardingAddressTypesTitle": "Zcash 주⁠소 유⁠형",
   "onboardingBiometricEnableFailed": "{method}⁠을(를) 켜⁠지 못⁠했⁠어⁠요. 설⁠정⁠에⁠서 다⁠시 시⁠도⁠할 수 있⁠어⁠요.",
   "onboardingBiometricSetUpFirst": "먼⁠저 기⁠기 설⁠정⁠에⁠서 {method}⁠을(를) 설⁠정⁠해 주⁠세⁠요.",

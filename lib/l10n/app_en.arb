@@ -7945,11 +7945,7 @@
   },
   "onboardingAddressTypesSubtitle": "Zcash has two address types.\nOne for privacy, one for transparency.",
   "@onboardingAddressTypesSubtitle": {
-    "description": "Subtitle on the desktop address types and things-to-know steps; two lines on purpose."
-  },
-  "onboardingAddressTypesSubtitleMobile": "Zcash has two addresses types.\nOne for Privacy, one for Transparency.",
-  "@onboardingAddressTypesSubtitleMobile": {
-    "description": "Subtitle of the mobile address types step; two lines on purpose."
+    "description": "Subtitle of the address types step on desktop and mobile, and of the desktop things-to-know step; two lines on purpose."
   },
   "onboardingAddressTypesTitle": "Zcash Address Types",
   "@onboardingAddressTypesTitle": {

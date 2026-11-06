@@ -1658,7 +1658,6 @@
   "onboardingAddressTransparentDescription": "地址以 t 开头，与 Bitcoin 类似，该地址的余额和交易记录对所有人公开可见。",
   "onboardingAddressTransparentTitleMobile": "透明地址",
   "onboardingAddressTypesSubtitle": "Zcash 有两种地址类型。\n一种用于隐私，一种用于透明。",
-  "onboardingAddressTypesSubtitleMobile": "Zcash 有两种地址类型。\n一种用于隐私，一种用于透明。",
   "onboardingAddressTypesTitle": "Zcash 地址类型",
   "onboardingBiometricEnableFailed": "无法启用 {method}。你可以稍后在设置中重试。",
   "onboardingBiometricSetUpFirst": "请先在设备设置中设置 {method}。",

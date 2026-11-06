@@ -148,7 +148,7 @@ class MobileAddressTypesScreen extends StatelessWidget {
       contentGap: 32,
       bottomAreaPadding: _educationActionPadding(context),
       // Line break matches the Figma subtitle wrap.
-      subtitle: context.l10n.onboardingAddressTypesSubtitleMobile,
+      subtitle: context.l10n.onboardingAddressTypesSubtitle,
       bottomArea: AppButton(
         key: const ValueKey('mobile_address_types_continue'),
         expand: true,

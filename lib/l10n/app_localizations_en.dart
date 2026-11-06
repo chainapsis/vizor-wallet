@@ -6187,10 +6187,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Zcash has two address types.\nOne for privacy, one for transparency.';
 
   @override
-  String get onboardingAddressTypesSubtitleMobile =>
-      'Zcash has two addresses types.\nOne for Privacy, one for Transparency.';
-
-  @override
   String get onboardingAddressTypesTitle => 'Zcash Address Types';
 
   @override

@@ -6099,10 +6099,6 @@ class AppLocalizationsKo extends AppLocalizations {
       'Zcash⁠에⁠는 두 가⁠지 주⁠소 유⁠형⁠이 있⁠어⁠요.\n하⁠나⁠는 프⁠라⁠이⁠버⁠시⁠용, 하⁠나⁠는 투⁠명⁠성⁠용⁠이⁠에⁠요.';
 
   @override
-  String get onboardingAddressTypesSubtitleMobile =>
-      'Zcash⁠에⁠는 두 가⁠지 주⁠소 유⁠형⁠이 있⁠어⁠요.\n하⁠나⁠는 프⁠라⁠이⁠버⁠시⁠용, 하⁠나⁠는 투⁠명⁠성⁠용⁠이⁠에⁠요.';
-
-  @override
   String get onboardingAddressTypesTitle => 'Zcash 주⁠소 유⁠형';
 
   @override

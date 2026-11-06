@@ -10097,17 +10097,11 @@ abstract class AppLocalizations {
   /// **'Transparent Address'**
   String get onboardingAddressTransparentTitleMobile;
 
-  /// Subtitle on the desktop address types and things-to-know steps; two lines on purpose.
+  /// Subtitle of the address types step on desktop and mobile, and of the desktop things-to-know step; two lines on purpose.
   ///
   /// In en, this message translates to:
   /// **'Zcash has two address types.\nOne for privacy, one for transparency.'**
   String get onboardingAddressTypesSubtitle;
-
-  /// Subtitle of the mobile address types step; two lines on purpose.
-  ///
-  /// In en, this message translates to:
-  /// **'Zcash has two addresses types.\nOne for Privacy, one for Transparency.'**
-  String get onboardingAddressTypesSubtitleMobile;
 
   /// Title of the screen explaining shielded and transparent addresses.
   ///
