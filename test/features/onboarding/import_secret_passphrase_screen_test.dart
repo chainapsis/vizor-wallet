@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart'
     show Color, FontWeight, MaterialApp, Scaffold, Scrollbar, TextField;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart'
     show
@@ -12,6 +13,7 @@ import 'package:flutter/widgets.dart'
         Focus,
         FocusNode,
         Positioned,
+        RichText,
         Scrollable,
         ScrollableState,
         SingleChildScrollView,
@@ -632,9 +634,18 @@ void main() {
       find.descendant(of: buttonFinder, matching: find.byType(AppIcon)),
       findsNothing,
     );
+    // At least 52 wide, and wider when the label needs it: the test font
+    // and Korean are wider than "Clear", and the label must stay one line.
     final pillSize = tester.getSize(buttonFinder);
-    expect(pillSize.width, closeTo(52, 0.5));
+    final label = tester.renderObject<RenderParagraph>(
+      find.descendant(of: buttonFinder, matching: find.byType(RichText)),
+    );
+    expect(pillSize.width, greaterThanOrEqualTo(52));
     expect(pillSize.height, 24);
+    expect(
+      label.getMaxIntrinsicWidth(double.infinity),
+      lessThanOrEqualTo(label.size.width),
+    );
 
     await tester.tapAt(tester.getCenter(buttonFinder));
     await tester.pump();
