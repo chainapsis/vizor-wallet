@@ -20,6 +20,7 @@ import '../../../core/layout/app_form_factor.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/transparent_ledger_errors.dart';
 import '../../../core/zcash/wallet_error_code.dart';
 import '../../../core/zcash/zip321_payment_request.dart'
@@ -634,6 +635,7 @@ class SendBroadcastOutcome {
     this.txid,
     this.statusMessage,
     this.error,
+    this.errorHold,
     this.canRetryBroadcast = false,
   });
 
@@ -652,6 +654,9 @@ class SendBroadcastOutcome {
   final String? txid;
   final String? statusMessage;
   final String? error;
+
+  /// The upgrade hold [error] explains, so screens need not compare its text.
+  final NetworkUpgradeHold? errorHold;
 }
 
 String? _firstTxid(String txids) {
@@ -677,8 +682,9 @@ String _broadcastStatusMessage(
   if (result.status == 'partial_broadcast') {
     return l10n.sendBroadcastPartial;
   }
-  final rawMessage = result.message?.toLowerCase() ?? '';
-  if (rawMessage.contains('broadcast rejected')) {
+  // Rust sets this when the server answered with a rejection; the message
+  // text stays for logs.
+  if (result.broadcastFailureKind == 'rejected') {
     return l10n.sendBroadcastRejectedLocal;
   }
   return l10n.sendBroadcastLocalRetry;
@@ -688,31 +694,38 @@ String _pcztBroadcastStatusMessage(
   AppLocalizations l10n,
   rust_sync.StoreAndBroadcastPcztsResult result,
 ) {
+  final detail = broadcastResultText(
+    l10n,
+    notices: result.notices,
+    message: result.message,
+  );
   if (result.status == 'broadcast_unknown') {
-    return result.message ?? l10n.sendBroadcastFirstUnknown;
+    return detail ?? l10n.sendBroadcastFirstUnknown;
   }
   if (result.status == 'partial_broadcast') {
-    return result.message ?? l10n.sendBroadcastDependentIncomplete;
+    return detail ?? l10n.sendBroadcastDependentIncomplete;
   }
   if (result.status == 'broadcasted_storage_failed') {
-    return result.message ?? l10n.sendBroadcastTrackingFailed;
+    return detail ?? l10n.sendBroadcastTrackingFailed;
   }
-  return result.message ?? l10n.sendBroadcastIncomplete;
+  return detail ?? l10n.sendBroadcastIncomplete;
 }
 
 String _ledgerBroadcastStatusMessage(
   AppLocalizations l10n, {
   required String status,
   required String? message,
+  required List<rust_sync.BroadcastNotice> notices,
 }) {
+  final detail = broadcastResultText(l10n, notices: notices, message: message);
   if (status == 'broadcast_unknown') {
-    return message ?? l10n.sendBroadcastLedgerFirstUnknown;
+    return detail ?? l10n.sendBroadcastLedgerFirstUnknown;
   }
   if (status == 'partial_broadcast') {
-    return message ?? l10n.sendBroadcastDependentIncomplete;
+    return detail ?? l10n.sendBroadcastDependentIncomplete;
   }
   if (status == 'broadcasted_storage_failed') {
-    return message ?? l10n.sendBroadcastLedgerNotStored;
+    return detail ?? l10n.sendBroadcastLedgerNotStored;
   }
   final rawMessage = message?.toLowerCase() ?? '';
   if (rawMessage.contains('broadcast rejected')) {
@@ -962,6 +975,7 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
                 l10n,
                 status: result.status,
                 message: result.message,
+                notices: result.notices,
               );
         broadcastMessageForFallback = result.message;
       } else {
@@ -1167,6 +1181,9 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
     }
 
     if (!secretGuard.enabled && await abortRequested()) return aborted();
+    final expiredHold = networkUpgradeHoldKind(
+      broadcastMessageForFallback ?? '',
+    );
     return SendBroadcastOutcome(
       phase: broadcastExpired
           ? SendBroadcastPhase.failed
@@ -1177,12 +1194,9 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
       txid: receiptTxid,
       statusMessage: pendingStatusMessage,
       error: broadcastExpired
-          ? networkUpgradeHoldMessage(
-                  l10n,
-                  broadcastMessageForFallback ?? '',
-                ) ??
-                l10n.sendBroadcastHardwareExpired
+          ? expiredHold?.message(l10n) ?? l10n.sendBroadcastHardwareExpired
           : null,
+      errorHold: broadcastExpired ? expiredHold : null,
     );
   } catch (e) {
     log('SendBroadcast: ERROR: $e');
@@ -1213,6 +1227,7 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
       proposalConsumed: proposalConsumed,
       canRetryBroadcast: canRetryBroadcast,
       error: message,
+      errorHold: networkUpgradeHoldKind(e),
     );
   }
 }

@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `api_transaction_info`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `api_broadcast_notices`, `api_proposal_result`, `api_transaction_info`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
 /// The running sync loop checks this each batch and exits if mismatched.
@@ -1833,6 +1833,42 @@ enum ApiWalletErrorCode {
   /// The wallet still requires private recovery while Private queries is
   /// off: turning it off did not finish.
   optOutUnfinished,
+
+  /// A scanned QR is not a UR. Skip the frame.
+  invalidUr,
+
+  /// A scanned UR has a different type from the one expected: the device
+  /// is showing another QR.
+  unexpectedUrType,
+
+  /// The multi-part UR decoder rejected a fragment and was reset; restart
+  /// the scan session.
+  urSessionReset,
+
+  /// More spend signatures than one Keystone batch round can return.
+  keystoneBatchSignatureLimit,
+
+  /// Transparent or Sapling inputs, which Keystone batch signing cannot
+  /// sign.
+  keystoneBatchUnsupportedInput,
+
+  /// A Gift Card group that needs more than one funding transaction.
+  paymentLinkBatchNotOneTransaction,
+
+  /// A Gift Card group spending Sapling funds a Keystone cannot sign.
+  paymentLinkBatchKeystoneSapling,
+
+  /// A Gift Card group needing more signatures than one Keystone batch.
+  paymentLinkBatchKeystoneSignatureLimit,
+
+  /// A Gift Card group with more shielded recipients than a Ledger shows.
+  paymentLinkBatchLedgerRecipientLimit,
+
+  /// A Gift Card group spending Sapling funds a Ledger cannot sign.
+  paymentLinkBatchLedgerSapling,
+
+  /// A Gift Card group too large for a Ledger to sign.
+  paymentLinkBatchLedgerTooLarge,
 }
 
 class BlockMetaInfo {
@@ -1868,6 +1904,54 @@ class BlockMetaInfo {
           time == other.time &&
           saplingOutputsCount == other.saplingOutputsCount &&
           orchardActionsCount == other.orchardActionsCount;
+}
+
+/// One sentence of a broadcast result's English `message`. The result's
+/// `message` is these sentences in English, one space apart. Dart builds them
+/// from ARB keys by `kind` and shows `message` for a kind it does not know.
+class BroadcastNotice {
+  final String kind;
+  final int? index;
+  final int? total;
+  final String? txid;
+
+  /// Rust, dependency or server text, shown untranslated.
+  final String? detail;
+  final int? expiryHeight;
+  final BigInt? chainHeight;
+
+  const BroadcastNotice({
+    required this.kind,
+    this.index,
+    this.total,
+    this.txid,
+    this.detail,
+    this.expiryHeight,
+    this.chainHeight,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      index.hashCode ^
+      total.hashCode ^
+      txid.hashCode ^
+      detail.hashCode ^
+      expiryHeight.hashCode ^
+      chainHeight.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BroadcastNotice &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          index == other.index &&
+          total == other.total &&
+          txid == other.txid &&
+          detail == other.detail &&
+          expiryHeight == other.expiryHeight &&
+          chainHeight == other.chainHeight;
 }
 
 /// Durable pending work, including obligations that cannot currently be retried.
@@ -1924,6 +2008,10 @@ class ExecuteProposalResult {
   final int totalCount;
   final String? message;
 
+  /// `message` as sentences the app can show in the display language;
+  /// empty when `message` has no fixed shape.
+  final List<BroadcastNotice> notices;
+
   /// Server rejection is distinct from a missing response, but is not finality.
   final String? broadcastFailureKind;
 
@@ -1933,6 +2021,7 @@ class ExecuteProposalResult {
     required this.broadcastedCount,
     required this.totalCount,
     this.message,
+    required this.notices,
     this.broadcastFailureKind,
   });
 
@@ -1943,6 +2032,7 @@ class ExecuteProposalResult {
       broadcastedCount.hashCode ^
       totalCount.hashCode ^
       message.hashCode ^
+      notices.hashCode ^
       broadcastFailureKind.hashCode;
 
   @override
@@ -1955,6 +2045,7 @@ class ExecuteProposalResult {
           broadcastedCount == other.broadcastedCount &&
           totalCount == other.totalCount &&
           message == other.message &&
+          notices == other.notices &&
           broadcastFailureKind == other.broadcastFailureKind;
 }
 
@@ -1963,14 +2054,19 @@ class ExtractAndBroadcastPcztResult {
   final String status;
   final String? message;
 
+  /// `message` as sentences; see [`BroadcastNotice`].
+  final List<BroadcastNotice> notices;
+
   const ExtractAndBroadcastPcztResult({
     required this.txid,
     required this.status,
     this.message,
+    required this.notices,
   });
 
   @override
-  int get hashCode => txid.hashCode ^ status.hashCode ^ message.hashCode;
+  int get hashCode =>
+      txid.hashCode ^ status.hashCode ^ message.hashCode ^ notices.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1979,7 +2075,8 @@ class ExtractAndBroadcastPcztResult {
           runtimeType == other.runtimeType &&
           txid == other.txid &&
           status == other.status &&
-          message == other.message;
+          message == other.message &&
+          notices == other.notices;
 }
 
 class IronwoodMigrationResult {
@@ -3103,12 +3200,16 @@ class StoreAndBroadcastPcztsResult {
   final int totalCount;
   final String? message;
 
+  /// `message` as sentences; see [`BroadcastNotice`].
+  final List<BroadcastNotice> notices;
+
   const StoreAndBroadcastPcztsResult({
     required this.txids,
     required this.status,
     required this.broadcastedCount,
     required this.totalCount,
     this.message,
+    required this.notices,
   });
 
   @override
@@ -3117,7 +3218,8 @@ class StoreAndBroadcastPcztsResult {
       status.hashCode ^
       broadcastedCount.hashCode ^
       totalCount.hashCode ^
-      message.hashCode;
+      message.hashCode ^
+      notices.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -3128,7 +3230,8 @@ class StoreAndBroadcastPcztsResult {
           status == other.status &&
           broadcastedCount == other.broadcastedCount &&
           totalCount == other.totalCount &&
-          message == other.message;
+          message == other.message &&
+          notices == other.notices;
 }
 
 class SubtreeIndices {

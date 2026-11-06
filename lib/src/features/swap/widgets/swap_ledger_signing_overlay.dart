@@ -55,7 +55,24 @@ class _SwapLedgerSigningOverlayState
   bool _showSaplingParamsPrompt = false;
   bool _cancelled = false;
   Completer<bool>? _saplingParamsPromptCompleter;
-  String? _error;
+  String? _errorText;
+
+  /// The upgrade hold [_error] explains, kept beside the localized text so
+  /// the modal can tell a hold apart without comparing copy.
+  NetworkUpgradeHold? _errorHold;
+
+  String? get _error => _errorText;
+
+  set _error(String? text) {
+    _errorText = text;
+    _errorHold = null;
+  }
+
+  void _setError(String text, NetworkUpgradeHold? hold) {
+    _errorText = text;
+    _errorHold = hold;
+  }
+
   LedgerFailureGuidance? _deviceGuidance;
   LedgerRequestFailure? _requestFailure;
   SwapHardwareSigningService? _signingService;
@@ -220,7 +237,7 @@ class _SwapLedgerSigningOverlayState
       }
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
-        _error = _friendlyError(e);
+        _setError(_friendlyError(e), networkUpgradeHoldKind(e));
       });
     }
   }
@@ -257,7 +274,7 @@ class _SwapLedgerSigningOverlayState
         }
         setState(() {
           _phase = LedgerSigningModalPhase.failed;
-          _error = _friendlyError(e);
+          _setError(_friendlyError(e), networkUpgradeHoldKind(e));
         });
       }
       return;
@@ -306,7 +323,7 @@ class _SwapLedgerSigningOverlayState
       }
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
-        _error = _friendlyError(e);
+        _setError(_friendlyError(e), networkUpgradeHoldKind(e));
       });
     }
   }
@@ -460,14 +477,11 @@ class _SwapLedgerSigningOverlayState
     _releaseOperationClaim();
     if (!mounted) return;
     // Explain an upgrade hold instead of closing without a word.
-    final upgradeHold = networkUpgradeHoldMessage(
-      context.l10n,
-      result.message ?? '',
-    );
+    final upgradeHold = networkUpgradeHoldKind(result.message ?? '');
     if (upgradeHold != null) {
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
-        _error = upgradeHold;
+        _setError(upgradeHold.message(context.l10n), upgradeHold);
       });
       return;
     }
@@ -504,6 +518,7 @@ class _SwapLedgerSigningOverlayState
           txHash: result.txid,
           status: result.status,
           message: result.message,
+          notices: result.notices,
         ),
       );
     } catch (error) {
@@ -525,6 +540,7 @@ class _SwapLedgerSigningOverlayState
       txid: txid,
       status: status,
       message: operation.message,
+      notices: operation.notices,
       requiresAck: true,
     );
   }
@@ -589,7 +605,7 @@ class _SwapLedgerSigningOverlayState
       _cancelled = false;
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
-        _error = _friendlyError(error);
+        _setError(_friendlyError(error), networkUpgradeHoldKind(error));
       });
       return;
     }
@@ -705,7 +721,7 @@ class _SwapLedgerSigningOverlayState
   @override
   Widget build(BuildContext context) {
     final canLeave = !_isBroadcasting;
-    final upgradeHold = _error == networkUpgradeHoldText(context.l10n);
+    final upgradeHold = _errorHold == NetworkUpgradeHold.hold;
     final pendingBroadcastResult = _pendingBroadcastResult;
     final postBroadcastRecovery = pendingBroadcastResult != null;
     // Retrying the same request fails the same way on the device.

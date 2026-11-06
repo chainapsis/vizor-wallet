@@ -7,6 +7,7 @@ use std::{
 use rusqlite::{params, OptionalExtension};
 
 use crate::wallet::failure::{FailureCode, WalletFailure};
+use crate::wallet::sync::broadcast_notice::{self, BroadcastNotice};
 use crate::wallet::sync::proposal_locks;
 
 use crate::wallet::{
@@ -32,6 +33,9 @@ pub(crate) struct SignedOperationMetadata {
     pub txid: Option<String>,
     pub status: Option<String>,
     pub message: Option<String>,
+    /// `message` as notices; empty for rows that earlier builds wrote and for
+    /// retryable errors, whose `message` is shown as it is.
+    pub notices: Vec<BroadcastNotice>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
 }
@@ -42,6 +46,7 @@ pub(crate) struct BroadcastResult {
     pub txid: String,
     pub status: String,
     pub message: Option<String>,
+    pub notices: Vec<BroadcastNotice>,
     pub requires_ack: bool,
 }
 
@@ -337,7 +342,7 @@ pub(crate) fn list(
         let sql = format!(
             "SELECT operation_id, account_uuid, kind, external_ref, expiry_height,
                     state, txid, status, message, created_at_ms, updated_at_ms,
-                    CASE WHEN kind = 'shield' THEN proof_pczt END
+                    CASE WHEN kind = 'shield' THEN proof_pczt END, notices
              FROM {TABLE}
              WHERE network = ?1 AND (?2 IS NULL OR account_uuid = ?2)
              ORDER BY created_at_ms, operation_id"
@@ -384,6 +389,7 @@ pub(crate) async fn broadcast(
             &result.txids,
             &result.status,
             result.message.as_deref(),
+            &result.notices,
         )
         .map_err(WalletFailure::from),
         Err(error) => {
@@ -439,19 +445,19 @@ pub(crate) fn acknowledge(
         ensure_table(&connection)?;
         proposal_locks::ensure_schema(&connection)?;
         let conn = connection.transaction().map_err(|e| e.to_string())?;
-        let (status, message): (Option<String>, Option<String>) = conn
+        let (status, message, notices): (Option<String>, Option<String>, Option<String>) = conn
             .query_row(
                 &format!(
                     "DELETE FROM {TABLE}
                      WHERE network = ?1 AND operation_id = ?2 AND state = ?3
-                     RETURNING status, message"
+                     RETURNING status, message, notices"
                 ),
                 params![
                     network_name(network),
                     operation_id,
                     STATE_RESULT_PENDING_ACK
                 ],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()
             .map_err(|e| format!("Acknowledge Ledger operation: {e}"))?
@@ -462,11 +468,13 @@ pub(crate) fn acknowledge(
             })?;
         // Partial results may still report failed wallet storage. Caller metadata
         // alone cannot protect inputs while sync recovers an unrecorded spend.
-        // This diagnostic is emitted by store_and_broadcast_pczts_inner when
-        // both wallet-storage paths fail, regardless of the broadcast count.
-        let storage_failed = message
-            .as_deref()
-            .is_some_and(|message| message.contains("local storage failed"));
+        // store_and_broadcast_pczts_inner reports it when both wallet-storage
+        // paths fail, regardless of the broadcast count. Rows from earlier
+        // builds have only the English message.
+        let storage_failed = result_reports_storage_failure(
+            message.as_deref(),
+            &broadcast_notice::notices_from_json(notices.as_deref()),
+        );
         let release = status.as_deref() == Some("partial_broadcast") && !storage_failed;
         if release {
             proposal_locks::release_operation(&conn, operation_id)?;
@@ -522,6 +530,17 @@ fn load_for_broadcast(
     })
 }
 
+/// Whether a stored result says wallet storage failed after the broadcast.
+/// Rows from earlier builds have only the English message.
+fn result_reports_storage_failure(message: Option<&str>, notices: &[BroadcastNotice]) -> bool {
+    if notices.is_empty() {
+        return message.is_some_and(|message| message.contains("local storage failed"));
+    }
+    notices
+        .iter()
+        .any(|notice| notice.kind == broadcast_notice::kind::STORAGE_FAILED)
+}
+
 fn apply_broadcast_outcome(
     db_path: &str,
     network: WalletNetwork,
@@ -530,8 +549,10 @@ fn apply_broadcast_outcome(
     txid: &str,
     status: &str,
     message: Option<&str>,
+    notices: &[BroadcastNotice],
 ) -> Result<BroadcastResult, String> {
     let clean_terminal = status == "broadcasted" && !kind.requires_ack();
+    let notices_json = broadcast_notice::notices_to_json(notices)?;
     let network = network_name(network);
     let now = now_ms()?;
     with_wallet_db_write_lock("ledger.operations.record_broadcast", || {
@@ -549,7 +570,8 @@ fn apply_broadcast_outcome(
             conn.execute(
                 &format!(
                     "UPDATE {TABLE}
-                     SET state = ?3, txid = ?4, status = ?5, message = ?6, updated_at_ms = ?7
+                     SET state = ?3, txid = ?4, status = ?5, message = ?6, updated_at_ms = ?7,
+                         notices = ?9
                      WHERE network = ?1 AND operation_id = ?2 AND state = ?8"
                 ),
                 params![
@@ -561,6 +583,7 @@ fn apply_broadcast_outcome(
                     message,
                     now,
                     STATE_SIGNED_PENDING_BROADCAST,
+                    notices_json,
                 ],
             )
             .map_err(|e| format!("Record Ledger broadcast result: {e}"))?
@@ -580,6 +603,7 @@ fn apply_broadcast_outcome(
             txid: txid.to_string(),
             status: status.to_string(),
             message: message.map(str::to_string),
+            notices: notices.to_vec(),
             requires_ack: !clean_terminal,
         })
     })
@@ -616,7 +640,8 @@ fn record_broadcast_failure(
         conn.execute(
             &format!(
                 "UPDATE {TABLE}
-                 SET status = 'retryable_error', message = ?3, updated_at_ms = ?4
+                 SET status = 'retryable_error', message = ?3, notices = NULL,
+                     updated_at_ms = ?4
                  WHERE network = ?1 AND operation_id = ?2 AND state = ?5"
             ),
             params![
@@ -784,6 +809,18 @@ fn ensure_table(conn: &rusqlite::Connection) -> Result<(), String> {
         tx.commit()
             .map_err(|e| format!("Commit Ledger outbox migration: {e}"))?;
     }
+    // Added after release; earlier builds ignore it and read `message`.
+    let has_notices: bool = conn
+        .query_row(
+            &format!("SELECT COUNT(*) > 0 FROM pragma_table_info('{TABLE}') WHERE name = 'notices'"),
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Read Ledger outbox columns: {e}"))?;
+    if !has_notices {
+        conn.execute_batch(&format!("ALTER TABLE {TABLE} ADD COLUMN notices TEXT;"))
+            .map_err(|e| format!("Add Ledger outbox notices: {e}"))?;
+    }
     conn.execute_batch(&format!(
         "CREATE INDEX IF NOT EXISTS vizor_ledger_signed_operations_account
          ON {TABLE}(network, account_uuid, created_at_ms);"
@@ -800,7 +837,7 @@ fn load_metadata(
         &format!(
             "SELECT operation_id, account_uuid, kind, external_ref, expiry_height,
                     state, txid, status, message, created_at_ms, updated_at_ms,
-                    CASE WHEN kind = 'shield' THEN proof_pczt END
+                    CASE WHEN kind = 'shield' THEN proof_pczt END, notices
              FROM {TABLE} WHERE network = ?1 AND operation_id = ?2"
         ),
         params![network, operation_id],
@@ -835,6 +872,7 @@ fn metadata_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SignedOperatio
         txid: row.get(6)?,
         status: row.get(7)?,
         message: row.get(8)?,
+        notices: broadcast_notice::notices_from_json(row.get::<_, Option<String>>(12)?.as_deref()),
         created_at_ms: row.get(9)?,
         updated_at_ms: row.get(10)?,
     })
@@ -1488,6 +1526,10 @@ mod tests {
         conn.execute_batch(&format!("INSERT INTO {TABLE} VALUES ('main', 'op', 'account', 'swap_deposit', 'external', X'010203', X'040506', 4000000, 'result_pending_ack', 'txid', 'broadcasted', NULL, 1, 2);")).unwrap();
         ensure_table(&conn).unwrap();
         ensure_table(&conn).unwrap();
+        let notices: Option<String> = conn
+            .query_row(&format!("SELECT notices FROM {TABLE}"), [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(notices, None);
         let payloads: (Vec<u8>, Vec<u8>, String) = conn.query_row(
             &format!("SELECT proof_pczt, signature_pczt, txid FROM {TABLE} WHERE operation_id = 'op'"), [],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -1511,6 +1553,7 @@ mod tests {
             "gift-txid",
             "broadcasted",
             None,
+            &[],
         )
         .unwrap();
         assert!(result.requires_ack);
@@ -1535,6 +1578,7 @@ mod tests {
             "txid-1",
             "broadcasted",
             None,
+            &[],
         )
         .unwrap();
         assert!(result.requires_ack);
@@ -1553,10 +1597,64 @@ mod tests {
             "txid-2",
             "broadcasted",
             None,
+            &[],
         )
         .unwrap();
         assert!(!result.requires_ack);
         assert!(list(db_path, WalletNetwork::Main, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn broadcast_notices_round_trip_through_the_outbox() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        checkpoint_test_operation(db_path, "swap-1", "swap_deposit");
+        let notices = vec![
+            BroadcastNotice::transaction_unknown(2, 2, "deadline exceeded"),
+            BroadcastNotice::stored_locally(),
+        ];
+        let message = broadcast_notice::english(&notices);
+        let result = apply_broadcast_outcome(
+            db_path,
+            WalletNetwork::Main,
+            "swap-1",
+            OperationKind::SwapDeposit,
+            "txid-1",
+            "partial_broadcast",
+            message.as_deref(),
+            &notices,
+        )
+        .unwrap();
+        assert_eq!(result.notices, notices);
+        let listed = list(db_path, WalletNetwork::Main, None).unwrap();
+        assert_eq!(listed[0].notices, notices);
+        assert_eq!(listed[0].message, message);
+    }
+
+    #[test]
+    fn storage_failure_reads_notices_and_falls_back_to_legacy_text() {
+        let legacy = "Transaction 2 of 2 has an unknown broadcast result: x A transaction may \
+                      already be on the network, but local storage failed: disk full.";
+        assert!(result_reports_storage_failure(Some(legacy), &[]));
+        assert!(!result_reports_storage_failure(
+            Some("Transaction 2 of 2 has an unknown broadcast result: x"),
+            &[]
+        ));
+        assert!(!result_reports_storage_failure(None, &[]));
+        assert!(result_reports_storage_failure(
+            None,
+            &[
+                BroadcastNotice::transaction_unknown(2, 2, "x"),
+                BroadcastNotice::storage_failed("disk full"),
+            ]
+        ));
+        assert!(!result_reports_storage_failure(
+            Some(legacy),
+            &[
+                BroadcastNotice::transaction_unknown(2, 2, "x"),
+                BroadcastNotice::stored_locally(),
+            ]
+        ));
     }
 
     #[test]
@@ -1576,6 +1674,7 @@ mod tests {
         let listed = list(db_path, WalletNetwork::Main, None).unwrap();
         assert_eq!(listed[0].state, STATE_SIGNED_PENDING_BROADCAST);
         assert_eq!(listed[0].status.as_deref(), Some("retryable_error"));
+        assert!(listed[0].notices.is_empty());
         assert!(acknowledge(db_path, WalletNetwork::Main, "send-1").is_err());
     }
 

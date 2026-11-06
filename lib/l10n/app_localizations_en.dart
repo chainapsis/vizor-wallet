@@ -991,6 +991,95 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String broadcastNoticeBroadcastFailed(
+    String sent,
+    String total,
+    String txids,
+    String detail,
+  ) {
+    return 'Broadcast failed after $sent/$total txs sent ($txids). Error: $detail';
+  }
+
+  @override
+  String broadcastNoticeBroadcastStorageFailed(String txid, String detail) {
+    return 'Broadcast succeeded (txid=$txid) but local storage failed. $detail. The transaction is on the network; check an explorer to confirm, and do not attempt to send again until the next sync reconciles your balance.';
+  }
+
+  @override
+  String broadcastNoticeDatabaseUnavailable(String detail) {
+    return 'Failed to open DB for broadcast after local transaction creation: $detail';
+  }
+
+  @override
+  String broadcastNoticeExpired(
+    String txid,
+    String expiryHeight,
+    String chainHeight,
+  ) {
+    return 'Hardware signing request expired before broadcast: txid=$txid, expiry height $expiryHeight, current chain height $chainHeight. Start the signing flow again so Vizor can build a fresh transaction.';
+  }
+
+  @override
+  String broadcastNoticeRawTransactionUnavailable(String txid, String detail) {
+    return 'Failed to get raw tx for $txid after local transaction creation: $detail';
+  }
+
+  @override
+  String broadcastNoticeResponseUnavailable(String txid, String detail) {
+    return 'Broadcast response was unavailable for txid=$txid ($detail). The transaction may already be on the network. Do not send again until sync or an explorer confirms whether this transaction was accepted.';
+  }
+
+  @override
+  String broadcastNoticeRetentionFailed(String detail) {
+    return 'Proposal input-lock retention also failed: $detail.';
+  }
+
+  @override
+  String get broadcastNoticeRetryingLocally =>
+      'It was stored locally and will retry automatically during sync until it is confirmed or expires.';
+
+  @override
+  String broadcastNoticeRouteUnavailable(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return 'Failed to open the broadcast route for transaction $index of $total; it was not stored: $detail';
+  }
+
+  @override
+  String broadcastNoticeStorageFailed(String detail) {
+    return 'A transaction may already be on the network, but local storage failed: $detail. Do not send again until sync or an explorer confirms the result.';
+  }
+
+  @override
+  String get broadcastNoticeStoredLocally =>
+      'The accepted-or-ambiguous transaction prefix was stored locally for recovery.';
+
+  @override
+  String broadcastNoticeTrackingFailed(String detail) {
+    return 'Local tracking also failed: $detail. Check an explorer before retrying this send.';
+  }
+
+  @override
+  String broadcastNoticeTransactionRejected(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return 'Transaction $index of $total was rejected and was not stored: $detail';
+  }
+
+  @override
+  String broadcastNoticeTransactionUnknown(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return 'Transaction $index of $total has an unknown broadcast result: $detail';
+  }
+
+  @override
   String get capsLockWarning => 'Caps Lock is on';
 
   @override
@@ -1237,6 +1326,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonEnterAmountInUsd => 'Enter amount in USD';
 
   @override
+  String commonErrorWithDetails(String message, String details) {
+    return '$message\nDetails: $details';
+  }
+
+  @override
   String get commonFailed => 'Failed';
 
   @override
@@ -1401,9 +1495,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'On a Mac, you can use Continuity Camera to scan with your iPhone instead.';
 
   @override
-  String get commonOnYourKeystone => 'on your Keystone,';
-
-  @override
   String get commonOpenSettings => 'Open settings';
 
   @override
@@ -1416,6 +1507,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get commonPayInsufficientZec =>
       'You don\'t have enough ZEC for this payment. Try a smaller amount.';
+
+  @override
+  String get commonPayingButton => 'Paying';
 
   @override
   String get commonPaymentFailed => 'Payment failed';
@@ -1654,12 +1748,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonSyncing => 'Syncing';
-
-  @override
-  String get commonTap => 'Tap';
-
-  @override
-  String get commonThenScanThisQRCode => 'then scan this QR code';
 
   @override
   String get commonThisQRCodeCouldNotBe =>
@@ -2395,10 +2483,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String keystoneFirmwareUpdate(String link) {
     return 'Update to the latest Keystone firmware at $link';
   }
-
-  @override
-  String get keystoneFirmwareUpdatePrefix =>
-      'Update to the latest Keystone firmware at ';
 
   @override
   String get keystoneImReadyNow => 'I\'m ready now';
@@ -4084,17 +4168,8 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationImmediateTradeoffEmphasis =>
-      'easier to associate with your wallet.';
-
-  @override
   String get migrationImmediateTradeoffHighlight =>
       'easier to associate with your wallet';
-
-  @override
-  String migrationImmediateTradeoffLead(String amount) {
-    return 'Crosses in one visible step — your $amount and timing are ';
-  }
 
   @override
   String get migrationImmediateTradeoffLedger =>
@@ -4593,10 +4668,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationMobileFastPlanUnavailable => 'Unavailable';
-
-  @override
-  String get migrationMobileFastPrivacyBodyHighlight =>
-      'easier to associate with your wallet';
 
   @override
   String get migrationMobileFastPrivacyConsiderPrivate =>
@@ -5125,9 +5196,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileStatusNotesLead => 'Migration ';
-
-  @override
   String migrationMobileStatusNotesTitle(String notes) {
     return 'Migration $notes';
   }
@@ -5159,14 +5227,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'Another Keystone approval will be needed after these confirmations.';
 
   @override
-  String get migrationMobileWaitLoopBatch => ' the batch of transactions';
-
-  @override
   String get migrationMobileWaitLoopCaption =>
       'Repeat several times,\nwaiting could take 2–10\nhours';
-
-  @override
-  String get migrationMobileWaitLoopForWindow => ' for the window';
 
   @override
   String get migrationMobileWaitLoopSign => 'Sign';
@@ -6012,6 +6074,39 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nativePrepUpdatesTitle => 'Migration preparation updates';
 
   @override
+  String get nativeTorUpdateBody =>
+      'Updating over Tor may take longer. Turning Tor off switches all Vizor network requests to a direct connection.';
+
+  @override
+  String get nativeTorUpdateCancel => 'Cancel';
+
+  @override
+  String get nativeTorUpdateClose => 'Close';
+
+  @override
+  String get nativeTorUpdateContinue => 'Continue with Tor';
+
+  @override
+  String get nativeTorUpdateDisableFailedBody =>
+      'Tor remains on. Turn it off in Settings, then check for updates again.';
+
+  @override
+  String get nativeTorUpdateDisableFailedTitle => 'Couldn’t turn off Tor';
+
+  @override
+  String get nativeTorUpdateRestartFailedBody =>
+      'Tor is off. Check for updates again to continue with a direct connection.';
+
+  @override
+  String get nativeTorUpdateRestartFailedTitle => 'Couldn’t restart the update';
+
+  @override
+  String get nativeTorUpdateTitle => 'Use Tor for this update?';
+
+  @override
+  String get nativeTorUpdateTurnOff => 'Turn off Tor and update';
+
+  @override
   String get navActivity => 'Activity';
 
   @override
@@ -6090,10 +6185,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get onboardingAddressTypesSubtitle =>
       'Zcash has two address types.\nOne for privacy, one for transparency.';
-
-  @override
-  String get onboardingAddressTypesSubtitleMobile =>
-      'Zcash has two addresses types.\nOne for Privacy, one for Transparency.';
 
   @override
   String get onboardingAddressTypesTitle => 'Zcash Address Types';
@@ -6261,6 +6352,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get onboardingDuplicateKeystoneAccount =>
       'This Keystone account is already in your wallet.';
+
+  @override
+  String get onboardingDuplicateLedgerAccount =>
+      'This Ledger account is already in your wallet.';
 
   @override
   String get onboardingEditBip39Passphrase => 'Edit BIP39 passphrase';
@@ -6642,6 +6737,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Vizor could not load its startup state.';
 
   @override
+  String get onboardingSubmitFailed => 'Couldn’t finish this step. Try again.';
+
+  @override
   String get onboardingTellMeHowZcashWorks => 'Tell me how Zcash works';
 
   @override
@@ -6699,6 +6797,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingUnlockWelcomeBack => 'Welcome back';
+
+  @override
+  String get onboardingWalletLinkNetworkMismatch =>
+      'This wallet link is for a different Zcash network.';
 
   @override
   String get onboardingWelcome => 'Welcome';
@@ -7122,6 +7224,31 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get paymentLinkBatchQuoteNotReady =>
       'Available balance is still loading. Try again after wallet sync.';
+
+  @override
+  String get paymentLinkBatchRejectedKeystoneSapling =>
+      'This group would spend older Sapling funds, which your Keystone can’t sign. Try fewer cards or a smaller amount per card.';
+
+  @override
+  String get paymentLinkBatchRejectedKeystoneSignatureLimit =>
+      'This group needs more inputs than your Keystone can sign at once. Try fewer cards or a smaller amount per card.';
+
+  @override
+  String paymentLinkBatchRejectedLedgerRecipientLimit(String max) {
+    return 'This group has more shielded recipients than your Ledger can display (maximum $max). Try fewer cards or a smaller amount per card.';
+  }
+
+  @override
+  String get paymentLinkBatchRejectedLedgerSapling =>
+      'This group would spend older Sapling funds, which your Ledger can’t sign. Try fewer cards or a smaller amount per card.';
+
+  @override
+  String get paymentLinkBatchRejectedLedgerTooLarge =>
+      'This group is too large for your Ledger to sign. Try fewer cards or a smaller amount per card.';
+
+  @override
+  String get paymentLinkBatchRejectedNotOneTransaction =>
+      'This group can’t be funded in one transaction. Try fewer cards or a smaller amount per card.';
 
   @override
   String get paymentLinkBatchRemoveCard => 'Remove a card';
@@ -8279,11 +8406,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiveCopyTransparentAddress => 'Copy transparent address';
 
   @override
-  String receiveErrorWithDetails(String message, String details) {
-    return '$message\nDetails: $details';
-  }
-
-  @override
   String get receiveGenerateNewShieldedAddress =>
       'Generate new shielded address';
 
@@ -8418,9 +8540,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiveShareTransparentAddress => 'Share transparent address';
 
   @override
+  String get receiveShieldedAddressLoadFailed =>
+      'Couldn’t load your shielded address. Try again in a moment.';
+
+  @override
   String receiveTitle(String ticker) {
     return 'Receive $ticker';
   }
+
+  @override
+  String get receiveTransparentAddressLoadFailed =>
+      'Couldn’t load your transparent address. Try again in a moment.';
 
   @override
   String get secretPassphraseCopy => 'Copy secret passphrase';
@@ -9627,10 +9757,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsSeedScreenshotBodyLead => 'Screenshots are not reliable';
-
-  @override
-  String get settingsSeedScreenshotBodyRest =>
-      '. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
 
   @override
   String get settingsSeedScreenshotTitle =>
@@ -10919,9 +11045,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapReviewStartingLockingQuote => 'Locking quote';
 
   @override
-  String get swapReviewStartingPaying => 'Paying';
-
-  @override
   String get swapReviewStartingSending => 'Sending';
 
   @override
@@ -11176,6 +11299,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingConfigAddCustomSource => 'Add custom source';
 
   @override
+  String get votingConfigChecksumFormat =>
+      'The checksum must be 64 lowercase hex characters.';
+
+  @override
+  String get votingConfigChecksumKeyEncoded =>
+      'Write the checksum parameter name as checksum, without encoding.';
+
+  @override
+  String get votingConfigChecksumPrefix =>
+      'The checksum must start with sha256:.';
+
+  @override
+  String get votingConfigChecksumRepeated =>
+      'Include the checksum parameter only once.';
+
+  @override
+  String get votingConfigChecksumRequired =>
+      'Add a checksum parameter to the URL.';
+
+  @override
   String get votingConfigCloseSettings => 'Close voting config settings';
 
   @override
@@ -11273,6 +11416,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get votingConfigUrlCopied => 'Source URL copied.';
+
+  @override
+  String get votingConfigUrlHasFragment =>
+      'The URL must not include a fragment (#…).';
+
+  @override
+  String get votingConfigUrlHasUserInfo =>
+      'The URL must not include a user name or password.';
+
+  @override
+  String get votingConfigUrlNotHttps => 'Use an HTTPS URL.';
 
   @override
   String get votingConfigValidating => 'Validating...';

@@ -9,12 +9,15 @@ import 'app_language.dart';
 
 const _channel = MethodChannel('com.zcash.wallet/native_strings');
 
-/// Tells iOS and Android the app language, so the copy they draw themselves
-/// (notifications, background-task captions, system prompts) matches the UI.
-/// Native code stores it for background work and uses English until it
-/// arrives. Desktop has no native copy and ignores it.
+/// Tells iOS, Android and macOS the app language, so the copy they draw
+/// themselves (notifications, background-task captions, system prompts, the
+/// macOS update alerts) matches the UI. Native code stores it for background
+/// work and uses English until it arrives. Windows and Linux have no native
+/// copy.
 Future<void> sendNativeAppLanguage(String tag) async {
-  if (kIsWeb || !(Platform.isIOS || Platform.isAndroid)) return;
+  if (kIsWeb || !(Platform.isIOS || Platform.isAndroid || Platform.isMacOS)) {
+    return;
+  }
   try {
     await _channel.invokeMethod<void>('setLanguage', {'tag': tag});
   } catch (error) {

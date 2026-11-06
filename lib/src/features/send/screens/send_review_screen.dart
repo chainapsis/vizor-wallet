@@ -980,20 +980,20 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       if (!mounted) return;
       setState(() {
         _keystonePhase = KeystoneSigningModalPhase.failed;
-        _keystoneError = _friendlyKeystoneError(e.toString());
+        _keystoneError = _friendlyKeystoneError(e);
       });
     }
   }
 
-  String _friendlyKeystoneError(String raw) {
-    final upgradeHold = networkUpgradeHoldMessage(context.l10n, raw);
+  String _friendlyKeystoneError(Object error) {
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) return upgradeHold;
-    final lower = raw.toLowerCase();
+    final lower = error.toString().toLowerCase();
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
       return context.l10n.commonSigningExpired;
     }
-    final batchError = keystoneBatchSigningFriendlyError(context.l10n, raw);
+    final batchError = keystoneBatchSigningFriendlyError(context.l10n, error);
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
       return context.l10n.commonProvingParamsFailed;

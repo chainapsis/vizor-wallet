@@ -1689,6 +1689,111 @@ abstract class AppLocalizations {
   /// **'BIP39 Passphrase: {passphrase}'**
   String bip39PassphraseValue(String passphrase);
 
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. A software send stopped part way: {sent} of {total} transactions went out ({txids} lists their IDs). {detail} is the error from the network, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcast failed after {sent}/{total} txs sent ({txids}). Error: {detail}'**
+  String broadcastNoticeBroadcastFailed(
+    String sent,
+    String total,
+    String txids,
+    String detail,
+  );
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The network accepted the transaction but the wallet could not record it. {detail} is the storage error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcast succeeded (txid={txid}) but local storage failed. {detail}. The transaction is on the network; check an explorer to confirm, and do not attempt to send again until the next sync reconciles your balance.'**
+  String broadcastNoticeBroadcastStorageFailed(String txid, String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The wallet created the transaction but could not open its database to send it. {detail} is the database error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to open DB for broadcast after local transaction creation: {detail}'**
+  String broadcastNoticeDatabaseUnavailable(String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The device approval took so long that the transaction would expire; nothing was sent. {expiryHeight} and {chainHeight} are block heights.
+  ///
+  /// In en, this message translates to:
+  /// **'Hardware signing request expired before broadcast: txid={txid}, expiry height {expiryHeight}, current chain height {chainHeight}. Start the signing flow again so Vizor can build a fresh transaction.'**
+  String broadcastNoticeExpired(
+    String txid,
+    String expiryHeight,
+    String chainHeight,
+  );
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The wallet created the transaction but could not read it back to send it. {detail} is the database error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to get raw tx for {txid} after local transaction creation: {detail}'**
+  String broadcastNoticeRawTransactionUnavailable(String txid, String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The connection ended before the server answered. {detail} is the connection status, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcast response was unavailable for txid={txid} ({detail}). The transaction may already be on the network. Do not send again until sync or an explorer confirms whether this transaction was accepted.'**
+  String broadcastNoticeResponseUnavailable(String txid, String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Follows the storage failure sentence: the wallet also could not keep the spent funds reserved. {detail} is the error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Proposal input-lock retention also failed: {detail}.'**
+  String broadcastNoticeRetentionFailed(String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Follows the sentence about the unavailable response.
+  ///
+  /// In en, this message translates to:
+  /// **'It was stored locally and will retry automatically during sync until it is confirmed or expires.'**
+  String get broadcastNoticeRetryingLocally;
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Earlier transactions of the batch went out; transaction {index} of {total} could not be sent. {detail} is the network error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to open the broadcast route for transaction {index} of {total}; it was not stored: {detail}'**
+  String broadcastNoticeRouteUnavailable(
+    String index,
+    String total,
+    String detail,
+  );
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. May follow another sentence of the result. {detail} is the storage error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'A transaction may already be on the network, but local storage failed: {detail}. Do not send again until sync or an explorer confirms the result.'**
+  String broadcastNoticeStorageFailed(String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Follows a sentence about a transaction that failed or has an unknown result: the transactions that went out, or may have, were saved so sync can recover them.
+  ///
+  /// In en, this message translates to:
+  /// **'The accepted-or-ambiguous transaction prefix was stored locally for recovery.'**
+  String get broadcastNoticeStoredLocally;
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Follows the sentence about the unavailable response. {detail} is the storage error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Local tracking also failed: {detail}. Check an explorer before retrying this send.'**
+  String broadcastNoticeTrackingFailed(String detail);
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. Earlier transactions of the batch went out; the server rejected transaction {index} of {total}. {detail} is the rejection, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction {index} of {total} was rejected and was not stored: {detail}'**
+  String broadcastNoticeTransactionRejected(
+    String index,
+    String total,
+    String detail,
+  );
+
+  /// [security] Part of a hardware-wallet broadcast result shown on the send, shield, swap and Gift Card screens; it tells the user whether the transaction may already be on the network. The connection ended while transaction {index} of {total} was being sent, so it may be on the network. {detail} is the connection error, shown in English.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction {index} of {total} has an unknown broadcast result: {detail}'**
+  String broadcastNoticeTransactionUnknown(
+    String index,
+    String total,
+    String detail,
+  );
+
   /// Tooltip on a password field warning that Caps Lock is on.
   ///
   /// In en, this message translates to:
@@ -2144,6 +2249,12 @@ abstract class AppLocalizations {
   /// **'Enter amount in USD'**
   String get commonEnterAmountInUsd;
 
+  /// An error summary line, then a technical details line. {details} is raw error text and is not translated. Shared by: receive, migration, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'{message}\nDetails: {details}'**
+  String commonErrorWithDetails(String message, String details);
+
   /// Status value of a transaction or swap that failed. Shared by: activity, send, settings, swap.
   ///
   /// In en, this message translates to:
@@ -2444,12 +2555,6 @@ abstract class AppLocalizations {
   /// **'On a Mac, you can use Continuity Camera to scan with your iPhone instead.'**
   String get commonOnAMacYouCanUse;
 
-  /// Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon. Shared by: keystone, migration.
-  ///
-  /// In en, this message translates to:
-  /// **'on your Keystone,'**
-  String get commonOnYourKeystone;
-
   /// Button that opens the system settings page for the camera permission. Shared by: address, keystone, ledger.
   ///
   /// In en, this message translates to:
@@ -2473,6 +2578,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You don\'t have enough ZEC for this payment. Try a smaller amount.'**
   String get commonPayInsufficientZec;
+
+  /// Disabled primary button label on the Pay review while the payment is being started. Shared by: pay, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Paying'**
+  String get commonPayingButton;
 
   /// Title of a failed Pay activity row or detail screen. Shared by: activity, pay, swap.
   ///
@@ -2929,18 +3040,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Syncing'**
   String get commonSyncing;
-
-  /// Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon. Shared by: keystone, migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Tap'**
-  String get commonTap;
-
-  /// End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'. Shared by: keystone, migration.
-  ///
-  /// In en, this message translates to:
-  /// **'then scan this QR code'**
-  String get commonThenScanThisQRCode;
 
   /// Hint under the mobile Keystone scanner when the scanned QR is not a valid signature. Shared by: home, keystone.
   ///
@@ -4165,12 +4264,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Update to the latest Keystone firmware at {link}'**
   String keystoneFirmwareUpdate(String link);
-
-  /// Text before the keyst.one/firmware link in the scanning help. Keep the trailing space; the link follows directly.
-  ///
-  /// In en, this message translates to:
-  /// **'Update to the latest Keystone firmware at '**
-  String get keystoneFirmwareUpdatePrefix;
 
   /// Primary button on the Keystone how-to-connect screen; continues to the QR scan step once the user has followed the instructions.
   ///
@@ -6853,23 +6946,11 @@ abstract class AppLocalizations {
   /// **'Crosses in one visible step — your {amount} and timing are {highlight}.'**
   String migrationImmediateTradeoffBody(String amount, String highlight);
 
-  /// [security] Highlighted second part of the privacy notice, continuing the previous message.
-  ///
-  /// In en, this message translates to:
-  /// **'easier to associate with your wallet.'**
-  String get migrationImmediateTradeoffEmphasis;
-
   /// [security] Emphasized phrase inserted into the privacy notice sentence as its highlight; it completes 'your amount and timing are …'.
   ///
   /// In en, this message translates to:
   /// **'easier to associate with your wallet'**
   String get migrationImmediateTradeoffHighlight;
-
-  /// [security] First part of the privacy notice; {amount} is the ZEC amount. The sentence continues in the next message, so it must end with a space.
-  ///
-  /// In en, this message translates to:
-  /// **'Crosses in one visible step — your {amount} and timing are '**
-  String migrationImmediateTradeoffLead(String amount);
 
   /// [security] Last line of the privacy notice for Ledger accounts; starts with a line break.
   ///
@@ -7608,12 +7689,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unavailable'**
   String get migrationMobileFastPlanUnavailable;
-
-  /// [security] Highlighted middle part of the sentence in the privacy warning card; it follows the lead part and ends the sentence.
-  ///
-  /// In en, this message translates to:
-  /// **'easier to associate with your wallet'**
-  String get migrationMobileFastPrivacyBodyHighlight;
 
   /// Last sentence of the privacy warning card suggesting the Private migration option.
   ///
@@ -8455,12 +8530,6 @@ abstract class AppLocalizations {
   /// **'{count} notes'**
   String migrationMobileStatusNotesCount(int count);
 
-  /// Bold first words of the heading row above the migration parts; followed by the note count such as 3 notes. Keep the trailing space.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration '**
-  String get migrationMobileStatusNotesLead;
-
   /// Heading row above the migration parts. {notes} is the muted note count such as '3 notes' and can be moved anywhere.
   ///
   /// In en, this message translates to:
@@ -8509,23 +8578,11 @@ abstract class AppLocalizations {
   /// **'Another Keystone approval will be needed after these confirmations.'**
   String get migrationMobileWaitKeystoneAgain;
 
-  /// Second fragment of the bottom text on the animated loop; keep the leading space.
-  ///
-  /// In en, this message translates to:
-  /// **' the batch of transactions'**
-  String get migrationMobileWaitLoopBatch;
-
   /// Caption in the middle of the animated loop that explains the sign-and-wait cycle; the line breaks are intentional and the dash is an en dash.
   ///
   /// In en, this message translates to:
   /// **'Repeat several times,\nwaiting could take 2–10\nhours'**
   String get migrationMobileWaitLoopCaption;
-
-  /// Second fragment of the top text on the animated loop; keep the leading space.
-  ///
-  /// In en, this message translates to:
-  /// **' for the window'**
-  String get migrationMobileWaitLoopForWindow;
 
   /// Highlighted verb inserted into the bottom text of the animated loop, which reads 'Sign the batch of transactions'.
   ///
@@ -9851,6 +9908,66 @@ abstract class AppLocalizations {
   /// **'Migration preparation updates'**
   String get nativePrepUpdatesTitle;
 
+  /// Body of the macOS alert shown before downloading an app update while Tor is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating over Tor may take longer. Turning Tor off switches all Vizor network requests to a direct connection.'**
+  String get nativeTorUpdateBody;
+
+  /// Button in the macOS update alert: skip this update.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get nativeTorUpdateCancel;
+
+  /// Button that dismisses the macOS update failure alerts.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get nativeTorUpdateClose;
+
+  /// Button in the macOS update alert: download the update over Tor.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue with Tor'**
+  String get nativeTorUpdateContinue;
+
+  /// Body of the macOS alert when turning Tor off for an update failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor remains on. Turn it off in Settings, then check for updates again.'**
+  String get nativeTorUpdateDisableFailedBody;
+
+  /// Title of the macOS alert when turning Tor off for an update failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t turn off Tor'**
+  String get nativeTorUpdateDisableFailedTitle;
+
+  /// Body of the macOS alert when Tor was turned off but the direct update check could not start.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor is off. Check for updates again to continue with a direct connection.'**
+  String get nativeTorUpdateRestartFailedBody;
+
+  /// Title of the macOS alert when Tor was turned off but the direct update check could not start.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t restart the update'**
+  String get nativeTorUpdateRestartFailedTitle;
+
+  /// Title of the macOS alert shown before downloading an app update while Tor is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Tor for this update?'**
+  String get nativeTorUpdateTitle;
+
+  /// Button in the macOS update alert: turn Tor off for every request, then download the update directly.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off Tor and update'**
+  String get nativeTorUpdateTurnOff;
+
   /// Sidebar and tab bar destination: transaction history. Shared by: activity, nav.
   ///
   /// In en, this message translates to:
@@ -9980,17 +10097,11 @@ abstract class AppLocalizations {
   /// **'Transparent Address'**
   String get onboardingAddressTransparentTitleMobile;
 
-  /// Subtitle on the desktop address types and things-to-know steps; two lines on purpose.
+  /// Subtitle of the address types step on desktop and mobile, and of the desktop things-to-know step; two lines on purpose.
   ///
   /// In en, this message translates to:
   /// **'Zcash has two address types.\nOne for privacy, one for transparency.'**
   String get onboardingAddressTypesSubtitle;
-
-  /// Subtitle of the mobile address types step; two lines on purpose.
-  ///
-  /// In en, this message translates to:
-  /// **'Zcash has two addresses types.\nOne for Privacy, one for Transparency.'**
-  String get onboardingAddressTypesSubtitleMobile;
 
   /// Title of the screen explaining shielded and transparent addresses.
   ///
@@ -10273,6 +10384,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This Keystone account is already in your wallet.'**
   String get onboardingDuplicateKeystoneAccount;
+
+  /// Error on the Ledger import screen when that hardware account is already in this wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'This Ledger account is already in your wallet.'**
+  String get onboardingDuplicateLedgerAccount;
 
   /// [security] Accessibility label of the bar that reopens the BIP39 passphrase dialog for editing.
   ///
@@ -10928,6 +11045,12 @@ abstract class AppLocalizations {
   /// **'Vizor could not load its startup state.'**
   String get onboardingStorageStartupFailureDetail;
 
+  /// Inline onboarding error when creating or importing an account failed for a reason Vizor has no message for. Shown on one line; the cause is only logged.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t finish this step. Try again.'**
+  String get onboardingSubmitFailed;
+
   /// Primary button on the Zcash education steps that continues to the next explanation.
   ///
   /// In en, this message translates to:
@@ -11029,6 +11152,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Welcome back'**
   String get onboardingUnlockWelcomeBack;
+
+  /// Error when a wallet link from another device was made on another Zcash network (for example testnet) than this app or wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'This wallet link is for a different Zcash network.'**
+  String get onboardingWalletLinkNetworkMismatch;
 
   /// Name of the Welcome screen, used in back links.
   ///
@@ -11258,7 +11387,7 @@ abstract class AppLocalizations {
   /// **'Converted amount'**
   String get payReviewConvertedAmount;
 
-  /// Label of the paying amount row on the Pay review step; also the disabled button label while the payment starts.
+  /// Label of the paying amount row on the Pay review step.
   ///
   /// In en, this message translates to:
   /// **'Paying'**
@@ -11758,6 +11887,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Available balance is still loading. Try again after wallet sync.'**
   String get paymentLinkBatchQuoteNotReady;
+
+  /// Shown when a Gift Card group cannot be funded from a Keystone account because it would spend Sapling funds. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This group would spend older Sapling funds, which your Keystone can’t sign. Try fewer cards or a smaller amount per card.'**
+  String get paymentLinkBatchRejectedKeystoneSapling;
+
+  /// Shown when a Gift Card group needs more spend signatures than one Keystone signing round. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This group needs more inputs than your Keystone can sign at once. Try fewer cards or a smaller amount per card.'**
+  String get paymentLinkBatchRejectedKeystoneSignatureLimit;
+
+  /// Shown when a Gift Card group has more card recipients than a Ledger can show for review. {max} is that limit, such as 4. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This group has more shielded recipients than your Ledger can display (maximum {max}). Try fewer cards or a smaller amount per card.'**
+  String paymentLinkBatchRejectedLedgerRecipientLimit(String max);
+
+  /// Shown when a Gift Card group cannot be funded from a Ledger account because it would spend Sapling funds. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This group would spend older Sapling funds, which your Ledger can’t sign. Try fewer cards or a smaller amount per card.'**
+  String get paymentLinkBatchRejectedLedgerSapling;
+
+  /// Shown when a Gift Card group has more actions in one pool than a Ledger can sign. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This group is too large for your Ledger to sign. Try fewer cards or a smaller amount per card.'**
+  String get paymentLinkBatchRejectedLedgerTooLarge;
+
+  /// Shown when a Gift Card group would need more than one funding transaction. Nothing was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'This group can’t be funded in one transaction. Try fewer cards or a smaller amount per card.'**
+  String get paymentLinkBatchRejectedNotOneTransaction;
 
   /// Screen reader label of the button that decreases the number of cards in a batch.
   ///
@@ -13562,12 +13727,6 @@ abstract class AppLocalizations {
   /// **'Copy transparent address'**
   String get receiveCopyTransparentAddress;
 
-  /// Inline error on the Receive screen: a summary line, then a technical details line. {details} is raw error text and is not translated.
-  ///
-  /// In en, this message translates to:
-  /// **'{message}\nDetails: {details}'**
-  String receiveErrorWithDetails(String message, String details);
-
   /// Accessibility label of the renew button that generates a new shielded address.
   ///
   /// In en, this message translates to:
@@ -13790,11 +13949,23 @@ abstract class AppLocalizations {
   /// **'Share transparent address'**
   String get receiveShareTransparentAddress;
 
+  /// Summary line of the inline Receive error when the shielded address could not be read; a technical details line follows.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t load your shielded address. Try again in a moment.'**
+  String get receiveShieldedAddressLoadFailed;
+
   /// Title of the Receive screen. {ticker} is the currency ticker such as ZEC.
   ///
   /// In en, this message translates to:
   /// **'Receive {ticker}'**
   String receiveTitle(String ticker);
+
+  /// Summary line of the inline Receive error when the transparent address could not be read; a technical details line follows.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t load your transparent address. Try again in a moment.'**
+  String get receiveTransparentAddressLoadFailed;
 
   /// [security] Button that copies the seed phrase to the clipboard.
   ///
@@ -15799,12 +15970,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Screenshots are not reliable'**
   String get settingsSeedScreenshotBodyLead;
-
-  /// [security] Rest of the screenshot warning body; it directly follows the bold lead and so starts with a period.
-  ///
-  /// In en, this message translates to:
-  /// **'. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.'**
-  String get settingsSeedScreenshotBodyRest;
 
   /// [security] Heading of the warning sheet shown when a screenshot is taken while the secret passphrase is visible.
   ///
@@ -17898,12 +18063,6 @@ abstract class AppLocalizations {
   /// **'Locking quote'**
   String get swapReviewStartingLockingQuote;
 
-  /// Disabled primary button label on the pay review while the payment is being started.
-  ///
-  /// In en, this message translates to:
-  /// **'Paying'**
-  String get swapReviewStartingPaying;
-
   /// Disabled primary button label on the swap review while the ZEC deposit is being sent.
   ///
   /// In en, this message translates to:
@@ -18324,6 +18483,36 @@ abstract class AppLocalizations {
   /// **'Add custom source'**
   String get votingConfigAddCustomSource;
 
+  /// Inline error under the voting config source URL field when the checksum after sha256: is not 64 lowercase hexadecimal characters.
+  ///
+  /// In en, this message translates to:
+  /// **'The checksum must be 64 lowercase hex characters.'**
+  String get votingConfigChecksumFormat;
+
+  /// Inline error under the voting config source URL field when the checksum query key is percent-encoded. Keep checksum as written; it is the literal parameter name.
+  ///
+  /// In en, this message translates to:
+  /// **'Write the checksum parameter name as checksum, without encoding.'**
+  String get votingConfigChecksumKeyEncoded;
+
+  /// Inline error under the voting config source URL field when the checksum value lacks the sha256: prefix. Keep sha256: as written.
+  ///
+  /// In en, this message translates to:
+  /// **'The checksum must start with sha256:.'**
+  String get votingConfigChecksumPrefix;
+
+  /// Inline error under the voting config source URL field when checksum appears more than once. Keep checksum as written; it is the literal parameter name.
+  ///
+  /// In en, this message translates to:
+  /// **'Include the checksum parameter only once.'**
+  String get votingConfigChecksumRepeated;
+
+  /// Inline error under the voting config source URL field when a checksum is required but missing. Keep checksum as written; it is the literal parameter name.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a checksum parameter to the URL.'**
+  String get votingConfigChecksumRequired;
+
   /// Accessibility label of the close button of the voting config panel.
   ///
   /// In en, this message translates to:
@@ -18497,6 +18686,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Source URL copied.'**
   String get votingConfigUrlCopied;
+
+  /// Inline error under the voting config source URL field when the URL has a # fragment.
+  ///
+  /// In en, this message translates to:
+  /// **'The URL must not include a fragment (#…).'**
+  String get votingConfigUrlHasFragment;
+
+  /// Inline error under the voting config source URL field when the URL contains user info (user:password@).
+  ///
+  /// In en, this message translates to:
+  /// **'The URL must not include a user name or password.'**
+  String get votingConfigUrlHasUserInfo;
+
+  /// Inline error under the voting config source URL field when the URL is not an HTTPS URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Use an HTTPS URL.'**
+  String get votingConfigUrlNotHttps;
 
   /// Label of the save button while the custom source is being validated.
   ///

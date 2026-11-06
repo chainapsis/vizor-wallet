@@ -114,6 +114,7 @@ use crate::wallet::sync_engine::enhancement::private_queries_active;
 use crate::wallet::{confirmations_policy, payment_link_claim_confirmations_policy};
 
 mod gift_card_input;
+use super::broadcast_notice::BroadcastNotice;
 use super::migration::MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI;
 use super::migration_wallet_ops::{
     migration_locked_input_policy, select_spendable_orchard_v2_notes,
@@ -455,6 +456,9 @@ pub struct ExecuteProposalResult {
     pub broadcasted_count: u32,
     pub total_count: u32,
     pub message: Option<String>,
+    /// `message` as notices when it is [`broadcast_notice::english`] of them;
+    /// empty otherwise.
+    pub notices: Vec<BroadcastNotice>,
     /// Server rejection is distinct from a missing response, but is not finality.
     pub broadcast_failure_kind: Option<String>,
 }
@@ -966,6 +970,7 @@ pub(crate) fn propose_send_for_purpose(
         },
         purpose,
     )
+    .map_err(String::from)
 }
 
 pub(crate) fn propose_payment_link_batch(
@@ -974,7 +979,7 @@ pub(crate) fn propose_payment_link_batch(
     account_uuid: &str,
     send_flow_id: &str,
     payments: &[(String, u64)],
-) -> Result<ProposalResult, String> {
+) -> Result<ProposalResult, WalletFailure> {
     propose_send_with_request(
         db_path,
         network,
@@ -992,11 +997,11 @@ fn propose_send_with_request(
     send_flow_id: &str,
     request: SendRequest<'_>,
     purpose: SendPurpose,
-) -> Result<ProposalResult, String> {
+) -> Result<ProposalResult, WalletFailure> {
     use zcash_protocol::{PoolType, ShieldedPool as SP};
 
     if send_flow_id.is_empty() {
-        return Err("Send flow id is required".to_string());
+        return Err("Send flow id is required".to_string().into());
     }
 
     with_wallet_db_write_lock("send.propose_send", || {
@@ -1085,6 +1090,7 @@ pub fn estimate_fee(
             memo_str,
         },
     )
+    .map_err(String::from)
 }
 
 pub fn estimate_payment_link_batch_fee(
@@ -1092,7 +1098,7 @@ pub fn estimate_payment_link_batch_fee(
     network: WalletNetwork,
     account_uuid: &str,
     payments: &[(String, u64)],
-) -> Result<u64, String> {
+) -> Result<u64, WalletFailure> {
     estimate_fee_with_request(
         db_path,
         network,
@@ -1106,7 +1112,7 @@ fn estimate_fee_with_request(
     network: WalletNetwork,
     account_uuid: &str,
     request: SendRequest<'_>,
-) -> Result<u64, String> {
+) -> Result<u64, WalletFailure> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let (proposal, _) = propose_request(
@@ -1162,7 +1168,7 @@ fn propose_request(
     request: SendRequest<'_>,
     purpose: SendPurpose,
     context: &str,
-) -> Result<(Proposal<WalletFeeRule, ReceivedNoteId>, Option<TxVersion>), String> {
+) -> Result<(Proposal<WalletFeeRule, ReceivedNoteId>, Option<TxVersion>), WalletFailure> {
     if purpose == SendPurpose::PaymentLinkClaim {
         if let Some(source) = gift_card_input::CardInput::load(db, db_path, account_id)? {
             let proposal = source.propose(network, request.build()?)?;
@@ -4209,8 +4215,16 @@ const PAYMENT_LINK_BATCH_REJECTION_PREFIX: &str = "This group ";
 /// the signer limits and the older funds a signer cannot spend.
 const PAYMENT_LINK_BATCH_ADVICE: &str = "Try fewer cards or a smaller amount per card.";
 
-fn payment_link_batch_rejection(reason: impl std::fmt::Display) -> String {
-    format!("{PAYMENT_LINK_BATCH_REJECTION_PREFIX}{reason}")
+/// A user-facing batch rejection: `code` picks the app's translated copy and
+/// the English message stays for logs and older builds.
+fn payment_link_batch_rejection(
+    code: FailureCode,
+    reason: impl std::fmt::Display,
+) -> WalletFailure {
+    WalletFailure::coded(
+        code,
+        format!("{PAYMENT_LINK_BATCH_REJECTION_PREFIX}{reason} {PAYMENT_LINK_BATCH_ADVICE}"),
+    )
 }
 
 fn build_payment_link_batch_request(
@@ -4252,31 +4266,34 @@ fn validate_payment_link_batch_proposal<NoteRef>(
     proposal: &Proposal<WalletFeeRule, NoteRef>,
     network: WalletNetwork,
     signer: Option<crate::wallet::keys::HardwareSignerKind>,
-) -> Result<(), String> {
+) -> Result<(), WalletFailure> {
     use crate::wallet::keys::HardwareSignerKind;
     use orchard::ValuePool;
 
     if proposal.steps().len() != 1 {
-        return Err(payment_link_batch_rejection(format_args!(
-            "can’t be funded in one transaction. {PAYMENT_LINK_BATCH_ADVICE}"
-        )));
+        return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchNotOneTransaction,
+                    format_args!("can’t be funded in one transaction."),
+                ));
     }
     let Some(signer) = signer else { return Ok(()) };
     let step = proposal.steps().first();
     match signer {
         HardwareSignerKind::Keystone => {
             if step.input_count_in_pool(PoolType::SAPLING) > 0 {
-                return Err(payment_link_batch_rejection(format_args!(
-                    "would spend older Sapling funds, which your Keystone can’t sign. {PAYMENT_LINK_BATCH_ADVICE}"
-                )));
+                return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchKeystoneSapling,
+                    format_args!("would spend older Sapling funds, which your Keystone can’t sign."),
+                ));
             }
             let signatures = step.input_count_in_pool(PoolType::ORCHARD)
                 + step.input_count_in_pool(PoolType::IRONWOOD);
             let max = crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES;
             if signatures > max {
-                return Err(payment_link_batch_rejection(format_args!(
-                    "needs more inputs than your Keystone can sign at once. {PAYMENT_LINK_BATCH_ADVICE}"
-                )));
+                return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchKeystoneSignatureLimit,
+                    format_args!("needs more inputs than your Keystone can sign at once."),
+                ));
             }
         }
         HardwareSignerKind::Ledger => {
@@ -4289,14 +4306,16 @@ fn validate_payment_link_batch_proposal<NoteRef>(
             .is_err()
             {
                 let max = crate::wallet::ledger::limits::MAX_EXTERNAL_SHIELDED_OUTPUTS;
-                return Err(payment_link_batch_rejection(format_args!(
-                    "has more shielded recipients than your Ledger can display (maximum {max}). {PAYMENT_LINK_BATCH_ADVICE}"
-                )));
+                return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchLedgerRecipientLimit,
+                    format_args!("has more shielded recipients than your Ledger can display (maximum {max})."),
+                ));
             }
             if step.input_count_in_pool(PoolType::SAPLING) > 0 {
-                return Err(payment_link_batch_rejection(format_args!(
-                    "would spend older Sapling funds, which your Ledger can’t sign. {PAYMENT_LINK_BATCH_ADVICE}"
-                )));
+                return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchLedgerSapling,
+                    format_args!("would spend older Sapling funds, which your Ledger can’t sign."),
+                ));
             }
             let branch = consensus::BranchId::for_height(
                 &network,
@@ -4315,9 +4334,10 @@ fn validate_payment_link_batch_proposal<NoteRef>(
                     payment_link_ledger_action_count(branch, value_pool, spends, outputs)?;
                 let max = crate::wallet::ledger::limits::MAX_SHIELDED_ACTIONS_PER_POOL;
                 if actions > max {
-                    return Err(payment_link_batch_rejection(format_args!(
-                        "is too large for your Ledger to sign. {PAYMENT_LINK_BATCH_ADVICE}"
-                    )));
+                    return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchLedgerTooLarge,
+                    format_args!("is too large for your Ledger to sign."),
+                ));
                 }
             }
         }
@@ -5893,6 +5913,7 @@ fn retire_expired_denomination_run(
         broadcasted_count: 0,
         total_count: expired_count,
         message: Some(message),
+        notices: Vec::new(),
     }))
 }
 
@@ -5934,6 +5955,7 @@ fn denomination_expiry_scan_wait_result(txids: &str, total_count: u32) -> Create
             "Migration preparation reached its expiry height. Waiting for wallet sync to determine whether the preparation schedule must be rebuilt."
                 .to_string(),
         ),
+        notices: Vec::new(),
     }
 }
 
@@ -6005,6 +6027,7 @@ async fn broadcast_pending_denomination_stages(
             message: Some(
                 "Background migration stopped before denomination broadcast.".to_string(),
             ),
+            notices: Vec::new(),
         }));
     }
     let live_chain_tip_height = match live_chain_tip_height(lightwalletd_url).await {
@@ -6017,6 +6040,7 @@ async fn broadcast_pending_denomination_stages(
                 broadcasted_count: 0,
                 total_count,
                 message: Some(e),
+                notices: Vec::new(),
             }));
         }
     };
@@ -6044,6 +6068,7 @@ async fn broadcast_pending_denomination_stages(
             broadcasted_count: 0,
             total_count,
             message: Some(network_upgrade::MIGRATION_HOLD_MESSAGE.to_string()),
+            notices: Vec::new(),
         }));
     }
     let due = pending
@@ -6096,6 +6121,7 @@ async fn broadcast_pending_denomination_stages(
                     "Denomination split broadcast failed for {}: {e}",
                     stage.expected_txid_hex
                 )),
+                notices: Vec::new(),
             }));
         }
 
@@ -6114,6 +6140,7 @@ async fn broadcast_pending_denomination_stages(
                 broadcasted_count,
                 total_count,
                 message: Some(message),
+                notices: Vec::new(),
             }));
         }
 
@@ -6175,6 +6202,7 @@ async fn broadcast_pending_denomination_stages(
                 "{total_count} independent denomination split stages were created. Migration will continue after confirmation."
             )
         }),
+        notices: Vec::new(),
     }))
 }
 
@@ -6910,6 +6938,7 @@ struct CreatedBroadcastResult {
     broadcasted_count: u32,
     total_count: u32,
     message: Option<String>,
+    notices: Vec<BroadcastNotice>,
 }
 
 impl CreatedBroadcastResult {
@@ -6926,6 +6955,7 @@ impl CreatedBroadcastResult {
             broadcasted_count: self.broadcasted_count,
             total_count: self.total_count,
             message: self.message,
+            notices: self.notices,
             broadcast_failure_kind: failure_kind.map(str::to_owned),
         }
     }
@@ -6960,8 +6990,8 @@ async fn broadcast_created_transactions(
     let read_conn = match open_readonly_conn(db_path) {
         Ok(conn) => conn,
         Err(e) => {
-            let message =
-                format!("Failed to open DB for broadcast after local transaction creation: {e}");
+            let notice = BroadcastNotice::database_unavailable(e.to_string());
+            let message = notice.sentence();
             log::warn!("{log_label}: {message}");
             return CreatedBroadcastResult {
                 broadcast_failure_kind: None,
@@ -6970,6 +7000,7 @@ async fn broadcast_created_transactions(
                 broadcasted_count: 0,
                 total_count,
                 message: Some(message),
+                notices: vec![notice],
             };
         }
     };
@@ -6983,9 +7014,11 @@ async fn broadcast_created_transactions(
         ) {
             Ok(raw_tx) => raw_tx,
             Err(e) => {
-                let message = format!(
-                    "Failed to get raw tx for {txid} after local transaction creation: {e}"
+                let notice = BroadcastNotice::raw_transaction_unavailable(
+                    txid.to_string(),
+                    e.to_string(),
                 );
+                let message = notice.sentence();
                 log::warn!("{log_label}: {message}");
                 return CreatedBroadcastResult {
                     broadcast_failure_kind: None,
@@ -6998,6 +7031,7 @@ async fn broadcast_created_transactions(
                     broadcasted_count: broadcast_ok.len() as u32,
                     total_count,
                     message: Some(message),
+                    notices: vec![notice],
                 };
             }
         };
@@ -7008,12 +7042,13 @@ async fn broadcast_created_transactions(
                 log::info!("{log_label}: broadcast {txid} ({} bytes)", raw_tx.len());
             }
             Err(e) => {
-                let message = format!(
-                    "Broadcast failed after {}/{} txs sent ({}). Error: {e}",
-                    broadcast_ok.len(),
-                    txids.len(),
-                    broadcast_ok.join(",")
+                let notice = BroadcastNotice::broadcast_failed(
+                    broadcast_ok.len() as u32,
+                    total_count,
+                    broadcast_ok.join(","),
+                    e.clone(),
                 );
+                let message = notice.sentence();
                 log::warn!("{log_label}: {message}");
                 return CreatedBroadcastResult {
                     broadcast_failure_kind: Some(if e.starts_with("Broadcast rejected:") {
@@ -7030,6 +7065,7 @@ async fn broadcast_created_transactions(
                     broadcasted_count: broadcast_ok.len() as u32,
                     total_count,
                     message: Some(message),
+                    notices: vec![notice],
                 };
             }
         }
@@ -7042,6 +7078,7 @@ async fn broadcast_created_transactions(
         broadcasted_count: total_count,
         total_count,
         message: None,
+        notices: Vec::new(),
     }
 }
 

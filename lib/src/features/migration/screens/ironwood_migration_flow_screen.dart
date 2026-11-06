@@ -67,6 +67,7 @@ import '../widgets/ledger_immediate_migration_signing_overlay.dart';
 import '../widgets/ironwood_migration_shimmer_text.dart';
 import '../widgets/mobile/mobile_ironwood_keystone_signing_view.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
+import '../../../core/zcash/wallet_error_code.dart';
 
 part 'ironwood_migration_flow/models.dart';
 part 'ironwood_migration_flow/routes.dart';

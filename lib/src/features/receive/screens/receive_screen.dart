@@ -155,7 +155,10 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       setState(() {
         _shieldedAddress ??= walletAddress;
         _isLoading = false;
-        _errorText = e.toString();
+        _errorText = context.l10n.commonErrorWithDetails(
+          context.l10n.receiveShieldedAddressLoadFailed,
+          e.toString(),
+        );
       });
     }
   }
@@ -215,7 +218,10 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       setState(() {
         _isLoadingTransparent = false;
         _transparentLoadingAccountUuid = null;
-        _transparentErrorText = e.toString();
+        _transparentErrorText = context.l10n.commonErrorWithDetails(
+          context.l10n.receiveTransparentAddressLoadFailed,
+          e.toString(),
+        );
       });
     }
   }
@@ -279,7 +285,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       }
       setState(() {
         _isRenewingShielded = false;
-        _errorText = context.l10n.receiveErrorWithDetails(
+        _errorText = context.l10n.commonErrorWithDetails(
           context.l10n.receiveRenewAddressError,
           e.toString(),
         );

@@ -46,6 +46,7 @@ void main() {
       shieldPcztBroadcastStatusMessage(
         testL10n,
         const rust_sync.ExtractAndBroadcastPcztResult(
+          notices: [],
           txid: 'txid',
           status: 'expired',
           message:

@@ -1104,16 +1104,20 @@ void main() {
     () {
       final legacyMessage = ironwoodMigrationKeystoneScanErrorMessage(
         testL10n,
-        Exception(
-          'Unexpected UR type: got "zcash-sign-result", '
-          'expected "zcash-batch-sig-result"',
+        const rust_sync.ApiWalletError(
+          code: rust_sync.ApiWalletErrorCode.unexpectedUrType,
+          message:
+              'Unexpected UR type: got "zcash-sign-result", '
+              'expected "zcash-batch-sig-result"',
         ),
       );
       final wrongQrMessage = ironwoodMigrationKeystoneScanErrorMessage(
         testL10n,
-        Exception(
-          'Unexpected UR type: got "zcash-pczt", '
-          'expected "zcash-batch-sig-result"',
+        const rust_sync.ApiWalletError(
+          code: rust_sync.ApiWalletErrorCode.unexpectedUrType,
+          message:
+              'Unexpected UR type: got "zcash-pczt", '
+              'expected "zcash-batch-sig-result"',
         ),
       );
 
@@ -1392,7 +1396,8 @@ void main() {
     );
     expect(
       ironwoodMigrationKeystoneProofFailureMessage(testL10n, failed),
-      'Proof generation failed.',
+      'Vizor could not prepare local proofs. Go back and prepare this request '
+      'again.\nDetails: Proof generation failed.',
     );
   });
 

@@ -154,7 +154,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get accountsRemoveMigrationBody =>
-      '이 계⁠정⁠의 이⁠전 작⁠업⁠은 더 이⁠상 Vizor⁠에⁠서 계⁠속⁠되⁠지 않⁠아⁠요. 이⁠미 Zcash 네⁠트⁠워⁠크⁠에 제⁠출⁠한 거⁠래⁠는 그⁠대⁠로 완⁠료⁠될 수 있⁠어⁠요. 다⁠시 가⁠져⁠온 뒤⁠에⁠는 계⁠정⁠을 완⁠전⁠히 동⁠기⁠화⁠한 다⁠음⁠에 이⁠전⁠을 다⁠시 시⁠작⁠하⁠세⁠요.';
+      '이 계⁠정⁠의 마⁠이⁠그⁠레⁠이⁠션 작⁠업⁠은 더 이⁠상 Vizor⁠에⁠서 계⁠속⁠되⁠지 않⁠아⁠요. 이⁠미 Zcash 네⁠트⁠워⁠크⁠에 제⁠출⁠한 거⁠래⁠는 그⁠대⁠로 완⁠료⁠될 수 있⁠어⁠요. 다⁠시 가⁠져⁠온 뒤⁠에⁠는 계⁠정⁠을 완⁠전⁠히 동⁠기⁠화⁠한 다⁠음⁠에 마⁠이⁠그⁠레⁠이⁠션⁠을 다⁠시 시⁠작⁠하⁠세⁠요.';
 
   @override
   String get accountsRemoveModalBody =>
@@ -189,7 +189,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get accountsResetMigrationBody =>
-      'Vizor⁠를 초⁠기⁠화⁠하⁠면 이 기⁠기⁠의 이⁠전 작⁠업⁠이 중⁠단⁠되⁠고 모⁠든 계⁠정⁠과 지⁠갑 데⁠이⁠터⁠가 삭⁠제⁠돼⁠요. 이⁠미 Zcash 네⁠트⁠워⁠크⁠에 제⁠출⁠한 거⁠래⁠는 그⁠대⁠로 완⁠료⁠될 수 있⁠어⁠요. 다⁠시 가⁠져⁠온 뒤⁠에⁠는 각 계⁠정⁠을 완⁠전⁠히 동⁠기⁠화⁠한 다⁠음⁠에 이⁠전⁠을 다⁠시 시⁠작⁠하⁠세⁠요.';
+      'Vizor⁠를 초⁠기⁠화⁠하⁠면 이 기⁠기⁠의 마⁠이⁠그⁠레⁠이⁠션 작⁠업⁠이 중⁠단⁠되⁠고 모⁠든 계⁠정⁠과 지⁠갑 데⁠이⁠터⁠가 삭⁠제⁠돼⁠요. 이⁠미 Zcash 네⁠트⁠워⁠크⁠에 제⁠출⁠한 거⁠래⁠는 그⁠대⁠로 완⁠료⁠될 수 있⁠어⁠요. 다⁠시 가⁠져⁠온 뒤⁠에⁠는 각 계⁠정⁠을 완⁠전⁠히 동⁠기⁠화⁠한 다⁠음⁠에 마⁠이⁠그⁠레⁠이⁠션⁠을 다⁠시 시⁠작⁠하⁠세⁠요.';
 
   @override
   String get accountsResetModalBody =>
@@ -278,7 +278,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityEtaStandard => '약 1–3⁠분';
 
   @override
-  String get activityEtaTakingLonger => '시⁠간⁠이 더 걸⁠리⁠고 있⁠어⁠요';
+  String get activityEtaTakingLonger => '지⁠연 중';
 
   @override
   String get activityFeedEmpty => '아⁠직 활⁠동⁠이 없⁠어⁠요';
@@ -297,11 +297,11 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get activityGiftCreated => '기⁠프⁠트 카⁠드⁠를 만⁠들⁠었⁠어⁠요';
+  String get activityGiftCreated => '기⁠프⁠트 카⁠드 생⁠성';
 
   @override
   String activityGiftCreatedMany(int count) {
-    return '기⁠프⁠트 카⁠드 $count⁠장⁠을 만⁠들⁠었⁠어⁠요';
+    return '기⁠프⁠트 카⁠드 $count⁠장 생⁠성';
   }
 
   @override
@@ -319,7 +319,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityGiftGroupFailed => '기⁠프⁠트 카⁠드 그⁠룹 실⁠패';
 
   @override
-  String get activityGiftRedeemed => '기⁠프⁠트 카⁠드⁠를 받⁠았⁠어⁠요';
+  String get activityGiftRedeemed => '기⁠프⁠트 카⁠드 받⁠음';
 
   @override
   String get activityGiftRedeeming => '카⁠드 받⁠는 중';
@@ -409,7 +409,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '서⁠버⁠는 이 지⁠갑⁠이 이 거⁠래⁠에 관⁠심⁠이 있⁠다⁠는 사⁠실⁠을 알⁠게 되⁠고, Tor⁠를 쓰⁠지 않⁠으⁠면 IP 주⁠소⁠도 알⁠게 돼⁠요.';
 
   @override
-  String get activityReceiptAmountMigrated => '이⁠전⁠한 금⁠액';
+  String get activityReceiptAmountMigrated => '마⁠이⁠그⁠레⁠이⁠션⁠한 금⁠액';
 
   @override
   String get activityReceiptCardFee => '카⁠드 수⁠수⁠료';
@@ -524,16 +524,16 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activitySwapTitle => '스⁠왑';
 
   @override
-  String get activityTitleMigrated => 'Ironwood⁠로 이⁠전⁠됨';
+  String get activityTitleMigrated => 'Ironwood⁠로 마⁠이⁠그⁠레⁠이⁠션⁠됨';
 
   @override
-  String get activityTitleMigrating => 'Ironwood⁠로 이⁠전⁠하⁠는 중...';
+  String get activityTitleMigrating => 'Ironwood⁠로 마⁠이⁠그⁠레⁠이⁠션⁠하⁠는 중...';
 
   @override
-  String get activityTitleMigratingVerb => 'Ironwood⁠로 이⁠전⁠하⁠는 중';
+  String get activityTitleMigratingVerb => 'Ironwood⁠로 마⁠이⁠그⁠레⁠이⁠션⁠하⁠는 중';
 
   @override
-  String get activityTitleMigrationFailed => '이⁠전 실⁠패';
+  String get activityTitleMigrationFailed => '마⁠이⁠그⁠레⁠이⁠션 실⁠패';
 
   @override
   String get activityTitleReceiveFailed => '받⁠기 실⁠패';
@@ -974,6 +974,95 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String broadcastNoticeBroadcastFailed(
+    String sent,
+    String total,
+    String txids,
+    String detail,
+  ) {
+    return '거⁠래 $total⁠건 중 $sent⁠건⁠을 보⁠낸 뒤 전⁠송⁠에 실⁠패⁠했⁠어⁠요($txids). 오⁠류: $detail';
+  }
+
+  @override
+  String broadcastNoticeBroadcastStorageFailed(String txid, String detail) {
+    return '전⁠송⁠에 성⁠공⁠했⁠지⁠만(txid=$txid) 로⁠컬 저⁠장⁠에 실⁠패⁠했⁠어⁠요. $detail. 거⁠래⁠는 네⁠트⁠워⁠크⁠에 있⁠어⁠요. 블⁠록 탐⁠색⁠기⁠에⁠서 확⁠인⁠하⁠고, 다⁠음 동⁠기⁠화⁠로 잔⁠액⁠이 맞⁠춰⁠질 때⁠까⁠지 다⁠시 보⁠내⁠지 마⁠세⁠요.';
+  }
+
+  @override
+  String broadcastNoticeDatabaseUnavailable(String detail) {
+    return '로⁠컬⁠에⁠서 거⁠래⁠를 만⁠든 뒤 전⁠송⁠을 위⁠해 데⁠이⁠터⁠베⁠이⁠스⁠를 열⁠지 못⁠했⁠어⁠요: $detail';
+  }
+
+  @override
+  String broadcastNoticeExpired(
+    String txid,
+    String expiryHeight,
+    String chainHeight,
+  ) {
+    return '하⁠드⁠웨⁠어 서⁠명 요⁠청⁠이 전⁠송 전⁠에 만⁠료⁠됐⁠어⁠요: txid=$txid, 만⁠료 블⁠록 높⁠이 $expiryHeight, 현⁠재 블⁠록 높⁠이 $chainHeight. Vizor⁠가 새 거⁠래⁠를 만⁠들 수 있⁠도⁠록 서⁠명⁠을 다⁠시 시⁠작⁠하⁠세⁠요.';
+  }
+
+  @override
+  String broadcastNoticeRawTransactionUnavailable(String txid, String detail) {
+    return '로⁠컬⁠에⁠서 거⁠래⁠를 만⁠든 뒤 $txid⁠의 원⁠본 거⁠래⁠를 읽⁠지 못⁠했⁠어⁠요: $detail';
+  }
+
+  @override
+  String broadcastNoticeResponseUnavailable(String txid, String detail) {
+    return 'txid=$txid⁠의 전⁠송 응⁠답⁠을 받⁠지 못⁠했⁠어⁠요($detail). 거⁠래⁠가 이⁠미 네⁠트⁠워⁠크⁠에 있⁠을 수 있⁠어⁠요. 동⁠기⁠화⁠나 블⁠록 탐⁠색⁠기⁠에⁠서 이 거⁠래⁠가 수⁠락⁠됐⁠는⁠지 확⁠인⁠하⁠기 전⁠에⁠는 다⁠시 보⁠내⁠지 마⁠세⁠요.';
+  }
+
+  @override
+  String broadcastNoticeRetentionFailed(String detail) {
+    return '보⁠낸 자⁠금⁠의 잠⁠금 유⁠지⁠에⁠도 실⁠패⁠했⁠어⁠요: $detail.';
+  }
+
+  @override
+  String get broadcastNoticeRetryingLocally =>
+      '로⁠컬⁠에 저⁠장⁠했⁠고, 확⁠인⁠되⁠거⁠나 만⁠료⁠될 때⁠까⁠지 동⁠기⁠화 중⁠에 자⁠동⁠으⁠로 다⁠시 시⁠도⁠해⁠요.';
+
+  @override
+  String broadcastNoticeRouteUnavailable(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return '전⁠체 $total⁠건 중 $index⁠번⁠째 거⁠래⁠의 전⁠송 경⁠로⁠를 열⁠지 못⁠해 저⁠장⁠하⁠지 않⁠았⁠어⁠요: $detail';
+  }
+
+  @override
+  String broadcastNoticeStorageFailed(String detail) {
+    return '거⁠래⁠가 이⁠미 네⁠트⁠워⁠크⁠에 있⁠을 수 있⁠지⁠만 로⁠컬 저⁠장⁠에 실⁠패⁠했⁠어⁠요: $detail. 동⁠기⁠화⁠나 블⁠록 탐⁠색⁠기⁠에⁠서 결⁠과⁠를 확⁠인⁠하⁠기 전⁠에⁠는 다⁠시 보⁠내⁠지 마⁠세⁠요.';
+  }
+
+  @override
+  String get broadcastNoticeStoredLocally =>
+      '전⁠송⁠됐⁠거⁠나 전⁠송⁠됐⁠을 수 있⁠는 거⁠래⁠는 복⁠구⁠를 위⁠해 로⁠컬⁠에 저⁠장⁠했⁠어⁠요.';
+
+  @override
+  String broadcastNoticeTrackingFailed(String detail) {
+    return '로⁠컬 추⁠적⁠에⁠도 실⁠패⁠했⁠어⁠요: $detail. 이 송⁠금⁠을 다⁠시 시⁠도⁠하⁠기 전⁠에 블⁠록 탐⁠색⁠기⁠를 확⁠인⁠하⁠세⁠요.';
+  }
+
+  @override
+  String broadcastNoticeTransactionRejected(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return '전⁠체 $total⁠건 중 $index⁠번⁠째 거⁠래⁠가 거⁠부⁠되⁠어 저⁠장⁠하⁠지 않⁠았⁠어⁠요: $detail';
+  }
+
+  @override
+  String broadcastNoticeTransactionUnknown(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return '전⁠체 $total⁠건 중 $index⁠번⁠째 거⁠래⁠의 전⁠송 결⁠과⁠를 알 수 없⁠어⁠요: $detail';
+  }
+
+  @override
   String get capsLockWarning => 'Caps Lock⁠이 켜⁠져 있⁠어⁠요';
 
   @override
@@ -1218,6 +1307,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonEnterAmountInUsd => 'USD 단⁠위⁠로 금⁠액 입⁠력';
 
   @override
+  String commonErrorWithDetails(String message, String details) {
+    return '$message\n세⁠부 정⁠보: $details';
+  }
+
+  @override
   String get commonFailed => '실⁠패';
 
   @override
@@ -1329,17 +1423,17 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonMessageIsTooLong => '메⁠시⁠지⁠가 너⁠무 길⁠어⁠요';
 
   @override
-  String get commonMigrateToIronwood => 'Ironwood⁠로 이⁠전⁠하⁠기';
+  String get commonMigrateToIronwood => 'Ironwood⁠로 마⁠이⁠그⁠레⁠이⁠션⁠하⁠기';
 
   @override
-  String get commonMigrating => '이⁠전 중...';
+  String get commonMigrating => '마⁠이⁠그⁠레⁠이⁠션 중...';
 
   @override
-  String get commonMigrationStopped => '이⁠전⁠이 중⁠단⁠됐⁠어⁠요';
+  String get commonMigrationStopped => '마⁠이⁠그⁠레⁠이⁠션 중⁠단⁠됨';
 
   @override
   String get commonMigrationStoppedByNetworkUpgrade =>
-      '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 이⁠전⁠이 중⁠단⁠됐⁠어⁠요';
+      '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 마⁠이⁠그⁠레⁠이⁠션⁠이 중⁠단⁠됐⁠어⁠요';
 
   @override
   String get commonMoveTheQRCodeAFew =>
@@ -1381,9 +1475,6 @@ class AppLocalizationsKo extends AppLocalizations {
       'Mac⁠에⁠서⁠는 연⁠속⁠성 카⁠메⁠라⁠를 사⁠용⁠해 iPhone⁠으⁠로 대⁠신 스⁠캔⁠할 수 있⁠어⁠요.';
 
   @override
-  String get commonOnYourKeystone => 'on your Keystone,';
-
-  @override
   String get commonOpenSettings => '설⁠정 열⁠기';
 
   @override
@@ -1396,6 +1487,9 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get commonPayInsufficientZec =>
       '이 결⁠제⁠에 필⁠요⁠한 ZEC⁠가 부⁠족⁠해⁠요. 더 적⁠은 금⁠액⁠으⁠로 시⁠도⁠해 보⁠세⁠요.';
+
+  @override
+  String get commonPayingButton => '결⁠제 중';
 
   @override
   String get commonPaymentFailed => '결⁠제⁠에 실⁠패⁠했⁠어⁠요';
@@ -1632,12 +1726,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonSyncing => '동⁠기⁠화 중';
-
-  @override
-  String get commonTap => 'Tap';
-
-  @override
-  String get commonThenScanThisQRCode => 'then scan this QR code';
 
   @override
   String get commonThisQRCodeCouldNotBe =>
@@ -1952,14 +2040,14 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get homeMigrationRequired => '이⁠전 필⁠요';
+  String get homeMigrationRequired => '마⁠이⁠그⁠레⁠이⁠션 필⁠요';
 
   @override
-  String get homeMigrationRequiredTitle => '이⁠전 필⁠요';
+  String get homeMigrationRequiredTitle => '마⁠이⁠그⁠레⁠이⁠션 필⁠요';
 
   @override
   String homeMigrationStillMigrating(String amount) {
-    return '$amount 이⁠전 중';
+    return '$amount 마⁠이⁠그⁠레⁠이⁠션 중';
   }
 
   @override
@@ -2356,10 +2444,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String keystoneFirmwareUpdate(String link) {
     return '최⁠신 Keystone 펌⁠웨⁠어⁠로 업⁠데⁠이⁠트⁠하⁠세⁠요: $link';
   }
-
-  @override
-  String get keystoneFirmwareUpdatePrefix =>
-      'Update to the latest Keystone firmware at ';
 
   @override
   String get keystoneImReadyNow => '준⁠비 완⁠료';
@@ -2880,14 +2964,14 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerFailureMsgMigrationTooLarge =>
-      '이 이⁠전 단⁠계⁠는 Ledger⁠가 서⁠명⁠하⁠기⁠엔 너⁠무 커⁠요. Vizor⁠는 아⁠직 나⁠눌 수 없⁠어⁠요.';
+      '이 마⁠이⁠그⁠레⁠이⁠션 단⁠계⁠는 Ledger⁠가 서⁠명⁠하⁠기⁠엔 너⁠무 커⁠요. Vizor⁠는 아⁠직 나⁠눌 수 없⁠어⁠요.';
 
   @override
   String get ledgerFailureMsgOpenZcash => 'Ledger⁠에⁠서 Zcash 앱⁠을 열⁠어 주⁠세⁠요.';
 
   @override
   String get ledgerFailureMsgOrchardChange =>
-      'Ledger⁠는 Orchard⁠에 잔⁠돈⁠이 남⁠는 거⁠래⁠에 서⁠명⁠할 수 없⁠어⁠요. 먼⁠저 Orchard 잔⁠액⁠을 Ironwood⁠로 이⁠전⁠해 주⁠세⁠요.';
+      'Ledger⁠는 Orchard⁠에 잔⁠돈⁠이 남⁠는 거⁠래⁠에 서⁠명⁠할 수 없⁠어⁠요. 먼⁠저 Orchard 잔⁠액⁠을 Ironwood⁠로 마⁠이⁠그⁠레⁠이⁠션⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerFailureMsgPaymentTooLarge =>
@@ -3687,16 +3771,17 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationAnalyzingCaption =>
-      'Vizor⁠가 이⁠전⁠의 안⁠전, 프⁠라⁠이⁠버⁠시, 속⁠도 사⁠이⁠에⁠서\n최⁠적⁠의 균⁠형⁠을 찾⁠고 있⁠어⁠요';
+      'Vizor⁠가 마⁠이⁠그⁠레⁠이⁠션⁠의 안⁠전, 프⁠라⁠이⁠버⁠시, 속⁠도 사⁠이⁠에⁠서\n최⁠적⁠의 균⁠형⁠을 찾⁠고 있⁠어⁠요';
 
   @override
   String get migrationAnalyzingFindingBatches => '비⁠공⁠개 배⁠치⁠를 찾⁠는 중...';
 
   @override
-  String get migrationAnalyzingPreparingPlan => '이⁠전 계⁠획⁠을 준⁠비⁠하⁠는 중...';
+  String get migrationAnalyzingPreparingPlan =>
+      '마⁠이⁠그⁠레⁠이⁠션 계⁠획⁠을 준⁠비⁠하⁠는 중...';
 
   @override
-  String get migrationAnalyzingSemanticsLabel => '비⁠공⁠개 이⁠전 계⁠획 준⁠비 중';
+  String get migrationAnalyzingSemanticsLabel => '비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션 계⁠획 준⁠비 중';
 
   @override
   String get migrationAnnouncementBody =>
@@ -3706,19 +3791,19 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationAnnouncementReleaseNote => '공⁠식 릴⁠리⁠스 노⁠트';
 
   @override
-  String get migrationAnnouncementStart => '이⁠전 시⁠작';
+  String get migrationAnnouncementStart => '마⁠이⁠그⁠레⁠이⁠션 시⁠작';
 
   @override
-  String get migrationBackAbout => '이⁠전 소⁠개';
+  String get migrationBackAbout => '마⁠이⁠그⁠레⁠이⁠션 소⁠개';
 
   @override
   String get migrationBackHome => '홈⁠으⁠로 돌⁠아⁠가⁠기';
 
   @override
-  String get migrationBackHowItWorks => '이⁠전 진⁠행 방⁠식';
+  String get migrationBackHowItWorks => '마⁠이⁠그⁠레⁠이⁠션 진⁠행 방⁠식';
 
   @override
-  String get migrationBackOptions => '이⁠전 옵⁠션';
+  String get migrationBackOptions => '마⁠이⁠그⁠레⁠이⁠션 옵⁠션';
 
   @override
   String get migrationBatchBroadcasting => '전⁠송 중...';
@@ -3781,14 +3866,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationBroadcastSubmitted => '제⁠출⁠됨';
 
   @override
-  String get migrationCarouselPreparationLabel => '이⁠전 준⁠비 안⁠내';
+  String get migrationCarouselPreparationLabel => '마⁠이⁠그⁠레⁠이⁠션 준⁠비 안⁠내';
 
   @override
-  String get migrationCarouselProgressLabel => '이⁠전 안⁠내';
+  String get migrationCarouselProgressLabel => '마⁠이⁠그⁠레⁠이⁠션 안⁠내';
 
   @override
   String get migrationCompleteBody =>
-      '이⁠전⁠이 완⁠료⁠되⁠었⁠어⁠요.\n평⁠소⁠처⁠럼 자⁠금⁠을 사⁠용⁠할 수 있⁠어⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션⁠이 완⁠료⁠되⁠었⁠어⁠요.\n평⁠소⁠처⁠럼 자⁠금⁠을 사⁠용⁠할 수 있⁠어⁠요.';
 
   @override
   String migrationCompleteTitle(String amount) {
@@ -3796,13 +3881,13 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationContinueMigration => '이⁠전 계⁠속';
+  String get migrationContinueMigration => '마⁠이⁠그⁠레⁠이⁠션 계⁠속';
 
   @override
   String get migrationContinuing => '계⁠속⁠하⁠는 중...';
 
   @override
-  String get migrationCtaStart => 'Ironwood 풀⁠로 이⁠전';
+  String get migrationCtaStart => 'Ironwood 풀⁠로 마⁠이⁠그⁠레⁠이⁠션';
 
   @override
   String get migrationCurrentBatch => '현⁠재 배⁠치';
@@ -3844,33 +3929,34 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationErrorBroadcast =>
-      '이⁠전 거⁠래⁠를 전⁠송⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠를 전⁠송⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationErrorContinue =>
-      '이⁠전⁠을 계⁠속⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션⁠을 계⁠속⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationErrorKeystonePrepare => 'Keystone 서⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요.';
 
   @override
   String get migrationErrorLedgerExcluded =>
-      '현⁠재 흐⁠름⁠은 일⁠괄 서⁠명⁠이 필⁠요⁠해⁠서 Ledger 비⁠공⁠개 이⁠전⁠은 지⁠원⁠하⁠지 않⁠아⁠요.';
+      '현⁠재 흐⁠름⁠은 일⁠괄 서⁠명⁠이 필⁠요⁠해⁠서 Ledger 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠은 지⁠원⁠하⁠지 않⁠아⁠요.';
 
   @override
   String get migrationErrorPlanChanged =>
       '금⁠액⁠이⁠나 수⁠수⁠료⁠가 바⁠뀌⁠었⁠어⁠요. 업⁠데⁠이⁠트⁠된 내⁠용⁠을 확⁠인⁠하⁠세⁠요.';
 
   @override
-  String get migrationErrorStart => '이⁠전⁠을 시⁠작⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+  String get migrationErrorStart =>
+      '마⁠이⁠그⁠레⁠이⁠션⁠을 시⁠작⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationErrorUnlockBeforeContinue =>
-      '이⁠전⁠을 계⁠속⁠하⁠기 전⁠에 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션⁠을 계⁠속⁠하⁠기 전⁠에 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
 
   @override
   String get migrationErrorUnlockBeforeStart =>
-      '이⁠전⁠을 시⁠작⁠하⁠기 전⁠에 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션⁠을 시⁠작⁠하⁠기 전⁠에 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
 
   @override
   String get migrationErrorWaitForSync =>
@@ -3920,18 +4006,19 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationExpectKeepRunningBody =>
-      '다⁠음 이⁠전 거⁠래⁠를 보⁠내⁠려⁠면 컴⁠퓨⁠터⁠의 잠⁠금⁠이 해⁠제⁠되⁠어 있⁠고 Vizor⁠가 실⁠행 중⁠이⁠어⁠야 해⁠요';
+      '다⁠음 마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠를 보⁠내⁠려⁠면 컴⁠퓨⁠터⁠의 잠⁠금⁠이 해⁠제⁠되⁠어 있⁠고 Vizor⁠가 실⁠행 중⁠이⁠어⁠야 해⁠요';
 
   @override
   String get migrationExpectLongBody =>
-      '이⁠전 금⁠액⁠에 따⁠라 Ironwood 이⁠전⁠에⁠는 몇 시⁠간⁠에⁠서 이⁠틀 정⁠도⁠까⁠지 걸⁠릴 수 있⁠어⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션 금⁠액⁠에 따⁠라 Ironwood 마⁠이⁠그⁠레⁠이⁠션⁠에⁠는 몇 시⁠간⁠에⁠서 이⁠틀 정⁠도⁠까⁠지 걸⁠릴 수 있⁠어⁠요.';
 
   @override
-  String get migrationExpectLongTitle => '이⁠전⁠에⁠는 시⁠간⁠이 오⁠래 걸⁠릴 수 있⁠어⁠요';
+  String get migrationExpectLongTitle =>
+      '마⁠이⁠그⁠레⁠이⁠션⁠에⁠는 시⁠간⁠이 오⁠래 걸⁠릴 수 있⁠어⁠요';
 
   @override
   String get migrationExpectSpendBody =>
-      '확⁠인⁠된 Ironwood 금⁠액⁠은 나⁠머⁠지 이⁠전⁠이 진⁠행⁠되⁠는 동⁠안⁠에⁠도 사⁠용⁠할 수 있⁠어⁠요.';
+      '확⁠인⁠된 Ironwood 금⁠액⁠은 나⁠머⁠지 마⁠이⁠그⁠레⁠이⁠션⁠이 진⁠행⁠되⁠는 동⁠안⁠에⁠도 사⁠용⁠할 수 있⁠어⁠요.';
 
   @override
   String get migrationExpectSpendTitle => '자⁠금⁠이 도⁠착⁠하⁠는 대⁠로 쓸 수 있⁠어⁠요';
@@ -3941,34 +4028,34 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationExpectVpnBody =>
-      '신⁠뢰⁠할 수 있⁠는 VPN/네⁠트⁠워⁠크 프⁠라⁠이⁠버⁠시 계⁠층⁠을 거⁠쳐 이⁠전⁠하⁠는 것⁠을 권⁠장⁠해⁠요';
+      '신⁠뢰⁠할 수 있⁠는 VPN/네⁠트⁠워⁠크 프⁠라⁠이⁠버⁠시 계⁠층⁠을 거⁠쳐 마⁠이⁠그⁠레⁠이⁠션⁠하⁠는 것⁠을 권⁠장⁠해⁠요';
 
   @override
   String get migrationExpectVpnTitle => '추⁠가 프⁠라⁠이⁠버⁠시⁠를 위⁠해 VPN⁠을 사⁠용⁠하⁠세⁠요';
 
   @override
-  String get migrationFlowTitle => 'Ironwood 이⁠전';
+  String get migrationFlowTitle => 'Ironwood 마⁠이⁠그⁠레⁠이⁠션';
 
   @override
   String get migrationHowDelayedBody =>
       '추⁠적 가⁠능⁠성⁠을 줄⁠이⁠기 위⁠해 Vizor⁠가 여⁠러 배⁠치⁠에 걸⁠쳐 간⁠격⁠을 두⁠고 천⁠천⁠히 나⁠눠 보⁠내⁠요.';
 
   @override
-  String get migrationHowDelayedTitle => '지⁠연⁠되⁠고 무⁠작⁠위⁠로 진⁠행⁠되⁠는 이⁠전';
+  String get migrationHowDelayedTitle => '지⁠연⁠되⁠고 무⁠작⁠위⁠로 진⁠행⁠되⁠는 마⁠이⁠그⁠레⁠이⁠션';
 
   @override
   String get migrationHowFrozenBody =>
-      '기⁠존 차⁠폐 잔⁠액⁠을 사⁠용⁠하⁠려⁠면 Ironwood⁠로 한 번 이⁠전⁠해⁠야 해⁠요.';
+      '기⁠존 차⁠폐 잔⁠액⁠을 사⁠용⁠하⁠려⁠면 Ironwood⁠로 한 번 마⁠이⁠그⁠레⁠이⁠션⁠해⁠야 해⁠요.';
 
   @override
   String get migrationHowFrozenTitle => 'Orchard(레⁠거⁠시 차⁠폐) 잔⁠액⁠이 동⁠결⁠돼⁠요';
 
   @override
   String get migrationHowPreparationBody =>
-      '이⁠전⁠하⁠기 전⁠에 Vizor⁠가 전⁠체 잔⁠액⁠을 더 작⁠은 노⁠트(예: 0.1 ZEC / 1 ZEC / 5 ZEC)로 나⁠눠⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션⁠하⁠기 전⁠에 Vizor⁠가 전⁠체 잔⁠액⁠을 더 작⁠은 노⁠트(예: 0.1 ZEC / 1 ZEC / 5 ZEC)로 나⁠눠⁠요.';
 
   @override
-  String get migrationHowPreparationTitle => '이⁠전 전 준⁠비';
+  String get migrationHowPreparationTitle => '마⁠이⁠그⁠레⁠이⁠션 전 준⁠비';
 
   @override
   String migrationHowStepLabel(String number) {
@@ -3982,16 +4069,16 @@ class AppLocalizationsKo extends AppLocalizations {
     String title,
     String body,
   ) {
-    return '이⁠전 $total⁠단⁠계 중 $number⁠단⁠계. $title. $body';
+    return '마⁠이⁠그⁠레⁠이⁠션 $total⁠단⁠계 중 $number⁠단⁠계. $title. $body';
   }
 
   @override
   String migrationHowStepSemanticsShow(String number, String total) {
-    return '이⁠전 $total⁠단⁠계 중 $number⁠단⁠계 보⁠기';
+    return '마⁠이⁠그⁠레⁠이⁠션 $total⁠단⁠계 중 $number⁠단⁠계 보⁠기';
   }
 
   @override
-  String get migrationHowTitle => '이⁠전 진⁠행 방⁠식';
+  String get migrationHowTitle => '마⁠이⁠그⁠레⁠이⁠션 진⁠행 방⁠식';
 
   @override
   String get migrationImmediateAuthoriseAnyway => '그⁠래⁠도 승⁠인';
@@ -4000,7 +4087,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationImmediateAuthorising => '승⁠인⁠하⁠는 중…';
 
   @override
-  String get migrationImmediateAuthorisingSemantics => '이⁠전 승⁠인⁠하⁠는 중';
+  String get migrationImmediateAuthorisingSemantics => '마⁠이⁠그⁠레⁠이⁠션 승⁠인⁠하⁠는 중';
 
   @override
   String get migrationImmediateConsiderOther => '다⁠른 옵⁠션 보⁠기';
@@ -4010,17 +4097,17 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationImmediateNoBalance =>
-      '즉⁠시 이⁠전⁠에 사⁠용⁠할 수 있⁠는 Orchard 잔⁠액⁠이 없⁠어⁠요.';
+      '즉⁠시 마⁠이⁠그⁠레⁠이⁠션⁠에 사⁠용⁠할 수 있⁠는 Orchard 잔⁠액⁠이 없⁠어⁠요.';
 
   @override
   String get migrationImmediatePlanFailed =>
-      '즉⁠시 이⁠전 계⁠획⁠을 계⁠산⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      '즉⁠시 마⁠이⁠그⁠레⁠이⁠션 계⁠획⁠을 계⁠산⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationImmediateRetryCalculation => '계⁠산 다⁠시 시⁠도';
 
   @override
-  String get migrationImmediateReviewTitle => '이⁠전 계⁠획 검⁠토';
+  String get migrationImmediateReviewTitle => '마⁠이⁠그⁠레⁠이⁠션 계⁠획 검⁠토';
 
   @override
   String migrationImmediateTradeoffBody(String amount, String highlight) {
@@ -4028,24 +4115,15 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationImmediateTradeoffEmphasis =>
-      'easier to associate with your wallet.';
-
-  @override
   String get migrationImmediateTradeoffHighlight => '내 지⁠갑⁠과 더 쉽⁠게 연⁠결⁠돼⁠요';
 
   @override
-  String migrationImmediateTradeoffLead(String amount) {
-    return 'Crosses in one visible step — your $amount and timing are ';
-  }
-
-  @override
   String get migrationImmediateTradeoffLedger =>
-      '\nLedger 계⁠정⁠에⁠서⁠는 비⁠공⁠개 이⁠전⁠을 사⁠용⁠할 수 없⁠어⁠요.';
+      '\nLedger 계⁠정⁠에⁠서⁠는 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠을 사⁠용⁠할 수 없⁠어⁠요.';
 
   @override
   String get migrationImmediateTradeoffPrivate =>
-      '\n비⁠공⁠개 이⁠전 옵⁠션⁠을 선⁠택⁠해 보⁠세⁠요.';
+      '\n비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션 옵⁠션⁠을 선⁠택⁠해 보⁠세⁠요.';
 
   @override
   String get migrationImmediateTradeoffTitle => '프⁠라⁠이⁠버⁠시 절⁠충';
@@ -4071,7 +4149,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationIntroBody(String amount) {
-    return '현⁠재 $amount ZEC⁠가 Orchard⁠에 있⁠어⁠요.\n이 자⁠금⁠을 계⁠속 차⁠폐 결⁠제⁠에 쓰⁠려⁠면 Ironwood⁠로 옮⁠겨⁠야 해⁠요. 자⁠금⁠이 이⁠동⁠하⁠기 전⁠에 이⁠전 계⁠획⁠을 검⁠토⁠하⁠게 돼⁠요.';
+    return '현⁠재 $amount ZEC⁠가 Orchard⁠에 있⁠어⁠요.\n이 자⁠금⁠을 계⁠속 차⁠폐 결⁠제⁠에 쓰⁠려⁠면 Ironwood⁠로 옮⁠겨⁠야 해⁠요. 자⁠금⁠이 이⁠동⁠하⁠기 전⁠에 마⁠이⁠그⁠레⁠이⁠션 계⁠획⁠을 검⁠토⁠하⁠게 돼⁠요.';
   }
 
   @override
@@ -4083,7 +4161,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationKeystoneApplyingToPlan =>
-      'Keystone 서⁠명⁠을 이⁠전 계⁠획⁠에 적⁠용⁠하⁠는 중⁠이⁠에⁠요.';
+      'Keystone 서⁠명⁠을 마⁠이⁠그⁠레⁠이⁠션 계⁠획⁠에 적⁠용⁠하⁠는 중⁠이⁠에⁠요.';
 
   @override
   String get migrationKeystoneBackToReview => '검⁠토⁠로 돌⁠아⁠가⁠기';
@@ -4100,7 +4178,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationKeystoneCameraOnly =>
-      'Keystone 이⁠전 서⁠명⁠은 카⁠메⁠라 QR 스⁠캔⁠만 지⁠원⁠해⁠요. 카⁠메⁠라⁠를 연⁠결⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      'Keystone 마⁠이⁠그⁠레⁠이⁠션 서⁠명⁠은 카⁠메⁠라 QR 스⁠캔⁠만 지⁠원⁠해⁠요. 카⁠메⁠라⁠를 연⁠결⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationKeystoneCancelFailed =>
@@ -4110,7 +4188,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationKeystoneClickToEnlarge => 'QR⁠을 클⁠릭⁠해 확⁠대';
 
   @override
-  String get migrationKeystoneConfirmTitle => 'Keystone⁠으⁠로 이⁠전 확⁠인';
+  String get migrationKeystoneConfirmTitle => 'Keystone⁠으⁠로 마⁠이⁠그⁠레⁠이⁠션 확⁠인';
 
   @override
   String get migrationKeystoneEnlargeQr => 'Keystone 요⁠청 QR 확⁠대';
@@ -4120,18 +4198,18 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationKeystoneFirmwareUpdate =>
-      'Ironwood 이⁠전⁠에 서⁠명⁠하⁠려⁠면 Keystone 펌⁠웨⁠어⁠를 업⁠데⁠이⁠트⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      'Ironwood 마⁠이⁠그⁠레⁠이⁠션⁠에 서⁠명⁠하⁠려⁠면 Keystone 펌⁠웨⁠어⁠를 업⁠데⁠이⁠트⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
-  String get migrationKeystoneMobileTitle => 'Keystone 이⁠전';
+  String get migrationKeystoneMobileTitle => 'Keystone 마⁠이⁠그⁠레⁠이⁠션';
 
   @override
   String get migrationKeystoneNotKeystone =>
-      '이 이⁠전⁠에 서⁠명⁠하⁠려⁠면 Keystone 계⁠정⁠을 사⁠용⁠하⁠세⁠요.';
+      '이 마⁠이⁠그⁠레⁠이⁠션⁠에 서⁠명⁠하⁠려⁠면 Keystone 계⁠정⁠을 사⁠용⁠하⁠세⁠요.';
 
   @override
   String get migrationKeystoneOpenSignedQr =>
-      'Keystone⁠에⁠서 서⁠명⁠된 이⁠전 QR⁠을 연 뒤 다⁠시 스⁠캔⁠하⁠세⁠요.';
+      'Keystone⁠에⁠서 서⁠명⁠된 마⁠이⁠그⁠레⁠이⁠션 QR⁠을 연 뒤 다⁠시 스⁠캔⁠하⁠세⁠요.';
 
   @override
   String get migrationKeystonePlanBody =>
@@ -4173,11 +4251,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationKeystoneQrBodyCombined =>
-      'Keystone⁠으⁠로 이 요⁠청⁠을 스⁠캔⁠해 준⁠비 거⁠래⁠와 이⁠전 배⁠치⁠에 함⁠께 서⁠명⁠하⁠세⁠요.';
+      'Keystone⁠으⁠로 이 요⁠청⁠을 스⁠캔⁠해 준⁠비 거⁠래⁠와 마⁠이⁠그⁠레⁠이⁠션 배⁠치⁠에 함⁠께 서⁠명⁠하⁠세⁠요.';
 
   @override
   String get migrationKeystoneQrBodyImmediate =>
-      'Keystone 지⁠갑⁠으⁠로 QR 코⁠드⁠를 스⁠캔⁠해 이⁠전⁠을 확⁠인⁠하⁠세⁠요.';
+      'Keystone 지⁠갑⁠으⁠로 QR 코⁠드⁠를 스⁠캔⁠해 마⁠이⁠그⁠레⁠이⁠션⁠을 확⁠인⁠하⁠세⁠요.';
 
   @override
   String get migrationKeystoneQrBodyRound =>
@@ -4237,7 +4315,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationKeystoneSignBatch => 'Ironwood 배⁠치 서⁠명';
 
   @override
-  String get migrationKeystoneSignMigration => '이⁠전 서⁠명';
+  String get migrationKeystoneSignMigration => '마⁠이⁠그⁠레⁠이⁠션 서⁠명';
 
   @override
   String get migrationKeystoneSignPrivateSplit => '비⁠공⁠개 분⁠할 서⁠명';
@@ -4253,10 +4331,10 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationKeystoneToolbarReview => '이⁠전 검⁠토';
+  String get migrationKeystoneToolbarReview => '마⁠이⁠그⁠레⁠이⁠션 검⁠토';
 
   @override
-  String get migrationKeystoneToolbarStatus => '이⁠전 상⁠태';
+  String get migrationKeystoneToolbarStatus => '마⁠이⁠그⁠레⁠이⁠션 상⁠태';
 
   @override
   String migrationKeystoneTransactionTotal(int count) {
@@ -4287,7 +4365,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationKeystoneUnlockFirst =>
-      '이⁠전⁠에 서⁠명⁠하⁠기 전⁠에 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션⁠에 서⁠명⁠하⁠기 전⁠에 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
 
   @override
   String get migrationKeystoneWaitingForProofsLong =>
@@ -4302,30 +4380,32 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 서⁠명⁠된 QR⁠은 다⁠른 회⁠차⁠의 것⁠이⁠에⁠요. 돌⁠아⁠가⁠서 현⁠재 요⁠청⁠을 Keystone⁠으⁠로 스⁠캔⁠한 뒤 새⁠로 서⁠명⁠된 QR⁠을 스⁠캔⁠하⁠세⁠요.';
 
   @override
-  String get migrationLedgerBroadcast => '이⁠전 거⁠래⁠를 전⁠송⁠하⁠지 못⁠했⁠어⁠요.';
+  String get migrationLedgerBroadcast => '마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠를 전⁠송⁠하⁠지 못⁠했⁠어⁠요.';
 
   @override
   String get migrationLedgerConnect =>
       'Ledger⁠를 연⁠결⁠하⁠고 잠⁠금⁠을 해⁠제⁠한 뒤 Zcash 앱⁠을 여⁠세⁠요.';
 
   @override
-  String get migrationLedgerFailed => 'Ledger 이⁠전⁠을 완⁠료⁠하⁠지 못⁠했⁠어⁠요.';
+  String get migrationLedgerFailed => 'Ledger 마⁠이⁠그⁠레⁠이⁠션⁠을 완⁠료⁠하⁠지 못⁠했⁠어⁠요.';
 
   @override
-  String get migrationLedgerFailedTitle => 'Ledger 이⁠전 실⁠패';
+  String get migrationLedgerFailedTitle => 'Ledger 마⁠이⁠그⁠레⁠이⁠션 실⁠패';
 
   @override
   String get migrationLedgerPlanChanged =>
       '금⁠액⁠이⁠나 수⁠수⁠료⁠가 바⁠뀌⁠었⁠어⁠요. 돌⁠아⁠가⁠서 업⁠데⁠이⁠트⁠된 계⁠획⁠을 검⁠토⁠하⁠세⁠요.';
 
   @override
-  String get migrationLedgerProofs => 'Vizor⁠가 이⁠전 증⁠명 준⁠비⁠를 마⁠치⁠지 못⁠했⁠어⁠요.';
+  String get migrationLedgerProofs =>
+      'Vizor⁠가 마⁠이⁠그⁠레⁠이⁠션 증⁠명 준⁠비⁠를 마⁠치⁠지 못⁠했⁠어⁠요.';
 
   @override
-  String get migrationLedgerRejected => 'Ledger⁠에⁠서 이⁠전 거⁠래⁠가 거⁠부⁠되⁠었⁠어⁠요.';
+  String get migrationLedgerRejected =>
+      'Ledger⁠에⁠서 마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠가 거⁠부⁠되⁠었⁠어⁠요.';
 
   @override
-  String get migrationLedgerTitle => 'Ledger⁠로 이⁠전';
+  String get migrationLedgerTitle => 'Ledger⁠로 마⁠이⁠그⁠레⁠이⁠션';
 
   @override
   String migrationLeftToTransfer(String amount) {
@@ -4336,34 +4416,37 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationManageCancelling => '취⁠소⁠하⁠는 중...';
 
   @override
-  String get migrationManageCannotCancel => '이 이⁠전⁠은 더 이⁠상 취⁠소⁠할 수 없⁠어⁠요.';
+  String get migrationManageCannotCancel =>
+      '이 마⁠이⁠그⁠레⁠이⁠션⁠은 더 이⁠상 취⁠소⁠할 수 없⁠어⁠요.';
 
   @override
   String get migrationManageConfirm => '확⁠인';
 
   @override
   String get migrationManageImmediateBullet1 =>
-      '남⁠은 분⁠할 노⁠트⁠는 즉⁠시 이⁠전⁠으⁠로 처⁠리⁠되⁠어 추⁠적 가⁠능⁠성⁠이 약⁠간 높⁠아⁠져⁠요';
+      '남⁠은 분⁠할 노⁠트⁠는 즉⁠시 마⁠이⁠그⁠레⁠이⁠션⁠으⁠로 처⁠리⁠되⁠어 추⁠적 가⁠능⁠성⁠이 약⁠간 높⁠아⁠져⁠요';
 
   @override
   String get migrationManageImmediateBullet2 =>
       '이⁠미 전⁠송⁠된 거⁠래⁠는 되⁠돌⁠려⁠지⁠지 않⁠아⁠요';
 
   @override
-  String get migrationManageImmediateBullet3 => '즉⁠시 이⁠전⁠은 되⁠돌⁠릴 방⁠법⁠이 없⁠어⁠요';
+  String get migrationManageImmediateBullet3 =>
+      '즉⁠시 마⁠이⁠그⁠레⁠이⁠션⁠은 되⁠돌⁠릴 방⁠법⁠이 없⁠어⁠요';
 
   @override
-  String get migrationManageImmediateIntro => '남⁠은 이⁠전⁠을 즉⁠시 처⁠리⁠해⁠요.';
+  String get migrationManageImmediateIntro => '남⁠은 마⁠이⁠그⁠레⁠이⁠션⁠을 즉⁠시 처⁠리⁠해⁠요.';
 
   @override
-  String get migrationManageNoBalance => '이⁠전⁠할 Orchard 잔⁠액⁠이 남⁠아 있⁠지 않⁠아⁠요.';
+  String get migrationManageNoBalance =>
+      '마⁠이⁠그⁠레⁠이⁠션⁠할 Orchard 잔⁠액⁠이 남⁠아 있⁠지 않⁠아⁠요.';
 
   @override
-  String get migrationManageStop => '이⁠전 중⁠단';
+  String get migrationManageStop => '마⁠이⁠그⁠레⁠이⁠션 중⁠단';
 
   @override
   String get migrationManageStopBody =>
-      '예⁠약⁠된 나⁠머⁠지 이⁠전 거⁠래⁠가 취⁠소⁠돼⁠요. 홈 화⁠면⁠에⁠서 이⁠전⁠을 다⁠시 시⁠작⁠할 수 있⁠어⁠요.';
+      '예⁠약⁠된 나⁠머⁠지 마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠가 취⁠소⁠돼⁠요. 홈 화⁠면⁠에⁠서 마⁠이⁠그⁠레⁠이⁠션⁠을 다⁠시 시⁠작⁠할 수 있⁠어⁠요.';
 
   @override
   String get migrationManageStopTitle => '정⁠말 중⁠단⁠할⁠까⁠요?';
@@ -4372,14 +4455,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationManageStopping => '중⁠단⁠하⁠는 중...';
 
   @override
-  String get migrationManageSwitchImmediate => '즉⁠시 이⁠전⁠으⁠로 전⁠환';
+  String get migrationManageSwitchImmediate => '즉⁠시 마⁠이⁠그⁠레⁠이⁠션⁠으⁠로 전⁠환';
 
   @override
-  String get migrationManageTitle => '이⁠전 관⁠리';
+  String get migrationManageTitle => '마⁠이⁠그⁠레⁠이⁠션 관⁠리';
 
   @override
   String get migrationManageUpdateFailed =>
-      '이⁠전⁠을 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션⁠을 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationMobileActionAllTransactions => '모⁠든 거⁠래';
@@ -4390,7 +4473,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileActionInProgress => '이⁠전 작⁠업 진⁠행 중';
+  String get migrationMobileActionInProgress => '마⁠이⁠그⁠레⁠이⁠션 작⁠업 진⁠행 중';
 
   @override
   String get migrationMobileActionNeedSignature => '서⁠명⁠이 필⁠요⁠한 거⁠래';
@@ -4406,10 +4489,10 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileActionResign => '이⁠전 거⁠래 다⁠시 서⁠명';
+  String get migrationMobileActionResign => '마⁠이⁠그⁠레⁠이⁠션 거⁠래 다⁠시 서⁠명';
 
   @override
-  String get migrationMobileActionSign => '이⁠전 거⁠래 서⁠명';
+  String get migrationMobileActionSign => '마⁠이⁠그⁠레⁠이⁠션 거⁠래 서⁠명';
 
   @override
   String migrationMobileActionSignBatch(int number) {
@@ -4425,7 +4508,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileAnnouncementBody =>
-      'Zcash⁠의 최⁠신 차⁠폐 풀⁠로, 최⁠첨⁠단 암⁠호⁠학⁠과 형⁠식 검⁠증⁠을 갖⁠췄⁠어⁠요.\n\n차⁠폐 잔⁠액⁠은 Ironwood⁠로 한 번 이⁠전⁠해⁠야 해⁠요.';
+      'Zcash⁠의 최⁠신 차⁠폐 풀⁠로, 최⁠첨⁠단 암⁠호⁠학⁠과 형⁠식 검⁠증⁠을 갖⁠췄⁠어⁠요.\n\n차⁠폐 잔⁠액⁠은 Ironwood⁠로 한 번 마⁠이⁠그⁠레⁠이⁠션⁠해⁠야 해⁠요.';
 
   @override
   String get migrationMobileAnnouncementOfficial => '공⁠식 발⁠표';
@@ -4434,19 +4517,21 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationMobileAnnouncementUpgrade => 'Ironwood⁠로 업⁠그⁠레⁠이⁠드';
 
   @override
-  String get migrationMobileAttentionContinueTitle => '이⁠전⁠을 계⁠속⁠하⁠세⁠요';
+  String get migrationMobileAttentionContinueTitle => '마⁠이⁠그⁠레⁠이⁠션⁠을 계⁠속⁠하⁠세⁠요';
 
   @override
-  String get migrationMobileAttentionLateTitle => '이⁠전 거⁠래⁠를 확⁠인⁠해⁠야 해⁠요';
+  String get migrationMobileAttentionLateTitle =>
+      '마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠를 확⁠인⁠해⁠야 해⁠요';
 
   @override
   String get migrationMobileAttentionLater => '나⁠중⁠에 할⁠게⁠요';
 
   @override
-  String get migrationMobileAttentionOpen => '이⁠전 페⁠이⁠지⁠로 이⁠동';
+  String get migrationMobileAttentionOpen => '마⁠이⁠그⁠레⁠이⁠션 페⁠이⁠지⁠로 이⁠동';
 
   @override
-  String get migrationMobileAttentionProofTitle => '다⁠음 이⁠전 배⁠치⁠가 준⁠비⁠됐⁠어⁠요';
+  String get migrationMobileAttentionProofTitle =>
+      '다⁠음 마⁠이⁠그⁠레⁠이⁠션 배⁠치⁠가 준⁠비⁠됐⁠어⁠요';
 
   @override
   String migrationMobileAttentionSignatureSheet(int count) {
@@ -4462,14 +4547,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationMobileBackToHome => '홈⁠으⁠로 돌⁠아⁠가⁠기';
 
   @override
-  String get migrationMobileBannerLate => '이⁠전 확⁠인⁠이 필⁠요⁠해⁠요';
+  String get migrationMobileBannerLate => '마⁠이⁠그⁠레⁠이⁠션 확⁠인⁠이 필⁠요⁠해⁠요';
 
   @override
-  String get migrationMobileBannerProof => '다⁠음 이⁠전 배⁠치⁠가 준⁠비⁠됐⁠어⁠요';
+  String get migrationMobileBannerProof => '다⁠음 마⁠이⁠그⁠레⁠이⁠션 배⁠치⁠가 준⁠비⁠됐⁠어⁠요';
 
   @override
   String migrationMobileBannerRemaining(String amount) {
-    return '$amount ZEC 이⁠전 중';
+    return '$amount ZEC 마⁠이⁠그⁠레⁠이⁠션 중';
   }
 
   @override
@@ -4492,7 +4577,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileCompleteBody =>
-      '이⁠전⁠이 성⁠공⁠적⁠으⁠로 끝⁠났⁠어⁠요. 이⁠제 평⁠소⁠처⁠럼 자⁠금⁠을 사⁠용⁠할 수 있⁠어⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션⁠이 성⁠공⁠적⁠으⁠로 끝⁠났⁠어⁠요. 이⁠제 평⁠소⁠처⁠럼 자⁠금⁠을 사⁠용⁠할 수 있⁠어⁠요.';
 
   @override
   String migrationMobileCompleteHeading(String amount) {
@@ -4504,30 +4589,26 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileContinueThisError =>
-      '이 이⁠전⁠을 계⁠속⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      '이 마⁠이⁠그⁠레⁠이⁠션⁠을 계⁠속⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationMobileCredentialsRestore =>
-      '계⁠속⁠하⁠기 전⁠에 이⁠전 자⁠격 증⁠명⁠을 복⁠원⁠해⁠야 해⁠요.';
+      '계⁠속⁠하⁠기 전⁠에 마⁠이⁠그⁠레⁠이⁠션 자⁠격 증⁠명⁠을 복⁠원⁠해⁠야 해⁠요.';
 
   @override
   String get migrationMobileFastPlanError =>
-      '즉⁠시 이⁠전 수⁠수⁠료⁠를 계⁠산⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      '즉⁠시 마⁠이⁠그⁠레⁠이⁠션 수⁠수⁠료⁠를 계⁠산⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠한 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationMobileFastPlanUnavailable => '사⁠용⁠할 수 없⁠음';
 
   @override
-  String get migrationMobileFastPrivacyBodyHighlight =>
-      'easier to associate with your wallet';
-
-  @override
   String get migrationMobileFastPrivacyConsiderPrivate =>
-      '비⁠공⁠개 이⁠전 옵⁠션⁠을 선⁠택⁠해 보⁠세⁠요.';
+      '비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션 옵⁠션⁠을 선⁠택⁠해 보⁠세⁠요.';
 
   @override
   String get migrationMobileFastPrivacyLedger =>
-      'Ledger 계⁠정⁠에⁠서⁠는 비⁠공⁠개 이⁠전⁠을 사⁠용⁠할 수 없⁠어⁠요.';
+      'Ledger 계⁠정⁠에⁠서⁠는 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠을 사⁠용⁠할 수 없⁠어⁠요.';
 
   @override
   String migrationMobileFastSubmittedBody(String amount) {
@@ -4535,17 +4616,17 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileFastSubmittedTitle => '이⁠전⁠을 제⁠출⁠했⁠어⁠요';
+  String get migrationMobileFastSubmittedTitle => '마⁠이⁠그⁠레⁠이⁠션⁠을 제⁠출⁠했⁠어⁠요';
 
   @override
-  String get migrationMobileFastTitle => '빠⁠른 이⁠전';
+  String get migrationMobileFastTitle => '빠⁠른 마⁠이⁠그⁠레⁠이⁠션';
 
   @override
   String get migrationMobileHowItWorksNavTitle => '안⁠내';
 
   @override
   String migrationMobileIntroBody(String amount) {
-    return '현⁠재 $amount ZEC⁠가 Orchard⁠에 있⁠어⁠요. 이 자⁠금⁠을 계⁠속 차⁠폐 결⁠제⁠에 쓰⁠려⁠면 Ironwood⁠로 옮⁠겨⁠야 해⁠요. 자⁠금⁠을 옮⁠기⁠기 전⁠에 이⁠전 계⁠획⁠을 먼⁠저 확⁠인⁠할 수 있⁠어⁠요.';
+    return '현⁠재 $amount ZEC⁠가 Orchard⁠에 있⁠어⁠요. 이 자⁠금⁠을 계⁠속 차⁠폐 결⁠제⁠에 쓰⁠려⁠면 Ironwood⁠로 옮⁠겨⁠야 해⁠요. 자⁠금⁠을 옮⁠기⁠기 전⁠에 마⁠이⁠그⁠레⁠이⁠션 계⁠획⁠을 먼⁠저 확⁠인⁠할 수 있⁠어⁠요.';
   }
 
   @override
@@ -4564,11 +4645,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileKeystoneConfirmPrepSemantics =>
-      'Keystone⁠으⁠로 이⁠전 준⁠비 확⁠인';
+      'Keystone⁠으⁠로 마⁠이⁠그⁠레⁠이⁠션 준⁠비 확⁠인';
 
   @override
   String get migrationMobileKeystoneConfirmTransferSemantics =>
-      'Keystone⁠으⁠로 이⁠전 전⁠송 확⁠인';
+      'Keystone⁠으⁠로 마⁠이⁠그⁠레⁠이⁠션 전⁠송 확⁠인';
 
   @override
   String get migrationMobileKeystoneHelpPrompt =>
@@ -4582,7 +4663,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileKeystoneReconnect =>
-      '이 이⁠전⁠을 계⁠속⁠하⁠려⁠면 Keystone 계⁠정⁠을 다⁠시 연⁠결⁠하⁠거⁠나 다⁠시 가⁠져⁠오⁠세⁠요.';
+      '이 마⁠이⁠그⁠레⁠이⁠션⁠을 계⁠속⁠하⁠려⁠면 Keystone 계⁠정⁠을 다⁠시 연⁠결⁠하⁠거⁠나 다⁠시 가⁠져⁠오⁠세⁠요.';
 
   @override
   String get migrationMobileKeystoneRequestQrSemantics => 'Keystone 요⁠청 QR 코⁠드';
@@ -4592,7 +4673,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileKeystoneResignMessage =>
-      '계⁠속⁠하⁠려⁠면 다⁠시 만⁠든 이⁠전 거⁠래⁠를 Keystone⁠으⁠로 서⁠명⁠하⁠세⁠요.';
+      '계⁠속⁠하⁠려⁠면 다⁠시 만⁠든 마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠를 Keystone⁠으⁠로 서⁠명⁠하⁠세⁠요.';
 
   @override
   String get migrationMobileKeystoneScanCaption =>
@@ -4600,21 +4681,21 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileKeystoneScanPrepSemantics =>
-      'Keystone⁠에⁠서 서⁠명⁠된 이⁠전 준⁠비⁠를 스⁠캔⁠하⁠세⁠요';
+      'Keystone⁠에⁠서 서⁠명⁠된 마⁠이⁠그⁠레⁠이⁠션 준⁠비⁠를 스⁠캔⁠하⁠세⁠요';
 
   @override
   String get migrationMobileKeystoneScanProgress => '스⁠캔 진⁠행⁠률';
 
   @override
   String get migrationMobileKeystoneScanTransferSemantics =>
-      'Keystone⁠에⁠서 서⁠명⁠된 이⁠전 전⁠송⁠을 스⁠캔⁠하⁠세⁠요';
+      'Keystone⁠에⁠서 서⁠명⁠된 마⁠이⁠그⁠레⁠이⁠션 전⁠송⁠을 스⁠캔⁠하⁠세⁠요';
 
   @override
   String get migrationMobileManageCheckError =>
-      '이⁠전 상⁠태⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션 상⁠태⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
-  String get migrationMobileManageChecking => '이⁠전 상⁠태⁠를 확⁠인⁠하⁠는 중...';
+  String get migrationMobileManageChecking => '마⁠이⁠그⁠레⁠이⁠션 상⁠태⁠를 확⁠인⁠하⁠는 중...';
 
   @override
   String get migrationMobileManageNoRevert =>
@@ -4624,34 +4705,36 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationMobileManageRetryStatus => '상⁠태 다⁠시 확⁠인';
 
   @override
-  String get migrationMobileManageStopAction => '이⁠전 중⁠단';
+  String get migrationMobileManageStopAction => '마⁠이⁠그⁠레⁠이⁠션 중⁠단';
 
   @override
   String get migrationMobileManageStopBody =>
-      '남⁠은 이⁠전⁠을 중⁠단⁠해⁠요. 이⁠미 이⁠전⁠된 자⁠금⁠은 Ironwood⁠에 그⁠대⁠로 있⁠어⁠요.';
+      '남⁠은 마⁠이⁠그⁠레⁠이⁠션⁠을 중⁠단⁠해⁠요. 이⁠미 마⁠이⁠그⁠레⁠이⁠션⁠된 자⁠금⁠은 Ironwood⁠에 그⁠대⁠로 있⁠어⁠요.';
 
   @override
-  String get migrationMobileManageStopTitle => '이⁠전⁠을 중⁠단⁠할⁠까⁠요?';
+  String get migrationMobileManageStopTitle => '마⁠이⁠그⁠레⁠이⁠션⁠을 중⁠단⁠할⁠까⁠요?';
 
   @override
-  String get migrationMobileManageSwitchAction => '빠⁠른 이⁠전⁠으⁠로 전⁠환';
+  String get migrationMobileManageSwitchAction => '빠⁠른 마⁠이⁠그⁠레⁠이⁠션⁠으⁠로 전⁠환';
 
   @override
   String get migrationMobileManageSwitchBody =>
-      '비⁠공⁠개 일⁠정⁠을 중⁠단⁠하⁠고 남⁠은 잔⁠액⁠에 대⁠한 빠⁠른 이⁠전⁠을 검⁠토⁠해⁠요. 빠⁠른 이⁠전⁠은 추⁠적 가⁠능⁠성⁠을 높⁠이⁠며, 한 번 제⁠출⁠하⁠면 되⁠돌⁠릴 수 없⁠어⁠요.';
+      '비⁠공⁠개 일⁠정⁠을 중⁠단⁠하⁠고 남⁠은 잔⁠액⁠에 대⁠한 빠⁠른 마⁠이⁠그⁠레⁠이⁠션⁠을 검⁠토⁠해⁠요. 빠⁠른 마⁠이⁠그⁠레⁠이⁠션⁠은 추⁠적 가⁠능⁠성⁠을 높⁠이⁠며, 한 번 제⁠출⁠하⁠면 되⁠돌⁠릴 수 없⁠어⁠요.';
 
   @override
-  String get migrationMobileManageSwitchTitle => '빠⁠른 이⁠전⁠으⁠로 전⁠환⁠할⁠까⁠요?';
+  String get migrationMobileManageSwitchTitle =>
+      '빠⁠른 마⁠이⁠그⁠레⁠이⁠션⁠으⁠로 전⁠환⁠할⁠까⁠요?';
 
   @override
-  String get migrationMobileManageTitle => '이⁠전 관⁠리';
+  String get migrationMobileManageTitle => '마⁠이⁠그⁠레⁠이⁠션 관⁠리';
 
   @override
-  String get migrationMobileManageUnavailable => '이 이⁠전⁠은 더 이⁠상 관⁠리⁠할 수 없⁠어⁠요.';
+  String get migrationMobileManageUnavailable =>
+      '이 마⁠이⁠그⁠레⁠이⁠션⁠은 더 이⁠상 관⁠리⁠할 수 없⁠어⁠요.';
 
   @override
   String get migrationMobileManageWaitingBroadcast =>
-      '진⁠행 중⁠인 전⁠송⁠이 끝⁠나⁠기⁠를 기⁠다⁠린 뒤 남⁠은 이⁠전⁠을 중⁠단⁠해⁠요.';
+      '진⁠행 중⁠인 전⁠송⁠이 끝⁠나⁠기⁠를 기⁠다⁠린 뒤 남⁠은 마⁠이⁠그⁠레⁠이⁠션⁠을 중⁠단⁠해⁠요.';
 
   @override
   String get migrationMobileNextConfirmationsArriving =>
@@ -4659,17 +4742,17 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationMobileNextExpectedIn(String timing) {
-    return '다⁠음 이⁠전 단⁠계⁠는\n$timing 예⁠정⁠이⁠에⁠요.';
+    return '다⁠음 마⁠이⁠그⁠레⁠이⁠션 단⁠계⁠는\n$timing 예⁠정⁠이⁠에⁠요.';
   }
 
   @override
   String migrationMobileNextNotificationsOffBlock(int height, String timing) {
-    return '알⁠림⁠이 꺼⁠져 있⁠어⁠요. $height 블⁠록($timing) 이⁠후⁠에 Vizor⁠를 열⁠어 다⁠음 이⁠전 배⁠치⁠를 승⁠인⁠하⁠세⁠요.';
+    return '알⁠림⁠이 꺼⁠져 있⁠어⁠요. $height 블⁠록($timing) 이⁠후⁠에 Vizor⁠를 열⁠어 다⁠음 마⁠이⁠그⁠레⁠이⁠션 배⁠치⁠를 승⁠인⁠하⁠세⁠요.';
   }
 
   @override
   String get migrationMobileNextNotificationsOffNoTiming =>
-      '알⁠림⁠이 꺼⁠져 있⁠어⁠요. 시⁠간 정⁠보⁠가 나⁠오⁠면 Vizor⁠를 다⁠시 열⁠어 다⁠음 이⁠전 배⁠치⁠를 승⁠인⁠하⁠세⁠요.';
+      '알⁠림⁠이 꺼⁠져 있⁠어⁠요. 시⁠간 정⁠보⁠가 나⁠오⁠면 Vizor⁠를 다⁠시 열⁠어 다⁠음 마⁠이⁠그⁠레⁠이⁠션 배⁠치⁠를 승⁠인⁠하⁠세⁠요.';
 
   @override
   String get migrationMobileNextNotificationsOffOpen =>
@@ -4680,7 +4763,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '알⁠림⁠이 켜⁠져 있⁠어⁠요. Vizor⁠를 나⁠갔⁠다⁠가 나⁠중⁠에 다⁠시 확⁠인⁠해⁠도 돼⁠요.';
 
   @override
-  String get migrationMobileNextOnTheWay => '다⁠음 이⁠전 단⁠계⁠가 곧 시⁠작⁠돼⁠요.';
+  String get migrationMobileNextOnTheWay => '다⁠음 마⁠이⁠그⁠레⁠이⁠션 단⁠계⁠가 곧 시⁠작⁠돼⁠요.';
 
   @override
   String get migrationMobileNextReadyAuto =>
@@ -4688,31 +4771,31 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileNextStepReady =>
-      '다⁠음 이⁠전 단⁠계⁠가 준⁠비⁠됐⁠어⁠요. 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 두⁠세⁠요.';
+      '다⁠음 마⁠이⁠그⁠레⁠이⁠션 단⁠계⁠가 준⁠비⁠됐⁠어⁠요. 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 두⁠세⁠요.';
 
   @override
   String migrationMobileNextTimingUntil(String timing) {
-    return '다⁠음 이⁠전 단⁠계⁠는 $timing 시⁠작⁠돼⁠요.\n알⁠림⁠이 켜⁠져 있⁠어⁠요. Vizor⁠를 나⁠갔⁠다⁠가 나⁠중⁠에 다⁠시 확⁠인⁠해⁠도 돼⁠요.';
+    return '다⁠음 마⁠이⁠그⁠레⁠이⁠션 단⁠계⁠는 $timing 시⁠작⁠돼⁠요.\n알⁠림⁠이 켜⁠져 있⁠어⁠요. Vizor⁠를 나⁠갔⁠다⁠가 나⁠중⁠에 다⁠시 확⁠인⁠해⁠도 돼⁠요.';
   }
 
   @override
   String get migrationMobileNextTorDisclosure =>
-      'Vizor⁠가 닫⁠혀 있⁠는 동⁠안⁠에⁠는 이⁠전⁠이 직⁠접 연⁠결⁠로 계⁠속⁠돼⁠요.';
+      'Vizor⁠가 닫⁠혀 있⁠는 동⁠안⁠에⁠는 마⁠이⁠그⁠레⁠이⁠션⁠이 직⁠접 연⁠결⁠로 계⁠속⁠돼⁠요.';
 
   @override
   String get migrationMobileNotifyAllow => '알⁠림 허⁠용';
 
   @override
   String get migrationMobileNotifyBody =>
-      '일⁠부 이⁠전 단⁠계⁠는 승⁠인⁠이 필⁠요⁠해⁠요. 때⁠가 되⁠면 알⁠려 드⁠릴 테⁠니 빠⁠르⁠게 응⁠답⁠해 불⁠필⁠요⁠한 지⁠연⁠을 피⁠하⁠세⁠요.';
+      '일⁠부 마⁠이⁠그⁠레⁠이⁠션 단⁠계⁠는 승⁠인⁠이 필⁠요⁠해⁠요. 때⁠가 되⁠면 알⁠려 드⁠릴 테⁠니 빠⁠르⁠게 응⁠답⁠해 불⁠필⁠요⁠한 지⁠연⁠을 피⁠하⁠세⁠요.';
 
   @override
   String get migrationMobileNotifyConfirmBody =>
-      '알⁠림⁠이 없⁠으⁠면 Vizor⁠를 주⁠기⁠적⁠으⁠로 열⁠어 준⁠비⁠된 다⁠음 이⁠전 단⁠계⁠를 직⁠접 승⁠인⁠해⁠야 해⁠요.';
+      '알⁠림⁠이 없⁠으⁠면 Vizor⁠를 주⁠기⁠적⁠으⁠로 열⁠어 준⁠비⁠된 다⁠음 마⁠이⁠그⁠레⁠이⁠션 단⁠계⁠를 직⁠접 승⁠인⁠해⁠야 해⁠요.';
 
   @override
   String get migrationMobileNotifyConfirmNote =>
-      '그⁠렇⁠지 않⁠으⁠면 이⁠전⁠에 더 오⁠래 걸⁠릴 수 있⁠어⁠요.';
+      '그⁠렇⁠지 않⁠으⁠면 마⁠이⁠그⁠레⁠이⁠션⁠에 더 오⁠래 걸⁠릴 수 있⁠어⁠요.';
 
   @override
   String get migrationMobileNotifyConfirmTitle => '알⁠림 없⁠이 계⁠속⁠할⁠까⁠요?';
@@ -4721,7 +4804,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationMobileNotifyContinueWithout => '알⁠림 없⁠이 계⁠속';
 
   @override
-  String get migrationMobileNotifyHeading => '이⁠전 일⁠정⁠을 놓⁠치⁠지 마⁠세⁠요';
+  String get migrationMobileNotifyHeading => '마⁠이⁠그⁠레⁠이⁠션 일⁠정⁠을 놓⁠치⁠지 마⁠세⁠요';
 
   @override
   String get migrationMobileNotifyStillOff =>
@@ -4732,7 +4815,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationMobileOptionImmediateBody(String estimate) {
-    return '전⁠체 잔⁠액⁠을 한 번⁠에 이⁠전⁠해⁠요. 빠⁠르⁠지⁠만($estimate) 프⁠라⁠이⁠버⁠시⁠는 낮⁠아⁠요.';
+    return '전⁠체 잔⁠액⁠을 한 번⁠에 마⁠이⁠그⁠레⁠이⁠션⁠해⁠요. 빠⁠르⁠지⁠만($estimate) 프⁠라⁠이⁠버⁠시⁠는 낮⁠아⁠요.';
   }
 
   @override
@@ -4744,35 +4827,35 @@ class AppLocalizationsKo extends AppLocalizations {
       'Android⁠에⁠서⁠는 사⁠용⁠할 수 없⁠어⁠요.';
 
   @override
-  String get migrationMobileOptionsNavTitle => '이⁠전 방⁠법';
+  String get migrationMobileOptionsNavTitle => '마⁠이⁠그⁠레⁠이⁠션 방⁠법';
 
   @override
   String get migrationMobileOptionsOpenError =>
-      '이⁠전 준⁠비⁠를 열⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션 준⁠비⁠를 열⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get migrationMobileOptionsSubtitleAndroid =>
-      'Android⁠에⁠서⁠는 비⁠공⁠개 이⁠전⁠을 일⁠시⁠적⁠으⁠로 사⁠용⁠할 수 없⁠어⁠요. 계⁠속⁠하⁠려⁠면 즉⁠시 이⁠전⁠을 선⁠택⁠하⁠세⁠요.';
+      'Android⁠에⁠서⁠는 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠을 일⁠시⁠적⁠으⁠로 사⁠용⁠할 수 없⁠어⁠요. 계⁠속⁠하⁠려⁠면 즉⁠시 마⁠이⁠그⁠레⁠이⁠션⁠을 선⁠택⁠하⁠세⁠요.';
 
   @override
   String migrationMobileOptionsSubtitleAndroidRest(String amount) {
-    return '$amount ZEC⁠가 아⁠직 Orchard⁠에 있⁠어⁠요. Android⁠에⁠서⁠는 비⁠공⁠개 이⁠전⁠을 일⁠시⁠적⁠으⁠로 사⁠용⁠할 수 없⁠어⁠요. 계⁠속⁠하⁠려⁠면 즉⁠시 이⁠전⁠을 선⁠택⁠하⁠세⁠요.';
+    return '$amount ZEC⁠가 아⁠직 Orchard⁠에 있⁠어⁠요. Android⁠에⁠서⁠는 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠을 일⁠시⁠적⁠으⁠로 사⁠용⁠할 수 없⁠어⁠요. 계⁠속⁠하⁠려⁠면 즉⁠시 마⁠이⁠그⁠레⁠이⁠션⁠을 선⁠택⁠하⁠세⁠요.';
   }
 
   @override
   String get migrationMobileOptionsSubtitleLedger =>
-      'Ledger 계⁠정⁠에⁠서⁠는 비⁠공⁠개 이⁠전⁠을 사⁠용⁠할 수 없⁠어⁠요. 계⁠속⁠하⁠려⁠면 즉⁠시 이⁠전⁠을 선⁠택⁠하⁠세⁠요.';
+      'Ledger 계⁠정⁠에⁠서⁠는 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠을 사⁠용⁠할 수 없⁠어⁠요. 계⁠속⁠하⁠려⁠면 즉⁠시 마⁠이⁠그⁠레⁠이⁠션⁠을 선⁠택⁠하⁠세⁠요.';
 
   @override
   String migrationMobileOptionsSubtitleLedgerRest(String amount) {
-    return '$amount ZEC⁠가 아⁠직 Orchard⁠에 있⁠어⁠요. Ledger 계⁠정⁠에⁠서⁠는 비⁠공⁠개 이⁠전⁠을 사⁠용⁠할 수 없⁠어⁠요. 계⁠속⁠하⁠려⁠면 즉⁠시 이⁠전⁠을 선⁠택⁠하⁠세⁠요.';
+    return '$amount ZEC⁠가 아⁠직 Orchard⁠에 있⁠어⁠요. Ledger 계⁠정⁠에⁠서⁠는 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠을 사⁠용⁠할 수 없⁠어⁠요. 계⁠속⁠하⁠려⁠면 즉⁠시 마⁠이⁠그⁠레⁠이⁠션⁠을 선⁠택⁠하⁠세⁠요.';
   }
 
   @override
-  String get migrationMobileOptionsTitle => '이⁠전 방⁠법 선⁠택';
+  String get migrationMobileOptionsTitle => '마⁠이⁠그⁠레⁠이⁠션 방⁠법 선⁠택';
 
   @override
-  String get migrationMobileOptionsTitleRest => '나⁠머⁠지 이⁠전 방⁠법';
+  String get migrationMobileOptionsTitleRest => '나⁠머⁠지 마⁠이⁠그⁠레⁠이⁠션 방⁠법';
 
   @override
   String migrationMobilePartConfirming(int count, int target) {
@@ -4794,7 +4877,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobilePartsPlaceholder =>
-      '거⁠래⁠가 준⁠비⁠되⁠면 이⁠전 파⁠트⁠가 여⁠기⁠에 표⁠시⁠돼⁠요.';
+      '거⁠래⁠가 준⁠비⁠되⁠면 마⁠이⁠그⁠레⁠이⁠션 파⁠트⁠가 여⁠기⁠에 표⁠시⁠돼⁠요.';
 
   @override
   String get migrationMobilePrepAdvancing =>
@@ -4816,7 +4899,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobilePrepDoneBody =>
-      '준⁠비⁠가 완⁠료⁠됐⁠어⁠요. 이⁠전 상⁠태⁠에⁠서 진⁠행 상⁠황⁠과 필⁠요⁠한 조⁠치⁠를 확⁠인⁠하⁠세⁠요.';
+      '준⁠비⁠가 완⁠료⁠됐⁠어⁠요. 마⁠이⁠그⁠레⁠이⁠션 상⁠태⁠에⁠서 진⁠행 상⁠황⁠과 필⁠요⁠한 조⁠치⁠를 확⁠인⁠하⁠세⁠요.';
 
   @override
   String get migrationMobilePrepDoneTitle => '준⁠비⁠가 끝⁠났⁠어⁠요';
@@ -4826,7 +4909,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobilePrepInfoThenBegin =>
-      '준⁠비⁠가 끝⁠나⁠면 이⁠전⁠을 시⁠작⁠할 수 있⁠어⁠요.';
+      '준⁠비⁠가 끝⁠나⁠면 마⁠이⁠그⁠레⁠이⁠션⁠을 시⁠작⁠할 수 있⁠어⁠요.';
 
   @override
   String get migrationMobilePrepKeystoneSignature =>
@@ -4845,41 +4928,42 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobilePreparingBody =>
-      '이⁠전⁠을 위⁠해 잔⁠액⁠을 준⁠비⁠하⁠고 있⁠어⁠요. 보⁠통 10~20⁠분 걸⁠려⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션⁠을 위⁠해 잔⁠액⁠을 준⁠비⁠하⁠고 있⁠어⁠요. 보⁠통 10~20⁠분 걸⁠려⁠요.';
 
   @override
-  String get migrationMobilePreparingTitle => '이⁠전 준⁠비 중';
+  String get migrationMobilePreparingTitle => '마⁠이⁠그⁠레⁠이⁠션 준⁠비 중';
 
   @override
   String get migrationMobileProcessChooseBody =>
-      '프⁠라⁠이⁠버⁠시⁠에 최⁠적⁠화⁠된 일⁠정⁠과 더 빠⁠른 이⁠전⁠을 비⁠교⁠해 보⁠세⁠요.';
+      '프⁠라⁠이⁠버⁠시⁠에 최⁠적⁠화⁠된 일⁠정⁠과 더 빠⁠른 마⁠이⁠그⁠레⁠이⁠션⁠을 비⁠교⁠해 보⁠세⁠요.';
 
   @override
-  String get migrationMobileProcessChooseTitle => '이⁠전 방⁠법 선⁠택';
+  String get migrationMobileProcessChooseTitle => '마⁠이⁠그⁠레⁠이⁠션 방⁠법 선⁠택';
 
   @override
   String get migrationMobileProcessMoveBody =>
-      '프⁠라⁠이⁠버⁠시⁠에 최⁠적⁠화⁠된 이⁠전⁠은 각 부⁠분⁠을 시⁠차⁠를 두⁠고 보⁠내 연⁠결 가⁠능⁠성⁠을 줄⁠여⁠요.';
+      '프⁠라⁠이⁠버⁠시⁠에 최⁠적⁠화⁠된 마⁠이⁠그⁠레⁠이⁠션⁠은 각 부⁠분⁠을 시⁠차⁠를 두⁠고 보⁠내 연⁠결 가⁠능⁠성⁠을 줄⁠여⁠요.';
 
   @override
   String get migrationMobileProcessMoveTitle => 'Ironwood⁠로 이⁠동';
 
   @override
   String get migrationMobileProcessPrepareBody =>
-      '이⁠전⁠을 시⁠작⁠하⁠기 전⁠에 Vizor⁠가 잔⁠액⁠을 많⁠이 쓰⁠이⁠는 크⁠기⁠의 여⁠러 부⁠분⁠으⁠로 재⁠구⁠성⁠해⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션⁠을 시⁠작⁠하⁠기 전⁠에 Vizor⁠가 잔⁠액⁠을 많⁠이 쓰⁠이⁠는 크⁠기⁠의 여⁠러 부⁠분⁠으⁠로 재⁠구⁠성⁠해⁠요.';
 
   @override
   String get migrationMobileProcessPrepareTitle => '잔⁠액 준⁠비';
 
   @override
   String get migrationMobileProcessSpendBody =>
-      '확⁠인⁠된 Ironwood 금⁠액⁠은 나⁠머⁠지 이⁠전⁠이 진⁠행⁠되⁠는 동⁠안⁠에⁠도 바⁠로 사⁠용⁠할 수 있⁠어⁠요.';
+      '확⁠인⁠된 Ironwood 금⁠액⁠은 나⁠머⁠지 마⁠이⁠그⁠레⁠이⁠션⁠이 진⁠행⁠되⁠는 동⁠안⁠에⁠도 바⁠로 사⁠용⁠할 수 있⁠어⁠요.';
 
   @override
   String get migrationMobileProcessSpendTitle => '도⁠착⁠하⁠는 대⁠로 사⁠용';
 
   @override
-  String get migrationMobileProgressAllClear => '문⁠제⁠없⁠어⁠요. 이⁠전⁠이 진⁠행 중⁠이⁠에⁠요';
+  String get migrationMobileProgressAllClear =>
+      '문⁠제⁠없⁠어⁠요. 마⁠이⁠그⁠레⁠이⁠션⁠이 진⁠행 중⁠이⁠에⁠요';
 
   @override
   String migrationMobileProgressAllClearBatch(int number) {
@@ -4892,7 +4976,8 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileProgressNextStep => '다⁠음 이⁠전 단⁠계⁠를 기⁠다⁠리⁠는 중';
+  String get migrationMobileProgressNextStep =>
+      '다⁠음 마⁠이⁠그⁠레⁠이⁠션 단⁠계⁠를 기⁠다⁠리⁠는 중';
 
   @override
   String get migrationMobileProgressReadyNow => '지⁠금 준⁠비⁠됨';
@@ -4902,10 +4987,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileProgressSyncingBody =>
-      '최⁠신 확⁠인 수⁠와 이⁠전 상⁠태⁠를 확⁠인⁠하⁠는 중⁠이⁠에⁠요.';
+      '최⁠신 확⁠인 수⁠와 마⁠이⁠그⁠레⁠이⁠션 상⁠태⁠를 확⁠인⁠하⁠는 중⁠이⁠에⁠요.';
 
   @override
-  String get migrationMobileProgressSyncingTitle => '이⁠전 진⁠행 상⁠황 동⁠기⁠화 중';
+  String get migrationMobileProgressSyncingTitle =>
+      '마⁠이⁠그⁠레⁠이⁠션 진⁠행 상⁠황 동⁠기⁠화 중';
 
   @override
   String get migrationMobileProgressWaitingWindowBody =>
@@ -4919,10 +5005,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileRebuildBody =>
-      'Vizor⁠가 먼⁠저 대⁠기 중⁠인 거⁠래⁠가 전⁠송⁠되⁠지 않⁠았⁠는⁠지 확⁠인⁠해⁠요. 그⁠런 다⁠음 남⁠은 잔⁠액⁠에 대⁠해⁠서⁠만 이⁠전⁠을 다⁠시 만⁠들⁠어⁠요. 이⁠미 확⁠인⁠된 이⁠전⁠은 그⁠대⁠로 유⁠지⁠돼⁠요.';
+      'Vizor⁠가 먼⁠저 대⁠기 중⁠인 거⁠래⁠가 전⁠송⁠되⁠지 않⁠았⁠는⁠지 확⁠인⁠해⁠요. 그⁠런 다⁠음 남⁠은 잔⁠액⁠에 대⁠해⁠서⁠만 마⁠이⁠그⁠레⁠이⁠션⁠을 다⁠시 만⁠들⁠어⁠요. 이⁠미 확⁠인⁠된 마⁠이⁠그⁠레⁠이⁠션⁠은 그⁠대⁠로 유⁠지⁠돼⁠요.';
 
   @override
-  String get migrationMobileRebuildTitle => '이⁠전⁠을 다⁠시 만⁠들⁠까⁠요?';
+  String get migrationMobileRebuildTitle => '마⁠이⁠그⁠레⁠이⁠션⁠을 다⁠시 만⁠들⁠까⁠요?';
 
   @override
   String get migrationMobileRecover => '복⁠구';
@@ -4931,7 +5017,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationMobileRecovering => '복⁠구⁠하⁠는 중...';
 
   @override
-  String get migrationMobileRecoveryRequired => '이⁠전⁠을 복⁠구⁠해⁠야 해⁠요.';
+  String get migrationMobileRecoveryRequired => '마⁠이⁠그⁠레⁠이⁠션⁠을 복⁠구⁠해⁠야 해⁠요.';
 
   @override
   String get migrationMobileResuming => '재⁠개⁠하⁠는 중...';
@@ -4955,13 +5041,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationMobileScheduleDuration => '소⁠요 시⁠간';
 
   @override
-  String get migrationMobileScheduleLoading => '이⁠전 일⁠정⁠을 불⁠러⁠오⁠는 중';
+  String get migrationMobileScheduleLoading => '마⁠이⁠그⁠레⁠이⁠션 일⁠정⁠을 불⁠러⁠오⁠는 중';
 
   @override
-  String get migrationMobileScheduleMigrating => '이⁠전 중…';
+  String get migrationMobileScheduleMigrating => '마⁠이⁠그⁠레⁠이⁠션 중…';
 
   @override
-  String get migrationMobileScheduleMigrationNote => '이⁠전⁠용 노⁠트';
+  String get migrationMobileScheduleMigrationNote => '마⁠이⁠그⁠레⁠이⁠션⁠용 노⁠트';
 
   @override
   String get migrationMobileScheduleNextRound => '다⁠음 회⁠차';
@@ -5001,7 +5087,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileScheduleUnavailableBody =>
-      'Vizor⁠가 최⁠신 일⁠정⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 저⁠장⁠된 이⁠전 상⁠태⁠는 그⁠대⁠로⁠예⁠요.';
+      'Vizor⁠가 최⁠신 일⁠정⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 저⁠장⁠된 마⁠이⁠그⁠레⁠이⁠션 상⁠태⁠는 그⁠대⁠로⁠예⁠요.';
 
   @override
   String get migrationMobileSpendableBalance => '현⁠재 사⁠용 가⁠능⁠한 잔⁠액';
@@ -5010,21 +5096,23 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationMobileStartErrorFallback => '준⁠비⁠되⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
-  String get migrationMobileStartErrorTitle => '이⁠전⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요';
+  String get migrationMobileStartErrorTitle => '마⁠이⁠그⁠레⁠이⁠션⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요';
 
   @override
   String get migrationMobileStartLoadingBody =>
-      'Vizor⁠가 이⁠전⁠을 준⁠비⁠하⁠고 있⁠어⁠요. 잠⁠시 걸⁠릴 수 있⁠어⁠요.';
+      'Vizor⁠가 마⁠이⁠그⁠레⁠이⁠션⁠을 준⁠비⁠하⁠고 있⁠어⁠요. 잠⁠시 걸⁠릴 수 있⁠어⁠요.';
 
   @override
-  String get migrationMobileStartMessageOrganizing => '이⁠전 배⁠치⁠를 정⁠리⁠하⁠는 중...';
+  String get migrationMobileStartMessageOrganizing =>
+      '마⁠이⁠그⁠레⁠이⁠션 배⁠치⁠를 정⁠리⁠하⁠는 중...';
 
   @override
-  String get migrationMobileStartMessagePreparing => '이⁠전⁠을 준⁠비⁠하⁠는 중...';
+  String get migrationMobileStartMessagePreparing =>
+      '마⁠이⁠그⁠레⁠이⁠션⁠을 준⁠비⁠하⁠는 중...';
 
   @override
   String get migrationMobileStartReadyBody =>
-      '계⁠속⁠하⁠면 Keystone⁠으⁠로 준⁠비 거⁠래⁠와 이⁠전 배⁠치⁠에 함⁠께 서⁠명⁠해⁠요.';
+      '계⁠속⁠하⁠면 Keystone⁠으⁠로 준⁠비 거⁠래⁠와 마⁠이⁠그⁠레⁠이⁠션 배⁠치⁠에 함⁠께 서⁠명⁠해⁠요.';
 
   @override
   String migrationMobileStatusNotesCount(int count) {
@@ -5032,16 +5120,13 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileStatusNotesLead => 'Migration ';
-
-  @override
   String migrationMobileStatusNotesTitle(String notes) {
-    return '이⁠전 $notes';
+    return '마⁠이⁠그⁠레⁠이⁠션 $notes';
   }
 
   @override
   String get migrationMobileSyncingProgress =>
-      '이⁠전 진⁠행 상⁠황⁠을 동⁠기⁠화⁠하⁠는 중⁠이⁠에⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션 진⁠행 상⁠황⁠을 동⁠기⁠화⁠하⁠는 중⁠이⁠에⁠요.';
 
   @override
   String get migrationMobileTimingUpdating => '시⁠간⁠을 업⁠데⁠이⁠트⁠하⁠는 중';
@@ -5051,7 +5136,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileWaitAutoStart =>
-      '노⁠트 분⁠할⁠이 끝⁠나⁠면 이⁠전⁠이 자⁠동⁠으⁠로 시⁠작⁠돼⁠요.';
+      '노⁠트 분⁠할⁠이 끝⁠나⁠면 마⁠이⁠그⁠레⁠이⁠션⁠이 자⁠동⁠으⁠로 시⁠작⁠돼⁠요.';
 
   @override
   String migrationMobileWaitBlocks(int count, int target) {
@@ -5066,14 +5151,8 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 확⁠인⁠이 끝⁠나⁠면 Keystone⁠에⁠서 한 번 더 승⁠인⁠해⁠야 해⁠요.';
 
   @override
-  String get migrationMobileWaitLoopBatch => ' the batch of transactions';
-
-  @override
   String get migrationMobileWaitLoopCaption =>
       '여⁠러 번 반⁠복⁠되⁠며\n기⁠다⁠리⁠는 데 2~10⁠시⁠간\n걸⁠릴 수 있⁠어⁠요';
-
-  @override
-  String get migrationMobileWaitLoopForWindow => ' for the window';
 
   @override
   String get migrationMobileWaitLoopSign => '서⁠명⁠하⁠기';
@@ -5100,7 +5179,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationMobileWaitSplitInto(int count) {
-    return '노⁠트⁠를 이⁠전 파⁠트 $count⁠개⁠로 분⁠할';
+    return '노⁠트⁠를 마⁠이⁠그⁠레⁠이⁠션 파⁠트 $count⁠개⁠로 분⁠할';
   }
 
   @override
@@ -5113,7 +5192,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationNextActionDetailExpectedAt => '예⁠상 블⁠록';
 
   @override
-  String get migrationNextActionDetailPreparing => '이⁠전 준⁠비 중';
+  String get migrationNextActionDetailPreparing => '마⁠이⁠그⁠레⁠이⁠션 준⁠비 중';
 
   @override
   String get migrationNextActionDetailReadyToSign => '서⁠명 준⁠비⁠됨';
@@ -5128,25 +5207,25 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationNextActionLabelAwaitingMining => '블⁠록 포⁠함 대⁠기 중';
 
   @override
-  String get migrationNextActionLabelComplete => '이⁠전 완⁠료';
+  String get migrationNextActionLabelComplete => '마⁠이⁠그⁠레⁠이⁠션 완⁠료';
 
   @override
-  String get migrationNextActionLabelFinalizing => '이⁠전 마⁠무⁠리 중';
+  String get migrationNextActionLabelFinalizing => '마⁠이⁠그⁠레⁠이⁠션 마⁠무⁠리 중';
 
   @override
-  String get migrationNextActionLabelNext => '다⁠음 이⁠전';
+  String get migrationNextActionLabelNext => '다⁠음 마⁠이⁠그⁠레⁠이⁠션';
 
   @override
-  String get migrationNextActionLabelNextWindow => '다⁠음 이⁠전 구⁠간';
+  String get migrationNextActionLabelNextWindow => '다⁠음 마⁠이⁠그⁠레⁠이⁠션 구⁠간';
 
   @override
-  String get migrationNextActionLabelOpeningWindow => '이⁠전 구⁠간 대⁠기 중';
+  String get migrationNextActionLabelOpeningWindow => '마⁠이⁠그⁠레⁠이⁠션 구⁠간 대⁠기 중';
 
   @override
-  String get migrationNextActionLabelSending => '이⁠전 전⁠송 중';
+  String get migrationNextActionLabelSending => '마⁠이⁠그⁠레⁠이⁠션 전⁠송 중';
 
   @override
-  String get migrationNextActionLabelWindowReady => '이⁠전 구⁠간 준⁠비⁠됨';
+  String get migrationNextActionLabelWindowReady => '마⁠이⁠그⁠레⁠이⁠션 구⁠간 준⁠비⁠됨';
 
   @override
   String get migrationNotScheduled => '예⁠약 안 됨';
@@ -5186,7 +5265,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationOptionImmediateBody =>
-      '전⁠체 잔⁠액⁠을 한 번⁠에 이⁠전⁠해⁠요. 빠⁠르⁠지⁠만 프⁠라⁠이⁠버⁠시⁠는 낮⁠아⁠요.';
+      '전⁠체 잔⁠액⁠을 한 번⁠에 마⁠이⁠그⁠레⁠이⁠션⁠해⁠요. 빠⁠르⁠지⁠만 프⁠라⁠이⁠버⁠시⁠는 낮⁠아⁠요.';
 
   @override
   String get migrationOptionPrivate => '비⁠공⁠개';
@@ -5203,21 +5282,21 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationOptionsBody =>
-      '시⁠간⁠을 들⁠여 프⁠라⁠이⁠버⁠시⁠를 높⁠일⁠지, 더 빠⁠르⁠게 이⁠전⁠할⁠지 선⁠택⁠하⁠세⁠요. 자⁠금⁠이 이⁠동⁠하⁠기 전⁠에 세⁠부 내⁠용⁠을 검⁠토⁠할 수 있⁠어⁠요.';
+      '시⁠간⁠을 들⁠여 프⁠라⁠이⁠버⁠시⁠를 높⁠일⁠지, 더 빠⁠르⁠게 마⁠이⁠그⁠레⁠이⁠션⁠할⁠지 선⁠택⁠하⁠세⁠요. 자⁠금⁠이 이⁠동⁠하⁠기 전⁠에 세⁠부 내⁠용⁠을 검⁠토⁠할 수 있⁠어⁠요.';
 
   @override
   String migrationOptionsBodyMoveRest(String amount) {
-    return '$amount ZEC⁠가 아⁠직 Orchard⁠에 있⁠어⁠요. 시⁠간⁠을 들⁠여 프⁠라⁠이⁠버⁠시⁠를 높⁠일⁠지, 더 빠⁠르⁠게 이⁠전⁠할⁠지 선⁠택⁠하⁠세⁠요.';
+    return '$amount ZEC⁠가 아⁠직 Orchard⁠에 있⁠어⁠요. 시⁠간⁠을 들⁠여 프⁠라⁠이⁠버⁠시⁠를 높⁠일⁠지, 더 빠⁠르⁠게 마⁠이⁠그⁠레⁠이⁠션⁠할⁠지 선⁠택⁠하⁠세⁠요.';
   }
 
   @override
   String get migrationOptionsSelectReview => '선⁠택 및 검⁠토';
 
   @override
-  String get migrationOptionsTitle => '이⁠전 방⁠법 선⁠택';
+  String get migrationOptionsTitle => '마⁠이⁠그⁠레⁠이⁠션 방⁠법 선⁠택';
 
   @override
-  String get migrationOptionsTitleMoveRest => '나⁠머⁠지 이⁠전 방⁠법';
+  String get migrationOptionsTitleMoveRest => '나⁠머⁠지 마⁠이⁠그⁠레⁠이⁠션 방⁠법';
 
   @override
   String migrationOverallProgress(String completed, String total) {
@@ -5258,11 +5337,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationPreparationTipDelay =>
-      '준⁠비⁠가 끝⁠나⁠면 의⁠도⁠적⁠으⁠로 긴 지⁠연 후⁠에 이⁠전⁠이 자⁠동⁠으⁠로 시⁠작⁠돼⁠요.';
+      '준⁠비⁠가 끝⁠나⁠면 의⁠도⁠적⁠으⁠로 긴 지⁠연 후⁠에 마⁠이⁠그⁠레⁠이⁠션⁠이 자⁠동⁠으⁠로 시⁠작⁠돼⁠요.';
 
   @override
   String get migrationPreparationTipOrganizing =>
-      '잔⁠액⁠을 많⁠이 쓰⁠이⁠는 크⁠기⁠로 나⁠누⁠고 있⁠어⁠요. 이⁠렇⁠게 하⁠면 이⁠전 내⁠역⁠을 서⁠로 연⁠결⁠하⁠기 어⁠려⁠워⁠져⁠요.';
+      '잔⁠액⁠을 많⁠이 쓰⁠이⁠는 크⁠기⁠로 나⁠누⁠고 있⁠어⁠요. 이⁠렇⁠게 하⁠면 마⁠이⁠그⁠레⁠이⁠션 내⁠역⁠을 서⁠로 연⁠결⁠하⁠기 어⁠려⁠워⁠져⁠요.';
 
   @override
   String get migrationPreparationTipRounds =>
@@ -5282,39 +5361,39 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationProgressTipClose =>
-      '언⁠제⁠든⁠지 Vizor⁠를 닫⁠아⁠도 돼⁠요. 이⁠전⁠이 일⁠시 중⁠지⁠되⁠고, 돌⁠아⁠오⁠면 다⁠시 시⁠작⁠할 수 있⁠어⁠요.';
+      '언⁠제⁠든⁠지 Vizor⁠를 닫⁠아⁠도 돼⁠요. 마⁠이⁠그⁠레⁠이⁠션⁠이 일⁠시 중⁠지⁠되⁠고, 돌⁠아⁠오⁠면 다⁠시 시⁠작⁠할 수 있⁠어⁠요.';
 
   @override
   String get migrationProgressTipKeepRunning =>
-      'Vizor⁠를 계⁠속 실⁠행⁠해 두⁠면 이⁠전⁠이 백⁠그⁠라⁠운⁠드⁠에⁠서 자⁠동⁠으⁠로 진⁠행⁠돼⁠요.';
+      'Vizor⁠를 계⁠속 실⁠행⁠해 두⁠면 마⁠이⁠그⁠레⁠이⁠션⁠이 백⁠그⁠라⁠운⁠드⁠에⁠서 자⁠동⁠으⁠로 진⁠행⁠돼⁠요.';
 
   @override
   String get migrationReadyNow => '지⁠금 가⁠능';
 
   @override
-  String get migrationRetryMigration => '이⁠전 다⁠시 시⁠도';
+  String get migrationRetryMigration => '마⁠이⁠그⁠레⁠이⁠션 다⁠시 시⁠도';
 
   @override
   String get migrationRetrying => '다⁠시 시⁠도⁠하⁠는 중...';
 
   @override
-  String get migrationReviewAmountToMigrate => '이⁠전⁠할 금⁠액';
+  String get migrationReviewAmountToMigrate => '마⁠이⁠그⁠레⁠이⁠션⁠할 금⁠액';
 
   @override
   String get migrationReviewAnalyzeErrorTitle => '이 잔⁠액⁠을 분⁠석⁠하⁠지 못⁠했⁠어⁠요';
 
   @override
-  String get migrationReviewCompleteIn => '이⁠전 완⁠료⁠까⁠지';
+  String get migrationReviewCompleteIn => '마⁠이⁠그⁠레⁠이⁠션 완⁠료⁠까⁠지';
 
   @override
   String get migrationReviewKeepRunningBody =>
-      '앱⁠을 최⁠소⁠화⁠해⁠도 준⁠비⁠가 계⁠속⁠되⁠고, 이⁠후 이⁠전⁠이 자⁠동⁠으⁠로 시⁠작⁠돼⁠요.';
+      '앱⁠을 최⁠소⁠화⁠해⁠도 준⁠비⁠가 계⁠속⁠되⁠고, 이⁠후 마⁠이⁠그⁠레⁠이⁠션⁠이 자⁠동⁠으⁠로 시⁠작⁠돼⁠요.';
 
   @override
   String get migrationReviewKeepRunningTitle => 'Vizor⁠를 계⁠속 실⁠행⁠하⁠세⁠요';
 
   @override
-  String get migrationReviewStart => '이⁠전 시⁠작';
+  String get migrationReviewStart => '마⁠이⁠그⁠레⁠이⁠션 시⁠작';
 
   @override
   String get migrationReviewStarting => '시⁠작⁠하⁠는 중…';
@@ -5347,7 +5426,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationRingStatusConfirming => '확⁠인 중';
 
   @override
-  String get migrationRingStatusMigrating => '이⁠전 중';
+  String get migrationRingStatusMigrating => '마⁠이⁠그⁠레⁠이⁠션 중';
 
   @override
   String get migrationRingStatusNeedsInput => '서⁠명 필⁠요';
@@ -5368,13 +5447,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationRingWaitingForPreviousSplit => '직⁠전 분⁠할 대⁠기 중';
 
   @override
-  String get migrationRouteNotAvailable => '이 계⁠정⁠에⁠서⁠는 이⁠전⁠을 사⁠용⁠할 수 없⁠어⁠요.';
+  String get migrationRouteNotAvailable =>
+      '이 계⁠정⁠에⁠서⁠는 마⁠이⁠그⁠레⁠이⁠션⁠을 사⁠용⁠할 수 없⁠어⁠요.';
 
   @override
-  String get migrationRouteNotNeeded => '이 계⁠정⁠은 이⁠전⁠이 필⁠요⁠하⁠지 않⁠아⁠요.';
+  String get migrationRouteNotNeeded => '이 계⁠정⁠은 마⁠이⁠그⁠레⁠이⁠션⁠이 필⁠요⁠하⁠지 않⁠아⁠요.';
 
   @override
-  String get migrationRouteStatusFailed => '이⁠전 상⁠태⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요.';
+  String get migrationRouteStatusFailed => '마⁠이⁠그⁠레⁠이⁠션 상⁠태⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요.';
 
   @override
   String get migrationRouteSyncFailed =>
@@ -5413,13 +5493,13 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationScheduleOutputMigration => '이⁠전⁠용';
+  String get migrationScheduleOutputMigration => '마⁠이⁠그⁠레⁠이⁠션⁠용';
 
   @override
   String get migrationSchedulePending => '일⁠정 대⁠기 중';
 
   @override
-  String get migrationScheduleReadyToMigrate => '이⁠전 준⁠비 완⁠료 시⁠점';
+  String get migrationScheduleReadyToMigrate => '마⁠이⁠그⁠레⁠이⁠션 준⁠비 완⁠료 시⁠점';
 
   @override
   String get migrationScheduleRecalculating => '다⁠시 계⁠산 중';
@@ -5497,7 +5577,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationScheduleSemanticsOutputMigration => '이⁠전⁠용';
+  String get migrationScheduleSemanticsOutputMigration => '마⁠이⁠그⁠레⁠이⁠션⁠용';
 
   @override
   String migrationScheduleSemanticsOutputs(String outputs) {
@@ -5549,17 +5629,18 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationScheduleTitle => '이⁠전 일⁠정';
+  String get migrationScheduleTitle => '마⁠이⁠그⁠레⁠이⁠션 일⁠정';
 
   @override
   String get migrationScheduleTitlePreparation => '준⁠비 일⁠정';
 
   @override
   String get migrationScheduleUnavailableBody =>
-      'Vizor⁠가 최⁠신 이⁠전 일⁠정⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 저⁠장⁠된 이⁠전 상⁠태⁠는 그⁠대⁠로⁠예⁠요.';
+      'Vizor⁠가 최⁠신 마⁠이⁠그⁠레⁠이⁠션 일⁠정⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 저⁠장⁠된 마⁠이⁠그⁠레⁠이⁠션 상⁠태⁠는 그⁠대⁠로⁠예⁠요.';
 
   @override
-  String get migrationScheduleUnavailableTitle => '이⁠전 일⁠정⁠을 불⁠러⁠올 수 없⁠어⁠요';
+  String get migrationScheduleUnavailableTitle =>
+      '마⁠이⁠그⁠레⁠이⁠션 일⁠정⁠을 불⁠러⁠올 수 없⁠어⁠요';
 
   @override
   String get migrationScheduleWaitingToBeMined => '블⁠록 포⁠함 대⁠기 중';
@@ -5576,10 +5657,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationSemanticsNotesOrder =>
-      '예⁠상 처⁠리 순⁠서⁠대⁠로 나⁠열⁠한 이⁠전 노⁠트⁠예⁠요.';
+      '예⁠상 처⁠리 순⁠서⁠대⁠로 나⁠열⁠한 마⁠이⁠그⁠레⁠이⁠션 노⁠트⁠예⁠요.';
 
   @override
-  String get migrationSemanticsPreparingNotes => '이⁠전 노⁠트⁠를 준⁠비⁠하⁠고 있⁠어⁠요.';
+  String get migrationSemanticsPreparingNotes =>
+      '마⁠이⁠그⁠레⁠이⁠션 노⁠트⁠를 준⁠비⁠하⁠고 있⁠어⁠요.';
 
   @override
   String migrationSignBatch(String number) {
@@ -5593,28 +5675,28 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationStageFinish => '마⁠무⁠리';
 
   @override
-  String get migrationStageMigration => '이⁠전';
+  String get migrationStageMigration => '마⁠이⁠그⁠레⁠이⁠션';
 
   @override
   String get migrationStagePreparation => '준⁠비';
 
   @override
   String get migrationStatusAttentionBody =>
-      'Ironwood 전⁠환⁠을 마⁠치⁠기 전⁠에 Vizor⁠에⁠서 복⁠구 가⁠능⁠한 이⁠전 오⁠류⁠가 발⁠생⁠했⁠어⁠요.';
+      'Ironwood 전⁠환⁠을 마⁠치⁠기 전⁠에 Vizor⁠에⁠서 복⁠구 가⁠능⁠한 마⁠이⁠그⁠레⁠이⁠션 오⁠류⁠가 발⁠생⁠했⁠어⁠요.';
 
   @override
   String get migrationStatusAttentionFooter =>
-      '잃⁠은 자⁠금⁠은 없⁠어⁠요. Vizor⁠가 동⁠기⁠화⁠되⁠어 온⁠라⁠인⁠인⁠지 확⁠인⁠한 뒤 이⁠전⁠을 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      '잃⁠은 자⁠금⁠은 없⁠어⁠요. Vizor⁠가 동⁠기⁠화⁠되⁠어 온⁠라⁠인⁠인⁠지 확⁠인⁠한 뒤 마⁠이⁠그⁠레⁠이⁠션⁠을 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
-  String get migrationStatusAttentionTitle => '이⁠전 확⁠인 필⁠요';
+  String get migrationStatusAttentionTitle => '마⁠이⁠그⁠레⁠이⁠션 확⁠인 필⁠요';
 
   @override
   String get migrationStatusBroadcasted => '전⁠송⁠됨';
 
   @override
   String get migrationStatusBroadcastingBody =>
-      'Vizor⁠가 준⁠비⁠된 Ironwood 이⁠전 거⁠래⁠를 전⁠송⁠하⁠고 있⁠어⁠요.';
+      'Vizor⁠가 준⁠비⁠된 Ironwood 마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠를 전⁠송⁠하⁠고 있⁠어⁠요.';
 
   @override
   String get migrationStatusCompleteBody => '자⁠금⁠이 Ironwood 풀⁠로 이⁠동⁠했⁠어⁠요.';
@@ -5624,25 +5706,25 @@ class AppLocalizationsKo extends AppLocalizations {
       '홈⁠으⁠로 돌⁠아⁠가 Vizor⁠를 계⁠속 사⁠용⁠할 수 있⁠어⁠요.';
 
   @override
-  String get migrationStatusCompleteTitle => '이⁠전 완⁠료';
+  String get migrationStatusCompleteTitle => '마⁠이⁠그⁠레⁠이⁠션 완⁠료';
 
   @override
   String get migrationStatusConfirmingBody =>
-      '이⁠전 거⁠래⁠를 전⁠송⁠했⁠어⁠요. Vizor⁠가 네⁠트⁠워⁠크 확⁠인⁠을 기⁠다⁠리⁠고 있⁠어⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠를 전⁠송⁠했⁠어⁠요. Vizor⁠가 네⁠트⁠워⁠크 확⁠인⁠을 기⁠다⁠리⁠고 있⁠어⁠요.';
 
   @override
   String get migrationStatusDefaultBody =>
-      'Vizor⁠가 현⁠재 Ironwood 이⁠전 상⁠태⁠를 추⁠적⁠하⁠고 있⁠어⁠요.';
+      'Vizor⁠가 현⁠재 Ironwood 마⁠이⁠그⁠레⁠이⁠션 상⁠태⁠를 추⁠적⁠하⁠고 있⁠어⁠요.';
 
   @override
-  String get migrationStatusDefaultButton => '이⁠전 진⁠행 중';
+  String get migrationStatusDefaultButton => '마⁠이⁠그⁠레⁠이⁠션 진⁠행 중';
 
   @override
   String get migrationStatusDefaultFooter =>
-      '이 상⁠태⁠는 이⁠전 흐⁠름⁠을 연⁠결⁠하⁠는 동⁠안 진⁠단⁠용⁠으⁠로 표⁠시⁠돼⁠요.';
+      '이 상⁠태⁠는 마⁠이⁠그⁠레⁠이⁠션 흐⁠름⁠을 연⁠결⁠하⁠는 동⁠안 진⁠단⁠용⁠으⁠로 표⁠시⁠돼⁠요.';
 
   @override
-  String get migrationStatusDefaultTitle => '이⁠전 상⁠태';
+  String get migrationStatusDefaultTitle => '마⁠이⁠그⁠레⁠이⁠션 상⁠태';
 
   @override
   String get migrationStatusLeaveFooter =>
@@ -5650,21 +5732,21 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationStatusLedgerUnsupported =>
-      '이 흐⁠름⁠은 일⁠괄 서⁠명⁠이 필⁠요⁠해⁠서 Ledger 비⁠공⁠개 이⁠전⁠은 지⁠원⁠하⁠지 않⁠아⁠요.';
+      '이 흐⁠름⁠은 일⁠괄 서⁠명⁠이 필⁠요⁠해⁠서 Ledger 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠은 지⁠원⁠하⁠지 않⁠아⁠요.';
 
   @override
   String get migrationStatusPausedBody =>
-      '비⁠공⁠개 이⁠전⁠이 다⁠음 작⁠업 전⁠에 일⁠시 중⁠지⁠되⁠었⁠어⁠요.';
+      '비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠이 다⁠음 작⁠업 전⁠에 일⁠시 중⁠지⁠되⁠었⁠어⁠요.';
 
   @override
   String get migrationStatusPausedButton => '일⁠시 중⁠지⁠됨';
 
   @override
   String get migrationStatusPausedFooter =>
-      '이⁠전 실⁠행⁠을 다⁠시 시⁠작⁠할 때⁠까⁠지 새 거⁠래⁠를 준⁠비⁠하⁠지 않⁠아⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션 실⁠행⁠을 다⁠시 시⁠작⁠할 때⁠까⁠지 새 거⁠래⁠를 준⁠비⁠하⁠지 않⁠아⁠요.';
 
   @override
-  String get migrationStatusPausedTitle => '이⁠전 일⁠시 중⁠지⁠됨';
+  String get migrationStatusPausedTitle => '마⁠이⁠그⁠레⁠이⁠션 일⁠시 중⁠지⁠됨';
 
   @override
   String get migrationStatusPendingBroadcasts => '전⁠송 대⁠기';
@@ -5674,22 +5756,22 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationStatusReadyBody =>
-      '비⁠공⁠개 분⁠할⁠이 준⁠비⁠되⁠었⁠어⁠요. 다⁠음 단⁠계⁠에⁠서 Ironwood 이⁠전 배⁠치⁠를 준⁠비⁠해⁠요.';
+      '비⁠공⁠개 분⁠할⁠이 준⁠비⁠되⁠었⁠어⁠요. 다⁠음 단⁠계⁠에⁠서 Ironwood 마⁠이⁠그⁠레⁠이⁠션 배⁠치⁠를 준⁠비⁠해⁠요.';
 
   @override
   String get migrationStatusReadyFooter =>
-      '이⁠전⁠을 계⁠속⁠하⁠면 예⁠정⁠된 시⁠점⁠에 Ironwood 거⁠래⁠를 준⁠비⁠하⁠고 전⁠송⁠해⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션⁠을 계⁠속⁠하⁠면 예⁠정⁠된 시⁠점⁠에 Ironwood 거⁠래⁠를 준⁠비⁠하⁠고 전⁠송⁠해⁠요.';
 
   @override
-  String get migrationStatusReadyTitle => '이⁠전 준⁠비 완⁠료';
+  String get migrationStatusReadyTitle => '마⁠이⁠그⁠레⁠이⁠션 준⁠비 완⁠료';
 
   @override
   String get migrationStatusScheduledBody =>
-      '이⁠전 거⁠래⁠가 준⁠비⁠되⁠었⁠고 예⁠약⁠된 전⁠송 시⁠간⁠을 기⁠다⁠리⁠고 있⁠어⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠가 준⁠비⁠되⁠었⁠고 예⁠약⁠된 전⁠송 시⁠간⁠을 기⁠다⁠리⁠고 있⁠어⁠요.';
 
   @override
   String get migrationStatusScheduledFooter =>
-      'Vizor⁠가 열⁠려 있⁠는 동⁠안 예⁠약⁠된 전⁠송⁠이 자⁠동⁠으⁠로 진⁠행⁠돼⁠요.';
+      'Vizor⁠가 열⁠려 있⁠는 동⁠안 예⁠약⁠된 마⁠이⁠그⁠레⁠이⁠션 전⁠송⁠이 자⁠동⁠으⁠로 진⁠행⁠돼⁠요.';
 
   @override
   String get migrationStatusScheduledTitle => '전⁠송 예⁠약⁠됨';
@@ -5699,14 +5781,15 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationStatusUnavailableBody =>
-      'Vizor⁠가 현⁠재 Ironwood 이⁠전 상⁠태⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 상⁠태⁠를 확⁠인⁠할 수 있⁠을 때⁠까⁠지 새 이⁠전⁠은 시⁠작⁠되⁠지 않⁠아⁠요.';
+      'Vizor⁠가 현⁠재 Ironwood 마⁠이⁠그⁠레⁠이⁠션 상⁠태⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 상⁠태⁠를 확⁠인⁠할 수 있⁠을 때⁠까⁠지 새 마⁠이⁠그⁠레⁠이⁠션⁠은 시⁠작⁠되⁠지 않⁠아⁠요.';
 
   @override
   String get migrationStatusUnavailableHint =>
-      '홈⁠으⁠로 돌⁠아⁠가 동⁠기⁠화⁠가 갱⁠신⁠된 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요. 이⁠미 진⁠행 중⁠인 이⁠전⁠이 있⁠다⁠면 저⁠장⁠된 상⁠태⁠를 읽⁠을 수 있⁠게 된 후 Vizor⁠가 이⁠어⁠서 진⁠행⁠해⁠요.';
+      '홈⁠으⁠로 돌⁠아⁠가 동⁠기⁠화⁠가 갱⁠신⁠된 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요. 이⁠미 진⁠행 중⁠인 마⁠이⁠그⁠레⁠이⁠션⁠이 있⁠다⁠면 저⁠장⁠된 상⁠태⁠를 읽⁠을 수 있⁠게 된 후 Vizor⁠가 이⁠어⁠서 진⁠행⁠해⁠요.';
 
   @override
-  String get migrationStatusUnavailableTitle => '이⁠전 상⁠태⁠를 확⁠인⁠할 수 없⁠어⁠요';
+  String get migrationStatusUnavailableTitle =>
+      '마⁠이⁠그⁠레⁠이⁠션 상⁠태⁠를 확⁠인⁠할 수 없⁠어⁠요';
 
   @override
   String get migrationSummaryCurrentBlock => '현⁠재 블⁠록';
@@ -5715,7 +5798,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationSummaryEstCompletion => '예⁠상 완⁠료';
 
   @override
-  String get migrationSummaryLeftToMigrate => '남⁠은 이⁠전 금⁠액';
+  String get migrationSummaryLeftToMigrate => '남⁠은 마⁠이⁠그⁠레⁠이⁠션 금⁠액';
 
   @override
   String get migrationSummaryOverallProgress => '전⁠체 진⁠행⁠률';
@@ -5735,10 +5818,11 @@ class AppLocalizationsKo extends AppLocalizations {
       '업⁠그⁠레⁠이⁠드 전⁠에 서⁠명⁠한 전⁠송⁠은 업⁠그⁠레⁠이⁠드 후⁠에 보⁠낼 수 없⁠어⁠요. 자⁠금⁠은 안⁠전⁠해⁠요.';
 
   @override
-  String get migrationUpgradeStopMoveRemainingLabel => '남⁠은 잔⁠액 이⁠전⁠하⁠기';
+  String get migrationUpgradeStopMoveRemainingLabel =>
+      '남⁠은 잔⁠액 마⁠이⁠그⁠레⁠이⁠션⁠하⁠기';
 
   @override
-  String get migrationUpgradeStopMovedLabel => 'Ironwood⁠로 이⁠전⁠됨';
+  String get migrationUpgradeStopMovedLabel => 'Ironwood⁠로 마⁠이⁠그⁠레⁠이⁠션⁠됨';
 
   @override
   String get migrationUpgradeStopRemainingLabel => '아⁠직 Orchard⁠에 있⁠음';
@@ -5757,17 +5841,18 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get nativeIronwoodContinueBody =>
-      '다⁠음 이⁠전 거⁠래⁠를 준⁠비⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+      '다⁠음 마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠를 준⁠비⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
 
   @override
-  String get nativeIronwoodContinueTitle => 'Ironwood 이⁠전⁠을 계⁠속⁠하⁠세⁠요';
+  String get nativeIronwoodContinueTitle => 'Ironwood 마⁠이⁠그⁠레⁠이⁠션⁠을 계⁠속⁠하⁠세⁠요';
 
   @override
   String get nativeIronwoodNeedsAttentionBody =>
-      '이⁠전⁠을 확⁠인⁠하⁠고 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션⁠을 확⁠인⁠하⁠고 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
 
   @override
-  String get nativeIronwoodNeedsAttentionTitle => 'Ironwood 이⁠전 확⁠인⁠이 필⁠요⁠해⁠요';
+  String get nativeIronwoodNeedsAttentionTitle =>
+      'Ironwood 마⁠이⁠그⁠레⁠이⁠션 확⁠인⁠이 필⁠요⁠해⁠요';
 
   @override
   String get nativeLedgerApduArgumentsInvalid =>
@@ -5823,7 +5908,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get nativeMigrationNeedsAttentionTitle => '이⁠전 확⁠인⁠이 필⁠요⁠해⁠요';
+  String get nativeMigrationNeedsAttentionTitle => '마⁠이⁠그⁠레⁠이⁠션 확⁠인⁠이 필⁠요⁠해⁠요';
 
   @override
   String get nativeMigrationStoppedByUpgradeBody =>
@@ -5831,17 +5916,17 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get nativeMigrationStoppedByUpgradeTitle =>
-      '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 이⁠전⁠이 중⁠단⁠됐⁠어⁠요';
+      '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 마⁠이⁠그⁠레⁠이⁠션⁠이 중⁠단⁠됐⁠어⁠요';
 
   @override
   String get nativeMigrationTransfersSentBody =>
-      '예⁠약⁠된 이⁠전 거⁠래⁠를 모⁠두 제⁠출⁠했⁠어⁠요. 상⁠태⁠를 확⁠인⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+      '예⁠약⁠된 마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠를 모⁠두 제⁠출⁠했⁠어⁠요. 상⁠태⁠를 확⁠인⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
 
   @override
-  String get nativeMigrationTransfersSentTitle => '이⁠전 거⁠래⁠를 보⁠냈⁠어⁠요';
+  String get nativeMigrationTransfersSentTitle => '마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠를 보⁠냈⁠어⁠요';
 
   @override
-  String get nativeMigrationUpdatesTitle => '이⁠전 업⁠데⁠이⁠트';
+  String get nativeMigrationUpdatesTitle => '마⁠이⁠그⁠레⁠이⁠션 업⁠데⁠이⁠트';
 
   @override
   String get nativeOpenToContinue => '계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
@@ -5858,14 +5943,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get nativePrepCheckingConfirmations => '거⁠래 확⁠인 수⁠를 확⁠인⁠하⁠고 있⁠어⁠요';
 
   @override
-  String get nativePrepCompleteTitle => '이⁠전 준⁠비⁠가 완⁠료⁠됐⁠어⁠요';
+  String get nativePrepCompleteTitle => '마⁠이⁠그⁠레⁠이⁠션 준⁠비⁠가 완⁠료⁠됐⁠어⁠요';
 
   @override
   String get nativePrepConfirmedTitle => '준⁠비 거⁠래⁠가 확⁠인⁠됐⁠어⁠요';
 
   @override
   String get nativePrepOpenToContinueMigration =>
-      '이⁠전⁠을 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요';
+      '마⁠이⁠그⁠레⁠이⁠션⁠을 계⁠속⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요';
 
   @override
   String get nativePrepOpenToResume => '다⁠시 시⁠작⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요';
@@ -5887,17 +5972,51 @@ class AppLocalizationsKo extends AppLocalizations {
   String get nativePrepStoppedTitle => '준⁠비⁠가 중⁠단⁠됐⁠어⁠요';
 
   @override
-  String get nativePrepTaskTitle => '이⁠전⁠을 준⁠비⁠하⁠고 있⁠어⁠요';
+  String get nativePrepTaskTitle => '마⁠이⁠그⁠레⁠이⁠션⁠을 준⁠비⁠하⁠고 있⁠어⁠요';
 
   @override
   String get nativePrepTrackingPausedBody =>
-      '이⁠전 준⁠비⁠를 다⁠시 시⁠작⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
+      '마⁠이⁠그⁠레⁠이⁠션 준⁠비⁠를 다⁠시 시⁠작⁠하⁠려⁠면 Vizor⁠를 열⁠어 주⁠세⁠요.';
 
   @override
   String get nativePrepTrackingPausedTitle => '준⁠비 추⁠적⁠이 일⁠시 중⁠지⁠됐⁠어⁠요';
 
   @override
-  String get nativePrepUpdatesTitle => '이⁠전 준⁠비 업⁠데⁠이⁠트';
+  String get nativePrepUpdatesTitle => '마⁠이⁠그⁠레⁠이⁠션 준⁠비 업⁠데⁠이⁠트';
+
+  @override
+  String get nativeTorUpdateBody =>
+      'Tor⁠로 업⁠데⁠이⁠트⁠하⁠면 시⁠간⁠이 더 걸⁠릴 수 있⁠어⁠요. Tor⁠를 끄⁠면 Vizor⁠의 모⁠든 네⁠트⁠워⁠크 요⁠청⁠이 직⁠접 연⁠결⁠로 바⁠뀌⁠어⁠요.';
+
+  @override
+  String get nativeTorUpdateCancel => '취⁠소';
+
+  @override
+  String get nativeTorUpdateClose => '닫⁠기';
+
+  @override
+  String get nativeTorUpdateContinue => 'Tor⁠로 계⁠속';
+
+  @override
+  String get nativeTorUpdateDisableFailedBody =>
+      'Tor⁠가 아⁠직 켜⁠져 있⁠어⁠요. 설⁠정⁠에⁠서 끈 다⁠음 업⁠데⁠이⁠트⁠를 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get nativeTorUpdateDisableFailedTitle => 'Tor⁠를 끄⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get nativeTorUpdateRestartFailedBody =>
+      'Tor⁠가 꺼⁠졌⁠어⁠요. 직⁠접 연⁠결⁠로 계⁠속⁠하⁠려⁠면 업⁠데⁠이⁠트⁠를 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get nativeTorUpdateRestartFailedTitle =>
+      '업⁠데⁠이⁠트⁠를 다⁠시 시⁠작⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get nativeTorUpdateTitle => '이⁠번 업⁠데⁠이⁠트⁠에 Tor⁠를 사⁠용⁠할⁠까⁠요?';
+
+  @override
+  String get nativeTorUpdateTurnOff => 'Tor 끄⁠고 업⁠데⁠이⁠트';
 
   @override
   String get navActivity => '활⁠동';
@@ -5977,10 +6096,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingAddressTypesSubtitle =>
-      'Zcash⁠에⁠는 두 가⁠지 주⁠소 유⁠형⁠이 있⁠어⁠요.\n하⁠나⁠는 프⁠라⁠이⁠버⁠시⁠용, 하⁠나⁠는 투⁠명⁠성⁠용⁠이⁠에⁠요.';
-
-  @override
-  String get onboardingAddressTypesSubtitleMobile =>
       'Zcash⁠에⁠는 두 가⁠지 주⁠소 유⁠형⁠이 있⁠어⁠요.\n하⁠나⁠는 프⁠라⁠이⁠버⁠시⁠용, 하⁠나⁠는 투⁠명⁠성⁠용⁠이⁠에⁠요.';
 
   @override
@@ -6144,6 +6259,10 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get onboardingDuplicateKeystoneAccount =>
       '이 Keystone 계⁠정⁠은 이⁠미 지⁠갑⁠에 있⁠어⁠요.';
+
+  @override
+  String get onboardingDuplicateLedgerAccount =>
+      '이 Ledger 계⁠정⁠은 이⁠미 지⁠갑⁠에 있⁠어⁠요.';
 
   @override
   String get onboardingEditBip39Passphrase => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈 수⁠정';
@@ -6517,6 +6636,10 @@ class AppLocalizationsKo extends AppLocalizations {
       'Vizor⁠가 시⁠작 상⁠태⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
 
   @override
+  String get onboardingSubmitFailed =>
+      '이 단⁠계⁠를 마⁠치⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
   String get onboardingTellMeHowZcashWorks => 'Zcash 작⁠동 방⁠식 알⁠아⁠보⁠기';
 
   @override
@@ -6572,6 +6695,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingUnlockWelcomeBack => '다⁠시 오⁠셨⁠네⁠요';
+
+  @override
+  String get onboardingWalletLinkNetworkMismatch =>
+      '이 지⁠갑 링⁠크⁠는 다⁠른 Zcash 네⁠트⁠워⁠크⁠용⁠이⁠에⁠요.';
 
   @override
   String get onboardingWelcome => '시⁠작 화⁠면';
@@ -6991,6 +7118,31 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get paymentLinkBatchQuoteNotReady =>
       '사⁠용 가⁠능⁠한 잔⁠액⁠을 아⁠직 불⁠러⁠오⁠는 중⁠이⁠에⁠요. 지⁠갑 동⁠기⁠화 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchRejectedKeystoneSapling =>
+      '이 그⁠룹⁠은 Keystone⁠이 서⁠명⁠할 수 없⁠는 예⁠전 Sapling 자⁠금⁠을 써⁠야 해⁠요. 카⁠드 수⁠를 줄⁠이⁠거⁠나 카⁠드⁠당 금⁠액⁠을 낮⁠춰 보⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchRejectedKeystoneSignatureLimit =>
+      '이 그⁠룹⁠은 Keystone⁠이 한 번⁠에 서⁠명⁠할 수 있⁠는 것⁠보⁠다 많⁠은 입⁠력⁠이 필⁠요⁠해⁠요. 카⁠드 수⁠를 줄⁠이⁠거⁠나 카⁠드⁠당 금⁠액⁠을 낮⁠춰 보⁠세⁠요.';
+
+  @override
+  String paymentLinkBatchRejectedLedgerRecipientLimit(String max) {
+    return '이 그⁠룹⁠의 차⁠폐 수⁠신⁠자⁠가 Ledger⁠가 표⁠시⁠할 수 있⁠는 수(최⁠대 $max⁠명)보⁠다 많⁠아⁠요. 카⁠드 수⁠를 줄⁠이⁠거⁠나 카⁠드⁠당 금⁠액⁠을 낮⁠춰 보⁠세⁠요.';
+  }
+
+  @override
+  String get paymentLinkBatchRejectedLedgerSapling =>
+      '이 그⁠룹⁠은 Ledger⁠가 서⁠명⁠할 수 없⁠는 예⁠전 Sapling 자⁠금⁠을 써⁠야 해⁠요. 카⁠드 수⁠를 줄⁠이⁠거⁠나 카⁠드⁠당 금⁠액⁠을 낮⁠춰 보⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchRejectedLedgerTooLarge =>
+      '이 그⁠룹⁠은 Ledger⁠가 서⁠명⁠하⁠기⁠에 너⁠무 커⁠요. 카⁠드 수⁠를 줄⁠이⁠거⁠나 카⁠드⁠당 금⁠액⁠을 낮⁠춰 보⁠세⁠요.';
+
+  @override
+  String get paymentLinkBatchRejectedNotOneTransaction =>
+      '이 그⁠룹⁠은 거⁠래 한 번⁠으⁠로 충⁠전⁠할 수 없⁠어⁠요. 카⁠드 수⁠를 줄⁠이⁠거⁠나 카⁠드⁠당 금⁠액⁠을 낮⁠춰 보⁠세⁠요.';
 
   @override
   String get paymentLinkBatchRemoveCard => '카⁠드 한 장 빼⁠기';
@@ -8047,7 +8199,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get paymentUriMigrationSendGate =>
-      '요⁠청 링⁠크⁠를 열⁠기 전⁠에 Ironwood 이⁠전⁠을 마⁠쳐 주⁠세⁠요.';
+      '요⁠청 링⁠크⁠를 열⁠기 전⁠에 Ironwood 마⁠이⁠그⁠레⁠이⁠션⁠을 마⁠쳐 주⁠세⁠요.';
 
   @override
   String get paymentUriNoWallet =>
@@ -8123,11 +8275,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get receiveCopyTransparentAddress => '투⁠명 주⁠소 복⁠사';
-
-  @override
-  String receiveErrorWithDetails(String message, String details) {
-    return '$message\n세⁠부 정⁠보: $details';
-  }
 
   @override
   String get receiveGenerateNewShieldedAddress => '새 차⁠폐 주⁠소 만⁠들⁠기';
@@ -8264,9 +8411,17 @@ class AppLocalizationsKo extends AppLocalizations {
   String get receiveShareTransparentAddress => '투⁠명 주⁠소 공⁠유';
 
   @override
+  String get receiveShieldedAddressLoadFailed =>
+      '차⁠폐 주⁠소⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
   String receiveTitle(String ticker) {
     return '$ticker 받⁠기';
   }
+
+  @override
+  String get receiveTransparentAddressLoadFailed =>
+      '투⁠명 주⁠소⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get secretPassphraseCopy => '복⁠구 문⁠구 복⁠사';
@@ -8636,7 +8791,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendPaymentRequestCheckUpgradeScheduleChanged =>
-      '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 이⁠전 일⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 계⁠획⁠을 확⁠인⁠한 다⁠음 다⁠시 시⁠작⁠해 주⁠세⁠요.';
+      '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 마⁠이⁠그⁠레⁠이⁠션 일⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 계⁠획⁠을 확⁠인⁠한 다⁠음 다⁠시 시⁠작⁠해 주⁠세⁠요.';
 
   @override
   String get sendPaymentRequestClose => '결⁠제 요⁠청 닫⁠기';
@@ -9343,7 +9498,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsPrivateQueriesIosNote =>
-      '켜⁠져 있⁠는 동⁠안⁠에⁠는 Vizor⁠가 열⁠려 있⁠을 때⁠만 이⁠전 거⁠래⁠의 확⁠인 수⁠를 점⁠검⁠해⁠요.';
+      '켜⁠져 있⁠는 동⁠안⁠에⁠는 Vizor⁠가 열⁠려 있⁠을 때⁠만 마⁠이⁠그⁠레⁠이⁠션 거⁠래⁠의 확⁠인 수⁠를 점⁠검⁠해⁠요.';
 
   @override
   String get settingsPrivateQueriesLabel => '비⁠공⁠개 조⁠회';
@@ -9449,10 +9604,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsSeedScreenshotBodyLead => '스⁠크⁠린⁠샷⁠은 안⁠전⁠하⁠지 않⁠아⁠요';
 
   @override
-  String get settingsSeedScreenshotBodyRest =>
-      '. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
-
-  @override
   String get settingsSeedScreenshotTitle => '복⁠구 문⁠구⁠를 스⁠크⁠린⁠샷⁠으⁠로 남⁠기⁠지 마⁠세⁠요';
 
   @override
@@ -9502,7 +9653,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsTorDescConnectedIos =>
-      'Vizor⁠의 네⁠트⁠워⁠크 요⁠청⁠은 Tor⁠를 거⁠쳐⁠요. Ironwood 비⁠공⁠개 이⁠전⁠은 Vizor⁠가 닫⁠혀 있⁠는 동⁠안 직⁠접 연⁠결⁠을 사⁠용⁠해⁠요. 다⁠른 앱⁠에⁠서 연 링⁠크⁠는 해⁠당 앱⁠의 네⁠트⁠워⁠크 설⁠정⁠을 따⁠라⁠요.';
+      'Vizor⁠의 네⁠트⁠워⁠크 요⁠청⁠은 Tor⁠를 거⁠쳐⁠요. Ironwood 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠은 Vizor⁠가 닫⁠혀 있⁠는 동⁠안 직⁠접 연⁠결⁠을 사⁠용⁠해⁠요. 다⁠른 앱⁠에⁠서 연 링⁠크⁠는 해⁠당 앱⁠의 네⁠트⁠워⁠크 설⁠정⁠을 따⁠라⁠요.';
 
   @override
   String get settingsTorDescConnectedNoUpdates =>
@@ -9570,7 +9721,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsTorGeneralIosSuffix =>
-      ' Ironwood 비⁠공⁠개 이⁠전⁠은 Vizor⁠가 닫⁠혀 있⁠는 동⁠안 직⁠접 연⁠결⁠돼⁠요.';
+      ' Ironwood 비⁠공⁠개 마⁠이⁠그⁠레⁠이⁠션⁠은 Vizor⁠가 닫⁠혀 있⁠는 동⁠안 직⁠접 연⁠결⁠돼⁠요.';
 
   @override
   String get settingsTorRetryUpdates => '업⁠데⁠이⁠트 다⁠시 시⁠도';
@@ -10719,9 +10870,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapReviewStartingLockingQuote => '견⁠적 고⁠정 중';
 
   @override
-  String get swapReviewStartingPaying => '결⁠제 중';
-
-  @override
   String get swapReviewStartingSending => '보⁠내⁠는 중';
 
   @override
@@ -10971,6 +11119,24 @@ class AppLocalizationsKo extends AppLocalizations {
   String get votingConfigAddCustomSource => '사⁠용⁠자 지⁠정 소⁠스 추⁠가';
 
   @override
+  String get votingConfigChecksumFormat => 'checksum⁠은 소⁠문⁠자 hex 64⁠자⁠여⁠야 해⁠요.';
+
+  @override
+  String get votingConfigChecksumKeyEncoded =>
+      'checksum 매⁠개⁠변⁠수 이⁠름⁠은 인⁠코⁠딩⁠하⁠지 말⁠고 checksum⁠으⁠로 써 주⁠세⁠요.';
+
+  @override
+  String get votingConfigChecksumPrefix => 'checksum⁠은 sha256:으⁠로 시⁠작⁠해⁠야 해⁠요.';
+
+  @override
+  String get votingConfigChecksumRepeated =>
+      'checksum 매⁠개⁠변⁠수⁠는 한 번⁠만 넣⁠어 주⁠세⁠요.';
+
+  @override
+  String get votingConfigChecksumRequired =>
+      'URL⁠에 checksum 매⁠개⁠변⁠수⁠를 추⁠가⁠해 주⁠세⁠요.';
+
+  @override
   String get votingConfigCloseSettings => '투⁠표 설⁠정 닫⁠기';
 
   @override
@@ -11067,6 +11233,16 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get votingConfigUrlCopied => '소⁠스 URL⁠을 복⁠사⁠했⁠어⁠요.';
+
+  @override
+  String get votingConfigUrlHasFragment => 'URL⁠에 프⁠래⁠그⁠먼⁠트(#…)를 넣⁠을 수 없⁠어⁠요.';
+
+  @override
+  String get votingConfigUrlHasUserInfo =>
+      'URL⁠에 사⁠용⁠자 이⁠름⁠이⁠나 비⁠밀⁠번⁠호⁠를 넣⁠을 수 없⁠어⁠요.';
+
+  @override
+  String get votingConfigUrlNotHttps => 'HTTPS URL⁠을 입⁠력⁠해 주⁠세⁠요.';
 
   @override
   String get votingConfigValidating => '확⁠인 중...';

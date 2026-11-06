@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show immutable;
 
+import '../../../../main.dart' show log;
 import '../../../core/l10n/l10n.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../providers/account_provider.dart';
@@ -46,12 +47,17 @@ const kDuplicateKeystoneAccountImportErrorMessage =
     'This Keystone account is already in your wallet.'; // l10n-ignore: context-free producer
 const kDuplicateAccountImportErrorMessage =
     'This account is already in your wallet.'; // l10n-ignore: context-free producer
+const kDuplicateLedgerAccountImportErrorMessage =
+    'This Ledger account is already in your wallet.'; // l10n-ignore: Rust text matched exactly
 
 String onboardingSubmitErrorMessage(AppLocalizations l10n, Object error) {
   if (error is WalletCreationCurrentBlockHeightException) {
     return l10n.onboardingBlockHeightRequired;
   }
   if (error is PasswordPolicyViolation) return error.issue.message(l10n);
+  if (error is WalletLinkNetworkMismatchException) {
+    return l10n.onboardingWalletLinkNetworkMismatch;
+  }
 
   const exceptionPrefix = 'Exception: ';
   var message = error.toString();
@@ -62,7 +68,7 @@ String onboardingSubmitErrorMessage(AppLocalizations l10n, Object error) {
   if (anyhowMatch != null) {
     message = anyhowMatch.group(1)!;
   }
-  // Rust words these two duplicates; the matching keeps their English.
+  // Rust words these duplicates; the matching keeps their English.
   if (message == kDuplicateSecretPassphraseImportErrorMessage ||
       _isAccountCollisionMessage(message)) {
     return l10n.onboardingDuplicateAccount;
@@ -70,7 +76,12 @@ String onboardingSubmitErrorMessage(AppLocalizations l10n, Object error) {
   if (message == kDuplicateKeystoneAccountImportErrorMessage) {
     return l10n.onboardingDuplicateKeystoneAccount;
   }
-  return message;
+  if (message == kDuplicateLedgerAccountImportErrorMessage) {
+    return l10n.onboardingDuplicateLedgerAccount;
+  }
+  // The inline message has one line, so the cause goes to the log only.
+  log('Onboarding submit failed: $message');
+  return l10n.onboardingSubmitFailed;
 }
 
 bool _isAccountCollisionMessage(String message) {

@@ -18,6 +18,7 @@ import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_hardware_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_hardware_signing_service.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
 
 class SwapKeystoneSigningOverlay extends ConsumerStatefulWidget {
@@ -262,7 +263,11 @@ class _SwapKeystoneSigningOverlayState
           _phase = _SwapKeystonePhase.failed;
           _error =
               networkUpgradeHoldMessage(context.l10n, result.message ?? '') ??
-              result.message ??
+              broadcastResultText(
+                context.l10n,
+                notices: result.notices,
+                message: result.message,
+              ) ??
               context.l10n.swapKeystoneStatusUncertain;
         });
         return;
@@ -277,6 +282,7 @@ class _SwapKeystoneSigningOverlayState
         txHash: result.txid,
         status: result.status,
         message: result.message,
+        notices: result.notices,
       );
       await widget.onDepositBroadcast(broadcast);
     } catch (e, st) {

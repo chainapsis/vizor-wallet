@@ -409,7 +409,7 @@ class SwapReviewPageActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final startingLabel = payMode
-        ? context.l10n.swapReviewStartingPaying
+        ? context.l10n.commonPayingButton
         : sendsZec
         ? context.l10n.swapReviewStartingSending
         : context.l10n.swapReviewStartingLockingQuote;

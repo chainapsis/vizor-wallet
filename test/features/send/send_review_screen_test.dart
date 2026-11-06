@@ -1011,9 +1011,11 @@ void main() {
   testWidgets('Keystone signature limit fails before showing a QR', (
     tester,
   ) async {
-    rustApi.prepareBatchError = StateError(
-      'Keystone batch signing supports at most 96 spend signatures per '
-      'transaction; this transaction requires 97',
+    rustApi.prepareBatchError = const ApiWalletError(
+      code: ApiWalletErrorCode.keystoneBatchSignatureLimit,
+      message:
+          'Keystone batch signing supports at most 96 spend signatures per '
+          'transaction; this transaction requires 97',
     );
 
     await _setDesktopViewport(tester);

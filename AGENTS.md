@@ -210,6 +210,10 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
 - Every `app_en.arb` key needs an `@key` description
   (`required-resource-attributes`). Never translate Rust error strings or
   strings that code matches with `.contains` or uses as keys.
+- Broadcast results carry `notices`, Rust's English `message` as sentences;
+  show them with `broadcastResultText`. A reworded sentence changes Rust, its
+  `broadcastNotice*` key and `test/fixtures/broadcast_notices_en.json`
+  together (`docs/i18n/rust-messages.md`).
 - `test/l10n/l10n_gates_test.dart` checks sorted keys, placeholders, URLs,
   numbers and `lib/l10n/glossary.yaml`, and fails when a path listed in
   `tool/l10n/migrated_dirs.txt` (all of `lib/src`) gains a hardcoded string.
@@ -225,8 +229,9 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
 - Copy that Swift or Kotlin draws (notifications, background-task captions,
   system prompts, native error messages Dart shows) uses `native*` ARB keys.
   `fvm dart run tool/l10n/native_strings.dart` regenerates
-  `ios/Runner/NativeStrings.swift` and `android/.../NativeStrings.kt`; never
-  edit them by hand. `NativeLanguageSync` in the app root sends the shown
+  `ios/Runner/NativeStrings.swift` (also compiled into the macOS target) and
+  `android/.../NativeStrings.kt`; never edit them by hand.
+  `NativeLanguageSync` in the app root sends the shown
   language over `com.zcash.wallet/native_strings`, and native code stores it
   for background work (English until it arrives). Do not add `.lproj`,
   `values-<lang>` or `localeConfig` before a language ships; the release
@@ -234,8 +239,14 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
 - `LocaleTypography` (applied in every app root's `builder`) gives Korean and
   Chinese UI their own CJK font fallback. Without it the engine picks Han
   glyphs by the OS language. A `TextPainter` built from a token style misses
-  the fallback; merge with `DefaultTextStyle.of(context).style` when
-  measurement must match rendering.
+  the fallback; measure with `withLocaleFontFallback(context, style)`.
+- Code never branches on a translated label (`status == 'Completed'`); give
+  the data a kind. The gate test rejects such comparisons in `lib/src`.
+- Check ko/zh screens with `scripts/figma-compare.sh widget --locale ko` or
+  the layout scan over every scenario ("Checking a language on screen" in
+  `docs/i18n/README.md`); `scripts/fetch-capture-fonts.sh` fetches the CJK
+  test fonts once. Fixed-height boxes that fit English exactly overflow in
+  CJK, so prefer minimum heights.
 
 ## Mainnet Block-Time Table
 
@@ -357,9 +368,9 @@ Ledger accounts keep the decorative dot style.
 - **Exception**: sidebar entries and screen titles may use Title Case (e.g.
   onboarding step labels `Secret Passphrase`, `Wallet Birthday Height`) — do
   not sentence-case them in copy sweeps.
-- Existing rationale and full audit are in `qa-copy-review.csv` and
-  `copy-review-20260528-1554.csv` at the repo root. Reference these before
-  introducing new copy in this project.
+- English copy lives in `lib/l10n/app_en.arb`, where each key's description
+  says where it appears. Check `lib/l10n/glossary.yaml` for the shared terms
+  before introducing new copy.
 - When editing existing copy, also update widgetbook fixtures
   (`lib/widgetbook/*.dart`) and tests (`test/`) that assert on the literal
   string — `find.text(...)` matchers, `expectedNextAction` fields, and

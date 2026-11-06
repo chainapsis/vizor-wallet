@@ -3624,16 +3624,19 @@ Widget _buildMobileIronwoodMigrationUseCase({
   };
   return ProviderScope(
     child: _MobilePreviewFrame(
-      child: MobileIronwoodMigrationFlowScreen(
-        step: step,
-        previewData: _ironwoodMigrationFlowData(
-          zatoshi: zatoshi,
-          accountName: accountName,
+      // The back scope asks the router whether it can pop.
+      child: _PreviewRouterHarness(
+        child: MobileIronwoodMigrationFlowScreen(
+          step: step,
+          previewData: _ironwoodMigrationFlowData(
+            zatoshi: zatoshi,
+            accountName: accountName,
+          ),
+          previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
+          previewImmediatePlan: previewImmediatePlan,
+          previewSurface: previewSurface,
+          privateMigrationSupported: privateMigrationSupported,
         ),
-        previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
-        previewImmediatePlan: previewImmediatePlan,
-        previewSurface: previewSurface,
-        privateMigrationSupported: privateMigrationSupported,
       ),
     ),
   );
@@ -5594,6 +5597,35 @@ class _MobileMigrationScheduleHarnessState
       ],
     );
   }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Router.withConfig(config: _router);
+}
+
+/// Hosts [child] as the only route, so screens that read the router build;
+/// any navigation lands on a placeholder naming the destination.
+class _PreviewRouterHarness extends StatefulWidget {
+  const _PreviewRouterHarness({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_PreviewRouterHarness> createState() => _PreviewRouterHarnessState();
+}
+
+class _PreviewRouterHarnessState extends State<_PreviewRouterHarness> {
+  late final GoRouter _router = GoRouter(
+    initialLocation: '/preview',
+    routes: [GoRoute(path: '/preview', builder: (_, _) => widget.child)],
+    errorBuilder: (_, state) =>
+        _PreviewRoutePlaceholder(label: state.uri.toString()),
+  );
 
   @override
   void dispose() {

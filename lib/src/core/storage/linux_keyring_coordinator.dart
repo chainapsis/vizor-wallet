@@ -134,7 +134,7 @@ class LinuxKeyringCoordinator extends ChangeNotifier {
           // Only KeyringLocked positively rejects a mutation. Other upstream
           // errors do not identify whether a write reached Secret Service.
           // Do not replay a write or claim its result can be reconciled here.
-          if (!isRead && error.code != 'KeyringLocked') {
+          if (!isRead && phase != LinuxKeyringPhase.keyringLocked) {
             _writeOutcomeUnknown = true;
             _setState(
               const LinuxKeyringState(phase: LinuxKeyringPhase.outcomeUnknown),

@@ -18,6 +18,7 @@ import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../core/l10n/l10n.dart';
 
@@ -242,13 +243,18 @@ String shieldPcztBroadcastStatusMessage(
 ) {
   final upgradeHold = networkUpgradeHoldMessage(l10n, result.message ?? '');
   if (upgradeHold != null) return upgradeHold;
+  final detail = broadcastResultText(
+    l10n,
+    notices: result.notices,
+    message: result.message,
+  );
   if (result.status == 'broadcast_unknown') {
-    return result.message ?? l10n.homeShieldBroadcastUnknown;
+    return detail ?? l10n.homeShieldBroadcastUnknown;
   }
   if (result.status == 'broadcasted_storage_failed') {
-    return result.message ?? l10n.homeShieldBroadcastNotStored;
+    return detail ?? l10n.homeShieldBroadcastNotStored;
   }
-  return result.message ?? l10n.homeShieldStatusUncertain;
+  return detail ?? l10n.homeShieldStatusUncertain;
 }
 
 /// Whether a hardware broadcast failed only because private recovery has not

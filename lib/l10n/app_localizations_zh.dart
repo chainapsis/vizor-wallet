@@ -947,6 +947,93 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String broadcastNoticeBroadcastFailed(
+    String sent,
+    String total,
+    String txids,
+    String detail,
+  ) {
+    return '已发送 $sent/$total 笔交易后广播失败（$txids）。错误：$detail';
+  }
+
+  @override
+  String broadcastNoticeBroadcastStorageFailed(String txid, String detail) {
+    return '广播成功（txid=$txid），但本地保存失败。$detail。交易已在网络上；请在区块浏览器中确认，在下次同步核对余额之前，请勿再次发送。';
+  }
+
+  @override
+  String broadcastNoticeDatabaseUnavailable(String detail) {
+    return '在本地创建交易后，无法打开数据库进行广播：$detail';
+  }
+
+  @override
+  String broadcastNoticeExpired(
+    String txid,
+    String expiryHeight,
+    String chainHeight,
+  ) {
+    return '硬件签名请求在广播前已过期：txid=$txid，过期区块高度 $expiryHeight，当前区块高度 $chainHeight。请重新开始签名，以便 Vizor 构建新的交易。';
+  }
+
+  @override
+  String broadcastNoticeRawTransactionUnavailable(String txid, String detail) {
+    return '在本地创建交易后，无法读取 $txid 的原始交易：$detail';
+  }
+
+  @override
+  String broadcastNoticeResponseUnavailable(String txid, String detail) {
+    return '未能获取 txid=$txid 的广播响应（$detail）。交易可能已在网络上。在同步或区块浏览器确认此交易是否被接受之前，请勿再次发送。';
+  }
+
+  @override
+  String broadcastNoticeRetentionFailed(String detail) {
+    return '保留已用资金的锁定也失败了：$detail。';
+  }
+
+  @override
+  String get broadcastNoticeRetryingLocally => '已保存在本地，同步期间会自动重试，直至确认或过期。';
+
+  @override
+  String broadcastNoticeRouteUnavailable(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return '无法为第 $index 笔交易（共 $total 笔）打开广播通道，未保存：$detail';
+  }
+
+  @override
+  String broadcastNoticeStorageFailed(String detail) {
+    return '交易可能已在网络上，但本地保存失败：$detail。在同步或区块浏览器确认结果之前，请勿再次发送。';
+  }
+
+  @override
+  String get broadcastNoticeStoredLocally => '已发送或可能已发送的交易已保存在本地，以便恢复。';
+
+  @override
+  String broadcastNoticeTrackingFailed(String detail) {
+    return '本地追踪也失败了：$detail。重试此发送前，请先查看区块浏览器。';
+  }
+
+  @override
+  String broadcastNoticeTransactionRejected(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return '第 $index 笔交易（共 $total 笔）被拒绝，未保存：$detail';
+  }
+
+  @override
+  String broadcastNoticeTransactionUnknown(
+    String index,
+    String total,
+    String detail,
+  ) {
+    return '第 $index 笔交易（共 $total 笔）的广播结果未知：$detail';
+  }
+
+  @override
   String get capsLockWarning => '大写锁定已开启';
 
   @override
@@ -1187,6 +1274,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonEnterAmountInUsd => '以 USD 输入金额';
 
   @override
+  String commonErrorWithDetails(String message, String details) {
+    return '$message\n详细信息：$details';
+  }
+
+  @override
   String get commonFailed => '失败';
 
   @override
@@ -1342,9 +1434,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonOnAMacYouCanUse => '在 Mac 上，你也可以使用连续互通相机，改用 iPhone 进行扫描。';
 
   @override
-  String get commonOnYourKeystone => 'on your Keystone,';
-
-  @override
   String get commonOpenSettings => '打开设置';
 
   @override
@@ -1356,6 +1445,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonPayInsufficientZec => '你的 ZEC 不足以完成此支付。请尝试较小的金额。';
+
+  @override
+  String get commonPayingButton => '支付中';
 
   @override
   String get commonPaymentFailed => '支付失败';
@@ -1590,12 +1682,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonSyncing => '正在同步';
-
-  @override
-  String get commonTap => 'Tap';
-
-  @override
-  String get commonThenScanThisQRCode => 'then scan this QR code';
 
   @override
   String get commonThisQRCodeCouldNotBe => '无法将此二维码解码为 Keystone 签名。';
@@ -2264,10 +2350,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String keystoneFirmwareUpdate(String link) {
     return '请更新到最新的 Keystone 固件：$link';
   }
-
-  @override
-  String get keystoneFirmwareUpdatePrefix =>
-      'Update to the latest Keystone firmware at ';
 
   @override
   String get keystoneImReadyNow => '我已准备好';
@@ -3807,16 +3889,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationImmediateTradeoffEmphasis =>
-      'easier to associate with your wallet.';
-
-  @override
   String get migrationImmediateTradeoffHighlight => '更容易与你的钱包关联';
-
-  @override
-  String migrationImmediateTradeoffLead(String amount) {
-    return 'Crosses in one visible step — your $amount and timing are ';
-  }
 
   @override
   String get migrationImmediateTradeoffLedger => '\nLedger 账户无法使用私密迁移。';
@@ -4265,10 +4338,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationMobileFastPlanUnavailable => '不可用';
-
-  @override
-  String get migrationMobileFastPrivacyBodyHighlight =>
-      'easier to associate with your wallet';
 
   @override
   String get migrationMobileFastPrivacyConsiderPrivate => '建议选择私密迁移选项。';
@@ -4752,9 +4821,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileStatusNotesLead => 'Migration ';
-
-  @override
   String migrationMobileStatusNotesTitle(String notes) {
     return '迁移 $notes';
   }
@@ -4783,13 +4849,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileWaitKeystoneAgain => '这些确认完成后，还需要再次在 Keystone 上批准。';
 
   @override
-  String get migrationMobileWaitLoopBatch => ' the batch of transactions';
-
-  @override
   String get migrationMobileWaitLoopCaption => '需重复多次，\n等待可能需要 2–10\n小时';
-
-  @override
-  String get migrationMobileWaitLoopForWindow => ' for the window';
 
   @override
   String get migrationMobileWaitLoopSign => '签署';
@@ -5571,6 +5631,38 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nativePrepUpdatesTitle => '迁移准备动态';
 
   @override
+  String get nativeTorUpdateBody =>
+      '通过 Tor 更新可能需要更长时间。关闭 Tor 后，Vizor 的所有网络请求都会改为直接连接。';
+
+  @override
+  String get nativeTorUpdateCancel => '取消';
+
+  @override
+  String get nativeTorUpdateClose => '关闭';
+
+  @override
+  String get nativeTorUpdateContinue => '继续使用 Tor';
+
+  @override
+  String get nativeTorUpdateDisableFailedBody =>
+      'Tor 仍处于开启状态。请在设置中将其关闭，然后再次检查更新。';
+
+  @override
+  String get nativeTorUpdateDisableFailedTitle => '无法关闭 Tor';
+
+  @override
+  String get nativeTorUpdateRestartFailedBody => 'Tor 已关闭。请再次检查更新，以通过直接连接继续。';
+
+  @override
+  String get nativeTorUpdateRestartFailedTitle => '无法重新开始更新';
+
+  @override
+  String get nativeTorUpdateTitle => '此次更新要使用 Tor 吗？';
+
+  @override
+  String get nativeTorUpdateTurnOff => '关闭 Tor 并更新';
+
+  @override
   String get navActivity => '活动';
 
   @override
@@ -5643,10 +5735,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingAddressTypesSubtitle => 'Zcash 有两种地址类型。\n一种用于隐私，一种用于透明。';
-
-  @override
-  String get onboardingAddressTypesSubtitleMobile =>
-      'Zcash 有两种地址类型。\n一种用于隐私，一种用于透明。';
 
   @override
   String get onboardingAddressTypesTitle => 'Zcash 地址类型';
@@ -5801,6 +5889,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingDuplicateKeystoneAccount => '此 Keystone 账户已在你的钱包中。';
+
+  @override
+  String get onboardingDuplicateLedgerAccount => '此 Ledger 账户已在你的钱包中。';
 
   @override
   String get onboardingEditBip39Passphrase => '编辑 BIP39 密码短语';
@@ -6151,6 +6242,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingStorageStartupFailureDetail => 'Vizor 无法加载其启动状态。';
 
   @override
+  String get onboardingSubmitFailed => '无法完成此步骤。请重试。';
+
+  @override
   String get onboardingTellMeHowZcashWorks => '了解 Zcash 如何运作';
 
   @override
@@ -6203,6 +6297,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingUnlockWelcomeBack => '欢迎回来';
+
+  @override
+  String get onboardingWalletLinkNetworkMismatch => '此钱包链接属于其他 Zcash 网络。';
 
   @override
   String get onboardingWelcome => '欢迎页';
@@ -6598,6 +6695,31 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get paymentLinkBatchQuoteNotReady => '可用余额仍在加载。请在钱包同步后重试。';
+
+  @override
+  String get paymentLinkBatchRejectedKeystoneSapling =>
+      '此卡片组需要花费较早的 Sapling 资金，而你的 Keystone 无法签署。请减少卡片数量或降低每张卡片的金额。';
+
+  @override
+  String get paymentLinkBatchRejectedKeystoneSignatureLimit =>
+      '此卡片组所需的输入超过你的 Keystone 一次可签署的数量。请减少卡片数量或降低每张卡片的金额。';
+
+  @override
+  String paymentLinkBatchRejectedLedgerRecipientLimit(String max) {
+    return '此卡片组的屏蔽收款方超过你的 Ledger 可显示的数量（最多 $max 个）。请减少卡片数量或降低每张卡片的金额。';
+  }
+
+  @override
+  String get paymentLinkBatchRejectedLedgerSapling =>
+      '此卡片组需要花费较早的 Sapling 资金，而你的 Ledger 无法签署。请减少卡片数量或降低每张卡片的金额。';
+
+  @override
+  String get paymentLinkBatchRejectedLedgerTooLarge =>
+      '此卡片组过大，你的 Ledger 无法签署。请减少卡片数量或降低每张卡片的金额。';
+
+  @override
+  String get paymentLinkBatchRejectedNotOneTransaction =>
+      '此卡片组无法通过一笔交易完成充值。请减少卡片数量或降低每张卡片的金额。';
 
   @override
   String get paymentLinkBatchRemoveCard => '减少一张卡片';
@@ -7645,11 +7767,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveCopyTransparentAddress => '复制透明地址';
 
   @override
-  String receiveErrorWithDetails(String message, String details) {
-    return '$message\n详细信息：$details';
-  }
-
-  @override
   String get receiveGenerateNewShieldedAddress => '生成新的屏蔽地址';
 
   @override
@@ -7774,9 +7891,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveShareTransparentAddress => '分享透明地址';
 
   @override
+  String get receiveShieldedAddressLoadFailed => '无法加载你的屏蔽地址。请稍后重试。';
+
+  @override
   String receiveTitle(String ticker) {
     return '接收 $ticker';
   }
+
+  @override
+  String get receiveTransparentAddressLoadFailed => '无法加载你的透明地址。请稍后重试。';
 
   @override
   String get secretPassphraseCopy => '复制助记词';
@@ -8868,10 +8991,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsSeedScreenshotBodyLead => '截图并不可靠';
-
-  @override
-  String get settingsSeedScreenshotBodyRest =>
-      '. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
 
   @override
   String get settingsSeedScreenshotTitle => '请勿截取助记词的屏幕截图';
@@ -10067,9 +10186,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapReviewStartingLockingQuote => '正在锁定报价';
 
   @override
-  String get swapReviewStartingPaying => '支付中';
-
-  @override
   String get swapReviewStartingSending => '发送中';
 
   @override
@@ -10305,6 +10421,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingConfigAddCustomSource => '添加自定义来源';
 
   @override
+  String get votingConfigChecksumFormat => 'checksum 必须是 64 个小写十六进制字符。';
+
+  @override
+  String get votingConfigChecksumKeyEncoded =>
+      'checksum 参数名请直接写作 checksum，不要编码。';
+
+  @override
+  String get votingConfigChecksumPrefix => 'checksum 必须以 sha256: 开头。';
+
+  @override
+  String get votingConfigChecksumRepeated => 'checksum 参数只能出现一次。';
+
+  @override
+  String get votingConfigChecksumRequired => '请在 URL 中添加 checksum 参数。';
+
+  @override
   String get votingConfigCloseSettings => '关闭投票配置设置';
 
   @override
@@ -10396,6 +10528,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get votingConfigUrlCopied => '已复制来源网址。';
+
+  @override
+  String get votingConfigUrlHasFragment => 'URL 中不能包含片段（#…）。';
+
+  @override
+  String get votingConfigUrlHasUserInfo => 'URL 中不能包含用户名或密码。';
+
+  @override
+  String get votingConfigUrlNotHttps => '请使用 HTTPS URL。';
 
   @override
   String get votingConfigValidating => '正在验证...';

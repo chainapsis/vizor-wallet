@@ -320,6 +320,7 @@ class _MobileSwapKeystoneSignScreenState
         txHash: result.txid,
         status: result.status,
         message: result.message,
+        notices: result.notices,
       ),
     );
   }

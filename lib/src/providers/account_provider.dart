@@ -68,6 +68,17 @@ const _duplicateKeystoneAccountImportMessage =
 const _duplicateLedgerAccountImportMessage =
     'This Ledger account is already in your wallet.'; // l10n-ignore: matched against thrown text
 
+/// A wallet link was made on another Zcash network than this app or wallet.
+class WalletLinkNetworkMismatchException implements Exception {
+  const WalletLinkNetworkMismatchException(this.detail);
+
+  /// Which network it disagrees with, for logs.
+  final String detail;
+
+  @override
+  String toString() => detail;
+}
+
 class WalletCreationCurrentBlockHeightException implements Exception {
   const WalletCreationCurrentBlockHeightException(this.cause);
 
@@ -2931,15 +2942,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ref.read(rpcEndpointProvider).networkName,
       );
       if (currentNetwork != normalizedNetwork) {
-        throw StateError(
-          'Linked wallet network does not match the current app network.',
+        throw const WalletLinkNetworkMismatchException(
+          'Linked wallet network does not match the current app network.', // l10n-ignore: log text; screens show onboardingWalletLinkNetworkMismatch
         );
       }
     } else {
       final storedNetwork = await _getNetwork();
       if (storedNetwork != normalizedNetwork) {
-        throw StateError(
-          'Linked wallet network does not match the current wallet.',
+        throw const WalletLinkNetworkMismatchException(
+          'Linked wallet network does not match the current wallet.', // l10n-ignore: log text; screens show onboardingWalletLinkNetworkMismatch
         );
       }
     }

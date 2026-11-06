@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/l10n/l10n.dart';
+import '../../../core/zcash/wallet_error_code.dart';
 import '../import/desktop_import_navigation.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
@@ -62,7 +63,7 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
 
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
-    final message = error.toString().contains('Unexpected UR type')
+    final message = isUnexpectedUrTypeError(error)
         ? context.l10n.keystoneScanOpenAccountQr
         : context.l10n.commonKeepQrSteady;
     if (_error == message) return;

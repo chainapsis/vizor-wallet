@@ -272,7 +272,7 @@ class PayReviewAction extends StatelessWidget {
                 : startBlockedReason != null
                 ? context.l10n.commonNotEnoughZec
                 : starting
-                ? context.l10n.payReviewPaying
+                ? context.l10n.commonPayingButton
                 : context.l10n.payReviewConfirmPay,
           ),
         ),

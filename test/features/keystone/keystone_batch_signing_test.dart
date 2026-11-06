@@ -67,9 +67,11 @@ void main() {
     expect(
       keystoneBatchSigningFriendlyError(
         testL10n,
-        StateError(
-          'Keystone batch signing supports at most 96 spend signatures per '
-          'transaction; this transaction requires 97',
+        const ApiWalletError(
+          code: ApiWalletErrorCode.keystoneBatchSignatureLimit,
+          message:
+              'Keystone batch signing supports at most 96 spend signatures '
+              'per transaction; this transaction requires 97',
         ),
       ),
       'This transaction uses too many inputs for Keystone batch signing. '
@@ -81,9 +83,11 @@ void main() {
     expect(
       keystoneBatchSigningFriendlyError(
         testL10n,
-        StateError(
-          'Keystone batch signing does not support transparent transaction '
-          'inputs',
+        const ApiWalletError(
+          code: ApiWalletErrorCode.keystoneBatchUnsupportedInput,
+          message:
+              'Keystone batch signing does not support transparent '
+              'transaction inputs',
         ),
         subject: KeystoneBatchSubject.deposit,
       ),
@@ -91,6 +95,14 @@ void main() {
     );
     expect(
       keystoneBatchSigningFriendlyError(testL10n, StateError('unrelated')),
+      isNull,
+    );
+    // The English text alone no longer selects the copy.
+    expect(
+      keystoneBatchSigningFriendlyError(
+        testL10n,
+        'Keystone batch signing does not support Sapling transaction inputs',
+      ),
       isNull,
     );
   });

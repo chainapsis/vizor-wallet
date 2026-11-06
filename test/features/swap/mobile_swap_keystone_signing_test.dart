@@ -1386,6 +1386,7 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
     String? outputParamsPath,
   }) async {
     return const rust_sync.ExtractAndBroadcastPcztResult(
+      notices: [],
       txid: 'hardware-broadcast-txid',
       status: SwapDepositBroadcastStatus.broadcasted,
       message: null,

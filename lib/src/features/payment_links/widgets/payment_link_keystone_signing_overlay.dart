@@ -20,6 +20,7 @@ import '../../send/widgets/sapling_params_prompt.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_hardware_signing_service.dart';
 import '../services/payment_link_service.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../core/l10n/l10n.dart';
 
@@ -310,7 +311,12 @@ class _PaymentLinkKeystoneSigningOverlayState
       if (!fundingAccepted) {
         // The network may already hold this transaction, so the draft stays.
         throw _PaymentLinkFundingUncertainException(
-          result.message ?? l10n.paymentLinkKeystoneFundingUncertain,
+          broadcastResultText(
+                l10n,
+                notices: result.notices,
+                message: result.message,
+              ) ??
+              l10n.paymentLinkKeystoneFundingUncertain,
         );
       }
       await widget.onFundingBroadcast(draft.link, result);

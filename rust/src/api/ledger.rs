@@ -60,6 +60,9 @@ pub struct LedgerSignedOperation {
     pub txid: Option<String>,
     pub status: Option<String>,
     pub message: Option<String>,
+    /// `message` as sentences; empty for rows earlier builds wrote and for
+    /// retryable errors. See [`crate::api::sync::BroadcastNotice`].
+    pub notices: Vec<crate::api::sync::BroadcastNotice>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
 }
@@ -70,6 +73,8 @@ pub struct LedgerSignedOperationBroadcastResult {
     pub txid: String,
     pub status: String,
     pub message: Option<String>,
+    /// `message` as sentences; see [`crate::api::sync::BroadcastNotice`].
+    pub notices: Vec<crate::api::sync::BroadcastNotice>,
     pub requires_ack: bool,
 }
 
@@ -416,6 +421,7 @@ pub async fn ledger_broadcast_signed_operation(
         txid: result.txid,
         status: result.status,
         message: result.message,
+        notices: crate::api::sync::api_broadcast_notices(result.notices),
         requires_ack: result.requires_ack,
     })
     .map_err(Into::into)
@@ -443,6 +449,7 @@ fn to_signed_operation(operation: ledger::SignedOperationMetadata) -> LedgerSign
         txid: operation.txid,
         status: operation.status,
         message: operation.message,
+        notices: crate::api::sync::api_broadcast_notices(operation.notices),
         created_at_ms: operation.created_at_ms,
         updated_at_ms: operation.updated_at_ms,
     }

@@ -48,6 +48,16 @@ enum NativeString: String, CaseIterable {
   case nativePrepTrackingPausedBody
   case nativePrepTrackingPausedTitle
   case nativePrepUpdatesTitle
+  case nativeTorUpdateBody
+  case nativeTorUpdateCancel
+  case nativeTorUpdateClose
+  case nativeTorUpdateContinue
+  case nativeTorUpdateDisableFailedBody
+  case nativeTorUpdateDisableFailedTitle
+  case nativeTorUpdateRestartFailedBody
+  case nativeTorUpdateRestartFailedTitle
+  case nativeTorUpdateTitle
+  case nativeTorUpdateTurnOff
 }
 
 enum NativeStrings {
@@ -126,16 +136,26 @@ enum NativeStrings {
     case .nativePrepTrackingPausedBody: return "Open Vizor to resume migration preparation."
     case .nativePrepTrackingPausedTitle: return "Preparation tracking paused"
     case .nativePrepUpdatesTitle: return "Migration preparation updates"
+    case .nativeTorUpdateBody: return "Updating over Tor may take longer. Turning Tor off switches all Vizor network requests to a direct connection."
+    case .nativeTorUpdateCancel: return "Cancel"
+    case .nativeTorUpdateClose: return "Close"
+    case .nativeTorUpdateContinue: return "Continue with Tor"
+    case .nativeTorUpdateDisableFailedBody: return "Tor remains on. Turn it off in Settings, then check for updates again."
+    case .nativeTorUpdateDisableFailedTitle: return "Couldn’t turn off Tor"
+    case .nativeTorUpdateRestartFailedBody: return "Tor is off. Check for updates again to continue with a direct connection."
+    case .nativeTorUpdateRestartFailedTitle: return "Couldn’t restart the update"
+    case .nativeTorUpdateTitle: return "Use Tor for this update?"
+    case .nativeTorUpdateTurnOff: return "Turn off Tor and update"
     }
   }
 
   private static let ko: [NativeString: String] = [
     .nativeBiometricEnableTitle: "지문 잠금 해제 켜기",
     .nativeBiometricUsePasscode: "암호 사용",
-    .nativeIronwoodContinueBody: "다음 이전 거래를 준비하려면 Vizor를 열어 주세요.",
-    .nativeIronwoodContinueTitle: "Ironwood 이전을 계속하세요",
-    .nativeIronwoodNeedsAttentionBody: "이전을 확인하고 계속하려면 Vizor를 열어 주세요.",
-    .nativeIronwoodNeedsAttentionTitle: "Ironwood 이전 확인이 필요해요",
+    .nativeIronwoodContinueBody: "다음 마이그레이션 거래를 준비하려면 Vizor를 열어 주세요.",
+    .nativeIronwoodContinueTitle: "Ironwood 마이그레이션을 계속하세요",
+    .nativeIronwoodNeedsAttentionBody: "마이그레이션을 확인하고 계속하려면 Vizor를 열어 주세요.",
+    .nativeIronwoodNeedsAttentionTitle: "Ironwood 마이그레이션 확인이 필요해요",
     .nativeLedgerApduArgumentsInvalid: "Ledger APDU 인수가 올바르지 않아요.",
     .nativeLedgerApduListInvalid: "Ledger 서명 APDU 목록이 비어 있거나 올바르지 않아요.",
     .nativeLedgerAppSwitchTimedOut: "Zcash 앱을 연 뒤 Vizor가 이어서 진행하지 못했어요. 다시 시도해 주세요.",
@@ -149,28 +169,38 @@ enum NativeStrings {
     .nativeLedgerPermissionRequestActive: "Ledger 권한 요청이 이미 진행 중이에요.",
     .nativeLedgerZcashAppNotInstalled: "이 Ledger에 Zcash 앱이 설치되어 있지 않아요.",
     .nativeMigrationAccountsNeedAttentionBody: "계정 {count}개를 확인해야 해요. 계속하려면 Vizor를 열어 주세요.",
-    .nativeMigrationNeedsAttentionTitle: "이전 확인이 필요해요",
+    .nativeMigrationNeedsAttentionTitle: "마이그레이션 확인이 필요해요",
     .nativeMigrationStoppedByUpgradeBody: "남은 잔액을 옮기려면 Vizor를 열어 주세요.",
-    .nativeMigrationStoppedByUpgradeTitle: "네트워크 업그레이드로 이전이 중단됐어요",
-    .nativeMigrationTransfersSentBody: "예약된 이전 거래를 모두 제출했어요. 상태를 확인하려면 Vizor를 열어 주세요.",
-    .nativeMigrationTransfersSentTitle: "이전 거래를 보냈어요",
-    .nativeMigrationUpdatesTitle: "이전 업데이트",
+    .nativeMigrationStoppedByUpgradeTitle: "네트워크 업그레이드로 마이그레이션이 중단됐어요",
+    .nativeMigrationTransfersSentBody: "예약된 마이그레이션 거래를 모두 제출했어요. 상태를 확인하려면 Vizor를 열어 주세요.",
+    .nativeMigrationTransfersSentTitle: "마이그레이션 거래를 보냈어요",
+    .nativeMigrationUpdatesTitle: "마이그레이션 업데이트",
     .nativeOpenToContinue: "계속하려면 Vizor를 열어 주세요.",
     .nativePrepAccountsChanged: "지갑 계정이 변경됐어요",
     .nativePrepAccountsReadyBody: "계정 {count}개가 다음 단계로 진행할 수 있어요. 계속하려면 Vizor를 열어 주세요.",
     .nativePrepCheckingConfirmations: "거래 확인 수를 확인하고 있어요",
-    .nativePrepCompleteTitle: "이전 준비가 완료됐어요",
+    .nativePrepCompleteTitle: "마이그레이션 준비가 완료됐어요",
     .nativePrepConfirmedTitle: "준비 거래가 확인됐어요",
-    .nativePrepOpenToContinueMigration: "이전을 계속하려면 Vizor를 열어 주세요",
+    .nativePrepOpenToContinueMigration: "마이그레이션을 계속하려면 Vizor를 열어 주세요",
     .nativePrepOpenToResume: "다시 시작하려면 Vizor를 열어 주세요",
     .nativePrepOpenToStartNextStep: "다음 단계를 시작하려면 Vizor를 열어 주세요",
     .nativePrepOpenToStartNextStepBody: "다음 단계를 시작하려면 Vizor를 열어 주세요.",
     .nativePrepProgress: "준비 거래 {total}건 중 {completed}건 확인됨",
     .nativePrepStoppedTitle: "준비가 중단됐어요",
-    .nativePrepTaskTitle: "이전을 준비하고 있어요",
-    .nativePrepTrackingPausedBody: "이전 준비를 다시 시작하려면 Vizor를 열어 주세요.",
+    .nativePrepTaskTitle: "마이그레이션을 준비하고 있어요",
+    .nativePrepTrackingPausedBody: "마이그레이션 준비를 다시 시작하려면 Vizor를 열어 주세요.",
     .nativePrepTrackingPausedTitle: "준비 추적이 일시 중지됐어요",
-    .nativePrepUpdatesTitle: "이전 준비 업데이트",
+    .nativePrepUpdatesTitle: "마이그레이션 준비 업데이트",
+    .nativeTorUpdateBody: "Tor로 업데이트하면 시간이 더 걸릴 수 있어요. Tor를 끄면 Vizor의 모든 네트워크 요청이 직접 연결로 바뀌어요.",
+    .nativeTorUpdateCancel: "취소",
+    .nativeTorUpdateClose: "닫기",
+    .nativeTorUpdateContinue: "Tor로 계속",
+    .nativeTorUpdateDisableFailedBody: "Tor가 아직 켜져 있어요. 설정에서 끈 다음 업데이트를 다시 확인해 주세요.",
+    .nativeTorUpdateDisableFailedTitle: "Tor를 끄지 못했어요",
+    .nativeTorUpdateRestartFailedBody: "Tor가 꺼졌어요. 직접 연결로 계속하려면 업데이트를 다시 확인해 주세요.",
+    .nativeTorUpdateRestartFailedTitle: "업데이트를 다시 시작하지 못했어요",
+    .nativeTorUpdateTitle: "이번 업데이트에 Tor를 사용할까요?",
+    .nativeTorUpdateTurnOff: "Tor 끄고 업데이트",
   ]
 
   private static let zh: [NativeString: String] = [
@@ -215,5 +245,15 @@ enum NativeStrings {
     .nativePrepTrackingPausedBody: "打开 Vizor 以恢复迁移准备。",
     .nativePrepTrackingPausedTitle: "准备跟踪已暂停",
     .nativePrepUpdatesTitle: "迁移准备动态",
+    .nativeTorUpdateBody: "通过 Tor 更新可能需要更长时间。关闭 Tor 后，Vizor 的所有网络请求都会改为直接连接。",
+    .nativeTorUpdateCancel: "取消",
+    .nativeTorUpdateClose: "关闭",
+    .nativeTorUpdateContinue: "继续使用 Tor",
+    .nativeTorUpdateDisableFailedBody: "Tor 仍处于开启状态。请在设置中将其关闭，然后再次检查更新。",
+    .nativeTorUpdateDisableFailedTitle: "无法关闭 Tor",
+    .nativeTorUpdateRestartFailedBody: "Tor 已关闭。请再次检查更新，以通过直接连接继续。",
+    .nativeTorUpdateRestartFailedTitle: "无法重新开始更新",
+    .nativeTorUpdateTitle: "此次更新要使用 Tor 吗？",
+    .nativeTorUpdateTurnOff: "关闭 Tor 并更新",
   ]
 }
