@@ -421,6 +421,7 @@ where
         // network operation returns. Without this, `restartSync`'s
         // 5s ceiling can expire before the old observer releases
         // (Codex 4th-round finding 1).
+        let tip_scope = super::TipRequestScope::capture();
         let channel_result = tokio::select! {
             biased;
             _ = watch_for_cancel(&cancel) => {
@@ -455,6 +456,8 @@ where
                 &mut client,
                 &lightwalletd_url,
                 network,
+                tip_scope,
+                || cancel.load(Ordering::Relaxed),
             ) => r,
         };
         let tip = match tip_result {

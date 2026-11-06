@@ -4945,6 +4945,10 @@ ProviderContainer _statusContainer({
       votingAccountIsHardwareProvider.overrideWithValue(
         (uuid) async => effectiveHardwareAccountUuids.contains(uuid),
       ),
+      votingReadyRpcEndpointProvider.overrideWith(
+        (ref) =>
+            () async => ref.read(votingRpcEndpointConfigProvider),
+      ),
       votingRpcEndpointConfigProvider.overrideWithValue(
         const RpcEndpointConfig(
           networkName: 'main',

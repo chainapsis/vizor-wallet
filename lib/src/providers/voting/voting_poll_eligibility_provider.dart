@@ -84,12 +84,19 @@ final votingPollEligibilityProvider = FutureProvider.autoDispose
           if (!scan.isReady || !ref.mounted) {
             return VotingPollEligibility.unknown;
           }
+          final selectedEndpoint = await ref.read(
+            votingReadyRpcEndpointProvider,
+          )();
+          if (!ref.mounted ||
+              selectedEndpoint.networkName != endpoint.networkName) {
+            return VotingPollEligibility.unknown;
+          }
           final result = await observeVotingHomeResult(
             ref,
             operation: () => rust.checkVotingEligibility(
               ctx: rust_api.ApiVotingRoundContext(
                 dbPath: dbPath,
-                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                lightwalletdUrl: selectedEndpoint.normalizedLightwalletdUrl,
                 network: endpoint.networkName,
                 roundParams: params,
                 roundName: round.title,

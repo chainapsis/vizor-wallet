@@ -14,6 +14,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_latency_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import 'network_privacy_control.dart';
 import 'enhance_pir_privacy_control.dart';
@@ -47,9 +48,10 @@ class _CustomEndpointSettingsPanelState
   @override
   void initState() {
     super.initState();
-    _controller.text = rpcEndpointInputText(
-      ref.read(rpcEndpointProvider).lightwalletdUrl,
-    );
+    final endpoint = ref.read(rpcEndpointProvider);
+    if (!isAutomaticRpcEndpointConfig(endpoint)) {
+      _controller.text = rpcEndpointInputText(endpoint.lightwalletdUrl);
+    }
   }
 
   @override
@@ -123,11 +125,40 @@ class _CustomEndpointSettingsPanelState
     }
   }
 
+  Future<void> _useAutomatic() async {
+    if (_isSubmitting ||
+        ref.read(enhancePirTransitionProvider) == kEnhancePirChangingMessage) {
+      return;
+    }
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+    });
+    try {
+      await ref.read(rpcEndpointProvider.notifier).setAutomatic();
+      if (widget.restartSyncAfterUpdate) {
+        await ref.read(syncProvider.notifier).restartSync();
+      }
+      if (!mounted) return;
+      _controller.clear();
+      setState(() => _isSubmitting = false);
+      widget.onUpdated?.call();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isSubmitting = false;
+        _submitError = "Couldn't save the endpoint. Try again.";
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final current = ref.watch(rpcEndpointProvider);
+    final automatic = isAutomaticRpcEndpointConfig(current);
+    final effective = automatic ? ref.watch(rpcEndpointFailoverProvider) : null;
     final latencyState = ref.watch(rpcEndpointLatencyProvider);
     final enabled = ref.watch(privateQueriesControlEnabledProvider);
     final available = ref.watch(enhancePirAvailableProvider) || enabled;
@@ -176,8 +207,22 @@ class _CustomEndpointSettingsPanelState
                       const SizedBox(height: AppSpacing.md),
                       CurrentEndpointText(
                         current: current,
+                        effectiveEndpoint: effective?.current,
+                        automaticReady: effective?.automaticReady ?? false,
                         latencyState: latencyState,
                       ),
+                      if (current.network == ZcashNetwork.mainnet &&
+                          !automatic) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        AppButton(
+                          key: const ValueKey('onboarding_endpoint_automatic'),
+                          variant: AppButtonVariant.secondary,
+                          onPressed: _isSubmitting || changingRecovery
+                              ? null
+                              : _useAutomatic,
+                          child: const Text('Use automatic selection'),
+                        ),
+                      ],
                       const SizedBox(height: AppSpacing.sm),
                       SizedBox(
                         width: 352,
@@ -266,33 +311,41 @@ class CurrentEndpointText extends StatelessWidget {
   const CurrentEndpointText({
     required this.current,
     required this.latencyState,
+    this.effectiveEndpoint,
+    this.automaticReady = false,
     super.key,
   });
 
   final RpcEndpointConfig current;
+  final RpcEndpointConfig? effectiveEndpoint;
+  final bool automaticReady;
   final RpcEndpointLatencyState latencyState;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final preset = findRpcEndpointPresetByUrl(
-      current.normalizedLightwalletdUrl,
-      networkName: current.networkName,
-    );
-    final latency = latencyState.sampleForUrl(
-      current.normalizedLightwalletdUrl,
-    );
+    final automatic = isAutomaticRpcEndpointConfig(current);
+    final endpoint = effectiveEndpoint ?? current;
+    final preset = explicitRpcEndpointPresetFor(current);
+    final latency = automatic
+        ? null
+        : latencyState.sampleForUrl(endpoint.normalizedLightwalletdUrl);
     final suffix = [
       if (latency != null) latency.label,
-      if (preset?.isDefault ?? false) '(Default)',
+      if (!automatic && (preset?.isDefault ?? false)) '(Default)',
     ].join(' ');
+    final hostLabel = automatic
+        ? automaticReady && effectiveEndpoint != null
+              ? 'Automatic · ${endpoint.hostPort}'
+              : 'Automatic'
+        : endpoint.hostPort;
 
     return Text.rich(
       TextSpan(
         text: 'Current: ',
         children: [
           TextSpan(
-            text: current.hostPort,
+            text: hostLabel,
             style: TextStyle(color: colors.text.brandCrimson),
           ),
           if (suffix.isNotEmpty) TextSpan(text: ' $suffix'),

@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import '../../support/home_initialization_checks.dart';
 import 'package:zcash_wallet/src/features/home/widgets/home_activity_skeleton.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_items_provider.dart';
 import 'dart:convert';
@@ -724,6 +725,19 @@ class _DeferredVotingStore implements VotingHomeCacheStore {
 }
 
 void main() {
+  registerHomeInitializationChecks(
+    mobile: true,
+    app: (state, notifier, cards) => _app(
+      state,
+      syncNotifier: notifier,
+      giftCardActivityFuture: cards,
+      showVoting: false,
+    ),
+    home: () => find.byType(MobileHomeScreen),
+    importing: () =>
+        find.byKey(const ValueKey('mobile_home_importing_background')),
+  );
+
   setUpAll(loadAppTestFonts);
 
   List<Object?> recordHaptics(WidgetTester tester) {
@@ -745,6 +759,7 @@ void main() {
     );
     return feedback;
   }
+
   testWidgets('Home displays ETA in place of the pool subtitle', (
     tester,
   ) async {
