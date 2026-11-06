@@ -892,8 +892,8 @@ class SwapNotifier extends Notifier<SwapState> {
         .read(accountProvider.notifier)
         .hardwareSignerKindForAccount(accountUuid);
     final hardwareSignerLabel = hardwareSignerKind == HardwareSignerKind.ledger
-        ? 'Ledger'
-        : 'Keystone';
+        ? 'Ledger' // l10n-ignore: device name
+        : 'Keystone'; // l10n-ignore: device name
     if (quote.direction.sendsZec) {
       // The provider would open a swap for a deposit Rust then refuses.
       if (ref.read(networkUpgradeWindowProvider).holdsTransactions) {
@@ -2263,7 +2263,10 @@ class SwapNotifier extends Notifier<SwapState> {
     if (trimmed == null || trimmed.isEmpty) return;
     final switched = await ref
         .read(rpcEndpointFailoverProvider.notifier)
-        .switchToFallbackFor(trimmed, operation: 'swap deposit broadcast');
+        .switchToFallbackFor(
+          trimmed,
+          operation: 'swap deposit broadcast', // l10n-ignore: log label
+        );
     if (switched) {
       unawaited(ref.read(syncProvider.notifier).restartSync());
     }

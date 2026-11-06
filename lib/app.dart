@@ -2247,10 +2247,10 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
         if (decision.action == IncomingLinkEntryAction.open) {
           _lastHomeNoticeLocation = null;
           widget.router.go('/home');
-        } else if (decision.message != null &&
+        } else if (decision.notice != null &&
             _lastHomeNoticeLocation != origin) {
           _lastHomeNoticeLocation = origin;
-          _showPaymentUriMessage(decision.message!);
+          _showIncomingLinkNotice(decision.notice!);
         }
       }),
     );
@@ -2309,8 +2309,8 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     if (guard.blocks(ExternalAction.navigation) ||
         guard.blocks(ExternalAction.paymentRequest)) {
       final decision = _incomingEntry(IncomingLinkKind.giftCard);
-      if (decision.message != null) {
-        _showDeferredPaymentLinkMessage(pendingLink, decision.message!);
+      if (decision.notice != null) {
+        _showDeferredPaymentLinkNotice(pendingLink, decision.notice!);
       }
       return;
     }
@@ -2342,12 +2342,12 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       });
       return;
     }
-    final deferredMessage = _incomingEntry(IncomingLinkKind.giftCard).message;
-    if (deferredMessage != null) {
+    final deferredNotice = _incomingEntry(IncomingLinkKind.giftCard).notice;
+    if (deferredNotice != null) {
       final setupLink = ref.read(giftClaimSetupReturnProvider)?.link;
       for (final queued in ref.read(paymentLinkIntakeProvider).pendingLinks) {
         if (setupLink?.hasSameCanonicalPayload(queued) == true) continue;
-        _showDeferredPaymentLinkMessage(queued, deferredMessage);
+        _showDeferredPaymentLinkNotice(queued, deferredNotice);
         break;
       }
       return;
@@ -2385,13 +2385,20 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   bool get _paymentRequestCardPresented =>
       ref.read(paymentRequestFlowProvider) != null;
 
-  void _showDeferredPaymentLinkMessage(VizorPaymentLink link, String message) {
+  void _showDeferredPaymentLinkNotice(
+    VizorPaymentLink link,
+    IncomingLinkNotice notice,
+  ) {
     if (identical(_lastDeferredLink, link)) return;
     _lastDeferredLink = link;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final toastContext = _toastScopeKey.currentContext;
       if (!mounted || toastContext == null) return;
-      showAppToast(toastContext, message, iconName: AppIcons.warning);
+      showAppToast(
+        toastContext,
+        notice.text(toastContext.l10n),
+        iconName: AppIcons.warning,
+      );
     });
   }
 
@@ -2410,19 +2417,19 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
         // the first is still parked (locked wallet, wallet still loading).
         // Only the newest survives, so say so instead of silently dropping
         // the earlier one.
-        _showPaymentUriMessage(kPaymentUriReplacedMessage);
+        _showPaymentUriNotice(PaymentUriNotice.replaced);
       }
     } on Zip321UnsupportedRequestException catch (e) {
       // Do not clear here: a refused link must not wipe a prefill already
       // parked from an earlier valid one.
       log('Payment URI: unsupported: ${e.reason}');
-      _showPaymentUriMessage(paymentUriRejectionMessage(e));
+      _showPaymentUriNotice(paymentUriRejectionNotice(e));
     } on Zip321ParseException catch (e) {
       // The parser's message is spec wording written for us, and it echoes
       // fragments of the link's own text; keep it in the log and show the
       // payer one sentence they can act on.
       log('Payment URI: rejected: ${e.message}');
-      _showPaymentUriMessage(paymentUriRejectionMessage(e));
+      _showPaymentUriNotice(paymentUriRejectionNotice(e));
     } catch (e) {
       // Defensive: no current parse path reaches this. It shares the drain
       // policy's constant rather than a literal of its own so the two cannot
@@ -2430,7 +2437,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       // Only `zcash:` links reach this lane, so `$e` cannot carry a Gift
       // Card's mnemonic fragment.
       log('Payment URI: failed to parse: $e');
-      _showPaymentUriMessage(kPaymentUriUnavailableMessage);
+      _showPaymentUriNotice(PaymentUriNotice.unavailable);
     }
   }
 
@@ -2511,15 +2518,15 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     switch (decision.action) {
       case PaymentUriDrainAction.wait:
         if (prefill != null &&
-            decision.message != null &&
+            decision.notice != null &&
             _lastDeferredPrefillId != prefill.id) {
           _lastDeferredPrefillId = prefill.id;
-          _showPaymentUriMessage(decision.message!);
+          _showPaymentUriNotice(decision.notice!);
         }
         return;
       case PaymentUriDrainAction.dropWithMessage:
         prefillNotifier.clear();
-        _showPaymentUriMessage(decision.message!);
+        _showPaymentUriNotice(decision.notice!);
       case PaymentUriDrainAction.routeToUnlock:
         // Leave the prefill parked in paymentUriPrefillProvider. The unlock
         // flow claims it and presents the card, so the payment intent is not
@@ -2528,7 +2535,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       case PaymentUriDrainAction.routeToWelcome:
         prefillNotifier.clear();
         widget.router.go('/welcome');
-        _showPaymentUriMessage(decision.message!);
+        _showPaymentUriNotice(decision.notice!);
       case PaymentUriDrainAction.deliver:
         prefillNotifier.clear();
         // The request is presented over the current screen, not navigated to.
@@ -2543,13 +2550,19 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   /// The host outlives the screen that asked for the notice, which matters on
   /// the unlock path: the unlock screen navigates in the same turn, so a
   /// notice tied to its own `BuildContext` would never arrive.
-  void _showPaymentUriMessage(String message) {
+  void _showPaymentUriNotice(PaymentUriNotice notice) =>
+      _showLinkToast((l10n) => notice.text(l10n));
+
+  void _showIncomingLinkNotice(IncomingLinkNotice notice) =>
+      _showLinkToast((l10n) => notice.text(l10n));
+
+  void _showLinkToast(String Function(AppLocalizations l10n) text) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final toastContext = _toastScopeKey.currentContext;
       if (!mounted || toastContext == null) return;
       showAppToast(
         toastContext,
-        message,
+        text(toastContext.l10n),
         duration: _kIncomingLinkNoticeDuration,
         iconName: AppIcons.warning,
       );
@@ -2945,7 +2958,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
   _WindowsUpdatePromptAction _primaryAction(AppLocalizations l10n) {
     return switch (state.status) {
       WindowsUpdateStatus.available => _WindowsUpdatePromptAction(
-        label: l10n.appUpdateDownload,
+        label: l10n.commonDownload,
         onPressed: onDownload,
       ),
       WindowsUpdateStatus.ready => _WindowsUpdatePromptAction(

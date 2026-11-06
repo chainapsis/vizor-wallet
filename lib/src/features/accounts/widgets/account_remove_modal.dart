@@ -307,7 +307,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     if (!_isSubmitting) {
       return widget.isLastAccount
           ? context.l10n.commonResetVizor
-          : context.l10n.accountsRemoveConfirm;
+          : context.l10n.commonRemove;
     }
 
     return switch (_submitPhase) {

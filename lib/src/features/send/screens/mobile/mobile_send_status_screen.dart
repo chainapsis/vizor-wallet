@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 
@@ -21,6 +22,7 @@ const _statusSubtitleWidth = 223.0;
 typedef MobileSendBroadcastRunner =
     Future<SendBroadcastOutcome> Function({
       required WidgetRef ref,
+      required AppLocalizations l10n,
       required SendReviewArgs args,
       KeystoneBroadcastArgs? keystone,
       LedgerBroadcastArgs? ledger,
@@ -157,6 +159,7 @@ class _MobileSendStatusScreenState
     final runner = widget.broadcastRunner ?? runSendBroadcast;
     final broadcast = runner(
       ref: ref,
+      l10n: context.l10n,
       args: widget.args,
       keystone: _keystoneRecovery ?? widget.keystone,
       ledger: widget.ledger,
@@ -249,43 +252,43 @@ class _MobileSendStatusScreenState
   String get _title {
     if (_isDonation) {
       return switch (_phase) {
-        _MobileSendStatusPhase.sending => 'Sending donation...',
-        _MobileSendStatusPhase.pendingBroadcast => 'Donation queued',
-        _MobileSendStatusPhase.succeeded => 'Thank you for\nsupporting Vizor',
-        _MobileSendStatusPhase.failed => 'Donation failed',
+        _MobileSendStatusPhase.sending =>
+          context.l10n.sendStatusMobileSendingDonation,
+        _MobileSendStatusPhase.pendingBroadcast =>
+          context.l10n.sendStatusMobileDonationQueued,
+        _MobileSendStatusPhase.succeeded =>
+          context.l10n.sendStatusMobileDonationThanks,
+        _MobileSendStatusPhase.failed => context.l10n.sendStatusDonationFailed,
       };
     }
     return switch (_phase) {
-      _MobileSendStatusPhase.sending => 'Sending...',
-      _MobileSendStatusPhase.pendingBroadcast => 'Queued to send',
-      _MobileSendStatusPhase.succeeded => 'Sent!',
-      _MobileSendStatusPhase.failed => 'Send failed',
+      _MobileSendStatusPhase.sending => context.l10n.commonSending,
+      _MobileSendStatusPhase.pendingBroadcast =>
+        context.l10n.sendStatusMobileQueued,
+      _MobileSendStatusPhase.succeeded => context.l10n.sendStatusMobileSent,
+      _MobileSendStatusPhase.failed => context.l10n.commonSendFailed,
     };
   }
 
   String get _subtitle {
     if (_isDonation && _phase == _MobileSendStatusPhase.succeeded) {
-      return 'Your support keeps Vizor going.';
+      return context.l10n.sendStatusMobileDonationSupport;
     }
     final statusMessage = _statusMessage?.trim();
     return switch (_phase) {
-      _MobileSendStatusPhase.sending =>
-        'Submitting your transaction to the network...',
+      _MobileSendStatusPhase.sending => context.l10n.sendStatusMobileSubmitting,
       _MobileSendStatusPhase.pendingBroadcast =>
         statusMessage == null || statusMessage.isEmpty
-            ? 'Your transaction was created and will be submitted '
-                  'automatically. Check the Activity page before sending '
-                  'again.'
+            ? context.l10n.sendStatusMobilePendingDefault
             : statusMessage,
       _MobileSendStatusPhase.succeeded =>
-        'It will confirm on-chain shortly. Track it in Activity.',
+        context.l10n.sendStatusMobileConfirmSoon,
       _MobileSendStatusPhase.failed =>
         _canRetryBroadcast
-            ? (_error ??
-                  'Wait for wallet sync, then retry this signed transaction.')
+            ? (_error ?? context.l10n.sendStatusRetryAfterSync)
             : _error == kNetworkUpgradeHoldMessage
             ? kNetworkUpgradeHoldMessage
-            : "Nothing was sent, your funds haven't moved. Try again.",
+            : context.l10n.sendStatusMobileNothingSent,
     };
   }
 
@@ -293,13 +296,13 @@ class _MobileSendStatusScreenState
     return switch (_phase) {
       _MobileSendStatusPhase.sending => null,
       _MobileSendStatusPhase.pendingBroadcast ||
-      _MobileSendStatusPhase.succeeded => 'Done',
+      _MobileSendStatusPhase.succeeded => context.l10n.commonDone,
       _MobileSendStatusPhase.failed =>
         _canRetryBroadcast
-            ? 'Retry'
+            ? context.l10n.commonRetry
             : _isDonation
-            ? 'Return to settings'
-            : 'Return home',
+            ? context.l10n.sendStatusMobileReturnToSettings
+            : context.l10n.commonReturnHome,
     };
   }
 
@@ -334,7 +337,9 @@ class _MobileSendStatusScreenState
             ? () => unawaited(_startBroadcast())
             : _handleBack,
         secondaryActionLabel: _canRetryBroadcast
-            ? (_isDonation ? 'Return to settings' : 'Return home')
+            ? (_isDonation
+                  ? context.l10n.sendStatusMobileReturnToSettings
+                  : context.l10n.commonReturnHome)
             : null,
         onSecondaryAction: _canRetryBroadcast ? _handleBack : null,
       ),

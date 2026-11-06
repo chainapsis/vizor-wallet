@@ -226,7 +226,7 @@ class _MobileKeystoneShieldScreenState
   String _friendlyError(Object error) {
     final lower = error.toString().toLowerCase();
     if (lower.contains('sapling') || lower.contains('download')) {
-      return context.l10n.homeShieldErrorProvingParams;
+      return context.l10n.commonProvingParamsFailed;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
       return context.l10n.homeShieldErrorSignatureNotApplied;
@@ -234,7 +234,7 @@ class _MobileKeystoneShieldScreenState
     if (lower.contains('extract')) {
       return context.l10n.homeShieldErrorNotFinalized;
     }
-    return friendlyShieldBalanceError(error);
+    return friendlyShieldBalanceError(context.l10n, error);
   }
 
   void _startScanning() {
@@ -418,7 +418,10 @@ class _MobileKeystoneShieldScreenState
       if (result.status != 'broadcasted') {
         setState(() {
           _stage = _ShieldSignStage.broadcastWarning;
-          _statusMessage = shieldPcztBroadcastStatusMessage(result);
+          _statusMessage = shieldPcztBroadcastStatusMessage(
+            context.l10n,
+            result,
+          );
         });
         return;
       }
@@ -439,7 +442,7 @@ class _MobileKeystoneShieldScreenState
       if (isHardwareBroadcastRetryable(e)) {
         setState(() {
           _stage = _ShieldSignStage.failed;
-          _error = kShieldWaitingForPrivateRecoveryMessage;
+          _error = context.l10n.homeShieldWaitingForPrivateRecovery;
           _retrySignatures = signatures;
         });
         return;
@@ -519,7 +522,7 @@ class _MobileKeystoneShieldScreenState
       _statusMessage = null;
       _error = released
           ? context.l10n.homeShieldCancelled
-          : context.l10n.homeShieldCancelFailed;
+          : context.l10n.commonCancelFailedRetry;
     });
   }
 
@@ -579,7 +582,7 @@ class _MobileKeystoneShieldScreenState
           title: !_started
               ? context.l10n.homeShieldBalanceTitle
               : _done
-              ? context.l10n.homeShieldSucceededTitle
+              ? context.l10n.commonShieldedSuccessfully
               : scanning
               ? context.l10n.homeShieldScanTitle
               : _stage == _ShieldSignStage.showQr
@@ -652,7 +655,7 @@ class _MobileKeystoneShieldScreenState
         controller: controller,
         maxWidth: viewSize,
         permissionDeniedMessage: context.l10n.homeShieldCameraDenied,
-        unavailableMessage: context.l10n.homeShieldCameraUnavailable,
+        unavailableMessage: context.l10n.commonCameraUnavailableNow,
         onOpenSettings: _openCameraSettings,
       ),
     );
@@ -684,7 +687,7 @@ class _MobileKeystoneShieldScreenState
                       variant: AppButtonVariant.ghost,
                       onPressed: _finishWarningOrFailure,
                       child: Text(
-                        context.l10n.homeShieldBackToWallet,
+                        context.l10n.commonBackToWallet,
                         style: const TextStyle(color: Colors.white),
                       ),
                     ),
@@ -707,7 +710,7 @@ class _MobileKeystoneShieldScreenState
                 constrainContent: true,
                 growWithContent: true,
                 onPressed: _finishWarningOrFailure,
-                child: Text(context.l10n.homeShieldBackToWallet),
+                child: Text(context.l10n.commonBackToWallet),
               ),
       );
     }

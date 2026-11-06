@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_layout.dart';
@@ -362,13 +363,13 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           _ledgerDrainingFailure = false;
           _ledgerPhase = LedgerSigningModalPhase.failed;
           _ledgerFailure = LedgerSigningFailurePresentation(
-            title: 'Could not finish transaction',
-            statusLabel: 'Action needed',
+            title: context.l10n.sendLedgerCouldNotFinishTitle,
+            statusLabel: context.l10n.commonActionNeeded,
             message: _ledgerSigningComplete
-                ? 'Keep Vizor open and try again. No new Ledger approval needed.'
-                : 'Vizor could not prepare the transaction. Try again.',
+                ? context.l10n.sendLedgerKeepOpenRetry
+                : context.l10n.sendLedgerCouldNotPrepare,
             showDeviceAppPrompt: false,
-            actionLabel: 'Try again',
+            actionLabel: context.l10n.commonTryAgain,
           );
           _ledgerRecoveryAction = _LedgerSendRecoveryAction.retrySigning;
         });
@@ -517,7 +518,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       // Nothing to do here until the upgrade, so only Cancel remains.
       failure = LedgerSigningFailurePresentation(
         title: kNetworkUpgradeHoldActionLabel,
-        statusLabel: 'Action needed',
+        statusLabel: context.l10n.commonActionNeeded,
         message: upgradeHold,
         showDeviceAppPrompt: false,
         showConnectionPicker: false,
@@ -525,13 +526,12 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       action = null;
     } else if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
-      failure = const LedgerSigningFailurePresentation(
-        title: 'Transaction expired',
-        statusLabel: 'New transaction required',
-        message:
-            'This transaction can no longer be signed. Create and review a new transaction.',
+      failure = LedgerSigningFailurePresentation(
+        title: context.l10n.commonTransactionExpired,
+        statusLabel: context.l10n.sendLedgerStatusNewTransactionRequired,
+        message: context.l10n.sendLedgerExpiredMessage,
         showDeviceAppPrompt: false,
-        actionLabel: 'Create new transaction',
+        actionLabel: context.l10n.sendLedgerCreateNewTransaction,
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
     } else if (isLedgerMemoHashUnsupported(error)) {
@@ -541,9 +541,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       failure = ledgerAppUpdateFailure;
       action = _LedgerSendRecoveryAction.retrySigning;
     } else if (lower.contains('sapling')) {
-      failure = const LedgerSigningFailurePresentation(
-        title: 'Ledger signing unavailable',
-        statusLabel: 'Unsupported transaction',
+      failure = LedgerSigningFailurePresentation(
+        title: context.l10n.sendLedgerSigningUnavailableTitle,
+        statusLabel: context.l10n.sendLedgerStatusUnsupportedTransaction,
         message: kLedgerSaplingRecipientMessage,
         showDeviceAppPrompt: false,
       );
@@ -553,42 +553,41 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       failure = LedgerSigningFailurePresentation(
         requestFailure: LedgerRequestFailure.fromError(error),
         title: LedgerRequestFailure.fromError(error).title,
-        statusLabel: 'New transaction required',
+        statusLabel: context.l10n.sendLedgerStatusNewTransactionRequired,
         message: guidance.message,
         showDeviceAppPrompt: false,
-        actionLabel: 'Create new transaction',
+        actionLabel: context.l10n.sendLedgerCreateNewTransaction,
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
     } else if (guidance != null) {
       failure = LedgerSigningFailurePresentation(
         requestFailure: LedgerRequestFailure.fromError(error),
-        title: 'Ledger needs attention',
-        statusLabel: 'Action needed',
+        title: context.l10n.sendLedgerNeedsAttentionTitle,
+        statusLabel: context.l10n.commonActionNeeded,
         message: guidance.message,
         showDeviceAppPrompt: guidance.showDeviceAppPrompt,
         bluetoothRecovery: guidance.bluetoothRecovery,
         pairingRecovery: guidance.pairingRecovery,
         pairingInvalid: guidance.pairingInvalid,
-        actionLabel: 'Try again',
+        actionLabel: context.l10n.commonTryAgain,
       );
       action = _LedgerSendRecoveryAction.retrySigning;
     } else {
       final message = switch (LedgerRequestFailure.fromError(error)) {
         LedgerRequestFailure.declined =>
-          'The transaction was rejected on your Ledger.',
+          context.l10n.sendLedgerRejectedOnDevice,
         LedgerRequestFailure.transportLost =>
           ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
-              'Connect and unlock your Ledger. $appInstruction',
-        _ =>
-          'Ledger signing could not be completed. Check your device and try again.',
+              context.l10n.sendLedgerConnectAndUnlock(appInstruction),
+        _ => context.l10n.sendLedgerSigningIncomplete,
       };
       failure = LedgerSigningFailurePresentation(
         requestFailure: LedgerRequestFailure.fromError(error),
-        title: 'Ledger signing failed',
-        statusLabel: 'Action needed',
+        title: context.l10n.commonLedgerSigningFailed,
+        statusLabel: context.l10n.commonActionNeeded,
         message: message,
         showDeviceAppPrompt: false,
-        actionLabel: 'Try again',
+        actionLabel: context.l10n.commonTryAgain,
       );
       action = _LedgerSendRecoveryAction.retrySigning;
     }
@@ -638,14 +637,16 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         _ledgerPhase = LedgerSigningModalPhase.failed;
         _ledgerFailure = LedgerSigningFailurePresentation(
           title: terminal
-              ? 'Signed transaction needs attention'
-              : 'Could not save signed transaction',
-          statusLabel: terminal ? 'Recovery required' : 'Signature preserved',
+              ? context.l10n.sendLedgerSignedNeedsAttentionTitle
+              : context.l10n.sendLedgerCouldNotSaveTitle,
+          statusLabel: terminal
+              ? context.l10n.sendLedgerStatusRecoveryRequired
+              : context.l10n.sendLedgerStatusSignaturePreserved,
           message: terminal
-              ? 'Vizor could not verify the saved transaction. Do not sign or send it again.'
-              : 'Your Ledger signature is preserved. Retry saving without approving another transaction.',
+              ? context.l10n.sendLedgerCouldNotVerifySaved
+              : context.l10n.sendLedgerSignaturePreservedMessage,
           showDeviceAppPrompt: false,
-          actionLabel: terminal ? null : 'Retry saving',
+          actionLabel: terminal ? null : context.l10n.commonRetrySaving,
         );
         _ledgerRecoveryAction = terminal
             ? null
@@ -766,7 +767,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       navigate();
       return;
     }
-    const error = 'Could not finish cancelling. Please try again.';
+    final error = context.l10n.commonCancelFailedRetry;
     setState(() {
       _cancelling = false;
       if (_keystonePhase != null) {
@@ -864,8 +865,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           if (!mounted) return;
           setState(() {
             _keystonePhase = KeystoneSigningModalPhase.failed;
-            _keystoneError =
-                'Signing was cancelled before proving parameters were downloaded.';
+            _keystoneError = context.l10n.commonSigningCancelledBeforeParams;
           });
           return;
         }
@@ -978,14 +978,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final lower = raw.toLowerCase();
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
-      return 'Transaction expired before it could be signed.';
+      return context.l10n.commonSigningExpired;
     }
     final batchError = keystoneBatchSigningFriendlyError(raw);
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return context.l10n.commonProvingParamsFailed;
     }
-    return 'Keystone signing could not be prepared. Return to Send and try again.';
+    return context.l10n.sendKeystonePrepareFailedReturnToSend;
   }
 
   Future<void> _cancelSigningAndRefreshReview() async {
@@ -1010,7 +1010,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
           _reviewRecoveryFailed = true;
         } else {
           _keystonePhase = KeystoneSigningModalPhase.failed;
-          _keystoneError = 'Could not finish cancelling. Please try again.';
+          _keystoneError = context.l10n.commonCancelFailedRetry;
         }
       });
       return;
@@ -1072,7 +1072,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       });
       showAppToast(
         context,
-        friendlyProposeSendError(error.toString()),
+        friendlyProposeSendError(context.l10n, error.toString()),
         iconName: AppIcons.warningCircle,
         tone: AppToastTone.destructive,
       );
@@ -1122,8 +1122,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       log('SendReview._getKeystoneSignature: ERROR: $e\n$st');
       if (!mounted || generation != _signingGeneration) return;
       setState(() {
-        _keystoneError =
-            'This QR code does not match the current Keystone signing request.';
+        _keystoneError = context.l10n.sendKeystoneQrMismatch;
       });
       return;
     }
@@ -1208,7 +1207,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                 toolbar: AppPaneToolbar(
                   leading: _reviewArgs.flowKind == SendFlowKind.donation
                       ? AppBackLink(
-                          label: 'Support Vizor',
+                          label: context.l10n.commonSupportVizor,
                           minWidth: 60,
                           onTap: _handleDonationBack,
                         )
@@ -1235,14 +1234,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                         ),
                         feeText: _formatFee(_reviewArgs.feeZatoshi),
                         confirmLabel: _reviewRecoveryFailed
-                            ? 'Retry'
+                            ? context.l10n.commonRetry
                             : _cancelling
-                            ? 'Cancelling…'
+                            ? context.l10n.commonCancelling
                             : isLedger
-                            ? 'Confirm with Ledger'
+                            ? context.l10n.sendReviewConfirmWithLedger
                             : isHardware
-                            ? 'Confirm with Keystone'
-                            : 'Confirm donation',
+                            ? context.l10n.sendKeystoneConfirmTitle
+                            : context.l10n.sendReviewConfirmDonation,
                         confirmIcon: isHardware
                             ? (isLedger ? AppIcons.ledger : AppIcons.qr)
                             : AppIcons.donation,
@@ -1269,14 +1268,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                         memoText: hasMemo ? memo : null,
                         memoExpanded: _messageExpanded,
                         confirmLabel: _reviewRecoveryFailed
-                            ? 'Retry'
+                            ? context.l10n.commonRetry
                             : _cancelling
-                            ? 'Cancelling…'
+                            ? context.l10n.commonCancelling
                             : isLedger
-                            ? 'Confirm with Ledger'
+                            ? context.l10n.sendReviewConfirmWithLedger
                             : isHardware
-                            ? 'Confirm with Keystone'
-                            : 'Confirm & send',
+                            ? context.l10n.sendKeystoneConfirmTitle
+                            : context.l10n.sendReviewConfirmAndSend,
                         confirmLeadingIconName: isHardware
                             ? (isLedger ? AppIcons.ledger : AppIcons.qr)
                             : AppIcons.plane,
@@ -1312,18 +1311,20 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                       phase: keystonePhase,
                       urParts: _keystoneUrParts,
                       error: _keystoneError,
-                      title: 'Confirm with Keystone',
+                      title: context.l10n.sendKeystoneConfirmTitle,
                       subtitle: _keystoneUrPartsByRound.length == 2
-                          ? 'Transaction ${_keystoneRound + 1} of 2'
-                          : 'Scan with your Keystone',
+                          ? context.l10n.sendKeystoneTransactionOfTwo(
+                              _keystoneRound + 1,
+                            )
+                          : context.l10n.sendKeystoneScanSubtitle,
                       instruction:
                           _keystoneError ??
                           (_keystonePcztsWithProofs.isEmpty
-                              ? 'Scan now. Signature import unlocks after proofs are ready.'
-                              : 'After you scanned, click Get signature.'),
+                              ? context.l10n.sendKeystoneScanNow
+                              : context.l10n.commonKeystoneAfterScan),
                       primaryLabel: _keystonePcztsWithProofs.isEmpty
-                          ? 'Preparing'
-                          : 'Get signature',
+                          ? context.l10n.sendKeystonePreparing
+                          : context.l10n.commonGetSignature,
                       onPrimary:
                           !_proposalAbandoned &&
                               keystonePhase ==
@@ -1331,7 +1332,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                               _keystonePcztsWithProofs.isNotEmpty
                           ? () => unawaited(_getKeystoneSignature())
                           : null,
-                      secondaryLabel: _cancelling ? 'Cancelling…' : 'Cancel',
+                      secondaryLabel: _cancelling
+                          ? context.l10n.commonCancelling
+                          : context.l10n.commonCancel,
                       onSecondary: _cancelling
                           ? null
                           : () => unawaited(_cancelSigningAndRefreshReview()),

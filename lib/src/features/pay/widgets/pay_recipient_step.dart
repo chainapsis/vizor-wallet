@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -94,7 +95,7 @@ class PayRecipientStep extends StatelessWidget {
         contact: contact,
         address: recent.address,
         amountText: recent.amountText,
-        timeLabel: payRecentTimeLabel(recent.lastUsedAt),
+        timeLabel: payRecentTimeLabel(context.l10n, recent.lastUsedAt),
         selected:
             selection.contactId != null &&
             selection.contactId == selectedContactId,
@@ -109,16 +110,16 @@ class PayRecipientStep extends StatelessWidget {
       children: [
         AppTextField(
           key: const ValueKey('pay_recipient_search_field'),
-          label: 'Recipient address',
+          label: context.l10n.payRecipientAddressLabel,
           showLabel: false,
           controller: controller,
-          hintText: 'Paste an address or scan QR code',
+          hintText: context.l10n.payRecipientAddressHint,
           leading: AppIcon(AppIcons.user, size: 20, color: colors.icon.regular),
           leadingSlotWidth: 32,
           trailing: AppIconHoverButton(
             key: const ValueKey('pay_recipient_scan_button'),
             icon: AppIcons.qr,
-            semanticLabel: 'Scan QR code',
+            semanticLabel: context.l10n.payRecipientScanQr,
             iconSize: 20,
             iconColor: colors.icon.regular,
             onTap: onOpenScanner,
@@ -148,14 +149,14 @@ class PayRecipientStep extends StatelessWidget {
                     AppIcon(AppIcons.users, size: 20, color: colors.icon.muted),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      'New address detected.',
+                      context.l10n.payNewAddressDetected,
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.primary,
                       ),
                     ),
                     Text(
-                      "You haven't interacted with this address before.",
+                      context.l10n.payNewAddressWarning,
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
@@ -170,7 +171,7 @@ class PayRecipientStep extends StatelessWidget {
           if (matchedRecents.isNotEmpty) ...[
             _PayRecipientListCard(
               key: const ValueKey('pay_recent_recipients_card'),
-              title: 'Recently sent',
+              title: context.l10n.payRecentlySent,
               children: [
                 for (final recent in matchedRecents) buildRecentRow(recent),
               ],
@@ -180,7 +181,7 @@ class PayRecipientStep extends StatelessWidget {
           if (matchedContacts.isNotEmpty)
             _PayRecipientListCard(
               key: const ValueKey('pay_contacts_card'),
-              title: 'Contacts',
+              title: context.l10n.commonContacts,
               children: [
                 for (final contact in matchedContacts)
                   _PayRecipientRow(
@@ -276,7 +277,7 @@ class PayRecipientActions extends StatelessWidget {
             size: AppButtonSize.large,
             minWidth: PayWizardActionMetrics.width,
             onPressed: busy ? null : onAddToContacts,
-            child: const Text('Add to contacts'),
+            child: Text(context.l10n.payAddToContacts),
           ),
           const SizedBox(height: AppSpacing.s),
         ],
@@ -288,7 +289,11 @@ class PayRecipientActions extends StatelessWidget {
           trailing: busy ? const AppIcon(AppIcons.loader) : null,
           iconGap: AppSpacing.xxs,
           onPressed: busy || !enabled ? null : onSelectRecipient,
-          child: Text(busy ? 'Fetching quote' : 'Select recipient'),
+          child: Text(
+            busy
+                ? context.l10n.payFetchingQuote
+                : context.l10n.paySelectRecipient,
+          ),
         ),
       ],
     );
@@ -499,7 +504,7 @@ class _ContactSelectionSlot extends StatelessWidget {
                 AppIcons.check,
                 size: 16,
                 color: context.colors.icon.accent,
-                semanticLabel: 'Selected contact',
+                semanticLabel: context.l10n.commonSelectedContact,
               ),
             )
           : null,

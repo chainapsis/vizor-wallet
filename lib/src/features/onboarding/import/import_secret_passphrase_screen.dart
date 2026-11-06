@@ -966,7 +966,7 @@ class _SavedBip39PassphraseFooter extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     Text(
-                      context.l10n.onboardingEdit,
+                      context.l10n.commonEdit,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                       ),
@@ -1001,7 +1001,7 @@ class _ClearMnemonicButton extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
         expand: true,
         constrainContent: true,
-        child: Text(context.l10n.onboardingClear),
+        child: Text(context.l10n.commonClear),
       ),
     );
   }
@@ -1083,7 +1083,7 @@ class _Bip39PassphraseModal extends StatelessWidget {
             actionKey: const ValueKey('bip39_passphrase_save_button'),
             onCancel: onCancel,
             actionLabel: isEditing
-                ? context.l10n.onboardingSave
+                ? context.l10n.commonSave
                 : context.l10n.onboardingAdd,
             onAction: canSave ? onSave : null,
           ),

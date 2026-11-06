@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
@@ -87,8 +88,8 @@ class NearIntentsServiceNoticeContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = notice.maintenanceOnly
-        ? 'Maintenance notice'
-        : 'Service notice';
+        ? context.l10n.swapNoticeMaintenanceTitle
+        : context.l10n.swapNoticeServiceTitle;
     final section = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -141,7 +142,7 @@ class NearIntentsServiceNoticeContent extends StatelessWidget {
             right: AppSpacing.sm,
             child: Semantics(
               button: true,
-              label: 'Close service notice',
+              label: context.l10n.swapNoticeCloseLabel,
               child: AppButton(
                 key: const ValueKey('near_intents_service_notice_close'),
                 variant: AppButtonVariant.secondary,
@@ -179,7 +180,7 @@ class _NoticeBody extends StatelessWidget {
     final colors = context.colors;
     final chains = {for (final issue in notice.issues) ...issue.chains}.toList()
       ..sort();
-    final networks = _networkNames(chains);
+    final networks = _networkNames(context.l10n, chains);
     final windows = <NearIntentsServiceIssue>[];
     final seen = <String>{};
     for (final issue in notice.issues) {
@@ -200,31 +201,40 @@ class _NoticeBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (notice.maintenanceOnly) ...[
-            Text('NEAR Intents is under maintenance.', style: bodyStyle),
+            Text(context.l10n.swapNoticeMaintenanceIntro, style: bodyStyle),
             const SizedBox(height: AppSpacing.xs),
           ],
           Text(
             payMode
-                ? 'Payments may not work right now.'
-                : 'Swaps may not work right now.',
+                ? context.l10n.swapNoticePaymentsMayFail
+                : context.l10n.swapNoticeSwapsMayFail,
             style: bodyStyle,
           ),
           for (final window in windows) ...[
             const SizedBox(height: AppSpacing.sm),
             if (!notice.maintenanceOnly)
               Text(
-                'Maintenance window: ${_networkNames(window.chains)}',
+                context.l10n.swapNoticeMaintenanceWindow(
+                  _networkNames(context.l10n, window.chains),
+                ),
                 style: bodyStyle,
               )
             else if (windows.length > 1)
-              Text(_networkNames(window.chains), style: bodyStyle),
+              Text(
+                _networkNames(context.l10n, window.chains),
+                style: bodyStyle,
+              ),
             Text(
-              'Start: ${formatNearIntentsServiceTime(window.startsAt!)}',
+              context.l10n.swapNoticeStart(
+                formatNearIntentsServiceTime(window.startsAt!),
+              ),
               style: bodyStyle,
             ),
             const SizedBox(height: AppSpacing.xxs),
             Text(
-              'Expected end: ${formatNearIntentsServiceTime(window.finishesAt!)}',
+              context.l10n.swapNoticeExpectedEnd(
+                formatNearIntentsServiceTime(window.finishesAt!),
+              ),
               style: bodyStyle,
             ),
           ],
@@ -243,8 +253,8 @@ class _NoticeBody extends StatelessWidget {
                     children: [
                       Text(
                         notice.maintenanceOnly
-                            ? 'List of maintenance'
-                            : 'Affected networks',
+                            ? context.l10n.swapNoticeListOfMaintenance
+                            : context.l10n.swapNoticeAffectedNetworks,
                         textAlign: TextAlign.center,
                         style: AppTypography.headlineSmall.copyWith(
                           color: _warningOrange,
@@ -271,7 +281,7 @@ class _NoticeBody extends StatelessWidget {
                     'assets/icons/near_intents_maintenance_wordmark.svg',
                     width: 91.9008,
                     height: 10.9945,
-                    semanticsLabel: 'NEAR Intents',
+                    semanticsLabel: 'NEAR Intents', // l10n-ignore: product name
                   ),
                 ),
               ],
@@ -309,8 +319,8 @@ class _NoticeActions extends StatelessWidget {
             AppIcons.arrowTopRight,
             size: AppIconSize.medium,
           ),
-          child: const Text(
-            'NEAR Intents status page',
+          child: Text(
+            context.l10n.swapNoticeStatusPage,
             textAlign: TextAlign.center,
           ),
         ),
@@ -321,15 +331,16 @@ class _NoticeActions extends StatelessWidget {
           expand: true,
           growWithContent: true,
           onPressed: onClose,
-          child: const Text('Ok'),
+          child: Text(context.l10n.swapNoticeOk),
         ),
       ],
     );
   }
 }
 
-String _networkNames(Iterable<String> chains) => chains.contains('*')
-    ? 'All chains'
+String _networkNames(AppLocalizations l10n, Iterable<String> chains) =>
+    chains.contains('*')
+    ? l10n.swapNoticeAllChains
     : chains.map(swapChainDisplayName).join(', ');
 
 /// Explicit local date and numeric UTC offset also disambiguate midnight,
@@ -339,7 +350,7 @@ String formatNearIntentsServiceTime(DateTime value) {
   String two(int value) => value.toString().padLeft(2, '0');
   final offset = time.timeZoneOffset;
   final minutes = offset.inMinutes.abs();
-  return '${time.year.toString().padLeft(4, '0')}-${two(time.month)}-${two(time.day)} '
+  return '${time.year.toString().padLeft(4, '0')}-${two(time.month)}-${two(time.day)} ' // l10n-ignore: numeric timestamp
       '${two(time.hour)}:${two(time.minute)} '
       '(UTC${offset.isNegative ? '-' : '+'}${two(minutes ~/ 60)}:${two(minutes % 60)})';
 }

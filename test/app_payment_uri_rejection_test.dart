@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fakes/fake_sync_notifier.dart';
+import 'support/test_l10n.dart';
 
 // A refused `zcash:` link is answered with one of two sentences, never with
 // the parser's own message: that text is spec wording written for us, and it
@@ -97,8 +98,11 @@ void main() {
     ]);
     await tester.pumpAndSettle();
 
-    expect(find.text(kPaymentUriUnsupportedMessage), findsOneWidget);
-    expect(find.text(kPaymentUriMalformedMessage), findsNothing);
+    expect(
+      find.text(PaymentUriNotice.unsupported.text(testL10n)),
+      findsOneWidget,
+    );
+    expect(find.text(PaymentUriNotice.malformed.text(testL10n)), findsNothing);
     expect(
       container.read(paymentUriPrefillProvider),
       isNull,
@@ -114,8 +118,14 @@ void main() {
     ]);
     await tester.pumpAndSettle();
 
-    expect(find.text(kPaymentUriMalformedMessage), findsOneWidget);
-    expect(find.text(kPaymentUriUnsupportedMessage), findsNothing);
+    expect(
+      find.text(PaymentUriNotice.malformed.text(testL10n)),
+      findsOneWidget,
+    );
+    expect(
+      find.text(PaymentUriNotice.unsupported.text(testL10n)),
+      findsNothing,
+    );
     expect(container.read(paymentUriPrefillProvider), isNull);
   });
 
@@ -135,8 +145,14 @@ void main() {
     ]);
     await tester.pumpAndSettle();
 
-    expect(find.text(kPaymentUriMalformedMessage), findsOneWidget);
-    expect(find.text(kPaymentUriUnsupportedMessage), findsNothing);
+    expect(
+      find.text(PaymentUriNotice.malformed.text(testL10n)),
+      findsOneWidget,
+    );
+    expect(
+      find.text(PaymentUriNotice.unsupported.text(testL10n)),
+      findsNothing,
+    );
     expect(
       container.read(paymentUriPrefillProvider),
       isNull,
@@ -163,7 +179,10 @@ void main() {
       findsNothing,
       reason: 'the link must not echo its own text back at the payer',
     );
-    expect(find.text(kPaymentUriMalformedMessage), findsOneWidget);
+    expect(
+      find.text(PaymentUriNotice.malformed.text(testL10n)),
+      findsOneWidget,
+    );
   });
 }
 

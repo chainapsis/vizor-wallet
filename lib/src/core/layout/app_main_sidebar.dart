@@ -1221,7 +1221,7 @@ class _SidebarCopyAddressButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: context.l10n.sidebarCopyShieldedAddress,
+      label: context.l10n.commonCopyShieldedAddress,
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
         child: GestureDetector(
@@ -1595,6 +1595,7 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
 
   bool get _isSyncing =>
       SyncStatusLabel.from(
+        context.l10n,
         widget.sync,
         networkPrivacy: widget.networkPrivacy,
       ).kind ==
@@ -1644,6 +1645,7 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
   Widget build(BuildContext context) {
     final colors = context.colors;
     final status = SyncStatusLabel.from(
+      context.l10n,
       widget.sync,
       displayWholePercentage: ref.watch(syncDisplayWholePercentageProvider),
       networkPrivacy: widget.networkPrivacy,

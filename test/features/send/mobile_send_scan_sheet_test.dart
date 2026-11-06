@@ -12,10 +12,10 @@ import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_sc
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_scan_screen.dart';
-import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 const _mainnetAddress =
     'u1testshieldedaddress000000000000000000000000000000000000000000000000';
@@ -117,6 +117,7 @@ void main() {
 
     test('accepts an address this wallet can pay', () async {
       final outcome = await resolveScannedZcashAddress(
+        testL10n,
         _mainnetAddress,
         networkName: kZcashDefaultNetworkName,
       );
@@ -127,6 +128,7 @@ void main() {
 
     test('refuses an address for another network, and says which', () async {
       final outcome = await resolveScannedZcashAddress(
+        testL10n,
         _otherNetworkAddress,
         networkName: kZcashDefaultNetworkName,
       );
@@ -134,7 +136,7 @@ void main() {
       expect(outcome.isAccepted, isFalse);
       expect(
         outcome.error,
-        '$kWrongNetworkAddressMessage.',
+        '${testL10n.sendRecipientWrongNetwork}.',
         reason:
             'the code scanned fine and holds a real address; "not a Zcash '
             'address" would read as a broken scanner',
@@ -143,6 +145,7 @@ void main() {
 
     test('refuses anything that is not an address at all', () async {
       final outcome = await resolveScannedZcashAddress(
+        testL10n,
         'not-an-address',
         networkName: kZcashDefaultNetworkName,
       );

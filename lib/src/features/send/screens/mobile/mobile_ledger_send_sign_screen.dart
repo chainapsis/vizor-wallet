@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
@@ -280,13 +281,13 @@ class _MobileLedgerSendSignScreenState
           _drainingFailure = false;
           _phase = LedgerSigningModalPhase.failed;
           _failure = LedgerSigningFailurePresentation(
-            title: 'Could not finish transaction',
-            statusLabel: 'Action needed',
+            title: context.l10n.sendLedgerCouldNotFinishTitle,
+            statusLabel: context.l10n.commonActionNeeded,
             message: _signingComplete
-                ? 'Keep Vizor open and try again. No new Ledger approval needed.'
-                : 'Vizor could not prepare the transaction. Try again.',
+                ? context.l10n.sendLedgerKeepOpenRetry
+                : context.l10n.sendLedgerCouldNotPrepare,
             showDeviceAppPrompt: false,
-            actionLabel: 'Try again',
+            actionLabel: context.l10n.commonTryAgain,
           );
           _recoveryAction = _LedgerSendRecoveryAction.retrySigning;
         });
@@ -425,26 +426,25 @@ class _MobileLedgerSendSignScreenState
       // Nothing to do here until the upgrade; the sheet only closes.
       presentation = LedgerSigningFailurePresentation(
         title: kNetworkUpgradeHoldActionLabel,
-        statusLabel: 'Action needed',
+        statusLabel: context.l10n.commonActionNeeded,
         message: upgradeHold,
         showDeviceAppPrompt: false,
       );
       action = null;
     } else if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
-      presentation = const LedgerSigningFailurePresentation(
-        title: 'Transaction expired',
-        statusLabel: 'New transaction required',
-        message:
-            'This transaction can no longer be signed. Create and review a new transaction.',
+      presentation = LedgerSigningFailurePresentation(
+        title: context.l10n.commonTransactionExpired,
+        statusLabel: context.l10n.sendLedgerStatusNewTransactionRequired,
+        message: context.l10n.sendLedgerExpiredMessage,
         showDeviceAppPrompt: false,
-        actionLabel: 'Create new transaction',
+        actionLabel: context.l10n.sendLedgerCreateNewTransaction,
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
     } else if (lower.contains('sapling')) {
-      presentation = const LedgerSigningFailurePresentation(
-        title: 'Ledger signing unavailable',
-        statusLabel: 'Unsupported transaction',
+      presentation = LedgerSigningFailurePresentation(
+        title: context.l10n.sendLedgerSigningUnavailableTitle,
+        statusLabel: context.l10n.sendLedgerStatusUnsupportedTransaction,
         message: kLedgerSaplingRecipientMessage,
         showDeviceAppPrompt: false,
       );
@@ -453,42 +453,41 @@ class _MobileLedgerSendSignScreenState
       // Retrying the same request fails the same way on the device.
       presentation = LedgerSigningFailurePresentation(
         title: LedgerRequestFailure.fromError(error).title,
-        statusLabel: 'New transaction required',
+        statusLabel: context.l10n.sendLedgerStatusNewTransactionRequired,
         message: guidance.message,
         showDeviceAppPrompt: false,
-        actionLabel: 'Create new transaction',
+        actionLabel: context.l10n.sendLedgerCreateNewTransaction,
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
     } else if (guidance != null) {
       presentation = LedgerSigningFailurePresentation(
-        title: 'Ledger needs attention',
+        title: context.l10n.sendLedgerNeedsAttentionTitle,
         requestFailure: LedgerRequestFailure.fromError(error),
-        statusLabel: 'Action needed',
+        statusLabel: context.l10n.commonActionNeeded,
         message: guidance.message,
         showDeviceAppPrompt: guidance.showDeviceAppPrompt,
         bluetoothRecovery: guidance.bluetoothRecovery,
         pairingRecovery: guidance.pairingRecovery,
         pairingInvalid: guidance.pairingInvalid,
-        actionLabel: 'Try again',
+        actionLabel: context.l10n.commonTryAgain,
       );
       action = _LedgerSendRecoveryAction.retrySigning;
     } else {
       final message = switch (LedgerRequestFailure.fromError(error)) {
         LedgerRequestFailure.declined =>
-          'The transaction was rejected on your Ledger.',
+          context.l10n.sendLedgerRejectedOnDevice,
         LedgerRequestFailure.transportLost =>
           ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
-              'Connect and unlock your Ledger. $appInstruction',
-        _ =>
-          'Ledger signing could not be completed. Check your device and try again.',
+              context.l10n.sendLedgerConnectAndUnlock(appInstruction),
+        _ => context.l10n.sendLedgerSigningIncomplete,
       };
       presentation = LedgerSigningFailurePresentation(
-        title: 'Ledger signing failed',
+        title: context.l10n.commonLedgerSigningFailed,
         requestFailure: LedgerRequestFailure.fromError(error),
-        statusLabel: 'Action needed',
+        statusLabel: context.l10n.commonActionNeeded,
         message: message,
         showDeviceAppPrompt: false,
-        actionLabel: 'Try again',
+        actionLabel: context.l10n.commonTryAgain,
       );
       action = _LedgerSendRecoveryAction.retrySigning;
     }
@@ -537,14 +536,16 @@ class _MobileLedgerSendSignScreenState
         _phase = LedgerSigningModalPhase.failed;
         _failure = LedgerSigningFailurePresentation(
           title: terminal
-              ? 'Signed transaction needs attention'
-              : 'Could not save signed transaction',
-          statusLabel: terminal ? 'Recovery required' : 'Action needed',
+              ? context.l10n.sendLedgerSignedNeedsAttentionTitle
+              : context.l10n.sendLedgerCouldNotSaveTitle,
+          statusLabel: terminal
+              ? context.l10n.sendLedgerStatusRecoveryRequired
+              : context.l10n.commonActionNeeded,
           message: terminal
-              ? 'Vizor could not verify the saved transaction. Do not sign or send it again.'
-              : 'Keep Vizor open and retry saving. No new Ledger approval needed.',
+              ? context.l10n.sendLedgerCouldNotVerifySaved
+              : context.l10n.sendLedgerKeepOpenRetrySaving,
           showDeviceAppPrompt: false,
-          actionLabel: terminal ? null : 'Retry saving',
+          actionLabel: terminal ? null : context.l10n.commonRetrySaving,
         );
         _recoveryAction = terminal
             ? null
@@ -602,7 +603,7 @@ class _MobileLedgerSendSignScreenState
           title: failure.title,
           requestFailure: failure.requestFailure,
           statusLabel: failure.statusLabel,
-          message: 'Could not finish cancelling. Please try again.',
+          message: context.l10n.commonCancelFailedRetry,
           showDeviceAppPrompt: false,
           actionLabel: failure.actionLabel,
         );
@@ -672,7 +673,7 @@ class _MobileLedgerSendSignScreenState
         !_signingComplete && !_cancelled && !_releasing && !_drainingFailure;
     return MobileLedgerSigningSurface(
       key: const ValueKey('mobile_ledger_signing_surface'),
-      title: 'Confirm transaction',
+      title: context.l10n.sendSignConfirmTransaction,
       canLeave: canLeave,
       onBack: () => unawaited(_cancelAndPop()),
       child: LedgerSigningModal(

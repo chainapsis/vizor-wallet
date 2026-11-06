@@ -22,10 +22,7 @@ import '../../send/services/sapling_params.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
 import '../services/hardware_shielding_session.dart';
 import '../services/transparent_shielding_service.dart'
-    show
-        isHardwareBroadcastRetryable,
-        kShieldWaitingForPrivateRecoveryMessage,
-        observeShieldingBroadcast;
+    show isHardwareBroadcastRetryable, observeShieldingBroadcast;
 
 enum _KeystoneShieldPhase {
   preparing,
@@ -295,7 +292,7 @@ class _KeystoneShieldSigningOverlayState
       if (isHardwareBroadcastRetryable(e)) {
         setState(() {
           _phase = _KeystoneShieldPhase.failed;
-          _error = kShieldWaitingForPrivateRecoveryMessage;
+          _error = context.l10n.homeShieldWaitingForPrivateRecovery;
           _retrySignatures = signatures;
         });
         return;
@@ -367,7 +364,7 @@ class _KeystoneShieldSigningOverlayState
       return context.l10n.homeShieldErrorTooSmall;
     }
     if (lower.contains('sapling') || lower.contains('download')) {
-      return context.l10n.homeShieldErrorProvingParams;
+      return context.l10n.commonProvingParamsFailed;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
       return context.l10n.homeShieldErrorBroadcast;
@@ -388,7 +385,7 @@ class _KeystoneShieldSigningOverlayState
       setState(() {
         _closed = false;
         _phase = _KeystoneShieldPhase.failed;
-        _error = context.l10n.homeShieldCancelFailed;
+        _error = context.l10n.commonCancelFailedRetry;
       });
       return;
     }

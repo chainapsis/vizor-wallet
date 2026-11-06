@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -679,7 +680,7 @@ class _SwapLedgerSigningOverlayState
     if (_deviceGuidance != null) return _deviceGuidance!.message;
     if (LedgerRequestFailure.fromError(error) ==
         LedgerRequestFailure.declined) {
-      return 'The ZEC deposit was rejected on your Ledger.';
+      return context.l10n.swapLedgerDeclined;
     }
     final usb = ledgerUsbErrorMessage(error, appInstruction: appInstruction);
     if (usb != null) return usb;
@@ -687,9 +688,9 @@ class _SwapLedgerSigningOverlayState
       return kLedgerSaplingRecipientMessage;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return 'The ZEC deposit could not be broadcast.';
+      return context.l10n.swapLedgerBroadcastFailed;
     }
-    return 'Ledger signing could not be completed.';
+    return context.l10n.swapLedgerSigningIncomplete;
   }
 
   @override
@@ -731,31 +732,31 @@ class _SwapLedgerSigningOverlayState
                   (_deviceGuidance?.bluetoothRecovery ?? false),
               title: postBroadcastRecovery
                   ? expiredRecovery
-                        ? 'Transaction expired'
+                        ? context.l10n.commonTransactionExpired
                         : broadcastConfirmed
-                        ? 'Transaction sent'
-                        : 'Transaction status pending'
+                        ? context.l10n.swapLedgerTitleSent
+                        : context.l10n.swapLedgerTitlePending
                   : _operationClaimUnavailable
-                  ? 'Transaction recovery in progress'
+                  ? context.l10n.swapLedgerTitleRecovery
                   : upgradeHold
                   ? kNetworkUpgradeHoldActionLabel
-                  : 'Ledger signing failed',
+                  : context.l10n.commonLedgerSigningFailed,
               statusLabel: postBroadcastRecovery
                   ? expiredRecovery
-                        ? 'Cleanup needed'
-                        : 'Saving transaction'
+                        ? context.l10n.swapLedgerStatusCleanup
+                        : context.l10n.swapLedgerStatusSaving
                   : _operationClaimUnavailable
-                  ? 'Please wait'
-                  : 'Action needed',
+                  ? context.l10n.swapLedgerStatusWait
+                  : context.l10n.commonActionNeeded,
               message: postBroadcastRecovery
                   ? expiredRecovery
-                        ? 'The transaction expired before it was sent. Vizor still needs to release its reserved funds.'
+                        ? context.l10n.swapLedgerMessageExpired
                         : broadcastConfirmed
-                        ? 'The transaction was sent, but Vizor could not finish saving it.'
-                        : 'Vizor could not confirm whether the transaction was sent, and still needs to save its status.'
+                        ? context.l10n.swapLedgerMessageSentNotSaved
+                        : context.l10n.swapLedgerMessageUncertain
                   : _operationClaimUnavailable
-                  ? 'Vizor is already finishing this transaction in the background.'
-                  : _error ?? 'Ledger signing could not be completed.',
+                  ? context.l10n.swapLedgerMessageBackground
+                  : _error ?? context.l10n.swapLedgerSigningIncomplete,
               showDeviceAppPrompt:
                   !postBroadcastRecovery &&
                   !_operationClaimUnavailable &&
@@ -768,13 +769,13 @@ class _SwapLedgerSigningOverlayState
                   ? null
                   : postBroadcastRecovery
                   ? expiredRecovery
-                        ? 'Retry cleanup'
-                        : 'Retry saving'
-                  : 'Try again',
+                        ? context.l10n.swapLedgerRetryCleanup
+                        : context.l10n.commonRetrySaving
+                  : context.l10n.commonTryAgain,
             )
           : null,
       onCancel: canLeave ? () => unawaited(_cancel()) : null,
-      cancelLabel: 'Back to activity',
+      cancelLabel: context.l10n.swapLedgerBackToActivity,
       onFailureAction:
           _phase == LedgerSigningModalPhase.failed &&
               !_operationClaimUnavailable &&
@@ -788,7 +789,9 @@ class _SwapLedgerSigningOverlayState
         fit: StackFit.expand,
         children: [
           MobileLedgerSigningSurface(
-            title: widget.intent.payMode ? 'Sign payment' : 'Sign ZEC deposit',
+            title: widget.intent.payMode
+                ? context.l10n.swapSignPayment
+                : context.l10n.swapSignZecDeposit,
             canLeave: canLeave,
             onBack: () => unawaited(_cancel()),
             child: modal,

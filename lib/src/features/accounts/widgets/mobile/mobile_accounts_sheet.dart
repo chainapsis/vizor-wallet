@@ -341,7 +341,7 @@ class _CopyAddressButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _AccountSheetButtonShell(
-      label: context.l10n.sidebarCopyShieldedAddress,
+      label: context.l10n.commonCopyShieldedAddress,
       onTap: onTap,
       child: SizedBox(
         width: 40,

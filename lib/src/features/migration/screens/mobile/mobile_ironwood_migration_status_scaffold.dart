@@ -33,6 +33,7 @@ class _MobileMigrationStatusScaffold extends ConsumerWidget {
                 builder: (context, ref, _) => MobileTopNav.account(
                   accountName: data.accountName,
                   syncLabel: SyncStatusLabel.from(
+                    context.l10n,
                     sync,
                     displayWholePercentage: ref.watch(
                       syncDisplayWholePercentageProvider,

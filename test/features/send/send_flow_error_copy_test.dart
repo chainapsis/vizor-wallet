@@ -3,19 +3,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/core/zcash/transparent_ledger_errors.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   group('friendlyProposeSendError', () {
     test('uses donation copy for an unknown donation proposal failure', () {
       expect(
         friendlyProposeSendError(
+          testL10n,
           'proposal failed',
           flowKind: SendFlowKind.donation,
         ),
         'Donation failed. Try again.',
       );
       expect(
-        friendlyProposeSendError('proposal failed'),
+        friendlyProposeSendError(testL10n, 'proposal failed'),
         'Send failed. Try again.',
       );
     });
@@ -28,8 +30,12 @@ void main() {
         'proposal not found',
       ]) {
         expect(
-          friendlyProposeSendError(raw, flowKind: SendFlowKind.donation),
-          friendlyProposeSendError(raw),
+          friendlyProposeSendError(
+            testL10n,
+            raw,
+            flowKind: SendFlowKind.donation,
+          ),
+          friendlyProposeSendError(testL10n, raw),
         );
       }
     });
@@ -37,6 +43,7 @@ void main() {
     test("maps Rust's own no-tip wording onto the sync message", () {
       expect(
         friendlyProposeSendError(
+          testL10n,
           'Propose failed: Wallet must sync before sending max',
         ),
         'Finishing wallet sync. Try again shortly.',
@@ -46,6 +53,7 @@ void main() {
     test('asks for a newer build when the wallet policy is stricter', () {
       expect(
         friendlyProposeSendError(
+          testL10n,
           'Propose failed: Transparent ledger mode Some(Public) is weaker '
           "than the wallet's applied policy PrivateRequired; this build "
           "cannot operate on this wallet's transparent funds",
@@ -58,14 +66,21 @@ void main() {
       const raw =
           "Propose failed: Transactions can't be sent this close to the "
           'network upgrade. Try again after it activates.';
-      expect(friendlyProposeSendError(raw), kNetworkUpgradeHoldMessage);
-      expect(friendlyBroadcastError(raw), kNetworkUpgradeHoldMessage);
-      expect(friendlyPaymentRequestCheckError(raw), kNetworkUpgradeHoldMessage);
+      expect(
+        friendlyProposeSendError(testL10n, raw),
+        kNetworkUpgradeHoldMessage,
+      );
+      expect(friendlyBroadcastError(testL10n, raw), kNetworkUpgradeHoldMessage);
+      expect(
+        paymentRequestCheckIssueFor(raw).text(testL10n),
+        kNetworkUpgradeHoldMessage,
+      );
     });
 
     test('reports incomplete private recovery, not insufficient funds', () {
       expect(
         friendlyProposeSendError(
+          testL10n,
           'Propose failed: Transparent funds are unavailable: private '
           'transparent authority is required but not available',
         ),
@@ -74,16 +89,18 @@ void main() {
     });
   });
 
-  group('friendlyPaymentRequestCheckError', () {
+  group('paymentRequestCheckIssueFor', () {
     test('names the network when the check could not reach it', () {
       expect(
-        friendlyPaymentRequestCheckError('grpc connect failed: dns error'),
+        paymentRequestCheckIssueFor(
+          'grpc connect failed: dns error',
+        ).text(testL10n),
         "Couldn't reach the network — check your connection and try again",
       );
     });
 
     test('never claims a send happened for an unknown failure', () {
-      final copy = friendlyPaymentRequestCheckError('something odd');
+      final copy = paymentRequestCheckIssueFor('something odd').text(testL10n);
       expect(
         copy,
         "Couldn't check this request — try again or edit the details",

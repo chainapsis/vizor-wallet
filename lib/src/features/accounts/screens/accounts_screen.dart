@@ -1435,7 +1435,7 @@ class _AccountContextMenu extends StatelessWidget {
           const SizedBox(height: AppSpacing.xxs),
           AppContextMenuItem(
             iconName: AppIcons.plane,
-            label: context.l10n.accountsSendZec,
+            label: context.l10n.commonSendZec,
             onTap: onSendZec,
           ),
           const SizedBox(height: AppSpacing.xxs),

@@ -19,6 +19,7 @@ ActivityRowData row(int id) => ActivityRowData(
   subtitle: 'Shielded',
   amountText: '+1 ZEC',
   statusText: 'Completed',
+  statusIsRoutine: true,
   timestampText: 'Oct 23, 12:00',
 );
 

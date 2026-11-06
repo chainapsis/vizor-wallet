@@ -13,6 +13,7 @@ import '../models/swap_address_formatting.dart';
 import 'swap_asset_icon.dart';
 import 'swap_status_page_content.dart';
 import 'swap_progress_explorer_footer.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Desktop Pay activity status for Figma nodes 6245:109737 / 6245:110194 and
 /// their dark variants. The Activity pane host already provides the toolbar
@@ -78,7 +79,7 @@ class PayActivityStatusContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            status.title,
+            status.title(context.l10n),
             key: const ValueKey('pay_activity_status_title'),
             textAlign: TextAlign.center,
             style: AppTypography.bodyLarge.copyWith(
@@ -92,7 +93,7 @@ class PayActivityStatusContent extends StatelessWidget {
           if (showTabs && progress != null) ...[
             SwapStatusTabs(
               activeTab: activeTab,
-              progressLabel: 'Payment progress',
+              progressLabel: context.l10n.commonPaymentProgress,
               onChanged: onTabChanged,
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -146,7 +147,7 @@ class PayActivityStatusContent extends StatelessWidget {
           rows: [
             ReviewInfoRow(
               key: const ValueKey('pay_status_amount_row'),
-              label: payActivityStatusAmountLabel(status.phase),
+              label: payActivityStatusAmountLabel(context.l10n, status.phase),
               value: amountText,
               leading: SwapAssetIcon(
                 asset: amountAsset,
@@ -157,7 +158,7 @@ class PayActivityStatusContent extends StatelessWidget {
             ),
             ReviewInfoRow(
               key: const ValueKey('pay_status_recipient_row'),
-              label: 'To',
+              label: context.l10n.commonTo,
               value: contact?.label ?? compactRecipient,
               leading: contact == null
                   ? const ReviewInfoIconCircle(iconName: AppIcons.wallet)
@@ -166,9 +167,9 @@ class PayActivityStatusContent extends StatelessWidget {
                       size: AppProfilePictureSize.large,
                     ),
               bottomLeftText: contact == null
-                  ? 'New address'
+                  ? context.l10n.swapPayStatusNewAddress
                   : compactRecipient,
-              trailingActionLabel: 'Show full address',
+              trailingActionLabel: context.l10n.commonShowFullAddress,
               trailingActionKey: const ValueKey('pay_status_show_full_address'),
               onTrailingAction: onShowFullAddress,
             ),
@@ -210,8 +211,8 @@ class PayActivityStatusContent extends StatelessWidget {
             enabled: !animationsDisabled,
             child: ReviewListRow(
               key: const ValueKey('pay_status_status_row'),
-              label: 'Status',
-              value: status.statusLabel,
+              label: context.l10n.swapStatusRowLabel,
+              value: status.statusLabel(context.l10n),
               valueColor: statusColor,
               leadingIconName: statusIcon,
             ),
@@ -219,9 +220,12 @@ class PayActivityStatusContent extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              ReviewListRow(label: 'Timestamp', value: status.timestampText),
               ReviewListRow(
-                label: 'Tx ID',
+                label: context.l10n.commonTimestamp,
+                value: status.timestampText,
+              ),
+              ReviewListRow(
+                label: context.l10n.commonTxId,
                 value: status.txIdText,
                 trailingIconName: onOpenExplorer == null
                     ? null
@@ -237,20 +241,20 @@ class PayActivityStatusContent extends StatelessWidget {
             children: [
               if (status.phase == PayActivityStatusPhase.failed)
                 ReviewListRow(
-                  label: 'Source amount',
+                  label: context.l10n.swapPayStatusSourceAmount,
                   value: status.convertedFromText,
                 ),
               if (status.phase == PayActivityStatusPhase.refunded &&
                   status.refundedAmountText?.isNotEmpty == true)
                 ReviewListRow(
-                  label: 'Refunded amount',
+                  label: context.l10n.commonRefundedAmount,
                   value: status.refundedAmountText!,
                 ),
               if ((status.phase == PayActivityStatusPhase.failed ||
                       status.phase == PayActivityStatusPhase.refunded) &&
                   status.refundAddress?.isNotEmpty == true)
                 ReviewListRow(
-                  label: 'Refund to',
+                  label: context.l10n.commonRefundTo,
                   value: compactSwapAddress(status.refundAddress!),
                   copyText: status.refundAddress,
                   scaleValueToFit: true,
@@ -258,22 +262,22 @@ class PayActivityStatusContent extends StatelessWidget {
               if (status.phase == PayActivityStatusPhase.refunded &&
                   status.refundFeeText?.isNotEmpty == true)
                 ReviewListRow(
-                  label: 'Refund fee',
+                  label: context.l10n.commonRefundFee,
                   value: status.refundFeeText!,
                 ),
               if (status.phase == PayActivityStatusPhase.inProgress ||
                   status.phase == PayActivityStatusPhase.completed) ...[
                 ReviewListRow(
-                  label: 'Converted from',
+                  label: context.l10n.swapPayStatusConvertedFrom,
                   value: status.convertedFromText,
                   trailingIconName: AppIcons.shieldKeyhole,
                 ),
                 ReviewListRow(
-                  label: 'Tx fee',
+                  label: context.l10n.txFeeInfoTitle,
                   value: status.transactionFeeText,
                   trailingIconName: AppIcons.help,
                   trailingIconColor: colors.text.secondary,
-                  trailingIconTooltip: kTxFeeHelpTooltip,
+                  trailingIconTooltip: context.l10n.txFeeHelpTooltip,
                 ),
               ],
             ],

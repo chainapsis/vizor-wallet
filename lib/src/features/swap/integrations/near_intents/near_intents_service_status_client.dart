@@ -1,3 +1,4 @@
+// l10n-ignore-file: protocol values
 import 'dart:convert';
 import 'dart:io';
 

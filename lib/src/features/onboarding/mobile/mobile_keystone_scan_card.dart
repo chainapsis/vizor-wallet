@@ -79,11 +79,11 @@ class MobileKeystoneScanPermissionCard extends StatelessWidget {
   String _title(AppLocalizations l10n) {
     switch (status) {
       case AddressQrCameraStatus.denied:
-        return l10n.keystoneCameraDeniedTitle;
+        return l10n.commonCameraDeniedTitle;
       case AddressQrCameraStatus.restricted:
-        return l10n.keystoneCameraRestrictedTitle;
+        return l10n.commonCameraRestrictedTitle;
       case AddressQrCameraStatus.unavailable:
-        return l10n.keystoneCameraUnavailableTitle;
+        return l10n.commonCameraUnavailable;
       case AddressQrCameraStatus.requesting:
       case AddressQrCameraStatus.active:
       case AddressQrCameraStatus.loading:
@@ -94,9 +94,9 @@ class MobileKeystoneScanPermissionCard extends StatelessWidget {
   String _description(AppLocalizations l10n) {
     switch (status) {
       case AddressQrCameraStatus.denied:
-        return l10n.keystoneCameraDeniedBody;
+        return l10n.commonCameraRequestAgainHint;
       case AddressQrCameraStatus.restricted:
-        return l10n.keystoneCameraRestrictedBody;
+        return l10n.commonCameraRestrictedBody;
       case AddressQrCameraStatus.unavailable:
         return unavailableDescription ?? l10n.keystoneCameraUnavailableBody;
       case AddressQrCameraStatus.requesting:
@@ -108,7 +108,7 @@ class MobileKeystoneScanPermissionCard extends StatelessWidget {
 
   String _retryLabel(AppLocalizations l10n) =>
       status == AddressQrCameraStatus.denied
-      ? l10n.keystoneCameraRequestAgain
+      ? l10n.commonRequestAgain
       : l10n.commonTryAgain;
 
   @override

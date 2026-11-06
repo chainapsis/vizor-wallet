@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import '../support/test_l10n.dart';
 
 void main() {
   test(
@@ -569,8 +570,8 @@ void main() {
       expect(
         container
             .read(pendingActivityEvidenceProvider)
-            .labelFor(_accountUuid, 'pending', 100),
-        'Est. 1–3 min',
+            .etaFor(_accountUuid, 'pending', 100),
+        ActivityEta.standard,
       );
       if (fails) {
         tipRead.completeError(StateError('network connection refused'));
@@ -585,8 +586,8 @@ void main() {
       expect(
         container
             .read(pendingActivityEvidenceProvider)
-            .labelFor(_accountUuid, 'pending', 100),
-        'Est. 1–3 min',
+            .etaFor(_accountUuid, 'pending', 100),
+        ActivityEta.standard,
       );
       expect(
         container.read(pendingActivityEvidenceProvider).connectionFailed,
@@ -680,7 +681,7 @@ void main() {
     expect(
       container
           .read(pendingActivityEvidenceProvider)
-          .labelFor(_accountUuid, 'pending', 100),
+          .etaFor(_accountUuid, 'pending', 100),
       isNull,
     );
     evidence.clear();
@@ -767,7 +768,7 @@ void main() {
       evidence.networkChecked(100);
       expect(
         container.read(activityEtaLabelsProvider)['pending'],
-        'Est. 1–3 min',
+        ActivityEta.standard,
       );
       sync.failHistory = true;
       await sync.refreshAfterSend();
@@ -777,7 +778,7 @@ void main() {
       await sync.refreshAfterSend();
       expect(
         container.read(activityEtaLabelsProvider)['pending'],
-        'Est. 1–3 min',
+        ActivityEta.standard,
       );
     },
   );
@@ -1495,7 +1496,7 @@ void main() {
 
     final current = container.read(syncProvider).requireValue;
     expect(
-      SyncStatusLabel.from(current).label,
+      SyncStatusLabel.from(testL10n, current).label,
       'Syncing failed. Unknown error...',
     );
     expect(current.failure, same(failure));

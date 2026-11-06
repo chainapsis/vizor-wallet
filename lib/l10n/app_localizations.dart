@@ -220,12 +220,6 @@ abstract class AppLocalizations {
   /// **'Checking this account for active swaps before removal.'**
   String get accountsRemoveCheckingSwaps;
 
-  /// [security] Destructive button that confirms removing one account and its local data.
-  ///
-  /// In en, this message translates to:
-  /// **'Remove'**
-  String get accountsRemoveConfirm;
-
   /// [security] Error in the desktop remove-account dialog when removing the account failed.
   ///
   /// In en, this message translates to:
@@ -334,12 +328,6 @@ abstract class AppLocalizations {
   /// **'Send couldn\'t be started'**
   String get accountsSendFailed;
 
-  /// Account menu item that starts a send to that account's address.
-  ///
-  /// In en, this message translates to:
-  /// **'Send ZEC'**
-  String get accountsSendZec;
-
   /// Title of the Accounts screen that lists the wallet's accounts.
   ///
   /// In en, this message translates to:
@@ -364,6 +352,1073 @@ abstract class AppLocalizations {
   /// **'View viewing key'**
   String get accountsViewViewingKey;
 
+  /// Title of the sheet that shows a full unified address.
+  ///
+  /// In en, this message translates to:
+  /// **'Unified address'**
+  String get activityAddressUnified;
+
+  /// Sub-line under the amount of an Ironwood migration receipt: the funds came from the Orchard balance.
+  ///
+  /// In en, this message translates to:
+  /// **'From Orchard balance'**
+  String get activityBalanceFromOrchard;
+
+  /// Sub-line under the amount of a shielding receipt: the funds came from the transparent balance.
+  ///
+  /// In en, this message translates to:
+  /// **'From transparent balance'**
+  String get activityBalanceFromTransparent;
+
+  /// Value of the To row of a migration receipt.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood balance'**
+  String get activityBalanceIronwood;
+
+  /// Value of the From row of a migration receipt.
+  ///
+  /// In en, this message translates to:
+  /// **'Orchard balance'**
+  String get activityBalanceOrchard;
+
+  /// Row value shown after a public load of the transaction details failed; the row stays tappable.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed — try again'**
+  String get activityDetailsLoadFailed;
+
+  /// Row value and dialog button that loads one transaction's full details from the server.
+  ///
+  /// In en, this message translates to:
+  /// **'Load publicly'**
+  String get activityDetailsLoadPublicly;
+
+  /// Label of the row that offers to load one transaction's full details from the server.
+  ///
+  /// In en, this message translates to:
+  /// **'Full details'**
+  String get activityDetailsLoadPubliclyLabel;
+
+  /// Row value shown while a public load of the transaction details runs.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading…'**
+  String get activityDetailsLoading;
+
+  /// Value of the Details row when Private queries cannot look up the transaction's outputs.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available in private mode'**
+  String get activityDetailsNotCovered;
+
+  /// Label of the row that lists what the private details of a transaction leave out.
+  ///
+  /// In en, this message translates to:
+  /// **'Not shown'**
+  String get activityDetailsOmittedLabel;
+
+  /// Label of the list of a transaction's other transparent outputs when no recipient was recorded.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction outputs'**
+  String get activityDetailsOutputsLabel;
+
+  /// Value telling that the listed outputs are the transaction's, not payments the account is known to have made.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient not confirmed'**
+  String get activityDetailsOutputsUnattributed;
+
+  /// Value of the Details row when transparent outputs could not be looked up yet; a later sync fills them in.
+  ///
+  /// In en, this message translates to:
+  /// **'Details unavailable — will update when the service is reachable'**
+  String get activityDetailsUnavailable;
+
+  /// Value of the To row of a send whose recipient the account did not record.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown recipient'**
+  String get activityDetailsUnknownRecipient;
+
+  /// Estimated time for a pending TEX transfer that first waits for its funding transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Est. 2–6 min'**
+  String get activityEtaFunding;
+
+  /// Estimated confirmation time after NU7, when blocks come faster.
+  ///
+  /// In en, this message translates to:
+  /// **'Est. under 1 min'**
+  String get activityEtaNu7;
+
+  /// Estimated time for a pending TEX transfer after NU7.
+  ///
+  /// In en, this message translates to:
+  /// **'Est. 1–2 min'**
+  String get activityEtaNu7Funding;
+
+  /// Estimated confirmation time beside a pending transaction (about 1 to 3 minutes).
+  ///
+  /// In en, this message translates to:
+  /// **'Est. 1–3 min'**
+  String get activityEtaStandard;
+
+  /// Shown beside a pending transaction that is taking longer than estimated.
+  ///
+  /// In en, this message translates to:
+  /// **'Taking longer'**
+  String get activityEtaTakingLonger;
+
+  /// Message shown when the activity list is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'No activity yet'**
+  String get activityFeedEmpty;
+
+  /// Button that reloads the activity list after it failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry loading activity'**
+  String get activityFeedRetry;
+
+  /// Cost breakdown of a gift card batch: card value, reserved redeem fees, and the network fee.
+  ///
+  /// In en, this message translates to:
+  /// **'Cards {cards} ZEC · Redeem fees {fees} ZEC · {feeLabel} {fee}'**
+  String activityGiftBatchBreakdown(
+    String cards,
+    String fees,
+    String feeLabel,
+    String fee,
+  );
+
+  /// Title of a completed gift card creation.
+  ///
+  /// In en, this message translates to:
+  /// **'Created a gift card'**
+  String get activityGiftCreated;
+
+  /// Title of a completed batch of gift cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Created {count} gift cards'**
+  String activityGiftCreatedMany(int count);
+
+  /// Title of a pending gift card creation; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating a card'**
+  String get activityGiftCreating;
+
+  /// Title of a pending batch of gift cards; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating {count} cards'**
+  String activityGiftCreatingMany(int count);
+
+  /// Title of a gift card that could not be created.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card creation failed'**
+  String get activityGiftCreationFailed;
+
+  /// Title of a failed batch of gift cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card group failed'**
+  String get activityGiftGroupFailed;
+
+  /// Title of a completed gift card redemption.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeemed a gift card'**
+  String get activityGiftRedeemed;
+
+  /// Title of a pending gift card redemption; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeeming a card'**
+  String get activityGiftRedeeming;
+
+  /// Title of a gift card that could not be redeemed.
+  ///
+  /// In en, this message translates to:
+  /// **'Gift card redemption failed'**
+  String get activityGiftRedemptionFailed;
+
+  /// Status of a gift card receipt after the card was created.
+  ///
+  /// In en, this message translates to:
+  /// **'Created'**
+  String get activityGiftStatusCreated;
+
+  /// Status of a gift card receipt while the card is being created.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating…'**
+  String get activityGiftStatusCreating;
+
+  /// Status of a gift card receipt after the card was redeemed.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeemed'**
+  String get activityGiftStatusRedeemed;
+
+  /// Status of a gift card receipt while the card is being redeemed.
+  ///
+  /// In en, this message translates to:
+  /// **'Redeeming…'**
+  String get activityGiftStatusRedeeming;
+
+  /// Label of the total cost of a gift card batch that failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Planned total'**
+  String get activityGiftTotalPlanned;
+
+  /// Label of the total cost of a completed gift card batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Total spent'**
+  String get activityGiftTotalSpent;
+
+  /// Label of the total cost of a gift card batch that is pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitted total'**
+  String get activityGiftTotalSubmitted;
+
+  /// Error shown on the desktop activity screen when loading failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Activity could not be loaded.'**
+  String get activityLoadFailedDesktop;
+
+  /// Error shown on the mobile activity screen when loading failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load activity. Try again in a moment.'**
+  String get activityLoadFailedMobile;
+
+  /// Item in the list of what private details leave out: outputs beyond the second.
+  ///
+  /// In en, this message translates to:
+  /// **'outputs after the second'**
+  String get activityOmissionLaterOutputs;
+
+  /// Item in the list of what private details leave out: how many outputs are not listed.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 more output} other{{count} more outputs}}'**
+  String activityOmissionMoreOutputs(int count);
+
+  /// Item in the list of what private details leave out: further sender addresses.
+  ///
+  /// In en, this message translates to:
+  /// **'other sending addresses'**
+  String get activityOmissionOtherSenders;
+
+  /// Item in the list of what private details leave out: an output address.
+  ///
+  /// In en, this message translates to:
+  /// **'an output address'**
+  String get activityOmissionOutputAddress;
+
+  /// Item in the list of what private details leave out: the sender address.
+  ///
+  /// In en, this message translates to:
+  /// **'the sending address'**
+  String get activityOmissionSender;
+
+  /// Item in the list of what private details leave out: inputs owned by other wallets.
+  ///
+  /// In en, this message translates to:
+  /// **'inputs from other wallets'**
+  String get activityOmissionSharedFunding;
+
+  /// Item in the list of what private details leave out: the shielded part of the funds.
+  ///
+  /// In en, this message translates to:
+  /// **'the shielded part of the funding'**
+  String get activityOmissionShieldedFunding;
+
+  /// Subtitle of a Pay activity row: the payment was made from shielded ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'from shielded ZEC'**
+  String get activityPayFromShielded;
+
+  /// Subtitle of a Pay activity row: shielded ZEC paid out to a network.
+  ///
+  /// In en, this message translates to:
+  /// **'from shielded ZEC · {network}'**
+  String activityPayFromShieldedOnChain(String network);
+
+  /// Title of the Pay detail screen when the deposit was incomplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment incomplete'**
+  String get activityPayIncomplete;
+
+  /// Title of a completed Pay activity row or detail screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Paid'**
+  String get activityPayPaid;
+
+  /// Title of the Pay detail screen while the payment is pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Paying ...'**
+  String get activityPayPaying;
+
+  /// Badge on an activity row for a transaction that involves more than one pool.
+  ///
+  /// In en, this message translates to:
+  /// **'Mixed'**
+  String get activityPoolMixed;
+
+  /// Body of the dialog that confirms loading one transaction's details from the server.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor will ask the server for this one transaction to show what private lookups leave out.'**
+  String get activityPublicLookupBody;
+
+  /// Title of the dialog that confirms loading one transaction's details from the server.
+  ///
+  /// In en, this message translates to:
+  /// **'Load details publicly?'**
+  String get activityPublicLookupTitle;
+
+  /// [security] Warning in the dialog that confirms loading one transaction's details from the server: what the server learns.
+  ///
+  /// In en, this message translates to:
+  /// **'The server learns that this wallet is interested in this transaction, and without Tor, your IP address.'**
+  String get activityPublicLookupWarning;
+
+  /// Label of a row on a transaction receipt: the amount moved to Ironwood.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount migrated'**
+  String get activityReceiptAmountMigrated;
+
+  /// Label of a row on a transaction receipt: the fee for creating a gift card.
+  ///
+  /// In en, this message translates to:
+  /// **'Card fee'**
+  String get activityReceiptCardFee;
+
+  /// Label of a row on a transaction receipt: the number of gift cards in a batch.
+  ///
+  /// In en, this message translates to:
+  /// **'Cards'**
+  String get activityReceiptCards;
+
+  /// Label of a row on a transaction receipt: a notice about transaction details.
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get activityReceiptDetails;
+
+  /// Short notice, also a sheet title, that some details of an entry are not known yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Details incomplete'**
+  String get activityReceiptDetailsIncomplete;
+
+  /// Explains why a receipt is marked as having incomplete details.
+  ///
+  /// In en, this message translates to:
+  /// **'Some details of this transaction, such as its recipients, memos, or fee, are not known yet. The amount shown may change.'**
+  String get activityReceiptDetailsIncompleteHelp;
+
+  /// Part of the gift card batch cost breakdown: the network fee while the batch is pending or failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated network fee'**
+  String get activityReceiptEstimatedNetworkFee;
+
+  /// Label of a row on a transaction receipt: the sender or the source of funds.
+  ///
+  /// In en, this message translates to:
+  /// **'From'**
+  String get activityReceiptFrom;
+
+  /// Value of the Details row on a receipt whose details are not all known yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Incomplete'**
+  String get activityReceiptIncomplete;
+
+  /// Message shown when a transaction receipt could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction could not be loaded.'**
+  String get activityReceiptLoadFailed;
+
+  /// Message shown while a transaction receipt is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading transaction…'**
+  String get activityReceiptLoading;
+
+  /// Label of a row on a transaction receipt: the balance change of a transaction that is not shown as an external payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Net change'**
+  String get activityReceiptNetChange;
+
+  /// Label of a row on a transaction receipt: the total network fee of the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Network fee'**
+  String get activityReceiptNetworkFee;
+
+  /// Label of a row on a transaction receipt: one transparent output of the transaction, followed by its address and amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Output'**
+  String get activityReceiptOutput;
+
+  /// Message shown when the latest status of a transaction could not be refreshed.
+  ///
+  /// In en, this message translates to:
+  /// **'Latest transaction status could not be refreshed.'**
+  String get activityReceiptRefreshFailed;
+
+  /// Label of a row on a transaction receipt: the transaction status.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get activityReceiptStatus;
+
+  /// Tooltip explaining a network fee when the account's share of it is not known.
+  ///
+  /// In en, this message translates to:
+  /// **'Total fee for this transaction. Your account\'s share of this fee is unknown.'**
+  String get activityReceiptUnattributedFeeHelp;
+
+  /// Shown as the fee of a transaction whose fee the wallet has not recorded. An unknown fee is never zero.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get activityReceiptUnknownFee;
+
+  /// Timestamp of an activity row from today on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Today, {time}'**
+  String activityRowToday(String time);
+
+  /// Subtitle of a pending activity row while the app has no connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for connection'**
+  String get activityRowWaitingForConnection;
+
+  /// Timestamp of an activity row from yesterday on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday, {time}'**
+  String activityRowYesterday(String time);
+
+  /// Heading of the activity section for entries without a date.
+  ///
+  /// In en, this message translates to:
+  /// **'Earlier'**
+  String get activitySectionEarlier;
+
+  /// Heading of the activity section for the current week.
+  ///
+  /// In en, this message translates to:
+  /// **'This week'**
+  String get activitySectionThisWeek;
+
+  /// Value of the From row when the sender is in a shielded pool, so no address is known.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded sender'**
+  String get activitySenderShielded;
+
+  /// Value of the From row when the sender cannot be determined.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown sender'**
+  String get activitySenderUnknown;
+
+  /// Status value of a mobile receipt for a transaction that expired before mining; no funds were spent.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed, funds returned'**
+  String get activityStatusFailedFundsReturned;
+
+  /// Status value of a swap whose deposit was smaller than the quote requires.
+  ///
+  /// In en, this message translates to:
+  /// **'Incomplete deposit'**
+  String get activityStatusIncompleteDeposit;
+
+  /// Subtitle of a swap activity row: an asset and the chain it lives on.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} on {chain}'**
+  String activitySwapAssetOnChain(String symbol, String chain);
+
+  /// Title of the sub-row of a completed swap that shows the deposited asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposited {symbol}'**
+  String activitySwapDepositedAsset(String symbol);
+
+  /// Timestamp of a swap sub-row that settled some minutes ago.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes}m ago'**
+  String activitySwapMinutesAgo(int minutes);
+
+  /// Title of the sub-row of a completed swap that shows the received asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Received {symbol}'**
+  String activitySwapReceivedAsset(String symbol);
+
+  /// Status of a swap activity row that shows which step of the swap it is on.
+  ///
+  /// In en, this message translates to:
+  /// **'{current}/{total} In progress'**
+  String activitySwapStep(int current, int total);
+
+  /// Title of a completed swap activity row.
+  ///
+  /// In en, this message translates to:
+  /// **'Swapped'**
+  String get activitySwapSwapped;
+
+  /// Title of a pending swap activity row.
+  ///
+  /// In en, this message translates to:
+  /// **'Swapping...'**
+  String get activitySwapSwapping;
+
+  /// Subtitle of the amount of a swap that expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Timeout'**
+  String get activitySwapTimeout;
+
+  /// Title of the mobile swap detail screen when the swap is not loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap'**
+  String get activitySwapTitle;
+
+  /// Title of an activity row or receipt for funds moved from Orchard to Ironwood.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrated to Ironwood'**
+  String get activityTitleMigrated;
+
+  /// Title of the mobile receipt of a pending Ironwood migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrating to Ironwood...'**
+  String get activityTitleMigrating;
+
+  /// Title of a pending Ironwood migration activity row; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrating to Ironwood'**
+  String get activityTitleMigratingVerb;
+
+  /// Title of an activity row or receipt for a failed move to Ironwood.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration failed'**
+  String get activityTitleMigrationFailed;
+
+  /// Title of a receipt for an incoming transaction that failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive failed'**
+  String get activityTitleReceiveFailed;
+
+  /// Title of the desktop receipt of an incoming transaction that is pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive in progress...'**
+  String get activityTitleReceiveInProgress;
+
+  /// Title of an activity row or receipt for an incoming transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Received'**
+  String get activityTitleReceived;
+
+  /// Title of the desktop receipt of an incoming transaction that completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Received successfully'**
+  String get activityTitleReceivedSuccessfully;
+
+  /// Title of the mobile receipt of an incoming transaction that is pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving...'**
+  String get activityTitleReceiving;
+
+  /// Title of a pending incoming activity row; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving'**
+  String get activityTitleReceivingVerb;
+
+  /// Title of a pending outgoing activity row; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending'**
+  String get activityTitleSendingVerb;
+
+  /// Title of an activity row for an outgoing transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent'**
+  String get activityTitleSent;
+
+  /// Title of an activity row or receipt for funds moved into a shielded pool.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded'**
+  String get activityTitleShielded;
+
+  /// Title of a receipt for a failed move into a shielded pool.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding failed'**
+  String get activityTitleShieldingFailed;
+
+  /// Title of the desktop receipt of a pending shielding transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding in progress...'**
+  String get activityTitleShieldingInProgress;
+
+  /// Title of a pending shielding activity row; the app appends an ellipsis.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding'**
+  String get activityTitleShieldingVerb;
+
+  /// Title of a receipt or activity row for a transaction of unknown kind.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction'**
+  String get activityTitleTransaction;
+
+  /// Toast on the mobile receipt after the transaction hash was copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction Hash Copied'**
+  String get activityToastHashCopiedMobile;
+
+  /// Button and dialog title that adds a new contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Add contact'**
+  String get addressBookAddContact;
+
+  /// Placeholder of the contact address field in the desktop dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Add address'**
+  String get addressBookAddressHintDesktop;
+
+  /// Placeholder of the contact address field on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Add an address'**
+  String get addressBookAddressHintMobile;
+
+  /// Label of the contact address field.
+  ///
+  /// In en, this message translates to:
+  /// **'Address'**
+  String get addressBookAddressLabel;
+
+  /// Validation message when the contact address field is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Add an address'**
+  String get addressBookAddressMissing;
+
+  /// Accessibility label of the button that clears the contact address on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear address'**
+  String get addressBookClearAddress;
+
+  /// Accessibility label of the button that clears the contact name on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear name'**
+  String get addressBookClearName;
+
+  /// Accessibility label of the button that clears the search text.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear search'**
+  String get addressBookClearSearch;
+
+  /// Accessibility label of the menu button on a contact row. {label} is the contact's name.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} actions'**
+  String addressBookContactActions(String label);
+
+  /// Contact menu item and title of the dialog that edits a contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit contact'**
+  String get addressBookEditContact;
+
+  /// Body text of the empty address book.
+  ///
+  /// In en, this message translates to:
+  /// **'Add your first contact to get started.'**
+  String get addressBookEmptyBody;
+
+  /// Headline of the address book when it has no contacts.
+  ///
+  /// In en, this message translates to:
+  /// **'No contacts yet'**
+  String get addressBookEmptyTitle;
+
+  /// Error under an address field when the text is not a valid Bitcoin address.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid Bitcoin address'**
+  String get addressBookInvalidBitcoin;
+
+  /// Error under an address field when the text is not a valid address for EVM chains such as Ethereum or Base.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid EVM address'**
+  String get addressBookInvalidEvm;
+
+  /// Error under an address field when the text is not a valid NEAR account.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid NEAR address'**
+  String get addressBookInvalidNear;
+
+  /// Error under an address field when the text is not a valid Solana address.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid Solana address'**
+  String get addressBookInvalidSolana;
+
+  /// Error under an address field when the text is not a valid Zcash address for the current network.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid Zcash address'**
+  String get addressBookInvalidZcash;
+
+  /// Validation message when the contact label is longer than 20 characters.
+  ///
+  /// In en, this message translates to:
+  /// **'Use 1-20 characters'**
+  String get addressBookLabelLength;
+
+  /// Validation message when the contact label field is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a label'**
+  String get addressBookLabelMissing;
+
+  /// Error shown in place of the address book when loading fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load your contacts. Try again, or contact support if this keeps happening.'**
+  String get addressBookLoadFailed;
+
+  /// Placeholder of the contact name field on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a name'**
+  String get addressBookNameHint;
+
+  /// Label of the contact name field on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get addressBookNameLabel;
+
+  /// Warning under an address field when a NEAR account name has no .near suffix. The address can still be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'NEAR accounts usually end in .near — double-check this address'**
+  String get addressBookNearSuffixWarning;
+
+  /// Label of the network selector in the mobile contact sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Network'**
+  String get addressBookNetworkLabel;
+
+  /// Message when the network picker search matches nothing.
+  ///
+  /// In en, this message translates to:
+  /// **'No networks found'**
+  String get addressBookNoNetworks;
+
+  /// Body text when an address book search matches nothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Try to modify your search'**
+  String get addressBookNoResultsBody;
+
+  /// Headline when an address book search matches nothing.
+  ///
+  /// In en, this message translates to:
+  /// **'No contacts were found'**
+  String get addressBookNoResultsTitle;
+
+  /// Accessibility label of the button that closes the contact picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Close contacts'**
+  String get addressBookPickerClose;
+
+  /// Message in the contact picker when no contact matches.
+  ///
+  /// In en, this message translates to:
+  /// **'No contacts found'**
+  String get addressBookPickerEmptyTitle;
+
+  /// Error in the contact picker when loading contacts fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load contacts. Try again.'**
+  String get addressBookPickerLoadFailed;
+
+  /// Placeholder of the contact picker search field.
+  ///
+  /// In en, this message translates to:
+  /// **'Search contacts'**
+  String get addressBookPickerSearchHint;
+
+  /// Body of the desktop remove dialog. {label} is the contact's name.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} will be removed from your contacts.'**
+  String addressBookRemoveBody(String label);
+
+  /// Body of the desktop remove dialog when the contact is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'This contact will be removed.'**
+  String get addressBookRemoveBodyUnknown;
+
+  /// Body of the mobile remove confirmation. {label} is the contact's name.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{label}\" will be removed from your contacts. This does not affect any past transactions.'**
+  String addressBookRemoveConfirmBody(String label);
+
+  /// Title of the mobile confirmation sheet that removes a contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove contact?'**
+  String get addressBookRemoveConfirmTitle;
+
+  /// Contact menu item and title of the dialog that removes a contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove contact'**
+  String get addressBookRemoveContact;
+
+  /// Error in the desktop remove dialog when deleting a contact fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t remove contact. Try again.'**
+  String get addressBookRemoveFailed;
+
+  /// Toast on mobile when deleting a contact fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t remove the contact. Please try again.'**
+  String get addressBookRemoveFailedMobile;
+
+  /// Error in the desktop contact dialog when saving fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save contact. Try again.'**
+  String get addressBookSaveFailed;
+
+  /// Toast on mobile when saving a contact fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the contact. Please try again.'**
+  String get addressBookSaveFailedMobile;
+
+  /// Accessibility label of the button that scans an address QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan address QR'**
+  String get addressBookScanAddressQr;
+
+  /// Title of the camera scanner that reads a contact address. {network} is the chain name such as Ethereum.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan {network} QR code'**
+  String addressBookScanQrTitle(String network);
+
+  /// Accessibility label of the search field in the address book and network picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get addressBookSearch;
+
+  /// Placeholder of the address book search field.
+  ///
+  /// In en, this message translates to:
+  /// **'Search for label or network'**
+  String get addressBookSearchHint;
+
+  /// Placeholder of the network picker search field.
+  ///
+  /// In en, this message translates to:
+  /// **'Search network'**
+  String get addressBookSearchNetwork;
+
+  /// Title and accessibility label of the network picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Select network'**
+  String get addressBookSelectNetwork;
+
+  /// Description in the mobile address scanner when the device has no camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Address QR scanning needs a camera on this device.'**
+  String get addressScanAddressCameraNeeded;
+
+  /// Camera name with a marker that it is the system default. {name} is the device-reported camera name.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} (Default)'**
+  String addressScanCameraDefaultSuffix(String name);
+
+  /// Description in the mobile QR scanner when the device has no camera.
+  ///
+  /// In en, this message translates to:
+  /// **'QR scanning needs a camera on this device.'**
+  String get addressScanCameraNeeded;
+
+  /// Message over the full-screen scanner when camera permission is off.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera access is off. Allow it in Settings to scan addresses.'**
+  String get addressScanCameraOff;
+
+  /// Description in the desktop QR scanner when the device has no camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Address QR scanning requires a camera on this device.'**
+  String get addressScanCameraRequired;
+
+  /// Message over the full-screen scanner when the system restricts the camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen Time or device management is blocking the camera on this device.'**
+  String get addressScanCameraRestricted;
+
+  /// Accessibility label of the close button of the QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Close scanner'**
+  String get addressScanCloseScanner;
+
+  /// Fallback name of the camera in the desktop QR scanner footer.
+  ///
+  /// In en, this message translates to:
+  /// **'Default camera'**
+  String get addressScanDefaultCamera;
+
+  /// Title in the desktop QR scanner when the camera permission was denied.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve denied Camera access'**
+  String get addressScanDeniedTitle;
+
+  /// Title in the desktop QR scanner when Windows blocks the camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Windows camera access'**
+  String get addressScanEnableWindowsAccess;
+
+  /// Title of the desktop QR scanner while waiting for the camera permission.
+  ///
+  /// In en, this message translates to:
+  /// **'Grant access to your camera'**
+  String get addressScanGrantAccess;
+
+  /// Footer label of the desktop QR scanner while cameras are being listed.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading camera...'**
+  String get addressScanLoadingCamera;
+
+  /// Label next to a spinner in the mobile QR scanner while the camera starts.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading...'**
+  String get addressScanLoadingEllipsis;
+
+  /// Footer label of the desktop QR scanner when the device has no camera.
+  ///
+  /// In en, this message translates to:
+  /// **'No camera found'**
+  String get addressScanNoCamera;
+
+  /// Description in the desktop QR scanner when the camera cannot be opened.
+  ///
+  /// In en, this message translates to:
+  /// **'No camera could be opened. Check that a camera is connected and not in use by another app.'**
+  String get addressScanNoCameraOpened;
+
+  /// Button that opens the system settings page for the camera permission.
+  ///
+  /// In en, this message translates to:
+  /// **'Open settings'**
+  String get addressScanOpenSettings;
+
+  /// Title of the QR scanner that reads an address.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the address QR code'**
+  String get addressScanTitle;
+
+  /// Description telling the user which two switches to turn on in Windows Settings. Use the Windows setting names.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Camera access and Let desktop apps access your camera in Windows Settings.'**
+  String get addressScanWindowsAccessHint;
+
+  /// Caption under the viewfinder of the mobile QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan a Zcash QR code to continue'**
+  String get addressScanZcashPrompt;
+
+  /// Back-link name of the donation screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Donation'**
+  String get appBackDonation;
+
   /// Back-link label shown during desktop import that returns to the hardware wallet list.
   ///
   /// In en, this message translates to:
@@ -375,6 +1430,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Import methods'**
   String get appBackImportMethods;
+
+  /// Back-link name of the Receive screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive'**
+  String get appBackReceive;
+
+  /// Back-link name of the voting results screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Results'**
+  String get appBackResults;
+
+  /// Back-link name of a review step (send, swap, vote).
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get appBackReview;
+
+  /// Back-link name of the Send screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get appBackSend;
+
+  /// Back-link name of a status screen (send, vote).
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get appBackStatus;
+
+  /// Back-link name of the vote submitted screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitted'**
+  String get appBackSubmitted;
+
+  /// Back-link name of a transaction detail screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction'**
+  String get appBackTransaction;
+
+  /// Back-link name of a coinholder voting round screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting round'**
+  String get appBackVotingRound;
 
   /// Hint shown on Android after the first Back press at the root, telling the user to press Back again to exit the app.
   ///
@@ -460,12 +1563,6 @@ abstract class AppLocalizations {
   /// **'Dismiss'**
   String get appUpdateDismiss;
 
-  /// Button on the in-app update prompt that starts downloading the update.
-  ///
-  /// In en, this message translates to:
-  /// **'Download'**
-  String get appUpdateDownload;
-
   /// Disabled button label on the in-app update prompt while the update downloads.
   ///
   /// In en, this message translates to:
@@ -549,6 +1646,18 @@ abstract class AppLocalizations {
   /// **'Show {name} {page} of {count}'**
   String carouselShowPage(String name, int page, int count);
 
+  /// Status label of the Ledger shield failure panel after an error. Shared by: home, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Action needed'**
+  String get commonActionNeeded;
+
+  /// Label of the collapsed prompt that adds an optional message to a payment request. Shared by: receive, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a message'**
+  String get commonAddAMessage;
+
   /// Button, screen name and step label for adding another account.
   ///
   /// In en, this message translates to:
@@ -560,6 +1669,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Address copied'**
   String get commonAddressCopied;
+
+  /// Placeholder of the Pay recipient field on mobile; names the chain the address must belong to. Shared by: pay, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'{chain} address'**
+  String commonAddressForChain(String chain);
+
+  /// Label of the contact name field in the desktop contact dialog. Shared by: address, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'Address label'**
+  String get commonAddressLabel;
+
+  /// Label of a row on a transaction receipt: the transferred amount. Shared by: activity, app, pay, receive, send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount'**
+  String get commonAmount;
 
   /// Screen-reader label of a back button.
   ///
@@ -573,11 +1700,59 @@ abstract class AppLocalizations {
   /// **'Back to {destination}'**
   String commonBackTo(String destination);
 
+  /// Button on the shield result screens that returns to the wallet. Shared by: home, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to wallet'**
+  String get commonBackToWallet;
+
+  /// Title in the mobile QR scanner when the camera permission was denied. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve denied camera access'**
+  String get commonCameraDeniedTitle;
+
+  /// Description when camera access is requested or denied. The line break splits the text for the narrow dialog. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Request again, or enable manually\nin the System settings.'**
+  String get commonCameraRequestAgainHint;
+
+  /// Description in the mobile QR scanner when Screen Time or device management restricts the camera. The line break splits the text. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen Time or device management\nis blocking the camera.'**
+  String get commonCameraRestrictedBody;
+
+  /// Title in the mobile QR scanner when the camera is restricted by the system. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera access is restricted'**
+  String get commonCameraRestrictedTitle;
+
+  /// Title shown when the camera cannot be used. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera unavailable'**
+  String get commonCameraUnavailable;
+
+  /// Message over the full-screen scanner when the camera cannot start. Shared by: address, home.
+  ///
+  /// In en, this message translates to:
+  /// **'The camera is unavailable right now.'**
+  String get commonCameraUnavailableNow;
+
   /// Button that closes a modal or sheet without applying a change.
   ///
   /// In en, this message translates to:
   /// **'Cancel'**
   String get commonCancel;
+
+  /// Error on the shield screens when cancelling could not release the pending work. Shared by: home, send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not finish cancelling. Please try again.'**
+  String get commonCancelFailedRetry;
 
   /// Toast when leaving a flow could not cancel its pending work.
   ///
@@ -585,17 +1760,59 @@ abstract class AppLocalizations {
   /// **'Could not finish cancellation. Try again.'**
   String get commonCancellationFailed;
 
+  /// Label shown on a button or title while a signing request is being cancelled. Shared by: send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelling…'**
+  String get commonCancelling;
+
   /// [security] Warning that a destructive action is permanent.
   ///
   /// In en, this message translates to:
   /// **'This cannot be undone.'**
   String get commonCannotBeUndone;
 
+  /// Section label above the network selector and address field in the contact dialog. Shared by: address, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain & address'**
+  String get commonChainAndAddress;
+
+  /// Accessibility label of the avatar button in the contact dialog. Shared by: address, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'Change contact picture'**
+  String get commonChangeContactPicture;
+
   /// Status while Vizor checks something.
   ///
   /// In en, this message translates to:
   /// **'Checking...'**
   String get commonChecking;
+
+  /// Label of the primary button on the payment request card while the request is being checked. Shared by: send, settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get commonCheckingEllipsis;
+
+  /// Subtitle of a pending activity row while the app checks the transaction status. Shared by: activity, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking status'**
+  String get commonCheckingStatus;
+
+  /// Button that clears the secret passphrase words entered so far. Shared by: onboarding, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get commonClear;
+
+  /// Accessibility label of the button that clears the contact label. Shared by: address, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear contact label'**
+  String get commonClearContactLabel;
 
   /// Screen-reader label of the clear button in a text field.
   ///
@@ -609,11 +1826,35 @@ abstract class AppLocalizations {
   /// **'Close'**
   String get commonClose;
 
+  /// Accessibility label of the button that removes the optional message field. Shared by: receive, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Close message'**
+  String get commonCloseMessage;
+
   /// Name of the coinholder voting feature.
   ///
   /// In en, this message translates to:
   /// **'Coinholder voting'**
   String get commonCoinholderVoting;
+
+  /// Status value of a transaction or swap that finished. Shared by: activity, send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get commonCompleted;
+
+  /// Placeholder of the contact name field in the desktop dialog. Shared by: address, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'Add label 1-20 characters'**
+  String get commonContactLabelHint;
+
+  /// Title of the address book screen. Shared by: address, app, pay, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Contacts'**
+  String get commonContacts;
 
   /// Button that moves to the next step.
   ///
@@ -639,11 +1880,59 @@ abstract class AppLocalizations {
   /// **'Copy address'**
   String get commonCopyAddress;
 
+  /// Button label and accessibility label that copies the shielded address. Shared by: receive, sidebar.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy shielded address'**
+  String get commonCopyShieldedAddress;
+
   /// Screen-reader label of the close button on a toast.
   ///
   /// In en, this message translates to:
   /// **'Dismiss notification'**
   String get commonDismissNotification;
+
+  /// Primary button of the mobile Pay submitted screen; goes to Home. Shared by: pay, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get commonDone;
+
+  /// Button on the in-app update prompt that starts downloading the update. Shared by: app, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get commonDownload;
+
+  /// Compact countdown until the deposit deadline when exactly one hour remains; 'hr' abbreviates hour.
+  ///
+  /// In en, this message translates to:
+  /// **'1hr'**
+  String get commonDurationOneHour;
+
+  /// Compact countdown until the deposit deadline when exactly one minute remains; 'min' abbreviates minute.
+  ///
+  /// In en, this message translates to:
+  /// **'1min'**
+  String get commonDurationOneMinute;
+
+  /// Button that edits the value shown next to it. Shared by: onboarding, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit'**
+  String get commonEdit;
+
+  /// Accessibility label of the toggle that switches the mobile Pay amount input to US dollars. Shared by: pay, receive.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in USD'**
+  String get commonEnterAmountInUsd;
+
+  /// Status value of a transaction or swap that failed. Shared by: activity, send, settings, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get commonFailed;
 
   /// Body of the sheet for a feature that is not available on this platform yet.
   ///
@@ -651,11 +1940,29 @@ abstract class AppLocalizations {
   /// **'This feature is still in progress.'**
   String get commonFeatureInProgress;
 
+  /// Link on the mobile Pay review recipient row that shows the whole address. Shared by: pay, send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Full address'**
+  String get commonFullAddress;
+
+  /// [security] Primary button in the desktop Keystone modal that opens the scanner to read the signature QR code from the device. Shared by: send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Get signature'**
+  String get commonGetSignature;
+
   /// Button that returns to the previous screen.
   ///
   /// In en, this message translates to:
   /// **'Go back'**
   String get commonGoBack;
+
+  /// Label of a status detail row with the minimum amount the swap is guaranteed to deliver.
+  ///
+  /// In en, this message translates to:
+  /// **'Guaranteed minimum'**
+  String get commonGuaranteedMinimum;
 
   /// Status or button label while an account is being imported.
   ///
@@ -663,13 +1970,25 @@ abstract class AppLocalizations {
   /// **'Importing...'**
   String get commonImporting;
 
+  /// Status value of a transaction or swap that has not finished. Shared by: activity, send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'In progress'**
+  String get commonInProgress;
+
   /// Default screen-reader name of a carousel of information cards.
   ///
   /// In en, this message translates to:
   /// **'Information'**
   String get commonInformation;
 
-  /// Hint while scanning a QR code from a device screen.
+  /// Timestamp of a swap sub-row that settled less than a minute ago. Shared by: activity, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'just now'**
+  String get commonJustNow;
+
+  /// Hint while scanning a QR code from a device screen. Shared by: common, pay.
   ///
   /// In en, this message translates to:
   /// **'Keep the QR code steady and fully visible.'**
@@ -681,11 +2000,89 @@ abstract class AppLocalizations {
   /// **'Keep screen awake'**
   String get commonKeepScreenAwake;
 
+  /// [security] Instruction in the desktop Keystone modal after proofs are ready. Shared by: send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'After you scanned, click Get signature.'**
+  String get commonKeystoneAfterScan;
+
+  /// Hint when the scanned QR code is of the wrong type; asks to open the signature result QR code on the Keystone device. Shared by: send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the signature result QR on Keystone, then scan again.'**
+  String get commonKeystoneScanSignatureResult;
+
+  /// [security] Instruction on the mobile Keystone screen to scan the transaction QR code with the Keystone device and follow its prompts. Shared by: send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.'**
+  String get commonKeystoneScanTransaction;
+
+  /// Title of the Ledger shield failure panel after an error. Shared by: home, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger signing failed'**
+  String get commonLedgerSigningFailed;
+
+  /// Label next to a spinner in the desktop QR scanner while the camera starts. Shared by: address, onboarding.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading'**
+  String get commonLoading;
+
+  /// Screen-reader label of the activity list loading placeholder. Shared by: activity, home.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading activity'**
+  String get commonLoadingActivity;
+
+  /// Label of a status detail row holding the deposit memo the user must include.
+  ///
+  /// In en, this message translates to:
+  /// **'Memo'**
+  String get commonMemo;
+
+  /// Label of a row on a transaction receipt: the memo attached to the transaction. Shared by: activity, receipt, receive, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get commonMessage;
+
+  /// Error shown when the payment request message exceeds the size limit. Shared by: receive, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Message is too long'**
+  String get commonMessageIsTooLong;
+
+  /// Label of a status detail row with the network and conversion fees of a payment in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Network + conversion fees'**
+  String get commonNetworkConversionFees;
+
+  /// Error shown on the Receive screen when no wallet account is selected. Shared by: receive, send.
+  ///
+  /// In en, this message translates to:
+  /// **'No active account'**
+  String get commonNoActiveAccount;
+
+  /// Error shown when a receipt is opened with no active account. Shared by: activity, home.
+  ///
+  /// In en, this message translates to:
+  /// **'No active account.'**
+  String get commonNoActiveAccountSentence;
+
   /// Title of the sheet for a feature that is not available on this platform yet.
   ///
   /// In en, this message translates to:
   /// **'Not available yet'**
   String get commonNotAvailableYet;
+
+  /// Error or disabled button label on Pay steps when the spendable ZEC balance is too low. Shared by: pay, send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Not enough ZEC'**
+  String get commonNotEnoughZec;
 
   /// Button that acknowledges a message and closes it.
   ///
@@ -693,11 +2090,119 @@ abstract class AppLocalizations {
   /// **'OK'**
   String get commonOk;
 
+  /// Error on the Pay recipient step when the quote costs more ZEC than is spendable. Shared by: pay, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'You don\'t have enough ZEC for this payment. Try a smaller amount.'**
+  String get commonPayInsufficientZec;
+
+  /// Title of a failed Pay activity row or detail screen. Shared by: activity, pay, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment failed'**
+  String get commonPaymentFailed;
+
+  /// Title of a pending Pay activity row. Shared by: activity, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment in progress'**
+  String get commonPaymentInProgress;
+
+  /// Label of the progress tab on a payment status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment progress'**
+  String get commonPaymentProgress;
+
+  /// Title of a refunded Pay activity row or detail screen. Shared by: activity, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment refunded'**
+  String get commonPaymentRefunded;
+
+  /// Title of the payment request card that opens when the user follows a zcash: link or scans a payment request QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment request'**
+  String get commonPaymentRequest;
+
+  /// Line under the paid amount on a payment status screen, saying the payment is spent privately from the shielded balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Privately, from shielded balance'**
+  String get commonPrivatelyFromShieldedBalance;
+
+  /// Error on the Keystone shield screens when the Sapling proving parameters failed to download or load. Shared by: home, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Required proving parameters could not be prepared.'**
+  String get commonProvingParamsFailed;
+
+  /// Error shown after scanning a QR code that contains no address. Shared by: address, pay, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'QR code did not include an address.'**
+  String get commonQrNoAddress;
+
   /// Button that quits Vizor.
   ///
   /// In en, this message translates to:
   /// **'Quit'**
   String get commonQuit;
+
+  /// Label of a status detail row with the exchange rate.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate'**
+  String get commonRate;
+
+  /// Label of the amount the payment recipient will receive, on an in-progress payment status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient gets'**
+  String get commonRecipientGets;
+
+  /// Label of a status detail row with the fee charged for the refund.
+  ///
+  /// In en, this message translates to:
+  /// **'Refund fee'**
+  String get commonRefundFee;
+
+  /// Label of a status detail row holding the address a refund goes to.
+  ///
+  /// In en, this message translates to:
+  /// **'Refund to'**
+  String get commonRefundTo;
+
+  /// Line under the paid amount of a swap status screen: the address a refund goes to.
+  ///
+  /// In en, this message translates to:
+  /// **'Refund to: {address}'**
+  String commonRefundToAddress(String address);
+
+  /// Status value of a swap, or subtitle of a failed row, whose funds were returned. Shared by: activity, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Refunded'**
+  String get commonRefunded;
+
+  /// Label of a status detail row with the amount refunded.
+  ///
+  /// In en, this message translates to:
+  /// **'Refunded amount'**
+  String get commonRefundedAmount;
+
+  /// [security] Destructive button that confirms removing one account and its local data. Shared by: accounts, address.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get commonRemove;
+
+  /// Button that asks for the camera permission again. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Request again'**
+  String get commonRequestAgain;
 
   /// [security] Button that erases every account and wallet data on this device.
   ///
@@ -711,6 +2216,60 @@ abstract class AppLocalizations {
   /// **'Retry'**
   String get commonRetry;
 
+  /// Button that retries saving a Ledger-signed transaction. Shared by: send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry saving'**
+  String get commonRetrySaving;
+
+  /// Primary button of the mobile Pay submitted screen after a failure; goes to Home. Shared by: pay, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Return home'**
+  String get commonReturnHome;
+
+  /// Button on the manual import step shown after the last word that moves to the review step. Shared by: onboarding, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Review & finish'**
+  String get commonReviewAndFinish;
+
+  /// Title of the Pay review step. Shared by: pay, send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Review Payment'**
+  String get commonReviewPayment;
+
+  /// Title of the mobile swap detail screen while the user has to review the quote. Shared by: activity, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Review quote'**
+  String get commonReviewQuote;
+
+  /// Primary button label on the swap screen that opens the swap review.
+  ///
+  /// In en, this message translates to:
+  /// **'Review swap'**
+  String get commonReviewSwap;
+
+  /// Dialog button that saves the edited value. Shared by: onboarding, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get commonSave;
+
+  /// Button that saves an edited contact on mobile. Shared by: address, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'Save contact'**
+  String get commonSaveContact;
+
+  /// Button that opens the camera to scan the requester's original payment request QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan original QR'**
+  String get commonScanOriginalQr;
+
   /// Title of a QR code scanning screen.
   ///
   /// In en, this message translates to:
@@ -723,17 +2282,197 @@ abstract class AppLocalizations {
   /// **'Select account'**
   String get commonSelectAccount;
 
+  /// Title of the picker that chooses a contact avatar. Shared by: address, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'Select contact picture'**
+  String get commonSelectContactPicture;
+
+  /// Title of the Pay recipient step. Shared by: pay, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Recipient'**
+  String get commonSelectRecipient;
+
+  /// Accessibility label of the check mark on the chosen contact. Shared by: address, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected contact'**
+  String get commonSelectedContact;
+
+  /// Title of an activity row or receipt for an outgoing transaction that failed. Shared by: activity, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Send failed'**
+  String get commonSendFailed;
+
+  /// Account menu item that starts a send to that account's address. Shared by: accounts, address.
+  ///
+  /// In en, this message translates to:
+  /// **'Send ZEC'**
+  String get commonSendZec;
+
+  /// Title of the mobile receipt of an outgoing transaction that is pending. Shared by: activity, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending...'**
+  String get commonSending;
+
   /// Screen-reader label of the lock icon covering secret content while the app is in the background.
   ///
   /// In en, this message translates to:
   /// **'Sensitive content hidden'**
   String get commonSensitiveContentHidden;
 
+  /// Title of the mobile receipt of an outgoing transaction that completed. Shared by: activity, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent successfully'**
+  String get commonSentSuccessfully;
+
+  /// Title of the sheet that shows a full shielded address. Shared by: activity, onboarding, receive, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded address'**
+  String get commonShieldedAddress;
+
+  /// Value of the To row of a shielding receipt. Shared by: activity, home, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded balance'**
+  String get commonShieldedBalance;
+
+  /// Title of the desktop receipt of a shielding transaction that completed. Shared by: activity, home.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded successfully'**
+  String get commonShieldedSuccessfully;
+
+  /// Title of the mobile receipt of a pending shielding transaction. Shared by: activity, home.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding...'**
+  String get commonShielding;
+
+  /// Ghost button on a receipt row that opens the full address of the sender or recipient. Shared by: activity, pay, send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Show full address'**
+  String get commonShowFullAddress;
+
+  /// Error shown when the user declined the proving-parameter download during Keystone signing. Shared by: send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing was cancelled before proving parameters were downloaded.'**
+  String get commonSigningCancelledBeforeParams;
+
+  /// [security] Error shown when the transaction expired before the Keystone could sign it. Shared by: send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction expired before it could be signed.'**
+  String get commonSigningExpired;
+
+  /// Label of a status detail row with the slippage tolerance of the quote.
+  ///
+  /// In en, this message translates to:
+  /// **'Slippage tolerance'**
+  String get commonSlippageTolerance;
+
+  /// Back link label on the donation review screen. Shared by: send, settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Support Vizor'**
+  String get commonSupportVizor;
+
+  /// Title of a failed swap activity row. Shared by: activity, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap failed'**
+  String get commonSwapFailed;
+
+  /// Label of a status detail row with the swap fee.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap fee'**
+  String get commonSwapFee;
+
+  /// Label of the progress tab on a swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap progress'**
+  String get commonSwapProgress;
+
+  /// Title of a refunded swap activity row. Shared by: activity, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap refunded'**
+  String get commonSwapRefunded;
+
+  /// Default contact label suggestion when saving a swap recipient to the address book.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} recipient'**
+  String commonSymbolRecipient(String symbol);
+
+  /// Label of a status detail row holding the address a refund of the asset goes to.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} refund address'**
+  String commonSymbolRefundAddress(String symbol);
+
+  /// Label of a row on a transaction receipt: the date and time of the transaction. Shared by: activity, send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Timestamp'**
+  String get commonTimestamp;
+
+  /// Label of a row on a transaction receipt: the recipient or the destination of funds. Shared by: activity, pay, send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'To'**
+  String get commonTo;
+
+  /// Line under the received amount of a swap or payment status screen: the recipient address followed by the blockchain it is on.
+  ///
+  /// In en, this message translates to:
+  /// **'To: {address} on {chain}'**
+  String commonToAddressOnChain(String address, String chain);
+
+  /// Accessibility label of the flashlight button of the QR scanner. Shared by: address, home.
+  ///
+  /// In en, this message translates to:
+  /// **'Toggle flashlight'**
+  String get commonToggleFlashlight;
+
+  /// Title of the Ledger failure panel when the transaction proposal expired before it could be signed. Shared by: send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction expired'**
+  String get commonTransactionExpired;
+
+  /// Toast on the desktop receipt after the transaction hash was copied. Shared by: activity, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction hash copied'**
+  String get commonTransactionHashCopied;
+
+  /// Title of the sheet that shows a full transparent address. Shared by: activity, onboarding, receive, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Transparent address'**
+  String get commonTransparentAddress;
+
   /// Button that repeats an action that failed.
   ///
   /// In en, this message translates to:
   /// **'Try again'**
   String get commonTryAgain;
+
+  /// Label of a row on a transaction receipt: the transaction ID, tapping it opens a block explorer. Shared by: activity, send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Tx ID'**
+  String get commonTxId;
 
   /// [security] Button and system biometric prompt reason for unlocking the wallet.
   ///
@@ -758,6 +2497,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Welcome Back'**
   String get commonWelcomeBack;
+
+  /// Label of the amount the user pays, on a payment status screen before the payment completes.
+  ///
+  /// In en, this message translates to:
+  /// **'You pay'**
+  String get commonYouPay;
+
+  /// Label of the amount being paid while a swap or payment is still in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re paying'**
+  String get commonYourePaying;
+
+  /// Label of the amount being received while a swap is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re receiving'**
+  String get commonYoureReceiving;
+
+  /// Title of the sheet that shows a full address of unrecognized type. Shared by: activity, send, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash address'**
+  String get commonZcashAddress;
 
   /// Shows the lightwalletd endpoint in use.
   ///
@@ -800,12 +2563,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'How about running your\nfirst ZEC tx?'**
   String get homeActivityEmptyHintMobile;
-
-  /// Screen-reader label of the Home recent-activity list while it loads.
-  ///
-  /// In en, this message translates to:
-  /// **'Loading activity'**
-  String get homeActivityLoading;
 
   /// Empty-state title on Home when the activity list could not be loaded.
   ///
@@ -902,12 +2659,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Stay awake to sync?'**
   String get homeKeepAwakeTitle;
-
-  /// Status label of the Ledger shield failure panel after an error.
-  ///
-  /// In en, this message translates to:
-  /// **'Action needed'**
-  String get homeLedgerActionNeeded;
 
   /// Ledger shield dialog error when the device refused a later round; earlier rounds were already broadcast.
   ///
@@ -1016,12 +2767,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Ledger shielding could not be completed.'**
   String get homeLedgerShieldingFailed;
-
-  /// Title of the Ledger shield failure panel after an error.
-  ///
-  /// In en, this message translates to:
-  /// **'Ledger signing failed'**
-  String get homeLedgerSigningFailedTitle;
 
   /// Error text on desktop Home when the wallet failed to load. {details} is the technical error text, passed through untranslated.
   ///
@@ -1191,12 +2936,6 @@ abstract class AppLocalizations {
   /// **'Shielding needs attention'**
   String get homeShieldAttentionTitle;
 
-  /// Button on the shield result screens that returns to the wallet.
-  ///
-  /// In en, this message translates to:
-  /// **'Back to wallet'**
-  String get homeShieldBackToWallet;
-
   /// Button on the desktop Keystone shield dialog that closes it after a failure or warning.
   ///
   /// In en, this message translates to:
@@ -1233,18 +2972,6 @@ abstract class AppLocalizations {
   /// **'Allow camera access in Settings to scan Keystone signatures.'**
   String get homeShieldCameraDenied;
 
-  /// Message over the mobile Keystone scanner when the camera cannot start.
-  ///
-  /// In en, this message translates to:
-  /// **'The camera is unavailable right now.'**
-  String get homeShieldCameraUnavailable;
-
-  /// Error on the shield screens when cancelling could not release the pending work.
-  ///
-  /// In en, this message translates to:
-  /// **'Could not finish cancelling. Please try again.'**
-  String get homeShieldCancelFailed;
-
   /// Message on the mobile Keystone shield screen after the user cancelled shielding.
   ///
   /// In en, this message translates to:
@@ -1275,6 +3002,18 @@ abstract class AppLocalizations {
   /// **'Shield transaction could not be broadcast.'**
   String get homeShieldErrorBroadcast;
 
+  /// Shield error when sending the shield transaction to the network failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t broadcast your shielding transaction. Try again.'**
+  String get homeShieldErrorBroadcastFailed;
+
+  /// Shield error when the cause is not known.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t shield your balance. Try again.'**
+  String get homeShieldErrorCouldNotShield;
+
   /// Generic error on the desktop Keystone shield dialog.
   ///
   /// In en, this message translates to:
@@ -1287,11 +3026,11 @@ abstract class AppLocalizations {
   /// **'Shield transaction could not be finalized.'**
   String get homeShieldErrorNotFinalized;
 
-  /// Error on the Keystone shield screens when the Sapling proving parameters failed to download or load.
+  /// [security] Shield error when the account's seed phrase cannot be read.
   ///
   /// In en, this message translates to:
-  /// **'Required proving parameters could not be prepared.'**
-  String get homeShieldErrorProvingParams;
+  /// **'Secret Passphrase isn\'t available for this account.'**
+  String get homeShieldErrorSeedUnavailable;
 
   /// Error on the Keystone shield screens when the scanned signature could not be added to the transaction.
   ///
@@ -1316,6 +3055,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Transparent balance is too small to shield after fees.'**
   String get homeShieldErrorTooSmall;
+
+  /// Shield error while the wallet is still syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait for sync to finish, then shield.'**
+  String get homeShieldErrorWaitForSync;
 
   /// Title of the mobile software-account shield screen when shielding failed.
   ///
@@ -1347,17 +3092,17 @@ abstract class AppLocalizations {
   /// **'Next step'**
   String get homeShieldNextStep;
 
-  /// Error notice on desktop Home when Shield is pressed but no account is selected.
-  ///
-  /// In en, this message translates to:
-  /// **'No active account.'**
-  String get homeShieldNoActiveAccount;
-
   /// Label of the desktop Home button that shields the transparent balance.
   ///
   /// In en, this message translates to:
   /// **'Shield now'**
   String get homeShieldNow;
+
+  /// Message after a shield transaction was saved but not yet broadcast; Vizor retries it.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding queued for retry. Check Activity.'**
+  String get homeShieldQueuedForRetry;
 
   /// Title of the mobile software-account shield screen when the shielding transaction is queued for retry.
   ///
@@ -1431,23 +3176,11 @@ abstract class AppLocalizations {
   /// **'Submitting transaction'**
   String get homeShieldSubmitting;
 
-  /// Title of the mobile shield screens after shielding completed.
+  /// Message when a Keystone shield must wait for private recovery; the signature is kept for the retry.
   ///
   /// In en, this message translates to:
-  /// **'Shielded successfully'**
-  String get homeShieldSucceededTitle;
-
-  /// Screen-reader label of the flashlight button on the mobile Keystone scanner.
-  ///
-  /// In en, this message translates to:
-  /// **'Toggle flashlight'**
-  String get homeShieldToggleFlashlight;
-
-  /// Label on the Home balance card for the shielded balance. See the glossary entry for shielded.
-  ///
-  /// In en, this message translates to:
-  /// **'Shielded balance'**
-  String get homeShieldedBalance;
+  /// **'Private recovery is catching up with the latest block. Try again in a moment; your Keystone signature is kept.'**
+  String get homeShieldWaitingForPrivateRecovery;
 
   /// Status text on the mobile shield screens while the transparent balance is being shielded.
   ///
@@ -1455,17 +3188,65 @@ abstract class AppLocalizations {
   /// **'Shielding your balance…'**
   String get homeShieldingBalance;
 
-  /// Label of the mobile Home shield button while shielding is in progress.
-  ///
-  /// In en, this message translates to:
-  /// **'Shielding...'**
-  String get homeShieldingProgress;
-
   /// Row on the mobile Home card showing the transparent balance. {balance} is a formatted amount such as 0.5 ZEC.
   ///
   /// In en, this message translates to:
   /// **'Transparent: {balance}'**
   String homeTransparentBalance(String balance);
+
+  /// Transparent balance row showing the last amount Vizor knew. {amount} is a formatted ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} (last known)'**
+  String homeTransparentLastKnown(String amount);
+
+  /// Transparent balance row when private recovery stopped; shows the last known amount.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} (last known, recovery stopped)'**
+  String homeTransparentLastKnownStopped(String amount);
+
+  /// Transparent balance row when private recovery stopped and no amount is known.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery stopped'**
+  String get homeTransparentRecoveryStopped;
+
+  /// [security] Why private transparent recovery stopped: earlier public records disagree.
+  ///
+  /// In en, this message translates to:
+  /// **'Earlier public records don\'t match private recovery. Turning off Private queries discards privately recovered records and looks up transparent funds publicly.'**
+  String get homeTransparentStopLegacyDiscrepancy;
+
+  /// [security] Why private transparent recovery stopped: turning off Private queries did not complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Turning off Private queries didn\'t finish. Turn it off again in Settings to look up transparent funds publicly.'**
+  String get homeTransparentStopOptOutUnfinished;
+
+  /// [security] Why private transparent recovery stopped: conflicting records. Turning off Private queries reveals lookups publicly.
+  ///
+  /// In en, this message translates to:
+  /// **'Private recovery found conflicting records for this account. Turning off Private queries discards privately recovered records and looks up transparent funds publicly.'**
+  String get homeTransparentStopQuarantined;
+
+  /// Why private transparent recovery stopped: no progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Private recovery can\'t make progress for this account. Vizor will try again later.'**
+  String get homeTransparentStopStalled;
+
+  /// Why private transparent recovery stopped: the service withdrew data.
+  ///
+  /// In en, this message translates to:
+  /// **'The private recovery service withdrew data for this account. Vizor will try again later.'**
+  String get homeTransparentStopWithdrawn;
+
+  /// Transparent balance row when the amount is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get homeTransparentUnavailable;
 
   /// Screen-reader label of the Home coinholder voting card.
   ///
@@ -1478,6 +3259,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Help to shape the network'**
   String get homeVotingSubtitle;
+
+  /// Toast shown when a gift card link is opened while the user is in the middle of a task.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish or cancel your current task to open this gift card.'**
+  String get incomingLinkGiftBusy;
+
+  /// Toast shown when a gift card link is opened during account setup.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish account setup to open this gift card.'**
+  String get incomingLinkGiftSetup;
+
+  /// Toast shown when a Vizor home link is opened while the user is in the middle of a task; asks them to finish or cancel and reopen it.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish or cancel your task, then reopen the link.'**
+  String get incomingLinkHomeBusy;
+
+  /// Toast shown when a Vizor home link is opened during account setup; asks them to finish setup and reopen it.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish account setup, then reopen the link.'**
+  String get incomingLinkHomeSetup;
+
+  /// Toast shown when a payment request link is opened while the user is in the middle of a task.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish or cancel your current task to open this payment request.'**
+  String get incomingLinkPaymentBusy;
 
   /// [security] Body of the Linux keyring screen when the system keyring is locked; mentions the keyring password prompt.
   ///
@@ -1575,18 +3386,6 @@ abstract class AppLocalizations {
   /// **'It helps us import your wallet faster.'**
   String get keystoneBirthdaySubtitle;
 
-  /// Two-line description under the camera denied title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short.
-  ///
-  /// In en, this message translates to:
-  /// **'Request again, or enable manually\nin the System settings.'**
-  String get keystoneCameraDeniedBody;
-
-  /// Title of the mobile Keystone scan card when the camera permission was denied.
-  ///
-  /// In en, this message translates to:
-  /// **'You\'ve denied camera access'**
-  String get keystoneCameraDeniedTitle;
-
   /// Two-line description under the enable camera access title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short.
   ///
   /// In en, this message translates to:
@@ -1599,35 +3398,11 @@ abstract class AppLocalizations {
   /// **'Enable camera access'**
   String get keystoneCameraEnableTitle;
 
-  /// Button on the mobile Keystone scan card that asks for camera permission again.
-  ///
-  /// In en, this message translates to:
-  /// **'Request again'**
-  String get keystoneCameraRequestAgain;
-
-  /// Two-line description under the camera restricted title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short.
-  ///
-  /// In en, this message translates to:
-  /// **'Screen Time or device management\nis blocking the camera.'**
-  String get keystoneCameraRestrictedBody;
-
-  /// Title of the mobile Keystone scan card when camera access is restricted by the system.
-  ///
-  /// In en, this message translates to:
-  /// **'Camera access is restricted'**
-  String get keystoneCameraRestrictedTitle;
-
   /// Two-line description under the camera unavailable title. Keep the line break; each line is shown on its own line without wrapping, so keep both lines short.
   ///
   /// In en, this message translates to:
   /// **'Keystone import uses camera QR scanning only.\nConnect a camera and try again.'**
   String get keystoneCameraUnavailableBody;
-
-  /// Title of the mobile Keystone scan card when no camera is available.
-  ///
-  /// In en, this message translates to:
-  /// **'Camera unavailable'**
-  String get keystoneCameraUnavailableTitle;
 
   /// Button that confirms the chosen Keystone account and continues the import.
   ///
@@ -2223,12 +3998,6 @@ abstract class AppLocalizations {
   /// **'Sync paused'**
   String get lockSyncPausedTitle;
 
-  /// Screen-reader label of the sync lock screen when sync has finished.
-  ///
-  /// In en, this message translates to:
-  /// **'Vizor is synced'**
-  String get lockSyncedSemantics;
-
   /// Screen-reader label and caption on the sync lock screen while sync is running.
   ///
   /// In en, this message translates to:
@@ -2253,7 +4022,7 @@ abstract class AppLocalizations {
   /// **'Unlock Vizor to continue.'**
   String get lockUnlockToContinuePausedBody;
 
-  /// Sidebar and tab bar destination: transaction history.
+  /// Sidebar and tab bar destination: transaction history. Shared by: activity, nav.
   ///
   /// In en, this message translates to:
   /// **'Activity'**
@@ -2334,12 +4103,6 @@ abstract class AppLocalizations {
     String legacyPrefix,
   );
 
-  /// Caption of the shielded example address card on the address types step.
-  ///
-  /// In en, this message translates to:
-  /// **'Shielded address'**
-  String get onboardingAddressShieldedLabel;
-
   /// Heading of the shielded address card on the mobile address types step.
   ///
   /// In en, this message translates to:
@@ -2351,12 +4114,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Address starts with t, similar to Bitcoin, your address\' balance and transaction history are publicly visible.'**
   String get onboardingAddressTransparentDescription;
-
-  /// Caption of the transparent example address card on the address types step.
-  ///
-  /// In en, this message translates to:
-  /// **'Transparent address'**
-  String get onboardingAddressTransparentLabel;
 
   /// Heading of the transparent address card on the mobile address types step.
   ///
@@ -2580,12 +4337,6 @@ abstract class AppLocalizations {
   /// **'Checking accounts...'**
   String get onboardingCheckingAccounts;
 
-  /// Button that clears the secret passphrase words entered so far.
-  ///
-  /// In en, this message translates to:
-  /// **'Clear'**
-  String get onboardingClear;
-
   /// Subtitle of the desktop hardware wallet picker.
   ///
   /// In en, this message translates to:
@@ -2663,12 +4414,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Additional accounts found'**
   String get onboardingDiscoveryTitle;
-
-  /// Button that edits the value shown next to it.
-  ///
-  /// In en, this message translates to:
-  /// **'Edit'**
-  String get onboardingEdit;
 
   /// [security] Accessibility label of the bar that reopens the BIP39 passphrase dialog for editing.
   ///
@@ -2964,12 +4709,6 @@ abstract class AppLocalizations {
   /// **'Scan & connect to Vizor Desktop'**
   String get onboardingLinkVizorDesktopDescription;
 
-  /// Placeholder shown instead of the transparent balance of a found account while it is being loaded.
-  ///
-  /// In en, this message translates to:
-  /// **'Loading'**
-  String get onboardingLoading;
-
   /// [security] Explanation on the lost-password screen. {resetAction} and {importAction} are bold phrases supplied by onboardingLostPasswordResetAction and onboardingLostPasswordImportAction; keep them in the sentence. The line breaks match the design.
   ///
   /// In en, this message translates to:
@@ -3011,12 +4750,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Next word'**
   String get onboardingManualNextWord;
-
-  /// Button on the manual import step shown after the last word that moves to the review step.
-  ///
-  /// In en, this message translates to:
-  /// **'Review & finish'**
-  String get onboardingManualReviewFinish;
 
   /// [security] Notice after pasting several words: the fill stopped at {word} because it is not a valid secret passphrase word. {word} is the first invalid word.
   ///
@@ -3161,12 +4894,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Review Import'**
   String get onboardingReviewImportTitle;
-
-  /// Dialog button that saves the edited value.
-  ///
-  /// In en, this message translates to:
-  /// **'Save'**
-  String get onboardingSave;
 
   /// Disabled primary button label while the already-created wallet is being saved after a retry.
   ///
@@ -3522,6 +5249,360 @@ abstract class AppLocalizations {
   /// **'Passwords do not match.'**
   String get passwordsDoNotMatch;
 
+  /// Button that saves the new Pay recipient address to the address book.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to contacts'**
+  String get payAddToContacts;
+
+  /// Accessibility label of the read-only address in the mobile Pay add-contact card.
+  ///
+  /// In en, this message translates to:
+  /// **'Address {address}'**
+  String payAddressSemantics(String address);
+
+  /// Accessibility label of the asset picker on the mobile Pay amount step.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose payment asset'**
+  String get payAmountChooseAsset;
+
+  /// Accessibility label of the toggle that switches the mobile Pay amount input to the asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in {symbol}'**
+  String payAmountEnterIn(String symbol);
+
+  /// Label before the estimated ZEC cost on the mobile Pay amount step.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated:'**
+  String get payAmountEstimated;
+
+  /// Label before the estimated ZEC cost on the desktop Pay amount step.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated spend'**
+  String get payAmountEstimatedSpend;
+
+  /// Text before the shielded balance chip on the desktop Pay amount step; reads 'Paying from your Shielded balance'.
+  ///
+  /// In en, this message translates to:
+  /// **'Paying from your'**
+  String get payAmountPayingFrom;
+
+  /// Label next to the asset picker on the Pay amount step.
+  ///
+  /// In en, this message translates to:
+  /// **'Paying in'**
+  String get payAmountPayingIn;
+
+  /// Back link of the first Pay step; goes to Home.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get payBackHome;
+
+  /// Disabled button label while the Pay quote is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetching quote'**
+  String get payFetchingQuote;
+
+  /// Heading of the warning shown when the pasted Pay recipient address is not in the address book or recents.
+  ///
+  /// In en, this message translates to:
+  /// **'New address detected.'**
+  String get payNewAddressDetected;
+
+  /// Warning text under the new-address heading on the Pay recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'You haven\'t interacted with this address before.'**
+  String get payNewAddressWarning;
+
+  /// Relative time of a recent Pay recipient used this many days ago; 'd' abbreviates days.
+  ///
+  /// In en, this message translates to:
+  /// **'{days}d ago'**
+  String payRecentDaysAgo(int days);
+
+  /// Relative time of a recent Pay recipient used this many hours ago; 'h' abbreviates hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours}h ago'**
+  String payRecentHoursAgo(int hours);
+
+  /// Relative time of a recent Pay recipient used this many minutes ago; 'm' abbreviates minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes}m ago'**
+  String payRecentMinutesAgo(int minutes);
+
+  /// Title of the list of recent Pay recipients on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Recently sent'**
+  String get payRecentlySent;
+
+  /// Title of the list of recent Pay recipients on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Recents'**
+  String get payRecents;
+
+  /// Placeholder of the Pay recipient search field.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste an address or scan QR code'**
+  String get payRecipientAddressHint;
+
+  /// Accessibility label of the Pay recipient search field.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient address'**
+  String get payRecipientAddressLabel;
+
+  /// Accessibility label of the button that opens the QR scanner on the Pay recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan QR code'**
+  String get payRecipientScanQr;
+
+  /// Disabled button label on the Pay review step while a new quote is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Refreshing quote'**
+  String get payRefreshingQuote;
+
+  /// Primary button of the Pay review step that sends the payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm & pay'**
+  String get payReviewConfirmPay;
+
+  /// Label of the row with the ZEC amount converted for the payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Converted amount'**
+  String get payReviewConvertedAmount;
+
+  /// Label of the paying amount row on the Pay review step; also the disabled button label while the payment starts.
+  ///
+  /// In en, this message translates to:
+  /// **'Paying'**
+  String get payReviewPaying;
+
+  /// Text of the Pay review countdown after the quote expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote expired'**
+  String get payReviewQuoteExpired;
+
+  /// Text before the countdown on the Pay review step; a trailing space separates it from the time.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote expires in '**
+  String get payReviewQuoteExpiresIn;
+
+  /// Button on the mobile Pay review step when the quote expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh quote'**
+  String get payReviewRefreshQuote;
+
+  /// Button on the desktop Pay review step when the quote expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh the quote'**
+  String get payReviewRefreshTheQuote;
+
+  /// Button on the mobile Pay review step when the quote is no longer active.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to pay'**
+  String get payReviewReturnToPay;
+
+  /// Caption of the recipient row when the address is not a saved contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown address'**
+  String get payReviewUnknownAddress;
+
+  /// Error in the Pay add-contact form when saving fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save this contact. Try again.'**
+  String get paySaveContactError;
+
+  /// Button label while the Pay add-contact card is saving.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving'**
+  String get paySaving;
+
+  /// Accessibility label of the tappable area that dismisses the mobile Pay modal.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get payScanBarrierDismiss;
+
+  /// Caption of the camera scanner for the Pay recipient address.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the recipient address QR code'**
+  String get payScanCaption;
+
+  /// Title of the camera permission prompt of the Pay recipient scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the recipient address'**
+  String get payScanPermissionTitle;
+
+  /// Subtitle of the card that opens the QR scanner on the mobile Pay recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan an address using camera'**
+  String get payScanQrSubtitle;
+
+  /// Title of the card that opens the QR scanner on the mobile Pay recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan a QR code'**
+  String get payScanQrTitle;
+
+  /// Button that confirms the Pay recipient and goes to the review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Select recipient'**
+  String get paySelectRecipient;
+
+  /// Label of the Pay wizard step where the user picks the recipient; also the back link from the review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient'**
+  String get payStepRecipient;
+
+  /// Label of the Pay wizard step where the user reviews the payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get payStepReview;
+
+  /// Body of the mobile Pay submitted screen when submitting failed.
+  ///
+  /// In en, this message translates to:
+  /// **'The payment could not be submitted. Try again.'**
+  String get paySubmittedFailedBody;
+
+  /// Secondary button of the mobile Pay submitted screen; opens Activity.
+  ///
+  /// In en, this message translates to:
+  /// **'Go to activity'**
+  String get paySubmittedGoToActivity;
+
+  /// Notice on the mobile Pay submitted screen when the broadcast result is unknown; Activity is the app's transaction list.
+  ///
+  /// In en, this message translates to:
+  /// **'The payment status is uncertain. Check Activity before trying again.'**
+  String get paySubmittedStatusUncertainNotice;
+
+  /// Body of the mobile Pay submitted screen while the payment is being broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting your payment to the network...'**
+  String get paySubmittedSubmittingBody;
+
+  /// Title of the mobile Pay submitted screen while the payment is being broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting payment...'**
+  String get paySubmittedSubmittingTitle;
+
+  /// Body of the mobile Pay submitted screen after broadcast; the line break is intentional and Activity is the app's transaction list.
+  ///
+  /// In en, this message translates to:
+  /// **'It will confirm on-chain shortly.\nTrack it in Activity.'**
+  String get paySubmittedSucceededBody;
+
+  /// Title of the mobile Pay submitted screen after the payment was broadcast; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment\nSubmitted'**
+  String get paySubmittedSucceededTitle;
+
+  /// Notice on the mobile Pay submitted screen when the payment record is missing.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t load this payment. Check Activity for its latest status.'**
+  String get paySubmittedUnavailableNotice;
+
+  /// Title of the mobile Pay submitted screen when the payment record is missing.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment unavailable'**
+  String get paySubmittedUnavailableTitle;
+
+  /// Title of the mobile Pay submitted screen when the broadcast result is unknown; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment status\nuncertain'**
+  String get paySubmittedUncertainTitle;
+
+  /// Title of the Pay amount step; the symbol is the asset the user pays in.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay in {symbol}'**
+  String payTitleAmount(String symbol);
+
+  /// Toast shown when a payment request link waited too long before it could be opened.
+  ///
+  /// In en, this message translates to:
+  /// **'That request link timed out. Open it again to pay.'**
+  String get paymentUriExpired;
+
+  /// Toast shown when a payment request link cannot be read.
+  ///
+  /// In en, this message translates to:
+  /// **'This request link isn\'t valid. Ask the sender for a new one.'**
+  String get paymentUriMalformed;
+
+  /// Toast shown when a payment request link is opened while an Ironwood migration blocks sending.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish your Ironwood migration before opening request links.'**
+  String get paymentUriMigrationSendGate;
+
+  /// Toast shown when a payment request link is opened but no wallet exists yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up or import a wallet before opening request links.'**
+  String get paymentUriNoWallet;
+
+  /// Toast shown when a payment request link is opened while the user is part-way through wallet setup.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish setting up your wallet before opening request links.'**
+  String get paymentUriOnboarding;
+
+  /// Toast shown when a second payment request link arrives before the first one was handled, so only the newest is kept.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the newest request link was kept. Open the earlier one again to pay it.'**
+  String get paymentUriReplaced;
+
+  /// Toast shown when a payment request link cannot be opened because of a storage failure or a wallet load error.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t open this request link. Open it again once your wallet has loaded.'**
+  String get paymentUriUnavailable;
+
+  /// Message shown when a payment request link or QR code asks for a feature Vizor does not support, such as several recipients.
+  ///
+  /// In en, this message translates to:
+  /// **'This request link uses a feature Vizor doesn\'t support yet.'**
+  String get paymentUriUnsupported;
+
   /// Badge naming a shielded pool or address. See the glossary entry for shielded.
   ///
   /// In en, this message translates to:
@@ -3552,11 +5633,269 @@ abstract class AppLocalizations {
   /// **'Couldn\'t update profile picture.'**
   String get profilePictureUpdateFailed;
 
-  /// Label of the memo row while a receipt is loading.
+  /// Accessibility label of the help button that explains shielded versus transparent addresses.
   ///
   /// In en, this message translates to:
-  /// **'Message'**
-  String get receiptMessageLabel;
+  /// **'About this address type'**
+  String get receiveAboutAddressType;
+
+  /// Text shown in the address line when the address is empty because loading failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Address couldn\'t be loaded. Try again.'**
+  String get receiveAddressCouldNotLoad;
+
+  /// Message shown in place of the QR code when the address could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t load your address. Try again in a moment.'**
+  String get receiveAddressLoadFailed;
+
+  /// Button label and accessibility label that copies the transparent address.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy transparent address'**
+  String get receiveCopyTransparentAddress;
+
+  /// Inline error on the Receive screen: a summary line, then a technical details line. {details} is raw error text and is not translated.
+  ///
+  /// In en, this message translates to:
+  /// **'{message}\nDetails: {details}'**
+  String receiveErrorWithDetails(String message, String details);
+
+  /// Accessibility label of the renew button that generates a new shielded address.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate new shielded address'**
+  String get receiveGenerateNewShieldedAddress;
+
+  /// [security] Bullet in the shielded address explainer: new addresses come from the same key and reach the same wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Each new address is a diversified address derived from the same key. They all receive to the same wallet.'**
+  String get receiveInfoShieldedDiversified;
+
+  /// [security] Bullet in the shielded address explainer on desktop; says transaction details are encrypted.
+  ///
+  /// In en, this message translates to:
+  /// **'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.'**
+  String get receiveInfoShieldedHiddenDesktop;
+
+  /// [security] Bullet in the shielded address explainer on mobile; says transaction details are encrypted. Keep the em dashes.
+  ///
+  /// In en, this message translates to:
+  /// **'Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.'**
+  String get receiveInfoShieldedHiddenMobile;
+
+  /// [security] Bullet in the shielded address explainer on desktop about when a new address is generated.
+  ///
+  /// In en, this message translates to:
+  /// **'A new Zcash shielded address is generated only when you click the renew button.'**
+  String get receiveInfoShieldedRenewClick;
+
+  /// [security] Bullet in the shielded address explainer on touch devices about when a new address is generated.
+  ///
+  /// In en, this message translates to:
+  /// **'A new Zcash shielded address is generated only when you tap the renew button.'**
+  String get receiveInfoShieldedRenewTap;
+
+  /// [security] Subtitle of the shielded address explainer.
+  ///
+  /// In en, this message translates to:
+  /// **'Strong privacy by default.'**
+  String get receiveInfoShieldedSubtitle;
+
+  /// Bullet in the transparent address explainer about where transparent addresses are used.
+  ///
+  /// In en, this message translates to:
+  /// **'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.'**
+  String get receiveInfoTransparentExchanges;
+
+  /// [security] Bullet in the transparent address explainer on desktop; says transaction details are public.
+  ///
+  /// In en, this message translates to:
+  /// **'All tx details - sender, receiver, and amount - are publicly visible on-chain.'**
+  String get receiveInfoTransparentPublicDesktop;
+
+  /// [security] Bullet in the transparent address explainer on mobile; says transaction details are public. Keep the em dashes.
+  ///
+  /// In en, this message translates to:
+  /// **'All tx details — sender, receiver, and amount — are publicly visible on-chain.'**
+  String get receiveInfoTransparentPublicMobile;
+
+  /// [security] Bullet in the transparent address explainer: the transparent address rotates after receiving funds.
+  ///
+  /// In en, this message translates to:
+  /// **'After this address receives ZEC and Vizor syncs, your next transparent address will automatically change. Previous addresses still belong to this wallet.'**
+  String get receiveInfoTransparentRotates;
+
+  /// [security] Bullet in the transparent address explainer: funds must be shielded before sending. {ticker} is the currency ticker.
+  ///
+  /// In en, this message translates to:
+  /// **'After receiving {ticker} to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won\'t be able to send it.'**
+  String receiveInfoTransparentShieldFirst(String ticker);
+
+  /// [security] Subtitle of the transparent address explainer; its activity is public.
+  ///
+  /// In en, this message translates to:
+  /// **'Publicly visible'**
+  String get receiveInfoTransparentSubtitle;
+
+  /// Error toast on the Receive screen when saving the payment-request QR image fails.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t save the QR image. Try another folder, or copy the request link instead.'**
+  String get receiveQrSaveFailed;
+
+  /// Toast on the Receive screen after a payment-request QR image is saved. {folder} is the folder name.
+  ///
+  /// In en, this message translates to:
+  /// **'QR image saved to {folder}'**
+  String receiveQrSaved(String folder);
+
+  /// Placeholder shown where a QR code would be when it cannot be drawn.
+  ///
+  /// In en, this message translates to:
+  /// **'QR unavailable'**
+  String get receiveQrUnavailable;
+
+  /// Toast and inline error on the Receive screen when generating a new shielded address fails.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t refresh your shielded address. Try again, or use your current one.'**
+  String get receiveRenewAddressError;
+
+  /// Inline error under the payment request amount field when the amount has more than 8 decimal places.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter up to 8 decimals'**
+  String get receiveRequestAmountDecimalsError;
+
+  /// Inline error under the payment request amount field when the text is not a number.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an amount like 0.5'**
+  String get receiveRequestAmountFormatError;
+
+  /// Inline error under the payment request amount field when the amount is larger than the total ZEC supply.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount exceeds the ZEC supply'**
+  String get receiveRequestAmountSupplyError;
+
+  /// Button on the mobile Receive screen that opens the payment request sheet, and the title of the payment request dialog on both form factors. {ticker} is the currency ticker such as ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Request {ticker}'**
+  String receiveRequestButton(String ticker);
+
+  /// Accessibility label of the close button of the payment request dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Close request'**
+  String get receiveRequestCloseRequest;
+
+  /// Error toast on the mobile payment request when copying the link fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t copy the request link. Try sharing it instead.'**
+  String get receiveRequestCopyFailed;
+
+  /// Button and accessibility label on the mobile payment request result that copies the request link.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy link'**
+  String get receiveRequestCopyLink;
+
+  /// Button on the desktop payment request result that copies the request link.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy request link'**
+  String get receiveRequestCopyRequestLink;
+
+  /// Button that turns the entered amount and message into a payment request.
+  ///
+  /// In en, this message translates to:
+  /// **'Create request'**
+  String get receiveRequestCreate;
+
+  /// Accessibility label of the toggle that switches the amount field to ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in ZEC'**
+  String get receiveRequestEnterZec;
+
+  /// Toast shown after the payment request link is copied to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Request link copied'**
+  String get receiveRequestLinkCopied;
+
+  /// [security] Help text under the payment request message field: the message is stored in the link itself, so anyone who sees the link can read it.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded addresses only — anyone with this link can read it.'**
+  String get receiveRequestMessageHelp;
+
+  /// [security] Placeholder in the payment request message field: the message is readable by anyone who gets the link.
+  ///
+  /// In en, this message translates to:
+  /// **'Anyone you send the link to can read this'**
+  String get receiveRequestMessageHint;
+
+  /// Button on the desktop payment request result that saves the QR code as an image file.
+  ///
+  /// In en, this message translates to:
+  /// **'Save QR image'**
+  String get receiveRequestSaveQr;
+
+  /// Button on the mobile payment request result that shares the request QR image.
+  ///
+  /// In en, this message translates to:
+  /// **'Share request'**
+  String get receiveRequestShare;
+
+  /// Error toast on the mobile payment request when sharing fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t share this request. Copy the link instead.'**
+  String get receiveRequestShareFailed;
+
+  /// Button on the desktop Receive pane that opens the payment request card.
+  ///
+  /// In en, this message translates to:
+  /// **'Request ZEC'**
+  String get receiveRequestZecButton;
+
+  /// Visible label of the mobile Receive button that shares the selected address.
+  ///
+  /// In en, this message translates to:
+  /// **'Share address'**
+  String get receiveShareAddress;
+
+  /// Toast on the Receive screen when the system share sheet fails for an address.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t share this address. Copy it instead.'**
+  String get receiveShareFailed;
+
+  /// Tooltip and accessibility label of the button that shares the shielded address.
+  ///
+  /// In en, this message translates to:
+  /// **'Share shielded address'**
+  String get receiveShareShieldedAddress;
+
+  /// Tooltip and accessibility label of the button that shares the transparent address.
+  ///
+  /// In en, this message translates to:
+  /// **'Share transparent address'**
+  String get receiveShareTransparentAddress;
+
+  /// Title of the Receive screen. {ticker} is the currency ticker such as ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive {ticker}'**
+  String receiveTitle(String ticker);
 
   /// [security] Button that copies the seed phrase to the clipboard.
   ///
@@ -3569,6 +5908,1344 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Secret Passphrase'**
   String get secretPassphraseTitle;
+
+  /// Button on the send screen that reveals the optional memo field.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a memo'**
+  String get sendAddMemo;
+
+  /// Fallback label for a recipient whose address is a transparent-source-only (TEX) address.
+  ///
+  /// In en, this message translates to:
+  /// **'TEX address'**
+  String get sendAddressTypeTex;
+
+  /// [security] Error under the recipient field when checking the address failed unexpectedly.
+  ///
+  /// In en, this message translates to:
+  /// **'Address validation failed'**
+  String get sendAddressValidationFailed;
+
+  /// Label of the disabled primary button on the mobile amount step before an amount is entered.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount to continue'**
+  String get sendAmountCtaEnterAmount;
+
+  /// Error when the user declined the proving-parameter download during a send.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending was cancelled before proving parameters were downloaded.'**
+  String get sendBroadcastCancelledBeforeParams;
+
+  /// [security] Status when the first of two linked transactions was accepted but the second did not complete; the user must check Activity before sending again.
+  ///
+  /// In en, this message translates to:
+  /// **'The first transaction was accepted, but the dependent transaction did not complete. Check Activity before sending again.'**
+  String get sendBroadcastDependentIncomplete;
+
+  /// [security] Status when confirmation of the first transaction timed out; it may have been sent, so the user must check Activity before sending again.
+  ///
+  /// In en, this message translates to:
+  /// **'The first transaction is stored locally and may have reached the network, but confirmation timed out. Check Activity before sending again.'**
+  String get sendBroadcastFirstUnknown;
+
+  /// [security] Error when a hardware-wallet signing request expired before it could be broadcast; the user must return, wait for sync and review the payment again.
+  ///
+  /// In en, this message translates to:
+  /// **'The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.'**
+  String get sendBroadcastHardwareExpired;
+
+  /// [security] Fallback status when broadcasting did not complete; the user must check Activity before sending again.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction broadcast did not complete. Check Activity before sending again.'**
+  String get sendBroadcastIncomplete;
+
+  /// [security] Ledger-flow status when confirmation of the first transaction timed out; the user must check Activity before sending again.
+  ///
+  /// In en, this message translates to:
+  /// **'The first transaction may have reached the network, but confirmation timed out. Check Activity before sending again.'**
+  String get sendBroadcastLedgerFirstUnknown;
+
+  /// [security] Ledger-flow status when the transaction was broadcast but could not be stored locally; the user must not send again until sync or an explorer confirms the status.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction reached the network, but Vizor could not store it locally. Do not send again until sync or an explorer confirms the latest status.'**
+  String get sendBroadcastLedgerNotStored;
+
+  /// Ledger-flow status when the network rejected the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction was rejected by the network. Please try again later.'**
+  String get sendBroadcastLedgerRejected;
+
+  /// [security] Status when a locally created transaction could not be broadcast; it retries automatically and the user must not send again unless it expires.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.'**
+  String get sendBroadcastLocalRetry;
+
+  /// [security] Error when the secret passphrase (mnemonic) of the sending account cannot be found on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Mnemonic not found for the proposal account.'**
+  String get sendBroadcastMnemonicMissing;
+
+  /// [security] Status when only part of a multi-transaction send was broadcast; the rest retries automatically and the user must not send again before checking activity.
+  ///
+  /// In en, this message translates to:
+  /// **'Some transactions were broadcast and the rest will retry automatically. Check activity before sending again.'**
+  String get sendBroadcastPartial;
+
+  /// Error when the user declines the proving-parameter download while retrying a signed transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Proof parameters are required to retry this signed transaction.'**
+  String get sendBroadcastProofParamsRequired;
+
+  /// [security] Status when the network rejected a locally created transaction; the wallet keeps retrying and the user must not send again unless it expires.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction was created locally but didn\'t reach the network. The wallet will keep retrying until it expires. Don\'t send again unless this one expires.'**
+  String get sendBroadcastRejectedLocal;
+
+  /// [security] Status when the transaction reached the network but the wallet failed to record it; the user must check Activity or an explorer before sending again.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction reached the network, but local tracking failed. Check Activity or an explorer before sending again.'**
+  String get sendBroadcastTrackingFailed;
+
+  /// Message shown while the maximum sendable amount is still being calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating max amount'**
+  String get sendCalculatingMax;
+
+  /// Empty-state title in the contact picker when the user has no Zcash contacts.
+  ///
+  /// In en, this message translates to:
+  /// **'No Zcash contacts'**
+  String get sendContactPickerEmpty;
+
+  /// Title of the contact picker modal opened from the send screen, listing Zcash contacts.
+  ///
+  /// In en, this message translates to:
+  /// **'Contacts Zcash'**
+  String get sendContactPickerTitle;
+
+  /// [security] Title of the sheet that shows the full Vizor donation address so the user can verify it.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor donation address'**
+  String get sendDonationAddressTitle;
+
+  /// Label of the disabled primary button on the mobile recipient step before an address is entered.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter address to continue'**
+  String get sendEnterAddressToContinue;
+
+  /// Accessibility label of the control that switches the amount input to {currency}, such as ZEC or USD.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in {currency}'**
+  String sendEnterAmountInCurrency(String currency);
+
+  /// [security] Error shown when the user tries to continue without a valid recipient address.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid address'**
+  String get sendEnterValidAddress;
+
+  /// [security] Generic error when broadcasting failed; asks the user to check the wallet's latest status before trying again.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction couldn\'t be sent. Go back to your wallet and check the latest status.'**
+  String get sendErrorCouldNotBeSent;
+
+  /// Generic error when a donation could not be sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Donation failed. Try again.'**
+  String get sendErrorDonationFailed;
+
+  /// Error when the transaction expired before it could be broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction expired before it could be sent.'**
+  String get sendErrorExpiredBeforeSent;
+
+  /// Error when the transaction proposal expired before it could be sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction expired before it could be sent. Try again.'**
+  String get sendErrorExpiredTryAgain;
+
+  /// [security] Error shown when the shielded balance cannot cover the amount plus the network fee.
+  ///
+  /// In en, this message translates to:
+  /// **'Insufficient shielded balance to cover amount and fee.'**
+  String get sendErrorInsufficientShielded;
+
+  /// Error shown when the wallet could not reach the network while sending.
+  ///
+  /// In en, this message translates to:
+  /// **'Network error. Check your connection and try again.'**
+  String get sendErrorNetwork;
+
+  /// [security] Error when part of a multi-transaction send was already broadcast; the user must check Activity before retrying to avoid paying twice.
+  ///
+  /// In en, this message translates to:
+  /// **'Some parts of this transaction were sent. Open Activity to see what went through before you try again.'**
+  String get sendErrorPartiallySent;
+
+  /// Error when the network rejected the transaction while it was being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'The network rejected this transaction. Try again.'**
+  String get sendErrorRejectedTryAgain;
+
+  /// Error when the network rejected the transaction at broadcast time.
+  ///
+  /// In en, this message translates to:
+  /// **'The network rejected this transaction. Try again later.'**
+  String get sendErrorRejectedTryLater;
+
+  /// Generic error when a send could not be completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Send failed. Try again.'**
+  String get sendErrorSendFailed;
+
+  /// Error shown when the wallet is still finishing its sync and cannot build a send yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing wallet sync. Try again shortly.'**
+  String get sendErrorSyncFinishing;
+
+  /// Accessibility label of the fee row on the mobile review step; opens an explanation of the network fee.
+  ///
+  /// In en, this message translates to:
+  /// **'About the transaction fee'**
+  String get sendFeeAboutSemantics;
+
+  /// [security] Notice on the mobile review step when the network fee could not be calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Fee unavailable. Try again.'**
+  String get sendFeeUnavailableTryAgain;
+
+  /// [security] Notice on the mobile review step: the fee changed after the wallet synced, so the user must review the new fee before confirming.
+  ///
+  /// In en, this message translates to:
+  /// **'Fee updated after sync. Review and confirm again.'**
+  String get sendFeeUpdatedAfterSync;
+
+  /// Notice on the mobile review step while the wallet is finishing its sync before the fee can be shown.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing wallet sync.'**
+  String get sendFinishingSync;
+
+  /// [security] Error under the send amount field when the amount plus the network fee exceeds the spendable balance. Variant for a shielded or transparent recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Insufficient shielded balance including fee'**
+  String get sendInsufficientBalanceIncludingFeeShielded;
+
+  /// [security] Error under the send amount field when the amount plus the network fee exceeds the spendable balance. Variant for a transparent-only (TEX) recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Insufficient balance including fee'**
+  String get sendInsufficientBalanceIncludingFeeTex;
+
+  /// [security] Error shown on the send screen when the user tries to review an amount above the spendable balance. Variant for a shielded or transparent recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Insufficient shielded balance.'**
+  String get sendInsufficientBalanceSentenceShielded;
+
+  /// [security] Error shown on the send screen when the user tries to review an amount above the spendable balance. Variant for a transparent-only (TEX) recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Insufficient balance.'**
+  String get sendInsufficientBalanceSentenceTex;
+
+  /// [security] Error under the send amount field when the amount exceeds the spendable balance. Variant for a shielded or transparent recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Insufficient shielded balance'**
+  String get sendInsufficientBalanceShielded;
+
+  /// [security] Error under the send amount field when the amount exceeds the spendable balance. Variant for a transparent-only (TEX) recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Insufficient balance'**
+  String get sendInsufficientBalanceTex;
+
+  /// [security] Error under the send amount field when the maximum amount cannot cover the network fee. Variant for a shielded or transparent recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Insufficient shielded balance to cover fee'**
+  String get sendInsufficientBalanceToCoverFeeShielded;
+
+  /// [security] Error under the send amount field when the maximum amount cannot cover the network fee. Variant for a transparent-only (TEX) recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Insufficient balance to cover fee'**
+  String get sendInsufficientBalanceToCoverFeeTex;
+
+  /// [security] Error under the send amount field when the amount is above the spendable balance; {fee} is the formatted network fee. Variant for a shielded or transparent recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Insufficient shielded balance (fee: {fee})'**
+  String sendInsufficientBalanceWithFeeShielded(String fee);
+
+  /// [security] Error under the send amount field when the amount is above the spendable balance; {fee} is the formatted network fee. Variant for a transparent-only (TEX) recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Insufficient balance (fee: {fee})'**
+  String sendInsufficientBalanceWithFeeTex(String fee);
+
+  /// [security] Error under the recipient field when the address is not valid.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid address'**
+  String get sendInvalidAddress;
+
+  /// Error under the amount field when the entered amount cannot be parsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid amount'**
+  String get sendInvalidAmount;
+
+  /// [security] Title of the desktop Keystone signing modal and label of the review button for a Keystone account.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm with Keystone'**
+  String get sendKeystoneConfirmTitle;
+
+  /// Error on the mobile review screen when the Keystone signing request could not be prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing could not be prepared. Go back and try again.'**
+  String get sendKeystonePrepareFailedGoBack;
+
+  /// Error on the desktop review screen when the Keystone signing request could not be prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing could not be prepared. Return to Send and try again.'**
+  String get sendKeystonePrepareFailedReturnToSend;
+
+  /// Disabled primary button label in the desktop Keystone modal while proofs are being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing'**
+  String get sendKeystonePreparing;
+
+  /// [security] Error when the scanned signature QR code does not belong to the signing request currently displayed.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code does not match the current Keystone signing request.'**
+  String get sendKeystoneQrMismatch;
+
+  /// Message shown on the Keystone scan screen when no camera is available.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing uses camera QR scanning only. Connect a camera and try again.'**
+  String get sendKeystoneScanCameraOnly;
+
+  /// Error when the scanned QR code is not a valid Keystone signature.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code could not be decoded as a Keystone transaction signature.'**
+  String get sendKeystoneScanDecodeFailed;
+
+  /// Subtitle on the desktop Keystone scan screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Hold the QR code steady in front of your camera'**
+  String get sendKeystoneScanHoldSteady;
+
+  /// [security] Instruction in the desktop Keystone modal while proofs are still being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan now. Signature import unlocks after proofs are ready.'**
+  String get sendKeystoneScanNow;
+
+  /// Label shown over the scanner while the signature QR code is being decoded.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading signature...'**
+  String get sendKeystoneScanReading;
+
+  /// [security] Subtitle of the desktop Keystone signing modal asking the user to scan the QR code with the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan with your Keystone'**
+  String get sendKeystoneScanSubtitle;
+
+  /// Caption under the camera view asking the user to scan the signature QR code shown on the Keystone to finish sending.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code on your Keystone to finish sending'**
+  String get sendKeystoneScanToFinish;
+
+  /// Hint when the scanned QR code is of the wrong type; asks to open the signed transaction QR code on the Keystone device.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the signed transaction QR on Keystone, then scan again.'**
+  String get sendKeystoneScanUnexpectedTransaction;
+
+  /// [security] Instruction on the mobile Keystone screen for a TEX send that needs two device approvals; {index} is 1 or 2.
+  ///
+  /// In en, this message translates to:
+  /// **'This TEX send requires two Keystone approvals. Scan transaction {index} of 2.'**
+  String sendKeystoneTexTwoApprovals(int index);
+
+  /// [security] Subtitle of the desktop Keystone modal for a two-transaction send; {index} is 1 or 2.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction {index} of 2'**
+  String sendKeystoneTransactionOfTwo(int index);
+
+  /// Failure message asking the user to reconnect and unlock the Ledger; {instruction} is a sentence telling which app to open on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect and unlock your Ledger. {instruction}'**
+  String sendLedgerConnectAndUnlock(String instruction);
+
+  /// Title of the Ledger signing failure panel when Vizor could not complete preparing or signing the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not finish transaction'**
+  String get sendLedgerCouldNotFinishTitle;
+
+  /// Ledger failure message when Vizor failed to prepare the transaction proofs before the device signed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not prepare the transaction. Try again.'**
+  String get sendLedgerCouldNotPrepare;
+
+  /// Title shown when the signed transaction could not be saved locally after the Ledger signed it.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save signed transaction'**
+  String get sendLedgerCouldNotSaveTitle;
+
+  /// [security] Warning that the saved signed transaction could not be verified; the user must not sign or send it again to avoid a duplicate payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not verify the saved transaction. Do not sign or send it again.'**
+  String get sendLedgerCouldNotVerifySaved;
+
+  /// Button on a Ledger failure panel that discards the failed transaction and returns to build a new one.
+  ///
+  /// In en, this message translates to:
+  /// **'Create new transaction'**
+  String get sendLedgerCreateNewTransaction;
+
+  /// [security] Ledger failure message: the expired transaction cannot be signed anymore and the user must start a new one.
+  ///
+  /// In en, this message translates to:
+  /// **'This transaction can no longer be signed. Create and review a new transaction.'**
+  String get sendLedgerExpiredMessage;
+
+  /// [security] Ledger failure message: the device already signed, so the user only needs to retry in Vizor without approving again on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open and try again. No new Ledger approval needed.'**
+  String get sendLedgerKeepOpenRetry;
+
+  /// [security] Message telling the user to keep Vizor open and retry saving the signed transaction; no new Ledger approval is needed.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open and retry saving. No new Ledger approval needed.'**
+  String get sendLedgerKeepOpenRetrySaving;
+
+  /// Title of the failure panel when the Ledger device needs the user to act (unlock, open the app, reconnect).
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger needs attention'**
+  String get sendLedgerNeedsAttentionTitle;
+
+  /// [security] Failure message when the user declined the transaction on their Ledger device.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction was rejected on your Ledger.'**
+  String get sendLedgerRejectedOnDevice;
+
+  /// [security] Message saying the Ledger signature was kept; the user should retry saving and must not approve another transaction on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger signature is preserved. Retry saving without approving another transaction.'**
+  String get sendLedgerSignaturePreservedMessage;
+
+  /// [security] Title shown when the signed transaction could not be verified and must not be signed or sent again.
+  ///
+  /// In en, this message translates to:
+  /// **'Signed transaction needs attention'**
+  String get sendLedgerSignedNeedsAttentionTitle;
+
+  /// Generic Ledger failure message asking the user to check the device and retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger signing could not be completed. Check your device and try again.'**
+  String get sendLedgerSigningIncomplete;
+
+  /// Title of the failure panel when the Ledger cannot sign this kind of transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger signing unavailable'**
+  String get sendLedgerSigningUnavailableTitle;
+
+  /// Status chip telling the user the failed transaction cannot be reused and a new one must be created.
+  ///
+  /// In en, this message translates to:
+  /// **'New transaction required'**
+  String get sendLedgerStatusNewTransactionRequired;
+
+  /// Status chip when a signed Ledger transaction needs recovery before anything else.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery required'**
+  String get sendLedgerStatusRecoveryRequired;
+
+  /// Status chip saying the Ledger signature was kept and saving can be retried.
+  ///
+  /// In en, this message translates to:
+  /// **'Signature preserved'**
+  String get sendLedgerStatusSignaturePreserved;
+
+  /// Status chip when the Ledger device app does not support the transaction type.
+  ///
+  /// In en, this message translates to:
+  /// **'Unsupported transaction'**
+  String get sendLedgerStatusUnsupportedTransaction;
+
+  /// Message shown on the send screen when the wallet fails to load; {error} is technical error text.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong. Try again in a moment.\n\nDetails: {error}'**
+  String sendLoadError(String error);
+
+  /// Label of the button on the mobile amount step that fills in the maximum spendable amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Max'**
+  String get sendMaxButton;
+
+  /// Error shown when the user taps Max before entering a valid recipient address.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid address to use Max'**
+  String get sendMaxNeedsAddress;
+
+  /// Error under the amount field when the maximum sendable amount could not be calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Max amount unavailable'**
+  String get sendMaxUnavailable;
+
+  /// Prompt on the mobile review step's memo row when no message has been added.
+  ///
+  /// In en, this message translates to:
+  /// **'Add short encrypted message'**
+  String get sendMemoAddShortEncrypted;
+
+  /// Label of the memo sheet's button that removes the existing memo.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear memo'**
+  String get sendMemoClear;
+
+  /// Value of the message row when expanded; tapping it collapses the full message.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapse'**
+  String get sendMemoCollapse;
+
+  /// Caption under Add a memo explaining memos work only for shielded recipients.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypted, for shielded addresses only.'**
+  String get sendMemoEncryptedHint;
+
+  /// Placeholder in the memo entry sheet explaining that the message is encrypted for the recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the recipient can read this'**
+  String get sendMemoRecipientOnly;
+
+  /// Title of the memo entry sheet and label of its confirm button on the mobile review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Memo'**
+  String get sendMemoSheetAdd;
+
+  /// Error under the message field when a memo is entered for a transparent recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Message is only available for shielded addresses'**
+  String get sendMemoShieldedOnly;
+
+  /// Muted value shown in place of a message that consists only of spaces or blank lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Whitespace only'**
+  String get sendMemoWhitespaceOnly;
+
+  /// Accessibility label of the control that opens the contact picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Open contacts'**
+  String get sendOpenContacts;
+
+  /// Button inside the empty recipient field that pastes the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste'**
+  String get sendPasteAction;
+
+  /// [security] Shown on the payment request card instead of an amount when the link does not ask for a specific amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount not specified'**
+  String get sendPaymentRequestAmountNotSpecified;
+
+  /// Label of the primary button on the payment request card that reruns the check.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get sendPaymentRequestCheckAgain;
+
+  /// [security] Warning that a payment request link can be altered by other apps, so the address or amount may not be what the requester intended.
+  ///
+  /// In en, this message translates to:
+  /// **'Other apps can change the address or amount in a request link.'**
+  String get sendPaymentRequestCheckBeforePayBody;
+
+  /// [security] Heading of the notice shown when a payment request came from a link and the user is advised to verify it against the original QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Check before you pay'**
+  String get sendPaymentRequestCheckBeforePayTitle;
+
+  /// Fallback status line on the payment request card when checking the request failed without a specific reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check this request'**
+  String get sendPaymentRequestCheckFailed;
+
+  /// Status line on the payment request card when the check failed for an unspecified reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check this request — try again or edit the details'**
+  String get sendPaymentRequestCheckGeneric;
+
+  /// Status line on the payment request card when the check failed because the network was unreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach the network — check your connection and try again'**
+  String get sendPaymentRequestCheckNetwork;
+
+  /// Status line on the payment request card when no account is selected.
+  ///
+  /// In en, this message translates to:
+  /// **'No active account — choose one, then open this link again'**
+  String get sendPaymentRequestCheckNoAccount;
+
+  /// Status line on the payment request card when the link's amount cannot be paid as written.
+  ///
+  /// In en, this message translates to:
+  /// **'This link doesn\'t ask for a payable amount — enter one to continue'**
+  String get sendPaymentRequestCheckNoAmount;
+
+  /// Status line on the payment request card while sending is paused just before a network upgrade.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused for the network upgrade. Try again in a few minutes.'**
+  String get sendPaymentRequestCheckUpgradeHold;
+
+  /// Status line on the payment request card when a network upgrade changed the migration schedule.
+  ///
+  /// In en, this message translates to:
+  /// **'The network upgrade changed the migration timing. Review the plan and start again.'**
+  String get sendPaymentRequestCheckUpgradeScheduleChanged;
+
+  /// Accessibility label of the button that closes the payment request card.
+  ///
+  /// In en, this message translates to:
+  /// **'Close payment request'**
+  String get sendPaymentRequestClose;
+
+  /// [security] Advice in the check-before-you-pay notice to confirm the payment details with the sender when no QR code can be scanned.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm the details with the person who sent it.'**
+  String get sendPaymentRequestConfirmWithSender;
+
+  /// Label of the primary button on the payment request card for a request without an amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount'**
+  String get sendPaymentRequestEnterAmount;
+
+  /// Accessibility label of the control that collapses the full recipient address.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide full recipient address'**
+  String get sendPaymentRequestHideFullAddress;
+
+  /// Label of the toggle that collapses the payment details (memo) on the payment request card.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide payment details'**
+  String get sendPaymentRequestHidePaymentDetails;
+
+  /// Accessibility label of the toggle that collapses the requester details on the payment request card.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide requester information'**
+  String get sendPaymentRequestHideRequesterInfo;
+
+  /// Accessibility label of the toggle that collapses the requester details; {name} is the name supplied by the link.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide requester information for {name}'**
+  String sendPaymentRequestHideRequesterInfoFor(String name);
+
+  /// [security] Status line on the payment request card when the spendable balance cannot cover the requested amount plus the network fee.
+  ///
+  /// In en, this message translates to:
+  /// **'Not enough ZEC for this amount and the network fee'**
+  String get sendPaymentRequestInsufficientFunds;
+
+  /// [security] Status line on the payment request card when the balance cannot cover the amount plus fee; {spendable} is the spendable amount without a currency suffix.
+  ///
+  /// In en, this message translates to:
+  /// **'Not enough ZEC for this amount and the network fee ({spendable} available)'**
+  String sendPaymentRequestInsufficientFundsWithSpendable(String spendable);
+
+  /// [security] Status line on the payment request card when the requested recipient address is not valid.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient address doesn\'t look right'**
+  String get sendPaymentRequestInvalidAddress;
+
+  /// [security] Warning that the payment request link had a different recipient address than the scanned QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'The link had a different address'**
+  String get sendPaymentRequestLinkDifferentAddress;
+
+  /// [security] Warning that the payment request link had a different amount than the scanned QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'The link had a different amount'**
+  String get sendPaymentRequestLinkDifferentAmount;
+
+  /// [security] Warning that the payment request link differs from the scanned QR code in more than one way.
+  ///
+  /// In en, this message translates to:
+  /// **'The link had different details'**
+  String get sendPaymentRequestLinkDifferentDetails;
+
+  /// [security] Warning that the payment request link had a different memo than the scanned QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'The link had a different memo'**
+  String get sendPaymentRequestLinkDifferentMemo;
+
+  /// Confirmation on the payment request card that the scanned QR code has the same details as the link.
+  ///
+  /// In en, this message translates to:
+  /// **'Matches the link'**
+  String get sendPaymentRequestMatchesLink;
+
+  /// Caption under the payment details toggle saying the request carries a memo.
+  ///
+  /// In en, this message translates to:
+  /// **'Memo included'**
+  String get sendPaymentRequestMemoIncluded;
+
+  /// Accessibility value of the payment details toggle saying a memo is included.
+  ///
+  /// In en, this message translates to:
+  /// **'Memo included. View the transaction memo.'**
+  String get sendPaymentRequestMemoIncludedHint;
+
+  /// [security] Warning on the payment request card: the requester name is unverified and does not prove who owns the receiving address.
+  ///
+  /// In en, this message translates to:
+  /// **'This name comes from the request. It doesn\'t confirm who owns the receiving address.'**
+  String get sendPaymentRequestNameDisclaimer;
+
+  /// Accessibility value saying the shown name was typed into the link by the requester.
+  ///
+  /// In en, this message translates to:
+  /// **'Name supplied in the request.'**
+  String get sendPaymentRequestNameSuppliedInRequest;
+
+  /// Label for a note that came with the payment request link, written by whoever created the link.
+  ///
+  /// In en, this message translates to:
+  /// **'Note from requester'**
+  String get sendPaymentRequestNoteFromRequester;
+
+  /// Label of the toggle that expands the payment details (memo) on the payment request card.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment details'**
+  String get sendPaymentRequestPaymentDetails;
+
+  /// Label above the recipient on the payment request card.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient'**
+  String get sendPaymentRequestRecipient;
+
+  /// Small notice on the payment request card saying this request replaced a payment link the user opened earlier.
+  ///
+  /// In en, this message translates to:
+  /// **'Replaced an earlier link'**
+  String get sendPaymentRequestReplacedNotice;
+
+  /// Label above the name the requester put in the payment request link.
+  ///
+  /// In en, this message translates to:
+  /// **'Request from'**
+  String get sendPaymentRequestRequestFrom;
+
+  /// Button that shows the details of the payment request link.
+  ///
+  /// In en, this message translates to:
+  /// **'Review link details'**
+  String get sendPaymentRequestReviewLinkDetails;
+
+  /// Label of the primary button on the payment request card that continues to the review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Review payment'**
+  String get sendPaymentRequestReviewPayment;
+
+  /// [security] Advice in the check-before-you-pay notice to scan the requester's original QR code in Vizor instead of trusting a link.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the original QR code directly in Vizor.'**
+  String get sendPaymentRequestScanOriginalHint;
+
+  /// [security] Accessibility label of the control that expands the full recipient address so the user can verify it.
+  ///
+  /// In en, this message translates to:
+  /// **'Show full recipient address'**
+  String get sendPaymentRequestShowFullAddress;
+
+  /// Accessibility label of the toggle that expands the requester details on the payment request card.
+  ///
+  /// In en, this message translates to:
+  /// **'Show requester information'**
+  String get sendPaymentRequestShowRequesterInfo;
+
+  /// Accessibility label of the toggle that expands the requester details; {name} is the name supplied by the link.
+  ///
+  /// In en, this message translates to:
+  /// **'Show requester information for {name}'**
+  String sendPaymentRequestShowRequesterInfoFor(String name);
+
+  /// Status line on the payment request card when syncing has stalled and the user must press Check again later.
+  ///
+  /// In en, this message translates to:
+  /// **'Still syncing — check again when the wallet is up to date'**
+  String get sendPaymentRequestSyncStalled;
+
+  /// Status line on the payment request card while the wallet is still syncing; the check reruns automatically afterwards.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet is still syncing — this will update when it finishes'**
+  String get sendPaymentRequestSyncing;
+
+  /// Label above the memo text on the payment request card.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction memo'**
+  String get sendPaymentRequestTransactionMemo;
+
+  /// Accessibility label of a disabled button on the payment request card; {label} is the button label.
+  ///
+  /// In en, this message translates to:
+  /// **'{label}, unavailable'**
+  String sendPaymentRequestUnavailableLabel(String label);
+
+  /// Accessibility label of a disabled button on the payment request card; {label} is the button label and {reason} the status message explaining why.
+  ///
+  /// In en, this message translates to:
+  /// **'{label}, unavailable. {reason}'**
+  String sendPaymentRequestUnavailableWithReason(String label, String reason);
+
+  /// [security] Explains that the card uses the scanned QR details because the link may have been tampered with.
+  ///
+  /// In en, this message translates to:
+  /// **'Using the QR instead — the link may have been changed.'**
+  String get sendPaymentRequestUsingQrInstead;
+
+  /// Prompt on the collapsed requester row to open the requester's note.
+  ///
+  /// In en, this message translates to:
+  /// **'View note'**
+  String get sendPaymentRequestViewNote;
+
+  /// Sub-label shown when the recipient address of a request belongs to one of the user's own accounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account'**
+  String get sendPaymentRequestYourAccount;
+
+  /// Toast shown when the payment-request QR scanner could not be opened.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open the QR scanner. Try again.'**
+  String get sendQrScannerOpenFailed;
+
+  /// Section header above recently used recipients on the mobile recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'Recents'**
+  String get sendRecentsSection;
+
+  /// Placeholder in the recipient field; the user can type an address or paste a zcash: payment request link.
+  ///
+  /// In en, this message translates to:
+  /// **'Address or request link'**
+  String get sendRecipientHint;
+
+  /// Label above the recipient address field on the send screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Send to'**
+  String get sendRecipientLabel;
+
+  /// [security] Error under the recipient field when a pasted zcash: payment link is not a valid address or request.
+  ///
+  /// In en, this message translates to:
+  /// **'This request link couldn\'t be read'**
+  String get sendRecipientUnreadableRequestLink;
+
+  /// [security] Error under the recipient field when a well-formed Zcash address belongs to another network than this wallet (for example a testnet address on mainnet).
+  ///
+  /// In en, this message translates to:
+  /// **'This address is for a different Zcash network'**
+  String get sendRecipientWrongNetwork;
+
+  /// Error when a scanned payment request QR code could not be checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check this QR code. Try again.'**
+  String get sendRequestScanCheckFailed;
+
+  /// Error shown after scanning a QR code whose address is not valid.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code isn\'t a valid Zcash address.'**
+  String get sendRequestScanInvalidAddress;
+
+  /// Error shown after scanning a QR code that holds an unreadable zcash: payment request.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code doesn\'t contain a valid payment request.'**
+  String get sendRequestScanInvalidRequest;
+
+  /// Error shown after scanning a QR code that is neither a Zcash address nor a payment request.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code isn\'t a Zcash address or payment request.'**
+  String get sendRequestScanNotRequest;
+
+  /// Explains why camera permission is needed for scanning the payment request QR code and that it can be changed in settings.
+  ///
+  /// In en, this message translates to:
+  /// **'A camera is required to scan the payment request QR code.\nYou can change camera access in settings at any time.'**
+  String get sendRequestScanPermission;
+
+  /// Subtitle of the payment request scan screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the requester’s original QR code to your camera'**
+  String get sendRequestScanSubtitle;
+
+  /// Troubleshooting tip suggesting Continuity Camera on a Mac.
+  ///
+  /// In en, this message translates to:
+  /// **'On a Mac, you can use Continuity Camera to scan with your iPhone instead.'**
+  String get sendRequestScanTipContinuity;
+
+  /// Troubleshooting tip when the QR code cannot be scanned.
+  ///
+  /// In en, this message translates to:
+  /// **'Move the QR code a few inches further from the camera so it can focus.'**
+  String get sendRequestScanTipDistance;
+
+  /// Troubleshooting tip when the QR code cannot be scanned.
+  ///
+  /// In en, this message translates to:
+  /// **'Make sure the room is well-lit and the QR code isn\'t reflecting glare.'**
+  String get sendRequestScanTipLight;
+
+  /// Troubleshooting tip when the payment request QR code cannot be scanned.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the requester’s original QR code full screen on another device.'**
+  String get sendRequestScanTipOriginal;
+
+  /// Message when no camera is available for scanning the payment request QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect a camera, or go back and review the link details.'**
+  String get sendRequestScanUnavailable;
+
+  /// Error shown after scanning a QR code whose address is for another Zcash network.
+  ///
+  /// In en, this message translates to:
+  /// **'This address belongs to a different network.'**
+  String get sendRequestScanWrongNetwork;
+
+  /// Label of the primary button on the send screen that opens the review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get sendReviewAction;
+
+  /// [security] Label of the disabled review button while the network fee is being calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating fee...'**
+  String get sendReviewCalculatingFee;
+
+  /// [security] Primary button on the send review screen that approves and broadcasts the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm & send'**
+  String get sendReviewConfirmAndSend;
+
+  /// [security] Primary button on the mobile review step that approves and sends the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm & Send'**
+  String get sendReviewConfirmAndSendMobile;
+
+  /// [security] Primary button on the donation review screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm donation'**
+  String get sendReviewConfirmDonation;
+
+  /// [security] Primary button on the review screen for a Ledger account; starts signing on the Ledger device.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm with Ledger'**
+  String get sendReviewConfirmWithLedger;
+
+  /// [security] Label of the disabled review button when the network fee could not be determined.
+  ///
+  /// In en, this message translates to:
+  /// **'Fee unavailable'**
+  String get sendReviewFeeUnavailable;
+
+  /// Label of the disabled review button while the wallet finishes syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing wallet sync...'**
+  String get sendReviewFinishingSyncButton;
+
+  /// Label of the review button while the transaction is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing...'**
+  String get sendReviewPreparing;
+
+  /// Line under the amount on the payment-request review screen showing the amount the requester asked for; {amount} is a formatted amount with currency.
+  ///
+  /// In en, this message translates to:
+  /// **'Requested {amount}'**
+  String sendReviewRequestedAmount(String amount);
+
+  /// Row label on the review screen for the recipient of a payment request; the value is the address or contact that asked to be paid.
+  ///
+  /// In en, this message translates to:
+  /// **'Requested by'**
+  String get sendReviewRequestedBy;
+
+  /// [security] Title of the review screen shown before the user approves an irreversible send.
+  ///
+  /// In en, this message translates to:
+  /// **'Review send'**
+  String get sendReviewTitle;
+
+  /// Body of the dialog explaining that about 50MB of cryptographic proving parameters must be downloaded to create a private transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'To create this private transaction, your wallet needs to download about 50MB of cryptographic parameters.'**
+  String get sendSaplingDownloadBody;
+
+  /// Note under the download explanation: the download happens only once and may use mobile data.
+  ///
+  /// In en, this message translates to:
+  /// **'This happens once, then it\'s done.\nNetwork data charges may apply.'**
+  String get sendSaplingDownloadNote;
+
+  /// Title of the dialog asking permission to download proving parameters before a private send.
+  ///
+  /// In en, this message translates to:
+  /// **'Download Required'**
+  String get sendSaplingDownloadTitle;
+
+  /// Toast shown after a pasted payment link is reduced to its address because the rest of the request is malformed or unsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Pasted the address only — the payment request couldn\'t be read'**
+  String get sendScanDowngradePastedMalformedRequest;
+
+  /// Toast shown after a pasted payment link is reduced to its first recipient because the link asks to pay several recipients.
+  ///
+  /// In en, this message translates to:
+  /// **'Pasted the first recipient only — this request asks for more than one'**
+  String get sendScanDowngradePastedMultipleRecipients;
+
+  /// Toast shown after a pasted payment link is reduced to its address because the memo it carries cannot be read as text.
+  ///
+  /// In en, this message translates to:
+  /// **'Pasted the address only — the request\'s message couldn\'t be read'**
+  String get sendScanDowngradePastedUnsupportedMemo;
+
+  /// Message shown after a scanned QR payment request is reduced to its address because the rest of the request is malformed or unsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanned the address only — the payment request couldn\'t be read'**
+  String get sendScanDowngradeScannedMalformedRequest;
+
+  /// Message shown after a scanned QR payment request is reduced to its first recipient because it asks to pay several recipients.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanned the first recipient only — this request asks for more than one'**
+  String get sendScanDowngradeScannedMultipleRecipients;
+
+  /// Message shown after a scanned QR payment request is reduced to its address because the memo it carries cannot be read as text.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanned the address only — the request\'s message couldn\'t be read'**
+  String get sendScanDowngradeScannedUnsupportedMemo;
+
+  /// [security] Error in the mobile scanner when the scanned QR code does not hold a Zcash address.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code isn\'t a Zcash address.'**
+  String get sendScanNotZcashAddress;
+
+  /// Subtitle of the row that opens the QR scanner on the mobile recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan an address or payment request'**
+  String get sendScanQrSubtitle;
+
+  /// Title of the row on the mobile recipient step that opens the QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan a QR Code'**
+  String get sendScanQrTitle;
+
+  /// Label above the chosen recipient on the mobile amount step.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending to'**
+  String get sendSendingToLabel;
+
+  /// Title of the mobile hardware-wallet signing screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm transaction'**
+  String get sendSignConfirmTransaction;
+
+  /// Title of the mobile Keystone signing screen for a two-transaction send; {index} is 1 or 2.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm transaction {index} of 2'**
+  String sendSignConfirmTransactionOfTwo(int index);
+
+  /// Accessibility label of the help icon that opens the spendable balance tooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Spendable balance info'**
+  String get sendSpendableInfoLabel;
+
+  /// [security] Body of the tooltip next to Use Max explaining confirmation counts before funds are spendable.
+  ///
+  /// In en, this message translates to:
+  /// **'Funds need confirmations before they can be spent: 3 for change from your own wallet, 6 for funds received from others. Shielded notes also need to be fully scanned. They\'ll become available shortly.'**
+  String get sendSpendableTooltipBody;
+
+  /// [security] Bold first line of the tooltip next to Use Max explaining why spendable balance can be lower than total.
+  ///
+  /// In en, this message translates to:
+  /// **'Your spendable balance may be lower than your total balance.'**
+  String get sendSpendableTooltipTitle;
+
+  /// Title on the status screen when a donation failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Donation failed'**
+  String get sendStatusDonationFailed;
+
+  /// Title on the status screen while a donation is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Donation in progress...'**
+  String get sendStatusDonationInProgress;
+
+  /// Line on the mobile failed-send screen summarising the attempted payment; {amount} is a formatted amount with currency and {recipient} is a contact name or truncated address.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} to {recipient}'**
+  String sendStatusFailureSummary(String amount, String recipient);
+
+  /// Subtitle on the mobile status screen after a successful send.
+  ///
+  /// In en, this message translates to:
+  /// **'It will confirm on-chain shortly. Track it in Activity.'**
+  String get sendStatusMobileConfirmSoon;
+
+  /// Title on the mobile status screen when a donation was created and queued for submission.
+  ///
+  /// In en, this message translates to:
+  /// **'Donation queued'**
+  String get sendStatusMobileDonationQueued;
+
+  /// Subtitle on the mobile status screen after a donation succeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Your support keeps Vizor going.'**
+  String get sendStatusMobileDonationSupport;
+
+  /// Title on the mobile status screen after a donation succeeded; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Thank you for\nsupporting Vizor'**
+  String get sendStatusMobileDonationThanks;
+
+  /// [security] Subtitle on the mobile status screen after a failed send: nothing left the wallet, so the user's funds are unchanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing was sent, your funds haven\'t moved. Try again.'**
+  String get sendStatusMobileNothingSent;
+
+  /// [security] Subtitle when the transaction was created but not yet submitted; warns the user to check Activity before sending again so they do not pay twice.
+  ///
+  /// In en, this message translates to:
+  /// **'Your transaction was created and will be submitted automatically. Check the Activity page before sending again.'**
+  String get sendStatusMobilePendingDefault;
+
+  /// Title on the mobile status screen when the transaction was created and will be submitted automatically.
+  ///
+  /// In en, this message translates to:
+  /// **'Queued to send'**
+  String get sendStatusMobileQueued;
+
+  /// Button on the mobile status screen that returns to Settings after a donation attempt.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to settings'**
+  String get sendStatusMobileReturnToSettings;
+
+  /// Title on the mobile status screen while a donation is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending donation...'**
+  String get sendStatusMobileSendingDonation;
+
+  /// Title on the mobile status screen after the transaction was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent!'**
+  String get sendStatusMobileSent;
+
+  /// Subtitle on the mobile status screen while the transaction is being submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting your transaction to the network...'**
+  String get sendStatusMobileSubmitting;
+
+  /// [security] Message shown when a signed transaction could not be sent yet; the user should wait for sync and retry the same transaction instead of creating a new one.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait for wallet sync, then retry this signed transaction.'**
+  String get sendStatusRetryAfterSync;
+
+  /// Row label on the send receipt for the transaction status.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get sendStatusRowStatus;
+
+  /// [security] Heading on the desktop send status screen asking the user to scan the signing QR code shown on their Keystone hardware wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan your Keystone QR Code'**
+  String get sendStatusScanKeystoneTitle;
+
+  /// Title on the send status screen while the transaction is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Send in progress...'**
+  String get sendStatusTitleInProgress;
+
+  /// Title of the second step of the mobile send flow where the user enters the amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter Amount'**
+  String get sendStepEnterAmount;
+
+  /// [security] Title of the review step of a mobile donation, before the user approves an irreversible payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Review donation'**
+  String get sendStepReviewDonation;
+
+  /// [security] Title of the review step of the mobile send flow, before the user approves an irreversible send.
+  ///
+  /// In en, this message translates to:
+  /// **'Review Send'**
+  String get sendStepReviewSend;
+
+  /// Page title of the send screen; {currency} is the network ticker such as ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Send {currency}'**
+  String sendTitle(String currency);
+
+  /// Button label that fills the amount field with the maximum spendable balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Max'**
+  String get sendUseMax;
+
+  /// Accessibility label of the Use Max button; {spendable} is the formatted spendable balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Use maximum spendable balance, {spendable} available'**
+  String sendUseMaxSemantics(String spendable);
+
+  /// Accessibility label of the Max button on the mobile amount step.
+  ///
+  /// In en, this message translates to:
+  /// **'Use maximum spendable balance'**
+  String get sendUseMaxSemanticsShort;
+
+  /// Sub-line under a saved contact's name in the verify-address dialog giving how many earlier transactions were sent to them.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 previous transaction} other{{count} previous transactions}}'**
+  String sendVerifyAddressPreviousTransactions(int count);
 
   /// [security] Error shown when the selected account changed while a passcode-protected secret screen was open.
   ///
@@ -4194,12 +7871,6 @@ abstract class AppLocalizations {
   /// **'Secret passphrase'**
   String get settingsRowSecretPassphrase;
 
-  /// Settings row that opens the donation screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Support Vizor'**
-  String get settingsRowSupportVizor;
-
   /// Settings row and dialog title for checking and installing app updates.
   ///
   /// In en, this message translates to:
@@ -4536,12 +8207,6 @@ abstract class AppLocalizations {
   /// **'Direct'**
   String get settingsTorStatusDirect;
 
-  /// Tor status label when connecting to Tor failed (mobile).
-  ///
-  /// In en, this message translates to:
-  /// **'Failed'**
-  String get settingsTorStatusFailed;
-
   /// Tor status label when the Tor preference could not be saved.
   ///
   /// In en, this message translates to:
@@ -4716,12 +8381,6 @@ abstract class AppLocalizations {
   /// **'Checking'**
   String get settingsUpdateChecking;
 
-  /// Disabled button label in the Updates dialog while checking.
-  ///
-  /// In en, this message translates to:
-  /// **'Checking…'**
-  String get settingsUpdateCheckingButton;
-
   /// Label before the currently installed version number in the Updates dialog.
   ///
   /// In en, this message translates to:
@@ -4739,12 +8398,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Downloading…'**
   String get settingsUpdateDownloadingButton;
-
-  /// Short value on the Updates row when the update failed.
-  ///
-  /// In en, this message translates to:
-  /// **'Failed'**
-  String get settingsUpdateFailed;
 
   /// [security] Heading and button label for setting a new wallet password.
   ///
@@ -5052,12 +8705,6 @@ abstract class AppLocalizations {
   /// **'Address couldn\'t be copied'**
   String get sidebarAddressCopyFailed;
 
-  /// Screen-reader label of the sidebar copy-address button.
-  ///
-  /// In en, this message translates to:
-  /// **'Copy shielded address'**
-  String get sidebarCopyShieldedAddress;
-
   /// Screen-reader label of the sidebar button that hides amounts.
   ///
   /// In en, this message translates to:
@@ -5106,6 +8753,1342 @@ abstract class AppLocalizations {
   /// **'Show balance'**
   String get sidebarShowBalance;
 
+  /// Primary button label on the swap screen that opens the recipient address editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Add recipient address'**
+  String get swapActionAddRecipientAddress;
+
+  /// Primary button label on the swap screen that opens the refund address editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Add refund address'**
+  String get swapActionAddRefundAddress;
+
+  /// Primary button label on the mobile swap screen that opens the review.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue to review'**
+  String get swapActionContinueToReview;
+
+  /// Primary button label on the swap screen while a quote is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Getting quote'**
+  String get swapActionGettingQuote;
+
+  /// Default contact label suggestion when saving a swap refund address to the address book.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} refund'**
+  String swapActivityAddressBookRefund(String symbol);
+
+  /// Compact countdown until the deposit deadline in hours (two or more); 'hrs' abbreviates hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours}hrs'**
+  String swapActivityDeadlineHours(int hours);
+
+  /// Compact countdown until the deposit deadline in minutes (two or more); 'mins' abbreviates minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes}mins'**
+  String swapActivityDeadlineMinutes(int minutes);
+
+  /// Label of the deposited amount on a failed or refunded swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit amount'**
+  String get swapActivityDepositAmount;
+
+  /// Lowercase fallback name of the deposited asset when a swap record has no symbol.
+  ///
+  /// In en, this message translates to:
+  /// **'deposit asset'**
+  String get swapActivityDepositAssetFallback;
+
+  /// Label of the deposit address field when the user sends the asset from Vizor.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} deposit'**
+  String swapActivityDepositInstructionDepositLabel(String symbol);
+
+  /// Warning under a one-time deposit address QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Do not reuse this address'**
+  String get swapActivityDepositInstructionReuseWarning;
+
+  /// Instruction title telling the user to send the asset from its own chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Send {symbol} from source chain'**
+  String swapActivityDepositInstructionSendFromSource(String symbol);
+
+  /// Label of the deposit address field when the user sends the asset from its source chain.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} source deposit'**
+  String swapActivityDepositInstructionSourceDepositLabel(String symbol);
+
+  /// Button that submits the deposit transaction hash.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit {symbol} deposit'**
+  String swapActivityDepositInstructionSubmit(String symbol);
+
+  /// Placeholder of the field where the user enters the deposit transaction hash.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} source-chain transaction hash'**
+  String swapActivityDepositInstructionTxHashHint(String symbol);
+
+  /// Label of the field where the user enters the deposit transaction hash.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} deposit tx hash'**
+  String swapActivityDepositInstructionTxHashLabel(String symbol);
+
+  /// Value of the slippage tolerance row when the swap used the quote's own setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Configured quote'**
+  String get swapActivityDetailConfiguredQuote;
+
+  /// Label of a status detail row holding the transaction hash that delivered the asset to the recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} delivery tx'**
+  String swapActivityDetailDeliveryTx(String symbol);
+
+  /// Label of a status detail row with the time by which the deposit must arrive.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit deadline'**
+  String get swapActivityDetailDepositDeadline;
+
+  /// Label of a status detail row holding the address the user deposits the asset to.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit {symbol} to'**
+  String swapActivityDetailDepositTo(String symbol);
+
+  /// Label of a status detail row holding the transaction hash of the deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} deposit tx'**
+  String swapActivityDetailDepositTx(String symbol);
+
+  /// Label of a status detail row with the deposit amount the provider detected.
+  ///
+  /// In en, this message translates to:
+  /// **'Detected deposit'**
+  String get swapActivityDetailDetectedDeposit;
+
+  /// Label of a status detail row with the fees of a payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Fees'**
+  String get swapActivityDetailFees;
+
+  /// Value of the fees row when the fee is already included in the quote.
+  ///
+  /// In en, this message translates to:
+  /// **'Included'**
+  String get swapActivityDetailIncluded;
+
+  /// Value of the swap fee row when the fee is already part of the displayed rate.
+  ///
+  /// In en, this message translates to:
+  /// **'Included in shown rate'**
+  String get swapActivityDetailIncludedInRate;
+
+  /// Label of a status detail row with how much more the user must deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'Missing deposit'**
+  String get swapActivityDetailMissingDeposit;
+
+  /// Label of a status detail row with the slippage a finished swap actually had.
+  ///
+  /// In en, this message translates to:
+  /// **'Realized slippage'**
+  String get swapActivityDetailRealizedSlippage;
+
+  /// Label of a status detail row with the deposit amount the swap requires.
+  ///
+  /// In en, this message translates to:
+  /// **'Required deposit'**
+  String get swapActivityDetailRequiredDeposit;
+
+  /// Label of a status detail row holding the shielded transaction hash that spent the asset.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} tx (shielded)'**
+  String swapActivityDetailSourceTxShielded(String symbol);
+
+  /// Label of a status detail row with the total fees of a swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Total fees'**
+  String get swapActivityDetailTotalFees;
+
+  /// Label of the quoted receive amount on a failed or refunded swap status screen, since nothing was delivered.
+  ///
+  /// In en, this message translates to:
+  /// **'Expected to receive'**
+  String get swapActivityExpectedToReceive;
+
+  /// Title and status of a swap whose deposit was smaller than required.
+  ///
+  /// In en, this message translates to:
+  /// **'Incomplete deposit'**
+  String get swapActivityIncompleteDeposit;
+
+  /// Title of a payment status screen when the deposit was smaller than required.
+  ///
+  /// In en, this message translates to:
+  /// **'Incomplete payment'**
+  String get swapActivityIncompletePayment;
+
+  /// Under a progress step: the provider status was checked less than a minute ago.
+  ///
+  /// In en, this message translates to:
+  /// **'Last check: just now'**
+  String get swapActivityLastCheckJustNow;
+
+  /// Under a progress step: the provider status was checked this many minutes ago; 'm' abbreviates minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Last check: {minutes}m ago'**
+  String swapActivityLastCheckMinutesAgo(int minutes);
+
+  /// Value shown in a status row when the provider or wallet has no data for it yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Not reported'**
+  String get swapActivityNotReported;
+
+  /// Title of the pay status header after a payment completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Paid successfully'**
+  String get swapActivityPaidSuccessfullyTitle;
+
+  /// Title of the pay status header while a payment is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay in progress...'**
+  String get swapActivityPayInProgressTitle;
+
+  /// Title of a payment status screen after the payment completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment complete'**
+  String get swapActivityPaymentComplete;
+
+  /// Empty state of the contact picker for recipients.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved {symbol} recipients'**
+  String swapActivityPickerNoRecipients(String symbol);
+
+  /// Empty state of the contact picker for refund addresses.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved {symbol} refunds'**
+  String swapActivityPickerNoRefunds(String symbol);
+
+  /// Title of the contact picker when choosing a recipient of the swapped asset.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} recipients'**
+  String swapActivityPickerRecipientsTitle(String symbol);
+
+  /// Title of the contact picker when choosing a refund address for the deposited asset.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} refunds'**
+  String swapActivityPickerRefundsTitle(String symbol);
+
+  /// Lowercase fallback name of the received asset when a swap record has no symbol.
+  ///
+  /// In en, this message translates to:
+  /// **'receive asset'**
+  String get swapActivityReceiveAssetFallback;
+
+  /// Label of the amount the payment recipient received, on a completed payment status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient received'**
+  String get swapActivityRecipientReceived;
+
+  /// Hint of the swap destination field: an address or account on the named chain.
+  ///
+  /// In en, this message translates to:
+  /// **'{chain} address or account'**
+  String swapActivityStateAddressOrAccountHint(String chain);
+
+  /// Error when the selected asset on the selected chain cannot be swapped.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} on {chain} is not currently supported.'**
+  String swapActivityStateAssetUnsupported(String symbol, String chain);
+
+  /// Error under the amount field when the entered amount has more decimals than the asset supports.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} supports up to {decimals} decimal places.'**
+  String swapActivityStateDecimalPlaces(String symbol, int decimals);
+
+  /// Label of the address field of the swap address modal when the user sends ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Destination'**
+  String get swapActivityStateDestination;
+
+  /// Warning on review when the live quote delivers more than the earlier estimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Live quote is {percent}% higher than the earlier estimate. Check the guaranteed minimum before you continue.'**
+  String swapActivityStateQuoteHigher(String percent);
+
+  /// Warning on review when the live quote delivers less than the earlier estimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Live quote is {percent}% lower than the earlier estimate. Check the guaranteed minimum before you continue.'**
+  String swapActivityStateQuoteLower(String percent);
+
+  /// Warning on review when the live quote needs a different amount of the sold asset than the earlier estimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Live quote uses {liveAmount} {symbol} instead of {estimateAmount} {symbol}. Check the guaranteed minimum before you continue.'**
+  String swapActivityStateQuoteUsesDifferentSell(
+    String liveAmount,
+    String estimateAmount,
+    String symbol,
+  );
+
+  /// Status label of a swap that is waiting for the deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'Awaiting deposit'**
+  String get swapActivityStatusAwaitingDeposit;
+
+  /// Status label of a swap that is waiting for the user to send a deposit from another chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Awaiting external deposit'**
+  String get swapActivityStatusAwaitingExternalDeposit;
+
+  /// Status label of a completed swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete'**
+  String get swapActivityStatusComplete;
+
+  /// Status label of a swap whose deposit was seen by the provider.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit observed'**
+  String get swapActivityStatusDepositObserved;
+
+  /// Status label of a swap whose quote or deposit window expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Expired'**
+  String get swapActivityStatusExpired;
+
+  /// Status label of a swap that the provider is processing.
+  ///
+  /// In en, this message translates to:
+  /// **'Processing'**
+  String get swapActivityStatusProcessing;
+
+  /// Title of the second payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Convert'**
+  String get swapActivityStepConvert;
+
+  /// Description of the second payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Converting the shielded spend into the payment asset.'**
+  String get swapActivityStepConvertDescription;
+
+  /// Title of the active second payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Converting...'**
+  String get swapActivityStepConverting;
+
+  /// Title of a progress step: the provider delivers the asset to the recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Deliver {symbol}'**
+  String swapActivityStepDeliver(String symbol);
+
+  /// Title of the active swap delivery progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Deliver {symbol}...'**
+  String swapActivityStepDeliverActive(String symbol);
+
+  /// Description of the payment delivery progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivering the payment to the recipient address.'**
+  String get swapActivityStepDeliverPayDescription;
+
+  /// Description of the last swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivering the output asset to the recipient address.'**
+  String get swapActivityStepDeliverSwapDescription;
+
+  /// Title of the active payment delivery progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivering {symbol}...'**
+  String swapActivityStepDelivering(String symbol);
+
+  /// Title of the pending first swap progress step when the user deposits an external asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit {symbol}'**
+  String swapActivityStepDeposit(String symbol);
+
+  /// Title of the second swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit confirmation'**
+  String get swapActivityStepDepositConfirmation;
+
+  /// Title of the active second swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit confirmation...'**
+  String get swapActivityStepDepositConfirmationActive;
+
+  /// Description of the second swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming the deposit before the swap route starts.'**
+  String get swapActivityStepDepositConfirmationDescription;
+
+  /// Title of the completed first swap progress step when the user deposits an external asset.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} Deposited'**
+  String swapActivityStepDeposited(String symbol);
+
+  /// Title of the active first swap progress step when the user deposits an external asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Depositing {symbol}...'**
+  String swapActivityStepDepositing(String symbol);
+
+  /// Title of the last payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient receives'**
+  String get swapActivityStepRecipientReceives;
+
+  /// Title of the active last payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient receives {symbol}...'**
+  String swapActivityStepRecipientReceivesAsset(String symbol);
+
+  /// Description of the last payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming the recipient-side payment.'**
+  String get swapActivityStepRecipientReceivesDescription;
+
+  /// Title of a progress step or button: send the asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Send {symbol}'**
+  String swapActivityStepSend(String symbol);
+
+  /// Title of the active swap delivery progress step when the provider sends the external asset to the user.
+  ///
+  /// In en, this message translates to:
+  /// **'Send {symbol}...'**
+  String swapActivityStepSendActive(String symbol);
+
+  /// Title of the active first swap progress step when the user sends the asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending {symbol}...'**
+  String swapActivityStepSending(String symbol);
+
+  /// Title of the completed first swap progress step when the user sends the asset.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} sent'**
+  String swapActivityStepSent(String symbol);
+
+  /// Description of the first swap progress step: waiting for the source chain and provider to recognise the deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm waiting for the source chain and provider to recognise the deposit'**
+  String get swapActivityStepSourceDescription;
+
+  /// Title of the first payment progress step: spending the asset from the shielded balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Spend {symbol}'**
+  String swapActivityStepSpend(String symbol);
+
+  /// Description of the first payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Spending from shielded balance.'**
+  String get swapActivityStepSpendDescription;
+
+  /// Title of the active first payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Spending {symbol}...'**
+  String swapActivityStepSpending(String symbol);
+
+  /// Title of the completed first payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} spent'**
+  String swapActivityStepSpent(String symbol);
+
+  /// Title of the third swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap'**
+  String get swapActivityStepSwap;
+
+  /// Title of the active third swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap...'**
+  String get swapActivityStepSwapActive;
+
+  /// Description of the third swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider is executing the swap route.'**
+  String get swapActivityStepSwapDescription;
+
+  /// Title of a swap status screen after the swap completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap completed'**
+  String get swapActivitySwapCompleted;
+
+  /// Title of a swap status screen while the swap is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap in progress...'**
+  String get swapActivitySwapInProgress;
+
+  /// Tooltip of the swap fee rows.
+  ///
+  /// In en, this message translates to:
+  /// **'Covers our fee and the route providers\' costs to process this swap. Already included in the rate above.'**
+  String get swapActivityTooltipFees;
+
+  /// Tooltip of the guaranteed minimum row, naming the received asset.
+  ///
+  /// In en, this message translates to:
+  /// **'The lowest amount of {symbol} you\'ll get after slippage. You may get more, never less.'**
+  String swapActivityTooltipMinimumReceive(String symbol);
+
+  /// Tooltip of the guaranteed minimum row when no asset is named.
+  ///
+  /// In en, this message translates to:
+  /// **'The lowest amount you\'ll get after slippage. You may get more, never less.'**
+  String get swapActivityTooltipMinimumReceiveGeneric;
+
+  /// Tooltip explaining the slippage tolerance row.
+  ///
+  /// In en, this message translates to:
+  /// **'How much of the received amount your slippage tolerance protects. The swap is refunded if the rate moves past this.'**
+  String get swapActivityTooltipPriceProtection;
+
+  /// Tooltip of a status detail row without its own explanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Details are based on the latest swap record and provider status.'**
+  String get swapActivityTooltipStatusDetail;
+
+  /// Label of the amount the user paid, on a completed swap or payment status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'You paid'**
+  String get swapActivityYouPaid;
+
+  /// Label of the amount received on a completed swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'You received'**
+  String get swapActivityYouReceived;
+
+  /// Helper text in the swap address editor explaining where the swapped asset is sent; {symbol} is the asset ticker.
+  ///
+  /// In en, this message translates to:
+  /// **'Your {symbol} will be delivered to this address.'**
+  String swapAddressRecipientDescription(String symbol);
+
+  /// Field label above the recipient address input in the swap address editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient'**
+  String get swapAddressRecipientFieldLabel;
+
+  /// Title of the swap address editor when the user receives an external asset; {symbol} is the asset ticker.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} recipient address'**
+  String swapAddressRecipientTitle(String symbol);
+
+  /// Helper text in the swap address editor explaining where a refund is sent; {symbol} is the asset ticker and {chain} the chain name.
+  ///
+  /// In en, this message translates to:
+  /// **'If the swap fails or the rate moves, you\'ll be refunded in {symbol} on {chain}, minus the fee.'**
+  String swapAddressRefundDescription(String symbol, String chain);
+
+  /// Toggle label in the swap address editor that saves the address for future recipients.
+  ///
+  /// In en, this message translates to:
+  /// **'Remember this address for recipients'**
+  String get swapAddressRememberRecipient;
+
+  /// Toggle label in the swap address editor that saves the address for future refunds.
+  ///
+  /// In en, this message translates to:
+  /// **'Remember this address for refunds'**
+  String get swapAddressRememberRefund;
+
+  /// Empty-state text in the swap asset picker when the search has no match.
+  ///
+  /// In en, this message translates to:
+  /// **'No tokens or chains found'**
+  String get swapAssetSelectorEmpty;
+
+  /// Placeholder of the search field in the swap asset picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Search token or chain'**
+  String get swapAssetSelectorSearchHint;
+
+  /// Title of the modal that lists assets to swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Select asset'**
+  String get swapAssetSelectorTitle;
+
+  /// Placeholder in the swap composer address row when no recipient address is set; tapping opens the editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Add recipient address...'**
+  String get swapComposerAddRecipientAddressEllipsis;
+
+  /// Placeholder in the swap composer address row when no refund address is set; tapping opens the editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Add refund address...'**
+  String get swapComposerAddRefundAddressEllipsis;
+
+  /// Button text in the swap composer showing the maximum amount available to swap; {amount} is a formatted amount with its ticker.
+  ///
+  /// In en, this message translates to:
+  /// **'Max: {amount}'**
+  String swapComposerMaxAmount(String amount);
+
+  /// Label above the amount the user gets in the swap composer.
+  ///
+  /// In en, this message translates to:
+  /// **'You receive'**
+  String get swapComposerYouReceive;
+
+  /// Toast on mobile after the user tries to save a swap address that is already in the address book.
+  ///
+  /// In en, this message translates to:
+  /// **'Already in your address book'**
+  String get swapContactAlreadyInAddressBook;
+
+  /// Toast shown after the user tries to save a swap address that is already in the address book.
+  ///
+  /// In en, this message translates to:
+  /// **'Already in your contacts'**
+  String get swapContactAlreadySaved;
+
+  /// Toast after the user copies the deposit amount on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount Copied'**
+  String get swapDepositAmountCopiedDesktop;
+
+  /// Toast after the user copies the deposit amount on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount copied'**
+  String get swapDepositAmountCopiedMobile;
+
+  /// Row label for the amount to send on the mobile deposit screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount to deposit'**
+  String get swapDepositAmountToDeposit;
+
+  /// Button text while the wallet checks whether the user’s deposit arrived.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking'**
+  String get swapDepositChecking;
+
+  /// Button on the desktop deposit screen the user taps after sending funds to the one-time deposit address.
+  ///
+  /// In en, this message translates to:
+  /// **'I\'ve deposited'**
+  String get swapDepositDoneDesktop;
+
+  /// Button on the mobile deposit screen the user taps after sending funds to the one-time deposit address.
+  ///
+  /// In en, this message translates to:
+  /// **'I’ve deposited tokens'**
+  String get swapDepositDoneMobile;
+
+  /// Deposit deadline label for several hours remaining; {count} is the number of hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}hrs'**
+  String swapDepositHoursMany(int count);
+
+  /// Toast after the user copies the deposit memo.
+  ///
+  /// In en, this message translates to:
+  /// **'Memo copied'**
+  String get swapDepositMemoCopied;
+
+  /// Deposit deadline label for several minutes remaining; {count} is the number of minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}mins'**
+  String swapDepositMinutesMany(int count);
+
+  /// [security] Row label for the one-time deposit address; it must not be reused.
+  ///
+  /// In en, this message translates to:
+  /// **'One-time address'**
+  String get swapDepositOneTimeAddress;
+
+  /// [security] Warning under the deposit address telling the user to send only this asset on this chain, otherwise funds may be lost; {symbol} is the ticker and {chain} the chain name.
+  ///
+  /// In en, this message translates to:
+  /// **'Send only {symbol} on {chain}'**
+  String swapDepositSendOnly(String symbol, String chain);
+
+  /// [security] Body on the desktop deposit screen after the deposit window ended; the deposit address must not be used any more. Contains a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'This deposit address is no longer valid.\nPlease, start another swap transaction.'**
+  String get swapDepositTimeoutBody;
+
+  /// Title of the desktop screen showing the one-time deposit address for a swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit tokens'**
+  String get swapDepositTitle;
+
+  /// Label before the countdown showing how long the user has to deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit within'**
+  String get swapDepositWithin;
+
+  /// Button on the deposit screen that sends the ZEC deposit from the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit ZEC'**
+  String get swapDepositZecButton;
+
+  /// Accessibility label of the tappable backdrop behind swap modals on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get swapDismissBarrierLabel;
+
+  /// [security] Error in swap Keystone signing when broadcasting failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction could not be broadcast.'**
+  String get swapKeystoneBroadcastFailed;
+
+  /// [security] Title of the swap Keystone signing overlay while the signed ZEC deposit is being broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasting ZEC deposit'**
+  String get swapKeystoneBroadcastingTitle;
+
+  /// [security] Title of the mobile swap Keystone screen when signing failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing failed'**
+  String get swapKeystoneFailedTitle;
+
+  /// [security] Label on the mobile swap Keystone screen while the signed deposit is broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasting ZEC deposit...'**
+  String get swapKeystoneFinalizing;
+
+  /// [security] Generic error in swap Keystone signing when signing the ZEC deposit fails.
+  ///
+  /// In en, this message translates to:
+  /// **'ZEC deposit signing could not be completed.'**
+  String get swapKeystoneIncomplete;
+
+  /// [security] Error in swap Keystone signing when the transaction is a TEX send.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone does not support TEX sends yet.'**
+  String get swapKeystoneNoTex;
+
+  /// [security] Error in the swap Keystone signing overlay when the scanned signature QR belongs to another request.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code does not match the current Keystone request.'**
+  String get swapKeystoneQrMismatch;
+
+  /// [security] Caption under the signature scanner on the mobile swap Keystone screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code on your Keystone to finish the ZEC deposit'**
+  String get swapKeystoneScanCaption;
+
+  /// [security] Subtitle of the swap Keystone signing overlay above the QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan to sign'**
+  String get swapKeystoneScanToSign;
+
+  /// [security] Title of the swap Keystone signing overlay asking the user to scan and sign the ZEC deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign ZEC deposit on Keystone'**
+  String get swapKeystoneSignTitle;
+
+  /// [security] Error in the swap Keystone signing overlay when the broadcast outcome is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction status is uncertain. Refresh activity before trying again.'**
+  String get swapKeystoneStatusUncertain;
+
+  /// Button in the swap Ledger signing modal that leaves the modal and returns to the activity list.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to activity'**
+  String get swapLedgerBackToActivity;
+
+  /// [security] Error in the swap Ledger signing modal when broadcasting the signed ZEC deposit failed.
+  ///
+  /// In en, this message translates to:
+  /// **'The ZEC deposit could not be broadcast.'**
+  String get swapLedgerBroadcastFailed;
+
+  /// [security] Error in the swap Ledger signing modal when the user rejected the ZEC deposit on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'The ZEC deposit was rejected on your Ledger.'**
+  String get swapLedgerDeclined;
+
+  /// [security] Body of the swap Ledger modal when a background operation already owns the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is already finishing this transaction in the background.'**
+  String get swapLedgerMessageBackground;
+
+  /// [security] Body of the swap Ledger recovery modal when the transaction expired and funds are still reserved.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction expired before it was sent. Vizor still needs to release its reserved funds.'**
+  String get swapLedgerMessageExpired;
+
+  /// [security] Body of the swap Ledger recovery modal when the transaction was sent but local saving failed.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction was sent, but Vizor could not finish saving it.'**
+  String get swapLedgerMessageSentNotSaved;
+
+  /// [security] Body of the swap Ledger recovery modal when it is unknown whether the transaction was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not confirm whether the transaction was sent, and still needs to save its status.'**
+  String get swapLedgerMessageUncertain;
+
+  /// [security] Button in the swap Ledger recovery modal that retries releasing reserved funds.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry cleanup'**
+  String get swapLedgerRetryCleanup;
+
+  /// [security] Generic error in the swap Ledger signing modal when signing fails for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger signing could not be completed.'**
+  String get swapLedgerSigningIncomplete;
+
+  /// [security] Status chip in the swap Ledger recovery modal when reserved funds still need to be released.
+  ///
+  /// In en, this message translates to:
+  /// **'Cleanup needed'**
+  String get swapLedgerStatusCleanup;
+
+  /// [security] Status chip in the swap Ledger recovery modal while the sent transaction is saved locally.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving transaction'**
+  String get swapLedgerStatusSaving;
+
+  /// [security] Status chip in the swap Ledger modal while another operation finishes the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait'**
+  String get swapLedgerStatusWait;
+
+  /// [security] Title of the swap Ledger recovery modal when it is unknown whether the transaction was sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction status pending'**
+  String get swapLedgerTitlePending;
+
+  /// [security] Title of the swap Ledger modal when another background operation is already finishing the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction recovery in progress'**
+  String get swapLedgerTitleRecovery;
+
+  /// [security] Title of the swap Ledger recovery modal when the transaction was sent but could not be saved locally.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction sent'**
+  String get swapLedgerTitleSent;
+
+  /// Heading of the list of networks affected by an incident.
+  ///
+  /// In en, this message translates to:
+  /// **'Affected networks'**
+  String get swapNoticeAffectedNetworks;
+
+  /// Network list text meaning the notice applies to every chain.
+  ///
+  /// In en, this message translates to:
+  /// **'All chains'**
+  String get swapNoticeAllChains;
+
+  /// Accessibility label of the close button on the NEAR Intents service notice.
+  ///
+  /// In en, this message translates to:
+  /// **'Close service notice'**
+  String get swapNoticeCloseLabel;
+
+  /// Service notice line with the expected end time of a maintenance window; {time} is a formatted local date and UTC offset.
+  ///
+  /// In en, this message translates to:
+  /// **'Expected end: {time}'**
+  String swapNoticeExpectedEnd(String time);
+
+  /// Heading of the list of affected networks when the notice is maintenance only.
+  ///
+  /// In en, this message translates to:
+  /// **'List of maintenance'**
+  String get swapNoticeListOfMaintenance;
+
+  /// First line of the service notice when scheduled maintenance is under way.
+  ///
+  /// In en, this message translates to:
+  /// **'NEAR Intents is under maintenance.'**
+  String get swapNoticeMaintenanceIntro;
+
+  /// Title of the NEAR Intents service banner when only scheduled maintenance is reported.
+  ///
+  /// In en, this message translates to:
+  /// **'Maintenance notice'**
+  String get swapNoticeMaintenanceTitle;
+
+  /// Service notice line naming the networks covered by one maintenance window; {networks} is a comma-separated list of chain names.
+  ///
+  /// In en, this message translates to:
+  /// **'Maintenance window: {networks}'**
+  String swapNoticeMaintenanceWindow(String networks);
+
+  /// Button that dismisses the NEAR Intents service notice.
+  ///
+  /// In en, this message translates to:
+  /// **'Ok'**
+  String get swapNoticeOk;
+
+  /// Service notice line shown in pay mode explaining that payments may fail.
+  ///
+  /// In en, this message translates to:
+  /// **'Payments may not work right now.'**
+  String get swapNoticePaymentsMayFail;
+
+  /// Title of the NEAR Intents service banner when an incident affects swaps.
+  ///
+  /// In en, this message translates to:
+  /// **'Service notice'**
+  String get swapNoticeServiceTitle;
+
+  /// Service notice line with the start time of a maintenance window; {time} is a formatted local date and UTC offset.
+  ///
+  /// In en, this message translates to:
+  /// **'Start: {time}'**
+  String swapNoticeStart(String time);
+
+  /// Button that opens the NEAR Intents status web page.
+  ///
+  /// In en, this message translates to:
+  /// **'NEAR Intents status page'**
+  String get swapNoticeStatusPage;
+
+  /// Service notice line shown in swap mode explaining that swaps may fail.
+  ///
+  /// In en, this message translates to:
+  /// **'Swaps may not work right now.'**
+  String get swapNoticeSwapsMayFail;
+
+  /// Page title on the desktop swap screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap'**
+  String get swapPageTitle;
+
+  /// Toast after the ZEC deposit broadcast result is uncertain and the wallet is checking it.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking ZEC deposit'**
+  String get swapPanelDepositChecking;
+
+  /// Toast after the ZEC deposit for a swap was broadcast and its arrival is certain.
+  ///
+  /// In en, this message translates to:
+  /// **'ZEC deposit sent'**
+  String get swapPanelDepositSent;
+
+  /// Body text under the load failure heading in the swap activity detail.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to Activity and select a saved swap.'**
+  String get swapPanelLoadFailedBody;
+
+  /// Heading shown when a saved swap cannot be loaded in the activity detail.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load this swap. Try again or pull to refresh.'**
+  String get swapPanelLoadFailedTitle;
+
+  /// Subtitle under the receive amount in the swap status header; {recipient} is a contact name or shortened address.
+  ///
+  /// In en, this message translates to:
+  /// **'To: {recipient}'**
+  String swapPanelRecipientTo(String recipient);
+
+  /// Row label for the ZEC amount a payment was converted from.
+  ///
+  /// In en, this message translates to:
+  /// **'Converted from'**
+  String get swapPayStatusConvertedFrom;
+
+  /// Subtext under the recipient on the pay status screen when the address is not a saved contact.
+  ///
+  /// In en, this message translates to:
+  /// **'New address'**
+  String get swapPayStatusNewAddress;
+
+  /// Row label for the original ZEC amount of a failed payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Source amount'**
+  String get swapPayStatusSourceAmount;
+
+  /// Accessibility label of the "Powered by" artwork in the NEAR Intents attribution.
+  ///
+  /// In en, this message translates to:
+  /// **'Powered by'**
+  String get swapPoweredByLabel;
+
+  /// Back link label on the review screen that returns to the Pay composer.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay'**
+  String get swapReviewBackPay;
+
+  /// Primary button on the mobile swap review that starts the swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm & swap'**
+  String get swapReviewConfirmAndSwap;
+
+  /// Title and fallback button label on the desktop pay review screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm payment'**
+  String get swapReviewConfirmPaymentTitle;
+
+  /// Primary button on the desktop swap review that starts the swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm swap'**
+  String get swapReviewConfirmSwap;
+
+  /// Subtitle under the pay amount on the mobile swap review when the user pays from an external chain; {address} is a contact name or shortened address.
+  ///
+  /// In en, this message translates to:
+  /// **'From: {address}'**
+  String swapReviewFromAddress(String address);
+
+  /// Warning on the swap review screen when the ZEC balance cannot cover the swap amount.
+  ///
+  /// In en, this message translates to:
+  /// **'You don\'t have enough ZEC for this swap. Try a smaller amount.'**
+  String get swapReviewInsufficientZecSwap;
+
+  /// Primary button on the pay review; {amount} is the formatted amount the recipient gets.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay {amount}'**
+  String swapReviewPayAmount(String amount);
+
+  /// Notice on the review screens when the quote expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote expired. Review again for an updated rate.'**
+  String get swapReviewQuoteExpired;
+
+  /// Row label for how long the quote stays valid on the pay review summary.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote holds'**
+  String get swapReviewQuoteHolds;
+
+  /// Warning on the mobile swap review screen when the quote has expired or been replaced.
+  ///
+  /// In en, this message translates to:
+  /// **'This quote is no longer active.'**
+  String get swapReviewQuoteInactive;
+
+  /// Primary button on the mobile swap review when the quote is no longer active.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to swap'**
+  String get swapReviewReturnToSwap;
+
+  /// Primary button on the swap review that fetches a new quote after the old one expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Review again'**
+  String get swapReviewReviewAgain;
+
+  /// Disabled primary button label on the swap review while the quote is being locked.
+  ///
+  /// In en, this message translates to:
+  /// **'Locking quote'**
+  String get swapReviewStartingLockingQuote;
+
+  /// Disabled primary button label on the pay review while the payment is being started.
+  ///
+  /// In en, this message translates to:
+  /// **'Paying'**
+  String get swapReviewStartingPaying;
+
+  /// Disabled primary button label on the swap review while the ZEC deposit is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending'**
+  String get swapReviewStartingSending;
+
+  /// Subtitle under the receive amount on the mobile swap review when the user sends ZEC; {address} is a contact name or shortened address.
+  ///
+  /// In en, this message translates to:
+  /// **'To: {address}'**
+  String swapReviewToAddress(String address);
+
+  /// Mobile Ledger signing screen title when the operation is a payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign payment'**
+  String get swapSignPayment;
+
+  /// Title of the mobile signing screens for the ZEC deposit of a swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign ZEC deposit'**
+  String get swapSignZecDeposit;
+
+  /// Label of the custom slippage input option in the slippage modal.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get swapSlippageCustom;
+
+  /// Slippage modal explanation shown in pay mode: extra ZEC allowed when the quote moves.
+  ///
+  /// In en, this message translates to:
+  /// **'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.'**
+  String get swapSlippageDescriptionPay;
+
+  /// Slippage modal explanation shown in swap mode: maximum rate change accepted.
+  ///
+  /// In en, this message translates to:
+  /// **'Sets the maximum rate change you\'ll accept. Network fees are separate.'**
+  String get swapSlippageDescriptionSwap;
+
+  /// Validation error in the slippage modal when the custom value is outside 0.1 to 5 percent.
+  ///
+  /// In en, this message translates to:
+  /// **'Slippage must be 0.1 - 5%'**
+  String get swapSlippageRangeError;
+
+  /// Title of the slippage settings modal and field label for the allowed price movement.
+  ///
+  /// In en, this message translates to:
+  /// **'Slippage'**
+  String get swapSlippageTitle;
+
+  /// Status text on the mobile status screen when the operation needs user action.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs attention'**
+  String get swapStatusBadgeNeedsAttention;
+
+  /// Label of the details tab on the swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction details'**
+  String get swapStatusDetailsTab;
+
+  /// Row label next to the final swap status on the swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get swapStatusRowLabel;
+
+  /// Body text on the swap timeout screen asking the user to start a new swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Please, start another swap transaction.'**
+  String get swapTimeoutBody;
+
+  /// Headline on the swap timeout screen explaining the one-time deposit address has expired.
+  ///
+  /// In en, this message translates to:
+  /// **'This deposit address is no longer valid'**
+  String get swapTimeoutHeadline;
+
+  /// Button on the swap timeout screen that returns to the swap composer.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart swap'**
+  String get swapTimeoutRestart;
+
+  /// Heading on the swap timeout screen shown when the quote deposit window has expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Time’s up'**
+  String get swapTimeoutTitle;
+
+  /// Button label on the swap progress footer that opens the swap in the NEAR Intents explorer.
+  ///
+  /// In en, this message translates to:
+  /// **'View on NEAR Intents'**
+  String get swapViewOnNearIntents;
+
+  /// Screen-reader sync status while Vizor re-checks the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking {percent} percent'**
+  String syncCheckingPercentSemantics(String percent);
+
+  /// Sync status while Vizor re-checks the wallet. {percent} is a whole number 0-99.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% checking'**
+  String syncCheckingProgress(String percent);
+
+  /// Sync status while Vizor waits for its Tor connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting to Tor…'**
+  String get syncConnectingToTor;
+
+  /// Screen-reader sync status while Vizor waits for its Tor connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting to Tor'**
+  String get syncConnectingToTorSemantics;
+
+  /// Sync failure reason: recovering from a chain reorganization failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain recovery'**
+  String get syncErrorChainRecovery;
+
+  /// Sync failure reason: received data could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Data error'**
+  String get syncErrorData;
+
+  /// Sync failure reason: the lightwalletd endpoint returned an error.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoint error'**
+  String get syncErrorEndpoint;
+
+  /// Sync failure reason: the server could not be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Network error'**
+  String get syncErrorNetwork;
+
+  /// Sync failure reason: a private (PIR) status lookup failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Private lookup'**
+  String get syncErrorPrivateLookup;
+
+  /// Sync failure reason when the cause is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown error'**
+  String get syncErrorUnknown;
+
+  /// Sync failure reason: the wallet database failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet data error'**
+  String get syncErrorWalletData;
+
+  /// Sync failure reason: the wallet database was busy.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet data busy'**
+  String get syncErrorWalletDataBusy;
+
+  /// Sync status after a sync failed. {reason} is a short failure reason such as Network error.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing failed. {reason}...'**
+  String syncFailed(String reason);
+
+  /// Screen-reader sync status after a sync failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing failed. {reason}'**
+  String syncFailedSemantics(String reason);
+
   /// Sync status when the wallet is up to date.
   ///
   /// In en, this message translates to:
@@ -5118,13 +10101,49 @@ abstract class AppLocalizations {
   /// **'Synced at block {height}'**
   String syncSyncedAtBlock(String height);
 
+  /// Screen-reader sync status while the wallet syncs.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing {percent} percent'**
+  String syncSyncingPercentSemantics(String percent);
+
+  /// Sync status while the wallet syncs. {percent} is a whole number 0-99.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% Syncing...'**
+  String syncSyncingProgress(String percent);
+
+  /// Sync status after the Tor connection failed; sync is paused until the user acts.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor couldn\'t connect...'**
+  String get syncTorFailed;
+
+  /// Screen-reader sync status, and sync failure reason, when the Tor connection failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor couldn\'t connect'**
+  String get syncTorFailedSemantics;
+
+  /// Sync status, and screen-reader label, when the wallet is up to date. Shared by: lock, sync.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is synced'**
+  String get syncVizorSynced;
+
+  /// Tooltip on the fee row of transaction review and receipt screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Fee paid to the Zcash network to process this transaction.'**
+  String get txFeeHelpTooltip;
+
   /// Body of the transaction fee info sheet.
   ///
   /// In en, this message translates to:
   /// **'The network fee is set by the Zcash protocol (ZIP 317) based on the transaction size. Vizor adds no extra fee.'**
   String get txFeeInfoDescription;
 
-  /// Title of the transaction fee info sheet.
+  /// Title of the transaction fee info sheet. Shared by: activity, swap, tx.
   ///
   /// In en, this message translates to:
   /// **'Tx fee'**

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_modal_shape.dart';
@@ -34,23 +35,21 @@ class PublicDetailsLookupDialog extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Load details publicly?',
+                context.l10n.activityPublicLookupTitle,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: colors.text.accent,
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'Vizor will ask the server for this one transaction to show '
-                'what private lookups leave out.',
+                context.l10n.activityPublicLookupBody,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'The server learns that this wallet is interested in this '
-                'transaction, and without Tor, your IP address.',
+                context.l10n.activityPublicLookupWarning,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.warning,
                 ),
@@ -60,7 +59,7 @@ class PublicDetailsLookupDialog extends StatelessWidget {
                 key: const ValueKey('public_details_lookup_confirm'),
                 expand: true,
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Load publicly'),
+                child: Text(context.l10n.activityDetailsLoadPublicly),
               ),
               const SizedBox(height: AppSpacing.xs),
               AppButton(
@@ -68,7 +67,7 @@ class PublicDetailsLookupDialog extends StatelessWidget {
                 expand: true,
                 variant: AppButtonVariant.ghost,
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
+                child: Text(context.l10n.commonCancel),
               ),
             ],
           ),

@@ -369,7 +369,7 @@ class _MobileShieldSceneState extends State<MobileShieldScene>
 
     return math.max(
       measure(context.l10n.homeShieldBalanceTitle),
-      measure(context.l10n.homeShieldSucceededTitle),
+      measure(context.l10n.commonShieldedSuccessfully),
     );
   }
 

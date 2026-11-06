@@ -8,6 +8,7 @@ import '../../../core/config/zcash_explorer.dart';
 import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/date_format.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -128,7 +129,7 @@ class _ActivityTransactionStatusScreenState
         widget.args.txidHex,
         ZcashExplorerTxidOrder.protocol,
       ),
-      toastMessage: 'Transaction hash copied',
+      toastMessage: context.l10n.commonTransactionHashCopied,
     );
   }
 
@@ -185,12 +186,13 @@ class _ActivityTransactionStatusScreenState
   bool _showsNetworkFee(rust_sync.TransactionInfo tx) =>
       unattributedReceiptNetworkFee(tx, matchingReceiptDetailFor(tx)) != null;
 
-  String _feeLabel(rust_sync.TransactionInfo tx) =>
-      _showsNetworkFee(tx) ? 'Network fee' : 'Tx fee';
+  String _feeLabel(rust_sync.TransactionInfo tx) => _showsNetworkFee(tx)
+      ? context.l10n.activityReceiptNetworkFee
+      : context.l10n.txFeeInfoTitle;
 
   String _feeHelpText(rust_sync.TransactionInfo tx) => _showsNetworkFee(tx)
-      ? kUnattributedNetworkFeeHelpText
-      : kTxFeeHelpTooltip;
+      ? context.l10n.activityReceiptUnattributedFeeHelp
+      : context.l10n.txFeeHelpTooltip;
 
   String _feeText(
     rust_sync.TransactionInfo? tx, {
@@ -206,7 +208,9 @@ class _ActivityTransactionStatusScreenState
         privacyModeEnabled: privacyModeEnabled,
       );
     }
-    if (tx != null && _showUnknownFee(tx)) return kUnknownFeeText;
+    if (tx != null && _showUnknownFee(tx)) {
+      return context.l10n.activityReceiptUnknownFee;
+    }
     if (tx == null || tx.fee <= BigInt.zero) return '--';
     final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
     return hideAmountIfPrivacyMode(
@@ -217,11 +221,13 @@ class _ActivityTransactionStatusScreenState
 
   /// Figma receipt timestamp ("25 May, 13:30") for the redesigned views.
   String _timestampText(rust_sync.TransactionInfo tx, {DateTime? override}) {
-    if (override != null) return formatDayMonthTime(override);
+    final localeName = context.l10n.localeName;
+    if (override != null) return formatDayMonthTime(override, localeName);
     final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
     if (seconds <= BigInt.zero) return '--';
     return formatDayMonthTime(
       DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000),
+      localeName,
     );
   }
 
@@ -365,11 +371,11 @@ class _ActivityTransactionStatusScreenState
       recipientRow: recipient != null
           ? null
           : receiptDetailsLoading
-          ? const ReceiptCounterpartySkeleton(label: 'To')
+          ? ReceiptCounterpartySkeleton(label: context.l10n.commonTo)
           : ReviewInfoRow(
               key: const ValueKey('receipt_unknown_recipient'),
-              label: 'To',
-              value: kUnknownRecipientText,
+              label: context.l10n.commonTo,
+              value: context.l10n.activityDetailsUnknownRecipient,
               struckThrough: _sentPhaseFor(tx) == SendStatusPhase.failed,
               leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
             ),
@@ -441,10 +447,18 @@ class _ActivityTransactionStatusScreenState
         !isFailed &&
         (tx.minedHeight == BigInt.zero || giftCard.isClaimInFlight);
     final (statusText, statusIconName, statusColor) = isFailed
-        ? ('Failed', AppIcons.cancel, colors.text.destructive)
+        ? (context.l10n.commonFailed, AppIcons.cancel, colors.text.destructive)
         : isInFlight
-        ? ('In progress', AppIcons.loader, colors.text.secondary)
-        : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
+        ? (
+            context.l10n.commonInProgress,
+            AppIcons.loader,
+            colors.text.secondary,
+          )
+        : (
+            context.l10n.commonCompleted,
+            AppIcons.checkCircle,
+            colors.text.positiveStrong,
+          );
     final batchCount = giftCard.batchCount;
     if (giftCard.kind == GiftCardActivityKind.created &&
         batchCount != null &&
@@ -457,26 +471,28 @@ class _ActivityTransactionStatusScreenState
       final reserve = giftCard.claimFeeReserveZatoshi!;
       final feeUnknown = _showUnknownFee(tx);
       final networkFeeText = feeUnknown
-          ? kUnknownFeeText
-          : '${privateAmount(tx.fee)} ZEC';
+          ? context.l10n.activityReceiptUnknownFee
+          : '${privateAmount(tx.fee)} ZEC'; // l10n-ignore: amount format
       final networkFeeLabel = isInFlight || isFailed
-          ? 'Estimated network fee'
-          : 'Network fee';
+          ? context.l10n.activityReceiptEstimatedNetworkFee
+          : context.l10n.activityReceiptNetworkFee;
       return GiftCardActivityDetailView.batch(
         batch: GiftCardActivityBatch(
           count: batchCount,
           totalLabel: isFailed
-              ? 'Planned total'
+              ? context.l10n.activityGiftTotalPlanned
               : isInFlight
-              ? 'Submitted total'
-              : 'Total spent',
+              ? context.l10n.activityGiftTotalSubmitted
+              : context.l10n.activityGiftTotalSpent,
           totalText: feeUnknown
-              ? kUnknownFeeText
-              : '${privateAmount(giftCard.amountZatoshi + reserve + tx.fee)} ZEC',
-          breakdownText:
-              'Cards ${privateAmount(giftCard.amountZatoshi)} ZEC · '
-              'Redeem fees ${privateAmount(reserve)} ZEC · '
-              '$networkFeeLabel $networkFeeText',
+              ? context.l10n.activityReceiptUnknownFee
+              : '${privateAmount(giftCard.amountZatoshi + reserve + tx.fee)} ZEC', // l10n-ignore: amount format
+          breakdownText: context.l10n.activityGiftBatchBreakdown(
+            privateAmount(giftCard.amountZatoshi),
+            privateAmount(reserve),
+            networkFeeLabel,
+            networkFeeText,
+          ),
         ),
         isInFlight: isInFlight,
         isFailed: isFailed,
@@ -553,8 +569,8 @@ class _ActivityTransactionStatusScreenState
           padding: const EdgeInsets.only(top: AppSpacing.xl),
           child: Text(
             receiptLoading
-                ? 'Loading transaction…'
-                : (receiptError ?? 'Transaction could not be loaded.'),
+                ? context.l10n.activityReceiptLoading
+                : (receiptError ?? context.l10n.activityReceiptLoadFailed),
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -566,10 +582,18 @@ class _ActivityTransactionStatusScreenState
 
     final isMigration = tx.txKind == 'migration';
     final (statusValue, statusIconName, statusColor) = tx.expiredUnmined
-        ? ('Failed', AppIcons.cancel, colors.text.destructive)
+        ? (context.l10n.commonFailed, AppIcons.cancel, colors.text.destructive)
         : tx.minedHeight == BigInt.zero
-        ? ('In progress', AppIcons.loader, colors.text.secondary)
-        : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
+        ? (
+            context.l10n.commonInProgress,
+            AppIcons.loader,
+            colors.text.secondary,
+          )
+        : (
+            context.l10n.commonCompleted,
+            AppIcons.checkCircle,
+            colors.text.positiveStrong,
+          );
     // The fee appears once: a fee-only entry is its one fee line, and an
     // amount that includes the fee says so.
     final feePresentation = transactionFeePresentation(tx);
@@ -590,11 +614,11 @@ class _ActivityTransactionStatusScreenState
           Text(
             isMigration
                 ? tx.expiredUnmined
-                      ? 'Migration failed'
+                      ? context.l10n.activityTitleMigrationFailed
                       : tx.minedHeight == BigInt.zero
-                      ? 'Migrating to Ironwood'
-                      : 'Migrated to Ironwood'
-                : 'Transaction',
+                      ? context.l10n.activityTitleMigratingVerb
+                      : context.l10n.activityTitleMigrated
+                : context.l10n.activityTitleTransaction,
             textAlign: TextAlign.center,
             style: AppTypography.bodyLarge.copyWith(
               color: colors.text.accent,
@@ -606,12 +630,14 @@ class _ActivityTransactionStatusScreenState
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             child: ReviewInfoRow(
               label: isMigration
-                  ? 'Amount migrated'
+                  ? context.l10n.activityReceiptAmountMigrated
                   : switch (feePresentation) {
-                      TransactionFeePresentation.separate => 'Amount',
+                      TransactionFeePresentation.separate =>
+                        context.l10n.commonAmount,
                       TransactionFeePresentation.includedInAmount =>
-                        kNetChangeText,
-                      TransactionFeePresentation.feeOnly => kNetChangeText,
+                        context.l10n.activityReceiptNetChange,
+                      TransactionFeePresentation.feeOnly =>
+                        context.l10n.activityReceiptNetChange,
                     },
               value: feeOnly
                   ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
@@ -631,37 +657,41 @@ class _ActivityTransactionStatusScreenState
             children: [
               if (isMigration) ...[
                 ReviewListRow(
-                  label: 'From',
-                  value: 'Orchard balance',
+                  label: context.l10n.activityReceiptFrom,
+                  value: context.l10n.activityBalanceOrchard,
                   leadingIconName: AppIcons.migrationSplit,
                 ),
                 ReviewListRow(
-                  label: 'To',
-                  value: 'Ironwood balance',
+                  label: context.l10n.commonTo,
+                  value: context.l10n.activityBalanceIronwood,
                   leadingIconName: AppIcons.shieldKeyholeOutline,
                 ),
                 const ReviewWrapDivider(),
               ],
               ReviewListRow(
-                label: 'Status',
+                label: context.l10n.activityReceiptStatus,
                 value: statusValue,
                 valueColor: statusColor,
                 leadingIconName: statusIconName,
               ),
-              ReviewListRow(label: 'Timestamp', value: _timestampText(tx)),
               ReviewListRow(
-                label: 'Tx ID',
+                label: context.l10n.commonTimestamp,
+                value: _timestampText(tx),
+              ),
+              ReviewListRow(
+                label: context.l10n.commonTxId,
                 value: _truncatedDisplayTxid(widget.args.txidHex),
                 trailingIconName: AppIcons.arrowTopRight,
                 onPressed: () => unawaited(_openTransactionExplorer()),
               ),
               if (_showIncompleteDetails(tx))
                 ReviewListRow(
-                  label: 'Details',
-                  value: 'Incomplete',
+                  label: context.l10n.activityReceiptDetails,
+                  value: context.l10n.activityReceiptIncomplete,
                   trailingIconName: AppIcons.help,
                   trailingIconColor: colors.text.secondary,
-                  trailingIconTooltip: kIncompleteDetailsHelpText,
+                  trailingIconTooltip:
+                      context.l10n.activityReceiptDetailsIncompleteHelp,
                 ),
               if (feeText != null) ...[
                 const ReviewWrapDivider(),
@@ -860,11 +890,12 @@ class _IncompleteDetailsNotice extends StatelessWidget {
       child: ReviewWrapCard(
         children: [
           ReviewListRow(
-            label: 'Details',
-            value: 'Incomplete',
+            label: context.l10n.activityReceiptDetails,
+            value: context.l10n.activityReceiptIncomplete,
             trailingIconName: AppIcons.help,
             trailingIconColor: context.colors.text.secondary,
-            trailingIconTooltip: kIncompleteDetailsHelpText,
+            trailingIconTooltip:
+                context.l10n.activityReceiptDetailsIncompleteHelp,
           ),
         ],
       ),

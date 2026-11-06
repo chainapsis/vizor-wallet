@@ -688,7 +688,7 @@ class _LedgerShieldSigningOverlayState
         _cancelled = false;
         _canRetry = false;
         _phase = LedgerSigningModalPhase.failed;
-        _error = context.l10n.homeShieldCancelFailed;
+        _error = context.l10n.commonCancelFailedRetry;
       });
       return;
     }
@@ -730,10 +730,10 @@ class _LedgerShieldSigningOverlayState
                   ? context.l10n.homeLedgerPausedTitle
                   : upgradeHold
                   ? kNetworkUpgradeHoldActionLabel
-                  : context.l10n.homeLedgerSigningFailedTitle,
+                  : context.l10n.commonLedgerSigningFailed,
               statusLabel: _pausedEarly
                   ? context.l10n.homeLedgerInputsRemaining
-                  : context.l10n.homeLedgerActionNeeded,
+                  : context.l10n.commonActionNeeded,
               message: _error ?? context.l10n.homeLedgerShieldingFailed,
               showDeviceAppPrompt:
                   !_pausedEarly &&
@@ -743,7 +743,7 @@ class _LedgerShieldSigningOverlayState
             )
           : null,
       onCancel: canLeave ? () => unawaited(_cancelToHome()) : null,
-      cancelLabel: context.l10n.homeShieldBackToWallet,
+      cancelLabel: context.l10n.commonBackToWallet,
       onFailureAction:
           !_cancelled && _phase == LedgerSigningModalPhase.failed && _canRetry
           ? () => unawaited(_retry())
@@ -777,7 +777,7 @@ class _LedgerShieldSigningOverlayState
                 title: !_momentStarted
                     ? context.l10n.homeShieldBalanceTitle
                     : _momentComplete
-                    ? context.l10n.homeShieldSucceededTitle
+                    ? context.l10n.commonShieldedSuccessfully
                     : broadcasting
                     ? context.l10n.homeShieldingBalance
                     : context.l10n.homeLedgerShieldTitle,

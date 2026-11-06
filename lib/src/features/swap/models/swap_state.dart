@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/models/address_format_validator.dart';
 import '../domain/swap_address_plan.dart';
@@ -12,17 +13,27 @@ enum SwapAmountInputMode { token, fiat }
 
 enum SwapAmountInputSide { pay, receive }
 
-String? swapTokenAmountPrecisionError({
+bool swapTokenAmountExceedsPrecision({
   required SwapAsset asset,
   required String amountText,
 }) {
   final text = amountText.trim();
-  if (text.isEmpty) return null;
+  if (text.isEmpty) return false;
   final parts = text.split('.');
-  if (parts.length > 2) return null;
+  if (parts.length > 2) return false;
   final fractionalDigits = parts.length == 2 ? parts[1].length : 0;
-  if (fractionalDigits <= asset.decimals) return null;
-  return '${asset.symbol} supports up to ${asset.decimals} decimal places.';
+  return fractionalDigits > asset.decimals;
+}
+
+String? swapTokenAmountPrecisionError(
+  AppLocalizations l10n, {
+  required SwapAsset asset,
+  required String amountText,
+}) {
+  if (!swapTokenAmountExceedsPrecision(asset: asset, amountText: amountText)) {
+    return null;
+  }
+  return l10n.swapActivityStateDecimalPlaces(asset.symbol, asset.decimals);
 }
 
 class SwapComposerPreferences {
@@ -155,12 +166,21 @@ class SwapState {
   String get quoteAmountText =>
       quoteMode.usesInputAmount ? amountText.trim() : receiveAmountText.trim();
 
-  String? get quoteAmountPrecisionError => swapTokenAmountPrecisionError(
-    asset: quoteMode.usesInputAmount
-        ? direction.fromAsset(externalAsset)
-        : direction.toAsset(externalAsset),
+  SwapAsset get _quoteAmountAsset => quoteMode.usesInputAmount
+      ? direction.fromAsset(externalAsset)
+      : direction.toAsset(externalAsset);
+
+  bool get hasQuoteAmountPrecisionError => swapTokenAmountExceedsPrecision(
+    asset: _quoteAmountAsset,
     amountText: quoteAmountText,
   );
+
+  String? quoteAmountPrecisionError(AppLocalizations l10n) =>
+      swapTokenAmountPrecisionError(
+        l10n,
+        asset: _quoteAmountAsset,
+        amountText: quoteAmountText,
+      );
 
   SwapAddressPlan? get addressPlan => reviewAddressPlan ?? draftAddressPlan;
 
@@ -174,24 +194,24 @@ class SwapState {
     );
   }
 
-  String get destinationFieldLabel => direction.sendsZec
-      ? 'Destination'
-      : '${externalAsset.symbol} refund address';
+  String destinationFieldLabel(AppLocalizations l10n) => direction.sendsZec
+      ? l10n.swapActivityStateDestination
+      : l10n.commonSymbolRefundAddress(externalAsset.symbol);
 
   // The address belongs to a chain, not the token (you don't have a "USDC
   // address" — you have an Ethereum address that holds USDC), so name the
   // chain. Leading with it also keeps the relevant part visible in the narrow
   // modal field (the old "Refund address on the ET…" cut off the chain).
-  String get destinationFieldHint => direction.sendsZec
-      ? '${externalAsset.chainLabel} address or account'
-      : '${externalAsset.chainLabel} address';
+  String destinationFieldHint(AppLocalizations l10n) => direction.sendsZec
+      ? l10n.swapActivityStateAddressOrAccountHint(externalAsset.chainLabel)
+      : l10n.commonAddressForChain(externalAsset.chainLabel);
 
   /// Best-effort format check of [destinationText] against the external asset's
   /// chain. Returns null when empty, when the chain has no validator, or when
   /// the address looks valid; otherwise a short reason. Used as a hard gate on
   /// the swap review path so a malformed recipient/refund address cannot be
   /// committed into a 1Click quote.
-  String? get destinationAddressFormatError {
+  AddressFormatFinding? get destinationAddressFormatIssue {
     final trimmed = destinationText.trim();
     if (trimmed.isEmpty) return null;
     final network = AddressBookNetwork.tryFromChainTicker(
@@ -211,11 +231,14 @@ class SwapState {
     return false;
   }
 
-  String? get externalAssetSupportError {
+  String? externalAssetSupportError(AppLocalizations l10n) {
     if (pricingLoading) return null;
     if (supportedAssetsError != null) return supportedAssetsError;
     if (externalAssetIsSupported) return null;
-    return '${externalAsset.symbol} on ${externalAsset.chainLabel} is not currently supported.';
+    return l10n.swapActivityStateAssetUnsupported(
+      externalAsset.symbol,
+      externalAsset.chainLabel,
+    );
   }
 
   /// Whether the selected external asset can carry a quote. A failed token-list
@@ -228,9 +251,9 @@ class SwapState {
 
   bool get canReviewQuote =>
       quoteAmount != null &&
-      quoteAmountPrecisionError == null &&
+      !hasQuoteAmountPrecisionError &&
       draftAddressPlan != null &&
-      destinationAddressFormatError == null &&
+      destinationAddressFormatIssue == null &&
       externalAssetIsAvailable &&
       !quoteLoading;
 
@@ -252,7 +275,7 @@ class SwapState {
     );
   }
 
-  String? get reviewAmountDifferenceWarning {
+  String? reviewAmountDifferenceWarning(AppLocalizations l10n) {
     final liveQuote = reviewQuote;
     final estimate = draftQuote;
     if (liveQuote == null || estimate == null) return null;
@@ -268,7 +291,11 @@ class SwapState {
         final sellAsset = estimate.sellAsset;
         final liveText = sellAsset.formatAmount(liveQuote.sellAmount);
         final estimateText = sellAsset.formatAmount(estimate.sellAmount);
-        return 'Live quote uses $liveText ${sellAsset.symbol} instead of $estimateText ${sellAsset.symbol}. Check the guaranteed minimum before you continue.';
+        return l10n.swapActivityStateQuoteUsesDifferentSell(
+          liveText,
+          estimateText,
+          sellAsset.symbol,
+        );
       }
     }
     if (estimate.receiveAmount <= 0) return null;
@@ -280,8 +307,9 @@ class SwapState {
     final percent = (absoluteDelta * 100).toStringAsFixed(
       absoluteDelta >= 0.1 ? 0 : 1,
     );
-    final directionLabel = delta < 0 ? 'lower' : 'higher';
-    return 'Live quote is $percent% $directionLabel than the earlier estimate. Check the guaranteed minimum before you continue.';
+    return delta < 0
+        ? l10n.swapActivityStateQuoteLower(percent)
+        : l10n.swapActivityStateQuoteHigher(percent);
   }
 
   SwapState copyWith({

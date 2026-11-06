@@ -116,6 +116,7 @@ import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import '../src/services/biometric_unlock.dart';
+import '../src/providers/pending_activity_evidence_provider.dart';
 
 const _previewMnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
@@ -2666,13 +2667,14 @@ Widget _buildActivityEtaUseCase({required bool home}) {
     recentTransactions: _etaTransactions(),
   );
   final previewChild = home ? null : _ActivityEtaPreviewRouter(mobile: mobile);
+  // `preview-connection` has no estimate; the fallback override below shows
+  // it as waiting for a connection.
   const etaLabels = {
-    'preview-eta': 'Est. 1–3 min',
-    'preview-long': 'Taking longer',
-    'preview-connection': 'Waiting for connection',
-    'funding:preview-tex': 'Est. 2–6 min',
-    'preview-gift-created': 'Est. 1–3 min',
-    'gift-card:preview-card': 'Est. 1–3 min',
+    'preview-eta': ActivityEta.standard,
+    'preview-long': ActivityEta.takingLonger,
+    'funding:preview-tex': ActivityEta.funding,
+    'preview-gift-created': ActivityEta.standard,
+    'gift-card:preview-card': ActivityEta.standard,
   };
   return mobile
       ? _buildMobileHomeUseCase(
@@ -3694,7 +3696,7 @@ Widget _buildMobileHomeUseCase({
   NativeMobileNavigationGeometry? geometryService,
   String initialLocation = '/home',
   Widget? previewChild,
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   bool setupPreview = false,
   bool inheritWalletState = false,
   bool shieldFlow = false,
@@ -3740,6 +3742,9 @@ Widget _buildMobileHomeUseCase({
         ),
       if (etaLabels != null) ...[
         activityEtaLabelsProvider.overrideWithValue(etaLabels),
+        activityPendingFallbackLabelProvider.overrideWithValue(
+          ActivityPendingFallback.waitingForConnection,
+        ),
         swapActivityRecordsProvider.overrideWith((ref, account) async => []),
       ],
       votingHomeEntryVisibleProvider.overrideWithValue(votingVisible),
@@ -3851,7 +3856,7 @@ class _ShieldMotionPreview extends StatelessWidget {
 
 Widget _buildDesktopHomeUseCase({
   Widget? previewChild,
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   required AccountState accountState,
   required SyncState syncState,
   required IronwoodHomeMigrationCtaState migrationCta,
@@ -3874,6 +3879,9 @@ Widget _buildDesktopHomeUseCase({
         ),
       if (etaLabels != null) ...[
         activityEtaLabelsProvider.overrideWithValue(etaLabels),
+        activityPendingFallbackLabelProvider.overrideWithValue(
+          ActivityPendingFallback.waitingForConnection,
+        ),
         swapActivityRecordsProvider.overrideWith((ref, account) async => []),
       ],
       if (receiptArgs != null) ...[

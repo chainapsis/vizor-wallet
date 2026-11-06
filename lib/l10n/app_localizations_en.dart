@@ -95,9 +95,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Checking this account for active swaps before removal.';
 
   @override
-  String get accountsRemoveConfirm => 'Remove';
-
-  @override
   String get accountsRemoveFailed => 'Couldn\'t remove account.';
 
   @override
@@ -159,9 +156,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountsSendFailed => 'Send couldn\'t be started';
 
   @override
-  String get accountsSendZec => 'Send ZEC';
-
-  @override
   String get accountsTitle => 'Accounts';
 
   @override
@@ -174,10 +168,630 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountsViewViewingKey => 'View viewing key';
 
   @override
+  String get activityAddressUnified => 'Unified address';
+
+  @override
+  String get activityBalanceFromOrchard => 'From Orchard balance';
+
+  @override
+  String get activityBalanceFromTransparent => 'From transparent balance';
+
+  @override
+  String get activityBalanceIronwood => 'Ironwood balance';
+
+  @override
+  String get activityBalanceOrchard => 'Orchard balance';
+
+  @override
+  String get activityDetailsLoadFailed => 'Failed — try again';
+
+  @override
+  String get activityDetailsLoadPublicly => 'Load publicly';
+
+  @override
+  String get activityDetailsLoadPubliclyLabel => 'Full details';
+
+  @override
+  String get activityDetailsLoading => 'Loading…';
+
+  @override
+  String get activityDetailsNotCovered => 'Not available in private mode';
+
+  @override
+  String get activityDetailsOmittedLabel => 'Not shown';
+
+  @override
+  String get activityDetailsOutputsLabel => 'Transaction outputs';
+
+  @override
+  String get activityDetailsOutputsUnattributed => 'Recipient not confirmed';
+
+  @override
+  String get activityDetailsUnavailable =>
+      'Details unavailable — will update when the service is reachable';
+
+  @override
+  String get activityDetailsUnknownRecipient => 'Unknown recipient';
+
+  @override
+  String get activityEtaFunding => 'Est. 2–6 min';
+
+  @override
+  String get activityEtaNu7 => 'Est. under 1 min';
+
+  @override
+  String get activityEtaNu7Funding => 'Est. 1–2 min';
+
+  @override
+  String get activityEtaStandard => 'Est. 1–3 min';
+
+  @override
+  String get activityEtaTakingLonger => 'Taking longer';
+
+  @override
+  String get activityFeedEmpty => 'No activity yet';
+
+  @override
+  String get activityFeedRetry => 'Retry loading activity';
+
+  @override
+  String activityGiftBatchBreakdown(
+    String cards,
+    String fees,
+    String feeLabel,
+    String fee,
+  ) {
+    return 'Cards $cards ZEC · Redeem fees $fees ZEC · $feeLabel $fee';
+  }
+
+  @override
+  String get activityGiftCreated => 'Created a gift card';
+
+  @override
+  String activityGiftCreatedMany(int count) {
+    return 'Created $count gift cards';
+  }
+
+  @override
+  String get activityGiftCreating => 'Creating a card';
+
+  @override
+  String activityGiftCreatingMany(int count) {
+    return 'Creating $count cards';
+  }
+
+  @override
+  String get activityGiftCreationFailed => 'Gift card creation failed';
+
+  @override
+  String get activityGiftGroupFailed => 'Gift card group failed';
+
+  @override
+  String get activityGiftRedeemed => 'Redeemed a gift card';
+
+  @override
+  String get activityGiftRedeeming => 'Redeeming a card';
+
+  @override
+  String get activityGiftRedemptionFailed => 'Gift card redemption failed';
+
+  @override
+  String get activityGiftStatusCreated => 'Created';
+
+  @override
+  String get activityGiftStatusCreating => 'Creating…';
+
+  @override
+  String get activityGiftStatusRedeemed => 'Redeemed';
+
+  @override
+  String get activityGiftStatusRedeeming => 'Redeeming…';
+
+  @override
+  String get activityGiftTotalPlanned => 'Planned total';
+
+  @override
+  String get activityGiftTotalSpent => 'Total spent';
+
+  @override
+  String get activityGiftTotalSubmitted => 'Submitted total';
+
+  @override
+  String get activityLoadFailedDesktop => 'Activity could not be loaded.';
+
+  @override
+  String get activityLoadFailedMobile =>
+      'Couldn\'t load activity. Try again in a moment.';
+
+  @override
+  String get activityOmissionLaterOutputs => 'outputs after the second';
+
+  @override
+  String activityOmissionMoreOutputs(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count more outputs',
+      one: '1 more output',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get activityOmissionOtherSenders => 'other sending addresses';
+
+  @override
+  String get activityOmissionOutputAddress => 'an output address';
+
+  @override
+  String get activityOmissionSender => 'the sending address';
+
+  @override
+  String get activityOmissionSharedFunding => 'inputs from other wallets';
+
+  @override
+  String get activityOmissionShieldedFunding =>
+      'the shielded part of the funding';
+
+  @override
+  String get activityPayFromShielded => 'from shielded ZEC';
+
+  @override
+  String activityPayFromShieldedOnChain(String network) {
+    return 'from shielded ZEC · $network';
+  }
+
+  @override
+  String get activityPayIncomplete => 'Payment incomplete';
+
+  @override
+  String get activityPayPaid => 'Paid';
+
+  @override
+  String get activityPayPaying => 'Paying ...';
+
+  @override
+  String get activityPoolMixed => 'Mixed';
+
+  @override
+  String get activityPublicLookupBody =>
+      'Vizor will ask the server for this one transaction to show what private lookups leave out.';
+
+  @override
+  String get activityPublicLookupTitle => 'Load details publicly?';
+
+  @override
+  String get activityPublicLookupWarning =>
+      'The server learns that this wallet is interested in this transaction, and without Tor, your IP address.';
+
+  @override
+  String get activityReceiptAmountMigrated => 'Amount migrated';
+
+  @override
+  String get activityReceiptCardFee => 'Card fee';
+
+  @override
+  String get activityReceiptCards => 'Cards';
+
+  @override
+  String get activityReceiptDetails => 'Details';
+
+  @override
+  String get activityReceiptDetailsIncomplete => 'Details incomplete';
+
+  @override
+  String get activityReceiptDetailsIncompleteHelp =>
+      'Some details of this transaction, such as its recipients, memos, or fee, are not known yet. The amount shown may change.';
+
+  @override
+  String get activityReceiptEstimatedNetworkFee => 'Estimated network fee';
+
+  @override
+  String get activityReceiptFrom => 'From';
+
+  @override
+  String get activityReceiptIncomplete => 'Incomplete';
+
+  @override
+  String get activityReceiptLoadFailed => 'Transaction could not be loaded.';
+
+  @override
+  String get activityReceiptLoading => 'Loading transaction…';
+
+  @override
+  String get activityReceiptNetChange => 'Net change';
+
+  @override
+  String get activityReceiptNetworkFee => 'Network fee';
+
+  @override
+  String get activityReceiptOutput => 'Output';
+
+  @override
+  String get activityReceiptRefreshFailed =>
+      'Latest transaction status could not be refreshed.';
+
+  @override
+  String get activityReceiptStatus => 'Status';
+
+  @override
+  String get activityReceiptUnattributedFeeHelp =>
+      'Total fee for this transaction. Your account\'s share of this fee is unknown.';
+
+  @override
+  String get activityReceiptUnknownFee => 'Unknown';
+
+  @override
+  String activityRowToday(String time) {
+    return 'Today, $time';
+  }
+
+  @override
+  String get activityRowWaitingForConnection => 'Waiting for connection';
+
+  @override
+  String activityRowYesterday(String time) {
+    return 'Yesterday, $time';
+  }
+
+  @override
+  String get activitySectionEarlier => 'Earlier';
+
+  @override
+  String get activitySectionThisWeek => 'This week';
+
+  @override
+  String get activitySenderShielded => 'Shielded sender';
+
+  @override
+  String get activitySenderUnknown => 'Unknown sender';
+
+  @override
+  String get activityStatusFailedFundsReturned => 'Failed, funds returned';
+
+  @override
+  String get activityStatusIncompleteDeposit => 'Incomplete deposit';
+
+  @override
+  String activitySwapAssetOnChain(String symbol, String chain) {
+    return '$symbol on $chain';
+  }
+
+  @override
+  String activitySwapDepositedAsset(String symbol) {
+    return 'Deposited $symbol';
+  }
+
+  @override
+  String activitySwapMinutesAgo(int minutes) {
+    return '${minutes}m ago';
+  }
+
+  @override
+  String activitySwapReceivedAsset(String symbol) {
+    return 'Received $symbol';
+  }
+
+  @override
+  String activitySwapStep(int current, int total) {
+    return '$current/$total In progress';
+  }
+
+  @override
+  String get activitySwapSwapped => 'Swapped';
+
+  @override
+  String get activitySwapSwapping => 'Swapping...';
+
+  @override
+  String get activitySwapTimeout => 'Timeout';
+
+  @override
+  String get activitySwapTitle => 'Swap';
+
+  @override
+  String get activityTitleMigrated => 'Migrated to Ironwood';
+
+  @override
+  String get activityTitleMigrating => 'Migrating to Ironwood...';
+
+  @override
+  String get activityTitleMigratingVerb => 'Migrating to Ironwood';
+
+  @override
+  String get activityTitleMigrationFailed => 'Migration failed';
+
+  @override
+  String get activityTitleReceiveFailed => 'Receive failed';
+
+  @override
+  String get activityTitleReceiveInProgress => 'Receive in progress...';
+
+  @override
+  String get activityTitleReceived => 'Received';
+
+  @override
+  String get activityTitleReceivedSuccessfully => 'Received successfully';
+
+  @override
+  String get activityTitleReceiving => 'Receiving...';
+
+  @override
+  String get activityTitleReceivingVerb => 'Receiving';
+
+  @override
+  String get activityTitleSendingVerb => 'Sending';
+
+  @override
+  String get activityTitleSent => 'Sent';
+
+  @override
+  String get activityTitleShielded => 'Shielded';
+
+  @override
+  String get activityTitleShieldingFailed => 'Shielding failed';
+
+  @override
+  String get activityTitleShieldingInProgress => 'Shielding in progress...';
+
+  @override
+  String get activityTitleShieldingVerb => 'Shielding';
+
+  @override
+  String get activityTitleTransaction => 'Transaction';
+
+  @override
+  String get activityToastHashCopiedMobile => 'Transaction Hash Copied';
+
+  @override
+  String get addressBookAddContact => 'Add contact';
+
+  @override
+  String get addressBookAddressHintDesktop => 'Add address';
+
+  @override
+  String get addressBookAddressHintMobile => 'Add an address';
+
+  @override
+  String get addressBookAddressLabel => 'Address';
+
+  @override
+  String get addressBookAddressMissing => 'Add an address';
+
+  @override
+  String get addressBookClearAddress => 'Clear address';
+
+  @override
+  String get addressBookClearName => 'Clear name';
+
+  @override
+  String get addressBookClearSearch => 'Clear search';
+
+  @override
+  String addressBookContactActions(String label) {
+    return '$label actions';
+  }
+
+  @override
+  String get addressBookEditContact => 'Edit contact';
+
+  @override
+  String get addressBookEmptyBody => 'Add your first contact to get started.';
+
+  @override
+  String get addressBookEmptyTitle => 'No contacts yet';
+
+  @override
+  String get addressBookInvalidBitcoin => 'Invalid Bitcoin address';
+
+  @override
+  String get addressBookInvalidEvm => 'Invalid EVM address';
+
+  @override
+  String get addressBookInvalidNear => 'Invalid NEAR address';
+
+  @override
+  String get addressBookInvalidSolana => 'Invalid Solana address';
+
+  @override
+  String get addressBookInvalidZcash => 'Invalid Zcash address';
+
+  @override
+  String get addressBookLabelLength => 'Use 1-20 characters';
+
+  @override
+  String get addressBookLabelMissing => 'Add a label';
+
+  @override
+  String get addressBookLoadFailed =>
+      'Couldn\'t load your contacts. Try again, or contact support if this keeps happening.';
+
+  @override
+  String get addressBookNameHint => 'Add a name';
+
+  @override
+  String get addressBookNameLabel => 'Name';
+
+  @override
+  String get addressBookNearSuffixWarning =>
+      'NEAR accounts usually end in .near — double-check this address';
+
+  @override
+  String get addressBookNetworkLabel => 'Network';
+
+  @override
+  String get addressBookNoNetworks => 'No networks found';
+
+  @override
+  String get addressBookNoResultsBody => 'Try to modify your search';
+
+  @override
+  String get addressBookNoResultsTitle => 'No contacts were found';
+
+  @override
+  String get addressBookPickerClose => 'Close contacts';
+
+  @override
+  String get addressBookPickerEmptyTitle => 'No contacts found';
+
+  @override
+  String get addressBookPickerLoadFailed =>
+      'Couldn\'t load contacts. Try again.';
+
+  @override
+  String get addressBookPickerSearchHint => 'Search contacts';
+
+  @override
+  String addressBookRemoveBody(String label) {
+    return '$label will be removed from your contacts.';
+  }
+
+  @override
+  String get addressBookRemoveBodyUnknown => 'This contact will be removed.';
+
+  @override
+  String addressBookRemoveConfirmBody(String label) {
+    return '\"$label\" will be removed from your contacts. This does not affect any past transactions.';
+  }
+
+  @override
+  String get addressBookRemoveConfirmTitle => 'Remove contact?';
+
+  @override
+  String get addressBookRemoveContact => 'Remove contact';
+
+  @override
+  String get addressBookRemoveFailed => 'Couldn\'t remove contact. Try again.';
+
+  @override
+  String get addressBookRemoveFailedMobile =>
+      'Couldn\'t remove the contact. Please try again.';
+
+  @override
+  String get addressBookSaveFailed => 'Couldn\'t save contact. Try again.';
+
+  @override
+  String get addressBookSaveFailedMobile =>
+      'Couldn\'t save the contact. Please try again.';
+
+  @override
+  String get addressBookScanAddressQr => 'Scan address QR';
+
+  @override
+  String addressBookScanQrTitle(String network) {
+    return 'Scan $network QR code';
+  }
+
+  @override
+  String get addressBookSearch => 'Search';
+
+  @override
+  String get addressBookSearchHint => 'Search for label or network';
+
+  @override
+  String get addressBookSearchNetwork => 'Search network';
+
+  @override
+  String get addressBookSelectNetwork => 'Select network';
+
+  @override
+  String get addressScanAddressCameraNeeded =>
+      'Address QR scanning needs a camera on this device.';
+
+  @override
+  String addressScanCameraDefaultSuffix(String name) {
+    return '$name (Default)';
+  }
+
+  @override
+  String get addressScanCameraNeeded =>
+      'QR scanning needs a camera on this device.';
+
+  @override
+  String get addressScanCameraOff =>
+      'Camera access is off. Allow it in Settings to scan addresses.';
+
+  @override
+  String get addressScanCameraRequired =>
+      'Address QR scanning requires a camera on this device.';
+
+  @override
+  String get addressScanCameraRestricted =>
+      'Screen Time or device management is blocking the camera on this device.';
+
+  @override
+  String get addressScanCloseScanner => 'Close scanner';
+
+  @override
+  String get addressScanDefaultCamera => 'Default camera';
+
+  @override
+  String get addressScanDeniedTitle => 'You\'ve denied Camera access';
+
+  @override
+  String get addressScanEnableWindowsAccess => 'Enable Windows camera access';
+
+  @override
+  String get addressScanGrantAccess => 'Grant access to your camera';
+
+  @override
+  String get addressScanLoadingCamera => 'Loading camera...';
+
+  @override
+  String get addressScanLoadingEllipsis => 'Loading...';
+
+  @override
+  String get addressScanNoCamera => 'No camera found';
+
+  @override
+  String get addressScanNoCameraOpened =>
+      'No camera could be opened. Check that a camera is connected and not in use by another app.';
+
+  @override
+  String get addressScanOpenSettings => 'Open settings';
+
+  @override
+  String get addressScanTitle => 'Scan the address QR code';
+
+  @override
+  String get addressScanWindowsAccessHint =>
+      'Turn on Camera access and Let desktop apps access your camera in Windows Settings.';
+
+  @override
+  String get addressScanZcashPrompt => 'Scan a Zcash QR code to continue';
+
+  @override
+  String get appBackDonation => 'Donation';
+
+  @override
   String get appBackHardwareWallets => 'Hardware wallets';
 
   @override
   String get appBackImportMethods => 'Import methods';
+
+  @override
+  String get appBackReceive => 'Receive';
+
+  @override
+  String get appBackResults => 'Results';
+
+  @override
+  String get appBackReview => 'Review';
+
+  @override
+  String get appBackSend => 'Send';
+
+  @override
+  String get appBackStatus => 'Status';
+
+  @override
+  String get appBackSubmitted => 'Submitted';
+
+  @override
+  String get appBackTransaction => 'Transaction';
+
+  @override
+  String get appBackVotingRound => 'Voting round';
 
   @override
   String get appExitBackHint => 'Go back again to exit';
@@ -226,9 +840,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get appUpdateDismiss => 'Dismiss';
-
-  @override
-  String get appUpdateDownload => 'Download';
 
   @override
   String get appUpdateDownloading => 'Downloading';
@@ -283,10 +894,27 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get commonActionNeeded => 'Action needed';
+
+  @override
+  String get commonAddAMessage => 'Add a message';
+
+  @override
   String get commonAddAccount => 'Add account';
 
   @override
   String get commonAddressCopied => 'Address copied';
+
+  @override
+  String commonAddressForChain(String chain) {
+    return '$chain address';
+  }
+
+  @override
+  String get commonAddressLabel => 'Address label';
+
+  @override
+  String get commonAmount => 'Amount';
 
   @override
   String get commonBack => 'Back';
@@ -297,17 +925,66 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get commonBackToWallet => 'Back to wallet';
+
+  @override
+  String get commonCameraDeniedTitle => 'You\'ve denied camera access';
+
+  @override
+  String get commonCameraRequestAgainHint =>
+      'Request again, or enable manually\nin the System settings.';
+
+  @override
+  String get commonCameraRestrictedBody =>
+      'Screen Time or device management\nis blocking the camera.';
+
+  @override
+  String get commonCameraRestrictedTitle => 'Camera access is restricted';
+
+  @override
+  String get commonCameraUnavailable => 'Camera unavailable';
+
+  @override
+  String get commonCameraUnavailableNow =>
+      'The camera is unavailable right now.';
+
+  @override
   String get commonCancel => 'Cancel';
+
+  @override
+  String get commonCancelFailedRetry =>
+      'Could not finish cancelling. Please try again.';
 
   @override
   String get commonCancellationFailed =>
       'Could not finish cancellation. Try again.';
 
   @override
+  String get commonCancelling => 'Cancelling…';
+
+  @override
   String get commonCannotBeUndone => 'This cannot be undone.';
 
   @override
+  String get commonChainAndAddress => 'Chain & address';
+
+  @override
+  String get commonChangeContactPicture => 'Change contact picture';
+
+  @override
   String get commonChecking => 'Checking...';
+
+  @override
+  String get commonCheckingEllipsis => 'Checking…';
+
+  @override
+  String get commonCheckingStatus => 'Checking status';
+
+  @override
+  String get commonClear => 'Clear';
+
+  @override
+  String get commonClearContactLabel => 'Clear contact label';
 
   @override
   String get commonClearText => 'Clear text';
@@ -316,7 +993,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonClose => 'Close';
 
   @override
+  String get commonCloseMessage => 'Close message';
+
+  @override
   String get commonCoinholderVoting => 'Coinholder voting';
+
+  @override
+  String get commonCompleted => 'Completed';
+
+  @override
+  String get commonContactLabelHint => 'Add label 1-20 characters';
+
+  @override
+  String get commonContacts => 'Contacts';
 
   @override
   String get commonContinue => 'Continue';
@@ -331,19 +1020,58 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonCopyAddress => 'Copy address';
 
   @override
+  String get commonCopyShieldedAddress => 'Copy shielded address';
+
+  @override
   String get commonDismissNotification => 'Dismiss notification';
+
+  @override
+  String get commonDone => 'Done';
+
+  @override
+  String get commonDownload => 'Download';
+
+  @override
+  String get commonDurationOneHour => '1hr';
+
+  @override
+  String get commonDurationOneMinute => '1min';
+
+  @override
+  String get commonEdit => 'Edit';
+
+  @override
+  String get commonEnterAmountInUsd => 'Enter amount in USD';
+
+  @override
+  String get commonFailed => 'Failed';
 
   @override
   String get commonFeatureInProgress => 'This feature is still in progress.';
 
   @override
+  String get commonFullAddress => 'Full address';
+
+  @override
+  String get commonGetSignature => 'Get signature';
+
+  @override
   String get commonGoBack => 'Go back';
+
+  @override
+  String get commonGuaranteedMinimum => 'Guaranteed minimum';
 
   @override
   String get commonImporting => 'Importing...';
 
   @override
+  String get commonInProgress => 'In progress';
+
+  @override
   String get commonInformation => 'Information';
+
+  @override
+  String get commonJustNow => 'just now';
 
   @override
   String get commonKeepQrSteady => 'Keep the QR code steady and fully visible.';
@@ -352,13 +1080,114 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonKeepScreenAwake => 'Keep screen awake';
 
   @override
+  String get commonKeystoneAfterScan =>
+      'After you scanned, click Get signature.';
+
+  @override
+  String get commonKeystoneScanSignatureResult =>
+      'Open the signature result QR on Keystone, then scan again.';
+
+  @override
+  String get commonKeystoneScanTransaction =>
+      'Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.';
+
+  @override
+  String get commonLedgerSigningFailed => 'Ledger signing failed';
+
+  @override
+  String get commonLoading => 'Loading';
+
+  @override
+  String get commonLoadingActivity => 'Loading activity';
+
+  @override
+  String get commonMemo => 'Memo';
+
+  @override
+  String get commonMessage => 'Message';
+
+  @override
+  String get commonMessageIsTooLong => 'Message is too long';
+
+  @override
+  String get commonNetworkConversionFees => 'Network + conversion fees';
+
+  @override
+  String get commonNoActiveAccount => 'No active account';
+
+  @override
+  String get commonNoActiveAccountSentence => 'No active account.';
+
+  @override
   String get commonNotAvailableYet => 'Not available yet';
+
+  @override
+  String get commonNotEnoughZec => 'Not enough ZEC';
 
   @override
   String get commonOk => 'OK';
 
   @override
+  String get commonPayInsufficientZec =>
+      'You don\'t have enough ZEC for this payment. Try a smaller amount.';
+
+  @override
+  String get commonPaymentFailed => 'Payment failed';
+
+  @override
+  String get commonPaymentInProgress => 'Payment in progress';
+
+  @override
+  String get commonPaymentProgress => 'Payment progress';
+
+  @override
+  String get commonPaymentRefunded => 'Payment refunded';
+
+  @override
+  String get commonPaymentRequest => 'Payment request';
+
+  @override
+  String get commonPrivatelyFromShieldedBalance =>
+      'Privately, from shielded balance';
+
+  @override
+  String get commonProvingParamsFailed =>
+      'Required proving parameters could not be prepared.';
+
+  @override
+  String get commonQrNoAddress => 'QR code did not include an address.';
+
+  @override
   String get commonQuit => 'Quit';
+
+  @override
+  String get commonRate => 'Rate';
+
+  @override
+  String get commonRecipientGets => 'Recipient gets';
+
+  @override
+  String get commonRefundFee => 'Refund fee';
+
+  @override
+  String get commonRefundTo => 'Refund to';
+
+  @override
+  String commonRefundToAddress(String address) {
+    return 'Refund to: $address';
+  }
+
+  @override
+  String get commonRefunded => 'Refunded';
+
+  @override
+  String get commonRefundedAmount => 'Refunded amount';
+
+  @override
+  String get commonRemove => 'Remove';
+
+  @override
+  String get commonRequestAgain => 'Request again';
 
   @override
   String get commonResetVizor => 'Reset Vizor';
@@ -367,16 +1196,141 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonRetry => 'Retry';
 
   @override
+  String get commonRetrySaving => 'Retry saving';
+
+  @override
+  String get commonReturnHome => 'Return home';
+
+  @override
+  String get commonReviewAndFinish => 'Review & finish';
+
+  @override
+  String get commonReviewPayment => 'Review Payment';
+
+  @override
+  String get commonReviewQuote => 'Review quote';
+
+  @override
+  String get commonReviewSwap => 'Review swap';
+
+  @override
+  String get commonSave => 'Save';
+
+  @override
+  String get commonSaveContact => 'Save contact';
+
+  @override
+  String get commonScanOriginalQr => 'Scan original QR';
+
+  @override
   String get commonScanQrCode => 'Scan QR Code';
 
   @override
   String get commonSelectAccount => 'Select account';
 
   @override
+  String get commonSelectContactPicture => 'Select contact picture';
+
+  @override
+  String get commonSelectRecipient => 'Select Recipient';
+
+  @override
+  String get commonSelectedContact => 'Selected contact';
+
+  @override
+  String get commonSendFailed => 'Send failed';
+
+  @override
+  String get commonSendZec => 'Send ZEC';
+
+  @override
+  String get commonSending => 'Sending...';
+
+  @override
   String get commonSensitiveContentHidden => 'Sensitive content hidden';
 
   @override
+  String get commonSentSuccessfully => 'Sent successfully';
+
+  @override
+  String get commonShieldedAddress => 'Shielded address';
+
+  @override
+  String get commonShieldedBalance => 'Shielded balance';
+
+  @override
+  String get commonShieldedSuccessfully => 'Shielded successfully';
+
+  @override
+  String get commonShielding => 'Shielding...';
+
+  @override
+  String get commonShowFullAddress => 'Show full address';
+
+  @override
+  String get commonSigningCancelledBeforeParams =>
+      'Signing was cancelled before proving parameters were downloaded.';
+
+  @override
+  String get commonSigningExpired =>
+      'Transaction expired before it could be signed.';
+
+  @override
+  String get commonSlippageTolerance => 'Slippage tolerance';
+
+  @override
+  String get commonSupportVizor => 'Support Vizor';
+
+  @override
+  String get commonSwapFailed => 'Swap failed';
+
+  @override
+  String get commonSwapFee => 'Swap fee';
+
+  @override
+  String get commonSwapProgress => 'Swap progress';
+
+  @override
+  String get commonSwapRefunded => 'Swap refunded';
+
+  @override
+  String commonSymbolRecipient(String symbol) {
+    return '$symbol recipient';
+  }
+
+  @override
+  String commonSymbolRefundAddress(String symbol) {
+    return '$symbol refund address';
+  }
+
+  @override
+  String get commonTimestamp => 'Timestamp';
+
+  @override
+  String get commonTo => 'To';
+
+  @override
+  String commonToAddressOnChain(String address, String chain) {
+    return 'To: $address on $chain';
+  }
+
+  @override
+  String get commonToggleFlashlight => 'Toggle flashlight';
+
+  @override
+  String get commonTransactionExpired => 'Transaction expired';
+
+  @override
+  String get commonTransactionHashCopied => 'Transaction hash copied';
+
+  @override
+  String get commonTransparentAddress => 'Transparent address';
+
+  @override
   String get commonTryAgain => 'Try again';
+
+  @override
+  String get commonTxId => 'Tx ID';
 
   @override
   String get commonUnlockVizor => 'Unlock Vizor';
@@ -389,6 +1343,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonWelcomeBack => 'Welcome Back';
+
+  @override
+  String get commonYouPay => 'You pay';
+
+  @override
+  String get commonYourePaying => 'You\'re paying';
+
+  @override
+  String get commonYoureReceiving => 'You\'re receiving';
+
+  @override
+  String get commonZcashAddress => 'Zcash address';
 
   @override
   String endpointCurrent(String endpoint) {
@@ -413,9 +1379,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeActivityEmptyHintMobile =>
       'How about running your\nfirst ZEC tx?';
-
-  @override
-  String get homeActivityLoading => 'Loading activity';
 
   @override
   String get homeActivityUnavailable => 'Unable to load activity.';
@@ -472,9 +1435,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get homeKeepAwakeTitle => 'Stay awake to sync?';
-
-  @override
-  String get homeLedgerActionNeeded => 'Action needed';
 
   @override
   String get homeLedgerApprovalNotAccepted =>
@@ -546,9 +1506,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeLedgerShieldingFailed =>
       'Ledger shielding could not be completed.';
-
-  @override
-  String get homeLedgerSigningFailedTitle => 'Ledger signing failed';
 
   @override
   String homeLoadFailed(String details) {
@@ -645,9 +1602,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeShieldAttentionTitle => 'Shielding needs attention';
 
   @override
-  String get homeShieldBackToWallet => 'Back to wallet';
-
-  @override
   String get homeShieldBackToWalletTitleCase => 'Back to Wallet';
 
   @override
@@ -669,14 +1623,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Allow camera access in Settings to scan Keystone signatures.';
 
   @override
-  String get homeShieldCameraUnavailable =>
-      'The camera is unavailable right now.';
-
-  @override
-  String get homeShieldCancelFailed =>
-      'Could not finish cancelling. Please try again.';
-
-  @override
   String get homeShieldCancelled => 'Shielding was cancelled.';
 
   @override
@@ -694,6 +1640,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Shield transaction could not be broadcast.';
 
   @override
+  String get homeShieldErrorBroadcastFailed =>
+      'Couldn\'t broadcast your shielding transaction. Try again.';
+
+  @override
+  String get homeShieldErrorCouldNotShield =>
+      'Couldn\'t shield your balance. Try again.';
+
+  @override
   String get homeShieldErrorGeneric =>
       'Shield balance failed. Please try again.';
 
@@ -702,8 +1656,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'Shield transaction could not be finalized.';
 
   @override
-  String get homeShieldErrorProvingParams =>
-      'Required proving parameters could not be prepared.';
+  String get homeShieldErrorSeedUnavailable =>
+      'Secret Passphrase isn\'t available for this account.';
 
   @override
   String get homeShieldErrorSignatureNotApplied =>
@@ -722,6 +1676,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Transparent balance is too small to shield after fees.';
 
   @override
+  String get homeShieldErrorWaitForSync =>
+      'Wait for sync to finish, then shield.';
+
+  @override
   String get homeShieldFailedTitle => 'Shielding could not be completed';
 
   @override
@@ -738,10 +1696,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeShieldNextStep => 'Next step';
 
   @override
-  String get homeShieldNoActiveAccount => 'No active account.';
+  String get homeShieldNow => 'Shield now';
 
   @override
-  String get homeShieldNow => 'Shield now';
+  String get homeShieldQueuedForRetry =>
+      'Shielding queued for retry. Check Activity.';
 
   @override
   String get homeShieldQueuedTitle => 'Shielding queued';
@@ -785,19 +1744,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeShieldSubmitting => 'Submitting transaction';
 
   @override
-  String get homeShieldSucceededTitle => 'Shielded successfully';
-
-  @override
-  String get homeShieldToggleFlashlight => 'Toggle flashlight';
-
-  @override
-  String get homeShieldedBalance => 'Shielded balance';
+  String get homeShieldWaitingForPrivateRecovery =>
+      'Private recovery is catching up with the latest block. Try again in a moment; your Keystone signature is kept.';
 
   @override
   String get homeShieldingBalance => 'Shielding your balance…';
-
-  @override
-  String get homeShieldingProgress => 'Shielding...';
 
   @override
   String homeTransparentBalance(String balance) {
@@ -805,10 +1756,66 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String homeTransparentLastKnown(String amount) {
+    return '$amount (last known)';
+  }
+
+  @override
+  String homeTransparentLastKnownStopped(String amount) {
+    return '$amount (last known, recovery stopped)';
+  }
+
+  @override
+  String get homeTransparentRecoveryStopped => 'Recovery stopped';
+
+  @override
+  String get homeTransparentStopLegacyDiscrepancy =>
+      'Earlier public records don\'t match private recovery. Turning off Private queries discards privately recovered records and looks up transparent funds publicly.';
+
+  @override
+  String get homeTransparentStopOptOutUnfinished =>
+      'Turning off Private queries didn\'t finish. Turn it off again in Settings to look up transparent funds publicly.';
+
+  @override
+  String get homeTransparentStopQuarantined =>
+      'Private recovery found conflicting records for this account. Turning off Private queries discards privately recovered records and looks up transparent funds publicly.';
+
+  @override
+  String get homeTransparentStopStalled =>
+      'Private recovery can\'t make progress for this account. Vizor will try again later.';
+
+  @override
+  String get homeTransparentStopWithdrawn =>
+      'The private recovery service withdrew data for this account. Vizor will try again later.';
+
+  @override
+  String get homeTransparentUnavailable => 'Unavailable';
+
+  @override
   String get homeVotingSemantics => 'Open coinholder voting';
 
   @override
   String get homeVotingSubtitle => 'Help to shape the network';
+
+  @override
+  String get incomingLinkGiftBusy =>
+      'Finish or cancel your current task to open this gift card.';
+
+  @override
+  String get incomingLinkGiftSetup =>
+      'Finish account setup to open this gift card.';
+
+  @override
+  String get incomingLinkHomeBusy =>
+      'Finish or cancel your task, then reopen the link.';
+
+  @override
+  String get incomingLinkHomeSetup =>
+      'Finish account setup, then reopen the link.';
+
+  @override
+  String get incomingLinkPaymentBusy =>
+      'Finish or cancel your current task to open this payment request.';
 
   @override
   String get keyringLockedBody =>
@@ -874,13 +1881,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'It helps us import your wallet faster.';
 
   @override
-  String get keystoneCameraDeniedBody =>
-      'Request again, or enable manually\nin the System settings.';
-
-  @override
-  String get keystoneCameraDeniedTitle => 'You\'ve denied camera access';
-
-  @override
   String get keystoneCameraEnableBody =>
       'A camera is required to connect Keystone.\nYou can revert this in settings anytime later.';
 
@@ -888,21 +1888,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneCameraEnableTitle => 'Enable camera access';
 
   @override
-  String get keystoneCameraRequestAgain => 'Request again';
-
-  @override
-  String get keystoneCameraRestrictedBody =>
-      'Screen Time or device management\nis blocking the camera.';
-
-  @override
-  String get keystoneCameraRestrictedTitle => 'Camera access is restricted';
-
-  @override
   String get keystoneCameraUnavailableBody =>
       'Keystone import uses camera QR scanning only.\nConnect a camera and try again.';
-
-  @override
-  String get keystoneCameraUnavailableTitle => 'Camera unavailable';
 
   @override
   String get keystoneConfirmSelection => 'Confirm selection';
@@ -1250,9 +2237,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lockSyncPausedTitle => 'Sync paused';
 
   @override
-  String get lockSyncedSemantics => 'Vizor is synced';
-
-  @override
   String get lockSyncingMessage => 'Vizor is syncing';
 
   @override
@@ -1311,17 +2295,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get onboardingAddressShieldedLabel => 'Shielded address';
-
-  @override
   String get onboardingAddressShieldedTitleMobile => 'Shielded Address';
 
   @override
   String get onboardingAddressTransparentDescription =>
       'Address starts with t, similar to Bitcoin, your address\' balance and transaction history are publicly visible.';
-
-  @override
-  String get onboardingAddressTransparentLabel => 'Transparent address';
 
   @override
   String get onboardingAddressTransparentTitleMobile => 'Transparent Address';
@@ -1456,9 +2434,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingCheckingAccounts => 'Checking accounts...';
 
   @override
-  String get onboardingClear => 'Clear';
-
-  @override
   String get onboardingConnectHardwareSubtitleDesktop =>
       'Select your hardware wallet.';
 
@@ -1500,9 +2475,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingDiscoveryTitle => 'Additional accounts found';
-
-  @override
-  String get onboardingEdit => 'Edit';
 
   @override
   String get onboardingEditBip39Passphrase => 'Edit BIP39 passphrase';
@@ -1672,9 +2644,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Scan & connect to Vizor Desktop';
 
   @override
-  String get onboardingLoading => 'Loading';
-
-  @override
   String onboardingLostPasswordBody(String resetAction, String importAction) {
     return 'If you\'ve lost your password, the only way to recover\nyour account is to $resetAction.\nThis deletes all accounts and unshared gift card links.\nYou will need to $importAction.';
   }
@@ -1698,9 +2667,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingManualNextWord => 'Next word';
-
-  @override
-  String get onboardingManualReviewFinish => 'Review & finish';
 
   @override
   String onboardingManualStoppedAt(String word) {
@@ -1784,9 +2750,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingReviewImportTitle => 'Review Import';
-
-  @override
-  String get onboardingSave => 'Save';
 
   @override
   String get onboardingSavingWallet => 'Saving wallet...';
@@ -1991,6 +2954,209 @@ class AppLocalizationsEn extends AppLocalizations {
   String get passwordsDoNotMatch => 'Passwords do not match.';
 
   @override
+  String get payAddToContacts => 'Add to contacts';
+
+  @override
+  String payAddressSemantics(String address) {
+    return 'Address $address';
+  }
+
+  @override
+  String get payAmountChooseAsset => 'Choose payment asset';
+
+  @override
+  String payAmountEnterIn(String symbol) {
+    return 'Enter amount in $symbol';
+  }
+
+  @override
+  String get payAmountEstimated => 'Estimated:';
+
+  @override
+  String get payAmountEstimatedSpend => 'Estimated spend';
+
+  @override
+  String get payAmountPayingFrom => 'Paying from your';
+
+  @override
+  String get payAmountPayingIn => 'Paying in';
+
+  @override
+  String get payBackHome => 'Home';
+
+  @override
+  String get payFetchingQuote => 'Fetching quote';
+
+  @override
+  String get payNewAddressDetected => 'New address detected.';
+
+  @override
+  String get payNewAddressWarning =>
+      'You haven\'t interacted with this address before.';
+
+  @override
+  String payRecentDaysAgo(int days) {
+    return '${days}d ago';
+  }
+
+  @override
+  String payRecentHoursAgo(int hours) {
+    return '${hours}h ago';
+  }
+
+  @override
+  String payRecentMinutesAgo(int minutes) {
+    return '${minutes}m ago';
+  }
+
+  @override
+  String get payRecentlySent => 'Recently sent';
+
+  @override
+  String get payRecents => 'Recents';
+
+  @override
+  String get payRecipientAddressHint => 'Paste an address or scan QR code';
+
+  @override
+  String get payRecipientAddressLabel => 'Recipient address';
+
+  @override
+  String get payRecipientScanQr => 'Scan QR code';
+
+  @override
+  String get payRefreshingQuote => 'Refreshing quote';
+
+  @override
+  String get payReviewConfirmPay => 'Confirm & pay';
+
+  @override
+  String get payReviewConvertedAmount => 'Converted amount';
+
+  @override
+  String get payReviewPaying => 'Paying';
+
+  @override
+  String get payReviewQuoteExpired => 'Quote expired';
+
+  @override
+  String get payReviewQuoteExpiresIn => 'Quote expires in ';
+
+  @override
+  String get payReviewRefreshQuote => 'Refresh quote';
+
+  @override
+  String get payReviewRefreshTheQuote => 'Refresh the quote';
+
+  @override
+  String get payReviewReturnToPay => 'Return to pay';
+
+  @override
+  String get payReviewUnknownAddress => 'Unknown address';
+
+  @override
+  String get paySaveContactError => 'Couldn\'t save this contact. Try again.';
+
+  @override
+  String get paySaving => 'Saving';
+
+  @override
+  String get payScanBarrierDismiss => 'Dismiss';
+
+  @override
+  String get payScanCaption => 'Scan the recipient address QR code';
+
+  @override
+  String get payScanPermissionTitle => 'Scan the recipient address';
+
+  @override
+  String get payScanQrSubtitle => 'Scan an address using camera';
+
+  @override
+  String get payScanQrTitle => 'Scan a QR code';
+
+  @override
+  String get paySelectRecipient => 'Select recipient';
+
+  @override
+  String get payStepRecipient => 'Recipient';
+
+  @override
+  String get payStepReview => 'Review';
+
+  @override
+  String get paySubmittedFailedBody =>
+      'The payment could not be submitted. Try again.';
+
+  @override
+  String get paySubmittedGoToActivity => 'Go to activity';
+
+  @override
+  String get paySubmittedStatusUncertainNotice =>
+      'The payment status is uncertain. Check Activity before trying again.';
+
+  @override
+  String get paySubmittedSubmittingBody =>
+      'Submitting your payment to the network...';
+
+  @override
+  String get paySubmittedSubmittingTitle => 'Submitting payment...';
+
+  @override
+  String get paySubmittedSucceededBody =>
+      'It will confirm on-chain shortly.\nTrack it in Activity.';
+
+  @override
+  String get paySubmittedSucceededTitle => 'Payment\nSubmitted';
+
+  @override
+  String get paySubmittedUnavailableNotice =>
+      'We couldn\'t load this payment. Check Activity for its latest status.';
+
+  @override
+  String get paySubmittedUnavailableTitle => 'Payment unavailable';
+
+  @override
+  String get paySubmittedUncertainTitle => 'Payment status\nuncertain';
+
+  @override
+  String payTitleAmount(String symbol) {
+    return 'Pay in $symbol';
+  }
+
+  @override
+  String get paymentUriExpired =>
+      'That request link timed out. Open it again to pay.';
+
+  @override
+  String get paymentUriMalformed =>
+      'This request link isn\'t valid. Ask the sender for a new one.';
+
+  @override
+  String get paymentUriMigrationSendGate =>
+      'Finish your Ironwood migration before opening request links.';
+
+  @override
+  String get paymentUriNoWallet =>
+      'Set up or import a wallet before opening request links.';
+
+  @override
+  String get paymentUriOnboarding =>
+      'Finish setting up your wallet before opening request links.';
+
+  @override
+  String get paymentUriReplaced =>
+      'Only the newest request link was kept. Open the earlier one again to pay it.';
+
+  @override
+  String get paymentUriUnavailable =>
+      'Vizor couldn\'t open this request link. Open it again once your wallet has loaded.';
+
+  @override
+  String get paymentUriUnsupported =>
+      'This request link uses a feature Vizor doesn\'t support yet.';
+
+  @override
   String get poolShielded => 'Shielded';
 
   @override
@@ -2006,13 +3172,987 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profilePictureUpdateFailed => 'Couldn\'t update profile picture.';
 
   @override
-  String get receiptMessageLabel => 'Message';
+  String get receiveAboutAddressType => 'About this address type';
+
+  @override
+  String get receiveAddressCouldNotLoad =>
+      'Address couldn\'t be loaded. Try again.';
+
+  @override
+  String get receiveAddressLoadFailed =>
+      'We couldn\'t load your address. Try again in a moment.';
+
+  @override
+  String get receiveCopyTransparentAddress => 'Copy transparent address';
+
+  @override
+  String receiveErrorWithDetails(String message, String details) {
+    return '$message\nDetails: $details';
+  }
+
+  @override
+  String get receiveGenerateNewShieldedAddress =>
+      'Generate new shielded address';
+
+  @override
+  String get receiveInfoShieldedDiversified =>
+      'Each new address is a diversified address derived from the same key. They all receive to the same wallet.';
+
+  @override
+  String get receiveInfoShieldedHiddenDesktop =>
+      'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.';
+
+  @override
+  String get receiveInfoShieldedHiddenMobile =>
+      'Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.';
+
+  @override
+  String get receiveInfoShieldedRenewClick =>
+      'A new Zcash shielded address is generated only when you click the renew button.';
+
+  @override
+  String get receiveInfoShieldedRenewTap =>
+      'A new Zcash shielded address is generated only when you tap the renew button.';
+
+  @override
+  String get receiveInfoShieldedSubtitle => 'Strong privacy by default.';
+
+  @override
+  String get receiveInfoTransparentExchanges =>
+      'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.';
+
+  @override
+  String get receiveInfoTransparentPublicDesktop =>
+      'All tx details - sender, receiver, and amount - are publicly visible on-chain.';
+
+  @override
+  String get receiveInfoTransparentPublicMobile =>
+      'All tx details — sender, receiver, and amount — are publicly visible on-chain.';
+
+  @override
+  String get receiveInfoTransparentRotates =>
+      'After this address receives ZEC and Vizor syncs, your next transparent address will automatically change. Previous addresses still belong to this wallet.';
+
+  @override
+  String receiveInfoTransparentShieldFirst(String ticker) {
+    return 'After receiving $ticker to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won\'t be able to send it.';
+  }
+
+  @override
+  String get receiveInfoTransparentSubtitle => 'Publicly visible';
+
+  @override
+  String get receiveQrSaveFailed =>
+      'We couldn\'t save the QR image. Try another folder, or copy the request link instead.';
+
+  @override
+  String receiveQrSaved(String folder) {
+    return 'QR image saved to $folder';
+  }
+
+  @override
+  String get receiveQrUnavailable => 'QR unavailable';
+
+  @override
+  String get receiveRenewAddressError =>
+      'We couldn\'t refresh your shielded address. Try again, or use your current one.';
+
+  @override
+  String get receiveRequestAmountDecimalsError => 'Enter up to 8 decimals';
+
+  @override
+  String get receiveRequestAmountFormatError => 'Enter an amount like 0.5';
+
+  @override
+  String get receiveRequestAmountSupplyError => 'Amount exceeds the ZEC supply';
+
+  @override
+  String receiveRequestButton(String ticker) {
+    return 'Request $ticker';
+  }
+
+  @override
+  String get receiveRequestCloseRequest => 'Close request';
+
+  @override
+  String get receiveRequestCopyFailed =>
+      'Couldn\'t copy the request link. Try sharing it instead.';
+
+  @override
+  String get receiveRequestCopyLink => 'Copy link';
+
+  @override
+  String get receiveRequestCopyRequestLink => 'Copy request link';
+
+  @override
+  String get receiveRequestCreate => 'Create request';
+
+  @override
+  String get receiveRequestEnterZec => 'Enter amount in ZEC';
+
+  @override
+  String get receiveRequestLinkCopied => 'Request link copied';
+
+  @override
+  String get receiveRequestMessageHelp =>
+      'Shielded addresses only — anyone with this link can read it.';
+
+  @override
+  String get receiveRequestMessageHint =>
+      'Anyone you send the link to can read this';
+
+  @override
+  String get receiveRequestSaveQr => 'Save QR image';
+
+  @override
+  String get receiveRequestShare => 'Share request';
+
+  @override
+  String get receiveRequestShareFailed =>
+      'Couldn\'t share this request. Copy the link instead.';
+
+  @override
+  String get receiveRequestZecButton => 'Request ZEC';
+
+  @override
+  String get receiveShareAddress => 'Share address';
+
+  @override
+  String get receiveShareFailed =>
+      'Couldn\'t share this address. Copy it instead.';
+
+  @override
+  String get receiveShareShieldedAddress => 'Share shielded address';
+
+  @override
+  String get receiveShareTransparentAddress => 'Share transparent address';
+
+  @override
+  String receiveTitle(String ticker) {
+    return 'Receive $ticker';
+  }
 
   @override
   String get secretPassphraseCopy => 'Copy secret passphrase';
 
   @override
   String get secretPassphraseTitle => 'Secret Passphrase';
+
+  @override
+  String get sendAddMemo => 'Add a memo';
+
+  @override
+  String get sendAddressTypeTex => 'TEX address';
+
+  @override
+  String get sendAddressValidationFailed => 'Address validation failed';
+
+  @override
+  String get sendAmountCtaEnterAmount => 'Enter amount to continue';
+
+  @override
+  String get sendBroadcastCancelledBeforeParams =>
+      'Sending was cancelled before proving parameters were downloaded.';
+
+  @override
+  String get sendBroadcastDependentIncomplete =>
+      'The first transaction was accepted, but the dependent transaction did not complete. Check Activity before sending again.';
+
+  @override
+  String get sendBroadcastFirstUnknown =>
+      'The first transaction is stored locally and may have reached the network, but confirmation timed out. Check Activity before sending again.';
+
+  @override
+  String get sendBroadcastHardwareExpired =>
+      'The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.';
+
+  @override
+  String get sendBroadcastIncomplete =>
+      'The transaction broadcast did not complete. Check Activity before sending again.';
+
+  @override
+  String get sendBroadcastLedgerFirstUnknown =>
+      'The first transaction may have reached the network, but confirmation timed out. Check Activity before sending again.';
+
+  @override
+  String get sendBroadcastLedgerNotStored =>
+      'The transaction reached the network, but Vizor could not store it locally. Do not send again until sync or an explorer confirms the latest status.';
+
+  @override
+  String get sendBroadcastLedgerRejected =>
+      'Transaction was rejected by the network. Please try again later.';
+
+  @override
+  String get sendBroadcastLocalRetry =>
+      'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
+
+  @override
+  String get sendBroadcastMnemonicMissing =>
+      'Mnemonic not found for the proposal account.';
+
+  @override
+  String get sendBroadcastPartial =>
+      'Some transactions were broadcast and the rest will retry automatically. Check activity before sending again.';
+
+  @override
+  String get sendBroadcastProofParamsRequired =>
+      'Proof parameters are required to retry this signed transaction.';
+
+  @override
+  String get sendBroadcastRejectedLocal =>
+      'Transaction was created locally but didn\'t reach the network. The wallet will keep retrying until it expires. Don\'t send again unless this one expires.';
+
+  @override
+  String get sendBroadcastTrackingFailed =>
+      'The transaction reached the network, but local tracking failed. Check Activity or an explorer before sending again.';
+
+  @override
+  String get sendCalculatingMax => 'Calculating max amount';
+
+  @override
+  String get sendContactPickerEmpty => 'No Zcash contacts';
+
+  @override
+  String get sendContactPickerTitle => 'Contacts Zcash';
+
+  @override
+  String get sendDonationAddressTitle => 'Vizor donation address';
+
+  @override
+  String get sendEnterAddressToContinue => 'Enter address to continue';
+
+  @override
+  String sendEnterAmountInCurrency(String currency) {
+    return 'Enter amount in $currency';
+  }
+
+  @override
+  String get sendEnterValidAddress => 'Enter a valid address';
+
+  @override
+  String get sendErrorCouldNotBeSent =>
+      'Transaction couldn\'t be sent. Go back to your wallet and check the latest status.';
+
+  @override
+  String get sendErrorDonationFailed => 'Donation failed. Try again.';
+
+  @override
+  String get sendErrorExpiredBeforeSent =>
+      'Transaction expired before it could be sent.';
+
+  @override
+  String get sendErrorExpiredTryAgain =>
+      'Transaction expired before it could be sent. Try again.';
+
+  @override
+  String get sendErrorInsufficientShielded =>
+      'Insufficient shielded balance to cover amount and fee.';
+
+  @override
+  String get sendErrorNetwork =>
+      'Network error. Check your connection and try again.';
+
+  @override
+  String get sendErrorPartiallySent =>
+      'Some parts of this transaction were sent. Open Activity to see what went through before you try again.';
+
+  @override
+  String get sendErrorRejectedTryAgain =>
+      'The network rejected this transaction. Try again.';
+
+  @override
+  String get sendErrorRejectedTryLater =>
+      'The network rejected this transaction. Try again later.';
+
+  @override
+  String get sendErrorSendFailed => 'Send failed. Try again.';
+
+  @override
+  String get sendErrorSyncFinishing =>
+      'Finishing wallet sync. Try again shortly.';
+
+  @override
+  String get sendFeeAboutSemantics => 'About the transaction fee';
+
+  @override
+  String get sendFeeUnavailableTryAgain => 'Fee unavailable. Try again.';
+
+  @override
+  String get sendFeeUpdatedAfterSync =>
+      'Fee updated after sync. Review and confirm again.';
+
+  @override
+  String get sendFinishingSync => 'Finishing wallet sync.';
+
+  @override
+  String get sendInsufficientBalanceIncludingFeeShielded =>
+      'Insufficient shielded balance including fee';
+
+  @override
+  String get sendInsufficientBalanceIncludingFeeTex =>
+      'Insufficient balance including fee';
+
+  @override
+  String get sendInsufficientBalanceSentenceShielded =>
+      'Insufficient shielded balance.';
+
+  @override
+  String get sendInsufficientBalanceSentenceTex => 'Insufficient balance.';
+
+  @override
+  String get sendInsufficientBalanceShielded => 'Insufficient shielded balance';
+
+  @override
+  String get sendInsufficientBalanceTex => 'Insufficient balance';
+
+  @override
+  String get sendInsufficientBalanceToCoverFeeShielded =>
+      'Insufficient shielded balance to cover fee';
+
+  @override
+  String get sendInsufficientBalanceToCoverFeeTex =>
+      'Insufficient balance to cover fee';
+
+  @override
+  String sendInsufficientBalanceWithFeeShielded(String fee) {
+    return 'Insufficient shielded balance (fee: $fee)';
+  }
+
+  @override
+  String sendInsufficientBalanceWithFeeTex(String fee) {
+    return 'Insufficient balance (fee: $fee)';
+  }
+
+  @override
+  String get sendInvalidAddress => 'Invalid address';
+
+  @override
+  String get sendInvalidAmount => 'Invalid amount';
+
+  @override
+  String get sendKeystoneConfirmTitle => 'Confirm with Keystone';
+
+  @override
+  String get sendKeystonePrepareFailedGoBack =>
+      'Keystone signing could not be prepared. Go back and try again.';
+
+  @override
+  String get sendKeystonePrepareFailedReturnToSend =>
+      'Keystone signing could not be prepared. Return to Send and try again.';
+
+  @override
+  String get sendKeystonePreparing => 'Preparing';
+
+  @override
+  String get sendKeystoneQrMismatch =>
+      'This QR code does not match the current Keystone signing request.';
+
+  @override
+  String get sendKeystoneScanCameraOnly =>
+      'Keystone signing uses camera QR scanning only. Connect a camera and try again.';
+
+  @override
+  String get sendKeystoneScanDecodeFailed =>
+      'This QR code could not be decoded as a Keystone transaction signature.';
+
+  @override
+  String get sendKeystoneScanHoldSteady =>
+      'Hold the QR code steady in front of your camera';
+
+  @override
+  String get sendKeystoneScanNow =>
+      'Scan now. Signature import unlocks after proofs are ready.';
+
+  @override
+  String get sendKeystoneScanReading => 'Reading signature...';
+
+  @override
+  String get sendKeystoneScanSubtitle => 'Scan with your Keystone';
+
+  @override
+  String get sendKeystoneScanToFinish =>
+      'Scan the QR code on your Keystone to finish sending';
+
+  @override
+  String get sendKeystoneScanUnexpectedTransaction =>
+      'Open the signed transaction QR on Keystone, then scan again.';
+
+  @override
+  String sendKeystoneTexTwoApprovals(int index) {
+    return 'This TEX send requires two Keystone approvals. Scan transaction $index of 2.';
+  }
+
+  @override
+  String sendKeystoneTransactionOfTwo(int index) {
+    return 'Transaction $index of 2';
+  }
+
+  @override
+  String sendLedgerConnectAndUnlock(String instruction) {
+    return 'Connect and unlock your Ledger. $instruction';
+  }
+
+  @override
+  String get sendLedgerCouldNotFinishTitle => 'Could not finish transaction';
+
+  @override
+  String get sendLedgerCouldNotPrepare =>
+      'Vizor could not prepare the transaction. Try again.';
+
+  @override
+  String get sendLedgerCouldNotSaveTitle => 'Could not save signed transaction';
+
+  @override
+  String get sendLedgerCouldNotVerifySaved =>
+      'Vizor could not verify the saved transaction. Do not sign or send it again.';
+
+  @override
+  String get sendLedgerCreateNewTransaction => 'Create new transaction';
+
+  @override
+  String get sendLedgerExpiredMessage =>
+      'This transaction can no longer be signed. Create and review a new transaction.';
+
+  @override
+  String get sendLedgerKeepOpenRetry =>
+      'Keep Vizor open and try again. No new Ledger approval needed.';
+
+  @override
+  String get sendLedgerKeepOpenRetrySaving =>
+      'Keep Vizor open and retry saving. No new Ledger approval needed.';
+
+  @override
+  String get sendLedgerNeedsAttentionTitle => 'Ledger needs attention';
+
+  @override
+  String get sendLedgerRejectedOnDevice =>
+      'The transaction was rejected on your Ledger.';
+
+  @override
+  String get sendLedgerSignaturePreservedMessage =>
+      'Your Ledger signature is preserved. Retry saving without approving another transaction.';
+
+  @override
+  String get sendLedgerSignedNeedsAttentionTitle =>
+      'Signed transaction needs attention';
+
+  @override
+  String get sendLedgerSigningIncomplete =>
+      'Ledger signing could not be completed. Check your device and try again.';
+
+  @override
+  String get sendLedgerSigningUnavailableTitle => 'Ledger signing unavailable';
+
+  @override
+  String get sendLedgerStatusNewTransactionRequired =>
+      'New transaction required';
+
+  @override
+  String get sendLedgerStatusRecoveryRequired => 'Recovery required';
+
+  @override
+  String get sendLedgerStatusSignaturePreserved => 'Signature preserved';
+
+  @override
+  String get sendLedgerStatusUnsupportedTransaction =>
+      'Unsupported transaction';
+
+  @override
+  String sendLoadError(String error) {
+    return 'Something went wrong. Try again in a moment.\n\nDetails: $error';
+  }
+
+  @override
+  String get sendMaxButton => 'Max';
+
+  @override
+  String get sendMaxNeedsAddress => 'Enter a valid address to use Max';
+
+  @override
+  String get sendMaxUnavailable => 'Max amount unavailable';
+
+  @override
+  String get sendMemoAddShortEncrypted => 'Add short encrypted message';
+
+  @override
+  String get sendMemoClear => 'Clear memo';
+
+  @override
+  String get sendMemoCollapse => 'Collapse';
+
+  @override
+  String get sendMemoEncryptedHint => 'Encrypted, for shielded addresses only.';
+
+  @override
+  String get sendMemoRecipientOnly => 'Only the recipient can read this';
+
+  @override
+  String get sendMemoSheetAdd => 'Add Memo';
+
+  @override
+  String get sendMemoShieldedOnly =>
+      'Message is only available for shielded addresses';
+
+  @override
+  String get sendMemoWhitespaceOnly => 'Whitespace only';
+
+  @override
+  String get sendOpenContacts => 'Open contacts';
+
+  @override
+  String get sendPasteAction => 'Paste';
+
+  @override
+  String get sendPaymentRequestAmountNotSpecified => 'Amount not specified';
+
+  @override
+  String get sendPaymentRequestCheckAgain => 'Check again';
+
+  @override
+  String get sendPaymentRequestCheckBeforePayBody =>
+      'Other apps can change the address or amount in a request link.';
+
+  @override
+  String get sendPaymentRequestCheckBeforePayTitle => 'Check before you pay';
+
+  @override
+  String get sendPaymentRequestCheckFailed => 'Couldn\'t check this request';
+
+  @override
+  String get sendPaymentRequestCheckGeneric =>
+      'Couldn\'t check this request — try again or edit the details';
+
+  @override
+  String get sendPaymentRequestCheckNetwork =>
+      'Couldn\'t reach the network — check your connection and try again';
+
+  @override
+  String get sendPaymentRequestCheckNoAccount =>
+      'No active account — choose one, then open this link again';
+
+  @override
+  String get sendPaymentRequestCheckNoAmount =>
+      'This link doesn\'t ask for a payable amount — enter one to continue';
+
+  @override
+  String get sendPaymentRequestCheckUpgradeHold =>
+      'Paused for the network upgrade. Try again in a few minutes.';
+
+  @override
+  String get sendPaymentRequestCheckUpgradeScheduleChanged =>
+      'The network upgrade changed the migration timing. Review the plan and start again.';
+
+  @override
+  String get sendPaymentRequestClose => 'Close payment request';
+
+  @override
+  String get sendPaymentRequestConfirmWithSender =>
+      'Confirm the details with the person who sent it.';
+
+  @override
+  String get sendPaymentRequestEnterAmount => 'Enter amount';
+
+  @override
+  String get sendPaymentRequestHideFullAddress => 'Hide full recipient address';
+
+  @override
+  String get sendPaymentRequestHidePaymentDetails => 'Hide payment details';
+
+  @override
+  String get sendPaymentRequestHideRequesterInfo =>
+      'Hide requester information';
+
+  @override
+  String sendPaymentRequestHideRequesterInfoFor(String name) {
+    return 'Hide requester information for $name';
+  }
+
+  @override
+  String get sendPaymentRequestInsufficientFunds =>
+      'Not enough ZEC for this amount and the network fee';
+
+  @override
+  String sendPaymentRequestInsufficientFundsWithSpendable(String spendable) {
+    return 'Not enough ZEC for this amount and the network fee ($spendable available)';
+  }
+
+  @override
+  String get sendPaymentRequestInvalidAddress =>
+      'Recipient address doesn\'t look right';
+
+  @override
+  String get sendPaymentRequestLinkDifferentAddress =>
+      'The link had a different address';
+
+  @override
+  String get sendPaymentRequestLinkDifferentAmount =>
+      'The link had a different amount';
+
+  @override
+  String get sendPaymentRequestLinkDifferentDetails =>
+      'The link had different details';
+
+  @override
+  String get sendPaymentRequestLinkDifferentMemo =>
+      'The link had a different memo';
+
+  @override
+  String get sendPaymentRequestMatchesLink => 'Matches the link';
+
+  @override
+  String get sendPaymentRequestMemoIncluded => 'Memo included';
+
+  @override
+  String get sendPaymentRequestMemoIncludedHint =>
+      'Memo included. View the transaction memo.';
+
+  @override
+  String get sendPaymentRequestNameDisclaimer =>
+      'This name comes from the request. It doesn\'t confirm who owns the receiving address.';
+
+  @override
+  String get sendPaymentRequestNameSuppliedInRequest =>
+      'Name supplied in the request.';
+
+  @override
+  String get sendPaymentRequestNoteFromRequester => 'Note from requester';
+
+  @override
+  String get sendPaymentRequestPaymentDetails => 'Payment details';
+
+  @override
+  String get sendPaymentRequestRecipient => 'Recipient';
+
+  @override
+  String get sendPaymentRequestReplacedNotice => 'Replaced an earlier link';
+
+  @override
+  String get sendPaymentRequestRequestFrom => 'Request from';
+
+  @override
+  String get sendPaymentRequestReviewLinkDetails => 'Review link details';
+
+  @override
+  String get sendPaymentRequestReviewPayment => 'Review payment';
+
+  @override
+  String get sendPaymentRequestScanOriginalHint =>
+      'Scan the original QR code directly in Vizor.';
+
+  @override
+  String get sendPaymentRequestShowFullAddress => 'Show full recipient address';
+
+  @override
+  String get sendPaymentRequestShowRequesterInfo =>
+      'Show requester information';
+
+  @override
+  String sendPaymentRequestShowRequesterInfoFor(String name) {
+    return 'Show requester information for $name';
+  }
+
+  @override
+  String get sendPaymentRequestSyncStalled =>
+      'Still syncing — check again when the wallet is up to date';
+
+  @override
+  String get sendPaymentRequestSyncing =>
+      'Wallet is still syncing — this will update when it finishes';
+
+  @override
+  String get sendPaymentRequestTransactionMemo => 'Transaction memo';
+
+  @override
+  String sendPaymentRequestUnavailableLabel(String label) {
+    return '$label, unavailable';
+  }
+
+  @override
+  String sendPaymentRequestUnavailableWithReason(String label, String reason) {
+    return '$label, unavailable. $reason';
+  }
+
+  @override
+  String get sendPaymentRequestUsingQrInstead =>
+      'Using the QR instead — the link may have been changed.';
+
+  @override
+  String get sendPaymentRequestViewNote => 'View note';
+
+  @override
+  String get sendPaymentRequestYourAccount => 'Your account';
+
+  @override
+  String get sendQrScannerOpenFailed =>
+      'Couldn\'t open the QR scanner. Try again.';
+
+  @override
+  String get sendRecentsSection => 'Recents';
+
+  @override
+  String get sendRecipientHint => 'Address or request link';
+
+  @override
+  String get sendRecipientLabel => 'Send to';
+
+  @override
+  String get sendRecipientUnreadableRequestLink =>
+      'This request link couldn\'t be read';
+
+  @override
+  String get sendRecipientWrongNetwork =>
+      'This address is for a different Zcash network';
+
+  @override
+  String get sendRequestScanCheckFailed =>
+      'Couldn\'t check this QR code. Try again.';
+
+  @override
+  String get sendRequestScanInvalidAddress =>
+      'This QR code isn\'t a valid Zcash address.';
+
+  @override
+  String get sendRequestScanInvalidRequest =>
+      'This QR code doesn\'t contain a valid payment request.';
+
+  @override
+  String get sendRequestScanNotRequest =>
+      'This QR code isn\'t a Zcash address or payment request.';
+
+  @override
+  String get sendRequestScanPermission =>
+      'A camera is required to scan the payment request QR code.\nYou can change camera access in settings at any time.';
+
+  @override
+  String get sendRequestScanSubtitle =>
+      'Show the requester’s original QR code to your camera';
+
+  @override
+  String get sendRequestScanTipContinuity =>
+      'On a Mac, you can use Continuity Camera to scan with your iPhone instead.';
+
+  @override
+  String get sendRequestScanTipDistance =>
+      'Move the QR code a few inches further from the camera so it can focus.';
+
+  @override
+  String get sendRequestScanTipLight =>
+      'Make sure the room is well-lit and the QR code isn\'t reflecting glare.';
+
+  @override
+  String get sendRequestScanTipOriginal =>
+      'Open the requester’s original QR code full screen on another device.';
+
+  @override
+  String get sendRequestScanUnavailable =>
+      'Connect a camera, or go back and review the link details.';
+
+  @override
+  String get sendRequestScanWrongNetwork =>
+      'This address belongs to a different network.';
+
+  @override
+  String get sendReviewAction => 'Review';
+
+  @override
+  String get sendReviewCalculatingFee => 'Calculating fee...';
+
+  @override
+  String get sendReviewConfirmAndSend => 'Confirm & send';
+
+  @override
+  String get sendReviewConfirmAndSendMobile => 'Confirm & Send';
+
+  @override
+  String get sendReviewConfirmDonation => 'Confirm donation';
+
+  @override
+  String get sendReviewConfirmWithLedger => 'Confirm with Ledger';
+
+  @override
+  String get sendReviewFeeUnavailable => 'Fee unavailable';
+
+  @override
+  String get sendReviewFinishingSyncButton => 'Finishing wallet sync...';
+
+  @override
+  String get sendReviewPreparing => 'Preparing...';
+
+  @override
+  String sendReviewRequestedAmount(String amount) {
+    return 'Requested $amount';
+  }
+
+  @override
+  String get sendReviewRequestedBy => 'Requested by';
+
+  @override
+  String get sendReviewTitle => 'Review send';
+
+  @override
+  String get sendSaplingDownloadBody =>
+      'To create this private transaction, your wallet needs to download about 50MB of cryptographic parameters.';
+
+  @override
+  String get sendSaplingDownloadNote =>
+      'This happens once, then it\'s done.\nNetwork data charges may apply.';
+
+  @override
+  String get sendSaplingDownloadTitle => 'Download Required';
+
+  @override
+  String get sendScanDowngradePastedMalformedRequest =>
+      'Pasted the address only — the payment request couldn\'t be read';
+
+  @override
+  String get sendScanDowngradePastedMultipleRecipients =>
+      'Pasted the first recipient only — this request asks for more than one';
+
+  @override
+  String get sendScanDowngradePastedUnsupportedMemo =>
+      'Pasted the address only — the request\'s message couldn\'t be read';
+
+  @override
+  String get sendScanDowngradeScannedMalformedRequest =>
+      'Scanned the address only — the payment request couldn\'t be read';
+
+  @override
+  String get sendScanDowngradeScannedMultipleRecipients =>
+      'Scanned the first recipient only — this request asks for more than one';
+
+  @override
+  String get sendScanDowngradeScannedUnsupportedMemo =>
+      'Scanned the address only — the request\'s message couldn\'t be read';
+
+  @override
+  String get sendScanNotZcashAddress => 'This QR code isn\'t a Zcash address.';
+
+  @override
+  String get sendScanQrSubtitle => 'Scan an address or payment request';
+
+  @override
+  String get sendScanQrTitle => 'Scan a QR Code';
+
+  @override
+  String get sendSendingToLabel => 'Sending to';
+
+  @override
+  String get sendSignConfirmTransaction => 'Confirm transaction';
+
+  @override
+  String sendSignConfirmTransactionOfTwo(int index) {
+    return 'Confirm transaction $index of 2';
+  }
+
+  @override
+  String get sendSpendableInfoLabel => 'Spendable balance info';
+
+  @override
+  String get sendSpendableTooltipBody =>
+      'Funds need confirmations before they can be spent: 3 for change from your own wallet, 6 for funds received from others. Shielded notes also need to be fully scanned. They\'ll become available shortly.';
+
+  @override
+  String get sendSpendableTooltipTitle =>
+      'Your spendable balance may be lower than your total balance.';
+
+  @override
+  String get sendStatusDonationFailed => 'Donation failed';
+
+  @override
+  String get sendStatusDonationInProgress => 'Donation in progress...';
+
+  @override
+  String sendStatusFailureSummary(String amount, String recipient) {
+    return '$amount to $recipient';
+  }
+
+  @override
+  String get sendStatusMobileConfirmSoon =>
+      'It will confirm on-chain shortly. Track it in Activity.';
+
+  @override
+  String get sendStatusMobileDonationQueued => 'Donation queued';
+
+  @override
+  String get sendStatusMobileDonationSupport =>
+      'Your support keeps Vizor going.';
+
+  @override
+  String get sendStatusMobileDonationThanks =>
+      'Thank you for\nsupporting Vizor';
+
+  @override
+  String get sendStatusMobileNothingSent =>
+      'Nothing was sent, your funds haven\'t moved. Try again.';
+
+  @override
+  String get sendStatusMobilePendingDefault =>
+      'Your transaction was created and will be submitted automatically. Check the Activity page before sending again.';
+
+  @override
+  String get sendStatusMobileQueued => 'Queued to send';
+
+  @override
+  String get sendStatusMobileReturnToSettings => 'Return to settings';
+
+  @override
+  String get sendStatusMobileSendingDonation => 'Sending donation...';
+
+  @override
+  String get sendStatusMobileSent => 'Sent!';
+
+  @override
+  String get sendStatusMobileSubmitting =>
+      'Submitting your transaction to the network...';
+
+  @override
+  String get sendStatusRetryAfterSync =>
+      'Wait for wallet sync, then retry this signed transaction.';
+
+  @override
+  String get sendStatusRowStatus => 'Status';
+
+  @override
+  String get sendStatusScanKeystoneTitle => 'Scan your Keystone QR Code';
+
+  @override
+  String get sendStatusTitleInProgress => 'Send in progress...';
+
+  @override
+  String get sendStepEnterAmount => 'Enter Amount';
+
+  @override
+  String get sendStepReviewDonation => 'Review donation';
+
+  @override
+  String get sendStepReviewSend => 'Review Send';
+
+  @override
+  String sendTitle(String currency) {
+    return 'Send $currency';
+  }
+
+  @override
+  String get sendUseMax => 'Use Max';
+
+  @override
+  String sendUseMaxSemantics(String spendable) {
+    return 'Use maximum spendable balance, $spendable available';
+  }
+
+  @override
+  String get sendUseMaxSemanticsShort => 'Use maximum spendable balance';
+
+  @override
+  String sendVerifyAddressPreviousTransactions(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count previous transactions',
+      one: '1 previous transaction',
+    );
+    return '$_temp0';
+  }
 
   @override
   String get settingsAccountChangedPasscode =>
@@ -2381,9 +4521,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsRowSecretPassphrase => 'Secret passphrase';
 
   @override
-  String get settingsRowSupportVizor => 'Support Vizor';
-
-  @override
   String get settingsRowUpdates => 'Updates';
 
   @override
@@ -2579,9 +4716,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsTorStatusDirect => 'Direct';
 
   @override
-  String get settingsTorStatusFailed => 'Failed';
-
-  @override
   String get settingsTorStatusNotSaved => 'Setting not saved';
 
   @override
@@ -2685,9 +4819,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsUpdateChecking => 'Checking';
 
   @override
-  String get settingsUpdateCheckingButton => 'Checking…';
-
-  @override
   String get settingsUpdateCurrentLabel => 'Current';
 
   @override
@@ -2695,9 +4826,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsUpdateDownloadingButton => 'Downloading…';
-
-  @override
-  String get settingsUpdateFailed => 'Failed';
 
   @override
   String get settingsUpdatePasswordTitle => 'Update password';
@@ -2879,9 +5007,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sidebarAddressCopyFailed => 'Address couldn\'t be copied';
 
   @override
-  String get sidebarCopyShieldedAddress => 'Copy shielded address';
-
-  @override
   String get sidebarHideBalance => 'Hide balance';
 
   @override
@@ -2906,12 +5031,855 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sidebarShowBalance => 'Show balance';
 
   @override
+  String get swapActionAddRecipientAddress => 'Add recipient address';
+
+  @override
+  String get swapActionAddRefundAddress => 'Add refund address';
+
+  @override
+  String get swapActionContinueToReview => 'Continue to review';
+
+  @override
+  String get swapActionGettingQuote => 'Getting quote';
+
+  @override
+  String swapActivityAddressBookRefund(String symbol) {
+    return '$symbol refund';
+  }
+
+  @override
+  String swapActivityDeadlineHours(int hours) {
+    return '${hours}hrs';
+  }
+
+  @override
+  String swapActivityDeadlineMinutes(int minutes) {
+    return '${minutes}mins';
+  }
+
+  @override
+  String get swapActivityDepositAmount => 'Deposit amount';
+
+  @override
+  String get swapActivityDepositAssetFallback => 'deposit asset';
+
+  @override
+  String swapActivityDepositInstructionDepositLabel(String symbol) {
+    return '$symbol deposit';
+  }
+
+  @override
+  String get swapActivityDepositInstructionReuseWarning =>
+      'Do not reuse this address';
+
+  @override
+  String swapActivityDepositInstructionSendFromSource(String symbol) {
+    return 'Send $symbol from source chain';
+  }
+
+  @override
+  String swapActivityDepositInstructionSourceDepositLabel(String symbol) {
+    return '$symbol source deposit';
+  }
+
+  @override
+  String swapActivityDepositInstructionSubmit(String symbol) {
+    return 'Submit $symbol deposit';
+  }
+
+  @override
+  String swapActivityDepositInstructionTxHashHint(String symbol) {
+    return '$symbol source-chain transaction hash';
+  }
+
+  @override
+  String swapActivityDepositInstructionTxHashLabel(String symbol) {
+    return '$symbol deposit tx hash';
+  }
+
+  @override
+  String get swapActivityDetailConfiguredQuote => 'Configured quote';
+
+  @override
+  String swapActivityDetailDeliveryTx(String symbol) {
+    return '$symbol delivery tx';
+  }
+
+  @override
+  String get swapActivityDetailDepositDeadline => 'Deposit deadline';
+
+  @override
+  String swapActivityDetailDepositTo(String symbol) {
+    return 'Deposit $symbol to';
+  }
+
+  @override
+  String swapActivityDetailDepositTx(String symbol) {
+    return '$symbol deposit tx';
+  }
+
+  @override
+  String get swapActivityDetailDetectedDeposit => 'Detected deposit';
+
+  @override
+  String get swapActivityDetailFees => 'Fees';
+
+  @override
+  String get swapActivityDetailIncluded => 'Included';
+
+  @override
+  String get swapActivityDetailIncludedInRate => 'Included in shown rate';
+
+  @override
+  String get swapActivityDetailMissingDeposit => 'Missing deposit';
+
+  @override
+  String get swapActivityDetailRealizedSlippage => 'Realized slippage';
+
+  @override
+  String get swapActivityDetailRequiredDeposit => 'Required deposit';
+
+  @override
+  String swapActivityDetailSourceTxShielded(String symbol) {
+    return '$symbol tx (shielded)';
+  }
+
+  @override
+  String get swapActivityDetailTotalFees => 'Total fees';
+
+  @override
+  String get swapActivityExpectedToReceive => 'Expected to receive';
+
+  @override
+  String get swapActivityIncompleteDeposit => 'Incomplete deposit';
+
+  @override
+  String get swapActivityIncompletePayment => 'Incomplete payment';
+
+  @override
+  String get swapActivityLastCheckJustNow => 'Last check: just now';
+
+  @override
+  String swapActivityLastCheckMinutesAgo(int minutes) {
+    return 'Last check: ${minutes}m ago';
+  }
+
+  @override
+  String get swapActivityNotReported => 'Not reported';
+
+  @override
+  String get swapActivityPaidSuccessfullyTitle => 'Paid successfully';
+
+  @override
+  String get swapActivityPayInProgressTitle => 'Pay in progress...';
+
+  @override
+  String get swapActivityPaymentComplete => 'Payment complete';
+
+  @override
+  String swapActivityPickerNoRecipients(String symbol) {
+    return 'No saved $symbol recipients';
+  }
+
+  @override
+  String swapActivityPickerNoRefunds(String symbol) {
+    return 'No saved $symbol refunds';
+  }
+
+  @override
+  String swapActivityPickerRecipientsTitle(String symbol) {
+    return '$symbol recipients';
+  }
+
+  @override
+  String swapActivityPickerRefundsTitle(String symbol) {
+    return '$symbol refunds';
+  }
+
+  @override
+  String get swapActivityReceiveAssetFallback => 'receive asset';
+
+  @override
+  String get swapActivityRecipientReceived => 'Recipient received';
+
+  @override
+  String swapActivityStateAddressOrAccountHint(String chain) {
+    return '$chain address or account';
+  }
+
+  @override
+  String swapActivityStateAssetUnsupported(String symbol, String chain) {
+    return '$symbol on $chain is not currently supported.';
+  }
+
+  @override
+  String swapActivityStateDecimalPlaces(String symbol, int decimals) {
+    return '$symbol supports up to $decimals decimal places.';
+  }
+
+  @override
+  String get swapActivityStateDestination => 'Destination';
+
+  @override
+  String swapActivityStateQuoteHigher(String percent) {
+    return 'Live quote is $percent% higher than the earlier estimate. Check the guaranteed minimum before you continue.';
+  }
+
+  @override
+  String swapActivityStateQuoteLower(String percent) {
+    return 'Live quote is $percent% lower than the earlier estimate. Check the guaranteed minimum before you continue.';
+  }
+
+  @override
+  String swapActivityStateQuoteUsesDifferentSell(
+    String liveAmount,
+    String estimateAmount,
+    String symbol,
+  ) {
+    return 'Live quote uses $liveAmount $symbol instead of $estimateAmount $symbol. Check the guaranteed minimum before you continue.';
+  }
+
+  @override
+  String get swapActivityStatusAwaitingDeposit => 'Awaiting deposit';
+
+  @override
+  String get swapActivityStatusAwaitingExternalDeposit =>
+      'Awaiting external deposit';
+
+  @override
+  String get swapActivityStatusComplete => 'Complete';
+
+  @override
+  String get swapActivityStatusDepositObserved => 'Deposit observed';
+
+  @override
+  String get swapActivityStatusExpired => 'Expired';
+
+  @override
+  String get swapActivityStatusProcessing => 'Processing';
+
+  @override
+  String get swapActivityStepConvert => 'Convert';
+
+  @override
+  String get swapActivityStepConvertDescription =>
+      'Converting the shielded spend into the payment asset.';
+
+  @override
+  String get swapActivityStepConverting => 'Converting...';
+
+  @override
+  String swapActivityStepDeliver(String symbol) {
+    return 'Deliver $symbol';
+  }
+
+  @override
+  String swapActivityStepDeliverActive(String symbol) {
+    return 'Deliver $symbol...';
+  }
+
+  @override
+  String get swapActivityStepDeliverPayDescription =>
+      'Delivering the payment to the recipient address.';
+
+  @override
+  String get swapActivityStepDeliverSwapDescription =>
+      'Delivering the output asset to the recipient address.';
+
+  @override
+  String swapActivityStepDelivering(String symbol) {
+    return 'Delivering $symbol...';
+  }
+
+  @override
+  String swapActivityStepDeposit(String symbol) {
+    return 'Deposit $symbol';
+  }
+
+  @override
+  String get swapActivityStepDepositConfirmation => 'Deposit confirmation';
+
+  @override
+  String get swapActivityStepDepositConfirmationActive =>
+      'Deposit confirmation...';
+
+  @override
+  String get swapActivityStepDepositConfirmationDescription =>
+      'Confirming the deposit before the swap route starts.';
+
+  @override
+  String swapActivityStepDeposited(String symbol) {
+    return '$symbol Deposited';
+  }
+
+  @override
+  String swapActivityStepDepositing(String symbol) {
+    return 'Depositing $symbol...';
+  }
+
+  @override
+  String get swapActivityStepRecipientReceives => 'Recipient receives';
+
+  @override
+  String swapActivityStepRecipientReceivesAsset(String symbol) {
+    return 'Recipient receives $symbol...';
+  }
+
+  @override
+  String get swapActivityStepRecipientReceivesDescription =>
+      'Confirming the recipient-side payment.';
+
+  @override
+  String swapActivityStepSend(String symbol) {
+    return 'Send $symbol';
+  }
+
+  @override
+  String swapActivityStepSendActive(String symbol) {
+    return 'Send $symbol...';
+  }
+
+  @override
+  String swapActivityStepSending(String symbol) {
+    return 'Sending $symbol...';
+  }
+
+  @override
+  String swapActivityStepSent(String symbol) {
+    return '$symbol sent';
+  }
+
+  @override
+  String get swapActivityStepSourceDescription =>
+      'Confirm waiting for the source chain and provider to recognise the deposit';
+
+  @override
+  String swapActivityStepSpend(String symbol) {
+    return 'Spend $symbol';
+  }
+
+  @override
+  String get swapActivityStepSpendDescription =>
+      'Spending from shielded balance.';
+
+  @override
+  String swapActivityStepSpending(String symbol) {
+    return 'Spending $symbol...';
+  }
+
+  @override
+  String swapActivityStepSpent(String symbol) {
+    return '$symbol spent';
+  }
+
+  @override
+  String get swapActivityStepSwap => 'Swap';
+
+  @override
+  String get swapActivityStepSwapActive => 'Swap...';
+
+  @override
+  String get swapActivityStepSwapDescription =>
+      'The provider is executing the swap route.';
+
+  @override
+  String get swapActivitySwapCompleted => 'Swap completed';
+
+  @override
+  String get swapActivitySwapInProgress => 'Swap in progress...';
+
+  @override
+  String get swapActivityTooltipFees =>
+      'Covers our fee and the route providers\' costs to process this swap. Already included in the rate above.';
+
+  @override
+  String swapActivityTooltipMinimumReceive(String symbol) {
+    return 'The lowest amount of $symbol you\'ll get after slippage. You may get more, never less.';
+  }
+
+  @override
+  String get swapActivityTooltipMinimumReceiveGeneric =>
+      'The lowest amount you\'ll get after slippage. You may get more, never less.';
+
+  @override
+  String get swapActivityTooltipPriceProtection =>
+      'How much of the received amount your slippage tolerance protects. The swap is refunded if the rate moves past this.';
+
+  @override
+  String get swapActivityTooltipStatusDetail =>
+      'Details are based on the latest swap record and provider status.';
+
+  @override
+  String get swapActivityYouPaid => 'You paid';
+
+  @override
+  String get swapActivityYouReceived => 'You received';
+
+  @override
+  String swapAddressRecipientDescription(String symbol) {
+    return 'Your $symbol will be delivered to this address.';
+  }
+
+  @override
+  String get swapAddressRecipientFieldLabel => 'Recipient';
+
+  @override
+  String swapAddressRecipientTitle(String symbol) {
+    return '$symbol recipient address';
+  }
+
+  @override
+  String swapAddressRefundDescription(String symbol, String chain) {
+    return 'If the swap fails or the rate moves, you\'ll be refunded in $symbol on $chain, minus the fee.';
+  }
+
+  @override
+  String get swapAddressRememberRecipient =>
+      'Remember this address for recipients';
+
+  @override
+  String get swapAddressRememberRefund => 'Remember this address for refunds';
+
+  @override
+  String get swapAssetSelectorEmpty => 'No tokens or chains found';
+
+  @override
+  String get swapAssetSelectorSearchHint => 'Search token or chain';
+
+  @override
+  String get swapAssetSelectorTitle => 'Select asset';
+
+  @override
+  String get swapComposerAddRecipientAddressEllipsis =>
+      'Add recipient address...';
+
+  @override
+  String get swapComposerAddRefundAddressEllipsis => 'Add refund address...';
+
+  @override
+  String swapComposerMaxAmount(String amount) {
+    return 'Max: $amount';
+  }
+
+  @override
+  String get swapComposerYouReceive => 'You receive';
+
+  @override
+  String get swapContactAlreadyInAddressBook => 'Already in your address book';
+
+  @override
+  String get swapContactAlreadySaved => 'Already in your contacts';
+
+  @override
+  String get swapDepositAmountCopiedDesktop => 'Amount Copied';
+
+  @override
+  String get swapDepositAmountCopiedMobile => 'Amount copied';
+
+  @override
+  String get swapDepositAmountToDeposit => 'Amount to deposit';
+
+  @override
+  String get swapDepositChecking => 'Checking';
+
+  @override
+  String get swapDepositDoneDesktop => 'I\'ve deposited';
+
+  @override
+  String get swapDepositDoneMobile => 'I’ve deposited tokens';
+
+  @override
+  String swapDepositHoursMany(int count) {
+    return '${count}hrs';
+  }
+
+  @override
+  String get swapDepositMemoCopied => 'Memo copied';
+
+  @override
+  String swapDepositMinutesMany(int count) {
+    return '${count}mins';
+  }
+
+  @override
+  String get swapDepositOneTimeAddress => 'One-time address';
+
+  @override
+  String swapDepositSendOnly(String symbol, String chain) {
+    return 'Send only $symbol on $chain';
+  }
+
+  @override
+  String get swapDepositTimeoutBody =>
+      'This deposit address is no longer valid.\nPlease, start another swap transaction.';
+
+  @override
+  String get swapDepositTitle => 'Deposit tokens';
+
+  @override
+  String get swapDepositWithin => 'Deposit within';
+
+  @override
+  String get swapDepositZecButton => 'Deposit ZEC';
+
+  @override
+  String get swapDismissBarrierLabel => 'Dismiss';
+
+  @override
+  String get swapKeystoneBroadcastFailed =>
+      'Transaction could not be broadcast.';
+
+  @override
+  String get swapKeystoneBroadcastingTitle => 'Broadcasting ZEC deposit';
+
+  @override
+  String get swapKeystoneFailedTitle => 'Keystone signing failed';
+
+  @override
+  String get swapKeystoneFinalizing => 'Broadcasting ZEC deposit...';
+
+  @override
+  String get swapKeystoneIncomplete =>
+      'ZEC deposit signing could not be completed.';
+
+  @override
+  String get swapKeystoneNoTex => 'Keystone does not support TEX sends yet.';
+
+  @override
+  String get swapKeystoneQrMismatch =>
+      'This QR code does not match the current Keystone request.';
+
+  @override
+  String get swapKeystoneScanCaption =>
+      'Scan the QR code on your Keystone to finish the ZEC deposit';
+
+  @override
+  String get swapKeystoneScanToSign => 'Scan to sign';
+
+  @override
+  String get swapKeystoneSignTitle => 'Sign ZEC deposit on Keystone';
+
+  @override
+  String get swapKeystoneStatusUncertain =>
+      'The transaction status is uncertain. Refresh activity before trying again.';
+
+  @override
+  String get swapLedgerBackToActivity => 'Back to activity';
+
+  @override
+  String get swapLedgerBroadcastFailed =>
+      'The ZEC deposit could not be broadcast.';
+
+  @override
+  String get swapLedgerDeclined =>
+      'The ZEC deposit was rejected on your Ledger.';
+
+  @override
+  String get swapLedgerMessageBackground =>
+      'Vizor is already finishing this transaction in the background.';
+
+  @override
+  String get swapLedgerMessageExpired =>
+      'The transaction expired before it was sent. Vizor still needs to release its reserved funds.';
+
+  @override
+  String get swapLedgerMessageSentNotSaved =>
+      'The transaction was sent, but Vizor could not finish saving it.';
+
+  @override
+  String get swapLedgerMessageUncertain =>
+      'Vizor could not confirm whether the transaction was sent, and still needs to save its status.';
+
+  @override
+  String get swapLedgerRetryCleanup => 'Retry cleanup';
+
+  @override
+  String get swapLedgerSigningIncomplete =>
+      'Ledger signing could not be completed.';
+
+  @override
+  String get swapLedgerStatusCleanup => 'Cleanup needed';
+
+  @override
+  String get swapLedgerStatusSaving => 'Saving transaction';
+
+  @override
+  String get swapLedgerStatusWait => 'Please wait';
+
+  @override
+  String get swapLedgerTitlePending => 'Transaction status pending';
+
+  @override
+  String get swapLedgerTitleRecovery => 'Transaction recovery in progress';
+
+  @override
+  String get swapLedgerTitleSent => 'Transaction sent';
+
+  @override
+  String get swapNoticeAffectedNetworks => 'Affected networks';
+
+  @override
+  String get swapNoticeAllChains => 'All chains';
+
+  @override
+  String get swapNoticeCloseLabel => 'Close service notice';
+
+  @override
+  String swapNoticeExpectedEnd(String time) {
+    return 'Expected end: $time';
+  }
+
+  @override
+  String get swapNoticeListOfMaintenance => 'List of maintenance';
+
+  @override
+  String get swapNoticeMaintenanceIntro => 'NEAR Intents is under maintenance.';
+
+  @override
+  String get swapNoticeMaintenanceTitle => 'Maintenance notice';
+
+  @override
+  String swapNoticeMaintenanceWindow(String networks) {
+    return 'Maintenance window: $networks';
+  }
+
+  @override
+  String get swapNoticeOk => 'Ok';
+
+  @override
+  String get swapNoticePaymentsMayFail => 'Payments may not work right now.';
+
+  @override
+  String get swapNoticeServiceTitle => 'Service notice';
+
+  @override
+  String swapNoticeStart(String time) {
+    return 'Start: $time';
+  }
+
+  @override
+  String get swapNoticeStatusPage => 'NEAR Intents status page';
+
+  @override
+  String get swapNoticeSwapsMayFail => 'Swaps may not work right now.';
+
+  @override
+  String get swapPageTitle => 'Swap';
+
+  @override
+  String get swapPanelDepositChecking => 'Checking ZEC deposit';
+
+  @override
+  String get swapPanelDepositSent => 'ZEC deposit sent';
+
+  @override
+  String get swapPanelLoadFailedBody =>
+      'Return to Activity and select a saved swap.';
+
+  @override
+  String get swapPanelLoadFailedTitle =>
+      'Couldn\'t load this swap. Try again or pull to refresh.';
+
+  @override
+  String swapPanelRecipientTo(String recipient) {
+    return 'To: $recipient';
+  }
+
+  @override
+  String get swapPayStatusConvertedFrom => 'Converted from';
+
+  @override
+  String get swapPayStatusNewAddress => 'New address';
+
+  @override
+  String get swapPayStatusSourceAmount => 'Source amount';
+
+  @override
+  String get swapPoweredByLabel => 'Powered by';
+
+  @override
+  String get swapReviewBackPay => 'Pay';
+
+  @override
+  String get swapReviewConfirmAndSwap => 'Confirm & swap';
+
+  @override
+  String get swapReviewConfirmPaymentTitle => 'Confirm payment';
+
+  @override
+  String get swapReviewConfirmSwap => 'Confirm swap';
+
+  @override
+  String swapReviewFromAddress(String address) {
+    return 'From: $address';
+  }
+
+  @override
+  String get swapReviewInsufficientZecSwap =>
+      'You don\'t have enough ZEC for this swap. Try a smaller amount.';
+
+  @override
+  String swapReviewPayAmount(String amount) {
+    return 'Pay $amount';
+  }
+
+  @override
+  String get swapReviewQuoteExpired =>
+      'Quote expired. Review again for an updated rate.';
+
+  @override
+  String get swapReviewQuoteHolds => 'Quote holds';
+
+  @override
+  String get swapReviewQuoteInactive => 'This quote is no longer active.';
+
+  @override
+  String get swapReviewReturnToSwap => 'Return to swap';
+
+  @override
+  String get swapReviewReviewAgain => 'Review again';
+
+  @override
+  String get swapReviewStartingLockingQuote => 'Locking quote';
+
+  @override
+  String get swapReviewStartingPaying => 'Paying';
+
+  @override
+  String get swapReviewStartingSending => 'Sending';
+
+  @override
+  String swapReviewToAddress(String address) {
+    return 'To: $address';
+  }
+
+  @override
+  String get swapSignPayment => 'Sign payment';
+
+  @override
+  String get swapSignZecDeposit => 'Sign ZEC deposit';
+
+  @override
+  String get swapSlippageCustom => 'Custom';
+
+  @override
+  String get swapSlippageDescriptionPay =>
+      'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.';
+
+  @override
+  String get swapSlippageDescriptionSwap =>
+      'Sets the maximum rate change you\'ll accept. Network fees are separate.';
+
+  @override
+  String get swapSlippageRangeError => 'Slippage must be 0.1 - 5%';
+
+  @override
+  String get swapSlippageTitle => 'Slippage';
+
+  @override
+  String get swapStatusBadgeNeedsAttention => 'Needs attention';
+
+  @override
+  String get swapStatusDetailsTab => 'Transaction details';
+
+  @override
+  String get swapStatusRowLabel => 'Status';
+
+  @override
+  String get swapTimeoutBody => 'Please, start another swap transaction.';
+
+  @override
+  String get swapTimeoutHeadline => 'This deposit address is no longer valid';
+
+  @override
+  String get swapTimeoutRestart => 'Restart swap';
+
+  @override
+  String get swapTimeoutTitle => 'Time’s up';
+
+  @override
+  String get swapViewOnNearIntents => 'View on NEAR Intents';
+
+  @override
+  String syncCheckingPercentSemantics(String percent) {
+    return 'Checking $percent percent';
+  }
+
+  @override
+  String syncCheckingProgress(String percent) {
+    return '$percent% checking';
+  }
+
+  @override
+  String get syncConnectingToTor => 'Connecting to Tor…';
+
+  @override
+  String get syncConnectingToTorSemantics => 'Connecting to Tor';
+
+  @override
+  String get syncErrorChainRecovery => 'Chain recovery';
+
+  @override
+  String get syncErrorData => 'Data error';
+
+  @override
+  String get syncErrorEndpoint => 'Endpoint error';
+
+  @override
+  String get syncErrorNetwork => 'Network error';
+
+  @override
+  String get syncErrorPrivateLookup => 'Private lookup';
+
+  @override
+  String get syncErrorUnknown => 'Unknown error';
+
+  @override
+  String get syncErrorWalletData => 'Wallet data error';
+
+  @override
+  String get syncErrorWalletDataBusy => 'Wallet data busy';
+
+  @override
+  String syncFailed(String reason) {
+    return 'Syncing failed. $reason...';
+  }
+
+  @override
+  String syncFailedSemantics(String reason) {
+    return 'Syncing failed. $reason';
+  }
+
+  @override
   String get syncSynced => 'Synced';
 
   @override
   String syncSyncedAtBlock(String height) {
     return 'Synced at block $height';
   }
+
+  @override
+  String syncSyncingPercentSemantics(String percent) {
+    return 'Syncing $percent percent';
+  }
+
+  @override
+  String syncSyncingProgress(String percent) {
+    return '$percent% Syncing...';
+  }
+
+  @override
+  String get syncTorFailed => 'Tor couldn\'t connect...';
+
+  @override
+  String get syncTorFailedSemantics => 'Tor couldn\'t connect';
+
+  @override
+  String get syncVizorSynced => 'Vizor is synced';
+
+  @override
+  String get txFeeHelpTooltip =>
+      'Fee paid to the Zcash network to process this transaction.';
 
   @override
   String get txFeeInfoDescription =>

@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/wallet_path_read_blocker.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 
 void main() {
   testWidgets(
@@ -56,7 +57,7 @@ void main() {
         tester,
         transaction: pending,
         syncNotifier: sync,
-        etaLabels: const {'pending': 'Est. 1–3 min'},
+        etaLabels: const {'pending': ActivityEta.standard},
         historyLoader: (_) async {
           reads++;
           return isRefreshing ? refreshing.future : [pending];
@@ -115,7 +116,7 @@ void main() {
         tester,
         transaction: pending,
         syncNotifier: sync,
-        etaLabels: const {'pending': 'Est. 1–3 min'},
+        etaLabels: const {'pending': ActivityEta.standard},
         historyLoader: (_) async {
           reads++;
           return refreshing ? refreshed.future : [pending];
@@ -173,7 +174,7 @@ void main() {
         displayPool: 'shielded',
         createdTime: BigInt.zero,
       ),
-      etaLabels: const {'pending': 'Est. 1–3 min'},
+      etaLabels: const {'pending': ActivityEta.standard},
     );
     expect(find.text('Est. 1–3 min'), findsOneWidget);
     expect(find.text('Shielded'), findsNothing);
@@ -257,7 +258,7 @@ void main() {
 Future<_SwitchableAccountNotifier> _pumpActivityScreen(
   WidgetTester tester, {
   rust_sync.TransactionInfo? transaction,
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   ActivityHistoryLoader? historyLoader,
   FakeSyncNotifier? syncNotifier,
 }) async {

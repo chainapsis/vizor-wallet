@@ -53,13 +53,13 @@ void main() {
     });
 
     test('only actionable amount rejections surface as errors', () {
-      String? errorFor(String input) => ZecRequestDraft(
+      RequestAmountError? errorFor(String input) => ZecRequestDraft(
         address: _shielded,
         input: input,
       ).resolve(zecUsdUnitPrice: 70).amountError;
 
-      expect(errorFor('0.123456789'), kRequestAmountDecimalsError);
-      expect(errorFor('21000001'), kRequestAmountSupplyError);
+      expect(errorFor('0.123456789'), RequestAmountError.decimals);
+      expect(errorFor('21000001'), RequestAmountError.supply);
       // In-progress input is not a failure state.
       expect(errorFor('0.'), isNull);
       expect(errorFor(''), isNull);
@@ -69,7 +69,7 @@ void main() {
     });
 
     test('an amount that is not a number says so instead of going quiet', () {
-      String? errorFor(String input) => ZecRequestDraft(
+      RequestAmountError? errorFor(String input) => ZecRequestDraft(
         address: _shielded,
         input: input,
       ).resolve(zecUsdUnitPrice: 70).amountError;
@@ -77,10 +77,10 @@ void main() {
       // The comma a French or German decimal keypad emits, and the leading
       // dot the conversion line happily prices: both build a URI of null, so
       // silence here is a permanently disabled CTA with no cause on screen.
-      expect(errorFor('0,5'), kRequestAmountFormatError);
-      expect(errorFor('.5'), kRequestAmountFormatError);
-      expect(errorFor('1e3'), kRequestAmountFormatError);
-      expect(errorFor('half a zec'), kRequestAmountFormatError);
+      expect(errorFor('0,5'), RequestAmountError.format);
+      expect(errorFor('.5'), RequestAmountError.format);
+      expect(errorFor('1e3'), RequestAmountError.format);
+      expect(errorFor('half a zec'), RequestAmountError.format);
     });
 
     test('switching units rewrites the field in the new unit', () {

@@ -235,7 +235,7 @@ _MobileTorPresentation _presentationFor(
     (NetworkPrivacyConnectionStatus.failed, true) =>
       state.torEnabled
           ? _MobileTorPresentation(
-              statusLabel: l10n.settingsTorStatusFailed,
+              statusLabel: l10n.commonFailed,
               description: l10n.settingsTorDescBootstrapFailed,
               statusColor: (colors) => colors.text.brandCrimson,
               iconColor: (colors) => colors.icon.brandCrimson,

@@ -1,3 +1,4 @@
+// l10n-ignore-file: Widgetbook-only static mockup with sample data, never shown in the app
 import 'dart:ui';
 
 import 'package:flutter/material.dart' show Colors;

@@ -149,6 +149,7 @@ ActivityRowData _row({
     subtitleIconName: subtitleIconName,
     amountText: '1.00 $kZcashDefaultCurrencyTicker',
     statusText: 'Completed',
+    statusIsRoutine: true,
     timestampText: 'Today, 13:11',
   );
 }

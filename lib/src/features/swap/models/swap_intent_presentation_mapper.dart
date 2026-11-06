@@ -329,11 +329,11 @@ String _nextActionForResolvedStatus(
 ) {
   if (status == SwapIntentStatus.expired &&
       snapshot.status != SwapIntentStatus.expired) {
-    return 'Start a fresh quote';
+    return 'Start a fresh quote'; // l10n-ignore: persisted nextAction text
   }
   if (status == SwapIntentStatus.refunded &&
       snapshot.status == SwapIntentStatus.failed) {
-    return 'Refund sent to your refund address';
+    return 'Refund sent to your refund address'; // l10n-ignore: persisted nextAction text
   }
   return snapshot.nextAction;
 }
@@ -344,11 +344,11 @@ String _nextActionForRestoredStatus(
 ) {
   if (status == SwapIntentStatus.expired &&
       record.status != SwapIntentStatus.expired) {
-    return 'Start a fresh quote';
+    return 'Start a fresh quote'; // l10n-ignore: persisted nextAction text
   }
   if (status == SwapIntentStatus.refunded &&
       record.status == SwapIntentStatus.failed) {
-    return 'Refund sent to your refund address';
+    return 'Refund sent to your refund address'; // l10n-ignore: persisted nextAction text
   }
   return record.nextAction;
 }

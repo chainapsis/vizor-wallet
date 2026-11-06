@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -44,8 +45,8 @@ class MobileAddressScanView extends StatefulWidget {
     required this.resolve,
     required this.onScanned,
     required this.onClose,
-    this.caption = 'Scan a Zcash QR code to continue',
-    this.steadyHint = 'Keep the QR code steady and fully visible.',
+    this.caption,
+    this.steadyHint,
     super.key,
   });
 
@@ -58,11 +59,11 @@ class MobileAddressScanView extends StatefulWidget {
   /// Called when the user taps the close control.
   final VoidCallback onClose;
 
-  /// Idle caption beneath the viewfinder.
-  final String caption;
+  /// Idle caption beneath the viewfinder; defaults to the Zcash QR prompt.
+  final String? caption;
 
-  /// Fallback message when resolution throws.
-  final String steadyHint;
+  /// Fallback message when resolution throws; defaults to the steady hint.
+  final String? steadyHint;
 
   @override
   State<MobileAddressScanView> createState() => _MobileAddressScanViewState();
@@ -121,13 +122,16 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
       }
       setState(() {
         _validating = false;
-        _error = outcome.error ?? widget.steadyHint;
+        _error =
+            outcome.error ??
+            widget.steadyHint ??
+            context.l10n.commonKeepQrSteady;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _validating = false;
-        _error = widget.steadyHint;
+        _error = widget.steadyHint ?? context.l10n.commonKeepQrSteady;
       });
     }
   }
@@ -212,9 +216,8 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
           MobileScanCameraErrorOverlay(
             controller: _controller,
             maxWidth: viewfinderSize,
-            permissionDeniedMessage:
-                'Camera access is off. Allow it in Settings to scan addresses.',
-            unavailableMessage: 'The camera is unavailable right now.',
+            permissionDeniedMessage: context.l10n.addressScanCameraOff,
+            unavailableMessage: context.l10n.commonCameraUnavailableNow,
             onOpenSettings: _openCameraSettings,
           ),
           SafeArea(
@@ -229,7 +232,7 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
                     children: [
                       Semantics(
                         button: true,
-                        label: 'Toggle flashlight',
+                        label: context.l10n.commonToggleFlashlight,
                         excludeSemantics: true,
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -248,7 +251,7 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
                       const Spacer(),
                       Semantics(
                         button: true,
-                        label: 'Close scanner',
+                        label: context.l10n.addressScanCloseScanner,
                         excludeSemantics: true,
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -279,7 +282,9 @@ class _MobileAddressScanViewState extends State<MobileAddressScanView>
                         64,
                   ),
                   child: Text(
-                    _error ?? widget.caption,
+                    _error ??
+                        widget.caption ??
+                        context.l10n.addressScanZcashPrompt,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: Colors.white,
@@ -305,12 +310,10 @@ class MobileScanCameraErrorOverlay extends StatefulWidget {
     required this.controller,
     required this.permissionDeniedMessage,
     required this.unavailableMessage,
-    this.restrictedMessage =
-        'Screen Time or device management is blocking the camera on this '
-        'device.',
+    this.restrictedMessage,
     this.maxWidth = 260,
     this.onOpenSettings,
-    this.openSettingsLabel = 'Open settings',
+    this.openSettingsLabel,
     super.key,
   });
 
@@ -320,10 +323,10 @@ class MobileScanCameraErrorOverlay extends StatefulWidget {
 
   /// Shown instead of [permissionDeniedMessage] when iOS reports the camera
   /// as restricted; Settings cannot lift that, so no settings action shows.
-  final String restrictedMessage;
+  final String? restrictedMessage;
   final double maxWidth;
   final Future<void> Function()? onOpenSettings;
-  final String openSettingsLabel;
+  final String? openSettingsLabel;
 
   @override
   State<MobileScanCameraErrorOverlay> createState() =>
@@ -398,7 +401,10 @@ class _MobileScanCameraErrorOverlayState
                       size: AppButtonSize.medium,
                       minWidth: 128,
                       leading: const AppIcon(AppIcons.cog),
-                      child: Text(widget.openSettingsLabel),
+                      child: Text(
+                        widget.openSettingsLabel ??
+                            context.l10n.addressScanOpenSettings,
+                      ),
                     ),
                   ],
                 ],
@@ -420,7 +426,7 @@ class _MobileScanCameraErrorOverlayState
       return widget.unavailableMessage;
     }
     return _restriction.restricted
-        ? widget.restrictedMessage
+        ? widget.restrictedMessage ?? context.l10n.addressScanCameraRestricted
         : widget.permissionDeniedMessage;
   }
 }

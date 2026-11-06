@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import 'package:zcash_wallet/src/core/navigation/incoming_link_entry_policy.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -12,7 +13,6 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/screens/payment_links_screen.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import 'fakes/fake_sync_notifier.dart';
 import 'support/payment_link_navigation_support.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
@@ -73,7 +74,7 @@ void main() {
         expect(find.byType(MobileSeedPhraseScreen), findsOneWidget);
         expect(find.byType(PaymentLinksScreen), findsNothing);
         expect(
-          find.text(kPaymentLinkDeferredByActiveFlowMessage),
+          find.text(IncomingLinkNotice.giftBusy.text(testL10n)),
           findsOneWidget,
         );
         expect(
@@ -126,7 +127,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byType(MobileSendScreen), findsOneWidget);
-    expect(find.text(kPaymentLinkDeferredByActiveFlowMessage), findsOneWidget);
+    expect(
+      find.text(IncomingLinkNotice.giftBusy.text(testL10n)),
+      findsOneWidget,
+    );
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
 
     GoRouter.of(sendContext).go('/home');

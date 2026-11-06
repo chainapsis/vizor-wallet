@@ -2,12 +2,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_format_validator.dart';
+import '../../support/test_l10n.dart';
+
+/// The error-severity message, in English.
+String? _issue(
+  AddressBookNetwork network,
+  String address, {
+  ZcashNetwork? zcashNetwork,
+}) => addressFormatIssue(
+  network,
+  address,
+  zcashNetwork: zcashNetwork,
+)?.localizedMessage(testL10n);
 
 void main() {
   group('addressFormatIssue', () {
     test('empty address has no opinion (handled by emptiness validators)', () {
-      expect(addressFormatIssue(AddressBookNetwork.ethereum, ''), isNull);
-      expect(addressFormatIssue(AddressBookNetwork.ethereum, '   '), isNull);
+      expect(_issue(AddressBookNetwork.ethereum, ''), isNull);
+      expect(_issue(AddressBookNetwork.ethereum, '   '), isNull);
     });
 
     test('unsupported networks always pass', () {
@@ -20,7 +32,7 @@ void main() {
         AddressBookNetwork.dogecoin,
       ]) {
         expect(
-          addressFormatIssue(network, 'literally anything goes here'),
+          _issue(network, 'literally anything goes here'),
           isNull,
           reason: '${network.id} has no validator',
         );
@@ -46,13 +58,13 @@ void main() {
         AddressBookNetwork.bera,
       ]) {
         test('${network.id} accepts a 0x + 40 hex address', () {
-          expect(addressFormatIssue(network, valid), isNull);
+          expect(_issue(network, valid), isNull);
         });
       }
 
       test('rejects missing 0x prefix', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.ethereum,
             '52908400098527886E0F7030069857D2E4169EE7',
           ),
@@ -61,15 +73,12 @@ void main() {
       });
 
       test('rejects wrong length', () {
-        expect(
-          addressFormatIssue(AddressBookNetwork.ethereum, '0x1234'),
-          isNotNull,
-        );
+        expect(_issue(AddressBookNetwork.ethereum, '0x1234'), isNotNull);
       });
 
       test('rejects non-hex characters', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.ethereum,
             '0xZZ908400098527886E0F7030069857D2E4169EE7',
           ),
@@ -79,7 +88,7 @@ void main() {
 
       test('accepts an uppercase 0X prefix', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.ethereum,
             '0X52908400098527886E0F7030069857D2E4169EE7',
           ),
@@ -89,7 +98,7 @@ void main() {
 
       test('accepts all-lowercase (no checksum info to verify)', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.ethereum,
             '0xde709f2102306220921060314715629080e2fb77',
           ),
@@ -105,7 +114,7 @@ void main() {
           '0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb',
         ]) {
           expect(
-            addressFormatIssue(AddressBookNetwork.ethereum, addr),
+            _issue(AddressBookNetwork.ethereum, addr),
             isNull,
             reason: addr,
           );
@@ -115,7 +124,7 @@ void main() {
       test('rejects a mixed-case address with a broken checksum', () {
         // Valid address with one letter's case flipped.
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.ethereum,
             '0x5AAeb6053F3E94C9b9A09f33669435E7Ef1BeAed',
           ),
@@ -130,17 +139,13 @@ void main() {
           '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
           '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D', // Uniswap V2 router
         ]) {
-          expect(
-            addressFormatIssue(AddressBookNetwork.base, addr),
-            isNull,
-            reason: addr,
-          );
+          expect(_issue(AddressBookNetwork.base, addr), isNull, reason: addr);
         }
       });
 
       test('accepts the lowercase form of a real address', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.ethereum,
             '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
           ),
@@ -150,14 +155,14 @@ void main() {
 
       test('rejects 39- and 41-hex lengths', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.ethereum,
             '0x52908400098527886E0F7030069857D2E4169EE',
           ),
           isNotNull,
         );
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.ethereum,
             '0x52908400098527886E0F7030069857D2E4169EE77',
           ),
@@ -169,7 +174,7 @@ void main() {
     group('Bitcoin', () {
       test('accepts P2PKH (1...)', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.bitcoin,
             '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2',
           ),
@@ -179,7 +184,7 @@ void main() {
 
       test('accepts P2SH (3...)', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.bitcoin,
             '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy',
           ),
@@ -189,7 +194,7 @@ void main() {
 
       test('accepts bech32 (bc1...)', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.bitcoin,
             'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4',
           ),
@@ -199,7 +204,7 @@ void main() {
 
       test('accepts taproot (bc1p...)', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.bitcoin,
             'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr',
           ),
@@ -209,7 +214,7 @@ void main() {
 
       test('accepts the genesis P2PKH address', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.bitcoin,
             '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
           ),
@@ -221,7 +226,7 @@ void main() {
         // Genesis P2PKH with the last character flipped (a -> b): valid base58
         // charset and length, but the double-SHA256 checksum no longer holds.
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.bitcoin,
             '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb',
           ),
@@ -233,7 +238,7 @@ void main() {
         // Last character flipped (…f3t4 -> …f3t5): valid charset/length but the
         // bech32 checksum no longer holds, so it must be rejected.
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.bitcoin,
             'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5',
           ),
@@ -243,7 +248,7 @@ void main() {
 
       test('rejects a testnet segwit address (tb1...) on mainnet', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.bitcoin,
             'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
           ),
@@ -253,7 +258,7 @@ void main() {
 
       test('rejects mixed-case bech32', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.bitcoin,
             'bc1qw508d6qejxtdg4y5r3zarvarY0c5xw7kv8f3t4',
           ),
@@ -263,7 +268,7 @@ void main() {
 
       test('rejects an EVM address', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.bitcoin,
             '0x52908400098527886E0F7030069857D2E4169EE7',
           ),
@@ -275,7 +280,7 @@ void main() {
     group('Zcash', () {
       test('accepts a unified address (u1...)', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             'u1l9f0l4348negsncgr9pxd9d3qaxagmqv3lnexcplmrfn8vnnlnzfm4hd2gxn'
             'wrdwy55q9xs8dwd56tppd0aqgg9k4n2x9p3zg3sx',
@@ -286,7 +291,7 @@ void main() {
 
       test('accepts a transparent address (t1...)', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             't1HsdDMzmJfq4vc7T17XYjEkLMLvbgM1fCi',
           ),
@@ -296,7 +301,7 @@ void main() {
 
       test('accepts a sapling address (zs1...)', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             'zs1z7rejlpsa98s2rrrfkwmaxu53e4ue0ulcrw0h4x5g8jl04tak0d3mm47'
             'vdtahatqrlkngh9sly',
@@ -307,7 +312,7 @@ void main() {
 
       test('accepts a P2SH transparent address (t3...)', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             't3Vz22vK5z2LcKEdg16Yv4FFneEL1zg9ojd',
           ),
@@ -321,7 +326,7 @@ void main() {
         const regtestTex = 'texregtest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy';
 
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             mainnetTex,
             zcashNetwork: ZcashNetwork.mainnet,
@@ -329,7 +334,7 @@ void main() {
           isNull,
         );
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             testnetTex,
             zcashNetwork: ZcashNetwork.testnet,
@@ -337,7 +342,7 @@ void main() {
           isNull,
         );
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             regtestTex,
             zcashNetwork: ZcashNetwork.regtest,
@@ -348,7 +353,7 @@ void main() {
 
       test('rejects an EVM address tagged as Zcash', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             '0x52908400098527886E0F7030069857D2E4169EE7',
           ),
@@ -357,15 +362,12 @@ void main() {
       });
 
       test('rejects obvious garbage', () {
-        expect(
-          addressFormatIssue(AddressBookNetwork.zcash, 'not an address'),
-          isNotNull,
-        );
+        expect(_issue(AddressBookNetwork.zcash, 'not an address'), isNotNull);
       });
 
       test('on mainnet, rejects testnet-prefixed addresses', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             'utest1qpw508d6qejxtdg4y5r3zarvary0c5xw7kqqqqqq',
             zcashNetwork: ZcashNetwork.mainnet,
@@ -373,7 +375,7 @@ void main() {
           isNotNull,
         );
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             'tm9iNYCVAhLLa4rJtfqqHauR5xL1REdpiDs',
             zcashNetwork: ZcashNetwork.mainnet,
@@ -381,7 +383,7 @@ void main() {
           isNotNull,
         );
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             'textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy',
             zcashNetwork: ZcashNetwork.mainnet,
@@ -393,7 +395,7 @@ void main() {
       test('honours the active Zcash network for its own prefixes', () {
         const testnetUa = 'utest1qpw508d6qejxtdg4y5r3zarvary0c5xw7kqqqqqq';
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             testnetUa,
             zcashNetwork: ZcashNetwork.testnet,
@@ -402,7 +404,7 @@ void main() {
         );
         // A mainnet t-addr is not valid on testnet.
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             't1HsdDMzmJfq4vc7T17XYjEkLMLvbgM1fCi',
             zcashNetwork: ZcashNetwork.testnet,
@@ -413,7 +415,7 @@ void main() {
 
       test('accepts a checksum-valid testnet t-addr on testnet', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             'tm9iNYCVAhLLa4rJtfqqHauR5xL1REdpiDs',
             zcashNetwork: ZcashNetwork.testnet,
@@ -425,7 +427,7 @@ void main() {
       test('rejects a t-addr with a corrupted Base58Check checksum', () {
         // Last character of the valid vector flipped (i -> j).
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             't1HsdDMzmJfq4vc7T17XYjEkLMLvbgM1fCj',
           ),
@@ -435,7 +437,7 @@ void main() {
 
       test('rejects checksum-free base58 padding behind a t1 prefix', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.zcash,
             't1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz',
           ),
@@ -447,7 +449,7 @@ void main() {
     group('Solana', () {
       test('accepts a base58 32-44 char address', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.solana,
             '7EYnhQoR9YM3N7UoaKRoA44Uy8JeaZV3qyouov87awMs',
           ),
@@ -457,7 +459,7 @@ void main() {
 
       test('rejects an EVM 0x address', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.solana,
             '0x52908400098527886E0F7030069857D2E4169EE7',
           ),
@@ -470,21 +472,17 @@ void main() {
           'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC mint
           'So11111111111111111111111111111111111111112', // wrapped SOL
         ]) {
-          expect(
-            addressFormatIssue(AddressBookNetwork.solana, addr),
-            isNull,
-            reason: addr,
-          );
+          expect(_issue(AddressBookNetwork.solana, addr), isNull, reason: addr);
         }
       });
 
       test('rejects too-short input', () {
-        expect(addressFormatIssue(AddressBookNetwork.solana, 'abc'), isNotNull);
+        expect(_issue(AddressBookNetwork.solana, 'abc'), isNotNull);
       });
 
       test('rejects input longer than 44 chars', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.solana,
             '7EYnhQoR9YM3N7UoaKRoA44Uy8JeaZV3qyouov87awMs7EYnh',
           ),
@@ -494,7 +492,7 @@ void main() {
 
       test('rejects non-base58 characters (0, O, I, l)', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.solana,
             '0OIl00000000000000000000000000000000',
           ),
@@ -510,7 +508,7 @@ void main() {
           'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz',
         ]) {
           expect(
-            addressFormatIssue(AddressBookNetwork.solana, addr),
+            _issue(AddressBookNetwork.solana, addr),
             isNotNull,
             reason: addr,
           );
@@ -519,10 +517,7 @@ void main() {
 
       test('accepts the 32-char system program address (32 zero bytes)', () {
         expect(
-          addressFormatIssue(
-            AddressBookNetwork.solana,
-            '11111111111111111111111111111111',
-          ),
+          _issue(AddressBookNetwork.solana, '11111111111111111111111111111111'),
           isNull,
         );
       });
@@ -531,7 +526,7 @@ void main() {
     group('NEAR', () {
       test('accepts an implicit 64-hex account', () {
         expect(
-          addressFormatIssue(
+          _issue(
             AddressBookNetwork.near,
             '98793cd91a3f870fb126f66285808c7e094afcfc4eda8a970f6648cdf0dbdb24',
           ),
@@ -549,27 +544,17 @@ void main() {
           'root.near',
           'a.b',
         ]) {
-          expect(
-            addressFormatIssue(AddressBookNetwork.near, acct),
-            isNull,
-            reason: acct,
-          );
+          expect(_issue(AddressBookNetwork.near, acct), isNull, reason: acct);
         }
       });
 
       test('rejects uppercase / invalid characters', () {
-        expect(
-          addressFormatIssue(AddressBookNetwork.near, 'Alice.NEAR'),
-          isNotNull,
-        );
-        expect(addressFormatIssue(AddressBookNetwork.near, 'a'), isNotNull);
+        expect(_issue(AddressBookNetwork.near, 'Alice.NEAR'), isNotNull);
+        expect(_issue(AddressBookNetwork.near, 'a'), isNotNull);
       });
 
       test('rejects an over-long named account (>64)', () {
-        expect(
-          addressFormatIssue(AddressBookNetwork.near, '${'a' * 65}.near'),
-          isNotNull,
-        );
+        expect(_issue(AddressBookNetwork.near, '${'a' * 65}.near'), isNotNull);
       });
 
       test('rejects consecutive / leading / trailing separators', () {
@@ -581,7 +566,7 @@ void main() {
           'alice.near.', // trailing separator
         ]) {
           expect(
-            addressFormatIssue(AddressBookNetwork.near, acct),
+            _issue(AddressBookNetwork.near, acct),
             isNotNull,
             reason: acct,
           );
@@ -596,14 +581,14 @@ void main() {
             AddressFormatSeverity.warning,
             reason: acct,
           );
-          expect(finding?.message, contains('.near'), reason: acct);
-          // The error-only view used by the swap hard gate stays silent, so
-          // real registrar-created top-level accounts are never blocked.
           expect(
-            addressFormatIssue(AddressBookNetwork.near, acct),
-            isNull,
+            finding?.localizedMessage(testL10n),
+            contains('.near'),
             reason: acct,
           );
+          // The error-only view used by the swap hard gate stays silent, so
+          // real registrar-created top-level accounts are never blocked.
+          expect(_issue(AddressBookNetwork.near, acct), isNull, reason: acct);
         }
       });
 

@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -115,7 +116,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _saveError = "Couldn't save this contact. Try again.";
+        _saveError = context.l10n.paySaveContactError;
       });
       return;
     }
@@ -153,7 +154,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
               Center(
                 child: AppTappable(
                   key: const ValueKey('mobile_pay_add_contact_picture'),
-                  semanticsLabel: 'Change contact picture',
+                  semanticsLabel: context.l10n.commonChangeContactPicture,
                   onTap: _pickPicture,
                   child: ExcludeSemantics(
                     child: SizedBox.square(
@@ -195,7 +196,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                'Address label',
+                context.l10n.commonAddressLabel,
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -205,7 +206,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                 controller: _labelController,
                 focusNode: _labelFocusNode,
                 fieldKey: const ValueKey('mobile_pay_add_contact_label'),
-                hintText: 'Add label 1-20 characters',
+                hintText: context.l10n.commonContactLabelHint,
                 textInputAction: TextInputAction.done,
                 inputFormatters: [LengthLimitingTextInputFormatter(20)],
                 onSubmitted: (_) => _save(),
@@ -216,7 +217,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                         padding: const EdgeInsets.only(right: AppSpacing.xs),
                         child: AppIconHoverButton(
                           icon: AppIcons.cross,
-                          semanticLabel: 'Clear contact label',
+                          semanticLabel: context.l10n.commonClearContactLabel,
                           onTap: _clearLabel,
                           size: 32,
                           borderRadius: BorderRadius.circular(AppRadii.small),
@@ -236,7 +237,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                       child: Padding(
                         padding: const EdgeInsets.all(AppSpacing.xxs),
                         child: Text(
-                          'Chain & address',
+                          context.l10n.commonChainAndAddress,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelMedium.copyWith(
@@ -270,7 +271,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
               ),
               const SizedBox(height: AppSpacing.xxs),
               Semantics(
-                label: 'Address ${widget.address}',
+                label: context.l10n.payAddressSemantics(widget.address),
                 readOnly: true,
                 child: ExcludeSemantics(
                   child: Container(
@@ -340,7 +341,11 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                 expand: true,
                 constrainContent: true,
                 onPressed: _canSave ? _save : null,
-                child: Text(_saving ? 'Saving' : 'Save contact'),
+                child: Text(
+                  _saving
+                      ? context.l10n.paySaving
+                      : context.l10n.commonSaveContact,
+                ),
               ),
               const SizedBox(height: AppSpacing.s),
               MobileSheetCancel(

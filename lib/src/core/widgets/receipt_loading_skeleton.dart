@@ -61,7 +61,7 @@ class ReceiptMemoSkeleton extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.all(AppSpacing.xxs),
           child: Text(
-            context.l10n.receiptMessageLabel,
+            context.l10n.commonMessage,
             style:
                 (kAppFormFactor == AppFormFactor.mobile
                         ? AppTypography.labelMedium

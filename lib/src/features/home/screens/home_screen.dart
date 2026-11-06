@@ -137,7 +137,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       accountUuid = activeShieldingAccountUuid(ref);
     } catch (_) {
       setState(() {
-        _shieldBalanceError = context.l10n.homeShieldNoActiveAccount;
+        _shieldBalanceError = context.l10n.commonNoActiveAccountSentence;
       });
       return;
     }
@@ -165,11 +165,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         accountUuid: accountUuid,
         logContext: 'HomeScreen',
       );
+      if (!mounted) return;
       final broadcastStatusMessage = shieldBalanceBroadcastStatusMessage(
+        context.l10n,
         result,
       );
       if (broadcastStatusMessage != null) {
-        if (!mounted) return;
         setState(() {
           _shieldBalanceError = broadcastStatusMessage;
           _shieldBalanceErrorDetail = null;
@@ -178,7 +179,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _shieldBalanceError = friendlyShieldBalanceError(e);
+        _shieldBalanceError = friendlyShieldBalanceError(context.l10n, e);
         _shieldBalanceErrorDetail = shieldBalanceErrorDetails(e);
       });
     } finally {
@@ -412,8 +413,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 migratingBalanceText: formatZecAmount(migratingBalance),
                 waitingForMigrationConfirmation:
                     waitingForMigrationConfirmation,
-                transparentBalanceText: transparentBalance.text(_formatZec),
-                transparentBalanceHint: transparentBalance.hint,
+                transparentBalanceText: transparentBalance.text(
+                  context.l10n,
+                  _formatZec,
+                ),
+                transparentBalanceHint: transparentBalance.hint(context.l10n),
                 hasTransparentBalance: transparentBalance.visible,
                 canShieldBalance: canShieldTransparentBalance,
                 isShieldingBalance: _isShieldingBalance,
@@ -813,13 +817,14 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
-        pendingLabel:
-            activityEtaLabelFor(
-              transaction: transaction,
-              labels: ref.watch(activityEtaLabelsProvider),
-              giftCard: giftCard,
-            ) ??
-            ref.watch(activityPendingFallbackLabelProvider),
+        pendingEta: activityEtaFor(
+          transaction: transaction,
+          labels: ref.watch(activityEtaLabelsProvider),
+          giftCard: giftCard,
+        ),
+        pendingFallbackLabel: ref
+            .watch(activityPendingFallbackLabelProvider)
+            .text(context.l10n),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardBatchCount: giftCard?.batchCount,
@@ -1070,7 +1075,7 @@ class _HomeShieldBalanceButton extends StatelessWidget {
                       ),
                       child: Text(
                         isLoading
-                            ? context.l10n.homeShieldingProgress
+                            ? context.l10n.commonShielding
                             : context.l10n.homeShieldNow,
                         style: AppTypography.labelLarge.copyWith(
                           color: contentColor,
@@ -1650,7 +1655,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
         : colors.text.homeCard;
     final balanceTitle = migrationRequired
         ? context.l10n.homeMigrationRequiredTitle
-        : context.l10n.homeShieldedBalance;
+        : context.l10n.commonShieldedBalance;
 
     return SizedBox(
       width: 396,
@@ -2630,7 +2635,7 @@ class _HomeDesktopActivityCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Semantics(
-            label: isLoading ? context.l10n.homeActivityLoading : null,
+            label: isLoading ? context.l10n.commonLoadingActivity : null,
             child: Column(
               children: [
                 for (

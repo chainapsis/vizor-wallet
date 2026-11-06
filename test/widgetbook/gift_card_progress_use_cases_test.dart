@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gif
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../support/test_l10n.dart';
 
 void main() {
   setUpAll(() async {
@@ -124,6 +125,7 @@ void main() {
         find.byType(MobileTransactionStatusScreen),
       );
       final claimTime = formatActivityTimestamp(
+        testL10n,
         screen.args.giftCard!.activityTimestamp,
       );
       expect(find.text('Redeeming a card...'), findsOneWidget);

@@ -261,7 +261,7 @@ String _rateText({
   }
   final precision = receiveAsset == SwapAsset.zec ? 4 : 2;
   final rate = receiveAmount / sellAmount;
-  return '1 ${sellAsset.symbol} = '
+  return '1 ${sellAsset.symbol} = ' // l10n-ignore: rate format
       '${rate.toStringAsFixed(precision)} ${receiveAsset.symbol}';
 }
 

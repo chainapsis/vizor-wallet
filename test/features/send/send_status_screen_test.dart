@@ -37,6 +37,7 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_zec_market_data_cache.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   final rustApi = _RustApiFake();
@@ -265,6 +266,7 @@ void main() {
           broadcastRunner:
               ({
                 required ref,
+                required l10n,
                 required args,
                 keystone,
                 ledger,
@@ -311,6 +313,7 @@ void main() {
         broadcastRunner:
             ({
               required ref,
+              required l10n,
               required args,
               keystone,
               ledger,
@@ -369,6 +372,7 @@ void main() {
           broadcastRunner:
               ({
                 required ref,
+                required l10n,
                 required args,
                 keystone,
                 ledger,
@@ -786,6 +790,7 @@ void main() {
         final outcome = await tester.runAsync(
           () => runSendBroadcast(
             ref: widgetRef,
+            l10n: testL10n,
             args: args,
             keystone: KeystoneBroadcastArgs(
               reviewArgs: args,

@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Material, MaterialType;
@@ -325,26 +326,32 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     final startBlockedReason =
         quote != null &&
             swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
-        ? "You don't have enough ZEC for this payment. Try a smaller amount."
+        ? context.l10n.commonPayInsufficientZec
         : null;
 
     final title = switch (_wizardStep) {
-      _PayWizardStep.amount => 'Pay in ${swapState.externalAsset.symbol}',
-      _PayWizardStep.recipient => 'Select Recipient',
-      _PayWizardStep.review => 'Review Payment',
+      _PayWizardStep.amount => context.l10n.payTitleAmount(
+        swapState.externalAsset.symbol,
+      ),
+      _PayWizardStep.recipient => context.l10n.commonSelectRecipient,
+      _PayWizardStep.review => context.l10n.commonReviewPayment,
     };
     final backLabel = switch (_wizardStep) {
-      _PayWizardStep.amount => 'Home',
-      _PayWizardStep.recipient => 'Amount',
-      _PayWizardStep.review => 'Recipient',
+      _PayWizardStep.amount => context.l10n.payBackHome,
+      _PayWizardStep.recipient => context.l10n.commonAmount,
+      _PayWizardStep.review => context.l10n.payStepRecipient,
     };
     final recipientActions = PayRecipientActions(
       typedAddress: swapState.destinationText,
-      addressError: swapState.destinationAddressFormatError,
+      addressError: swapState.destinationAddressFormatIssue?.localizedMessage(
+        context.l10n,
+      ),
       contacts: contacts,
       busy: swapState.quoteLoading,
       enabled: swapState.externalAssetIsAvailable && !addressBookInitialLoading,
-      quoteError: swapState.externalAssetSupportError ?? swapState.quoteError,
+      quoteError:
+          swapState.externalAssetSupportError(context.l10n) ??
+          swapState.quoteError,
       onSelectRecipient: () => unawaited(_reviewRecipient(effectiveSelection)),
       onAddToContacts: network == null
           ? () {}
@@ -430,7 +437,8 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                   _PayWizardStep.recipient => PayRecipientStep(
                     controller: _recipientController,
                     typedAddress: swapState.destinationText,
-                    addressError: swapState.destinationAddressFormatError,
+                    addressError: swapState.destinationAddressFormatIssue
+                        ?.localizedMessage(context.l10n),
                     network: network,
                     contacts: contacts,
                     recents: recents,
@@ -609,11 +617,11 @@ class _PayReviewLoadingAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const AppButton(
-      key: ValueKey('pay_review_refreshing_button'),
+    return AppButton(
+      key: const ValueKey('pay_review_refreshing_button'),
       onPressed: null,
       minWidth: 196,
-      child: Text('Refreshing quote'),
+      child: Text(context.l10n.payRefreshingQuote),
     );
   }
 }

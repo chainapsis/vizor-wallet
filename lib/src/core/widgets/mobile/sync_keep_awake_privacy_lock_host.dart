@@ -421,7 +421,7 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
         const _SyncKeepAwakeDisplayProgressLockup(),
     };
     final semanticsLabel = switch (mode) {
-      SyncKeepAwakePrivacyLockMode.done => l10n.lockSyncedSemantics,
+      SyncKeepAwakePrivacyLockMode.done => l10n.syncVizorSynced,
       SyncKeepAwakePrivacyLockMode.interrupted => l10n.lockSyncPausedSemantics,
       SyncKeepAwakePrivacyLockMode.hidden ||
       SyncKeepAwakePrivacyLockMode.syncing => l10n.lockSyncingMessage,

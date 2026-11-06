@@ -2285,47 +2285,46 @@ void main() {
     expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
   });
 
-  testWidgets(
-    'Ledger upgrade hold shows the hold copy, not the device',
-    (tester) async {
-      final operationService = _FakeLedgerSignedOperationService();
-      var signerCalls = 0;
-      rustApi.createPcztError = StateError(
-        "Transactions can't be sent this close to the network upgrade. "
-        'Try again after it activates.',
-      );
+  testWidgets('Ledger upgrade hold shows the hold copy, not the device', (
+    tester,
+  ) async {
+    final operationService = _FakeLedgerSignedOperationService();
+    var signerCalls = 0;
+    rustApi.createPcztError = StateError(
+      "Transactions can't be sent this close to the network upgrade. "
+      'Try again after it activates.',
+    );
 
-      await _setDesktopViewport(tester);
-      await tester.pumpWidget(
-        _harness(
-          _reviewArgs(addressType: 'unified'),
-          bootstrap: _bootstrap(
-            isHardware: true,
-            hardwareSignerKind: HardwareSignerKind.ledger,
-          ),
-          ledgerOperationService: operationService,
-          ledgerSigner: (_) async {
-            signerCalls++;
-            return _fakeSignatureBytes;
-          },
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
         ),
-      );
-      await tester.pumpAndSettle();
+        ledgerOperationService: operationService,
+        ledgerSigner: (_) async {
+          signerCalls++;
+          return _fakeSignatureBytes;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Confirm with Ledger'));
-      await _flushRealAsync(tester);
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
 
-      expect(find.text('Paused for network upgrade'), findsOneWidget);
-      expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
-      expect(find.textContaining('Check your device'), findsNothing);
-      expect(find.text('Ledger signing failed'), findsNothing);
-      expect(find.text('Create new transaction'), findsNothing);
-      expect(find.text('New transaction required'), findsNothing);
-      expect(find.text('Try again'), findsNothing);
-      expect(signerCalls, 0);
-      expect(operationService.checkpoints, isEmpty);
-    },
-  );
+    expect(find.text('Paused for network upgrade'), findsOneWidget);
+    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.textContaining('Check your device'), findsNothing);
+    expect(find.text('Ledger signing failed'), findsNothing);
+    expect(find.text('Create new transaction'), findsNothing);
+    expect(find.text('New transaction required'), findsNothing);
+    expect(find.text('Try again'), findsNothing);
+    expect(signerCalls, 0);
+    expect(operationService.checkpoints, isEmpty);
+  });
 
   testWidgets('Ledger checkpoint retry preserves bytes without re-signing', (
     tester,
