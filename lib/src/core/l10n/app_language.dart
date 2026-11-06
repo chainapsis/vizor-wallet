@@ -91,9 +91,12 @@ AppLanguage resolveDeviceLanguage(
   return AppLanguage.fromTag(locale.languageCode) ?? AppLanguage.en;
 }
 
-/// `null` means follow the device language, including for unknown values.
+/// `null` means follow the device language, which only an explicit choice
+/// stores. Nothing stored, or a value this build does not know, is English,
+/// so existing installs keep the English UI until the user picks a language.
 AppLanguage? decodeAppLanguagePreference(String? raw) {
-  return AppLanguage.fromTag(raw);
+  if (raw == kAppLanguageSystemValue) return null;
+  return AppLanguage.fromTag(raw) ?? AppLanguage.en;
 }
 
 String encodeAppLanguagePreference(AppLanguage? preference) {

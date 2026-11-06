@@ -199,7 +199,8 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
   English only, so Korean and Chinese devices keep the English UI. Widgetbook
   previews every language.
 - The preference (`zcash_app_language`: `system` or a language tag) is plain
-  storage read during bootstrap, like the theme mode.
+  storage read during bootstrap, like the theme mode. Nothing stored, or an
+  unknown value, is English; only an explicit `system` follows the device.
 - Every `MaterialApp` root passes `appSupportedLocales()` and
   `appLocalizationsDelegates`. A new root must too.
 - Widgets read strings through `context.l10n` (`lib/src/core/l10n/l10n.dart`),

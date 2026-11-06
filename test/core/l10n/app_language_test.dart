@@ -36,9 +36,10 @@ void main() {
       expect(encodeAppLanguagePreference(null), kAppLanguageSystemValue);
     });
 
-    test('unknown or missing values follow the device', () {
-      expect(decodeAppLanguagePreference(null), isNull);
-      expect(decodeAppLanguagePreference('ja'), isNull);
+    test('missing or unknown values are English', () {
+      expect(decodeAppLanguagePreference(null), AppLanguage.en);
+      expect(decodeAppLanguagePreference('ja'), AppLanguage.en);
+      expect(decodeAppLanguagePreference(kAppLanguageSystemValue), isNull);
     });
 
     test('a language this build does not offer follows the device', () {
