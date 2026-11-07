@@ -12,6 +12,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/untranslated_details.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/voting/voting_config_provider.dart';
@@ -117,10 +118,11 @@ class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
                       loading: () => const VotingPaneLoading(),
                       error: (error, _) => _VotingMessage(
                         title: context.l10n.votingPollsLoadFailedTitle,
-                        message: friendlyVotingErrorMessage(
+                        message: friendlyVotingLoadErrorMessage(
                           context.l10n,
                           error,
                         ),
+                        details: friendlyVotingErrorDetails(error),
                         actionLabel: context.l10n.commonTryAgain,
                         onAction: () => _reloadRoundsWithFreshConfig(),
                       ),
@@ -780,12 +782,14 @@ class _VotingMessage extends StatelessWidget {
   const _VotingMessage({
     required this.title,
     required this.message,
+    this.details,
     this.actionLabel,
     this.onAction,
   });
 
   final String title;
   final String message;
+  final String? details;
   final String? actionLabel;
   final VoidCallback? onAction;
 
@@ -812,6 +816,7 @@ class _VotingMessage extends StatelessWidget {
                 color: context.colors.text.secondary,
               ),
             ),
+            ...untranslatedDetailsButton(details),
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: AppSpacing.sm),
               AppButton(

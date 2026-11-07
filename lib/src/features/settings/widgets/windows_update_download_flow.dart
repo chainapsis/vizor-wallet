@@ -5,6 +5,7 @@ import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/untranslated_details.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/windows_update_provider.dart';
 
@@ -69,6 +70,7 @@ Future<void> startWindowsUpdateDownload({
     context,
     title: context.l10n.settingsWinUpdateStartFailedTitle,
     message: result.message(context.l10n),
+    details: result.details,
   );
 }
 
@@ -84,10 +86,15 @@ Future<void> _showUpdateError(
   BuildContext context, {
   required String title,
   required String message,
+  String? details,
 }) {
   return showDialog<void>(
     context: context,
-    builder: (_) => _WindowsUpdateErrorDialog(title: title, message: message),
+    builder: (_) => _WindowsUpdateErrorDialog(
+      title: title,
+      message: message,
+      details: details,
+    ),
   );
 }
 
@@ -138,10 +145,15 @@ class _WindowsUpdatePrivacyChoiceDialog extends StatelessWidget {
 }
 
 class _WindowsUpdateErrorDialog extends StatelessWidget {
-  const _WindowsUpdateErrorDialog({required this.title, required this.message});
+  const _WindowsUpdateErrorDialog({
+    required this.title,
+    required this.message,
+    this.details,
+  });
 
   final String title;
   final String message;
+  final String? details;
 
   @override
   Widget build(BuildContext context) {
@@ -157,6 +169,10 @@ class _WindowsUpdateErrorDialog extends StatelessWidget {
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
             ),
+          ),
+          ...untranslatedDetailsButton(
+            details,
+            alignment: AlignmentDirectional.centerStart,
           ),
           const SizedBox(height: AppSpacing.md),
           AppButton(

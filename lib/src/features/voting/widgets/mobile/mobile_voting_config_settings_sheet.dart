@@ -11,6 +11,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/untranslated_details.dart';
 import '../../../../providers/voting/voting_config_provider.dart';
 import '../../../../providers/voting/voting_config_source_provider.dart';
 import '../../../../providers/voting/voting_round_visibility_provider.dart';
@@ -46,7 +47,15 @@ class _MobileVotingConfigSettingsSheetState
   bool _showEditor = false;
   String? _editingSourceId;
   bool _busy = false;
-  String? _error;
+  String? _errorText;
+
+  /// Untranslated text behind [_error]; any new error clears it.
+  String? _errorDetails;
+  String? get _error => _errorText;
+  set _error(String? value) {
+    _errorText = value;
+    _errorDetails = null;
+  }
 
   @override
   void dispose() {
@@ -150,7 +159,10 @@ class _MobileVotingConfigSettingsSheetState
       await action();
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = _friendlyError(error));
+      setState(() {
+        _error = _friendlyError(error);
+        _errorDetails = votingConfigSourceErrorDetails(error);
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -202,6 +214,7 @@ class _MobileVotingConfigSettingsSheetState
               logUntranslatedText(error.toString());
               return _LoadError(
                 message: context.l10n.votingConfigSettingsLoadFailed,
+                details: error.toString(),
               );
             },
             data: (state) => Column(
@@ -295,6 +308,10 @@ class _MobileVotingConfigSettingsSheetState
                         color: context.colors.text.destructive,
                       ),
                     ),
+                    ...untranslatedDetailsButton(
+                      _errorDetails,
+                      alignment: AlignmentDirectional.centerStart,
+                    ),
                   ],
                   const SizedBox(height: AppSpacing.xs),
                   AppButton(
@@ -332,6 +349,10 @@ class _MobileVotingConfigSettingsSheetState
                     style: AppTypography.bodySmall.copyWith(
                       color: context.colors.text.destructive,
                     ),
+                  ),
+                  ...untranslatedDetailsButton(
+                    _errorDetails,
+                    alignment: AlignmentDirectional.centerStart,
                   ),
                 ],
                 const SizedBox(height: AppSpacing.md),
@@ -632,21 +653,28 @@ class _TestRoundsRow extends StatelessWidget {
 }
 
 class _LoadError extends StatelessWidget {
-  const _LoadError({required this.message});
+  const _LoadError({required this.message, this.details});
 
   final String message;
+  final String? details;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: 180,
       child: Center(
-        child: Text(
-          message,
-          textAlign: TextAlign.center,
-          style: AppTypography.bodyMedium.copyWith(
-            color: context.colors.text.secondary,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.secondary,
+              ),
+            ),
+            ...untranslatedDetailsButton(details),
+          ],
         ),
       ),
     );

@@ -73,8 +73,9 @@ class _MobileMigrationFastReviewState
   String? _broadcastError;
   rust_sync.OrchardMigrationImmediatePlan? _submittedPlan;
 
-  /// Whether Rust reported that the broadcast did not fully finish.
-  bool _submittedWithWarning = false;
+  /// Rust's English account of a broadcast that did not fully finish, shown
+  /// behind a "Show details" button.
+  String? _submittedMessage;
 
   /// Whether the network may not have received the transaction.
   bool _submittedUnconfirmed = false;
@@ -157,14 +158,15 @@ class _MobileMigrationFastReviewState
     await _refreshPrivateMigrationDraftPresentation(ref);
     if (!mounted) return;
 
-    // Rust's English account goes to the log; the notice below words it.
+    // The notice words Rust's English account; the account itself goes to
+    // the log and behind the notice's "Show details" button.
     final message = result.message?.trim() ?? '';
     logUntranslatedText(message);
     setState(() {
       _ledgerAccountUuid = null;
       _ledgerPlan = null;
       _submittedPlan = plan;
-      _submittedWithWarning = message.isNotEmpty;
+      _submittedMessage = message.isEmpty ? null : message;
       _submittedUnconfirmed = result.status == 'pending_broadcast';
     });
   }
@@ -243,7 +245,7 @@ class _MobileMigrationFastReviewState
                       color: colors.text.primary,
                     ),
                   ),
-                  if (_submittedWithWarning) ...[
+                  if (_submittedMessage != null) ...[
                     const SizedBox(height: AppSpacing.sm),
                     Text(
                       _submittedUnconfirmed
@@ -257,6 +259,7 @@ class _MobileMigrationFastReviewState
                         color: colors.text.warning,
                       ),
                     ),
+                    ...untranslatedDetailsButton(_submittedMessage),
                   ],
                 ],
               ),

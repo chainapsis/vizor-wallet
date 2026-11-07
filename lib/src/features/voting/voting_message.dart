@@ -574,6 +574,13 @@ VotingMessage normalizedVotingMessage(VotingMessage message) =>
     ? _withSummary(votingTextMessage(message.value), message.summary)
     : message;
 
+/// The untranslated text behind [message], for a "Show details" button, or
+/// null when the message is the app's own copy.
+String? votingMessageDetails(VotingMessage? message) {
+  final normalized = message == null ? null : normalizedVotingMessage(message);
+  return normalized is VotingLiteralMessage ? normalized.value : null;
+}
+
 VotingMessage _withSummary(VotingMessage message, VotingNoticeKind summary) =>
     message is VotingLiteralMessage
     ? VotingLiteralMessage(message.value, summary: summary)

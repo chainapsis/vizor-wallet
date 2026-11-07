@@ -25,6 +25,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/primitives.dart';
 import '../../../../core/zcash/block_spacing.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/untranslated_details.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../providers/account_provider.dart';

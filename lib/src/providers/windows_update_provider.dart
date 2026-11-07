@@ -38,18 +38,28 @@ enum WindowsUpdateIssue {
 }
 
 class WindowsUpdateDownloadResult {
-  const WindowsUpdateDownloadResult.started() : started = true, issue = null;
+  const WindowsUpdateDownloadResult.started()
+    : started = true,
+      issue = null,
+      nativeMessage = '';
 
-  const WindowsUpdateDownloadResult.failed({this.issue}) : started = false;
+  const WindowsUpdateDownloadResult.failed({
+    this.issue,
+    this.nativeMessage = '',
+  }) : started = false;
 
   final bool started;
 
-  /// Set when the app found the reason. The native updater's text, if any,
-  /// is only logged.
+  /// Set when the app found the reason; otherwise [nativeMessage] may hold the
+  /// native updater's untranslated text.
   final WindowsUpdateIssue? issue;
+  final String nativeMessage;
 
   String message(AppLocalizations l10n) =>
       (issue ?? WindowsUpdateIssue.generic).message(l10n);
+
+  /// The native updater's text, for a "Show details" button.
+  String? get details => _nativeDetails(issue, nativeMessage);
 }
 
 /// Why an update operation failed, and whether the user was waiting on it.
@@ -137,9 +147,12 @@ class WindowsUpdateState {
   final WindowsUpdateIssue? issue;
 
   /// The failure text to show: the app's own reason, else the generic one.
-  /// The native updater's [message] is untranslated and only logged.
   String failureMessage(AppLocalizations l10n) =>
       (issue ?? WindowsUpdateIssue.generic).message(l10n);
+
+  /// The native updater's untranslated [message], for a "Show details"
+  /// button under [failureMessage].
+  String? get failureDetails => _nativeDetails(issue, message);
 
   /// Set only while [status] is [WindowsUpdateStatus.failed]. Carries what the
   /// prompt needs to decide whether the user should be interrupted, and to tell
@@ -269,11 +282,17 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
     } catch (error) {
       final failure = _updateErrorMessage(error);
       _setFailed(failure);
-      return WindowsUpdateDownloadResult.failed(issue: failure.issue);
+      return WindowsUpdateDownloadResult.failed(
+        issue: failure.issue,
+        nativeMessage: failure.message,
+      );
     }
 
     if (state.status == WindowsUpdateStatus.failed) {
-      return WindowsUpdateDownloadResult.failed(issue: state.issue);
+      return WindowsUpdateDownloadResult.failed(
+        issue: state.issue,
+        nativeMessage: state.message,
+      );
     }
     return const WindowsUpdateDownloadResult.started();
   }
@@ -366,6 +385,12 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
       }
     });
   }
+}
+
+/// Native text is shown only when the app has no reason of its own.
+String? _nativeDetails(WindowsUpdateIssue? issue, String nativeMessage) {
+  final details = nativeMessage.trim();
+  return issue == null && details.isNotEmpty ? details : null;
 }
 
 ({String message, WindowsUpdateIssue? issue}) _updateErrorMessage(

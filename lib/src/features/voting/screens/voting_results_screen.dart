@@ -12,6 +12,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/untranslated_details.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
@@ -116,8 +117,9 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
               _clearPendingTallyRefresh();
               return _Message(
                 context.l10n.votingResultsLoadFailed(
-                  friendlyVotingErrorMessage(context.l10n, error),
+                  friendlyVotingLoadErrorMessage(context.l10n, error),
                 ),
+                details: friendlyVotingErrorDetails(error),
               );
             },
             data: (result) {
@@ -127,8 +129,12 @@ class _VotingResultsViewState extends ConsumerState<VotingResultsView> {
                 if (session.hasError) {
                   return _Message(
                     context.l10n.votingResultsRoundLoadFailed(
-                      friendlyVotingErrorMessage(context.l10n, session.error!),
+                      friendlyVotingLoadErrorMessage(
+                        context.l10n,
+                        session.error!,
+                      ),
                     ),
+                    details: friendlyVotingErrorDetails(session.error!),
                   );
                 }
                 return const VotingPaneLoading();
@@ -948,19 +954,26 @@ class _TallyProgressBar extends StatelessWidget {
 }
 
 class _Message extends StatelessWidget {
-  const _Message(this.message);
+  const _Message(this.message, {this.details});
 
   final String message;
+  final String? details;
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Text(
-        message,
-        textAlign: TextAlign.center,
-        style: AppTypography.bodyMedium.copyWith(
-          color: context.colors.text.secondary,
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
+          ...untranslatedDetailsButton(details),
+        ],
       ),
     );
   }

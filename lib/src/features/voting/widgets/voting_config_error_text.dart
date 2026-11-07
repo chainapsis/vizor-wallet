@@ -30,6 +30,13 @@ String staticVotingConfigSourceProblemText(
 bool votingConfigErrorIsSdkRefusal(Object error) =>
     error is rust_wire.VotingErrorView || error is VotingRustException;
 
+/// The SDK's untranslated reason behind [votingConfigSourceErrorText], for a
+/// "Show details" button.
+String? votingConfigSourceErrorDetails(Object error) =>
+    votingConfigErrorIsSdkRefusal(error)
+    ? describeVotingConfigMirrorError(error)
+    : null;
+
 /// What the voting config settings show when adding, choosing or deleting a
 /// source fails. [fallback] covers failures with no copy of their own.
 String votingConfigSourceErrorText(

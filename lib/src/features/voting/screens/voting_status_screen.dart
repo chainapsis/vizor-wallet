@@ -20,6 +20,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_shape.dart';
+import '../../../core/widgets/untranslated_details.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
@@ -403,6 +404,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             phase: VotingSessionPhase.error,
             horizontalPadding: widget.contentHorizontalPadding,
             errorMessage: startError.text(context.l10n),
+            errorDetails: votingMessageDetails(startError),
             onRetry: _retry,
           );
         }
@@ -412,6 +414,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             phase: VotingSessionPhase.error,
             horizontalPadding: widget.contentHorizontalPadding,
             errorMessage: job?.errorMessage?.text(context.l10n),
+            errorDetails: votingMessageDetails(job?.errorMessage),
             onRetry: _jobRetry(job),
             onClear: _clearError,
           );
@@ -440,6 +443,9 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         horizontalPadding: widget.contentHorizontalPadding,
         errorMessage:
             job?.errorMessage?.text(context.l10n) ?? _messageFromError(error),
+        errorDetails: job?.errorMessage != null
+            ? votingMessageDetails(job?.errorMessage)
+            : friendlyVotingErrorDetails(error),
         onRetry: _jobRetry(job),
         onClear: job?.status == VotingSubmissionJobStatus.error
             ? _clearError
@@ -590,6 +596,9 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           walletSnapshotHeight: state.walletSnapshotHeight,
           walletChainTipHeight: state.walletChainTipHeight,
           errorMessage: _sessionErrorMessage(state, localError),
+          errorDetails: localError != null
+              ? votingMessageDetails(job?.errorMessage)
+              : votingMessageDetails(state.error?.message),
           terminalDelegationNotice: state.terminalDelegationNotice?.text(
             context.l10n,
           ),
@@ -878,6 +887,7 @@ class VotingStatusContent extends StatelessWidget {
     this.walletSnapshotHeight,
     this.walletChainTipHeight,
     this.errorMessage,
+    this.errorDetails,
     this.terminalDelegationNotice,
     this.onRetry,
     this.onClear,
@@ -922,6 +932,9 @@ class VotingStatusContent extends StatelessWidget {
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
   final String? errorMessage;
+
+  /// Untranslated text behind [errorMessage], behind a "Show details" button.
+  final String? errorDetails;
 
   /// A delegation the SDK ended, shown alongside whatever the round is still
   /// doing. Not an error: the remaining bundles still delegate and vote.
@@ -1092,6 +1105,7 @@ class VotingStatusContent extends StatelessWidget {
                     color: context.colors.text.destructive,
                   ),
                 ),
+                ...untranslatedDetailsButton(errorDetails),
                 const SizedBox(height: AppSpacing.sm),
                 Wrap(
                   alignment: WrapAlignment.center,

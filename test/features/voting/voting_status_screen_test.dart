@@ -1952,9 +1952,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // The specific error is only logged; the screen shows the summary.
+    // The specific error stays behind "Show details" under the summary.
     expect(find.text(testL10n.votingErrorSessionFailed), findsOne);
     expect(find.textContaining('active account lookup failed'), findsNothing);
+    await tester.tap(find.text(testL10n.commonShowDetails));
+    await tester.pumpAndSettle();
+    expect(find.text('active account lookup failed'), findsOne);
     expect(find.text('Retry'), findsOne);
   });
 
@@ -3503,9 +3506,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining("Couldn't load results"), findsOneWidget);
+    // The SDK's reason is behind "Show details"; the copy says what to do.
     expect(
-      find.textContaining(testL10n.votingErrorSessionFailed),
+      find.text(
+        testL10n.votingResultsLoadFailed(testL10n.votingLoadFailedRetry),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text(testL10n.commonShowDetails));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('not authenticated by voting config'),
       findsOneWidget,
     );
     expect(_tallyRequestCount(http, _unauthenticatedRoundId), 0);

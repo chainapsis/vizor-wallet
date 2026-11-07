@@ -1751,6 +1751,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 ),
               ),
             ),
+            if (proofFailed)
+              ...untranslatedDetailsButton(_proofStatus?.message),
           ],
           const SizedBox(height: AppSpacing.lg),
           AppButton(
@@ -1864,6 +1866,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 ),
               ),
             ),
+            if (proofFailed)
+              ...untranslatedDetailsButton(_proofStatus?.message),
           ],
           const SizedBox(height: AppSpacing.lg),
           AppButton(

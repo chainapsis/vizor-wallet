@@ -919,6 +919,42 @@ void main() {
     );
   });
 
+  testWidgets('keeps the error details reachable with larger text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(() async {
+      tester.platformDispatcher.clearTextScaleFactorTestValue();
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    // The sidebar's account header overflows at this text size, a separate
+    // problem; this test checks only the receive pane.
+    final onError = FlutterError.onError;
+    FlutterError.onError = (details) {
+      if (details.toString().contains('app_main_sidebar.dart')) return;
+      onError?.call(details);
+    };
+    try {
+      await tester.pumpWidget(
+        _receiveHarness(
+          receiveAddressService: _FailingReceiveAddressService.new,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // The error sits in flow, so the pane scrolls far enough to reach it.
+      final details = find.text(testL10n.commonShowDetails);
+      await tester.drag(find.byType(Scrollable).last, const Offset(0, -2000));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.getRect(details).bottom, lessThanOrEqualTo(720));
+    } finally {
+      FlutterError.onError = onError;
+    }
+  });
+
   for (final pool in ['Shielded', 'Transparent']) {
     testWidgets('shares the selected $pool address', (tester) async {
       final semantics = tester.ensureSemantics();

@@ -2267,6 +2267,18 @@ abstract class AppLocalizations {
   /// **'Enter amount in USD'**
   String get commonEnterAmountInUsd;
 
+  /// Note above the untranslated error text in the dialog or sheet that commonShowDetails opens. The text below it is English from the wallet and is not translated.
+  ///
+  /// In en, this message translates to:
+  /// **'This is the original error text. If the problem keeps happening, copy it and send it to support.'**
+  String get commonErrorDetailsHint;
+
+  /// Title of the dialog or sheet that commonShowDetails opens.
+  ///
+  /// In en, this message translates to:
+  /// **'Error details'**
+  String get commonErrorDetailsTitle;
+
   /// Status value of a transaction or swap that failed. Shared by: activity, send, settings, swap.
   ///
   /// In en, this message translates to:
@@ -2956,6 +2968,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Shielding...'**
   String get commonShielding;
+
+  /// Small button under an error whose cause is untranslated text from the wallet (Rust, SDK or platform). Opens that text with a copy button.
+  ///
+  /// In en, this message translates to:
+  /// **'Show details'**
+  String get commonShowDetails;
 
   /// Ghost button on a receipt row that opens the full address of the sender or recipient. Shared by: activity, pay, send, swap.
   ///
@@ -19377,6 +19395,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reconnect your Ledger and try again.'**
   String get votingLedgerReconnect;
+
+  /// Shown in place of an untranslated voting SDK error when a voting screen fails to load: alone under a load-failed title, or as {error} in votingResultsLoadFailed, votingResultsRoundLoadFailed, votingReviewLoadFailed and votingConfirmationLoadFailed. The English error stays behind commonShowDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again in a moment.'**
+  String get votingLoadFailedRetry;
 
   /// Error on the mobile voting pages when the wallet account could not be loaded; {error} is the reason on a new line.
   ///

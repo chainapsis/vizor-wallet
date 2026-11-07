@@ -1319,6 +1319,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonEnterAmountInUsd => 'USD 단‍위‍로 금‍액 입‍력';
 
   @override
+  String get commonErrorDetailsHint =>
+      '번‍역‍되‍지 않‍은 원‍래 오‍류 문‍구‍예‍요. 문‍제‍가 계‍속‍되‍면 복‍사‍해‍서 고‍객 지‍원‍에 보‍내 주‍세‍요.';
+
+  @override
+  String get commonErrorDetailsTitle => '오‍류 세‍부 정‍보';
+
+  @override
   String get commonFailed => '실‍패';
 
   @override
@@ -1680,6 +1687,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonShielding => '차‍폐‍하‍는 중...';
+
+  @override
+  String get commonShowDetails => '자‍세‍히 보‍기';
 
   @override
   String get commonShowFullAddress => '전‍체 주‍소 보‍기';
@@ -11681,6 +11691,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get votingLedgerReconnect => 'Ledger‍를 다‍시 연‍결‍하‍고 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get votingLoadFailedRetry => '잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
   String votingMobileAccountLoadFailed(String error) {

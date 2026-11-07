@@ -1338,6 +1338,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonEnterAmountInUsd => 'Enter amount in USD';
 
   @override
+  String get commonErrorDetailsHint =>
+      'This is the original error text. If the problem keeps happening, copy it and send it to support.';
+
+  @override
+  String get commonErrorDetailsTitle => 'Error details';
+
+  @override
   String get commonFailed => 'Failed';
 
   @override
@@ -1701,6 +1708,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonShielding => 'Shielding...';
+
+  @override
+  String get commonShowDetails => 'Show details';
 
   @override
   String get commonShowFullAddress => 'Show full address';
@@ -11873,6 +11883,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get votingLedgerReconnect => 'Reconnect your Ledger and try again.';
+
+  @override
+  String get votingLoadFailedRetry => 'Try again in a moment.';
 
   @override
   String votingMobileAccountLoadFailed(String error) {

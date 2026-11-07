@@ -1794,6 +1794,14 @@
   "@commonEnterAmountInUsd": {
     "description": "Accessibility label of the toggle that switches the mobile Pay amount input to US dollars. Shared by: pay, receive."
   },
+  "commonErrorDetailsHint": "This is the original error text. If the problem keeps happening, copy it and send it to support.",
+  "@commonErrorDetailsHint": {
+    "description": "Note above the untranslated error text in the dialog or sheet that commonShowDetails opens. The text below it is English from the wallet and is not translated."
+  },
+  "commonErrorDetailsTitle": "Error details",
+  "@commonErrorDetailsTitle": {
+    "description": "Title of the dialog or sheet that commonShowDetails opens."
+  },
   "commonFailed": "Failed",
   "@commonFailed": {
     "description": "Status value of a transaction or swap that failed. Shared by: activity, send, settings, swap."
@@ -2263,6 +2271,10 @@
   "commonShielding": "Shielding...",
   "@commonShielding": {
     "description": "Title of the mobile receipt of a pending shielding transaction. Shared by: activity, home."
+  },
+  "commonShowDetails": "Show details",
+  "@commonShowDetails": {
+    "description": "Small button under an error whose cause is untranslated text from the wallet (Rust, SDK or platform). Opens that text with a copy button."
   },
   "commonShowFullAddress": "Show full address",
   "@commonShowFullAddress": {
@@ -15176,6 +15188,10 @@
   "votingLedgerReconnect": "Reconnect your Ledger and try again.",
   "@votingLedgerReconnect": {
     "description": "Fallback body of the Ledger panel when the device has a problem and no detail is known."
+  },
+  "votingLoadFailedRetry": "Try again in a moment.",
+  "@votingLoadFailedRetry": {
+    "description": "Shown in place of an untranslated voting SDK error when a voting screen fails to load: alone under a load-failed title, or as {error} in votingResultsLoadFailed, votingResultsRoundLoadFailed, votingReviewLoadFailed and votingConfirmationLoadFailed. The English error stays behind commonShowDetails."
   },
   "votingMobileAccountLoadFailed": "Couldn't load account.\n{error}",
   "@votingMobileAccountLoadFailed": {

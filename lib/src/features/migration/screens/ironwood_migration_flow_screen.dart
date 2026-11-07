@@ -46,6 +46,7 @@ import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_toast.dart';
+import '../../../core/widgets/untranslated_details.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/block_spacing_provider.dart';
 import '../../../providers/network_upgrade_window_provider.dart';

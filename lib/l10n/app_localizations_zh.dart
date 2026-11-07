@@ -1285,6 +1285,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonEnterAmountInUsd => '以 USD 输入金额';
 
   @override
+  String get commonErrorDetailsHint => '这是原始错误信息。如果问题持续，请复制并发送给支持团队。';
+
+  @override
+  String get commonErrorDetailsTitle => '错误详情';
+
+  @override
   String get commonFailed => '失败';
 
   @override
@@ -1636,6 +1642,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonShielding => '屏蔽中...';
+
+  @override
+  String get commonShowDetails => '查看详情';
 
   @override
   String get commonShowFullAddress => '显示完整地址';
@@ -10947,6 +10956,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get votingLedgerReconnect => '请重新连接你的 Ledger 并重试。';
+
+  @override
+  String get votingLoadFailedRetry => '请稍后重试。';
 
   @override
   String votingMobileAccountLoadFailed(String error) {

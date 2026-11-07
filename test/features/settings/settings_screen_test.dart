@@ -445,7 +445,7 @@ void main() {
       await tester.tap(find.text('Updates'));
       await tester.pumpAndSettle();
 
-      // The native text is only logged; the modal shows the app's copy.
+      // The native text stays behind "Show details" under the app's copy.
       expect(
         find.text("Couldn't complete the update. Try again."),
         findsOneWidget,
@@ -454,6 +454,9 @@ void main() {
         find.textContaining('Signed feed verification failed.'),
         findsNothing,
       );
+      await tester.tap(find.text(testL10n.commonShowDetails));
+      await tester.pumpAndSettle();
+      expect(find.text('Signed feed verification failed.'), findsOneWidget);
     } finally {
       await tester.binding.setSurfaceSize(null);
       _resetPlatformOverride();
