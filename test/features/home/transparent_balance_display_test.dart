@@ -1,4 +1,6 @@
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:zcash_wallet/src/core/zcash/transparent_ledger_errors.dart';
 import 'package:zcash_wallet/src/features/home/services/transparent_balance_display.dart';
 import 'package:zcash_wallet/src/features/home/services/transparent_shielding_service.dart';
@@ -285,6 +287,36 @@ void main() {
       expect(copy, privateQueriesOptOutUnfinishedMessage(testL10n));
       expect(copy, contains('Turn it off again'));
       expect(copy, isNot(contains('until private recovery completes')));
+    });
+  });
+
+  group('shield errors raised before Rust', () {
+    final ko = lookupAppLocalizations(const Locale('ko'));
+
+    test('are explained in the shown language without an English detail', () {
+      for (final (reason, copy) in [
+        (ShieldPrecondition.balanceTooSmall, ko.homeShieldErrorTooSmall),
+        (
+          ShieldPrecondition.secretUnavailable,
+          ko.homeShieldErrorSeedUnavailable,
+        ),
+        (ShieldPrecondition.noActiveAccount, ko.commonNoActiveAccountSentence),
+      ]) {
+        final error = ShieldPreconditionException(reason);
+        expect(friendlyShieldBalanceError(ko, error), copy);
+        expect(shieldBalanceErrorDetails(error), isNull);
+      }
+    });
+
+    test('a stored-locally failure after broadcast is localized', () {
+      expect(
+        postBroadcastShieldErrorMessage(
+          ko,
+          Exception('Broadcast succeeded (txid=ab) but local storage failed.'),
+        ),
+        ko.homeShieldBroadcastNotStored,
+      );
+      expect(postBroadcastShieldErrorMessage(ko, Exception('timeout')), isNull);
     });
   });
 }
