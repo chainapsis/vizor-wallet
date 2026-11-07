@@ -19,6 +19,18 @@
 - Error messages say what happened and what to do next:
   `연결하지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.`
 
+## Particles after placeholders
+
+- A particle after a placeholder depends on how the inserted value ends, which
+  the message cannot know. Do not hedge it as `{method}(으)로` or
+  `{label}을(를)`. Put a fixed noun between them (`{method} 잠금 해제를`,
+  `{label} 연락처를`, `{signer} 기기에서`), use a particle that does not change
+  (`{amount}만큼`), or attach the particle to a word in parentheses
+  (`금액({amount})과`).
+- When every value of a placeholder ends the same way, a fixed particle is
+  fine: `{feature}` always ends in `잠금 해제`, so `{feature}를` is correct.
+- The l10n gate test rejects a hedged particle after a placeholder.
+
 ## Numbers, units and names
 
 - Put a space between a number and a unit or symbol: `0.5 ZEC`, `3 블록`.

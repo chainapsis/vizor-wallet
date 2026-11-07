@@ -677,7 +677,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String addressBookRemoveBody(String label) {
-    return '$label‍을(를) 연‍락‍처‍에‍서 삭‍제‍해‍요.';
+    return '$label 연‍락‍처‍를 삭‍제‍해‍요.';
   }
 
   @override
@@ -685,7 +685,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String addressBookRemoveConfirmBody(String label) {
-    return '\"$label\"을(를) 연‍락‍처‍에‍서 삭‍제‍해‍요. 지‍난 거‍래‍에‍는 영‍향‍이 없‍어‍요.';
+    return '\"$label\" 연‍락‍처‍를 삭‍제‍해‍요. 지‍난 거‍래‍에‍는 영‍향‍이 없‍어‍요.';
   }
 
   @override
@@ -806,12 +806,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String appLinuxUpdateAvailable(String version) {
-    return 'Vizor $version‍을(를) 사‍용‍할 수 있‍어‍요.';
+    return 'Vizor $version 버‍전‍을 사‍용‍할 수 있‍어‍요.';
   }
 
   @override
   String appLinuxUpdateAvailableTor(String version) {
-    return 'Vizor $version‍을(를) 사‍용‍할 수 있‍어‍요. 릴‍리‍스 페‍이‍지‍는 Vizor‍의 Tor 연‍결 밖‍에‍서 브‍라‍우‍저‍로 열‍려‍요.';
+    return 'Vizor $version 버‍전‍을 사‍용‍할 수 있‍어‍요. 릴‍리‍스 페‍이‍지‍는 Vizor‍의 Tor 연‍결 밖‍에‍서 브‍라‍우‍저‍로 열‍려‍요.';
   }
 
   @override
@@ -1115,7 +1115,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String commonBackTo(String destination) {
-    return '$destination(으)로 돌‍아‍가‍기';
+    return '$destination 화‍면‍으‍로 돌‍아‍가‍기';
   }
 
   @override
@@ -4169,7 +4169,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationImmediateTradeoffBody(String amount, String highlight) {
-    return '눈‍에 보‍이‍는 한 번‍의 단‍계‍로 넘‍어‍가‍므‍로 $amount‍과(와) 시‍점‍이 $highlight.';
+    return '눈‍에 보‍이‍는 한 번‍의 단‍계‍로 넘‍어‍가‍므‍로 금‍액($amount)과 시‍점‍이 $highlight.';
   }
 
   @override
@@ -6169,12 +6169,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String onboardingBiometricEnableFailed(String method) {
-    return '$method‍을(를) 켜‍지 못‍했‍어‍요. 설‍정‍에‍서 다‍시 시‍도‍할 수 있‍어‍요.';
+    return '$method 잠‍금 해‍제‍를 켜‍지 못‍했‍어‍요. 설‍정‍에‍서 다‍시 시‍도‍할 수 있‍어‍요.';
   }
 
   @override
   String onboardingBiometricSetUpFirst(String method) {
-    return '먼‍저 기‍기 설‍정‍에‍서 $method‍을(를) 설‍정‍해 주‍세‍요.';
+    return '먼‍저 기‍기 설‍정‍에‍서 $method 설‍정‍을 마‍쳐 주‍세‍요.';
   }
 
   @override
@@ -6183,7 +6183,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String onboardingBiometricTitle(String method) {
-    return '$method(으)로\n지‍갑 잠‍금 해‍제';
+    return '지‍갑 잠‍금 해‍제‍에\n$method 사‍용';
   }
 
   @override
@@ -6992,7 +6992,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String payTitleAmount(String symbol) {
-    return '$symbol(으)로 결‍제';
+    return '$symbol 결‍제';
   }
 
   @override
@@ -9294,22 +9294,22 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String settingsBiometricSetupFirst(String biometric) {
-    return '먼‍저 기‍기 설‍정‍에‍서 $biometric‍을(를) 설‍정‍하‍세‍요.';
+    return '먼‍저 기‍기 설‍정‍에‍서 $biometric 설‍정‍을 마‍쳐 주‍세‍요.';
   }
 
   @override
   String settingsBiometricTurnOffBody(String feature) {
-    return '앞‍으‍로‍는 암‍호‍로 Vizor 잠‍금‍을 해‍제‍해‍요. $feature‍은(는) 언‍제‍든 설‍정‍에‍서 다‍시 켤 수 있‍어‍요.';
+    return '앞‍으‍로‍는 암‍호‍로 Vizor 잠‍금‍을 해‍제‍해‍요. $feature‍는 언‍제‍든 설‍정‍에‍서 다‍시 켤 수 있‍어‍요.';
   }
 
   @override
   String settingsBiometricTurnOffTitle(String feature) {
-    return '$feature‍을(를) 끌‍까‍요?';
+    return '$feature‍를 끌‍까‍요?';
   }
 
   @override
   String settingsBiometricUpdateFailed(String feature) {
-    return '$feature‍을(를) 변‍경‍하‍지 못‍했‍어‍요.';
+    return '$feature‍를 변‍경‍하‍지 못‍했‍어‍요.';
   }
 
   @override
@@ -9956,7 +9956,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String settingsUpdateStatusAvailable(String version) {
-    return '버‍전 $version‍을(를) 사‍용‍할 수 있‍어‍요.';
+    return '$version 버‍전‍을 사‍용‍할 수 있‍어‍요.';
   }
 
   @override
@@ -10313,12 +10313,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String swapActivityStateAssetUnsupported(String symbol, String chain) {
-    return '$chain‍의 $symbol‍은(는) 현‍재 지‍원‍되‍지 않‍아‍요.';
+    return '$chain‍의 $symbol 스‍왑‍은 현‍재 지‍원‍되‍지 않‍아‍요.';
   }
 
   @override
   String swapActivityStateDecimalPlaces(String symbol, int decimals) {
-    return '$symbol‍은(는) 소‍수‍점 $decimals‍자‍리‍까‍지 지‍원‍해‍요.';
+    return '$symbol 금‍액‍은 소‍수‍점 $decimals‍자‍리‍까‍지 지‍원‍해‍요.';
   }
 
   @override
@@ -10340,7 +10340,7 @@ class AppLocalizationsKo extends AppLocalizations {
     String estimateAmount,
     String symbol,
   ) {
-    return '실‍시‍간 견‍적‍은 $estimateAmount $symbol 대‍신 $liveAmount $symbol‍을(를) 사‍용‍해‍요. 계‍속‍하‍기 전‍에 최‍소 보‍장 수‍량‍을 확‍인‍하‍세‍요.';
+    return '실‍시‍간 견‍적‍은 $estimateAmount $symbol 대‍신 $liveAmount $symbol 수‍량‍을 사‍용‍해‍요. 계‍속‍하‍기 전‍에 최‍소 보‍장 수‍량‍을 확‍인‍하‍세‍요.';
   }
 
   @override
@@ -10518,7 +10518,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String swapAddressRecipientDescription(String symbol) {
-    return '$symbol‍이(가) 이 주‍소‍로 전‍송‍돼‍요.';
+    return '스‍왑‍한 $symbol 자‍산‍은 이 주‍소‍로 전‍송‍돼‍요.';
   }
 
   @override
@@ -10531,7 +10531,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String swapAddressRefundDescription(String symbol, String chain) {
-    return '스‍왑‍이 실‍패‍하‍거‍나 환‍율‍이 변‍동‍되‍면 수‍수‍료‍를 제‍외‍한 금‍액‍을 $chain‍의 $symbol(으)로 환‍불‍해 드‍려‍요.';
+    return '스‍왑‍이 실‍패‍하‍거‍나 환‍율‍이 변‍동‍되‍면 수‍수‍료‍를 제‍외‍한 금‍액‍을 $chain‍의 $symbol 자‍산‍으‍로 환‍불‍해 드‍려‍요.';
   }
 
   @override
@@ -11573,12 +11573,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String votingErrorSignBundleFirst(int bundle, String signer) {
-    return '제‍출‍하‍기 전‍에 $signer(으)로 위‍임 묶‍음 $bundle‍에 서‍명‍해 주‍세‍요.';
+    return '제‍출‍하‍기 전‍에 $signer 기‍기‍에‍서 위‍임 묶‍음 $bundle‍에 서‍명‍해 주‍세‍요.';
   }
 
   @override
   String votingErrorSignBundlesFirst(String signer) {
-    return '제‍출‍하‍기 전‍에 $signer(으)로 위‍임 묶‍음‍에 서‍명‍해 주‍세‍요.';
+    return '제‍출‍하‍기 전‍에 $signer 기‍기‍에‍서 위‍임 묶‍음‍에 서‍명‍해 주‍세‍요.';
   }
 
   @override
@@ -11866,7 +11866,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String votingPrivacyTrimNotice(String amount) {
-    return '제‍출‍한 투‍표‍가 덜 식‍별‍되‍도‍록 $amount‍은(는) 이‍번 투‍표‍에‍서 제‍외‍돼‍요.';
+    return '제‍출‍한 투‍표‍가 덜 식‍별‍되‍도‍록 $amount‍만‍큼‍은 이‍번 투‍표‍에‍서 제‍외‍돼‍요.';
   }
 
   @override
@@ -12098,7 +12098,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String votingTerminalSingle(String bundle) {
-    return '위‍임 $bundle‍은(는) 계‍속‍할 수 없‍어‍요. 거‍래‍가 이‍미 체‍인‍에 있‍을 수 있‍으‍니 다‍시 시‍도‍하‍지 마‍세‍요.';
+    return '위‍임 $bundle‍은 계‍속‍할 수 없‍어‍요. 거‍래‍가 이‍미 체‍인‍에 있‍을 수 있‍으‍니 다‍시 시‍도‍하‍지 마‍세‍요.';
   }
 
   @override

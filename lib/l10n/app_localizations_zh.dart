@@ -5804,12 +5804,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String onboardingBiometricEnableFailed(String method) {
-    return '无法启用 $method。你可以稍后在设置中重试。';
+    return '无法启用“$method”。你可以稍后在设置中重试。';
   }
 
   @override
   String onboardingBiometricSetUpFirst(String method) {
-    return '请先在设备设置中设置 $method。';
+    return '请先在设备设置中设置“$method”。';
   }
 
   @override
@@ -5817,7 +5817,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String onboardingBiometricTitle(String method) {
-    return '使用 $method\n解锁你的钱包';
+    return '使用“$method”\n解锁你的钱包';
   }
 
   @override
@@ -8703,22 +8703,22 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String settingsBiometricSetupFirst(String biometric) {
-    return '请先在设备设置中设置$biometric。';
+    return '请先在设备设置中设置“$biometric”。';
   }
 
   @override
   String settingsBiometricTurnOffBody(String feature) {
-    return '你将使用数字密码解锁 Vizor。你可以随时在设置中重新开启$feature。';
+    return '你将使用数字密码解锁 Vizor。你可以随时在设置中重新开启“$feature”。';
   }
 
   @override
   String settingsBiometricTurnOffTitle(String feature) {
-    return '要关闭$feature吗？';
+    return '要关闭“$feature”吗？';
   }
 
   @override
   String settingsBiometricUpdateFailed(String feature) {
-    return '无法更新$feature。';
+    return '无法更新“$feature”。';
   }
 
   @override
