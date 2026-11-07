@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../core/l10n/l10n.dart';
+import '../shared/onboarding_error_messages.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
@@ -40,7 +41,7 @@ class _SecretPassphraseScreenState
   bool _revealed = false;
   bool _copied = false;
   Timer? _copyResetTimer;
-  String? _prepareError;
+  Object? _prepareError;
 
   @override
   void initState() {
@@ -97,7 +98,7 @@ class _SecretPassphraseScreenState
       _isPreparing = false;
     } catch (e, st) {
       log('SecretPassphraseScreen._prepareMnemonic: ERROR: $e\n$st');
-      _prepareError = e.toString();
+      _prepareError = e;
       _isPreparing = false;
     }
   }
@@ -172,7 +173,10 @@ class _SecretPassphraseScreenState
             isPreparing: _isPreparing,
             revealed: _revealed,
             copied: _copied,
-            prepareError: _prepareError,
+            prepareError: switch (_prepareError) {
+              final error? => onboardingSubmitErrorMessage(context.l10n, error),
+              null => null,
+            },
             onPrimaryPressed: _handlePrimaryAction,
             onCopyPressed: _copyMnemonic,
           ),
