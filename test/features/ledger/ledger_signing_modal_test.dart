@@ -299,7 +299,10 @@ void main() {
         ),
         readiness: const LedgerAppReadinessState.failed(
           failure: LedgerAppReadinessFailure.unsupportedVersion,
-          message: 'Update the Ledger Zcash app to version 3.9.3 or newer.',
+          error: LedgerAppReadinessException(
+            LedgerAppReadinessFailure.unsupportedVersion,
+            'Update the Ledger Zcash app to version 3.9.3 or newer.',
+          ),
         ),
       ),
     );

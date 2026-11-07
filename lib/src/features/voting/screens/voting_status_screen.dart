@@ -25,6 +25,7 @@ import '../../../providers/voting/voting_state.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../keystone/widgets/keystone_scan_help_overlay.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
@@ -1271,7 +1272,15 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
         ),
       LedgerAppReadinessPhase.failed => (
         context.l10n.commonLedgerNeedsAttention,
-        readiness.message ?? context.l10n.votingLedgerReconnect,
+        switch (readiness.error) {
+              final error? => ledgerFailureGuidance(
+                context.l10n,
+                error,
+                requestKind: LedgerRequestKind.voting,
+              )?.message,
+              null => null,
+            } ??
+            context.l10n.votingLedgerReconnect,
       ),
       _ => (
         switch (stage) {
