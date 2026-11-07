@@ -65,6 +65,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get accountNameLabel => '계‍정 이‍름';
 
   @override
+  String get accountNameRequired => '이‍름‍을 입‍력‍해 주‍세‍요.';
+
+  @override
   String get accountNameTooLong => '이‍름‍은 20‍자‍까‍지 입‍력‍할 수 있‍어‍요.';
 
   @override

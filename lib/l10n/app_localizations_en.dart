@@ -66,6 +66,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountNameLabel => 'Account name';
 
   @override
+  String get accountNameRequired => 'Enter a name.';
+
+  @override
   String get accountNameTooLong => 'Name can be up to 20 characters.';
 
   @override

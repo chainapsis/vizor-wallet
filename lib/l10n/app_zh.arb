@@ -16,6 +16,7 @@
   "aboutVersionLabel": "版本：{version} 公测版",
   "aboutWebsite": "网站",
   "accountNameLabel": "账户名称",
+  "accountNameRequired": "请输入名称。",
   "accountNameTooLong": "名称最多 20 个字符。",
   "accountsActionsLabel": "账户操作",
   "accountsAddressLoadFailed": "无法加载账户地址",

@@ -196,6 +196,12 @@ abstract class AppLocalizations {
   /// **'Account name'**
   String get accountNameLabel;
 
+  /// Validation message when the user saves an account name that is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a name.'**
+  String get accountNameRequired;
+
   /// Validation message when an account name is longer than 20 characters.
   ///
   /// In en, this message translates to:

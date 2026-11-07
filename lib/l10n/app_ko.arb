@@ -16,6 +16,7 @@
   "aboutVersionLabel": "버‍전: {version} 퍼‍블‍릭 베‍타",
   "aboutWebsite": "웹‍사‍이‍트",
   "accountNameLabel": "계‍정 이‍름",
+  "accountNameRequired": "이‍름‍을 입‍력‍해 주‍세‍요.",
   "accountNameTooLong": "이‍름‍은 20‍자‍까‍지 입‍력‍할 수 있‍어‍요.",
   "accountsActionsLabel": "계‍정 작‍업",
   "accountsAddressLoadFailed": "계‍정 주‍소‍를 불‍러‍오‍지 못‍했‍어‍요",

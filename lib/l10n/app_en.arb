@@ -74,6 +74,10 @@
   "@accountNameLabel": {
     "description": "Label of the account name field or row."
   },
+  "accountNameRequired": "Enter a name.",
+  "@accountNameRequired": {
+    "description": "Validation message when the user saves an account name that is empty."
+  },
   "accountNameTooLong": "Name can be up to 20 characters.",
   "@accountNameTooLong": {
     "description": "Validation message when an account name is longer than 20 characters."

@@ -65,6 +65,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountNameLabel => '账户名称';
 
   @override
+  String get accountNameRequired => '请输入名称。';
+
+  @override
   String get accountNameTooLong => '名称最多 20 个字符。';
 
   @override
