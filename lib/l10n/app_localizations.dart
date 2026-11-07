@@ -2195,6 +2195,12 @@ abstract class AppLocalizations {
   /// **'Default camera'**
   String get commonDefaultCamera;
 
+  /// A technical details line under a screen that already says what happened. {details} is raw text from the wallet and is not translated. Keep the label the same as in commonErrorWithDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Details: {details}'**
+  String commonDetails(String details);
+
   /// Screen-reader label of the close button on a toast.
   ///
   /// In en, this message translates to:
@@ -7795,11 +7801,23 @@ abstract class AppLocalizations {
   /// **'{amount} is on its way to Ironwood.'**
   String migrationMobileFastSubmittedBody(String amount);
 
+  /// Warning on the Immediate migration success screen when the network accepted the transaction but storing it on the device failed. Raw details follow on the next line.
+  ///
+  /// In en, this message translates to:
+  /// **'The network accepted this migration, but Vizor couldn\'t record it on this device. Sync will recover it.'**
+  String get migrationMobileFastSubmittedNotTracked;
+
   /// Heading of the success screen after the Immediate migration was broadcast.
   ///
   /// In en, this message translates to:
   /// **'Migration submitted'**
   String get migrationMobileFastSubmittedTitle;
+
+  /// Warning on the Immediate migration success screen when the broadcast response was lost, so the transaction may or may not be on the network. Raw details follow on the next line.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t confirm that the network received this migration. It may already be on the network, so don\'t start it again until sync shows the result.'**
+  String get migrationMobileFastSubmittedUnconfirmed;
 
   /// Title-case top bar title of the mobile Immediate (fast) migration success screen.
   ///

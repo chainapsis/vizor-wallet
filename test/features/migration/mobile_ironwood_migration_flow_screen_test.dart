@@ -5656,7 +5656,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(message), findsOneWidget);
+      expect(find.text(testL10n.commonDetails(message)), findsOneWidget);
       expect(find.text(label), findsOneWidget);
 
       await tester.ensureVisible(find.text(label));
@@ -9145,7 +9145,12 @@ void main() {
       find.byKey(const ValueKey('mobile_ironwood_immediate_submitted_notice')),
       findsOneWidget,
     );
-    expect(find.text(warning), findsOneWidget);
+    // Rust's English is only logged; the notice shows the localized copy.
+    expect(
+      find.text(testL10n.migrationMobileFastSubmittedUnconfirmed),
+      findsOneWidget,
+    );
+    expect(find.textContaining(warning), findsNothing);
   });
 
   testWidgets('immediate migration holds the review while broadcasting', (

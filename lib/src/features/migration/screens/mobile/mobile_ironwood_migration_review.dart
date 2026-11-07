@@ -72,7 +72,12 @@ class _MobileMigrationFastReviewState
   bool _isBroadcasting = false;
   String? _broadcastError;
   rust_sync.OrchardMigrationImmediatePlan? _submittedPlan;
-  String? _submittedMessage;
+
+  /// Whether Rust reported that the broadcast did not fully finish.
+  bool _submittedWithWarning = false;
+
+  /// Whether the network may not have received the transaction.
+  bool _submittedUnconfirmed = false;
   String? _ledgerAccountUuid;
   rust_sync.OrchardMigrationImmediatePlan? _ledgerPlan;
 
@@ -152,12 +157,15 @@ class _MobileMigrationFastReviewState
     await _refreshPrivateMigrationDraftPresentation(ref);
     if (!mounted) return;
 
-    final message = result.message?.trim();
+    // Rust's English account goes to the log; the notice below words it.
+    final message = result.message?.trim() ?? '';
+    logUntranslatedText(message);
     setState(() {
       _ledgerAccountUuid = null;
       _ledgerPlan = null;
       _submittedPlan = plan;
-      _submittedMessage = message == null || message.isEmpty ? null : message;
+      _submittedWithWarning = message.isNotEmpty;
+      _submittedUnconfirmed = result.status == 'pending_broadcast';
     });
   }
 
@@ -235,10 +243,12 @@ class _MobileMigrationFastReviewState
                       color: colors.text.primary,
                     ),
                   ),
-                  if (_submittedMessage != null) ...[
+                  if (_submittedWithWarning) ...[
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      _submittedMessage!,
+                      _submittedUnconfirmed
+                          ? context.l10n.migrationMobileFastSubmittedUnconfirmed
+                          : context.l10n.migrationMobileFastSubmittedNotTracked,
                       key: const ValueKey(
                         'mobile_ironwood_immediate_submitted_notice',
                       ),

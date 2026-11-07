@@ -210,7 +210,7 @@ class _IronwoodMigrationPrivateStatusContentState
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        status.message!,
+                        context.l10n.commonDetails(status.message!),
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.secondary,

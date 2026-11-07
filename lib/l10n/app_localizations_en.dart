@@ -1297,6 +1297,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonDefaultCamera => 'Default camera';
 
   @override
+  String commonDetails(String details) {
+    return 'Details: $details';
+  }
+
+  @override
   String get commonDismissNotification => 'Dismiss notification';
 
   @override
@@ -4732,7 +4737,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get migrationMobileFastSubmittedNotTracked =>
+      'The network accepted this migration, but Vizor couldn\'t record it on this device. Sync will recover it.';
+
+  @override
   String get migrationMobileFastSubmittedTitle => 'Migration submitted';
+
+  @override
+  String get migrationMobileFastSubmittedUnconfirmed =>
+      'Vizor couldn\'t confirm that the network received this migration. It may already be on the network, so don\'t start it again until sync shows the result.';
 
   @override
   String get migrationMobileFastTitle => 'Fast Migration';

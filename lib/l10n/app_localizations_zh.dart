@@ -1245,6 +1245,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonDefaultCamera => '默认摄像头';
 
   @override
+  String commonDetails(String details) {
+    return '详细信息：$details';
+  }
+
+  @override
   String get commonDismissNotification => '关闭通知';
 
   @override
@@ -4398,7 +4403,15 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get migrationMobileFastSubmittedNotTracked =>
+      '网络已接受此迁移，但 Vizor 无法在此设备上记录它。同步后会恢复。';
+
+  @override
   String get migrationMobileFastSubmittedTitle => '迁移已提交';
+
+  @override
+  String get migrationMobileFastSubmittedUnconfirmed =>
+      'Vizor 无法确认网络是否已收到此迁移。它可能已在网络上，在同步显示结果之前请勿再次发起。';
 
   @override
   String get migrationMobileFastTitle => '快速迁移';
