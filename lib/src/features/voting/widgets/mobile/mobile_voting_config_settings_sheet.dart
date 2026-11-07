@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/l10n/untranslated_text_log.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -197,7 +198,12 @@ class _MobileVotingConfigSettingsSheetState
               height: 220,
               child: Center(child: AppIcon(AppIcons.loader)),
             ),
-            error: (error, _) => _LoadError(message: error.toString()),
+            error: (error, _) {
+              logUntranslatedText(error.toString());
+              return _LoadError(
+                message: context.l10n.votingConfigSettingsLoadFailed,
+              );
+            },
             data: (state) => Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,

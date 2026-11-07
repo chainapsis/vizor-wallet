@@ -10,20 +10,13 @@ void main() {
   String text(Object error) =>
       votingConfigSourceErrorText(testL10n, error, fallback: 'fallback');
 
-  test('an SDK refusal names the source failure and keeps its reason', () {
+  test('an SDK refusal names the source failure without its English', () {
     const view = VotingErrorView(
       kind: VotingErrorKindView.invalidInput,
       retryable: false,
       message: 'static config hash does not match the pin',
     );
-    expect(
-      text(view),
-      testL10n.commonErrorWithDetails(
-        testL10n.votingConfigLoadFailed,
-        'invalidInput: static config hash does not match the pin',
-      ),
-    );
-    expect(text(view), isNot(contains('Instance of')));
+    expect(text(view), testL10n.votingConfigLoadFailed);
   });
 
   test('a refused URL shows the copy for its problem', () {

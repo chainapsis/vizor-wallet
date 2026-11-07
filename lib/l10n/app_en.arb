@@ -14658,6 +14658,10 @@
   "@votingConfigSettings": {
     "description": "Accessibility label of the settings button on the voting list that opens the voting configuration."
   },
+  "votingConfigSettingsLoadFailed": "Couldn't load voting config settings.",
+  "@votingConfigSettingsLoadFailed": {
+    "description": "Error in the voting config settings when the saved config sources could not be read from the device."
+  },
   "votingConfigShowTestRounds": "Show test rounds",
   "@votingConfigShowTestRounds": {
     "description": "Title and accessibility label of the switch that shows test voting rounds."

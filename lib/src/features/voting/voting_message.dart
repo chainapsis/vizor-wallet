@@ -66,6 +66,18 @@ abstract interface class VotingMessageSource {
   VotingMessage get votingMessage;
 }
 
+/// Carries a [VotingMessage] through code that reports failures by throwing;
+/// screens show the message.
+class VotingMessageException implements Exception, VotingMessageSource {
+  const VotingMessageException(this.votingMessage);
+
+  @override
+  final VotingMessage votingMessage;
+
+  @override
+  String toString() => 'VotingMessageException($votingMessage)';
+}
+
 final class VotingNotice extends VotingMessage {
   const VotingNotice(this.kind);
 

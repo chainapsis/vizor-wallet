@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/untranslated_text_log.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_button.dart';
@@ -171,7 +172,7 @@ class _VotingConfigSettingsPanelState
         _submitError = _messageFromError(error);
         // The field message has one line; an SDK refusal with its details
         // goes above the editor instead.
-        _validationField = votingConfigErrorHasDetails(error) ? null : 'url';
+        _validationField = votingConfigErrorIsSdkRefusal(error) ? null : 'url';
         _isSubmitting = false;
       });
     }
@@ -427,8 +428,13 @@ class _VotingConfigSettingsPanelState
               height: 220,
               child: Center(child: AppIcon(AppIcons.loader)),
             ),
-            error: (error, _) =>
-                _PanelError(message: error.toString(), onClose: widget.onClose),
+            error: (error, _) {
+              logUntranslatedText(error.toString());
+              return _PanelError(
+                message: context.l10n.votingConfigSettingsLoadFailed,
+                onClose: widget.onClose,
+              );
+            },
             data: (source) {
               final nameMessage = _nameMessage();
               final urlMessage = _urlMessage(source);

@@ -284,7 +284,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     if (!mounted || _selectedJobKey() != key) return;
     final session = ref.read(votingSubmissionJobSessionProvider(key)).value;
     final scanError = session?.keystoneScanError;
-    if (scanError != null) throw StateError(scanError.text(context.l10n));
+    if (scanError != null) throw VotingMessageException(scanError);
   }
 
   Future<void> _skipRemainingKeystoneBundles() async {

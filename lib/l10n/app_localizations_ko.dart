@@ -11294,6 +11294,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get votingConfigSettings => '투‍표 설‍정 열‍기';
 
   @override
+  String get votingConfigSettingsLoadFailed => '투‍표 설‍정‍을 불‍러‍오‍지 못‍했‍어‍요.';
+
+  @override
   String get votingConfigShowTestRounds => '테‍스‍트 라‍운‍드 표‍시';
 
   @override

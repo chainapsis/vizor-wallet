@@ -18792,6 +18792,12 @@ abstract class AppLocalizations {
   /// **'Voting config settings'**
   String get votingConfigSettings;
 
+  /// Error in the voting config settings when the saved config sources could not be read from the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load voting config settings.'**
+  String get votingConfigSettingsLoadFailed;
+
   /// Title and accessibility label of the switch that shows test voting rounds.
   ///
   /// In en, this message translates to:

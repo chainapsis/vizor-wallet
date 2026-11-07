@@ -10587,6 +10587,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingConfigSettings => '投票配置设置';
 
   @override
+  String get votingConfigSettingsLoadFailed => '无法加载投票配置设置。';
+
+  @override
   String get votingConfigShowTestRounds => '显示测试轮次';
 
   @override

@@ -11479,6 +11479,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingConfigSettings => 'Voting config settings';
 
   @override
+  String get votingConfigSettingsLoadFailed =>
+      'Couldn\'t load voting config settings.';
+
+  @override
   String get votingConfigShowTestRounds => 'Show test rounds';
 
   @override

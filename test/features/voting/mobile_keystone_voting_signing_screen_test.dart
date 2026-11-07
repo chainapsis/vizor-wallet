@@ -8,11 +8,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_keystone_voting_signing_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
+import 'package:zcash_wallet/src/features/voting/voting_message.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
@@ -48,7 +50,9 @@ void main() {
   ) async {
     await _pumpSigningScreen(
       tester,
-      onSigned: (_) async => throw StateError('Signature does not match vote'),
+      onSigned: (_) async => throw const VotingMessageException(
+        VotingNotice(VotingNoticeKind.keystoneSignatureMismatch),
+      ),
       interactiveScanner: true,
     );
 
@@ -65,7 +69,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump();
 
-    expect(find.text('Signature does not match vote'), findsOneWidget);
+    expect(
+      find.text(testL10n.votingErrorKeystoneSignatureMismatch),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('mobile_voting_keystone_scanner_card')),
       findsOneWidget,

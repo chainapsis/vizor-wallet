@@ -3103,6 +3103,7 @@
   "votingConfigMobileUpdateFailed": "无法更新投票配置。请检查来源后重试。",
   "votingConfigSaving": "正在保存...",
   "votingConfigSettings": "投票配置设置",
+  "votingConfigSettingsLoadFailed": "无法加载投票配置设置。",
   "votingConfigShowTestRounds": "显示测试轮次",
   "votingConfigShowTestRoundsHint": "显示标题以 [TEST] 开头的已认证轮次。",
   "votingConfigSources": "来源",
