@@ -356,7 +356,6 @@
   "commonEnterAmount": "输入金额",
   "commonEnterAmountIn": "以 {currency} 输入金额",
   "commonEnterAmountInUsd": "以 USD 输入金额",
-  "commonErrorWithDetails": "{message}\n详细信息：{details}",
   "commonFailed": "失败",
   "commonFeatureInProgress": "此功能仍在开发中。",
   "commonFullAddress": "完整地址",

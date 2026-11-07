@@ -1338,11 +1338,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonEnterAmountInUsd => 'Enter amount in USD';
 
   @override
-  String commonErrorWithDetails(String message, String details) {
-    return '$message\nDetails: $details';
-  }
-
-  @override
   String get commonFailed => 'Failed';
 
   @override

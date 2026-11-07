@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../support/test_l10n.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../fixtures/orchard_receive_address.dart';
 import 'receive_qr_bitmap_cases.dart';
@@ -910,7 +911,7 @@ void main() {
     );
 
     // The error slot still sits below the action row.
-    final error = find.textContaining('shielded address is unavailable');
+    final error = find.text(testL10n.receiveShieldedAddressLoadFailed);
     expect(error, findsOneWidget);
     expect(
       tester.getTopLeft(error).dy,

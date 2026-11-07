@@ -1742,7 +1742,7 @@
   },
   "commonDetails": "Details: {details}",
   "@commonDetails": {
-    "description": "A technical details line under a screen that already says what happened. {details} is raw text from the wallet and is not translated. Keep the label the same as in commonErrorWithDetails.",
+    "description": "A technical details line under a screen that already says what happened. {details} is raw text from the wallet and is not translated.",
     "placeholders": {
       "details": {
         "type": "String"
@@ -1793,18 +1793,6 @@
   "commonEnterAmountInUsd": "Enter amount in USD",
   "@commonEnterAmountInUsd": {
     "description": "Accessibility label of the toggle that switches the mobile Pay amount input to US dollars. Shared by: pay, receive."
-  },
-  "commonErrorWithDetails": "{message}\nDetails: {details}",
-  "@commonErrorWithDetails": {
-    "description": "An error summary line, then a technical details line. {details} is raw error text and is not translated. Shared by: receive, migration, voting.",
-    "placeholders": {
-      "message": {
-        "type": "String"
-      },
-      "details": {
-        "type": "String"
-      }
-    }
   },
   "commonFailed": "Failed",
   "@commonFailed": {

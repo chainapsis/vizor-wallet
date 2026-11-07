@@ -1285,11 +1285,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonEnterAmountInUsd => '以 USD 输入金额';
 
   @override
-  String commonErrorWithDetails(String message, String details) {
-    return '$message\n详细信息：$details';
-  }
-
-  @override
   String get commonFailed => '失败';
 
   @override

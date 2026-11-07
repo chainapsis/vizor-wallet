@@ -155,10 +155,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       setState(() {
         _shieldedAddress ??= walletAddress;
         _isLoading = false;
-        _errorText = context.l10n.commonErrorWithDetails(
-          context.l10n.receiveShieldedAddressLoadFailed,
-          e.toString(),
-        );
+        _errorText = context.l10n.receiveShieldedAddressLoadFailed;
       });
     }
   }
@@ -218,10 +215,8 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       setState(() {
         _isLoadingTransparent = false;
         _transparentLoadingAccountUuid = null;
-        _transparentErrorText = context.l10n.commonErrorWithDetails(
-          context.l10n.receiveTransparentAddressLoadFailed,
-          e.toString(),
-        );
+        _transparentErrorText =
+            context.l10n.receiveTransparentAddressLoadFailed;
       });
     }
   }
@@ -285,10 +280,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       }
       setState(() {
         _isRenewingShielded = false;
-        _errorText = context.l10n.commonErrorWithDetails(
-          context.l10n.receiveRenewAddressError,
-          e.toString(),
-        );
+        _errorText = context.l10n.receiveRenewAddressError;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.l10n.receiveRenewAddressError)),

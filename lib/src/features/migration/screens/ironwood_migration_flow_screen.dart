@@ -26,6 +26,7 @@ import '../../../core/formatting/number_format.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/l10n/inline_spans.dart';
 import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/untranslated_text_log.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';

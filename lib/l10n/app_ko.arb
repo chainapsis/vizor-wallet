@@ -356,7 +356,6 @@
   "commonEnterAmount": "금‍액‍을 입‍력‍하‍세‍요",
   "commonEnterAmountIn": "{currency}‍로 금‍액 입‍력",
   "commonEnterAmountInUsd": "USD 단‍위‍로 금‍액 입‍력",
-  "commonErrorWithDetails": "{message}\n세‍부 정‍보: {details}",
   "commonFailed": "실‍패",
   "commonFeatureInProgress": "아‍직 준‍비 중‍인 기‍능‍이‍에‍요.",
   "commonFullAddress": "전‍체 주‍소",

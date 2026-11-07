@@ -2201,7 +2201,7 @@ abstract class AppLocalizations {
   /// **'Default camera'**
   String get commonDefaultCamera;
 
-  /// A technical details line under a screen that already says what happened. {details} is raw text from the wallet and is not translated. Keep the label the same as in commonErrorWithDetails.
+  /// A technical details line under a screen that already says what happened. {details} is raw text from the wallet and is not translated.
   ///
   /// In en, this message translates to:
   /// **'Details: {details}'**
@@ -2266,12 +2266,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Enter amount in USD'**
   String get commonEnterAmountInUsd;
-
-  /// An error summary line, then a technical details line. {details} is raw error text and is not translated. Shared by: receive, migration, voting.
-  ///
-  /// In en, this message translates to:
-  /// **'{message}\nDetails: {details}'**
-  String commonErrorWithDetails(String message, String details);
 
   /// Status value of a transaction or swap that failed. Shared by: activity, send, settings, swap.
   ///

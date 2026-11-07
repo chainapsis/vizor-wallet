@@ -1319,11 +1319,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonEnterAmountInUsd => 'USD 단‍위‍로 금‍액 입‍력';
 
   @override
-  String commonErrorWithDetails(String message, String details) {
-    return '$message\n세‍부 정‍보: $details';
-  }
-
-  @override
   String get commonFailed => '실‍패';
 
   @override
