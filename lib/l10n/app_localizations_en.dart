@@ -6478,6 +6478,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Couldn\'t check secret passphrase';
 
   @override
+  String get onboardingImportCheckFailedRetry =>
+      'That passphrase couldn\'t be checked. Try again.';
+
+  @override
+  String get onboardingImportChecksumError =>
+      'These words are valid, but they do not form a valid secret passphrase. Check the order or replace any word that looks wrong.';
+
+  @override
   String get onboardingImportClipboardEmpty => 'Clipboard is empty';
 
   @override
@@ -6542,6 +6550,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingImportWalletTitleMobile => 'Import Wallet';
+
+  @override
+  String onboardingImportWordCountError(int count) {
+    return 'A secret passphrase has 12, 15, 18, 21, or 24 words — found $count.';
+  }
 
   @override
   String get onboardingIntroCard =>

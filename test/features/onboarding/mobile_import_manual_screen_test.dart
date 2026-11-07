@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
 
@@ -26,18 +27,26 @@ const _wordCountSubtitle = 'Accept 12, 15, 18, 21 or 24 words';
 const _validMnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse access accident';
 
-Widget _app() {
+Widget _app({
+  Locale? locale,
+  MnemonicIssue? Function(List<String> words)? mnemonicValidator,
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp(
+      locale: locale,
+      supportedLocales: appSupportedLocales(preview: true),
       localizationsDelegates: appLocalizationsDelegates,
       builder: (_, c) => AppTheme(
         data: AppThemeData.light,
         child: MobileOnboardingProgressFrame(child: c!),
       ),
-      home: const MobileImportManualScreen(wordListOverride: _wordList),
+      home: MobileImportManualScreen(
+        wordListOverride: _wordList,
+        mnemonicValidator: mnemonicValidator,
+      ),
     ),
   );
 }
@@ -351,6 +360,30 @@ void main() {
     expect(find.text('Invalid secret passphrase word.'), findsOneWidget);
     expect(find.text('01'), findsOneWidget);
   });
+
+  for (final issue in MnemonicIssue.values) {
+    testWidgets('a rejected phrase (${issue.name}) is explained in Korean', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(locale: const Locale('ko'), mnemonicValidator: (_) => issue),
+      );
+      await tester.pump();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_import_manual_field')),
+        List.filled(12, 'abandon').join(' '),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_import_manual_finish')),
+      );
+      await tester.pump();
+
+      final ko = lookupAppLocalizations(const Locale('ko'));
+      expect(find.text(mnemonicIssueText(ko, issue, 12)), findsOneWidget);
+    });
+  }
 
   testWidgets('undo steps back to re-edit the previous word', (tester) async {
     await tester.pumpWidget(_app());

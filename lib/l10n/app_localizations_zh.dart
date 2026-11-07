@@ -6007,6 +6007,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingImportCheckFailedError => '无法检查助记词';
 
   @override
+  String get onboardingImportCheckFailedRetry => '无法检查该助记词，请重试。';
+
+  @override
+  String get onboardingImportChecksumError =>
+      '这些单词都有效，但组合起来不是有效的助记词。请检查顺序，或替换看起来有误的单词。';
+
+  @override
   String get onboardingImportClipboardEmpty => '剪贴板为空';
 
   @override
@@ -6068,6 +6075,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingImportWalletTitleMobile => '导入钱包';
+
+  @override
+  String onboardingImportWordCountError(int count) {
+    return '助记词应为 12、15、18、21 或 24 个单词，当前为 $count 个。';
+  }
 
   @override
   String get onboardingIntroCard =>

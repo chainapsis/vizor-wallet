@@ -6382,6 +6382,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingImportCheckFailedError => '복‍구 문‍구‍를 확‍인‍하‍지 못‍했‍어‍요';
 
   @override
+  String get onboardingImportCheckFailedRetry =>
+      '복‍구 문‍구‍를 확‍인‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get onboardingImportChecksumError =>
+      '단‍어‍는 모‍두 맞‍지‍만 올‍바‍른 복‍구 문‍구‍가 아‍니‍에‍요. 순‍서‍를 확‍인‍하‍거‍나 잘‍못‍된 것 같‍은 단‍어‍를 바‍꿔 주‍세‍요.';
+
+  @override
   String get onboardingImportClipboardEmpty => '클‍립‍보‍드‍가 비‍어 있‍어‍요';
 
   @override
@@ -6444,6 +6452,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingImportWalletTitleMobile => '지‍갑 가‍져‍오‍기';
+
+  @override
+  String onboardingImportWordCountError(int count) {
+    return '복‍구 문‍구‍는 12, 15, 18, 21, 24‍개 단‍어‍로 되‍어 있‍어‍요. 지‍금‍은 $count‍개‍예‍요.';
+  }
 
   @override
   String get onboardingIntroCard =>

@@ -10604,6 +10604,18 @@ abstract class AppLocalizations {
   /// **'Couldn\'t check secret passphrase'**
   String get onboardingImportCheckFailedError;
 
+  /// [security] Inline error on the mobile word-by-word import step when the secret passphrase could not be checked.
+  ///
+  /// In en, this message translates to:
+  /// **'That passphrase couldn\'t be checked. Try again.'**
+  String get onboardingImportCheckFailedRetry;
+
+  /// [security] Inline error on the mobile word-by-word import step when every word is a valid word but the phrase as a whole is not a valid secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'These words are valid, but they do not form a valid secret passphrase. Check the order or replace any word that looks wrong.'**
+  String get onboardingImportChecksumError;
+
   /// Toast on the mobile import step when the clipboard has no text.
   ///
   /// In en, this message translates to:
@@ -10723,6 +10735,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Import Wallet'**
   String get onboardingImportWalletTitleMobile;
+
+  /// [security] Inline error on the mobile word-by-word import step when the number of entered words is not a valid secret passphrase length; {count} is the number entered.
+  ///
+  /// In en, this message translates to:
+  /// **'A secret passphrase has 12, 15, 18, 21, or 24 words — found {count}.'**
+  String onboardingImportWordCountError(int count);
 
   /// Explains what shielded transactions hide, in the Zcash intro card on desktop and mobile.
   ///

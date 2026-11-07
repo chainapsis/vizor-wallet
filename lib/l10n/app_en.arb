@@ -8315,6 +8315,14 @@
   "@onboardingImportCheckFailedError": {
     "description": "[security] Toast on the mobile import step when the pasted secret passphrase could not be checked."
   },
+  "onboardingImportCheckFailedRetry": "That passphrase couldn't be checked. Try again.",
+  "@onboardingImportCheckFailedRetry": {
+    "description": "[security] Inline error on the mobile word-by-word import step when the secret passphrase could not be checked."
+  },
+  "onboardingImportChecksumError": "These words are valid, but they do not form a valid secret passphrase. Check the order or replace any word that looks wrong.",
+  "@onboardingImportChecksumError": {
+    "description": "[security] Inline error on the mobile word-by-word import step when every word is a valid word but the phrase as a whole is not a valid secret passphrase."
+  },
   "onboardingImportClipboardEmpty": "Clipboard is empty",
   "@onboardingImportClipboardEmpty": {
     "description": "Toast on the mobile import step when the clipboard has no text."
@@ -8394,6 +8402,15 @@
   "onboardingImportWalletTitleMobile": "Import Wallet",
   "@onboardingImportWalletTitleMobile": {
     "description": "Heading of the mobile step where the user imports a secret passphrase."
+  },
+  "onboardingImportWordCountError": "A secret passphrase has 12, 15, 18, 21, or 24 words — found {count}.",
+  "@onboardingImportWordCountError": {
+    "description": "[security] Inline error on the mobile word-by-word import step when the number of entered words is not a valid secret passphrase length; {count} is the number entered.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "onboardingIntroCard": "Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount — verified by cryptography, not trust.",
   "@onboardingIntroCard": {
