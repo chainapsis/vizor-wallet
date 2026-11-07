@@ -56,6 +56,7 @@ void main() {
     expect(request.body?['recipient'], '0xrecipient');
     expect(request.body?['deadline'], '2026-05-07T12:00:00Z');
     expect(request.body?['referral'], 'rowan');
+    expect(request.body, isNot(contains('confidentiality')));
 
     expect(quote.providerQuoteId, 'quote-1');
     expect(quote.pairText, 'ZEC -> USDC');
@@ -1106,6 +1107,127 @@ void main() {
     expect(intent.id, '0xexternal-deposit');
     expect(intent.status, SwapIntentStatus.awaitingExternalDeposit);
   });
+
+  test('quote requests a confidential swap for ZEC into QTC', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokensWithQtc),
+      _FakeResponse.post(
+        '/v0/quote',
+        _quoteResponse(
+          originAsset: 'nep141:zec.omft.near',
+          destinationAsset: _qtcAssetId,
+          amountInFormatted: '0.1',
+          amountOutFormatted: '1.2477',
+          depositAddress: 't1deposit',
+          quoteRequestRecipient: 'qz-recipient',
+          quoteRequestConfidentiality: 'basic',
+          status: null,
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    final quote = await provider.quote(
+      SwapQuoteRequest(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: _qtc,
+        sellAmount: 0.1,
+        sellAmountText: '0.1',
+        destination: 'qz-recipient',
+        refundAddress: 'u1refund',
+      ),
+    );
+
+    final request = transport.requests.last;
+    expect(request.body?['confidentiality'], 'basic');
+    expect(request.body?['destinationAsset'], _qtcAssetId);
+    expect(quote.pairText, 'ZEC -> QTC');
+    expect(quote.receiveEstimateText, '1.2477 QTC');
+  });
+
+  test('quote requests a confidential swap for QTC into ZEC', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokensWithQtc),
+      _FakeResponse.post(
+        '/v0/quote',
+        _quoteResponse(
+          originAsset: _qtcAssetId,
+          destinationAsset: 'nep141:zec.omft.near',
+          swapType: 'FLEX_INPUT',
+          amountInFormatted: '1',
+          amountOutFormatted: '0.0775',
+          depositAddress: 'qz-deposit',
+          quoteRequestRefundTo: 'qz-refund',
+          quoteRequestRecipient: 'u1recipient',
+          quoteRequestConfidentiality: 'basic',
+          status: null,
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    final quote = await provider.quote(
+      SwapQuoteRequest(
+        direction: SwapDirection.externalToZec,
+        externalAsset: _qtc,
+        sellAmount: 1,
+        sellAmountText: '1',
+        destination: 'u1recipient',
+        refundAddress: 'qz-refund',
+      ),
+    );
+
+    final request = transport.requests.last;
+    expect(request.body?['confidentiality'], 'basic');
+    expect(request.body?['originAsset'], _qtcAssetId);
+    expect(quote.pairText, 'QTC -> ZEC');
+    expect(quote.receiveEstimateText, '0.0775 ZEC');
+  });
+
+  for (final echoed in ['public', null]) {
+    test(
+      'quote rejects a confidential request echoed as ${echoed ?? 'omitted'}',
+      () async {
+        final transport = _FakeOneClickTransport([
+          _FakeResponse.get('/v0/tokens', _tokensWithQtc),
+          _FakeResponse.post(
+            '/v0/quote',
+            _quoteResponse(
+              originAsset: 'nep141:zec.omft.near',
+              destinationAsset: _qtcAssetId,
+              amountInFormatted: '0.1',
+              amountOutFormatted: '1.2477',
+              depositAddress: 't1deposit',
+              quoteRequestRecipient: 'qz-recipient',
+              quoteRequestConfidentiality: echoed,
+              status: null,
+            ),
+          ),
+        ]);
+        final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+        await expectLater(
+          provider.quote(
+            SwapQuoteRequest(
+              direction: SwapDirection.zecToExternal,
+              externalAsset: _qtc,
+              sellAmount: 0.1,
+              sellAmountText: '0.1',
+              destination: 'qz-recipient',
+              refundAddress: 'u1refund',
+            ),
+          ),
+          throwsA(
+            isA<OneClickApiException>().having(
+              (error) => error.message,
+              'message',
+              '1Click quote response did not match the requested confidentiality',
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   test('quote can override the USDC 1Click asset id', () async {
     final transport = _FakeOneClickTransport([
@@ -2569,6 +2691,25 @@ const _tokens = [
   },
 ];
 
+const _qtcAssetId = 'nep141:qtc.omft.near';
+
+const _tokensWithQtc = [
+  ..._tokens,
+  {
+    'assetId': _qtcAssetId,
+    'decimals': 12,
+    'blockchain': 'qtc',
+    'symbol': 'QTC',
+  },
+];
+
+final _qtc = SwapAsset.live(
+  assetId: _qtcAssetId,
+  symbol: 'QTC',
+  blockchain: 'qtc',
+  decimals: 12,
+);
+
 const _tokensWithNearUsdcFirst = [
   {
     'assetId': 'nep141:near-usdc.example',
@@ -2684,6 +2825,7 @@ Map<String, Object?> _quoteResponse({
   String? quoteRequestAmount,
   String quoteRequestRefundTo = 'u1refund',
   String quoteRequestRecipient = '0xrecipient',
+  String? quoteRequestConfidentiality,
   Map<String, Object?>? swapDetails,
 }) {
   final resolvedAmountIn =
@@ -2712,6 +2854,7 @@ Map<String, Object?> _quoteResponse({
       'recipientType': 'DESTINATION_CHAIN',
       'deadline': quoteRequestDeadline,
       'appFees': appFees,
+      'confidentiality': ?quoteRequestConfidentiality,
     },
     'quote': {
       'amountIn': resolvedAmountIn,
@@ -2751,6 +2894,7 @@ int _testDecimalsForAsset(String assetId) {
   if (assetId.contains('usdc')) return 6;
   if (assetId.contains('zec')) return 8;
   if (assetId.contains('btc')) return 8;
+  if (assetId.contains('qtc')) return 12;
   return 8;
 }
 
