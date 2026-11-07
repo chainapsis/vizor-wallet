@@ -8509,6 +8509,10 @@
   "@onboardingPasscodeCreateTitle": {
     "description": "[security] Heading of the step where the user chooses the 6-digit passcode of the wallet on mobile."
   },
+  "onboardingPasscodeDeleteSemantics": "Delete digit",
+  "@onboardingPasscodeDeleteSemantics": {
+    "description": "Accessibility label of the passcode keypad key that deletes the last digit entered."
+  },
   "onboardingPasscodeDigitSemantics": "Digit {digit}",
   "@onboardingPasscodeDigitSemantics": {
     "description": "Accessibility label of a passcode keypad key; {digit} is the number on the key.",
@@ -8517,6 +8521,10 @@
         "type": "int"
       }
     }
+  },
+  "onboardingPasscodeHelpSemantics": "Passcode help",
+  "@onboardingPasscodeHelpSemantics": {
+    "description": "[security] Accessibility label of the help key on the unlock passcode keypad; it opens the option to reset the wallet."
   },
   "onboardingPasscodeReEnter": "Re-enter your passcode.",
   "@onboardingPasscodeReEnter": {

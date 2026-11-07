@@ -6630,9 +6630,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingPasscodeCreateTitle => 'Create Passcode';
 
   @override
+  String get onboardingPasscodeDeleteSemantics => 'Delete digit';
+
+  @override
   String onboardingPasscodeDigitSemantics(int digit) {
     return 'Digit $digit';
   }
+
+  @override
+  String get onboardingPasscodeHelpSemantics => 'Passcode help';
 
   @override
   String get onboardingPasscodeReEnter => 'Re-enter your passcode.';

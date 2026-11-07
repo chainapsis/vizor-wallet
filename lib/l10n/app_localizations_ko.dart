@@ -6533,9 +6533,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingPasscodeCreateTitle => '암‍호 만‍들‍기';
 
   @override
+  String get onboardingPasscodeDeleteSemantics => '숫‍자 지‍우‍기';
+
+  @override
   String onboardingPasscodeDigitSemantics(int digit) {
     return '숫‍자 $digit';
   }
+
+  @override
+  String get onboardingPasscodeHelpSemantics => '암‍호 도‍움‍말';
 
   @override
   String get onboardingPasscodeReEnter => '암‍호‍를 다‍시 입‍력‍해 주‍세‍요.';

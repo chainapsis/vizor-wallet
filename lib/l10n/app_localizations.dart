@@ -10868,11 +10868,23 @@ abstract class AppLocalizations {
   /// **'Create Passcode'**
   String get onboardingPasscodeCreateTitle;
 
+  /// Accessibility label of the passcode keypad key that deletes the last digit entered.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete digit'**
+  String get onboardingPasscodeDeleteSemantics;
+
   /// Accessibility label of a passcode keypad key; {digit} is the number on the key.
   ///
   /// In en, this message translates to:
   /// **'Digit {digit}'**
   String onboardingPasscodeDigitSemantics(int digit);
+
+  /// [security] Accessibility label of the help key on the unlock passcode keypad; it opens the option to reset the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Passcode help'**
+  String get onboardingPasscodeHelpSemantics;
 
   /// [security] Subtitle of the confirm-passcode step.
   ///

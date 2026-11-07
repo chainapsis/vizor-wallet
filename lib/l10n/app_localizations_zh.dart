@@ -6150,9 +6150,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingPasscodeCreateTitle => '创建数字密码';
 
   @override
+  String get onboardingPasscodeDeleteSemantics => '删除数字';
+
+  @override
   String onboardingPasscodeDigitSemantics(int digit) {
     return '数字 $digit';
   }
+
+  @override
+  String get onboardingPasscodeHelpSemantics => '数字密码帮助';
 
   @override
   String get onboardingPasscodeReEnter => '请再次输入数字密码。';

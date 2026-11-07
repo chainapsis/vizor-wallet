@@ -244,7 +244,7 @@ class PasscodeNumpad extends StatelessWidget {
               color: enabled ? colors.icon.muted : colors.icon.disabled,
             ),
             onTap: onHelp,
-            label: 'Passcode help',
+            label: context.l10n.onboardingPasscodeHelpSemantics,
           );
 
     final deleteKey = canDelete
@@ -256,7 +256,7 @@ class PasscodeNumpad extends StatelessWidget {
               unawaited(AppHaptics.auxiliaryKey());
               onBackspace();
             },
-            label: 'Delete digit',
+            label: context.l10n.onboardingPasscodeDeleteSemantics,
           )
         : keySlot(const SizedBox.shrink());
 
