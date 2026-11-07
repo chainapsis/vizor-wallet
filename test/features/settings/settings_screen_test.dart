@@ -422,7 +422,7 @@ void main() {
     }
   });
 
-  testWidgets('Settings preserves the underlying Windows update error', (
+  testWidgets('Settings shows its own copy for a native Windows update error', (
     tester,
   ) async {
     _overridePlatform(TargetPlatform.windows);
@@ -445,9 +445,13 @@ void main() {
       await tester.tap(find.text('Updates'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Signed feed verification failed.'), findsOneWidget);
+      // The native text is only logged; the modal shows the app's copy.
       expect(
         find.text("Couldn't complete the update. Try again."),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Signed feed verification failed.'),
         findsNothing,
       );
     } finally {

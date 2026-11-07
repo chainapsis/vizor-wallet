@@ -38,28 +38,18 @@ enum WindowsUpdateIssue {
 }
 
 class WindowsUpdateDownloadResult {
-  const WindowsUpdateDownloadResult.started()
-    : started = true,
-      issue = null,
-      nativeMessage = '';
+  const WindowsUpdateDownloadResult.started() : started = true, issue = null;
 
-  const WindowsUpdateDownloadResult.failed({
-    this.issue,
-    this.nativeMessage = '',
-  }) : started = false;
+  const WindowsUpdateDownloadResult.failed({this.issue}) : started = false;
 
   final bool started;
 
-  /// Set when the app found the reason; otherwise [nativeMessage] holds the
-  /// native updater's text.
+  /// Set when the app found the reason. The native updater's text, if any,
+  /// is only logged.
   final WindowsUpdateIssue? issue;
-  final String nativeMessage;
 
   String message(AppLocalizations l10n) =>
-      issue?.message(l10n) ??
-      (nativeMessage.trim().isEmpty
-          ? WindowsUpdateIssue.generic.message(l10n)
-          : nativeMessage.trim());
+      (issue ?? WindowsUpdateIssue.generic).message(l10n);
 }
 
 /// Why an update operation failed, and whether the user was waiting on it.
@@ -146,13 +136,10 @@ class WindowsUpdateState {
   /// Set when the app, not the native updater, found why the update failed.
   final WindowsUpdateIssue? issue;
 
-  /// The failure text to show: the app's own reason, else the native
-  /// updater's, else the generic one.
+  /// The failure text to show: the app's own reason, else the generic one.
+  /// The native updater's [message] is untranslated and only logged.
   String failureMessage(AppLocalizations l10n) =>
-      issue?.message(l10n) ??
-      (message.trim().isEmpty
-          ? WindowsUpdateIssue.generic.message(l10n)
-          : message.trim());
+      (issue ?? WindowsUpdateIssue.generic).message(l10n);
 
   /// Set only while [status] is [WindowsUpdateStatus.failed]. Carries what the
   /// prompt needs to decide whether the user should be interrupted, and to tell
@@ -238,7 +225,6 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
       // Callers start this unawaited, so an escaping error would surface as an
       // unhandled async error and leave the check permanently spent. Record it
       // silently and let route recovery run it again.
-      debugPrint('[zcash] Windows startup update check failed: $error');
       _setFailed(_updateErrorMessage(error));
       _startupCheckStarted = false;
     }
@@ -283,17 +269,11 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
     } catch (error) {
       final failure = _updateErrorMessage(error);
       _setFailed(failure);
-      return WindowsUpdateDownloadResult.failed(
-        issue: failure.issue,
-        nativeMessage: failure.message,
-      );
+      return WindowsUpdateDownloadResult.failed(issue: failure.issue);
     }
 
     if (state.status == WindowsUpdateStatus.failed) {
-      return WindowsUpdateDownloadResult.failed(
-        issue: state.issue,
-        nativeMessage: state.message,
-      );
+      return WindowsUpdateDownloadResult.failed(issue: state.issue);
     }
     return const WindowsUpdateDownloadResult.started();
   }
@@ -330,6 +310,10 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
     if (next.status != WindowsUpdateStatus.failed) {
       state = next;
       return;
+    }
+    if (state.status != WindowsUpdateStatus.failed ||
+        state.message != next.message) {
+      debugPrint('[zcash] Windows update failed: ${next.message}');
     }
     state = WindowsUpdateState.fromSnapshot(snapshot, failure: _nextFailure());
     // The native check runs detached and can report its failure through a
@@ -387,15 +371,15 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
 ({String message, WindowsUpdateIssue? issue}) _updateErrorMessage(
   Object error,
 ) {
+  debugPrint('[zcash] Windows update failed: $error');
   if (error is PlatformException) {
     final message = error.message?.trim();
     if (message != null && message.isNotEmpty) {
       return (message: message, issue: null);
     }
   }
-  // Only the native updater writes copy meant for the user. Anything else can
-  // carry local paths or transport internals, so it stays in the log.
-  debugPrint('[zcash] Windows update failed: $error');
+  // Anything but the native updater's message can carry local paths or
+  // transport internals, so it is not kept.
   return (message: '', issue: WindowsUpdateIssue.generic);
 }
 
