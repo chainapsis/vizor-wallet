@@ -217,6 +217,7 @@
   "addressScanCameraDefaultSuffix": "{name}（默认）",
   "addressScanCameraNeeded": "扫描二维码需要此设备配备摄像头。",
   "addressScanCameraOff": "摄像头访问已关闭。请在设置中允许以扫描地址。",
+  "addressScanCameraOpenFailed": "无法打开摄像头。请关闭正在使用摄像头的其他应用。",
   "addressScanCameraRequired": "扫描地址二维码需要此设备配备摄像头。",
   "addressScanCameraRestricted": "屏幕使用时间或设备管理正在阻止此设备使用摄像头。",
   "addressScanCloseScanner": "关闭扫描器",

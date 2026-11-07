@@ -1013,6 +1013,10 @@
   "@addressScanCameraOff": {
     "description": "Message over the full-screen scanner when camera permission is off."
   },
+  "addressScanCameraOpenFailed": "Couldn't open the camera. Close other apps using it.",
+  "@addressScanCameraOpenFailed": {
+    "description": "Description on the mobile QR scan card when the camera exists but failed to open, for example because another app is using it. A Try again button follows it. The card shows at most two lines."
+  },
   "addressScanCameraRequired": "Address QR scanning requires a camera on this device.",
   "@addressScanCameraRequired": {
     "description": "Description in the desktop QR scanner when the device has no camera."

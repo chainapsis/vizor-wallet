@@ -748,6 +748,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '카‍메‍라 접‍근‍이 꺼‍져 있‍어‍요. 주‍소‍를 스‍캔‍하‍려‍면 설‍정‍에‍서 허‍용‍해 주‍세‍요.';
 
   @override
+  String get addressScanCameraOpenFailed =>
+      '카‍메‍라‍를 열 수 없‍어‍요. 카‍메‍라‍를 쓰‍는 다‍른 앱‍을 닫‍아 주‍세‍요.';
+
+  @override
   String get addressScanCameraRequired =>
       '주‍소 QR‍을 스‍캔‍하‍려‍면 이 기‍기‍에 카‍메‍라‍가 필‍요‍해‍요.';
 

@@ -766,6 +766,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Camera access is off. Allow it in Settings to scan addresses.';
 
   @override
+  String get addressScanCameraOpenFailed =>
+      'Couldn\'t open the camera. Close other apps using it.';
+
+  @override
   String get addressScanCameraRequired =>
       'Address QR scanning requires a camera on this device.';
 

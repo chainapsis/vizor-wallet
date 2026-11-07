@@ -1407,6 +1407,12 @@ abstract class AppLocalizations {
   /// **'Camera access is off. Allow it in Settings to scan addresses.'**
   String get addressScanCameraOff;
 
+  /// Description on the mobile QR scan card when the camera exists but failed to open, for example because another app is using it. A Try again button follows it. The card shows at most two lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open the camera. Close other apps using it.'**
+  String get addressScanCameraOpenFailed;
+
   /// Description in the desktop QR scanner when the device has no camera.
   ///
   /// In en, this message translates to:

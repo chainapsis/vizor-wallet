@@ -724,6 +724,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressScanCameraOff => '摄像头访问已关闭。请在设置中允许以扫描地址。';
 
   @override
+  String get addressScanCameraOpenFailed => '无法打开摄像头。请关闭正在使用摄像头的其他应用。';
+
+  @override
   String get addressScanCameraRequired => '扫描地址二维码需要此设备配备摄像头。';
 
   @override

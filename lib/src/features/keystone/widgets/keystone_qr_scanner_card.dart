@@ -7,6 +7,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/untranslated_text_log.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -375,8 +376,8 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   }
 
   String _cameraUnavailableDescription(MobileScannerState state) {
-    final message = state.error?.errorDetails?.message;
-    if (message != null && message.isNotEmpty) return message;
+    // The plugin's message is untranslated, so only the log keeps it.
+    logUntranslatedText(state.error?.errorDetails?.message ?? '');
     return context.l10n.commonNoCameraCouldBeOpenedCheck;
   }
 

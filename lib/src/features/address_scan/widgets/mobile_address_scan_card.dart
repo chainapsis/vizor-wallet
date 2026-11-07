@@ -7,6 +7,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/untranslated_text_log.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart'
     show kMobileTopNavHeight;
@@ -183,8 +184,13 @@ class _MobileQrScanCardState extends State<MobileQrScanCard>
   }
 
   String _cameraUnavailableDescription(MobileScannerState state) {
-    final message = state.error?.errorDetails?.message;
-    if (message != null && message.isNotEmpty) return message;
+    // A camera that failed to open is not a missing camera: say so. The
+    // plugin's message is untranslated, so only the log keeps it.
+    final error = state.error;
+    if (error != null) {
+      logUntranslatedText(error.errorDetails?.message ?? '');
+      return context.l10n.addressScanCameraOpenFailed;
+    }
     return widget.unavailableDescription ??
         context.l10n.addressScanCameraNeeded;
   }
