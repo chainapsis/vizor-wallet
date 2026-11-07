@@ -6971,6 +6971,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkClaimGiftButton => '领取礼物';
 
   @override
+  String get paymentLinkClaimInFlightError => '此礼品卡正在领取中。';
+
+  @override
+  String get paymentLinkClaimOtherNetworkError => '此礼品卡适用于其他 Zcash 网络。';
+
+  @override
   String get paymentLinkClaimQueueFull => '等待中的礼品卡过多。请先完成另一张卡片。';
 
   @override
@@ -7538,6 +7544,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get paymentLinkScanCameraHint => '请连接摄像头扫描礼品卡二维码，或返回粘贴卡片链接。';
+
+  @override
+  String get paymentLinkScanNotGiftCard => '这不是礼品卡二维码。';
+
+  @override
+  String get paymentLinkScanOtherNetwork => '此礼品卡适用于其他网络。';
 
   @override
   String get paymentLinkScanSheetSemantic => '扫描礼品卡二维码';

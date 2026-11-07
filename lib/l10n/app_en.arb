@@ -9639,6 +9639,14 @@
   "@paymentLinkClaimGiftButton": {
     "description": "Button in the receiving-account sheet that claims the Gift Card into the selected account."
   },
+  "paymentLinkClaimInFlightError": "This gift card is already being received.",
+  "@paymentLinkClaimInFlightError": {
+    "description": "Error toast when the user opens a Gift Card that the wallet is already receiving."
+  },
+  "paymentLinkClaimOtherNetworkError": "This gift card is for a different Zcash network.",
+  "@paymentLinkClaimOtherNetworkError": {
+    "description": "Error toast when the user pastes a Gift Card made on another Zcash network (for example testnet) than the wallet uses."
+  },
   "paymentLinkClaimQueueFull": "Too many gift cards are waiting. Finish another card first.",
   "@paymentLinkClaimQueueFull": {
     "description": "Toast shown when a received Gift Card cannot be saved because too many other cards are already waiting to be redeemed."
@@ -10403,6 +10411,14 @@
   "paymentLinkScanCameraHint": "Connect a camera to scan the gift card QR code, or go back to paste the card link.",
   "@paymentLinkScanCameraHint": {
     "description": "Message shown on the desktop scan screen when no camera is available."
+  },
+  "paymentLinkScanNotGiftCard": "This isn't a gift card QR code.",
+  "@paymentLinkScanNotGiftCard": {
+    "description": "Error in the Gift Card QR scanner when the scanned code is not a Gift Card."
+  },
+  "paymentLinkScanOtherNetwork": "This gift card is for a different network.",
+  "@paymentLinkScanOtherNetwork": {
+    "description": "Error in the Gift Card QR scanner when the scanned Gift Card was made on another Zcash network than the wallet uses."
   },
   "paymentLinkScanSheetSemantic": "Scan the gift card QR code",
   "@paymentLinkScanSheetSemantic": {

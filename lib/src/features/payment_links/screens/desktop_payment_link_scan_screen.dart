@@ -34,7 +34,7 @@ class _DesktopPaymentLinkScanScreenState
     with ExternalActionGuardHoldMixin {
   bool _finished = false;
   int _resetToken = 0;
-  String? _error;
+  PaymentLinkQrIssue? _issue;
 
   void _scan(String raw) {
     if (!mounted || _finished || ModalRoute.of(context)?.isCurrent == false) {
@@ -44,9 +44,9 @@ class _DesktopPaymentLinkScanScreenState
       final link = decodePaymentLinkQr(raw, networkName: widget.networkName);
       _finished = true;
       context.pop(link);
-    } on FormatException catch (error) {
+    } on PaymentLinkQrException catch (error) {
       setState(() {
-        _error = error.message;
+        _issue = error.issue;
         _resetToken++;
       });
     }
@@ -73,7 +73,10 @@ class _DesktopPaymentLinkScanScreenState
     scanner: KeystoneQrScannerCard.plain(
       onPlainComplete: _scan,
       scanSessionResetToken: _resetToken,
-      error: _error,
+      error: switch (_issue) {
+        final issue? => paymentLinkQrIssueText(context.l10n, issue),
+        null => null,
+      },
       unavailableMessage: context.l10n.paymentLinkScanCameraHint,
     ),
   );

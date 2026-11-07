@@ -31,7 +31,7 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
   late final MobileScannerController _controller;
   bool _finished = false;
   int _scanResetToken = 0;
-  String? _error;
+  PaymentLinkQrIssue? _issue;
 
   bool get _canScan =>
       mounted && !_finished && ModalRoute.of(context)?.isCurrent != false;
@@ -54,9 +54,9 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
     super.dispose();
   }
 
-  void _reject(String message) {
+  void _reject(PaymentLinkQrIssue issue) {
     setState(() {
-      _error = message;
+      _issue = issue;
       _scanResetToken++;
     });
   }
@@ -67,8 +67,8 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
       final link = decodePaymentLinkQr(raw, networkName: widget.networkName);
       _finished = true;
       widget.onScanned(link);
-    } on FormatException catch (error) {
-      _reject(error.message);
+    } on PaymentLinkQrException catch (error) {
+      _reject(error.issue);
     }
   }
 
@@ -78,7 +78,10 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
       controller: _controller,
       caption: context.l10n.paymentLinkScanSheetSemantic,
       permissionTitle: context.l10n.paymentLinkScanSheetTitle,
-      error: _error,
+      error: switch (_issue) {
+        final issue? => paymentLinkQrIssueText(context.l10n, issue),
+        null => null,
+      },
       onClose: () {
         _finished = true;
         widget.onClose();

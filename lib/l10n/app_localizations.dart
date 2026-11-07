@@ -12333,6 +12333,18 @@ abstract class AppLocalizations {
   /// **'Claim gift'**
   String get paymentLinkClaimGiftButton;
 
+  /// Error toast when the user opens a Gift Card that the wallet is already receiving.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card is already being received.'**
+  String get paymentLinkClaimInFlightError;
+
+  /// Error toast when the user pastes a Gift Card made on another Zcash network (for example testnet) than the wallet uses.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card is for a different Zcash network.'**
+  String get paymentLinkClaimOtherNetworkError;
+
   /// Toast shown when a received Gift Card cannot be saved because too many other cards are already waiting to be redeemed.
   ///
   /// In en, this message translates to:
@@ -13376,6 +13388,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connect a camera to scan the gift card QR code, or go back to paste the card link.'**
   String get paymentLinkScanCameraHint;
+
+  /// Error in the Gift Card QR scanner when the scanned code is not a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'This isn\'t a gift card QR code.'**
+  String get paymentLinkScanNotGiftCard;
+
+  /// Error in the Gift Card QR scanner when the scanned Gift Card was made on another Zcash network than the wallet uses.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card is for a different network.'**
+  String get paymentLinkScanOtherNetwork;
 
   /// Screen reader label of the camera preview in the Gift Card QR scanner sheet.
   ///

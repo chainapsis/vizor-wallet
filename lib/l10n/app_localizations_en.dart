@@ -7512,6 +7512,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentLinkClaimGiftButton => 'Claim gift';
 
   @override
+  String get paymentLinkClaimInFlightError =>
+      'This gift card is already being received.';
+
+  @override
+  String get paymentLinkClaimOtherNetworkError =>
+      'This gift card is for a different Zcash network.';
+
+  @override
   String get paymentLinkClaimQueueFull =>
       'Too many gift cards are waiting. Finish another card first.';
 
@@ -8151,6 +8159,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get paymentLinkScanCameraHint =>
       'Connect a camera to scan the gift card QR code, or go back to paste the card link.';
+
+  @override
+  String get paymentLinkScanNotGiftCard => 'This isn\'t a gift card QR code.';
+
+  @override
+  String get paymentLinkScanOtherNetwork =>
+      'This gift card is for a different network.';
 
   @override
   String get paymentLinkScanSheetSemantic => 'Scan the gift card QR code';
