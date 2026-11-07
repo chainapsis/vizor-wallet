@@ -942,7 +942,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     if (requests.isEmpty) {
-      throw StateError('No Keystone voting requests are ready to encode.');
+      throw const _VotingNoticeException(
+        VotingNoticeKind.keystoneNoSigningRequest,
+        'No Keystone voting requests are ready to encode.',
+      );
     }
     _keystoneSigningRound = null;
     state = state.copyWith(
@@ -1758,3 +1761,17 @@ final votingSubmissionJobSessionProvider = Provider.autoDispose
     .family<AsyncValue<VotingSessionState>, VotingSessionKey>((ref, key) {
       return ref.watch(votingSubmissionSessionProvider(key));
     });
+
+/// A failure the app words with a [VotingNotice]; [toString] is for logs.
+class _VotingNoticeException implements Exception, VotingMessageSource {
+  const _VotingNoticeException(this.kind, this.log);
+
+  final VotingNoticeKind kind;
+  final String log;
+
+  @override
+  VotingMessage get votingMessage => VotingNotice(kind);
+
+  @override
+  String toString() => log;
+}

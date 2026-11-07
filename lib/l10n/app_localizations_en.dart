@@ -11682,6 +11682,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'This Ledger signature conflicts with the signature already saved for this voting bundle.';
 
   @override
+  String get votingErrorLedgerSignatureMismatch =>
+      'Ledger returned a signature that doesn\'t match this vote. Retry to sign again.';
+
+  @override
   String get votingErrorLedgerSignatureSaveFailed =>
       'Could not save the Ledger voting signature. Retry this bundle.';
 

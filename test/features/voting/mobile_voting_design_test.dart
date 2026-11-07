@@ -19,6 +19,10 @@ import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../support/test_l10n.dart';
+
+// SDK text is only logged; the screen shows the session summary.
+final _eligibilityErrorText = testL10n.votingErrorSessionFailed;
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -249,7 +253,7 @@ void main() {
     ),
     (
       buildMobileVotingEligibilityErrorUseCase,
-      'Unable to check voting eligibility.',
+      _eligibilityErrorText,
       'Voting power unavailable',
     ),
   ]) {
@@ -548,7 +552,7 @@ void main() {
         find.byKey(const ValueKey('voting_detail_ineligible_badge')),
         findsNothing,
       );
-      expect(find.text('Unable to check voting eligibility.'), findsOneWidget);
+      expect(find.text(_eligibilityErrorText), findsOneWidget);
       expect(find.text('Ends Aug 24, 2026'), findsOneWidget);
       expect(find.byType(VotingForumLinkButton), findsOneWidget);
       await tester.tap(find.text('Yes'));

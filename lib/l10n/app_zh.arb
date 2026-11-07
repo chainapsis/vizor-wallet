@@ -3154,6 +3154,7 @@
   "votingErrorLedgerNoPendingBundle": "没有等待批准的 Ledger 投票票据包。",
   "votingErrorLedgerRejected": "你已在 Ledger 上拒绝投票签名。请重试并再次签名。",
   "votingErrorLedgerSignatureConflict": "此 Ledger 签名与已为此投票票据包保存的签名冲突。",
+  "votingErrorLedgerSignatureMismatch": "Ledger 返回的签名与此投票不匹配。请重试并再次签名。",
   "votingErrorLedgerSignatureSaveFailed": "无法保存 Ledger 投票签名。请重试此票据包。",
   "votingErrorLedgerWrongApp": "{instruction}然后重试。",
   "votingErrorMinimumWeight": "投票要求截至{snapshot}，至少拥有一个包含 {amount} 的符合条件的屏蔽票据包。请切换到符合条件的账户后再投票。",

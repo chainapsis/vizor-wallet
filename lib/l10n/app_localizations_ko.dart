@@ -11494,6 +11494,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 Ledger 서‍명‍이 이 투‍표 묶‍음‍에 이‍미 저‍장‍된 서‍명‍과 충‍돌‍해‍요.';
 
   @override
+  String get votingErrorLedgerSignatureMismatch =>
+      'Ledger‍에‍서 받‍은 서‍명‍이 이 투‍표‍와 일‍치‍하‍지 않‍아‍요. 다‍시 시‍도‍해 서‍명‍해 주‍세‍요.';
+
+  @override
   String get votingErrorLedgerSignatureSaveFailed =>
       'Ledger 투‍표 서‍명‍을 저‍장‍하‍지 못‍했‍어‍요. 이 묶‍음‍을 다‍시 시‍도‍해 주‍세‍요.';
 

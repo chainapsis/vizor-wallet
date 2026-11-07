@@ -75,6 +75,7 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'fake_voting_round_session.dart';
 import 'round_plan_test_utils.dart';
 import 'voting_retry_recovery_test_utils.dart';
+import '../../support/test_l10n.dart';
 import '../../services/voting/fake_voting_http.dart';
 import 'fake_round_recovery_state.dart';
 
@@ -1254,7 +1255,11 @@ void main() {
     await _pumpUntilFound(tester, find.text('Retry'));
 
     expect(find.text('Submission not complete'), findsOneWidget);
-    expect(find.textContaining('temporary setup unavailable'), findsOneWidget);
+    // The setup error is only logged; the screen shows the session summary.
+    expect(
+      find.textContaining(testL10n.votingErrorSessionFailed),
+      findsOneWidget,
+    );
     expect(notifier.refreshCalls, 1);
 
     await tester.tap(find.text('Retry'));
@@ -1947,8 +1952,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('active account lookup failed'), findsOne);
-    expect(find.text('Voting session action failed.'), findsNothing);
+    // The specific error is only logged; the screen shows the summary.
+    expect(find.text(testL10n.votingErrorSessionFailed), findsOne);
+    expect(find.textContaining('active account lookup failed'), findsNothing);
     expect(find.text('Retry'), findsOne);
   });
 
@@ -3499,7 +3505,7 @@ void main() {
 
     expect(find.textContaining("Couldn't load results"), findsOneWidget);
     expect(
-      find.textContaining('not authenticated by voting config'),
+      find.textContaining(testL10n.votingErrorSessionFailed),
       findsOneWidget,
     );
     expect(_tallyRequestCount(http, _unauthenticatedRoundId), 0);

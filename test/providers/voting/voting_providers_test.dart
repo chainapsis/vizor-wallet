@@ -76,6 +76,13 @@ import '../../features/voting/fake_round_recovery_state.dart';
 /// The English a screen shows for [message].
 String? _text(VotingMessage? message) => message?.text(testL10n);
 
+/// The untranslated text a message carries, which screens only log, or else
+/// what the screen shows.
+String? _raw(VotingMessage? message) => switch (message) {
+  VotingLiteralMessage(:final value) => value,
+  _ => message?.text(testL10n),
+};
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -3200,7 +3207,7 @@ void main() {
 
       expect(state.phase, VotingSessionPhase.error);
       expect(
-        _text(state.error?.message),
+        _raw(state.error?.message),
         contains('lightwalletd is unreachable'),
       );
       // The bare "the stream ended" text is what this failure decays to when the
@@ -3301,8 +3308,8 @@ void main() {
         key,
         VotingSubmissionJobStatus.error,
       );
-      expect(_text(result.errorMessage), contains('wallet session changed'));
-      expect(_text(result.errorMessage), isNot(contains('password')));
+      expect(_raw(result.errorMessage), contains('wallet session changed'));
+      expect(_raw(result.errorMessage), isNot(contains('password')));
       expect(rust.delegationBundleCalls, isEmpty);
     },
   );
@@ -3350,7 +3357,7 @@ void main() {
           interruption == 'none' ? [0] : isEmpty,
         );
         if (interruption != 'none') {
-          final error = _text(
+          final error = _raw(
             container
                 .read(votingSessionProvider(kRoundId))
                 .value
@@ -3443,9 +3450,9 @@ void main() {
     final state = container.read(votingSessionProvider(kRoundId)).value!;
 
     expect(state.phase, VotingSessionPhase.error);
-    expect(_text(state.error?.message), contains('submitted-delegation-tx'));
-    expect(_text(state.error?.message), contains('bundle 0'));
-    expect(_text(state.error?.message), contains('manual recovery'));
+    expect(_raw(state.error?.message), contains('submitted-delegation-tx'));
+    expect(_raw(state.error?.message), contains('bundle 0'));
+    expect(_raw(state.error?.message), contains('manual recovery'));
     expect(rust.delegationRecoveryModes, [
       rust_api.ApiChainRecoveryMode.statusOnly,
     ]);
@@ -3719,7 +3726,7 @@ void main() {
 
     expect(state.phase, VotingSessionPhase.error);
     expect(
-      _text(state.error?.message),
+      _raw(state.error?.message),
       contains('delegation rejected by chain'),
     );
     expect(rust.storedDelegationTxHashes, isEmpty);
@@ -3785,7 +3792,7 @@ void main() {
 
       expect(state.phase, VotingSessionPhase.error);
       expect(
-        _text(state.error?.message),
+        _raw(state.error?.message),
         contains('dispatch attempts exhausted'),
       );
       expect(rust.delegationRecoveryModes, [
@@ -4104,7 +4111,7 @@ void main() {
 
       expect(state.phase, VotingSessionPhase.error);
       expect(
-        _text(state.error?.message),
+        _raw(state.error?.message),
         contains('invalid branch id from lightwalletd'),
       );
       expect(rust.keystoneDelegationRequestCalls, [0]);
@@ -4681,7 +4688,7 @@ void main() {
 
       expect(state.phase, VotingSessionPhase.error);
       expect(
-        _text(state.error?.message),
+        _raw(state.error?.message),
         contains('missing stored voting hotkey'),
       );
       expect(rust.generateVotingHotkeyCalls, 0);
@@ -4811,7 +4818,7 @@ void main() {
 
       expect(state.phase, VotingSessionPhase.error);
       expect(
-        _text(state.error?.message),
+        _raw(state.error?.message),
         contains('missing stored voting hotkey'),
       );
       expect(rust.generateVotingHotkeyCalls, 0);
@@ -6459,7 +6466,11 @@ void main() {
       VotingSubmissionJobStatus.error,
     );
 
-    expect(_text(failed.errorMessage), 'share retry planning failed');
+    expect(
+      failed.errorMessage,
+      const VotingLiteralMessage('share retry planning failed'),
+    );
+    expect(_text(failed.errorMessage), testL10n.votingErrorSessionFailed);
     // The failure came from a tracking pass that actually ran.
     expect(rust.trackPendingSharesCalls, isNotEmpty);
     expect(rust.shareTrackingSessions, isNotEmpty);
@@ -8253,9 +8264,9 @@ void main() {
     final state = container.read(votingSessionProvider(kRoundId)).value!;
 
     expect(state.phase, VotingSessionPhase.error);
-    expect(_text(state.error?.message), contains('submitted-vote-tx'));
-    expect(_text(state.error?.message), contains('bundle 0, proposal 7'));
-    expect(_text(state.error?.message), contains('manual recovery'));
+    expect(_raw(state.error?.message), contains('submitted-vote-tx'));
+    expect(_raw(state.error?.message), contains('bundle 0, proposal 7'));
+    expect(_raw(state.error?.message), contains('manual recovery'));
     expect(rust.voteCommitBundleCalls, isEmpty);
     expect(rust.voteRecoveryModes, [rust_api.ApiChainRecoveryMode.statusOnly]);
   });
@@ -9082,7 +9093,7 @@ void main() {
 
     final state = container.read(votingSessionProvider(kRoundId)).value!;
     expect(state.phase, VotingSessionPhase.error);
-    expect(_text(state.error?.message), contains('intent write failed'));
+    expect(_raw(state.error?.message), contains('intent write failed'));
     expect(rust.sessionBallotIntents, isEmpty);
     expect(rust.voteCommitBundleCalls, isEmpty);
     expect(rust.storedVoteTxHashes, isEmpty);

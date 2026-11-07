@@ -19098,6 +19098,12 @@ abstract class AppLocalizations {
   /// **'This Ledger signature conflicts with the signature already saved for this voting bundle.'**
   String get votingErrorLedgerSignatureConflict;
 
+  /// Voting error when the signature a Ledger returns does not match the vote bundle it was asked to sign. The status screen offers Retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger returned a signature that doesn\'t match this vote. Retry to sign again.'**
+  String get votingErrorLedgerSignatureMismatch;
+
   /// Error shown when the Ledger voting signature could not be stored.
   ///
   /// In en, this message translates to:

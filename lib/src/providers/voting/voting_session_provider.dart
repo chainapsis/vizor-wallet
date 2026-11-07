@@ -1083,8 +1083,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           signatures: signatures,
           actionIndex: request.actionIndex,
         );
-      } on StateError catch (error) {
-        _setError(VotingLiteralMessage(error.message), context: context);
+      } on StateError {
+        _setError(
+          const VotingNotice(VotingNoticeKind.ledgerSignatureMismatch),
+          context: context,
+        );
         return;
       }
 
@@ -4577,14 +4580,17 @@ class VotingChainTerminalOutcome implements Exception, VotingMessageSource {
   @override
   VotingMessage get votingMessage {
     final diagnostic = chainOutcome?.diagnostic?.message;
-    if (diagnostic != null) return VotingLiteralMessage(diagnostic);
-    return VotingNotice(switch (chainOutcome?.kind) {
+    final kind = switch (chainOutcome?.kind) {
       rust_wire.ChainSubmissionOutcomeKind.rejected =>
         VotingNoticeKind.chainRejected,
       rust_wire.ChainSubmissionOutcomeKind.submittedWithoutHash =>
         VotingNoticeKind.chainSubmittedWithoutHash,
       _ => VotingNoticeKind.chainNoUsableTransaction,
-    });
+    };
+    if (diagnostic != null) {
+      return VotingLiteralMessage(diagnostic, summary: kind);
+    }
+    return VotingNotice(kind);
   }
 
   /// English for logs; screens use [votingMessage].
@@ -4616,7 +4622,10 @@ class VotingChainPendingOutcome implements Exception, VotingMessageSource {
   @override
   VotingMessage get votingMessage =>
       switch (chainOutcome?.diagnostic?.message) {
-        final String diagnostic => VotingLiteralMessage(diagnostic),
+        final String diagnostic => VotingLiteralMessage(
+          diagnostic,
+          summary: VotingNoticeKind.chainRecoveryPending,
+        ),
         null => const VotingNotice(VotingNoticeKind.chainRecoveryPending),
       };
 

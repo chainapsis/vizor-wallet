@@ -3154,6 +3154,7 @@
   "votingErrorLedgerNoPendingBundle": "승인을 기다리는 Ledger 투표 묶음이 없어요.",
   "votingErrorLedgerRejected": "Ledger에서 투표 서명을 거부했어요. 다시 시도해 서명해 주세요.",
   "votingErrorLedgerSignatureConflict": "이 Ledger 서명이 이 투표 묶음에 이미 저장된 서명과 충돌해요.",
+  "votingErrorLedgerSignatureMismatch": "Ledger에서 받은 서명이 이 투표와 일치하지 않아요. 다시 시도해 서명해 주세요.",
   "votingErrorLedgerSignatureSaveFailed": "Ledger 투표 서명을 저장하지 못했어요. 이 묶음을 다시 시도해 주세요.",
   "votingErrorLedgerWrongApp": "{instruction} 그런 다음 다시 시도해 주세요.",
   "votingErrorMinimumWeight": "투표하려면 {snapshot}에 {amount} 이상의 자격 있는 차폐 노트 묶음이 하나 이상 필요해요. 자격이 있는 계정으로 전환해 투표해 주세요.",

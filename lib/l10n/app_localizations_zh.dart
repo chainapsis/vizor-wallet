@@ -10768,6 +10768,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '此 Ledger 签名与已为此投票票据包保存的签名冲突。';
 
   @override
+  String get votingErrorLedgerSignatureMismatch =>
+      'Ledger 返回的签名与此投票不匹配。请重试并再次签名。';
+
+  @override
   String get votingErrorLedgerSignatureSaveFailed =>
       '无法保存 Ledger 投票签名。请重试此票据包。';
 
