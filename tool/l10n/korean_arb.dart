@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'generated_output.dart';
+import 'ui_font_characters.dart';
 
 const koreanSourcePath = 'lib/l10n/source/app_ko.arb';
 const koreanOutputPath = 'lib/l10n/app_ko.arb';
@@ -58,7 +59,7 @@ String buildKoreanArb(String sourceJson) {
   return '${const JsonEncoder.withIndent('  ').convert(output)}\n';
 }
 
-void main(List<String> args) {
+Future<void> main(List<String> args) async {
   final expected = buildKoreanArb(File(koreanSourcePath).readAsStringSync());
   if (!checkGeneratedOutputPath(koreanOutputPath)) return;
   final output = File(koreanOutputPath);
@@ -72,5 +73,12 @@ void main(List<String> args) {
     }
     return;
   }
-  output.writeAsStringSync(expected);
+  writeGeneratedTextIfChanged(koreanOutputPath, expected);
+  await writeUiFormattingCharacters();
+  // This existing regeneration entry point also covers Chinese glyph changes.
+  // Plain Flutter gen-l10n cannot run an arbitrary post-generation command.
+  final fonts = await Process.start(Platform.isWindows ? 'python' : 'python3', [
+    'tool/l10n/ui_fonts.py',
+  ], mode: ProcessStartMode.inheritStdio);
+  exitCode = await fonts.exitCode;
 }

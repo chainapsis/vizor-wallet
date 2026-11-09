@@ -3,9 +3,13 @@
 Vizor ships English, Korean and Simplified Chinese. All app copy lives in `lib/l10n/app_<locale>.arb`; `app_en.arb` is the source.
 
 Korean is the exception: edit `lib/l10n/source/app_ko.arb`, then run
-`fvm dart run tool/l10n/korean_arb.dart`. The generated `lib/l10n/app_ko.arb`
+`fvm dart run tool/l10n/generate.dart`. The generated `lib/l10n/app_ko.arb`
 joins the characters of each word with invisible U+200D so lines break
 between words.
+
+Optionally use `fvm dart run tool/l10n/generate.dart --watch` while translating
+to regenerate on save. It debounces saves, skips unchanged work, and does not
+run automatically during normal app development. Ctrl+C stops it.
 
 | To | Read |
 | --- | --- |
@@ -38,9 +42,13 @@ is still to do.
 
 ## Checking a language on screen
 
-Flutter tests cannot read system fonts. Fetch the Korean and Chinese capture
-fonts once with `scripts/fetch-capture-fonts.sh`; it stores them in
-`~/.cache/vizor/capture-fonts`, outside the repository.
+Captures use the same bundled UI font subsets as the app: Pretendard Variable
+for Korean and Noto Sans SC for Chinese. They need no external font download.
+Regenerate after translation edits with the command above.
+
+The subsets also cover all modern Hangul syllables and Pretendard-supported
+jamo, and all 8,105 characters of the Chinese 2013 General Standard Characters
+Table. Unsupported jamo and characters outside the coverage use system fallback.
 
 - One screen: `scripts/figma-compare.sh widget --scenario <id> --locale ko`
   (add `--form-factor mobile` for a mobile scenario).
@@ -64,6 +72,8 @@ fonts once with `scripts/fetch-capture-fonts.sh`; it stores them in
   any word split. Add
   `--dart-define=LOCALE_SCAN_SCENARIOS=<id prefixes>` to rerun a few, and
   `--update-goldens --dart-define=LOCALE_SCAN_OUTPUT=<directory>` for PNGs.
+  Use `--dart-define=LOCALE_SCAN_LANGUAGES=ko,zh` to limit languages and
+  `--dart-define=LOCALE_SCAN_THEME=light` for a light-theme pass (default dark).
 
 Fix a break by shortening the translation or by letting the layout grow (a
 minimum height instead of a fixed one); English must render exactly as before.

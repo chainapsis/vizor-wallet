@@ -20,8 +20,7 @@ same key to `lib/l10n/source/app_ko.arb` and `lib/l10n/app_zh.arb`. Keep keys
 sorted. Then regenerate:
 
 ```bash
-fvm dart run tool/l10n/korean_arb.dart   # writes lib/l10n/app_ko.arb
-fvm flutter gen-l10n                     # writes lib/l10n/app_localizations*.dart
+fvm dart run tool/l10n/generate.dart   # ARBs, UI font subsets and string tables
 ```
 
 Never edit `lib/l10n/app_ko.arb` or the generated Dart files by hand.

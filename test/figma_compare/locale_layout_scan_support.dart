@@ -26,6 +26,24 @@ void runLocaleLayoutScan({
   const reportPath = String.fromEnvironment('LOCALE_SCAN_REPORT');
   const prefixText = String.fromEnvironment('LOCALE_SCAN_SCENARIOS');
   const outputDirectory = String.fromEnvironment('LOCALE_SCAN_OUTPUT');
+  const themeName = String.fromEnvironment(
+    'LOCALE_SCAN_THEME',
+    defaultValue: 'dark',
+  );
+  const languageTags = String.fromEnvironment(
+    'LOCALE_SCAN_LANGUAGES',
+    defaultValue: 'en,ko,zh',
+  );
+  final languages = [
+    for (final tag in languageTags.split(','))
+      AppLanguage.fromTag(tag.trim()) ??
+          (throw ArgumentError('Unknown scan language: $tag')),
+  ];
+  final themeMode = switch (themeName) {
+    'dark' => ThemeMode.dark,
+    'light' => ThemeMode.light,
+    _ => throw ArgumentError('Unknown scan theme: $themeName'),
+  };
   final prefixes = [
     for (final prefix in prefixText.split(','))
       if (prefix.trim().isNotEmpty) prefix.trim(),
@@ -41,14 +59,14 @@ void runLocaleLayoutScan({
     if (prefixes.isNotEmpty && !prefixes.any(scenario.id.startsWith)) {
       continue;
     }
-    for (final language in AppLanguage.values) {
+    for (final language in languages) {
       runFigmaCompareCaptureTest(
         expectedFormFactor: formFactor,
         defaultLogicalSize: logicalSize,
         defaultPixelRatio: 1,
         overrideConfiguration: FigmaCompareConfiguration(
           scenarioId: scenario.id,
-          themeMode: ThemeMode.dark,
+          themeMode: themeMode,
           outputPath: outputDirectory.isEmpty
               ? ''
               : '$outputDirectory/${scenario.id}.${language.tag}.png',
@@ -61,6 +79,7 @@ void runLocaleLayoutScan({
           final record = {
             'scenario': scenario.id,
             'language': language.tag,
+            'theme': themeName,
             'exception': exception?.toString().split('\n').first,
             'cutOff': _cutOffTexts(tester),
             'wordSplits': _wordSplits(tester),

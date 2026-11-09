@@ -131,6 +131,9 @@ flutter:
 
   assets:
     - assets/fonts/ShieldingSerif-OFL.txt
+    - assets/fonts/Pretendard-OFL.txt
+    - assets/fonts/NotoSansSC-OFL.txt
+    - assets/fonts/Unicode-LICENSE.txt
     - assets/animations/
     # Desktop artwork is omitted from iOS and Android bundles.
     - path: assets/animations/desktop/
@@ -159,6 +162,13 @@ flutter:
     - assets/swap/chains/
 
   fonts:
+    # Generated language variable fonts; other characters use system fallback.
+    - family: Vizor Korean UI
+      fonts:
+        - asset: assets/fonts/VizorKoreanUI-VF.ttf
+    - family: Vizor Chinese UI
+      fonts:
+        - asset: assets/fonts/VizorChineseUI-VF.ttf
     - family: Inter
       fonts:
         - asset: assets/fonts/Inter-Regular.ttf

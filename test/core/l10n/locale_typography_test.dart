@@ -5,6 +5,19 @@ import 'package:zcash_wallet/src/core/l10n/locale_typography.dart';
 import 'package:zcash_wallet/src/core/theme/app_typography.dart';
 
 void main() {
+  test('bundled UI fonts precede language-specific system fallback', () {
+    expect(kKoreanFontFallback.take(2), [
+      kKoreanUiFontFamily,
+      kChineseUiFontFamily,
+    ]);
+    expect(kSimplifiedChineseFontFallback.take(2), [
+      kChineseUiFontFamily,
+      kKoreanUiFontFamily,
+    ]);
+    expect(kKoreanFontFallback, contains('Apple SD Gothic Neo'));
+    expect(kSimplifiedChineseFontFallback, contains('PingFang SC'));
+  });
+
   Future<List<String>?> fallbackOf(WidgetTester tester, Locale locale) async {
     await tester.pumpWidget(
       MaterialApp(

@@ -13,8 +13,7 @@ Options:
   --scenario <id>          Registered scenario (default: pay-recipient)
   --theme <dark|light>     Theme (default: dark)
   --form-factor <value>    desktop or mobile (default: desktop)
-  --locale <en|ko|zh>      UI language, including preview-only ones (widget
-                           ko/zh captures need scripts/fetch-capture-fonts.sh)
+  --locale <en|ko|zh>      UI language, including preview-only ones
   --width <logical-px>     Widget-test logical width
   --height <logical-px>    Widget-test logical height
   --pixel-ratio <ratio>    Widget simulated DPR / native content scale

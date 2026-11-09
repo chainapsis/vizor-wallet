@@ -352,7 +352,7 @@ void main(List<String> args) {
     if (!checkGeneratedOutputPath(path)) continue;
     final output = File(path);
     if (!check) {
-      output.writeAsStringSync(expected);
+      writeGeneratedTextIfChanged(path, expected);
       continue;
     }
     if (!output.existsSync() || output.readAsStringSync() != expected) {

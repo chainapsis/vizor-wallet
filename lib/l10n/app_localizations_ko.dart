@@ -6542,7 +6542,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get onboardingLostPasswordTitle => '비‍밀‍번‍호‍를 잊‍으‍셨‍나‍요?';
+  String get onboardingLostPasswordTitle => '비‍밀‍번‍호 분‍실';
 
   @override
   String get onboardingManualInvalidWord => '복‍구 문‍구 단‍어 목‍록‍에 없‍는 단‍어‍예‍요.';

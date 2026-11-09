@@ -41,4 +41,34 @@ void main() {
       'android',
     );
   });
+
+  test('identical generated content preserves its modification time', () {
+    const path = 'ios/Runner/Out.swift';
+    expect(writeGeneratedTextIfChanged(path, 'same', root: root.path), isTrue);
+    final file = File('${root.path}/$path');
+    final time = DateTime.utc(2000);
+    file.setLastModifiedSync(time);
+    expect(writeGeneratedTextIfChanged(path, 'same', root: root.path), isFalse);
+    expect(file.lastModifiedSync().toUtc(), time);
+    expect(
+      writeGeneratedTextIfChanged(path, 'changed', root: root.path),
+      isTrue,
+    );
+    expect(file.readAsStringSync(), 'changed');
+  });
+
+  test('generated output writes reject a linked destination', () {
+    Link(
+      '${root.path}/ios/Runner/Out.swift',
+    ).createSync('${root.path}/elsewhere.txt');
+    expect(
+      () => writeGeneratedTextIfChanged(
+        'ios/Runner/Out.swift',
+        'changed',
+        root: root.path,
+      ),
+      throwsA(isA<FileSystemException>()),
+    );
+    expect(File('${root.path}/elsewhere.txt').readAsStringSync(), 'keep');
+  });
 }

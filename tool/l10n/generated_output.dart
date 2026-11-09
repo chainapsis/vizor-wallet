@@ -28,3 +28,21 @@ bool checkGeneratedOutputPath(String path) {
   exitCode = 1;
   return false;
 }
+
+/// Preserve timestamps on identical outputs so native/Flutter builds do not
+/// see an unrelated localization save as a source change.
+bool writeGeneratedTextIfChanged(
+  String path,
+  String contents, {
+  String root = '.',
+}) {
+  final link = symbolicLinkOnPath(path, root: root);
+  if (link != null) {
+    throw FileSystemException('Refusing to write through symbolic link', link);
+  }
+  final file = File('$root/$path');
+  if (file.existsSync() && file.readAsStringSync() == contents) return false;
+  file.parent.createSync(recursive: true);
+  file.writeAsStringSync(contents);
+  return true;
+}

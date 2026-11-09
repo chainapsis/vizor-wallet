@@ -16,6 +16,7 @@ lib/l10n/source/app_ko.arb ─ korean_arb ─ lib/l10n/app_ko.arb ─┼─ gen-
 lib/l10n/app_zh.arb ────────────────────────────┘
 
 native* keys in the same ARB files ─ native_strings ─ NativeStrings.swift, NativeStrings.kt
+ko/zh message characters + fixed script coverage ─ ui_fonts.py ─ bundled variable fonts
 ```
 
 ### Where things live
@@ -32,6 +33,9 @@ native* keys in the same ARB files ─ native_strings ─ NativeStrings.swift, N
 | `lib/src/core/l10n/l10n.dart` | `context.l10n` |
 | `lib/src/core/l10n/inline_spans.dart` | Icons, links and emphasis inside a message |
 | `lib/src/core/l10n/locale_typography.dart` | CJK font fallback |
+| `tool/l10n/generate.dart` | One-shot or watch-mode localization and font generation |
+| `tool/l10n/ui_fonts.lock.json` | Pinned font sources, hashes and fontTools version |
+| `tool/l10n/ui_fonts.manifest.json` | Generated font coverage, source signature and output hashes |
 | `lib/src/core/l10n/native_language.dart` | Tells native code the shown language |
 | `lib/src/core/l10n/untranslated_text_log.dart` | Logs Rust or SDK text that a screen replaced |
 | `lib/src/core/widgets/untranslated_details.dart` | The "Show details" button for that text |
@@ -118,10 +122,38 @@ enum-label and mapper patterns, and what stays a literal
 3. **Regenerate.**
 
    ```bash
-   fvm dart run tool/l10n/korean_arb.dart   # writes lib/l10n/app_ko.arb
-   fvm flutter gen-l10n                     # writes lib/l10n/app_localizations*.dart
-   fvm dart run tool/l10n/native_strings.dart   # only when native* keys changed
+   fvm dart run tool/l10n/generate.dart
    ```
+
+   This generates the Korean ARB, font subsets, Flutter localizations and
+   native tables. For automatic regeneration on every translation save:
+
+   ```bash
+   fvm dart run tool/l10n/generate.dart --watch
+   ```
+
+   Watch is opt-in and intended for translation sessions; ordinary app runs,
+   builds and Dart UI edits do not start it. It uses file events with a 500ms
+   debounce, coalesces saves and runs one generation at a time. Duplicate
+   watchers in the same worktree are rejected. Stop it with Ctrl+C.
+
+   Unchanged Flutter outputs are checked against a local cache under
+   `.dart_tool/l10n_generation/`; a missing or edited output invalidates the
+   cache. `--force` forces Flutter localization generation. Identical Korean
+   ARB, font and native outputs keep their timestamps, avoiding unnecessary
+   native rebuilds. Font subsetting runs only for languages whose character
+   coverage changed. Ordinary new Korean words or Chinese text within the
+   bundled coverage do not rebuild the fonts.
+
+   Updating the Dart generators, SDK or locked dependencies stops the watcher
+   with a restart message, so it cannot keep using previously loaded intl
+   data. Restart it after such updates. First-time font-tool installation and
+   source downloads happen only when a font actually needs regeneration.
+
+   The existing `korean_arb.dart` command also updates both font subsets.
+   Plain `flutter gen-l10n` does **not** update the fonts; use the command
+   above for translation edits. `python3 tool/l10n/ui_fonts.py --check`
+   checks freshness offline, and the UI font subsets PR workflow enforces it.
 
 4. **Update literals.** Widgetbook fixtures (`lib/widgetbook/`) and tests that
    assert the literal string break when copy changes.
@@ -183,9 +215,35 @@ prompts, native error messages Dart shows) uses `native*` ARB keys.
 
 ## Fonts and layout
 
-- `LocaleTypography` gives Korean and Chinese UI their own CJK font fallback.
-  Without it the engine picks Han glyphs by the OS language, so Chinese on a
-  Korean Mac draws Korean-style glyphs.
+- `LocaleTypography` keeps the Latin token font, then prefers bundled
+  **Pretendard Variable** for Korean and **Noto Sans SC** for Simplified
+  Chinese. Their modified subsets have family names `Vizor Korean UI`
+  and `Vizor Chinese UI`. The upstream licenses ship beside the fonts.
+- Korean includes all 11,172 modern Hangul syllables, plus every
+  upstream-supported character in the Jamo, Compatibility Jamo, Extended-A,
+  Extended-B and halfwidth Hangul ranges. Pretendard's missing jamo are
+  intentionally left to system fallback; do not add a second Korean font.
+- Chinese includes all 8,105 characters in the 2013 General Standard Chinese
+  Characters Table, including its personal-name, place-name and technical
+  tier. The ordered list is vendored from Unicode 17.0.0 Unihan `kTGH` in
+  `tool/l10n/character_sets/tgh_2013.txt`, with its SHA-256 pinned in the font
+  lock file. Unicode's license ships with the font licenses.
+- Subsets include the locale's ARB message characters, language-picker native
+  names, Korean joiners, and intl date/number formatting characters generated
+  in `tool/l10n/ui_font_characters.json`. They keep variable weights and shaping features.
+  Names/memos within the fixed coverage also use bundled fonts. Characters
+  outside the coverage fall through to the language's system font list;
+  arbitrary user content is not guaranteed identical across operating systems.
+  Both bundled fonts precede system fonts so a picker can
+  render another language's native name.
+- Fonts are generated from pinned, SHA-256-verified upstream TTFs with pinned
+  fontTools. Python 3.9+ is required for generation/checks. When characters
+  change, the generator creates its own venv and caches full source fonts in
+  `.dart_tool/ui_fonts/`; full fonts never enter the repository or app bundle.
+  An unchanged checkout needs no downloads, pip packages or regeneration.
+- Widget captures load these exact bundled subsets through
+  `test/support/app_test_fonts.dart`. No external capture fonts or system-family
+  aliases are used. Native user-content fallback still needs a device check.
 - A `TextPainter` built from a token style misses that fallback. Measure with
   `withLocaleFontFallback(context, style)`.
 - Fixed-height boxes that fit English exactly overflow in CJK, so prefer minimum
@@ -210,6 +268,7 @@ prompts, native error messages Dart shows) uses `native*` ARB keys.
 | Test | Fails when |
 | --- | --- |
 | `app_ko.arb is generated from its source` | `korean_arb.dart` was not run |
+| `bundled UI font subsets are current` | A new UI character is missing from generated font subsets, or a font was modified |
 | `native string tables are generated from the ARB files` | `native_strings.dart` was not run |
 | `Korean never hedges a particle after a placeholder` | A message has `{x}(으)로` or `{x}을(를)` |
 | `Chinese quotes biometric names, which may be Latin or Chinese` | `{method}` is not in quotes |
@@ -226,8 +285,16 @@ Other tests: `test/l10n/native_locale_declarations_test.dart` compares native
 language declarations with `released`, and `test/l10n/broadcast_notice_text_test.dart`
 pins the English that Rust and Dart share.
 
-**No GitHub workflow in this repository runs these tests.** They only protect
-the code when someone runs them, so run them before you open a pull request.
+The UI font subsets workflow checks freshness, regenerates byte-identical font
+files, and runs `test/tool/ui_fonts_test.py` for new-character coverage and
+tamper detection. To run those generator tests locally, first run
+`python3 tool/l10n/ui_fonts.py --rebuild`, then use
+`.dart_tool/ui_fonts/venv/bin/python test/tool/ui_fonts_test.py`
+(`Scripts/python.exe` on Windows).
+
+**No GitHub workflow in this repository runs the Flutter gate tests.** Run
+them before opening a pull request. Font freshness is also checked separately
+by the UI font subsets workflow above.
 
 ### Before you open a pull request
 
@@ -238,10 +305,10 @@ fvm flutter test
 fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile
 ```
 
-When a message gets longer, also run the layout scan over every scenario
+When copy or font subsets change, also run the layout scan over every scenario
 ([README.md](README.md#checking-a-language-on-screen)). It is skipped by default
-and is the only check that finds text cut off in Korean or Chinese. Fetch its
-fonts once with `scripts/fetch-capture-fonts.sh`. To look at one screen:
+and is the only check that finds text cut off in Korean or Chinese. To look at
+one screen:
 
 ```bash
 scripts/figma-compare.sh widget --scenario <id> --locale ko

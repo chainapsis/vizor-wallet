@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../tool/l10n/korean_arb.dart';
 import '../../tool/l10n/native_strings.dart';
 import '../../tool/l10n/strings.dart';
+import '../../tool/l10n/ui_font_characters.dart';
 
 /// The file translators edit: `lib/l10n/source/` when a locale has a
 /// generated ARB (Korean), otherwise the ARB itself.
@@ -67,6 +68,22 @@ void main() {
       reason:
           'Edit $koreanSourcePath, then run '
           '`fvm dart run tool/l10n/korean_arb.dart`.',
+    );
+  });
+
+  test('bundled UI font subsets are current', () {
+    final result = Process.runSync(Platform.isWindows ? 'python' : 'python3', [
+      'tool/l10n/ui_fonts.py',
+      '--check',
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  });
+
+  test('UI font formatting characters match the intl data', () async {
+    expect(
+      File(uiFormattingCharactersPath).readAsStringSync(),
+      await buildUiFormattingCharacters(),
+      reason: 'Run fvm dart run tool/l10n/generate.dart after updating intl.',
     );
   });
 

@@ -4,7 +4,6 @@ import 'package:zcash_wallet/figma_compare/figma_compare_configuration.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 
-import 'capture_locale_fonts.dart';
 import 'figma_compare_capture_support.dart';
 
 void runLanguageCaptures({required bool mobile, required String output}) {
@@ -27,9 +26,6 @@ void runLanguageCaptures({required bool mobile, required String output}) {
           pixelRatio: 2,
         ),
         beforeCapture: (tester) async {
-          // Even English pickers display Korean and Chinese language names.
-          await loadCaptureLocaleFonts(AppLanguage.ko);
-          await tester.pump();
           final key = screen == 'welcome'
               ? (mobile ? 'mobile_welcome_language' : 'welcome_language_button')
               : (mobile

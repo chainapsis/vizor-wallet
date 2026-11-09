@@ -11,7 +11,7 @@
    `fvm dart run tool/l10n/native_strings.dart`. iOS, Android and macOS then
    show their own copy (notifications, background-task captions, system
    prompts, the macOS update alerts) in it. See [Native copy](#native-copy).
-5. Check fonts: the language's script needs a system font on every platform.
+5. Check fonts: the language's script needs a bundled or system font on every platform.
    A CJK language also gets its own list in `fontFamilyFallbackFor`
    (`lib/src/core/l10n/locale_typography.dart`).
 6. Review it on screen with `--dart-define=VIZOR_I18N_PREVIEW=true`.

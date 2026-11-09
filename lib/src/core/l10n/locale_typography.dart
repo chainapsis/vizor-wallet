@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
 
-/// System CJK fonts for each UI language, most specific first; a family the
-/// platform lacks is skipped. Without them the engine falls back by operating
-/// system language, not app language, so on a Korean Mac Chinese text draws
-/// Korean-style Han glyphs.
+/// Pretendard covers modern Hangul syllables and its supported jamo; Noto Sans
+/// SC covers all 8,105 TGH 2013 characters. Keep Latin token fonts and use the
+/// language's system fonts for characters outside these bundled subsets.
+const kKoreanUiFontFamily = 'Vizor Korean UI'; // l10n-ignore: font family name
+const kChineseUiFontFamily =
+    'Vizor Chinese UI'; // l10n-ignore: font family name
+
 const kSimplifiedChineseFontFallback = [
+  kChineseUiFontFamily,
+  kKoreanUiFontFamily,
   'PingFang SC', // l10n-ignore: font family name
   'Microsoft YaHei', // l10n-ignore: font family name
   'Noto Sans CJK SC', // l10n-ignore: font family name
   'Noto Sans SC', // l10n-ignore: font family name
 ];
 const kKoreanFontFallback = [
+  kKoreanUiFontFamily,
+  kChineseUiFontFamily,
   'Apple SD Gothic Neo', // l10n-ignore: font family name
   'Malgun Gothic', // l10n-ignore: font family name
   'Noto Sans CJK KR', // l10n-ignore: font family name

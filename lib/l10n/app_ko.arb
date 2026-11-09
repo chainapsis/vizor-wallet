@@ -1786,7 +1786,7 @@
   "onboardingLostPasswordImportAction": "계‍정‍을 다‍시 가‍져‍와‍야 해‍요",
   "onboardingLostPasswordResetAction": "Vizor 앱‍을 완‍전‍히 초‍기‍화‍하‍는 것",
   "onboardingLostPasswordResetCountdown": "{seconds}‍초 후 초‍기‍화‍할 수 있‍어‍요",
-  "onboardingLostPasswordTitle": "비‍밀‍번‍호‍를 잊‍으‍셨‍나‍요?",
+  "onboardingLostPasswordTitle": "비‍밀‍번‍호 분‍실",
   "onboardingManualInvalidWord": "복‍구 문‍구 단‍어 목‍록‍에 없‍는 단‍어‍예‍요.",
   "onboardingManualNextWord": "다‍음 단‍어",
   "onboardingManualStoppedAt": "'{word}'에‍서 멈‍췄‍어‍요. 복‍구 문‍구 단‍어 목‍록‍에 없‍는 단‍어‍예‍요.",

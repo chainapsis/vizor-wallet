@@ -193,6 +193,20 @@ or changing user-facing text, ARB files, language selection, or copy that native
 code draws. [docs/i18n/README.md](docs/i18n/README.md) indexes the translation
 rules, adding a language, and Rust-originated text.
 
+- **After editing translations or updating `intl`, run
+  `fvm dart run tool/l10n/generate.dart`. `flutter gen-l10n` alone does not
+  regenerate the bundled font subsets.** `--watch` is optional for translation
+  work; do not auto-start it with normal app runs or builds.
+- Korean bundles Pretendard's 11,172 modern Hangul syllables and supported
+  jamo; Chinese bundles Noto Sans SC's 8,105 TGH 2013 characters. New UI and
+  date/number-formatting characters are included automatically. Unsupported
+  characters retain system fallback.
+- Commit the generated `assets/fonts/Vizor*UI-VF.ttf`,
+  `tool/l10n/ui_fonts.manifest.json`, and `tool/l10n/ui_font_characters.json`
+  with translation changes; never edit these generated files by hand.
+- Check freshness with `python3 tool/l10n/ui_fonts.py --check`. Screenshot
+  tests must load the shipped subsets, not substitute external/system fonts.
+
 ## Mainnet Block-Time Table
 
 On mainnet, wallet birthday conversions (import date to height, seed-phrase
