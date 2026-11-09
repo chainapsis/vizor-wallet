@@ -478,7 +478,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activitySectionThisWeek => '이‍번 주';
 
   @override
-  String get activitySenderShielded => '차‍폐 주‍소';
+  String get activitySenderShielded => '차‍폐‍된 보‍낸 사‍람';
 
   @override
   String get activitySenderUnknown => '알 수 없‍음';

@@ -137,7 +137,7 @@
   "activityRowYesterday": "昨天 {time}",
   "activitySectionEarlier": "更早",
   "activitySectionThisWeek": "本周",
-  "activitySenderShielded": "屏蔽资金池",
+  "activitySenderShielded": "屏蔽的发送方",
   "activitySenderUnknown": "未知发送方",
   "activityStatusFailedFundsReturned": "失败，资金已退回",
   "activityStatusIncompleteDeposit": "存入不足",

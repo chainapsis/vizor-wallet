@@ -464,7 +464,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activitySectionThisWeek => '本周';
 
   @override
-  String get activitySenderShielded => '屏蔽资金池';
+  String get activitySenderShielded => '屏蔽的发送方';
 
   @override
   String get activitySenderUnknown => '未知发送方';
