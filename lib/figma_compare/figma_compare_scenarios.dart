@@ -1,3 +1,4 @@
+import 'endpoint_selection_capture.dart';
 import 'near_intents_service_notice_capture.dart';
 import 'activity_pagination_capture.dart';
 import 'mobile_shield_capture.dart';
@@ -109,6 +110,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-account-removal-passcode',
     description: 'Passcode confirmation before account removal',
     builder: buildMobilePasscodeAccountRemovalCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-endpoint-selection',
+    description: 'Desktop endpoint list with Automatic selected',
+    builder: buildDesktopEndpointSelectionCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-endpoint-selection',
+    description: 'Mobile endpoint list with Automatic selected',
+    builder: buildMobileEndpointSelectionCapture,
     desktop: false,
     mobile: true,
   ),

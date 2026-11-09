@@ -111,7 +111,10 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
 
     final dbPath = await getWalletDbPath();
     secretGuard.check();
-    final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+    final endpoint = await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .ensureReady();
+    secretGuard.check();
     attemptedEndpoint = endpoint;
 
     late final rust_sync.ShieldTransparentResult result;

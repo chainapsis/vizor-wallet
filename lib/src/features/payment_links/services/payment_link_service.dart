@@ -2571,7 +2571,9 @@ class PaymentLinkService
     Future<void> Function()? beforeExecute,
     FutureOr<void> Function()? onSubmissionStarted,
   }) async {
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final endpoint = await _ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .ensureReady();
     final sendFlowId = _newSendFlowId();
     Future<({String dbPath, rust_sync.ProposalResult proposal})> createProposal(
       String proposalDbPath,

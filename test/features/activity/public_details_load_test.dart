@@ -10,6 +10,12 @@ import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 class _Route extends RpcEndpointFailoverNotifier {
+  Completer<RpcEndpointConfig>? selection;
+
+  @override
+  Future<RpcEndpointConfig> ensureReady() async =>
+      selection == null ? state.current : await selection!.future;
+
   @override
   RpcEndpointFailoverState build() => const RpcEndpointFailoverState(
     primary: RpcEndpointConfig(
@@ -123,6 +129,22 @@ void main() {
   test('a locked wallet starts nothing', () async {
     (container.read(appSecurityProvider.notifier) as _Security).lockWallet();
     await expectLater(load(), throwsStateError);
+    expect(calls, isEmpty);
+  });
+
+  test('a lock during endpoint selection sends no public lookup', () async {
+    final route =
+        container.read(rpcEndpointFailoverProvider.notifier) as _Route;
+    final selection = route.selection = Completer<RpcEndpointConfig>();
+    final running = load();
+    await pumpEventQueue();
+    expect(calls, isEmpty);
+
+    (container.read(appSecurityProvider.notifier) as _Security).lockWallet();
+    container.read(publicDetailsLoadsProvider).cancel();
+    selection.complete(container.read(rpcEndpointFailoverProvider).current);
+
+    await expectLater(running, throwsStateError);
     expect(calls, isEmpty);
   });
 
