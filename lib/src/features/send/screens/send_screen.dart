@@ -14,6 +14,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/naming/zns_name_resolver.dart';
+import '../../../core/naming/zns_names_setting.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
@@ -1425,7 +1426,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                         : null,
                                     focusNode: focusNode,
                                     controller: controller,
-                                    hintText: 'Address, name, or request link',
+                                    hintText: ref.watch(znsNamesOnProvider)
+                                        ? 'Address, name, or request link'
+                                        : 'Address or request link',
                                     leading: AppIcon(
                                       addressLeadingIcon,
                                       size: 20,

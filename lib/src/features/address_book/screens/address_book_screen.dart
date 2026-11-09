@@ -10,6 +10,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_floating_bar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/naming/zns_name_resolver.dart';
+import '../../../core/naming/zns_names_setting.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
@@ -339,6 +340,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
           draft: formDraft,
           editing: _editingContact != null,
           canSubmit: _canSubmit(formDraft),
+          namesOn: ref.watch(znsNamesOnProvider),
           addressIsName:
               _zns?.isName(formDraft.address, formDraft.network) ?? false,
           znsMessage: _zns?.message(formDraft.address),
@@ -1100,6 +1102,7 @@ class _ContactFormModal extends StatefulWidget {
     required this.draft,
     required this.editing,
     required this.canSubmit,
+    required this.namesOn,
     required this.addressIsName,
     required this.znsMessage,
     required this.submitError,
@@ -1114,6 +1117,9 @@ class _ContactFormModal extends StatefulWidget {
   final _ContactDraft draft;
   final bool editing;
   final bool canSubmit;
+
+  /// Whether the user turned Zcash names on, which the address hint offers.
+  final bool namesOn;
 
   /// The address field holds a Zcash name, not an address to format-check.
   final bool addressIsName;
@@ -1254,7 +1260,9 @@ class _ContactFormModalState extends State<_ContactFormModal> {
               label: 'Address',
               showLabel: false,
               controller: _addressController,
-              hintText: widget.draft.network == AddressBookNetwork.zcash
+              hintText:
+                  widget.namesOn &&
+                      widget.draft.network == AddressBookNetwork.zcash
                   ? 'Add address or Zcash name'
                   : 'Add address',
               trailing: AppTappable(

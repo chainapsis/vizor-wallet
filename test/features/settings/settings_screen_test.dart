@@ -28,9 +28,32 @@ import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
 
+import 'package:zcash_wallet/src/core/naming/zns_names_setting.dart';
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
+  testWidgets('Zcash names start off and turn on under Privacy', (
+    tester,
+  ) async {
+    final store = _MemoryZnsNamesStore();
+    await tester.pumpWidget(_settingsHarness(znsNamesStore: store));
+    await tester.pumpAndSettle();
+    final toggle = find.byKey(const ValueKey('settings_zns_names_toggle'));
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Zcash names'), findsOneWidget);
+    expect(find.text(kZnsNamesSettingsCopy), findsOneWidget);
+    final status = find.byKey(const ValueKey('settings_zns_names_status'));
+    expect(tester.widget<Text>(status).data, 'Off');
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+
+    expect(store.enabled, isTrue);
+    expect(tester.widget<Text>(status).data, 'On');
+  });
+
   testWidgets('private recovery is labelled experimental', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1070,6 +1093,7 @@ Widget _settingsHarness({
   AccountState? accountState,
   String network = 'main',
   bool enhancePirEnabled = false,
+  ZnsNamesSettingStore? znsNamesStore,
 }) {
   final router = GoRouter(
     initialLocation: '/settings',
@@ -1113,6 +1137,8 @@ Widget _settingsHarness({
           networkPrivacyCalls ?? <bool>[],
         ),
       ),
+      if (znsNamesStore != null)
+        znsNamesSettingStoreProvider.overrideWithValue(znsNamesStore),
       ...extraOverrides,
     ],
     child: MaterialApp.router(
@@ -1287,4 +1313,14 @@ class _RecordingToggle extends EnhancePirNotifier {
 class _PrivateWallet extends WalletTransparentPrivateNotifier {
   @override
   bool build() => true;
+}
+
+class _MemoryZnsNamesStore implements ZnsNamesSettingStore {
+  bool enabled = false;
+
+  @override
+  Future<bool> readEnabled() async => enabled;
+
+  @override
+  Future<void> writeEnabled(bool value) async => enabled = value;
 }

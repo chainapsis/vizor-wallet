@@ -29,6 +29,7 @@ import '../../../main.dart' show log;
 import '../../providers/rpc_endpoint_provider.dart';
 import '../config/network_config.dart';
 import '../network/network_http_client.dart';
+import 'zns_names_setting.dart';
 
 /// Mainnet resolvers in the order the ZNS SDK tries them. The second one is
 /// a fallback used only when the first cannot be reached.
@@ -444,9 +445,29 @@ ZnsResolution _parseIndexRecord(Object? record) {
   return ZnsResolution(name: name, address: address.trim());
 }
 
-/// The resolver for the wallet's network, or null where ZNS has no registry
-/// (regtest).
+/// Thrown by [kZnsNamesOffResolver]: the user has not turned names on.
+class ZnsNamesOffException implements Exception {
+  const ZnsNamesOffException();
+
+  @override
+  String toString() => 'ZnsNamesOffException: Zcash names are off';
+}
+
+/// The resolver while the user has names off. It makes no request.
+const ZnsNameResolver kZnsNamesOffResolver = _ZnsNamesOffResolver();
+
+class _ZnsNamesOffResolver implements ZnsNameResolver {
+  const _ZnsNamesOffResolver();
+
+  @override
+  Future<ZnsResolution?> resolve(String name) =>
+      Future.error(const ZnsNamesOffException());
+}
+
+/// The resolver for the wallet's network: [kZnsNamesOffResolver] while the
+/// user has names off, or null where ZNS has no registry (regtest).
 final znsNameResolverProvider = Provider<ZnsNameResolver?>((ref) {
+  if (!ref.watch(znsNamesOnProvider)) return kZnsNamesOffResolver;
   final network = ref.watch(
     rpcEndpointProvider.select((config) => config.network),
   );

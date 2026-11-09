@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/naming/zns_name_resolver.dart';
+import '../../../../core/naming/zns_names_setting.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
@@ -62,6 +63,7 @@ class MobileAddressBookScreen extends ConsumerWidget {
       builder: (_) => _ContactEditSheet(
         contact: contact,
         readZnsResolver: () => ref.read(znsNameResolverProvider),
+        namesOn: ref.read(znsNamesOnProvider),
       ),
     );
     if (result == null || !context.mounted) return;
@@ -973,9 +975,16 @@ class _ContactDraft {
 }
 
 class _ContactEditSheet extends StatefulWidget {
-  const _ContactEditSheet({required this.readZnsResolver, this.contact});
+  const _ContactEditSheet({
+    required this.readZnsResolver,
+    required this.namesOn,
+    this.contact,
+  });
 
   final AddressBookContact? contact;
+
+  /// Whether the user turned Zcash names on, which the address hint offers.
+  final bool namesOn;
 
   /// Reads the resolver for a Zcash name typed as the address; it gives null
   /// where the network has no ZNS registry.
@@ -1309,7 +1318,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                 fieldKey: const ValueKey('mobile_address_book_address'),
                 controller: _addressController,
                 focusNode: _addressFocus,
-                hintText: _network == AddressBookNetwork.zcash
+                hintText: widget.namesOn && _network == AddressBookNetwork.zcash
                     ? 'Add an address or Zcash name'
                     : 'Add an address',
                 textInputAction: TextInputAction.done,

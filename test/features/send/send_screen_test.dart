@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/core/naming/zns_name_resolver.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -1700,6 +1701,27 @@ void main() {
       await tester.pump(kZnsLookupDebounce);
       await tester.pumpAndSettle();
     }
+
+    testWidgets('with names off by default, says where to turn them on', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(_sendHarness());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Address or request link'), findsOneWidget);
+      expect(find.text('Address, name, or request link'), findsNothing);
+
+      await enterRecipient(tester, 'alice.zcash');
+
+      expect(find.text('Turn on Zcash names in Settings'), findsOneWidget);
+      await tester.enterText(_editableIn('send_amount_field'), '0.5');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.pumpAndSettle();
+      expect(rustApi.lastProposeToAddress, isNull);
+    });
 
     testWidgets('resolves, shows the address, and proposes to it', (
       tester,

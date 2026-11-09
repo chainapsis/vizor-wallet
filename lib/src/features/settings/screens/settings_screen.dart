@@ -37,6 +37,7 @@ import '../widgets/enhance_pir_privacy_control.dart';
 import '../widgets/private_queries_turn_off.dart';
 import '../widgets/settings_new_badge.dart';
 import '../widgets/windows_update_download_flow.dart';
+import '../widgets/zns_names_control.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
@@ -629,6 +630,8 @@ class _SettingsList extends ConsumerWidget {
                     : () => unawaited(togglePrivateQueries(context, ref)),
               ),
             ],
+            const SizedBox(height: AppSpacing.sm),
+            const ZnsNamesControl(key: ValueKey('settings_zns_names_control')),
           ],
         ),
         const SizedBox(height: AppSpacing.md),

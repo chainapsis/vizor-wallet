@@ -15,6 +15,7 @@ import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/naming/zns_name_resolver.dart';
+import '../../../../core/naming/zns_names_setting.dart';
 import '../../../../core/navigation/external_action_guard_provider.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -2606,7 +2607,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       fieldKey: const ValueKey('mobile_send_address_input'),
       controller: _addressController,
       focusNode: _addressFocus,
-      hintText: 'Address, name, or request link',
+      hintText: ref.watch(znsNamesOnProvider)
+          ? 'Address, name, or request link'
+          : 'Address or request link',
       leading: SizedBox(
         width: AppInputSizing.iconWrapWidth,
         height: AppInputSizing.height,

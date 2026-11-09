@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import '../src/app_bootstrap.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/naming/zns_name_resolver.dart';
+import '../src/core/naming/zns_names_setting.dart';
 import '../src/features/address_book/models/address_book_contact.dart';
 import '../src/features/address_book/providers/address_book_provider.dart';
 import '../src/features/address_book/screens/address_book_screen.dart';
@@ -150,6 +151,7 @@ Widget _captureScope({
       const _CaptureAddressBookRepository(),
     ),
     ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+    znsNamesOnProvider.overrideWithValue(true),
     znsNameResolverProvider.overrideWithValue(resolver),
   ],
   child: child,
