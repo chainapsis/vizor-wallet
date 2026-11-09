@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -27,6 +28,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
     required this.messageController,
     required this.artwork,
     required this.spendable,
+    required this.privacyModeEnabled,
     required this.quote,
     required this.preparing,
     required this.reviewing,
@@ -61,6 +63,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
   final List<PaymentLinkCardArtwork>? mixedArtworks;
   final ValueChanged<bool>? onMixChanged;
   final BigInt? spendable;
+  final bool privacyModeEnabled;
   final PaymentLinkBatchQuote? quote;
   final bool preparing;
   final bool reviewing;
@@ -279,6 +282,12 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
 
   Widget _available(BuildContext context) {
     final colors = context.colors;
+    final balance = spendable == null
+        ? null
+        : hideIfPrivacyMode(
+            formatZecAmount(spendable!),
+            privacyModeEnabled: privacyModeEnabled,
+          );
     return Row(
       key: const ValueKey('payment_link_bulk_available'),
       mainAxisSize: MainAxisSize.min,
@@ -286,12 +295,10 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
         AppIcon(AppIcons.wallet, size: 16, color: colors.icon.regular),
         const SizedBox(width: AppSpacing.xxs),
         Semantics(
-          label: spendable == null
-              ? 'Balance loading'
-              : '${formatZecAmount(spendable!)} ZEC available',
+          label: balance == null ? 'Balance loading' : '$balance ZEC available',
           child: ExcludeSemantics(
             child: Text(
-              spendable == null ? '…' : '${formatZecAmount(spendable!)} ZEC',
+              balance == null ? '…' : '$balance ZEC',
               style: _labelStyle(
                 context,
               ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
@@ -373,6 +380,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
     amountText: amountController.text,
     messageText: messageController.text,
     spendable: spendable,
+    privacyModeEnabled: privacyModeEnabled,
     quote: quote,
     preparing: preparing,
     waitingForSync: waitingForSync,

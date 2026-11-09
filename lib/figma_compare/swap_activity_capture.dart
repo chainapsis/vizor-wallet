@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../src/app_bootstrap.dart';
 import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/layout/app_form_factor.dart';
 import '../src/core/theme/app_theme.dart';
@@ -51,6 +52,7 @@ Widget _capture(BuildContext context, {required bool payMode}) {
   );
   return ProviderScope(
     overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       accountProvider.overrideWith(_CaptureAccounts.new),
       addressBookProvider.overrideWith(_CaptureAddressBook.new),
       swapStateProvider.overrideWith(() => _CaptureSwap(intent)),

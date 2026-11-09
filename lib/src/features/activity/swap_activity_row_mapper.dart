@@ -1,10 +1,10 @@
 import 'package:flutter/widgets.dart';
 
-import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../swap/models/swap_models.dart';
+import '../swap/models/swap_privacy_mask.dart';
 import 'activity_amount_text.dart';
 import 'activity_row_mapper.dart';
 import 'models/activity_row_data.dart';
@@ -222,9 +222,11 @@ List<ActivityRowData> _swapActivityChildRows({
   final receivesZec = direction == SwapDirection.externalToZec;
   // The absorbed on-chain receive carries the real settled amount; fall back
   // to the quote estimate until the payout tx is matched.
-  final amountText =
-      receivesZec && receivedAmountText != null && !privacyModeEnabled
-      ? receivedAmountText
+  final amountText = receivesZec && receivedAmountText != null
+      ? _swapActivityAmountTextForPrivacy(
+          receivedAmountText,
+          privacyModeEnabled: privacyModeEnabled,
+        )
       : _swapActivityReceiveAmountText(
           item,
           privacyModeEnabled: privacyModeEnabled,
@@ -250,18 +252,24 @@ List<ActivityRowData> _swapActivityChildRows({
   ];
 }
 
+/// Masks after the visible amount is chosen so the mask keeps that leg's own
+/// symbol (`*** USDC`), not the ZEC default.
+String _swapActivityAmountTextForPrivacy(
+  String amountText, {
+  required bool privacyModeEnabled,
+}) {
+  return swapAmountTextForPrivacy(
+    amountText,
+    privacyModeEnabled: privacyModeEnabled,
+    maskLength: _swapActivityAmountPrivacyMaskLength,
+  );
+}
+
 String _swapActivityAmountText(
   SwapActivityRowItem item, {
   required bool includeSign,
   required bool privacyModeEnabled,
 }) {
-  if (privacyModeEnabled) {
-    return hideAmountIfPrivacyMode(
-      '',
-      privacyModeEnabled: true,
-      maskLength: _swapActivityAmountPrivacyMaskLength,
-    );
-  }
   // A refund row shows what came back once the provider records it.
   final refundedAmount = item.refundedAmountText?.trim();
   final amount =
@@ -270,38 +278,28 @@ String _swapActivityAmountText(
       ? refundedAmount!
       : item.sellAmountText;
   if (amount.trim().isEmpty) return '--';
-  if (!includeSign) return amount;
-  return '-$amount';
+  return _swapActivityAmountTextForPrivacy(
+    includeSign ? '-$amount' : amount,
+    privacyModeEnabled: privacyModeEnabled,
+  );
 }
 
 String _swapActivityReceiveAmountText(
   SwapActivityRowItem item, {
   required bool privacyModeEnabled,
 }) {
-  if (privacyModeEnabled) {
-    return hideAmountIfPrivacyMode(
-      '',
-      privacyModeEnabled: true,
-      maskLength: _swapActivityAmountPrivacyMaskLength,
-    );
-  }
   final amount = item.receiveEstimateText.trim();
   if (amount.isEmpty) return '--';
-  if (amount.startsWith('+')) return amount;
-  return '+$amount';
+  return _swapActivityAmountTextForPrivacy(
+    amount.startsWith('+') ? amount : '+$amount',
+    privacyModeEnabled: privacyModeEnabled,
+  );
 }
 
 String _payActivityAmountText(
   SwapActivityRowItem item, {
   required bool privacyModeEnabled,
 }) {
-  if (privacyModeEnabled) {
-    return hideAmountIfPrivacyMode(
-      '',
-      privacyModeEnabled: true,
-      maskLength: _swapActivityAmountPrivacyMaskLength,
-    );
-  }
   final depositedAmount = item.depositedAmountText?.trim();
   final hasProviderDepositAmount = _isPositiveSwapAmount(depositedAmount);
   final showsDepositDebit =
@@ -323,10 +321,11 @@ String _payActivityAmountText(
                 item.status == SwapIntentStatus.incompleteDeposit)
       ? depositedAmount!
       : item.receiveEstimateText.trim();
-  if (showsDepositDebit && amount.isNotEmpty && !amount.startsWith('-')) {
-    return '-$amount';
-  }
-  return amount.isEmpty ? '--' : amount;
+  if (amount.isEmpty) return '--';
+  return _swapActivityAmountTextForPrivacy(
+    showsDepositDebit && !amount.startsWith('-') ? '-$amount' : amount,
+    privacyModeEnabled: privacyModeEnabled,
+  );
 }
 
 bool _payActivityRepresentsDepositDebit(SwapActivityRowItem item) {

@@ -1791,7 +1791,11 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                                         ? '—'
                                         : widget.hasBalance
                                         ? visibleBalance
-                                        : '0',
+                                        : hideIfPrivacyMode(
+                                            '0',
+                                            privacyModeEnabled:
+                                                widget.privacyModeEnabled,
+                                          ),
                                     key: const ValueKey(
                                       'home_desktop_balance_amount_text',
                                     ),

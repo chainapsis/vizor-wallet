@@ -7,9 +7,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
@@ -250,6 +252,7 @@ class _VotingSubmissionConfirmationViewState
         message: 'Your vote was successfully published and cannot be changed.',
         votingPower: _formatVotingPower(
           _refreshedVotingPowerZatoshi ?? state.eligibleWeightZatoshi,
+          privacyModeEnabled: ref.watch(privacyModeProvider),
         ),
         isReturningToPolls: _isReturningToPolls,
         doneEnabled: !_isReturningToPolls,
@@ -294,9 +297,16 @@ class _VotingSubmissionConfirmationViewState
     }
   }
 
-  String _formatVotingPower(BigInt? zatoshi) {
+  String _formatVotingPower(
+    BigInt? zatoshi, {
+    required bool privacyModeEnabled,
+  }) {
     if (zatoshi == null) return 'Not available';
-    return formatVotingPower(zatoshi);
+    return hideAmountIfPrivacyMode(
+      formatVotingPower(zatoshi),
+      privacyModeEnabled: privacyModeEnabled,
+      denomination: 'ZEC',
+    );
   }
 
   void _retryVotingPowerRefresh(
