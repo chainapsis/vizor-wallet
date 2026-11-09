@@ -621,7 +621,7 @@ void main() {
     );
     await tester.scrollUntilVisible(description, 200);
     // Private queries are off, which doesn't affect it.
-    expect(find.text(kNearSwapPrivacyOffCopy), findsOneWidget);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOff), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(
@@ -644,8 +644,8 @@ void main() {
     await tester.pumpAndSettle();
     final sheet = find.byKey(const ValueKey('near_swap_privacy_info_sheet'));
     expect(sheet, findsOneWidget);
-    expect(find.text(kNearSwapPrivacyInfoTitle), findsOneWidget);
-    for (final paragraph in kNearSwapPrivacyInfoParagraphs) {
+    expect(find.text(testL10n.commonWhatsThis), findsOneWidget);
+    for (final paragraph in nearSwapPrivacyInfoParagraphs(testL10n)) {
       expect(find.text(paragraph), findsOneWidget);
     }
     // It names what one-time Zcash addresses leave linkable, including the
@@ -672,8 +672,8 @@ void main() {
       const ValueKey('mobile_settings_near_swap_privacy_description'),
     );
     await tester.scrollUntilVisible(description, 200);
-    expect(find.text(kNearSwapPrivacyOnCopy), findsOneWidget);
-    expect(find.text(kNearSwapPrivacyOffCopy), findsNothing);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOn), findsOneWidget);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOff), findsNothing);
   });
 
   testWidgets('NEAR swap privacy off describes regular addresses', (
@@ -685,12 +685,18 @@ void main() {
       const ValueKey('mobile_settings_near_swap_privacy_description'),
     );
     await tester.scrollUntilVisible(description, 200);
-    expect(tester.widget<Text>(description).data, kNearSwapPrivacyOffCopy);
-    expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
+    expect(
+      tester.widget<Text>(description).data,
+      testL10n.settingsNearSwapPrivacyOff,
+    );
+    expect(find.text(testL10n.settingsNearSwapPrivacyOn), findsNothing);
     // Checking swap history doesn't need NEAR swap privacy.
     final sheet = await _openNearSwapPrivacyInfo(tester);
     expect(sheet, findsOneWidget);
-    expect(find.text(kNearSwapPrivacyInfoParagraphs.last), findsOneWidget);
+    expect(
+      find.text(nearSwapPrivacyInfoParagraphs(testL10n).last),
+      findsOneWidget,
+    );
     expect(_troubleshooting, findsOneWidget);
   });
 
@@ -776,9 +782,9 @@ void main() {
       findsOneWidget,
     );
     for (final text in [
-      kNearSwapPrivacyTroubleshootingTitle,
-      kNearSwapPrivacyTroubleshootingCopy,
-      kSwapHistoryCheckExplanation,
+      testL10n.settingsNearSwapPrivacyTroubleshootingTitle,
+      testL10n.settingsNearSwapPrivacyTroubleshootingBody,
+      testL10n.settingsSwapHistoryExplanation,
     ]) {
       expect(
         find.descendant(of: section, matching: find.text(text)),
@@ -804,7 +810,11 @@ void main() {
     expect(
       tester.getTopLeft(section).dy,
       greaterThan(
-        tester.getBottomLeft(find.text(kNearSwapPrivacyInfoParagraphs.last)).dy,
+        tester
+            .getBottomLeft(
+              find.text(nearSwapPrivacyInfoParagraphs(testL10n).last),
+            )
+            .dy,
       ),
       reason: 'after the explanation',
     );
@@ -829,8 +839,11 @@ void main() {
         const ValueKey('mobile_settings_near_swap_privacy_description'),
       );
       await tester.scrollUntilVisible(description, 200);
-      expect(find.text(kNearSwapPrivacyHardwareCopy), findsOneWidget);
-      expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
+      expect(
+        find.text(testL10n.settingsNearSwapPrivacyHardware),
+        findsOneWidget,
+      );
+      expect(find.text(testL10n.settingsNearSwapPrivacyOn), findsNothing);
       expect(
         find.byKey(const ValueKey('settings_check_swap_history')),
         findsNothing,

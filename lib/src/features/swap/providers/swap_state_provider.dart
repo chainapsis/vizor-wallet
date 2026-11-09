@@ -2634,8 +2634,8 @@ class SwapNotifier extends Notifier<SwapState> {
         null ||
         ReceiveError(kind: ReceiveErrorKind.waitingForSync) ||
         ReceiveError(kind: ReceiveErrorKind.waitingForService) => null,
-        ReceiveError(kind: ReceiveErrorKind.upgradeRequired, :final message) =>
-          SwapLiteralMessage(message),
+        ReceiveError(kind: ReceiveErrorKind.upgradeRequired) =>
+          const SwapNotice(SwapNoticeKind.recoveryUpdateRequired),
         _ => const SwapNotice(SwapNoticeKind.privateReceiveAddressUnavailable),
       };
 
@@ -2651,7 +2651,7 @@ class SwapNotifier extends Notifier<SwapState> {
       );
     }
     if (error is NearSwapPrivacyUnknownException) {
-      return SwapLiteralMessage(error.toString());
+      return const SwapNotice(SwapNoticeKind.nearSwapPrivacyUnknown);
     }
     return _providerFailureMessage(
       SwapFailureOperation.quote,

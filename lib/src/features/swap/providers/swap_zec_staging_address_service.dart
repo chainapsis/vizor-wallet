@@ -113,10 +113,9 @@ class SwapZecStagingAddressUnavailableException implements Exception {
 class NearSwapPrivacyUnknownException implements Exception {
   const NearSwapPrivacyUnknownException();
 
+  // The quote error shows SwapNoticeKind.nearSwapPrivacyUnknown instead.
   @override
-  String toString() =>
-      "Vizor couldn't read your NEAR swap privacy setting. Choose it again in "
-      'Settings to swap.';
+  String toString() => 'NearSwapPrivacyUnknownException'; // l10n-ignore: log text
 }
 
 class SwapZecStagingAddressService {

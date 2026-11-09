@@ -1862,6 +1862,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonWelcomeBack => 'Welcome Back';
 
   @override
+  String get commonWhatsThis => 'What\'s this?';
+
+  @override
   String get commonWizard => 'Wizard';
 
   @override
@@ -9642,6 +9645,50 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsLanguageUpdateFailed => 'Couldn\'t update language.';
 
   @override
+  String get settingsNearSwapPrivacyHardware =>
+      'Not available for hardware wallet accounts. Their swaps use regular Zcash addresses.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoOneTime =>
+      'When you swap with NEAR Intents, your wallet gives NEAR a Zcash address for the payout and another for any refund. With NEAR swap privacy on, these are one-time addresses made just for swaps, so any future quantum adversary can\'t tie them to your wallet.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoOwnAddresses =>
+      'Addresses you enter yourself, like an Ethereum address you reuse for several swaps, are still shared with NEAR and can link those swaps. Hardware wallet accounts don\'t use one-time addresses.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoRestore =>
+      'Your recovery phrase still recovers everything. After a restore, your wallet finds these payments privately on its own.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoReuse =>
+      'A payout address from a quote that expired unpaid can be used again for a later quote. Rarely, two devices with the same wallet that quote at the same moment get the same address. NEAR can see that those quotes share an address, but still not which wallet it belongs to.';
+
+  @override
+  String get settingsNearSwapPrivacyInfoTurnOff =>
+      'Turning this off only gives new swaps regular addresses. Payouts and refunds to one-time addresses you already used still show up.';
+
+  @override
+  String get settingsNearSwapPrivacyLabel => 'NEAR swap privacy';
+
+  @override
+  String get settingsNearSwapPrivacyOff => 'Swaps use regular Zcash addresses.';
+
+  @override
+  String get settingsNearSwapPrivacyOn => 'Swaps use one-time Zcash addresses.';
+
+  @override
+  String get settingsNearSwapPrivacyTroubleshootingBody =>
+      'Vizor finds swap payments and refunds automatically. If one is missing after a swap finished, this check looks at every private swap address and refund key this wallet has used. It starts from the beginning of Ironwood history and runs over Private queries. It can take a few minutes.';
+
+  @override
+  String get settingsNearSwapPrivacyTroubleshootingTitle => 'Troubleshooting';
+
+  @override
+  String get settingsNearSwapPrivacyUnknown =>
+      'Vizor couldn\'t read your saved choice. Set it again to swap.';
+
+  @override
   String get settingsNewBadge => 'New';
 
   @override
@@ -9909,6 +9956,57 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsStatusOn => 'On';
+
+  @override
+  String get settingsSwapHistoryCheckButton => 'Check swap history';
+
+  @override
+  String get settingsSwapHistoryChecking => 'Checking swap history…';
+
+  @override
+  String get settingsSwapHistoryContinuing =>
+      'The check will keep going while Vizor is open.';
+
+  @override
+  String get settingsSwapHistoryDone => 'Swap history check complete.';
+
+  @override
+  String get settingsSwapHistoryExplanation =>
+      'Only needed if a swap payment or refund is missing.';
+
+  @override
+  String get settingsSwapHistoryFailed =>
+      'Swap history can\'t be checked right now. Try again later.';
+
+  @override
+  String get settingsSwapHistoryIdle =>
+      'Check older addresses for repeat payments.';
+
+  @override
+  String get settingsSwapHistoryNotStarted =>
+      'The check couldn\'t start. Try again in a moment.';
+
+  @override
+  String get settingsSwapHistoryPauseButton => 'Pause check';
+
+  @override
+  String get settingsSwapHistoryPauseFailed =>
+      'Couldn\'t pause the check. Try again.';
+
+  @override
+  String get settingsSwapHistoryPaused => 'Paused. Check again to resume.';
+
+  @override
+  String get settingsSwapHistoryWaitingForService =>
+      'The swap recovery service hasn\'t caught up with this wallet yet. Try again in a few minutes.';
+
+  @override
+  String get settingsSwapHistoryWaitingForSync =>
+      'Waiting for wallet sync. Try again in a few minutes.';
+
+  @override
+  String get settingsSwapHistoryWalletChanged =>
+      'The check stopped because the wallet changed. Try again.';
 
   @override
   String get settingsThemeDark => 'Dark';
@@ -11063,6 +11161,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get swapNoticeNearSwapPrivacyUnknown =>
+      'Vizor couldn\'t read your NEAR swap privacy setting. Choose it again in Settings to swap.';
+
+  @override
   String get swapNoticeOk => 'Ok';
 
   @override
@@ -11142,6 +11244,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapQuoteRatePending => 'Rate pending';
+
+  @override
+  String get swapRecoveryUpdateRequired =>
+      'Update Vizor to keep checking private swap addresses. Your saved progress is kept.';
 
   @override
   String get swapReviewBackPay => 'Pay';

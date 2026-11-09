@@ -708,10 +708,10 @@ class _SettingsList extends ConsumerWidget {
                 lineX: AppSpacing.xxs + 10,
                 rowCenter: 22,
                 child: EnhancePirPrivacyControl(
-                  label: 'NEAR swap privacy',
+                  label: context.l10n.settingsNearSwapPrivacyLabel,
                   keyPrefix: 'settings_near_swap_privacy',
                   serverSettings: false,
-                  description: nearSwapPrivacy.description,
+                  description: nearSwapPrivacy.description.text(context.l10n),
                   onInfo: () => unawaited(showNearSwapPrivacyInfo(context)),
                   enabled: nearSwapPrivacy.enabled,
                   transition: nearSwapPrivacy.transition,

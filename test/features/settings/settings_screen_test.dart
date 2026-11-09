@@ -637,7 +637,7 @@ void main() {
     await tester.pumpWidget(_settingsHarness());
     await tester.pump();
     // Private queries are off, which doesn't affect it.
-    expect(find.text(kNearSwapPrivacyOffCopy), findsOneWidget);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOff), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('settings_near_swap_privacy_sub_option')),
@@ -656,8 +656,8 @@ void main() {
     await tester.pumpAndSettle();
     final dialog = find.byKey(const ValueKey('near_swap_privacy_info_dialog'));
     expect(dialog, findsOneWidget);
-    expect(find.text(kNearSwapPrivacyInfoTitle), findsOneWidget);
-    for (final paragraph in kNearSwapPrivacyInfoParagraphs) {
+    expect(find.text(testL10n.commonWhatsThis), findsOneWidget);
+    for (final paragraph in nearSwapPrivacyInfoParagraphs(testL10n)) {
       expect(find.text(paragraph), findsOneWidget);
     }
     // It names what one-time Zcash addresses leave linkable, including the
@@ -685,8 +685,8 @@ void main() {
       _settingsHarness(enhancePirEnabled: true, nearSwapPrivacyEnabled: true),
     );
     await tester.pump();
-    expect(find.text(kNearSwapPrivacyOnCopy), findsOneWidget);
-    expect(find.text(kNearSwapPrivacyOffCopy), findsNothing);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOn), findsOneWidget);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOff), findsNothing);
   });
 
   testWidgets('NEAR swap privacy off describes regular addresses', (
@@ -702,9 +702,9 @@ void main() {
             ),
           )
           .data,
-      kNearSwapPrivacyOffCopy,
+      testL10n.settingsNearSwapPrivacyOff,
     );
-    expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOn), findsNothing);
   });
 
   for (final (name, own) in [
@@ -747,7 +747,10 @@ void main() {
     await tester.pump();
     final dialog = await _openNearSwapPrivacyInfo(tester);
     expect(dialog, findsOneWidget);
-    expect(find.text(kNearSwapPrivacyInfoParagraphs.last), findsOneWidget);
+    expect(
+      find.text(nearSwapPrivacyInfoParagraphs(testL10n).last),
+      findsOneWidget,
+    );
     expect(_troubleshooting, findsOneWidget);
     expect(find.byType(SwapHistoryCheckControl), findsOneWidget);
   });
@@ -796,9 +799,9 @@ void main() {
       findsOneWidget,
     );
     for (final text in [
-      kNearSwapPrivacyTroubleshootingTitle,
-      kNearSwapPrivacyTroubleshootingCopy,
-      kSwapHistoryCheckExplanation,
+      testL10n.settingsNearSwapPrivacyTroubleshootingTitle,
+      testL10n.settingsNearSwapPrivacyTroubleshootingBody,
+      testL10n.settingsSwapHistoryExplanation,
     ]) {
       expect(
         find.descendant(of: section, matching: find.text(text)),
@@ -821,7 +824,11 @@ void main() {
     expect(
       tester.getTopLeft(section).dy,
       greaterThan(
-        tester.getBottomLeft(find.text(kNearSwapPrivacyInfoParagraphs.last)).dy,
+        tester
+            .getBottomLeft(
+              find.text(nearSwapPrivacyInfoParagraphs(testL10n).last),
+            )
+            .dy,
       ),
       reason: 'after the explanation',
     );
@@ -873,7 +880,7 @@ void main() {
     await _openNearSwapPrivacyInfo(tester);
     expect(
       tester.widget<Text>(status).data,
-      swapHistoryCheckStatus(SwapHistoryCheck.checking),
+      swapHistoryCheckStatus(testL10n, SwapHistoryCheck.checking),
     );
     expect(
       find.byKey(const ValueKey('settings_cancel_swap_history')),
@@ -891,7 +898,7 @@ void main() {
     await _openNearSwapPrivacyInfo(tester);
     expect(
       tester.widget<Text>(status).data,
-      swapHistoryCheckStatus(SwapHistoryCheck.done),
+      swapHistoryCheckStatus(testL10n, SwapHistoryCheck.done),
     );
     expect(
       find.byKey(const ValueKey('settings_cancel_swap_history')),
@@ -939,7 +946,7 @@ void main() {
     await tester.pump();
     final button = find.byKey(const ValueKey('settings_check_swap_history'));
     await tester.ensureVisible(button);
-    expect(find.text(kSwapRecoveryUpdateMessage), findsOneWidget);
+    expect(find.text(testL10n.swapRecoveryUpdateRequired), findsOneWidget);
     expect(tester.widget<AppButton>(button).onPressed, isNull);
   });
 
@@ -995,7 +1002,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(paused, isTrue);
     expect(
-      find.text(swapHistoryCheckStatus(SwapHistoryCheck.paused)),
+      find.text(swapHistoryCheckStatus(testL10n, SwapHistoryCheck.paused)),
       findsOneWidget,
     );
     // Let the stopped watch's last poll interval run out.
@@ -1029,14 +1036,14 @@ void main() {
     );
     await tester.pump();
     await _openNearSwapPrivacyInfo(tester);
-    expect(find.text(kSwapHistoryCheckExplanation), findsOneWidget);
+    expect(find.text(testL10n.settingsSwapHistoryExplanation), findsOneWidget);
     final start = find.byKey(const ValueKey('settings_check_swap_history'));
     final status = find.byKey(
       const ValueKey('settings_check_swap_history_status'),
     );
     expect(
       tester.widget<Text>(status).data,
-      swapHistoryCheckStatus(SwapHistoryCheck.idle),
+      swapHistoryCheckStatus(testL10n, SwapHistoryCheck.idle),
     );
     await tester.ensureVisible(start);
     await tester.tap(start);
@@ -1044,7 +1051,7 @@ void main() {
     expect(begun, 1);
     expect(
       tester.widget<Text>(status).data,
-      swapHistoryCheckStatus(SwapHistoryCheck.checking),
+      swapHistoryCheckStatus(testL10n, SwapHistoryCheck.checking),
     );
 
     final pause = find.byKey(const ValueKey('settings_cancel_swap_history'));
@@ -1054,7 +1061,7 @@ void main() {
     expect(paused, 1);
     expect(
       tester.widget<Text>(status).data,
-      swapHistoryCheckStatus(SwapHistoryCheck.paused),
+      swapHistoryCheckStatus(testL10n, SwapHistoryCheck.paused),
     );
 
     final earlierPolls = polls.length;
@@ -1071,7 +1078,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester.widget<Text>(status).data,
-      swapHistoryCheckStatus(SwapHistoryCheck.done),
+      swapHistoryCheckStatus(testL10n, SwapHistoryCheck.done),
     );
   });
 
@@ -1096,8 +1103,8 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text(kNearSwapPrivacyHardwareCopy), findsOneWidget);
-    expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
+    expect(find.text(testL10n.settingsNearSwapPrivacyHardware), findsOneWidget);
+    expect(find.text(testL10n.settingsNearSwapPrivacyOn), findsNothing);
     // Hardware accounts have no one-time keys to check.
     expect(
       find.byKey(const ValueKey('settings_check_swap_history')),

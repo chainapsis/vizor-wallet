@@ -253,9 +253,9 @@ class NearIntentsOneClickSwapAdapter
       // status alone says for callers that need it (see
       // [OneClickStatusOnlyException]).
       final message = sellAsset == null || receiveAsset == null
-          ? 'Unsupported 1Click status pair: '
+          ? 'Unsupported 1Click status pair: ' // l10n-ignore: error text classified by swapFailureCategory
                 '${request.originAsset} -> ${request.destinationAsset}'
-          : 'NEAR Intents does not currently list '
+          : 'NEAR Intents does not currently list ' // l10n-ignore: error text classified by swapFailureCategory
                 '${(sellToken == null ? sellAsset : receiveAsset).symbol}';
       final statusOnly = _statusOnlySnapshot(response, sellAsset, receiveAsset);
       if (statusOnly == null) {
@@ -370,8 +370,10 @@ class NearIntentsOneClickSwapAdapter
       id: depositAddress,
       providerLabel: providerLabel,
       pairText:
-          '${sellAsset?.symbol ?? 'Unlisted token'} -> '
-          '${receiveAsset?.symbol ?? 'Unlisted token'}',
+          // A status-only snapshot's pair is a placeholder the stored swap
+          // replaces (see [SwapIntentSnapshot.statusOnly]).
+          '${sellAsset?.symbol ?? 'Unlisted token'} -> ' // l10n-ignore: placeholder
+          '${receiveAsset?.symbol ?? 'Unlisted token'}', // l10n-ignore: placeholder
       sellAmountText: kSwapNotReportedToken,
       receiveEstimateText: kSwapNotReportedToken,
       status: status,
@@ -381,7 +383,7 @@ class NearIntentsOneClickSwapAdapter
             sellAsset ??
             SwapAsset.live(
               assetId: request.originAsset,
-              symbol: 'Unlisted token',
+              symbol: 'Unlisted token', // l10n-ignore: placeholder
               blockchain: 'unknown',
               decimals: 0,
             ),

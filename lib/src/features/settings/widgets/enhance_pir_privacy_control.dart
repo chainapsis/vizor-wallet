@@ -99,7 +99,7 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
                             AppIconHoverButton(
                               key: ValueKey('${keyPrefix}_info'),
                               icon: AppIcons.help,
-                              semanticLabel: "What's this?",
+                              semanticLabel: context.l10n.commonWhatsThis,
                               size: 20,
                               iconSize: 16,
                               iconColor: colors.icon.muted,

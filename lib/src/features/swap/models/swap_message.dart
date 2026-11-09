@@ -58,6 +58,8 @@ enum SwapNoticeKind {
   networkUpgradeHold,
   networkUpgradeScheduleChanged,
   startNotFinished,
+  nearSwapPrivacyUnknown,
+  recoveryUpdateRequired,
 }
 
 /// A message that swap state or a persisted swap record keeps. It records
@@ -130,6 +132,9 @@ final class SwapNotice extends SwapMessage {
     SwapNoticeKind.networkUpgradeScheduleChanged =>
       l10n.sendPaymentRequestCheckUpgradeScheduleChanged,
     SwapNoticeKind.startNotFinished => l10n.swapNoticeStartNotFinished,
+    SwapNoticeKind.nearSwapPrivacyUnknown =>
+      l10n.swapNoticeNearSwapPrivacyUnknown,
+    SwapNoticeKind.recoveryUpdateRequired => l10n.swapRecoveryUpdateRequired,
   };
 
   @override

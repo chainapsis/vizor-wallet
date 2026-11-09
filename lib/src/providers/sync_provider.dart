@@ -2957,7 +2957,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     Future<String?> Function() resolvePath,
     Future<T> Function(String path) call,
   ) async {
-    const busy = 'The wallet is changing. Try again in a moment.';
+    const busy =
+        'The wallet is changing. Try again in a moment.'; // l10n-ignore: exception text, callers map it to a state
     if (_walletMutationPauseCount > 0) throw StateError(busy);
     _recoveryStatusReadCount++;
     try {
