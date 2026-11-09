@@ -3542,9 +3542,9 @@
   "@ledgerBtAccessAllowed": {
     "description": "Shown in the Bluetooth access checker when permission is granted."
   },
-  "ledgerBtAccessBluetoothRequestable": "Choose Allow permission to connect to your Ledger. If no prompt appears, open Settings.",
+  "ledgerBtAccessBluetoothRequestable": "Choose Allow access to connect to your Ledger. If no prompt appears, open Settings.",
   "@ledgerBtAccessBluetoothRequestable": {
-    "description": "Shown before the Bluetooth permission is requested. 'Allow permission' is a button label."
+    "description": "Shown before the Bluetooth permission is requested. 'Allow access' is a button label."
   },
   "ledgerBtAccessBluetoothSettings": "Allow Bluetooth access for Vizor in your device settings.",
   "@ledgerBtAccessBluetoothSettings": {
@@ -3554,9 +3554,9 @@
   "@ledgerBtAccessKindLocation": {
     "description": "Permission name 'Location' inserted into the restricted-access sentence."
   },
-  "ledgerBtAccessLocationRequestable": "This Android version needs location permission to find your Ledger. Choose Allow permission, or open Settings if no prompt appears.",
+  "ledgerBtAccessLocationRequestable": "This Android version needs location permission to find your Ledger. Choose Allow access, or open Settings if no prompt appears.",
   "@ledgerBtAccessLocationRequestable": {
-    "description": "Shown on Android before the location permission is requested. 'Allow permission' is a button label."
+    "description": "Shown on Android before the location permission is requested. 'Allow access' is a button label."
   },
   "ledgerBtAccessLocationSettings": "This Android version needs location permission to find your Ledger. Allow location access for Vizor in Settings.",
   "@ledgerBtAccessLocationSettings": {
@@ -5276,11 +5276,11 @@
   "@migrationExpectTitle": {
     "description": "Title of the screen that lists what to expect during the migration."
   },
-  "migrationExpectVpnBody": "It’s recommended to run the migration behind a trustable VPN/network privacy layer",
+  "migrationExpectVpnBody": "We recommend running the migration behind a trusted VPN or network privacy layer.",
   "@migrationExpectVpnBody": {
     "description": "Recommends running the migration behind a trustworthy VPN or network privacy layer."
   },
-  "migrationExpectVpnTitle": "Use VPN for an extra privacy",
+  "migrationExpectVpnTitle": "Use a VPN for extra privacy",
   "@migrationExpectVpnTitle": {
     "description": "Heading of a \"what to expect\" item recommending a VPN."
   },
@@ -5981,7 +5981,7 @@
   "@migrationMobileCanLeave": {
     "description": "First line on the mobile migration progress screens saying the user may leave the screen."
   },
-  "migrationMobileCompleteBody": "Migration went successfully and you can spend your funds as usual.",
+  "migrationMobileCompleteBody": "Migration completed successfully and you can spend your funds as usual.",
   "@migrationMobileCompleteBody": {
     "description": "Body of the migration complete screen."
   },
@@ -6229,7 +6229,7 @@
   "@migrationMobileNextStepReady": {
     "description": "[security] Migration status text when the next step is ready now; the app must stay open."
   },
-  "migrationMobileNextTimingUntil": "{timing} until the next migration step.\nNotifications are on; you can leave Vizor and check back later.",
+  "migrationMobileNextTimingUntil": "Time until the next migration step: {timing}.\nNotifications are on; you can leave Vizor and check back later.",
   "@migrationMobileNextTimingUntil": {
     "description": "Migration status text with the wait until the next step; the notification sentence is on its own line. {timing} is a duration such as ~5 minutes, or the migrationMobileTimingUpdating text when it is unknown.",
     "placeholders": {
@@ -6303,11 +6303,11 @@
   "@migrationMobileOptionsOpenError": {
     "description": "Error under the Continue button of the migration options screen when the private migration preparation screen could not be opened."
   },
-  "migrationMobileOptionsSubtitleAndroid": "Private migration is temporarily unavailable on Android. Choose immediate to continue.",
+  "migrationMobileOptionsSubtitleAndroid": "Private migration is temporarily unavailable on Android. Choose Immediate to continue.",
   "@migrationMobileOptionsSubtitleAndroid": {
     "description": "Subtitle of the migration options screen on Android, where private migration is temporarily unavailable."
   },
-  "migrationMobileOptionsSubtitleAndroidRest": "{amount} ZEC is still in Orchard. Private migration is temporarily unavailable on Android. Choose immediate to continue.",
+  "migrationMobileOptionsSubtitleAndroidRest": "{amount} ZEC is still in Orchard. Private migration is temporarily unavailable on Android. Choose Immediate to continue.",
   "@migrationMobileOptionsSubtitleAndroidRest": {
     "description": "Subtitle of the migration options screen on Android when part of the balance is already migrated. {amount} is the remaining Orchard balance without the ZEC unit.",
     "placeholders": {
@@ -6700,9 +6700,9 @@
   "@migrationMobileSyncingProgress": {
     "description": "Message under the loading indicator while the migration progress is syncing."
   },
-  "migrationMobileTimingUpdating": "Timing is updating",
+  "migrationMobileTimingUpdating": "calculating",
   "@migrationMobileTimingUpdating": {
-    "description": "Placeholder used as the timing of the next migration step while the estimate is not available."
+    "description": "Placeholder used mid-sentence as the timing of the next migration step while the estimate is not available."
   },
   "migrationMobileViewSchedule": "View schedule",
   "@migrationMobileViewSchedule": {
@@ -7021,7 +7021,7 @@
       }
     }
   },
-  "migrationProgressTipClose": "You can close Vizor anytime. Migration will pause, and you can restart it when you return.",
+  "migrationProgressTipClose": "You can close Vizor anytime. Migration will pause, and you can resume it when you return.",
   "@migrationProgressTipClose": {
     "description": "[security] Carousel tip on the migration progress screen: closing the app pauses the migration and it can be resumed later."
   },
@@ -8656,7 +8656,7 @@
   "@onboardingSetPasswordAndFinish": {
     "description": "Primary button on the desktop set-password step that saves the password and completes setup."
   },
-  "onboardingSetPasswordPlaceholder": "Min. 8 characters and symbols",
+  "onboardingSetPasswordPlaceholder": "Min. 8 characters",
   "@onboardingSetPasswordPlaceholder": {
     "description": "[security] Placeholder in the new wallet password field describing the password rules."
   },
@@ -10093,11 +10093,11 @@
   "@paymentLinkHowTheCardWorks": {
     "description": "Label of the link that opens the Gift Cards explainer on mobile."
   },
-  "paymentLinkIntakeCouldNotOpen": "Payment link could not be opened.",
+  "paymentLinkIntakeCouldNotOpen": "Gift card link could not be opened.",
   "@paymentLinkIntakeCouldNotOpen": {
     "description": "Toast shown when an incoming Gift Card link could not be read or opened."
   },
-  "paymentLinkIntakeQueueFull": "Too many payment links are waiting to open.",
+  "paymentLinkIntakeQueueFull": "Too many gift card links are waiting to open.",
   "@paymentLinkIntakeQueueFull": {
     "description": "Toast shown when an incoming Gift Card link is rejected because too many links are already queued to open."
   },
@@ -14041,7 +14041,7 @@
       }
     }
   },
-  "swapNoticeListOfMaintenance": "List of maintenance",
+  "swapNoticeListOfMaintenance": "Networks under maintenance",
   "@swapNoticeListOfMaintenance": {
     "description": "Heading of the list of affected networks when the notice is maintenance only."
   },

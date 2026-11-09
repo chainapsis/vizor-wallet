@@ -4670,10 +4670,10 @@ abstract class AppLocalizations {
   /// **'Permission is allowed. Try again when ready.'**
   String get ledgerBtAccessAllowed;
 
-  /// Shown before the Bluetooth permission is requested. 'Allow permission' is a button label.
+  /// Shown before the Bluetooth permission is requested. 'Allow access' is a button label.
   ///
   /// In en, this message translates to:
-  /// **'Choose Allow permission to connect to your Ledger. If no prompt appears, open Settings.'**
+  /// **'Choose Allow access to connect to your Ledger. If no prompt appears, open Settings.'**
   String get ledgerBtAccessBluetoothRequestable;
 
   /// Shown when Bluetooth access is denied on mobile.
@@ -4688,10 +4688,10 @@ abstract class AppLocalizations {
   /// **'Location'**
   String get ledgerBtAccessKindLocation;
 
-  /// Shown on Android before the location permission is requested. 'Allow permission' is a button label.
+  /// Shown on Android before the location permission is requested. 'Allow access' is a button label.
   ///
   /// In en, this message translates to:
-  /// **'This Android version needs location permission to find your Ledger. Choose Allow permission, or open Settings if no prompt appears.'**
+  /// **'This Android version needs location permission to find your Ledger. Choose Allow access, or open Settings if no prompt appears.'**
   String get ledgerBtAccessLocationRequestable;
 
   /// Shown on Android when location permission is denied and must be changed in Settings.
@@ -6917,13 +6917,13 @@ abstract class AppLocalizations {
   /// Recommends running the migration behind a trustworthy VPN or network privacy layer.
   ///
   /// In en, this message translates to:
-  /// **'It’s recommended to run the migration behind a trustable VPN/network privacy layer'**
+  /// **'We recommend running the migration behind a trusted VPN or network privacy layer.'**
   String get migrationExpectVpnBody;
 
   /// Heading of a "what to expect" item recommending a VPN.
   ///
   /// In en, this message translates to:
-  /// **'Use VPN for an extra privacy'**
+  /// **'Use a VPN for extra privacy'**
   String get migrationExpectVpnTitle;
 
   /// Title of the Ironwood migration screens.
@@ -7762,7 +7762,7 @@ abstract class AppLocalizations {
   /// Body of the migration complete screen.
   ///
   /// In en, this message translates to:
-  /// **'Migration went successfully and you can spend your funds as usual.'**
+  /// **'Migration completed successfully and you can spend your funds as usual.'**
   String get migrationMobileCompleteBody;
 
   /// Large heading of the migration complete screen; line breaks are intentional. {amount} is the migrated amount with the ZEC unit.
@@ -8092,7 +8092,7 @@ abstract class AppLocalizations {
   /// Migration status text with the wait until the next step; the notification sentence is on its own line. {timing} is a duration such as ~5 minutes, or the migrationMobileTimingUpdating text when it is unknown.
   ///
   /// In en, this message translates to:
-  /// **'{timing} until the next migration step.\nNotifications are on; you can leave Vizor and check back later.'**
+  /// **'Time until the next migration step: {timing}.\nNotifications are on; you can leave Vizor and check back later.'**
   String migrationMobileNextTimingUntil(String timing);
 
   /// [security] Sentence for iOS users with Tor on, appended on a new line to the migration status text: the background migration uses a direct connection, not Tor, while the app is closed.
@@ -8188,13 +8188,13 @@ abstract class AppLocalizations {
   /// Subtitle of the migration options screen on Android, where private migration is temporarily unavailable.
   ///
   /// In en, this message translates to:
-  /// **'Private migration is temporarily unavailable on Android. Choose immediate to continue.'**
+  /// **'Private migration is temporarily unavailable on Android. Choose Immediate to continue.'**
   String get migrationMobileOptionsSubtitleAndroid;
 
   /// Subtitle of the migration options screen on Android when part of the balance is already migrated. {amount} is the remaining Orchard balance without the ZEC unit.
   ///
   /// In en, this message translates to:
-  /// **'{amount} ZEC is still in Orchard. Private migration is temporarily unavailable on Android. Choose immediate to continue.'**
+  /// **'{amount} ZEC is still in Orchard. Private migration is temporarily unavailable on Android. Choose Immediate to continue.'**
   String migrationMobileOptionsSubtitleAndroidRest(String amount);
 
   /// Subtitle of the migration options screen for a Ledger account. Immediate is the name of the fast option.
@@ -8665,10 +8665,10 @@ abstract class AppLocalizations {
   /// **'Syncing the migration progress.'**
   String get migrationMobileSyncingProgress;
 
-  /// Placeholder used as the timing of the next migration step while the estimate is not available.
+  /// Placeholder used mid-sentence as the timing of the next migration step while the estimate is not available.
   ///
   /// In en, this message translates to:
-  /// **'Timing is updating'**
+  /// **'calculating'**
   String get migrationMobileTimingUpdating;
 
   /// Small button and its screen reader label that opens the migration schedule.
@@ -9022,7 +9022,7 @@ abstract class AppLocalizations {
   /// [security] Carousel tip on the migration progress screen: closing the app pauses the migration and it can be resumed later.
   ///
   /// In en, this message translates to:
-  /// **'You can close Vizor anytime. Migration will pause, and you can restart it when you return.'**
+  /// **'You can close Vizor anytime. Migration will pause, and you can resume it when you return.'**
   String get migrationProgressTipClose;
 
   /// [security] Carousel tip: leaving Vizor open lets the migration continue automatically in the background.
@@ -11081,7 +11081,7 @@ abstract class AppLocalizations {
   /// [security] Placeholder in the new wallet password field describing the password rules.
   ///
   /// In en, this message translates to:
-  /// **'Min. 8 characters and symbols'**
+  /// **'Min. 8 characters'**
   String get onboardingSetPasswordPlaceholder;
 
   /// Subtitle under the set-password heading on desktop.
@@ -12960,13 +12960,13 @@ abstract class AppLocalizations {
   /// Toast shown when an incoming Gift Card link could not be read or opened.
   ///
   /// In en, this message translates to:
-  /// **'Payment link could not be opened.'**
+  /// **'Gift card link could not be opened.'**
   String get paymentLinkIntakeCouldNotOpen;
 
   /// Toast shown when an incoming Gift Card link is rejected because too many links are already queued to open.
   ///
   /// In en, this message translates to:
-  /// **'Too many payment links are waiting to open.'**
+  /// **'Too many gift card links are waiting to open.'**
   String get paymentLinkIntakeQueueFull;
 
   /// Error shown when checking a received Gift Card was interrupted.
@@ -18033,7 +18033,7 @@ abstract class AppLocalizations {
   /// Heading of the list of affected networks when the notice is maintenance only.
   ///
   /// In en, this message translates to:
-  /// **'List of maintenance'**
+  /// **'Networks under maintenance'**
   String get swapNoticeListOfMaintenance;
 
   /// First line of the service notice when scheduled maintenance is under way.

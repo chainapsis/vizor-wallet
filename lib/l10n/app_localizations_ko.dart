@@ -2686,7 +2686,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerBtAccessBluetoothRequestable =>
-      'Ledger‍에 연‍결‍하‍려‍면 \'권‍한 허‍용\'을 선‍택‍해 주‍세‍요. 안‍내‍가 나‍타‍나‍지 않‍으‍면 설‍정‍을 열‍어 주‍세‍요.';
+      'Ledger‍에 연‍결‍하‍려‍면 \'접‍근 허‍용\'을 선‍택‍해 주‍세‍요. 안‍내‍가 나‍타‍나‍지 않‍으‍면 설‍정‍을 열‍어 주‍세‍요.';
 
   @override
   String get ledgerBtAccessBluetoothSettings =>
@@ -2697,7 +2697,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerBtAccessLocationRequestable =>
-      '이 Android 버‍전‍에‍서 Ledger‍를 찾‍으‍려‍면 위‍치 권‍한‍이 필‍요‍해‍요. \'권‍한 허‍용\'을 선‍택‍하‍거‍나, 안‍내‍가 나‍타‍나‍지 않‍으‍면 설‍정‍을 열‍어 주‍세‍요.';
+      '이 Android 버‍전‍에‍서 Ledger‍를 찾‍으‍려‍면 위‍치 권‍한‍이 필‍요‍해‍요. \'접‍근 허‍용\'을 선‍택‍하‍거‍나, 안‍내‍가 나‍타‍나‍지 않‍으‍면 설‍정‍을 열‍어 주‍세‍요.';
 
   @override
   String get ledgerBtAccessLocationSettings =>
@@ -5433,7 +5433,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationProgressTipClose =>
-      '언‍제‍든‍지 Vizor‍를 닫‍아‍도 돼‍요. 마‍이‍그‍레‍이‍션‍이 일‍시 중‍지‍되‍고, 돌‍아‍오‍면 다‍시 시‍작‍할 수 있‍어‍요.';
+      '언‍제‍든‍지 Vizor‍를 닫‍아‍도 돼‍요. 마‍이‍그‍레‍이‍션‍이 일‍시 중‍지‍되‍고, 돌‍아‍오‍면 이‍어‍서 진‍행‍할 수 있‍어‍요.';
 
   @override
   String get migrationProgressTipKeepRunning =>
@@ -6655,7 +6655,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingSetPasswordAndFinish => '비‍밀‍번‍호 설‍정‍하‍고 완‍료';
 
   @override
-  String get onboardingSetPasswordPlaceholder => '8‍자 이‍상, 기‍호 사‍용 가‍능';
+  String get onboardingSetPasswordPlaceholder => '8‍자 이‍상';
 
   @override
   String get onboardingSetPasswordSubtitle =>

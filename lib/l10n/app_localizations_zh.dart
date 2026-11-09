@@ -6263,7 +6263,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingSetPasswordAndFinish => '设置密码并完成';
 
   @override
-  String get onboardingSetPasswordPlaceholder => '至少 8 个字符，可含符号';
+  String get onboardingSetPasswordPlaceholder => '至少 8 个字符';
 
   @override
   String get onboardingSetPasswordSubtitle => '设置用于登录 Vizor 钱包的密码。';
@@ -10167,7 +10167,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get swapNoticeListOfMaintenance => '维护列表';
+  String get swapNoticeListOfMaintenance => '维护中的网络';
 
   @override
   String get swapNoticeMaintenanceIntro => 'NEAR Intents 正在维护中。';

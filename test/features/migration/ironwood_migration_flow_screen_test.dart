@@ -305,9 +305,9 @@ void main() {
 
     expect(find.text('Migrations can take a long time'), findsOneWidget);
     expect(find.text('You can spend as funds arrive'), findsOneWidget);
-    expect(find.text('Use VPN for an extra privacy'), findsOneWidget);
+    expect(find.text('Use a VPN for extra privacy'), findsOneWidget);
     expect(find.text('Keep Vizor running'), findsOneWidget);
-    expect(find.textContaining('VPN/network privacy layer'), findsOneWidget);
+    expect(find.textContaining('VPN or network privacy layer'), findsOneWidget);
     expect(
       find.textContaining('send the next migration transaction'),
       findsOneWidget,
@@ -1853,7 +1853,7 @@ void main() {
     expect(
       find.text(
         'You can close Vizor anytime. Migration will pause, and you can '
-        'restart it when you return.',
+        'resume it when you return.',
       ),
       findsOneWidget,
     );
