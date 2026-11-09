@@ -107,6 +107,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountsOtherAccounts => 'Other accounts';
 
   @override
+  String get accountsRemovalPasscodeRemoveSubtitle =>
+      'Enter your passcode to remove this account.';
+
+  @override
+  String get accountsRemovalPasscodeResetSubtitle =>
+      'Enter your passcode to reset Vizor.';
+
+  @override
+  String get accountsRemovalRemoveBiometricReason => 'Confirm account removal';
+
+  @override
+  String get accountsRemovalResetBiometricReason => 'Confirm wallet reset';
+
+  @override
   String get accountsRemove => 'Remove account';
 
   @override

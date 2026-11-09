@@ -274,6 +274,30 @@ abstract class AppLocalizations {
   /// **'Other accounts'**
   String get accountsOtherAccounts;
 
+  /// [security] Subtitle of the mobile passcode screen shown before removing an account.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your passcode to remove this account.'**
+  String get accountsRemovalPasscodeRemoveSubtitle;
+
+  /// [security] Subtitle of the mobile passcode screen shown before removing the last account, which resets the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your passcode to reset Vizor.'**
+  String get accountsRemovalPasscodeResetSubtitle;
+
+  /// [security] Reason line in the operating system's biometric prompt before removing an account.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm account removal'**
+  String get accountsRemovalRemoveBiometricReason;
+
+  /// [security] Reason line in the operating system's biometric prompt before removing the last account, which resets the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm wallet reset'**
+  String get accountsRemovalResetBiometricReason;
+
   /// [security] Account menu item and sheet title for removing an account from the wallet; this deletes its local data.
   ///
   /// In en, this message translates to:

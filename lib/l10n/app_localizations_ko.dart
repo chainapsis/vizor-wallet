@@ -106,6 +106,20 @@ class AppLocalizationsKo extends AppLocalizations {
   String get accountsOtherAccounts => '다‍른 계‍정';
 
   @override
+  String get accountsRemovalPasscodeRemoveSubtitle =>
+      '이 계‍정‍을 삭‍제‍하‍려‍면 암‍호‍를 입‍력‍해 주‍세‍요.';
+
+  @override
+  String get accountsRemovalPasscodeResetSubtitle =>
+      'Vizor‍를 초‍기‍화‍하‍려‍면 암‍호‍를 입‍력‍해 주‍세‍요.';
+
+  @override
+  String get accountsRemovalRemoveBiometricReason => '계‍정 삭‍제 확‍인';
+
+  @override
+  String get accountsRemovalResetBiometricReason => '지‍갑 초‍기‍화 확‍인';
+
+  @override
   String get accountsRemove => '계‍정 삭‍제';
 
   @override

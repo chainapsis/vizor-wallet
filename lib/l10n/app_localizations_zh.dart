@@ -106,6 +106,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountsOtherAccounts => '其他账户';
 
   @override
+  String get accountsRemovalPasscodeRemoveSubtitle => '输入数字密码以移除此账户。';
+
+  @override
+  String get accountsRemovalPasscodeResetSubtitle => '输入数字密码以重置 Vizor。';
+
+  @override
+  String get accountsRemovalRemoveBiometricReason => '确认移除账户';
+
+  @override
+  String get accountsRemovalResetBiometricReason => '确认重置钱包';
+
+  @override
   String get accountsRemove => '移除账户';
 
   @override

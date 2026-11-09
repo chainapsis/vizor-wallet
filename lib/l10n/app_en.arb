@@ -132,6 +132,22 @@
   "@accountsOtherAccounts": {
     "description": "Heading above the unselected accounts in the mobile account switcher sheet."
   },
+  "accountsRemovalPasscodeRemoveSubtitle": "Enter your passcode to remove this account.",
+  "@accountsRemovalPasscodeRemoveSubtitle": {
+    "description": "[security] Subtitle of the mobile passcode screen shown before removing an account."
+  },
+  "accountsRemovalPasscodeResetSubtitle": "Enter your passcode to reset Vizor.",
+  "@accountsRemovalPasscodeResetSubtitle": {
+    "description": "[security] Subtitle of the mobile passcode screen shown before removing the last account, which resets the wallet."
+  },
+  "accountsRemovalRemoveBiometricReason": "Confirm account removal",
+  "@accountsRemovalRemoveBiometricReason": {
+    "description": "[security] Reason line in the operating system's biometric prompt before removing an account."
+  },
+  "accountsRemovalResetBiometricReason": "Confirm wallet reset",
+  "@accountsRemovalResetBiometricReason": {
+    "description": "[security] Reason line in the operating system's biometric prompt before removing the last account, which resets the wallet."
+  },
   "accountsRemove": "Remove account",
   "@accountsRemove": {
     "description": "[security] Account menu item and sheet title for removing an account from the wallet; this deletes its local data."
