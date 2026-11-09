@@ -36,6 +36,8 @@ scenarios) use a chain that activates it at height 500.
 Funding transactions are signed offline by
 `rust/examples/regtest_direct_funder.rs` from the chain's coinbase, which pays
 a public test-only key, and are broadcast with the node's `sendrawtransaction`.
+Orchard funding before NU6.3 goes through `rust/regtest-orchard-funder`, its own
+locked crate on SDK 2.0, because later SDKs build Orchard only from NU6.3.
 Nothing uses a node wallet. The signer and the Rust test executables are built
 from `git archive HEAD rust`, so the runner refuses to start while `rust/` has
 uncommitted changes.
@@ -56,7 +58,7 @@ python3 scripts/e2e/prune-build-cache.py --apply
 
 Prerequisites: Python 3.11+, Docker, `grpcurl`, the fvm-pinned Flutter SDK after
 `fvm flutter pub get`, and fetched Cargo dependencies (`cargo fetch --locked` in
-`rust/`). Pinned images that Docker lacks are pulled by digest before the first
+`rust/` and `rust/regtest-orchard-funder/`). Pinned images that Docker lacks are pulled by digest before the first
 scenario.
 
 ```bash

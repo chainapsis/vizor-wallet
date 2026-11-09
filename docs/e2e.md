@@ -46,9 +46,9 @@ letting its cases hang.
 - One-shot runner from repo root: `./run-regtest-rust-tests.sh` runs every Rust scenario; `./run-regtest-rust-tests.sh rust.import rust.send.basic` selects scenario IDs or dotted prefixes. List them with `python3 scripts/e2e/zakura-run.py --list`.
 - Each test runs alone against its own fresh Zakura regtest chain: a Zakura node and lightwalletd in Docker, the lightwalletd shim and an HTTP control (`scripts/e2e/zakura-run.py`). Tests never share chain or wallet state.
 - Ironwood (NU6.3) is active from height 1, except in the `rust.ironwood.*` scenarios, which fund Orchard before activating Ironwood at height 500.
-- Funding is signed offline from a public test-only coinbase key (`rust/examples/regtest_direct_funder.rs`); there is no node wallet.
+- Funding is signed offline from a public test-only coinbase key (`rust/examples/regtest_direct_funder.rs`); Orchard funding before NU6.3 uses `rust/regtest-orchard-funder`, which stays on the last SDK that can build it. There is no node wallet.
 - The signer and the test executables are built once per run from the committed `rust/` tree. The runner refuses to start while `rust/` has uncommitted changes.
-- Prerequisites: Python 3.11+, Docker, `grpcurl`, the fvm-pinned Flutter SDK after `fvm flutter pub get` (the lightwalletd shim runs on its Dart), and Cargo dependencies already fetched (`cargo fetch --locked` in `rust/`; the build runs offline).
+- Prerequisites: Python 3.11+, Docker, `grpcurl`, the fvm-pinned Flutter SDK after `fvm flutter pub get` (the lightwalletd shim runs on its Dart), and Cargo dependencies already fetched (`cargo fetch --locked` in `rust/` and `rust/regtest-orchard-funder/`; the build runs offline).
 - The runner streams its output to the terminal and saves a copy to `.regtest-logs/regtest-rust-tests.log`. Each run also writes `.regtest-logs/zakura-<run id>/report.json` and per-test logs.
 - Passing tests are always cleaned up, and the run's build output (several GB) is removed when it ends. `./run-regtest-rust-tests.sh --keep` keeps the stopped containers and wallet files of failed tests; the report lists their Docker IDs for removal.
 - Sapling proving params are cached at `~/.zcash-params` by default. Override with `SAPLING_PARAMS_DIR=/custom/path ./run-regtest-rust-tests.sh` if needed.

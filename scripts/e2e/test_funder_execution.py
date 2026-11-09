@@ -39,6 +39,18 @@ class FunderExecutionTests(unittest.TestCase):
         case = case or self.fixture.case()
         return EXECUTION.run_offline_funder(case, artifact, command, request, timeout=3, **options)
 
+    def test_orchard_requests_reach_only_the_orchard_signer(self):
+        self.fixture.orchard_binary_contents = ("#!/usr/bin/env python3\nimport json,sys\n"
+            "json.load(sys.stdin)\nprint(json.dumps({'schema_version':1,'signer':'orchard'}))\n")
+        artifact = self.artifact()
+        for command, request, signer in (("build-orchard", {"amount":1}, "orchard"),
+                ("build-batch", {"recipient_pool":"orchard"}, "orchard"),
+                ("build-batch", {"recipient_pool":"ironwood"}, None),
+                ("build-transparent", {"amount":1}, None)):
+            with self.subTest(command=command, request=request):
+                result = self.execute(artifact, command, request)
+                self.assertEqual(result.get("signer"), signer)
+
     def test_two_original_consumers_reuse_one_publication_and_join_their_outputs(self):
         artifact = self.artifact()
         for _ in range(2):

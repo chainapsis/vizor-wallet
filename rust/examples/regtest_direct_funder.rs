@@ -1,8 +1,9 @@
 //! Offline transaction builder for the direct-Zakura regtest fixture.
 //!
 //! This is deliberately not a wallet API. It spends a coinbase output mined to
-//! one public, test-only key and creates an Ironwood payment to a regtest UA,
-//! a pre-NU6.3 Orchard payment, or a transparent payment for native wallet E2E.
+//! one public, test-only key and creates an Ironwood payment to a regtest UA or
+//! a transparent payment for native wallet E2E. This SDK cannot build Orchard
+//! before NU6.3; `rust/regtest-orchard-funder` signs that funding.
 
 use std::{
     convert::Infallible,
@@ -105,19 +106,6 @@ struct BuildRequest {
     amount_zatoshi: u64,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct OrchardBuildRequest {
-    schema_version: u32,
-    coinbase_hex: String,
-    coinbase_height: u64,
-    coinbase_vout: u64,
-    target_height: u64,
-    recipient_address: String,
-    amount_zatoshi: u64,
-    nu6_3_activation_height: u64,
-}
-
 #[derive(Serialize)]
 struct IdentityResponse {
     schema_version: u32,
@@ -154,14 +142,12 @@ struct TransparentOutputEvidence {
 #[derive(Clone, Copy)]
 enum Recipient {
     Ironwood(orchard::Address),
-    Orchard(orchard::Address),
     Transparent(TransparentAddress),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RecipientPool {
     Ironwood,
-    Orchard,
     Transparent,
 }
 
@@ -175,7 +161,7 @@ fn main() {
 fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
     let command = args.next().ok_or_else(|| {
-        "usage: regtest_direct_funder <identity|build|build-orchard|build-transparent|build-batch>".to_string()
+        "usage: regtest_direct_funder <identity|build|build-transparent|build-batch>".to_string()
     })?;
     if args.next().is_some() {
         return Err("unexpected command arguments".to_string());
@@ -197,11 +183,6 @@ fn run() -> Result<(), String> {
             serde_json::to_value(build_transaction(request, pool, regtest_network())?)
                 .map_err(|error| format!("encode build result: {error}"))?
         }
-        "build-orchard" => {
-            let request = read_orchard_request(io::stdin().lock())?;
-            serde_json::to_value(build_orchard_transaction(request)?)
-                .map_err(|error| format!("encode build result: {error}"))?
-        }
         "build-batch" => {
             let bytes = read_request_bytes(&mut io::stdin().lock())?;
             let request = serde_json::from_slice(&bytes)
@@ -220,11 +201,6 @@ fn run() -> Result<(), String> {
 }
 
 fn read_request(mut reader: impl Read) -> Result<BuildRequest, String> {
-    let bytes = read_request_bytes(&mut reader)?;
-    serde_json::from_slice(&bytes).map_err(|error| format!("decode request: {error}"))
-}
-
-fn read_orchard_request(mut reader: impl Read) -> Result<OrchardBuildRequest, String> {
     let bytes = read_request_bytes(&mut reader)?;
     serde_json::from_slice(&bytes).map_err(|error| format!("decode request: {error}"))
 }
@@ -272,12 +248,6 @@ impl Parameters for DirectRegtest {
 fn regtest_network() -> DirectRegtest {
     DirectRegtest {
         nu6_3_activation_height: BlockHeight::from_u32(1),
-    }
-}
-
-fn migration_network() -> DirectRegtest {
-    DirectRegtest {
-        nu6_3_activation_height: BlockHeight::from_u32(MIGRATION_NU6_3_ACTIVATION_HEIGHT),
     }
 }
 
@@ -370,9 +340,6 @@ fn add_payment(
         Recipient::Ironwood(address) => builder
             .add_ironwood_output::<Infallible>(None, address, amount, MemoBytes::empty())
             .map_err(|error| format!("add Ironwood output: {error}")),
-        Recipient::Orchard(address) => builder
-            .add_orchard_output::<Infallible>(None, address, amount, MemoBytes::empty())
-            .map_err(|error| format!("add Orchard output: {error}")),
         Recipient::Transparent(address) => builder
             .add_transparent_output(&address, amount)
             .map_err(|error| format!("add transparent payment: {error}")),
@@ -401,7 +368,6 @@ fn build_transaction(
         RecipientPool::Ironwood => {
             Recipient::Ironwood(decode_recipient(&request.recipient_address)?)
         }
-        RecipientPool::Orchard => Recipient::Orchard(decode_recipient(&request.recipient_address)?),
         RecipientPool::Transparent => {
             Recipient::Transparent(decode_transparent_recipient(&request.recipient_address)?)
         }
@@ -541,38 +507,10 @@ fn build_transaction(
         maturity_validated: true,
         pools: match pool {
             RecipientPool::Transparent => vec!["transparent"],
-            RecipientPool::Orchard => vec!["transparent", "orchard"],
             RecipientPool::Ironwood => vec!["transparent", "ironwood"],
         },
         recipient_output,
     })
-}
-
-fn build_orchard_transaction(request: OrchardBuildRequest) -> Result<BuildResponse, String> {
-    let activation_height =
-        checked_height(request.nu6_3_activation_height, "nu6_3_activation_height")?;
-    if activation_height != MIGRATION_NU6_3_ACTIVATION_HEIGHT {
-        return Err(format!(
-            "nu6_3_activation_height must be {MIGRATION_NU6_3_ACTIVATION_HEIGHT}"
-        ));
-    }
-    let target_height = checked_height(request.target_height, "target_height")?;
-    if target_height >= activation_height {
-        return Err("Orchard funding target must be before NU6.3 activation".to_string());
-    }
-    build_transaction(
-        BuildRequest {
-            schema_version: request.schema_version,
-            coinbase_hex: request.coinbase_hex,
-            coinbase_height: request.coinbase_height,
-            coinbase_vout: request.coinbase_vout,
-            target_height: request.target_height,
-            recipient_address: request.recipient_address,
-            amount_zatoshi: request.amount_zatoshi,
-        },
-        RecipientPool::Orchard,
-        migration_network(),
-    )
 }
 
 fn funding_amount(value: u64) -> Result<Zatoshis, String> {
@@ -598,7 +536,6 @@ fn build_batch_transaction(request: BatchBuildRequest) -> Result<BatchBuildRespo
     }
     let pool = match request.recipient_pool.as_str() {
         "ironwood" if target >= activation => RecipientPool::Ironwood,
-        "orchard" if activation == 500 && target < activation => RecipientPool::Orchard,
         "transparent" => RecipientPool::Transparent,
         _ => return Err("batch recipient pool is not active at target height".into()),
     };
@@ -665,9 +602,6 @@ fn build_batch_transaction(request: BatchBuildRequest) -> Result<BatchBuildRespo
             RecipientPool::Ironwood => {
                 Recipient::Ironwood(decode_recipient(&payment.recipient_address)?)
             }
-            RecipientPool::Orchard => {
-                Recipient::Orchard(decode_recipient(&payment.recipient_address)?)
-            }
             RecipientPool::Transparent => {
                 Recipient::Transparent(decode_transparent_recipient(&payment.recipient_address)?)
             }
@@ -732,18 +666,14 @@ fn build_batch_transaction(request: BatchBuildRequest) -> Result<BatchBuildRespo
         .map_err(|error| format!("build batch: {error}"))?;
     let tx = result.transaction();
     if tx.sapling_bundle().is_some()
-        || (pool != RecipientPool::Orchard && tx.orchard_bundle().is_some())
+        || tx.orchard_bundle().is_some()
         || (pool != RecipientPool::Ironwood && tx.ironwood_bundle().is_some())
         || tx.transparent_bundle().map(|bundle| bundle.vin.len()) != Some(inputs.len())
     {
         return Err("batch transaction pool/input evidence differs".into());
     }
     if pool != RecipientPool::Transparent {
-        let meta = if pool == RecipientPool::Orchard {
-            result.orchard_meta()
-        } else {
-            result.ironwood_meta()
-        };
+        let meta = result.ironwood_meta();
         let positions: std::collections::HashSet<_> = (0..payments.len())
             .map(|index| {
                 meta.output_action_index(index)
@@ -792,7 +722,6 @@ fn build_batch_transaction(request: BatchBuildRequest) -> Result<BatchBuildRespo
         maturity_validated: true,
         pools: match pool {
             RecipientPool::Transparent => vec!["transparent"],
-            RecipientPool::Orchard => vec!["transparent", "orchard"],
             RecipientPool::Ironwood => vec!["transparent", "ironwood"],
         },
         coinbase_inputs: input_evidence,
@@ -815,7 +744,7 @@ fn new_builder_for(
         BlockHeight::from_u32(target_height),
         BuildConfig::Standard {
             sapling_anchor: None,
-            orchard_anchor: (pool == RecipientPool::Orchard).then(Anchor::empty_tree),
+            orchard_anchor: None,
             ironwood_anchor: (pool == RecipientPool::Ironwood).then(Anchor::empty_tree),
             orchard_padding: BundlePadding::DEFAULT,
             ironwood_padding: BundlePadding::DEFAULT,
@@ -894,7 +823,7 @@ mod tests {
             zcash_keys::address::UnifiedAddress::from_receivers(Some(recipient), None, None)
                 .unwrap(),
         )
-        .encode(&migration_network());
+        .encode(&regtest_network());
         let inputs = (2..=3)
             .map(|height| {
                 let bundle = transparent::bundle::Bundle {
@@ -913,7 +842,7 @@ mod tests {
                     zcash_primitives::transaction::Authorized,
                 >::from_parts(
                     zcash_primitives::transaction::TxVersion::V5,
-                    BranchId::Nu6_2,
+                    BranchId::Nu6_3,
                     0,
                     BlockHeight::from_u32(height),
                     Some(bundle),
@@ -936,8 +865,8 @@ mod tests {
             schema_version: 1,
             coinbase_inputs: inputs,
             target_height: 104,
-            recipient_pool: "orchard".into(),
-            nu6_3_activation_height: 500,
+            recipient_pool: "ironwood".into(),
+            nu6_3_activation_height: 1,
             payments: (0..count)
                 .map(|_| BatchPayment {
                     recipient_address: address.clone(),
@@ -961,10 +890,10 @@ mod tests {
             result.amount_zatoshi + result.fee_zatoshi + result.change_zatoshi
         );
         let raw = hex::decode(result.raw_tx_hex).unwrap();
-        let tx = Transaction::read(&raw[..], BranchId::Nu6_2).unwrap();
-        assert!(tx.ironwood_bundle().is_none());
+        let tx = Transaction::read(&raw[..], BranchId::Nu6_3).unwrap();
+        assert!(tx.orchard_bundle().is_none());
         assert!(tx.sapling_bundle().is_none());
-        assert_eq!(tx.orchard_bundle().unwrap().actions().len(), 20);
+        assert_eq!(tx.ironwood_bundle().unwrap().actions().len(), 20);
         assert_eq!(tx.transparent_bundle().unwrap().vin.len(), 2);
     }
 
@@ -1005,8 +934,8 @@ mod tests {
         assert_eq!(result.amount_zatoshi, 100_001_000);
         assert_eq!(result.payments.len(), 50);
         let raw = hex::decode(result.raw_tx_hex).unwrap();
-        let tx = Transaction::read(&raw[..], BranchId::Nu6_2).unwrap();
-        assert_eq!(tx.orchard_bundle().unwrap().actions().len(), 50);
+        let tx = Transaction::read(&raw[..], BranchId::Nu6_3).unwrap();
+        assert_eq!(tx.ironwood_bundle().unwrap().actions().len(), 50);
     }
 
     #[test]
@@ -1107,8 +1036,8 @@ mod tests {
     fn coinbase_encoding_must_consume_the_entire_input() {
         let request = batch_request(1);
         let encoded = &request.coinbase_inputs[0].coinbase_hex;
-        assert!(read_coinbase(encoded, BranchId::Nu6_2).is_ok());
-        assert!(read_coinbase(&format!("{encoded}00"), BranchId::Nu6_2)
+        assert!(read_coinbase(encoded, BranchId::Nu6_3).is_ok());
+        assert!(read_coinbase(&format!("{encoded}00"), BranchId::Nu6_3)
             .err()
             .unwrap()
             .contains("trailing bytes"));
@@ -1162,10 +1091,16 @@ mod tests {
             .add_ironwood_output::<Infallible>(None, recipient, amount, MemoBytes::empty())
             .is_ok());
 
-        let mut orchard = new_builder_for(
-            migration_network(),
-            MIGRATION_NU6_3_ACTIVATION_HEIGHT,
-            RecipientPool::Orchard,
+        let mut orchard = Builder::new(
+            regtest_network(),
+            BlockHeight::from_u32(102),
+            BuildConfig::Standard {
+                sapling_anchor: None,
+                orchard_anchor: Some(Anchor::empty_tree()),
+                ironwood_anchor: None,
+                orchard_padding: BundlePadding::DEFAULT,
+                ironwood_padding: BundlePadding::DEFAULT,
+            },
         );
         assert!(matches!(
             orchard.add_orchard_output::<Infallible>(None, recipient, amount, MemoBytes::empty()),
@@ -1175,119 +1110,5 @@ mod tests {
                 )
             )
         ));
-    }
-
-    #[test]
-    fn migration_profile_selects_pre_and_post_activation_branches() {
-        let network = migration_network();
-        assert_eq!(
-            BranchId::for_height(
-                &network,
-                BlockHeight::from_u32(MIGRATION_NU6_3_ACTIVATION_HEIGHT - 1)
-            ),
-            BranchId::Nu6_2
-        );
-        assert_eq!(
-            BranchId::for_height(
-                &network,
-                BlockHeight::from_u32(MIGRATION_NU6_3_ACTIVATION_HEIGHT)
-            ),
-            BranchId::Nu6_3
-        );
-    }
-
-    #[test]
-    fn preactivation_orchard_payment_builds_only_an_orchard_bundle() {
-        let (secret, public, miner) = funding_identity();
-        let spending_key = orchard::keys::SpendingKey::from_bytes([7; 32]).unwrap();
-        let recipient = orchard::keys::FullViewingKey::from(&spending_key)
-            .address_at(0u32, orchard::keys::Scope::External);
-        let target_height = MIGRATION_NU6_3_ACTIVATION_HEIGHT - 1;
-        let amount = Zatoshis::const_from_u64(75_000_000);
-        let input = transparent::bundle::TxOut::new(
-            Zatoshis::const_from_u64(200_000_000),
-            miner.script().into(),
-        );
-        let outpoint = OutPoint::new([3; 32], 0);
-        let fee_rule = zip317::FeeRule::standard();
-
-        let mut sizing =
-            new_builder_for(migration_network(), target_height, RecipientPool::Orchard);
-        sizing
-            .add_transparent_p2pkh_input(public, outpoint.clone(), input.clone())
-            .unwrap();
-        add_payment(&mut sizing, Recipient::Orchard(recipient), amount).unwrap();
-        sizing
-            .add_transparent_output(&miner, Zatoshis::const_from_u64(1))
-            .unwrap();
-        let fee = sizing.get_fee(&fee_rule).unwrap();
-        let change = Zatoshis::from_u64(200_000_000 - 75_000_000 - u64::from(fee)).unwrap();
-
-        let mut builder =
-            new_builder_for(migration_network(), target_height, RecipientPool::Orchard);
-        builder
-            .add_transparent_p2pkh_input(public, outpoint, input)
-            .unwrap();
-        add_payment(&mut builder, Recipient::Orchard(recipient), amount).unwrap();
-        builder.add_transparent_output(&miner, change).unwrap();
-        assert_eq!(builder.get_fee(&fee_rule).unwrap(), fee);
-        let mut signing = TransparentSigningSet::new();
-        signing.add_key(secret);
-        let result = builder
-            .build(
-                &signing,
-                &[],
-                &[],
-                OsRng,
-                &NoSaplingSpendProver,
-                &NoSaplingOutputProver,
-                &fee_rule,
-            )
-            .unwrap();
-        let tx = result.transaction();
-        assert!(tx.transparent_bundle().is_some());
-        assert!(tx.sapling_bundle().is_none());
-        assert!(tx.orchard_bundle().is_some());
-        assert!(tx.ironwood_bundle().is_none());
-    }
-
-    #[test]
-    fn orchard_request_requires_fixed_activation_and_preactivation_target() {
-        let request = |activation, target| OrchardBuildRequest {
-            schema_version: SCHEMA_VERSION,
-            coinbase_hex: "00".to_string(),
-            coinbase_height: 2,
-            coinbase_vout: 0,
-            target_height: target,
-            recipient_address: "uregtest1invalid".to_string(),
-            amount_zatoshi: 100_000_000,
-            nu6_3_activation_height: activation,
-        };
-        assert!(build_orchard_transaction(request(499, 102))
-            .err()
-            .unwrap()
-            .contains("must be 500"));
-        assert!(build_orchard_transaction(request(500, 500))
-            .err()
-            .unwrap()
-            .contains("before NU6.3"));
-    }
-
-    #[test]
-    fn orchard_request_schema_is_distinct_and_strict() {
-        let request = br#"{
-            "schema_version":1,
-            "coinbase_hex":"00",
-            "coinbase_height":2,
-            "coinbase_vout":0,
-            "target_height":499,
-            "recipient_address":"u1",
-            "amount_zatoshi":100000000,
-            "nu6_3_activation_height":500,
-            "unexpected":true
-        }"#;
-        assert!(read_orchard_request(&request[..])
-            .unwrap_err()
-            .contains("unknown field"));
     }
 }

@@ -176,6 +176,7 @@ class FunderCacheLease:
         staging = self.root / (".pending-" + uuid.uuid4().hex)
         staging.mkdir(mode=0o700)
         originals = {artifact.binary.name: artifact.binary,
+                     artifact.orchard_binary.name: artifact.orchard_binary,
                      **{name: pair[0] for name, pair in artifact._test_binaries.items()}}
         if artifact._wallet_addresses_binary is not None:
             originals["regtest_wallet_addresses"] = artifact.wallet_addresses_binary()

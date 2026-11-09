@@ -41,6 +41,13 @@ def _json_depth(text):
             depth -= 1
     return deepest
 
+def _signer(artifact, command, request):
+    """Orchard before NU6.3 has its own signer: the wallet's SDK cannot build it."""
+    if command == "build-orchard" or (command == "build-batch" and request.get("recipient_pool") == "orchard"):
+        return artifact.orchard_binary
+    return artifact.binary
+
+
 def _object(pairs):
     result = {}
     for key, value in pairs:
@@ -181,7 +188,7 @@ def run_offline_funder(case: NativeCaseLifecycle, artifact: ProducedRegtestFunde
         # Keep the original descriptors open on both normal and exceptional
         # execution exits. Attachment failure must not reclassify the primary.
         try:
-            result = case.run_command([str(artifact.binary), command], env=os.environ,
+            result = case.run_command([str(_signer(artifact, command, request)), command], env=os.environ,
                             stdin=stdin, timeout=timeout, cancel_event=cancellation,
                             max_output_bytes=_MAX_JSON_BYTES)
             if result.returncode != 0:

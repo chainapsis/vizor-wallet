@@ -32,6 +32,9 @@ class FunderBuildTests(unittest.TestCase):
         self.git("config", "core.hooksPath", "/dev/null")
         for name, value in (("rust/Cargo.toml", '[package]\nname="model"\nversion="0.0.0"\n'),
                             ("rust/Cargo.lock", "# model lock\n"),
+                            ("rust/regtest-orchard-funder/Cargo.toml", '[package]\nname="orchard"\nversion="0.0.0"\n'),
+                            ("rust/regtest-orchard-funder/Cargo.lock", "# model lock\n"),
+                            ("rust/regtest-orchard-funder/src/main.rs", "fn main() {}\n"),
                             ("rust/examples/regtest_direct_funder.rs", "fn main() {}\n")):
             path = self.source / name
             path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -53,6 +56,7 @@ class FunderBuildTests(unittest.TestCase):
         self.compiler_exit = 0
         self.compile_calls = 0
         self.binary_contents = "modeled-compiler-output"
+        self.orchard_binary_contents = "modeled-orchard-output"
         self.rustc_identity = "rustc modeled\nhost: aarch64-apple-darwin"
         self.compiler = self.root / "selected-rustc"
         self.compiler.write_text("modeled compiler\n")
@@ -67,6 +71,7 @@ class FunderBuildTests(unittest.TestCase):
         self.hard_link_output = False
         self.test_candidate_mode = "original"
         self.address_candidate_mode = "original"
+        self.orchard_candidate_mode = "original"
         self.rust_sysroot = self.root/"rust-sysroot"
         self.rust_libraries = (self.rust_sysroot/"lib/libLLVM.dylib",
                                self.rust_sysroot/"lib/rustlib/host/lib/libstd.rlib")
@@ -101,6 +106,22 @@ class FunderBuildTests(unittest.TestCase):
         for case in self.cases:
             case.close()
 
+    def orchard_build_script(self, manifest, options):
+        binary = Path(options["env"]["CARGO_TARGET_DIR"]) / "debug/regtest_orchard_funder"
+        message = {"reason": "compiler-artifact", "executable": str(binary),
+            "target": {"name": "regtest_orchard_funder", "kind": ["bin"], "src_path": str(manifest.parent / "src/main.rs")},
+            "profile": {"test": False}}
+        if self.orchard_candidate_mode == "wrong-source":
+            message["target"]["src_path"] = str(self.source / "rust/regtest-orchard-funder/src/main.rs")
+        script = ("from pathlib import Path; import json,os; "
+            f"p=Path({str(binary)!r}); p.parent.mkdir(mode=0o700,parents=True,exist_ok=True); "
+            f"p.write_text({self.orchard_binary_contents!r}); p.chmod(0o700); ")
+        if self.hard_link_output:
+            script += "os.link(p, p.with_name(p.name + '-hashed')); "
+        if self.orchard_candidate_mode != "missing":
+            script += f"print(json.dumps({message!r})); "
+        return script + f"print(json.dumps({ {'reason': 'build-finished', 'success': True}!r}))"
+
     def build(self, case=None, **updates):
         case = case or self.case()
         original = case.run_command
@@ -131,6 +152,9 @@ class FunderBuildTests(unittest.TestCase):
                 return original([sys.executable, "-B", "-c", "print('cargo modeled')"], **options)
             if arguments[0] not in {"cargo", str(self.cargo)} or arguments[1:2] != ["build"]:
                 return original(arguments, **options)
+            manifest = Path(arguments[arguments.index("--manifest-path") + 1])
+            if manifest.parent.name == "regtest-orchard-funder":
+                return original([sys.executable, "-B", "-c", self.orchard_build_script(manifest, options)], **options)
             self.selected_cargo = arguments[0]
             self.last_build_env = options["env"]
             self.compile_calls += 1
@@ -144,7 +168,6 @@ class FunderBuildTests(unittest.TestCase):
             binary = target / "debug/examples/regtest_direct_funder"
             if self.candidate_mode == "outside":
                 binary = self.root / "outside-binary"
-            manifest = Path(arguments[arguments.index("--manifest-path") + 1])
             source_file = manifest.parent / "examples/regtest_direct_funder.rs"
             message = {"reason": "compiler-artifact", "executable": str(binary),
                 "target": {"name": "regtest_direct_funder", "kind": ["example"], "src_path": str(source_file)},
@@ -216,7 +239,7 @@ class FunderBuildTests(unittest.TestCase):
         self.assertEqual(artifact.identity()["host_target"], "aarch64-apple-darwin")
         evidence = artifact.identity()
         evidence["rust_blobs"].clear()
-        self.assertEqual(len(artifact.identity()["rust_blobs"]), 3)
+        self.assertEqual(len(artifact.identity()["rust_blobs"]), 6)
 
     @unittest.skipUnless(sys.platform == "darwin", "Apple linker inputs are macOS-only")
     def test_linker_and_sdk_bytes_invalidate_cached_funder_with_same_rust(self):
@@ -295,6 +318,23 @@ class FunderBuildTests(unittest.TestCase):
         test.write_text("changed")
         with self.assertRaises(BUILD.FunderBuildError):
             artifact.verify_unchanged()
+
+    def test_orchard_signer_shares_original_build_and_detects_mutation(self):
+        artifact = self.build()
+        orchard = artifact.orchard_binary
+        self.assertEqual(orchard.read_text(), "modeled-orchard-output")
+        self.assertEqual(orchard.stat().st_mode & 0o777, 0o500)
+        self.assertEqual(artifact.identity()["orchard_binary"]["binary"], str(orchard))
+        orchard.chmod(0o700)
+        orchard.write_text("changed")
+        with self.assertRaises(BUILD.FunderBuildError):
+            artifact.verify_unchanged()
+
+    def test_orchard_signer_must_have_original_completed_cargo_output(self):
+        for mode in ("wrong-source", "missing"):
+            self.orchard_candidate_mode = mode
+            with self.subTest(mode=mode), self.assertRaises(BUILD.FunderBuildError):
+                self.build()
 
     def add_address_source(self):
         (self.source / "rust/examples/regtest_wallet_addresses.rs").write_text("fn main() {}\n")
@@ -462,7 +502,7 @@ class FunderBuildTests(unittest.TestCase):
         for directory, _, _ in os.walk(frozen):
             self.assertEqual(Path(directory).stat().st_mode & 0o777, 0o700)
         self.assertEqual((frozen / "rust/src/nested/deep/module.rs").read_text(), "// nested Git source\n")
-        self.assertEqual(len(artifact.identity()["rust_blobs"]), 4)
+        self.assertEqual(len(artifact.identity()["rust_blobs"]), 7)
 
     def test_git_export_substitution_cannot_change_frozen_blob_bytes(self):
         (self.source / ".gitattributes").write_text("rust/examples/regtest_direct_funder.rs export-subst\n")

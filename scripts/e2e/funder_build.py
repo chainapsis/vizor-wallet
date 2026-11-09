@@ -30,7 +30,9 @@ _COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 _MAX_SOURCE_BYTES = 128 * 1024 * 1024
 _MAX_SOURCE_FILES = 10_000
 _MAX_BINARY_BYTES = 512 * 1024 * 1024
-_REQUIRED = {"rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/regtest_direct_funder.rs"}
+_ORCHARD_FUNDER = "rust/regtest-orchard-funder"
+_REQUIRED = {"rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/regtest_direct_funder.rs",
+             f"{_ORCHARD_FUNDER}/Cargo.toml", f"{_ORCHARD_FUNDER}/Cargo.lock", f"{_ORCHARD_FUNDER}/src/main.rs"}
 _TEST_TARGET = re.compile(r"(?:regtest|ironwood_regtest)_[a-z0-9_]+\Z")
 
 
@@ -79,7 +81,7 @@ def _file_record(path, *, executable=False, limit=_MAX_SOURCE_BYTES):
 class ProducedRegtestFunder:
     """Original joined publication owner; never construct from a receipt."""
     def __init__(self, case, root, root_id, binary, binary_record, source_records,
-                 source_directories, binary_parents, provenance, token, test_binaries=None,
+                 source_directories, binary_parents, provenance, token, orchard_binary, test_binaries=None,
                  wallet_addresses_binary=None):
         if token is not _TOKEN:
             raise FunderBuildError("use build_regtest_funder")
@@ -92,11 +94,17 @@ class ProducedRegtestFunder:
         self._provenance = provenance
         self._test_binaries = test_binaries or {}
         self._wallet_addresses_binary = wallet_addresses_binary
+        self._orchard_binary = orchard_binary
         self._failed = False
 
     @property
     def binary(self):
         return self._binary
+
+    @property
+    def orchard_binary(self):
+        """The separately locked signer of Orchard funding before NU6.3."""
+        return self._orchard_binary[0]
 
     def test_binary(self, target):
         """A test executable published by this original, joined Cargo producer."""
@@ -125,6 +133,8 @@ class ProducedRegtestFunder:
                         raise FunderBuildError("original executable parent changed")
             if _file_record(self.binary, executable=True, limit=_MAX_BINARY_BYTES) != self._binary_record:
                 raise FunderBuildError("original funder executable changed")
+            if _file_record(self.orchard_binary, executable=True, limit=_MAX_BINARY_BYTES) != self._orchard_binary[1]:
+                raise FunderBuildError("original Orchard funder executable changed")
             for binary, record in self._test_binaries.values():
                 if _file_record(binary, executable=True, limit=_MAX_BINARY_BYTES) != record:
                     raise FunderBuildError("original Rust test executable changed")
@@ -380,10 +390,12 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                     Path(item["path"]).parent for item in (cache_inputs["apple_linker"] or {}).get(
                         "executables",{}).values()}) != cache_inputs["configured_tools"]:
                 raise FunderBuildError("configured build tools changed during publication")
-            unchanged = (dependency_inputs() == cache_inputs["cargo_dependencies"] if case.accepting_launches
-                else toolchain_inputs.cargo_dependencies_unchanged(cache_inputs["cargo_dependencies"], cancellation))
-            if not unchanged:
-                raise FunderBuildError("Cargo dependency sources changed during publication")
+            for manifest, key in (("rust/Cargo.toml", "cargo_dependencies"),
+                                  (f"{_ORCHARD_FUNDER}/Cargo.toml", "orchard_cargo_dependencies")):
+                unchanged = (dependency_inputs(manifest) == cache_inputs[key] if case.accepting_launches
+                    else toolchain_inputs.cargo_dependencies_unchanged(cache_inputs[key], cancellation))
+                if not unchanged:
+                    raise FunderBuildError("Cargo dependency sources changed during publication")
         if cache_root is not None:
             from funder_cache import FunderCacheLease
             cargo_entry = shutil.which("cargo", path=build_env.get("PATH"))
@@ -412,9 +424,9 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
             collector = Path(toolchain_inputs.__file__).resolve(strict=True)
             for path in (compiler, cargo_tool, Path(__file__).resolve(strict=True), collector):
                 input_records[path] = _file_record(path)
-            def dependency_inputs():
+            def dependency_inputs(manifest="rust/Cargo.toml"):
                 return toolchain_inputs.cargo_dependency_inputs(
-                    lambda args:command(args, env=build_env), cargo_tool, root/"source/rust/Cargo.toml", cancellation,
+                    lambda args:command(args, env=build_env), cargo_tool, root/"source"/manifest, cancellation,
                     flags=("--filter-platform", host), excluded_roots=(root/"source",), cargo_home=cargo_home)
             apple = toolchain_inputs.apple_linker_inputs(lambda args:command(args, env=build_env), cancellation)
             cache_inputs = {"schema": 1, "rust_blobs": {name: list(value) for name, value in sorted(expected.items())},
@@ -424,6 +436,7 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                 "producer_sha256": _file_record(Path(__file__).resolve(strict=True))[1],
                 "collector_sha256": input_records[collector][1],
                 "cargo_dependencies":dependency_inputs(),
+                "orchard_cargo_dependencies":dependency_inputs(f"{_ORCHARD_FUNDER}/Cargo.toml"),
                 "configured_tools":toolchain_inputs.configured_tool_inputs(
                     build_env, configuration_paths, Path.cwd(), tool_directories={Path(item["path"]).parent
                         for item in (apple or {}).get("executables",{}).values()}),
@@ -433,7 +446,7 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                 "configuration_sha256": configurations,
                 "environment_sha256": toolchain_inputs.build_environment_inputs(
                     build_env, excluded={"CARGO_TARGET_DIR", "CARGO_BUILD_JOBS"})[0]}
-            names = ("regtest_direct_funder", *test_targets,
+            names = ("regtest_direct_funder", "regtest_orchard_funder", *test_targets,
                      *(("regtest_wallet_addresses",) if wallet_addresses else ()))
             lease = FunderCacheLease(cache_root, cache_inputs, names, timeout=timeout, cancel_event=cancellation)
             lease.__enter__()
@@ -446,6 +459,9 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
             *(["--example", "regtest_wallet_addresses"] if wallet_addresses else []),
             *(argument for name in test_targets for argument in ("--test", name)),
             "--target", host, "--message-format=json"], env=build_env)
+        orchard_lines = () if cached is not None else command([cargo_executable, "build", "--offline", "--locked",
+            "--manifest-path", str(root / "source" / _ORCHARD_FUNDER / "Cargo.toml"),
+            "--bin", "regtest_orchard_funder", "--target", host, "--message-format=json"], env=build_env)
         candidates = [cached["regtest_direct_funder"]] if cached is not None else []
         completed = cached is not None
         test_candidates = {name: [cached[name]] if cached is not None else [] for name in test_targets}
@@ -474,14 +490,31 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                 and message["target"].get("src_path") == str(root / f"source/rust/tests/{name}.rs")
                 and message.get("profile", {}).get("test") is True):
                 test_candidates[name].append(Path(message["executable"]))
+        orchard_candidates = [cached["regtest_orchard_funder"]] if cached is not None else []
+        orchard_completed = cached is not None
+        for line in orchard_lines:
+            if not line.lstrip().startswith("{"):
+                continue
+            message = json.loads(line)
+            if message.get("reason") == "build-finished":
+                orchard_completed = message.get("success") is True
+            if (message.get("reason") == "compiler-artifact" and message.get("executable") is not None
+                and message.get("target", {}).get("name") == "regtest_orchard_funder"
+                and message["target"].get("kind") == ["bin"]
+                and message["target"].get("src_path") == str(root / "source" / _ORCHARD_FUNDER / "src/main.rs")
+                and message.get("profile", {}).get("test") is False):
+                orchard_candidates.append(Path(message["executable"]))
         if not completed or len(candidates) != 1:
             raise FunderBuildError("Cargo did not prove one completed funding executable")
+        if not orchard_completed or len(orchard_candidates) != 1:
+            raise FunderBuildError("Cargo did not prove one completed Orchard funding executable")
         if any(len(paths) != 1 for paths in test_candidates.values()):
             raise FunderBuildError("Cargo did not prove every selected Rust test executable")
         if wallet_addresses and len(address_candidates) != 1:
             raise FunderBuildError("Cargo did not prove one wallet address executable")
         cargo_binary = candidates[0]
-        for output in (cargo_binary, *(paths[0] for paths in test_candidates.values()), *address_candidates):
+        for output in (cargo_binary, orchard_candidates[0], *(paths[0] for paths in test_candidates.values()),
+                       *address_candidates):
             if not output.is_absolute() or output.resolve(strict=True) != output:
                 raise FunderBuildError("Cargo executable path is not canonical")
             output.relative_to(lease.entry if cached is not None else target)
@@ -494,6 +527,8 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
         publication.mkdir(mode=0o700)
         binary = publication / "regtest_direct_funder"
         binary_record = _copy_cargo_executable(cargo_binary, binary)
+        orchard_published = publication / "regtest_orchard_funder"
+        orchard_binary = (orchard_published, _copy_cargo_executable(orchard_candidates[0], orchard_published))
         test_binaries = {}
         for name, paths in test_candidates.items():
             published = publication / name
@@ -513,6 +548,7 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
             "rust_blobs": {name: {"git_blob": expected[name][1], "sha256": record[1]}
                            for name, record in sorted(records.items())},
             "binary": str(binary), "binary_sha256": binary_record[1],
+            "orchard_binary": {"binary": str(orchard_published), "sha256": orchard_binary[1][1]},
             "rustc": list(rustc), "rustc_binary": str(compiler), "cargo": list(cargo), "offline": True,
             "host_target": host, "jobs": jobs, "producer_namespace": case.workspace.namespace,
             "cargo_build_count": int(cached is None), "cache_hit": cached is not None}
@@ -525,7 +561,8 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
             provenance["wallet_addresses_binary"] = {"binary": str(address_binary[0]),
                 "sha256": address_binary[1][1]}
         artifact = ProducedRegtestFunder(case, root, root_id, binary, binary_record, records,
-                                        source_directories, binary_parents, provenance, _TOKEN, test_binaries,
+                                        source_directories, binary_parents, provenance, _TOKEN, orchard_binary,
+                                        test_binaries,
                                         address_binary)
         artifact.verify_unchanged()
         verify_cache_inputs()
