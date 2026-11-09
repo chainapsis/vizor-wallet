@@ -252,7 +252,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityDetailsLoading => '加载中…';
 
   @override
-  String get activityDetailsNotCovered => '隐私模式下不可用';
+  String get activityDetailsNotCovered => '隐私查询暂不支持此详情';
 
   @override
   String get activityDetailsOmittedLabel => '未显示';
@@ -353,7 +353,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityLoadFailedMobile => '无法加载活动记录，请稍后重试。';
 
   @override
-  String get activityOmissionLaterOutputs => '第二个之后的输出';
+  String get activityOmissionLaterOutputs => '第三个及之后的输出';
 
   @override
   String activityOmissionMoreOutputs(int count) {
@@ -485,7 +485,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityStatusFailedFundsReturned => '失败，资金已退回';
 
   @override
-  String get activityStatusIncompleteDeposit => '存入不足';
+  String get activityStatusIncompleteDeposit => '存入金额不足';
 
   @override
   String activitySwapAssetOnChain(String symbol, String chain) {
@@ -632,7 +632,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressBookLabelLength => '请使用 1-20 个字符';
 
   @override
-  String get addressBookLabelMissing => '请添加标签';
+  String get addressBookLabelMissing => '请输入联系人名称';
 
   @override
   String get addressBookLoadFailed => '无法加载你的联系人。请重试；如果问题持续，请联系支持团队。';
@@ -748,7 +748,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressScanCloseScanner => '关闭扫描器';
 
   @override
-  String get addressScanDeniedTitle => '你已拒绝摄像头权限';
+  String get addressScanDeniedTitle => '请允许使用摄像头';
 
   @override
   String get addressScanGrantAccess => '请授予摄像头访问权限';
@@ -815,7 +815,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appTermsOfUseTitle => '使用条款';
 
   @override
-  String get appUpdateApplyingMessage => '将在 Vizor 关闭后应用。';
+  String get appUpdateApplyingMessage => '退出 Vizor 后，更新将生效。';
 
   @override
   String get appUpdateAvailableMessage => '可立即下载，也可继续使用。';
@@ -915,10 +915,10 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String biometricSignInLabel(String kind) {
     String _temp0 = intl.Intl.selectLogic(kind, {
-      'face': '使用 Face ID 登录',
-      'touchId': '使用 Touch ID 登录',
-      'fingerprint': '使用指纹登录',
-      'other': '使用生物识别登录',
+      'face': '使用 Face ID 解锁',
+      'touchId': '使用 Touch ID 解锁',
+      'fingerprint': '使用指纹解锁',
+      'other': '使用生物识别解锁',
     });
     return '$_temp0';
   }
@@ -1087,7 +1087,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get commonAddressLabel => '地址标签';
+  String get commonAddressLabel => '联系人名称';
 
   @override
   String get commonAmount => '金额';
@@ -1113,7 +1113,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonCamera => '摄像头';
 
   @override
-  String get commonCameraDeniedTitle => '你已拒绝摄像头权限';
+  String get commonCameraDeniedTitle => '请允许使用摄像头';
 
   @override
   String get commonCameraRequestAgainHint => '请重新请求，或在\n系统设置中手动开启。';
@@ -1134,13 +1134,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonCancel => '取消';
 
   @override
-  String get commonCancelFailedRetry => '无法完成取消，请重试。';
+  String get commonCancelFailedRetry => '未能完成取消操作，请重试。';
 
   @override
   String get commonCancelShielding => '取消屏蔽操作';
 
   @override
-  String get commonCancellationFailed => '无法完成取消，请重试。';
+  String get commonCancellationFailed => '未能完成取消操作，请重试。';
 
   @override
   String get commonCancelling => '正在取消…';
@@ -1176,7 +1176,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonClear => '清除';
 
   @override
-  String get commonClearContactLabel => '清除联系人标签';
+  String get commonClearContactLabel => '清除联系人名称';
 
   @override
   String get commonClearText => '清除文本';
@@ -1209,7 +1209,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonConnecting => '正在连接…';
 
   @override
-  String get commonContactLabelHint => '添加 1-20 个字符的标签';
+  String get commonContactLabelHint => '请输入名称（1-20 个字符）';
 
   @override
   String get commonContacts => '联系人';
@@ -1221,7 +1221,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonContinueAnyway => '仍然继续';
 
   @override
-  String get commonContinueToReview => '继续查看';
+  String get commonContinueToReview => '核对信息';
 
   @override
   String get commonCopied => '已复制';
@@ -1796,10 +1796,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonYouPay => '你支付';
 
   @override
-  String get commonYourePaying => '正在支付';
+  String get commonYourePaying => '支付金额';
 
   @override
-  String get commonYoureReceiving => '正在接收';
+  String get commonYoureReceiving => '接收金额';
 
   @override
   String get commonZcashAddress => 'Zcash 地址';
@@ -2003,7 +2003,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeLedgerContextChanged => '所选账户或网络已更改。请返回钱包。';
 
   @override
-  String get homeLedgerInputsRemaining => '仍有剩余输入';
+  String get homeLedgerInputsRemaining => '仍有资金未屏蔽';
 
   @override
   String get homeLedgerNoFundsRemain => '没有可花费的透明资金。请返回钱包。';
@@ -2197,10 +2197,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeShieldNow => '立即屏蔽';
 
   @override
-  String get homeShieldQueuedForRetry => '屏蔽已排队等待重试。请查看活动记录。';
+  String get homeShieldQueuedForRetry => '已安排自动重试屏蔽操作。请在活动记录中查看状态。';
 
   @override
-  String get homeShieldQueuedTitle => '屏蔽已加入队列';
+  String get homeShieldQueuedTitle => '已安排重试屏蔽操作';
 
   @override
   String get homeShieldReject => '拒绝';
@@ -2230,7 +2230,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeShieldWaitingForPrivateRecovery =>
-      '私密恢复正在追赶最新区块。请稍后重试；你的 Keystone 签名已保留。';
+      '私密恢复正在同步最新区块。请稍后重试，Keystone 签名已保留。';
 
   @override
   String get homeShieldingBalance => '正在屏蔽你的余额…';
@@ -2366,7 +2366,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneBirthdaySubtitle => '这有助于我们更快地导入你的钱包。';
 
   @override
-  String get keystoneCameraDeniedTitle => '你已拒绝摄像头权限';
+  String get keystoneCameraDeniedTitle => '请允许使用摄像头';
 
   @override
   String get keystoneCameraEnableBody => '连接 Keystone 需要使用摄像头。\n你之后可随时在设置中更改。';
@@ -2727,7 +2727,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerButtonSearching => '正在搜索';
 
   @override
-  String get ledgerCancelFailed => '无法完成取消。请重试。';
+  String get ledgerCancelFailed => '未能完成取消操作，请重试。';
 
   @override
   String get ledgerCancellingRequest => '正在取消请求';
@@ -5754,7 +5754,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navSettings => '设置';
 
   @override
-  String get navSignOut => '退出登录';
+  String get navSignOut => '锁定钱包';
 
   @override
   String get navSwap => '兑换';
@@ -5829,7 +5829,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get onboardingBiometricSubtitle => '这是一种便捷快速的登录方式。\n你随时可以切换回数字密码。';
+  String get onboardingBiometricSubtitle => '快速便捷地解锁钱包。\n也可随时使用数字密码解锁。';
 
   @override
   String onboardingBiometricTitle(String method) {
@@ -5955,7 +5955,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingCreatingWallet => '正在创建钱包...';
 
   @override
-  String get onboardingCustomiseAccountSubtitle => '设置账户名称并选择头像，为你的账户增添个性。';
+  String get onboardingCustomiseAccountSubtitle => '设置账户名称和头像。';
 
   @override
   String get onboardingDiscoverySubtitle => '请选择要导入的其他账户。';
@@ -5985,7 +5985,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingFinishSetup => '完成设置';
 
   @override
-  String get onboardingForgotPasscodeAreYouSure => '确定要继续吗？';
+  String get onboardingForgotPasscodeAreYouSure => '要重置 Vizor 吗？';
 
   @override
   String get onboardingForgotPasscodeBody =>
@@ -5998,7 +5998,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingForgotPasscodeContinueToReset => '继续重置 Vizor';
 
   @override
-  String get onboardingForgotPasscodeProceed => '继续操作的后果需由你自行承担。';
+  String get onboardingForgotPasscodeProceed => '请确认已了解以上影响，再继续操作。';
 
   @override
   String get onboardingForgotPasscodeTitle => '忘记数字密码？';
@@ -6124,13 +6124,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingIntroClosingMobile => '距离你的第一个隐私钱包只差几步。让我们开始设置吧。';
 
   @override
-  String get onboardingIntroSubtitle => 'Zcash（ZEC）围绕金融隐私与自主托管而构建。';
+  String get onboardingIntroSubtitle => 'Zcash（ZEC）让你保护财务隐私，自主管理资产。';
 
   @override
-  String get onboardingIntroSubtitleMobile => 'Zcash（ZEC）围绕金融隐私\n与自主托管而构建。';
+  String get onboardingIntroSubtitleMobile => 'Zcash（ZEC）让你保护财务隐私，\n自主管理资产。';
 
   @override
-  String get onboardingIntroTitle => '屏蔽的世界';
+  String get onboardingIntroTitle => '走进隐私世界';
 
   @override
   String get onboardingLinkVizorDesktop => '关联 Vizor 桌面版';
@@ -6151,7 +6151,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String onboardingLostPasswordResetCountdown(int seconds) {
-    return '$seconds 秒后重置...';
+    return '$seconds 秒后可重置';
   }
 
   @override
@@ -6278,7 +6278,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingSetPasswordPlaceholder => '至少 8 个字符';
 
   @override
-  String get onboardingSetPasswordSubtitle => '设置用于登录 Vizor 钱包的密码。';
+  String get onboardingSetPasswordSubtitle => '设置用于解锁 Vizor 钱包的密码。';
 
   @override
   String get onboardingSettingPassword => '正在设置密码...';
@@ -6483,7 +6483,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get payNewAddressDetected => '检测到新地址。';
 
   @override
-  String get payNewAddressWarning => '你之前未与此地址交互过。';
+  String get payNewAddressWarning => '你之前未向此地址转账。';
 
   @override
   String payRecentDaysAgo(int days) {
@@ -6594,7 +6594,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paySubmittedUnavailableNotice => '无法加载此支付。请在活动记录中查看最新状态。';
 
   @override
-  String get paySubmittedUnavailableTitle => '找不到此笔支付';
+  String get paySubmittedUnavailableTitle => '无法加载这笔支付';
 
   @override
   String get paySubmittedUncertainTitle => '支付状态\n不确定';
@@ -7877,7 +7877,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get receiveInfoShieldedDiversified =>
-      '每个新地址都是由同一密钥派生的多样化地址，所有地址都会收款到同一个钱包。';
+      '新地址都由同一密钥派生。无论使用哪个地址，资金都会进入同一个钱包。';
 
   @override
   String get receiveInfoShieldedHiddenDesktop =>
@@ -8420,7 +8420,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendPaymentRequestReviewLinkDetails => '查看链接详情';
 
   @override
-  String get sendPaymentRequestReviewPayment => '查看付款确认';
+  String get sendPaymentRequestReviewPayment => '核对付款信息';
 
   @override
   String get sendPaymentRequestScanOriginalHint => '请直接在 Vizor 中扫描原始二维码。';
@@ -8511,7 +8511,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendRequestScanWrongNetwork => '此地址属于另一个网络。';
 
   @override
-  String get sendReviewAction => '查看确认';
+  String get sendReviewAction => '核对转账信息';
 
   @override
   String get sendReviewCalculatingFee => '正在计算手续费...';
@@ -8543,7 +8543,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendReviewRequestedBy => '请求方';
 
   @override
-  String get sendReviewTitle => '查看发送确认';
+  String get sendReviewTitle => '核对转账信息';
 
   @override
   String get sendSaplingDownloadBody => '要创建这笔隐私交易，钱包需要下载约 50MB 的加密参数。';
@@ -8665,10 +8665,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendStepEnterAmount => '输入金额';
 
   @override
-  String get sendStepReviewDonation => '查看捐赠确认';
+  String get sendStepReviewDonation => '核对捐赠信息';
 
   @override
-  String get sendStepReviewSend => '查看发送确认';
+  String get sendStepReviewSend => '核对转账信息';
 
   @override
   String sendTitle(String currency) {
@@ -9065,7 +9065,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsSectionAccount => '账户';
 
   @override
-  String get settingsSectionDangerZone => '危险区域';
+  String get settingsSectionDangerZone => '应用与数据删除';
 
   @override
   String get settingsSectionMisc => '其他';
@@ -9092,7 +9092,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsSeedLoadFailed => '无法加载你的助记词。请重试。';
 
   @override
-  String get settingsSeedPasswordSubtitle => '以查看助记词。';
+  String get settingsSeedPasswordSubtitle => '请输入密码以查看助记词。';
 
   @override
   String get settingsSeedRemindLater => '稍后提醒我';
@@ -9106,10 +9106,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get settingsSeedScreenshotBodyLead => '截图并不可靠';
+  String get settingsSeedScreenshotBodyLead => '截图保存不安全';
 
   @override
-  String get settingsSeedScreenshotTitle => '请勿截取助记词的屏幕截图';
+  String get settingsSeedScreenshotTitle => '请勿截图保存助记词';
 
   @override
   String get settingsSeedUnavailableAccount => '此账户没有助记词。';
@@ -9288,7 +9288,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsUninstallFinishWindows => '要完成卸载，请在 Windows 设置中卸载 Vizor。';
 
   @override
-  String get settingsUninstallPasswordSubtitle => '以卸载 Vizor。';
+  String get settingsUninstallPasswordSubtitle => '请输入密码以卸载 Vizor。';
 
   @override
   String get settingsUninstallRemovingTitle => '正在删除数据...';
@@ -9401,7 +9401,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsViewingKeyCopy => '复制查看密钥';
 
   @override
-  String get settingsViewingKeyExplanation => '会泄露你的余额以及所有过去和未来的交易。它无法花费 ZEC。';
+  String get settingsViewingKeyExplanation =>
+      '会泄露你的余额以及所有过去和未来的交易。仅凭此密钥无法转出 ZEC。';
 
   @override
   String get settingsViewingKeyFormatQr => '二维码';
@@ -9414,13 +9415,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsViewingKeyIncomingExplanation =>
-      '会泄露过去和未来收到的付款。它无法花费 ZEC。';
+      '会泄露过去和未来收到的付款。仅凭此密钥无法转出 ZEC。';
 
   @override
-  String get settingsViewingKeyIncomingOnly => '仅收款';
+  String get settingsViewingKeyIncomingOnly => '仅查看收款记录';
 
   @override
-  String get settingsViewingKeyIncomingOnlyDescription => '仅可查看收到的交易。';
+  String get settingsViewingKeyIncomingOnlyDescription => '只能查看收到的交易记录。';
 
   @override
   String get settingsViewingKeyIncomingWarningTitle => '此密钥会泄露收到的付款';
@@ -9429,7 +9430,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsViewingKeyLoadFailedTitle => '无法加载查看密钥';
 
   @override
-  String get settingsViewingKeyPasswordSubtitle => '以显示查看密钥。';
+  String get settingsViewingKeyPasswordSubtitle => '请输入密码以查看密钥。';
 
   @override
   String get settingsViewingKeyQrFull => '完整查看密钥二维码';
@@ -9630,7 +9631,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapActivityExpectedToReceive => '预计收到金额';
 
   @override
-  String get swapActivityIncompleteDeposit => '存入不足';
+  String get swapActivityIncompleteDeposit => '存入金额不足';
 
   @override
   String get swapActivityIncompletePayment => '支付金额不足';
@@ -10003,7 +10004,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapFailureAssetUnavailable => '此资产目前无法兑换。\n请选择其他资产或稍后重试。';
 
   @override
-  String get swapFailureDepositNotIndexed => '存入尚未被索引。\n请几分钟后再查看。';
+  String get swapFailureDepositNotIndexed => '暂未查询到这笔存入交易。\n请几分钟后再查看。';
 
   @override
   String get swapFailureDepositRejected => '存入交易被拒绝。\n请检查地址、备注和交易哈希。';
@@ -10189,7 +10190,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String swapNoticeMaintenanceWindow(String networks) {
-    return '维护时段：$networks';
+    return '维护网络：$networks';
   }
 
   @override
@@ -11425,7 +11426,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get walletLinkDeselectAll => '取消全选';
 
   @override
-  String get walletLinkDesktopConfirmSubtitle => '以关联 Vizor 手机端。';
+  String get walletLinkDesktopConfirmSubtitle => '请输入密码以关联 Vizor 手机端。';
 
   @override
   String get walletLinkDesktopEncryptedNotice => '该二维码使用一次性密钥加密，一分钟后失效。';

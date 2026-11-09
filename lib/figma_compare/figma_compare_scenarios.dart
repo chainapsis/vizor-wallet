@@ -108,6 +108,40 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'copy-desktop-reset-countdown',
+    description: 'Localized reset button before the safety delay expires',
+    builder: buildLostPasswordCountdownUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-desktop-seed-auth',
+    description: 'Localized password instruction before showing recovery words',
+    builder: buildSettingsSecretPassphraseGateUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-desktop-viewing-key-auth',
+    description: 'Localized password instruction before showing viewing keys',
+    builder: buildSettingsViewingKeyGateUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-desktop-wallet-link-auth',
+    description: 'Localized password instruction before linking a phone',
+    builder: buildSettingsWalletLinkConfirmAccessUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-mobile-reset-final',
+    description: 'Localized final reset confirmation and safety countdown',
+    builder: buildMobileForgotPasscodeLastWarningUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-mobile-seed-screenshot-warning',
+    description: 'Localized recovery word screenshot warning in context',
+    builder: buildMobileSecretPassphraseScreenshotWarningUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'desktop-language-welcome',
     description: 'Desktop Welcome language entry and interactive picker',
     builder: buildDesktopWelcomeCapture,

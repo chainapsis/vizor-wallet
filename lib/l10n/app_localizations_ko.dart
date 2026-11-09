@@ -367,7 +367,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '활‍동‍을 불‍러‍오‍지 못‍했‍어‍요. 잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
-  String get activityOmissionLaterOutputs => '두 번‍째 이‍후‍의 출‍력';
+  String get activityOmissionLaterOutputs => '세 번‍째 이‍후‍의 출‍력';
 
   @override
   String activityOmissionMoreOutputs(int count) {
@@ -648,7 +648,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get addressBookLabelLength => '1~20‍자‍로 입‍력‍해 주‍세‍요';
 
   @override
-  String get addressBookLabelMissing => '라‍벨‍을 입‍력‍해 주‍세‍요';
+  String get addressBookLabelMissing => '연‍락‍처 이‍름‍을 입‍력‍해 주‍세‍요';
 
   @override
   String get addressBookLoadFailed =>
@@ -777,7 +777,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get addressScanCloseScanner => '스‍캐‍너 닫‍기';
 
   @override
-  String get addressScanDeniedTitle => '카‍메‍라 접‍근‍을 거‍부‍했‍어‍요';
+  String get addressScanDeniedTitle => '카‍메‍라 사‍용 권‍한‍이 필‍요‍해‍요';
 
   @override
   String get addressScanGrantAccess => '카‍메‍라 접‍근‍을 허‍용‍해 주‍세‍요';
@@ -945,10 +945,10 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String biometricSignInLabel(String kind) {
     String _temp0 = intl.Intl.selectLogic(kind, {
-      'face': 'Face ID‍로 로‍그‍인',
-      'touchId': 'Touch ID‍로 로‍그‍인',
-      'fingerprint': '지‍문‍으‍로 로‍그‍인',
-      'other': '생‍체 인‍식‍으‍로 로‍그‍인',
+      'face': 'Face ID‍로 잠‍금 해‍제',
+      'touchId': 'Touch ID‍로 잠‍금 해‍제',
+      'fingerprint': '지‍문‍으‍로 잠‍금 해‍제',
+      'other': '생‍체 인‍식‍으‍로 잠‍금 해‍제',
     });
     return '$_temp0';
   }
@@ -1119,7 +1119,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get commonAddressLabel => '주‍소 라‍벨';
+  String get commonAddressLabel => '연‍락‍처 이‍름';
 
   @override
   String get commonAmount => '금‍액';
@@ -1145,7 +1145,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonCamera => '카‍메‍라';
 
   @override
-  String get commonCameraDeniedTitle => '카‍메‍라 접‍근‍을 거‍부‍했‍어‍요';
+  String get commonCameraDeniedTitle => '카‍메‍라 사‍용 권‍한‍이 필‍요‍해‍요';
 
   @override
   String get commonCameraRequestAgainHint =>
@@ -1211,7 +1211,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonClear => '지‍우‍기';
 
   @override
-  String get commonClearContactLabel => '연‍락‍처 라‍벨 지‍우‍기';
+  String get commonClearContactLabel => '연‍락‍처 이‍름 지‍우‍기';
 
   @override
   String get commonClearText => '텍‍스‍트 지‍우‍기';
@@ -1244,7 +1244,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonConnecting => '연‍결‍하‍는 중…';
 
   @override
-  String get commonContactLabelHint => '1~20‍자‍의 라‍벨‍을 입‍력‍하‍세‍요';
+  String get commonContactLabelHint => '이‍름‍을 입‍력‍해 주‍세‍요(1~20‍자)';
 
   @override
   String get commonContacts => '연‍락‍처';
@@ -1625,7 +1625,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonReviewAndFinish => '검‍토‍하‍고 완‍료';
 
   @override
-  String get commonReviewPayment => '결‍제 검‍토';
+  String get commonReviewPayment => '결‍제 내‍용 확‍인';
 
   @override
   String get commonReviewQuote => '견‍적 검‍토';
@@ -1837,7 +1837,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonWaitingForWalletSync => '지‍갑 동‍기‍화 대‍기 중';
 
   @override
-  String get commonWelcomeBack => '다‍시 오‍셨‍네‍요';
+  String get commonWelcomeBack => '반‍가‍워‍요';
 
   @override
   String get commonWizard => '마‍법‍사';
@@ -2281,10 +2281,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeShieldQueuedForRetry =>
-      '차‍폐‍를 다‍시 시‍도‍하‍도‍록 대‍기‍열‍에 넣‍었‍어‍요. 활‍동‍에‍서 확‍인‍해 주‍세‍요.';
+      '차‍폐‍를 자‍동‍으‍로 다‍시 시‍도‍할 예‍정‍이‍에‍요. 활‍동‍에‍서 상‍태‍를 확‍인‍해 주‍세‍요.';
 
   @override
-  String get homeShieldQueuedTitle => '차‍폐‍를 대‍기‍열‍에 추‍가‍했‍어‍요';
+  String get homeShieldQueuedTitle => '차‍폐‍를 다‍시 시‍도‍할 예‍정‍이‍에‍요';
 
   @override
   String get homeShieldReject => '거‍부';
@@ -2462,7 +2462,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get keystoneBirthdaySubtitle => '알‍려 주‍시‍면 지‍갑‍을 더 빨‍리 가‍져‍올 수 있‍어‍요.';
 
   @override
-  String get keystoneCameraDeniedTitle => '카‍메‍라 접‍근‍을 거‍부‍했‍어‍요';
+  String get keystoneCameraDeniedTitle => '카‍메‍라 사‍용 권‍한‍이 필‍요‍해‍요';
 
   @override
   String get keystoneCameraEnableBody =>
@@ -6117,7 +6117,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get navSettings => '설‍정';
 
   @override
-  String get navSignOut => '로‍그‍아‍웃';
+  String get navSignOut => '지‍갑 잠‍그‍기';
 
   @override
   String get navSwap => '스‍왑';
@@ -6199,7 +6199,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingBiometricSubtitle =>
-      '쉽‍고 빠‍르‍게 로‍그‍인‍하‍는 방‍법‍이‍에‍요.\n언‍제‍든 암‍호 입‍력‍으‍로 다‍시 바‍꿀 수 있‍어‍요.';
+      '쉽‍고 빠‍르‍게 지‍갑 잠‍금‍을 해‍제‍해‍요.\n언‍제‍든 암‍호‍를 입‍력‍해 잠‍금‍을 해‍제‍할 수‍도 있‍어‍요.';
 
   @override
   String onboardingBiometricTitle(String method) {
@@ -6331,7 +6331,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingCustomiseAccountSubtitle =>
-      '계‍정 이‍름‍을 정‍하‍고 프‍로‍필 사‍진‍을 골‍라 계‍정‍에 개‍성‍을 더‍해 보‍세‍요.';
+      '계‍정 이‍름‍과 프‍로‍필 사‍진‍을 정‍해 주‍세‍요.';
 
   @override
   String get onboardingDiscoverySubtitle => '가‍져‍올 추‍가 계‍정‍을 선‍택‍해 주‍세‍요.';
@@ -6363,7 +6363,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingFinishSetup => '설‍정 완‍료';
 
   @override
-  String get onboardingForgotPasscodeAreYouSure => '정‍말 진‍행‍할‍까‍요?';
+  String get onboardingForgotPasscodeAreYouSure => 'Vizor‍를 초‍기‍화‍할‍까‍요?';
 
   @override
   String get onboardingForgotPasscodeBody =>
@@ -6376,7 +6376,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingForgotPasscodeContinueToReset => 'Vizor 초‍기‍화 계‍속';
 
   @override
-  String get onboardingForgotPasscodeProceed => '본‍인 책‍임‍하‍에 진‍행‍해 주‍세‍요.';
+  String get onboardingForgotPasscodeProceed => '위 내‍용‍을 확‍인‍한 뒤 진‍행‍해 주‍세‍요.';
 
   @override
   String get onboardingForgotPasscodeTitle => '암‍호‍를 잊‍으‍셨‍나‍요?';
@@ -6509,14 +6509,14 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingIntroSubtitle =>
-      'Zcash(ZEC)는 금‍융 프‍라‍이‍버‍시‍와 직‍접 보‍관‍을 중‍심‍으‍로 만‍들‍어‍졌‍어‍요.';
+      'Zcash(ZEC)는 금‍융 정‍보‍를 보‍호‍하‍고 자‍금‍을 직‍접 관‍리‍할 수 있‍게 해‍요.';
 
   @override
   String get onboardingIntroSubtitleMobile =>
-      'Zcash(ZEC)는 금‍융 프‍라‍이‍버‍시‍와\n직‍접 보‍관‍을 중‍심‍으‍로 만‍들‍어‍졌‍어‍요.';
+      'Zcash(ZEC)는 금‍융 정‍보‍를 보‍호‍하‍고\n자‍금‍을 직‍접 관‍리‍할 수 있‍게 해‍요.';
 
   @override
-  String get onboardingIntroTitle => '차‍폐‍된 세‍상';
+  String get onboardingIntroTitle => '프‍라‍이‍버‍시‍가 지‍켜‍지‍는 세‍상';
 
   @override
   String get onboardingLinkVizorDesktop => 'Vizor 데‍스‍크‍톱 연‍결';
@@ -6538,7 +6538,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String onboardingLostPasswordResetCountdown(int seconds) {
-    return '$seconds‍초 후 초‍기‍화...';
+    return '$seconds‍초 후 초‍기‍화‍할 수 있‍어‍요';
   }
 
   @override
@@ -6634,7 +6634,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '가‍져‍오‍기‍를 시‍작‍하‍기 전‍에\n복‍구 문‍구‍를 확‍인‍해 주‍세‍요.';
 
   @override
-  String get onboardingReviewImportTitle => '가‍져‍오‍기 검‍토';
+  String get onboardingReviewImportTitle => '복‍구 문‍구 확‍인';
 
   @override
   String get onboardingSavingWallet => '지‍갑 저‍장‍하‍는 중...';
@@ -6673,7 +6673,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingSetPasswordSubtitle =>
-      'Vizor 지‍갑‍에 로‍그‍인‍할 비‍밀‍번‍호‍를 설‍정‍해 주‍세‍요.';
+      'Vizor 지‍갑‍의 잠‍금‍을 해‍제‍할 비‍밀‍번‍호‍를 설‍정‍해 주‍세‍요.';
 
   @override
   String get onboardingSettingPassword => '비‍밀‍번‍호 설‍정‍하‍는 중...';
@@ -6795,7 +6795,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingUnlockOpening => '지‍갑‍을 여‍는 중...';
 
   @override
-  String get onboardingUnlockWelcomeBack => '다‍시 오‍셨‍네‍요';
+  String get onboardingUnlockWelcomeBack => '반‍가‍워‍요';
 
   @override
   String get onboardingWalletLinkNetworkMismatch =>
@@ -8396,7 +8396,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get receiveInfoShieldedDiversified =>
-      '새 주‍소‍는 모‍두 같‍은 키‍에‍서 파‍생‍된 다‍변‍화 주‍소‍예‍요. 모‍두 같‍은 지‍갑‍으‍로 받‍아‍요.';
+      '새 주‍소‍는 모‍두 같‍은 키‍에‍서 만‍들‍어‍져‍요. 어‍느 주‍소‍로 받‍아‍도 같‍은 지‍갑‍에 입‍금‍돼‍요.';
 
   @override
   String get receiveInfoShieldedHiddenDesktop =>
@@ -8990,7 +8990,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendPaymentRequestReviewLinkDetails => '링‍크 상‍세 보‍기';
 
   @override
-  String get sendPaymentRequestReviewPayment => '결‍제 검‍토';
+  String get sendPaymentRequestReviewPayment => '결‍제 내‍용 확‍인';
 
   @override
   String get sendPaymentRequestScanOriginalHint =>
@@ -9093,7 +9093,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendRequestScanWrongNetwork => '이 주‍소‍는 다‍른 네‍트‍워‍크‍의 주‍소‍예‍요.';
 
   @override
-  String get sendReviewAction => '검‍토';
+  String get sendReviewAction => '보‍낼 내‍용 확‍인';
 
   @override
   String get sendReviewCalculatingFee => '수‍수‍료‍를 계‍산‍하‍는 중...';
@@ -9125,7 +9125,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendReviewRequestedBy => '요‍청‍한 사‍람';
 
   @override
-  String get sendReviewTitle => '보‍내‍기 검‍토';
+  String get sendReviewTitle => '보‍낼 내‍용 확‍인';
 
   @override
   String get sendSaplingDownloadBody =>
@@ -9261,7 +9261,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendStepReviewDonation => '후‍원 검‍토';
 
   @override
-  String get sendStepReviewSend => '보‍내‍기 검‍토';
+  String get sendStepReviewSend => '보‍낼 내‍용 확‍인';
 
   @override
   String sendTitle(String currency) {
@@ -9682,7 +9682,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsSectionAccount => '계‍정';
 
   @override
-  String get settingsSectionDangerZone => '위‍험 구‍역';
+  String get settingsSectionDangerZone => '앱 및 데‍이‍터 삭‍제';
 
   @override
   String get settingsSectionMisc => '기‍타';
@@ -9736,7 +9736,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsSeedUnavailableHardware =>
-      '하‍드‍웨‍어 계‍정‍에‍는 복‍구 문‍구‍가 없‍어‍요.';
+      '하‍드‍웨‍어 지‍갑‍의 복‍구 문‍구‍는 Vizor‍에‍서 볼 수 없‍어‍요.';
 
   @override
   String get settingsSeedWrittenDown => '적‍어 두‍었‍어‍요';
@@ -10040,7 +10040,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsViewingKeyExplanation =>
-      '잔‍액‍과 과‍거·미‍래‍의 모‍든 거‍래‍를 드‍러‍내‍요. ZEC‍를 사‍용‍할 수‍는 없‍어‍요.';
+      '잔‍액‍과 과‍거·미‍래‍의 모‍든 거‍래‍를 드‍러‍내‍요. 이 키‍만‍으‍로‍는 ZEC‍를 보‍낼 수 없‍어‍요.';
 
   @override
   String get settingsViewingKeyFormatQr => 'QR 코‍드';
@@ -10054,7 +10054,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsViewingKeyIncomingExplanation =>
-      '이‍미 받‍은 결‍제‍와 앞‍으‍로 받‍을 결‍제‍를 드‍러‍내‍요. ZEC‍를 사‍용‍할 수‍는 없‍어‍요.';
+      '이‍미 받‍은 결‍제‍와 앞‍으‍로 받‍을 결‍제‍를 드‍러‍내‍요. 이 키‍만‍으‍로‍는 ZEC‍를 보‍낼 수 없‍어‍요.';
 
   @override
   String get settingsViewingKeyIncomingOnly => '수‍신 전‍용';
@@ -10603,10 +10603,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapDepositChecking => '확‍인 중';
 
   @override
-  String get swapDepositDoneDesktop => '입‍금 완‍료';
+  String get swapDepositDoneDesktop => '입‍금‍했‍어‍요';
 
   @override
-  String get swapDepositDoneMobile => '토‍큰 입‍금 완‍료';
+  String get swapDepositDoneMobile => '토‍큰‍을 입‍금‍했‍어‍요';
 
   @override
   String swapDepositHoursMany(int count) {

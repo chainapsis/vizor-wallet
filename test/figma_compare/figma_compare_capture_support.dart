@@ -15,6 +15,10 @@ import 'figma_compare_font_loader.dart';
 const _windowAppearanceChannel = MethodChannel(
   'com.zcash.wallet/window_appearance',
 );
+const _privacyExposureChannel = MethodChannel(
+  'com.zcash.wallet/privacy_exposure',
+);
+const _privacyShieldChannel = MethodChannel('com.zcash.wallet/privacy_shield');
 
 void runFigmaCompareCaptureTest({
   required AppFormFactor expectedFormFactor,
@@ -89,6 +93,23 @@ void runFigmaCompareCaptureTest({
     addTearDown(
       () => messenger.setMockMethodCallHandler(_windowAppearanceChannel, null),
     );
+    // Widget captures render app content without the native privacy plugins.
+    // Keep secret-screen previews in a deterministic, foreground-safe state.
+    messenger.setMockMethodCallHandler(
+      _privacyExposureChannel,
+      (_) async => null,
+    );
+    messenger.setMockMethodCallHandler(_privacyShieldChannel, (call) async {
+      final visible = (call.arguments as Map?)?['visible'] == true;
+      return {'visible': visible, 'state': visible ? 'applied' : 'disabled'};
+    });
+    addTearDown(() async {
+      // Cancel EventChannel subscriptions before removing their mocks.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      messenger.setMockMethodCallHandler(_privacyExposureChannel, null);
+      messenger.setMockMethodCallHandler(_privacyShieldChannel, null);
+    });
 
     await loadFigmaCompareFonts();
     final language = configuration.language;

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/locale_typography.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -169,14 +170,20 @@ class _ForgotPasscodeLastWarningContentState
                 // destructive magenta; the follow-up sits in plain accent.
                 TextSpan(
                   text: context.l10n.onboardingForgotPasscodeCantBeUndone,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.destructive,
+                  style: withLocaleFontFallback(
+                    context,
+                    AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.destructive,
+                    ),
                   ),
                 ),
                 TextSpan(
                   text: context.l10n.onboardingForgotPasscodeProceed,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.accent,
+                  style: withLocaleFontFallback(
+                    context,
+                    AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.accent,
+                    ),
                   ),
                 ),
               ],

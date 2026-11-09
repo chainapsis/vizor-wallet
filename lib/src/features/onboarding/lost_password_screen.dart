@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../main.dart' show log;
 import '../../core/l10n/l10n.dart';
+import '../../core/l10n/locale_typography.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
@@ -237,11 +238,13 @@ class _LostPasswordContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final bodyStyle = AppTypography.bodyMedium.copyWith(
-      color: colors.text.secondary,
+    final bodyStyle = withLocaleFontFallback(
+      context,
+      AppTypography.bodyMedium.copyWith(color: colors.text.secondary),
     );
-    final strongStyle = AppTypography.bodyMediumStrong.copyWith(
-      color: colors.text.accent,
+    final strongStyle = withLocaleFontFallback(
+      context,
+      AppTypography.bodyMediumStrong.copyWith(color: colors.text.accent),
     );
     final l10n = context.l10n;
     final buttonLabel = remainingSeconds > 0

@@ -1,5 +1,6 @@
 import '../../../../core/l10n/inline_spans.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/l10n/locale_typography.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 import 'dart:math' as math;
@@ -1324,15 +1325,16 @@ class _MobileSeedScreenshotWarningSheetState
           Text.rich(
             key: const ValueKey('mobile_seed_screenshot_body'),
             TextSpan(
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.accent,
+              style: withLocaleFontFallback(
+                context,
+                AppTypography.bodyMedium.copyWith(color: colors.text.accent),
               ),
               children: emphasisSpans(
                 context.l10n.settingsSeedScreenshotBody(
                   context.l10n.settingsSeedScreenshotBodyLead,
                 ),
                 [context.l10n.settingsSeedScreenshotBodyLead],
-                AppTypography.bodyMediumStrong,
+                withLocaleFontFallback(context, AppTypography.bodyMediumStrong),
               ),
             ),
             textAlign: TextAlign.center,
