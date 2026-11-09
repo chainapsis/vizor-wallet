@@ -6186,7 +6186,7 @@
   },
   "migrationMobileNextExpectedIn": "Next migration step expected in\n{timing}.",
   "@migrationMobileNextExpectedIn": {
-    "description": "First lines of the migration status text; the timing is on its own line. {timing} is an estimated duration such as ~in 5 minutes.",
+    "description": "First lines of the migration status text; the timing is on its own line. {timing} is a duration such as ~5 minutes.",
     "placeholders": {
       "timing": {
         "type": "String"
@@ -6231,7 +6231,7 @@
   },
   "migrationMobileNextTimingUntil": "{timing} until the next migration step.\nNotifications are on; you can leave Vizor and check back later.",
   "@migrationMobileNextTimingUntil": {
-    "description": "Migration status text with the wait until the next step; the notification sentence is on its own line. {timing} is an estimate such as ~in 5 minutes.",
+    "description": "Migration status text with the wait until the next step; the notification sentence is on its own line. {timing} is a duration such as ~5 minutes, or the migrationMobileTimingUpdating text when it is unknown.",
     "placeholders": {
       "timing": {
         "type": "String"

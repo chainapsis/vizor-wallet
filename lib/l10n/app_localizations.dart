@@ -8041,7 +8041,7 @@ abstract class AppLocalizations {
   /// **'Confirmations are still arriving.\nYou can leave Vizor and check again later.'**
   String get migrationMobileNextConfirmationsArriving;
 
-  /// First lines of the migration status text; the timing is on its own line. {timing} is an estimated duration such as ~in 5 minutes.
+  /// First lines of the migration status text; the timing is on its own line. {timing} is a duration such as ~5 minutes.
   ///
   /// In en, this message translates to:
   /// **'Next migration step expected in\n{timing}.'**
@@ -8089,7 +8089,7 @@ abstract class AppLocalizations {
   /// **'The next migration step is ready. Keep Vizor open to continue.'**
   String get migrationMobileNextStepReady;
 
-  /// Migration status text with the wait until the next step; the notification sentence is on its own line. {timing} is an estimate such as ~in 5 minutes.
+  /// Migration status text with the wait until the next step; the notification sentence is on its own line. {timing} is a duration such as ~5 minutes, or the migrationMobileTimingUpdating text when it is unknown.
   ///
   /// In en, this message translates to:
   /// **'{timing} until the next migration step.\nNotifications are on; you can leave Vizor and check back later.'**
