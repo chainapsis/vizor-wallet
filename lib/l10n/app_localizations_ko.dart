@@ -17,7 +17,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get aboutLegalPlaceholderBody =>
-      'Bitcoin‍이‍나 Ethereum‍과 달‍리 차‍폐 Zcash 거‍래‍는 보‍낸 사‍람, 받‍는 사‍람, 금‍액‍을 숨‍겨‍요.';
+      'Bitcoin‍이‍나 Ethereum‍과 달‍리 비‍공‍개 Zcash 거‍래‍는 보‍낸 사‍람, 받‍는 사‍람, 금‍액‍을 숨‍겨‍요.';
 
   @override
   String get aboutLegalPlaceholderHeading => 'Keplr 지‍갑‍을 만‍든 팀‍이 만‍들‍었‍어‍요.';
@@ -42,10 +42,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get aboutShieldedBody =>
-      'Vizor‍는 보‍낸 사‍람, 받‍는 사‍람, 금‍액‍이 비‍공‍개‍로 유‍지‍되‍는 차‍폐 거‍래‍를 중‍심‍으‍로 만‍들‍어‍졌‍어‍요. 투‍명 Zcash‍도 쓸 수 있‍지‍만 기‍본‍은 비‍공‍개‍예‍요.';
+      'Vizor‍는 보‍낸 사‍람, 받‍는 사‍람, 금‍액‍이 드‍러‍나‍지 않‍는 비‍공‍개 거‍래‍를 중‍심‍으‍로 만‍들‍어‍졌‍어‍요. Zcash 공‍개 거‍래‍도 지‍원‍하‍지‍만 기‍본‍은 비‍공‍개‍예‍요.';
 
   @override
-  String get aboutShieldedHeading => '차‍폐 Zcash‍를 위‍해 설‍계‍했‍어‍요';
+  String get aboutShieldedHeading => '비‍공‍개 Zcash‍를 위‍해 설‍계‍했‍어‍요';
 
   @override
   String get aboutTermsTitle => '이‍용 약‍관';
@@ -243,7 +243,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityBalanceFromOrchard => 'Orchard 잔‍액‍에‍서';
 
   @override
-  String get activityBalanceFromTransparent => '투‍명 잔‍액‍에‍서';
+  String get activityBalanceFromTransparent => '공‍개 잔‍액‍에‍서';
 
   @override
   String get activityBalanceIronwood => 'Ironwood 잔‍액';
@@ -392,14 +392,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityOmissionSharedFunding => '다‍른 지‍갑‍의 입‍력';
 
   @override
-  String get activityOmissionShieldedFunding => '자‍금 중 차‍폐‍된 부‍분';
+  String get activityOmissionShieldedFunding => '자‍금 중 비‍공‍개 부‍분';
 
   @override
-  String get activityPayFromShielded => '차‍폐‍된 ZEC‍에‍서';
+  String get activityPayFromShielded => '비‍공‍개 ZEC‍에‍서';
 
   @override
   String activityPayFromShieldedOnChain(String network) {
-    return '차‍폐‍된 ZEC‍에‍서 · $network';
+    return '비‍공‍개 ZEC‍에‍서 · $network';
   }
 
   @override
@@ -492,7 +492,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activitySectionThisWeek => '이‍번 주';
 
   @override
-  String get activitySenderShielded => '차‍폐‍된 보‍낸 사‍람';
+  String get activitySenderShielded => '보‍낸 사‍람 비‍공‍개';
 
   @override
   String get activitySenderUnknown => '알 수 없‍음';
@@ -574,16 +574,16 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityTitleSent => '보‍냄';
 
   @override
-  String get activityTitleShielded => '차‍폐‍됨';
+  String get activityTitleShielded => '비‍공‍개 전‍환';
 
   @override
-  String get activityTitleShieldingFailed => '차‍폐 실‍패';
+  String get activityTitleShieldingFailed => '비‍공‍개 전‍환 실‍패';
 
   @override
-  String get activityTitleShieldingInProgress => '차‍폐‍하‍는 중...';
+  String get activityTitleShieldingInProgress => '비‍공‍개 전‍환 중...';
 
   @override
-  String get activityTitleShieldingVerb => '차‍폐‍하‍는 중';
+  String get activityTitleShieldingVerb => '비‍공‍개 전‍환';
 
   @override
   String get activityTitleTransaction => '거‍래';
@@ -1171,7 +1171,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonCancelFailedRetry => '취‍소‍를 마‍치‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
-  String get commonCancelShielding => '차‍폐 취‍소';
+  String get commonCancelShielding => '비‍공‍개 전‍환 취‍소';
 
   @override
   String get commonCancellationFailed =>
@@ -1271,7 +1271,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonCopyLink => '링‍크 복‍사';
 
   @override
-  String get commonCopyShieldedAddress => '차‍폐 주‍소 복‍사';
+  String get commonCopyShieldedAddress => '비‍공‍개 주‍소 복‍사';
 
   @override
   String get commonCouldnTCloseTheCardTry =>
@@ -1553,7 +1553,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonPreparingEllipsis => '준‍비 중…';
 
   @override
-  String get commonPrivatelyFromShieldedBalance => '차‍폐 잔‍액‍에‍서 비‍공‍개‍로';
+  String get commonPrivatelyFromShieldedBalance => '비‍공‍개 잔‍액‍으‍로';
 
   @override
   String get commonProvingParamsFailed =>
@@ -1691,16 +1691,16 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonSentSuccessfully => '보‍냈‍어‍요';
 
   @override
-  String get commonShieldedAddress => '차‍폐 주‍소';
+  String get commonShieldedAddress => '비‍공‍개 주‍소';
 
   @override
-  String get commonShieldedBalance => '차‍폐 잔‍액';
+  String get commonShieldedBalance => '비‍공‍개 잔‍액';
 
   @override
-  String get commonShieldedSuccessfully => '차‍폐‍했‍어‍요';
+  String get commonShieldedSuccessfully => '잔‍액‍을 비‍공‍개‍로 전‍환‍했‍어‍요.';
 
   @override
-  String get commonShielding => '차‍폐‍하‍는 중...';
+  String get commonShielding => '비‍공‍개 전‍환 중...';
 
   @override
   String get commonShowDetails => '자‍세‍히 보‍기';
@@ -1793,7 +1793,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonTransactionHashCopied => '거‍래 해‍시‍를 복‍사‍했‍어‍요';
 
   @override
-  String get commonTransparentAddress => '투‍명 주‍소';
+  String get commonTransparentAddress => '공‍개 주‍소';
 
   @override
   String get commonTryAgain => '다‍시 시‍도';
@@ -1982,7 +1982,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get enhancePirRaisePending =>
-      '비‍공‍개 조‍회‍가 켜‍졌‍어‍요. 투‍명 자‍금‍의 비‍공‍개 복‍구‍를 아‍직 시‍작‍하‍지 못‍했‍고, 다‍시 시‍도‍할 거‍예‍요.';
+      '비‍공‍개 조‍회‍가 켜‍졌‍어‍요. 공‍개 자‍금‍의 비‍공‍개 복‍구‍를 아‍직 시‍작‍하‍지 못‍했‍고, 다‍시 시‍도‍할 거‍예‍요.';
 
   @override
   String get enhancePirUnchanged => '설‍정‍이 바‍뀌‍지 않‍았‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
@@ -2056,11 +2056,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeLedgerBroadcastNotStored =>
-      '차‍폐 거‍래‍가 네‍트‍워‍크‍에 전‍달‍됐‍지‍만 Vizor‍에 저‍장‍되‍지 않‍았‍어‍요. 동‍기‍화‍로 확‍인‍되‍기 전‍에‍는 다‍시 시‍도‍하‍지 마‍세‍요.';
+      '비‍공‍개 전‍환 거‍래‍가 네‍트‍워‍크‍에 전‍달‍됐‍지‍만 Vizor‍에 저‍장‍되‍지 않‍았‍어‍요. 동‍기‍화‍로 확‍인‍되‍기 전‍에‍는 다‍시 시‍도‍하‍지 마‍세‍요.';
 
   @override
   String get homeLedgerBroadcastUnknown =>
-      '차‍폐 거‍래‍가 네‍트‍워‍크‍에 전‍달‍됐‍을 수 있‍어‍요. 다‍시 시‍도‍하‍기 전‍에 활‍동‍을 확‍인‍해 주‍세‍요.';
+      '비‍공‍개 전‍환 거‍래‍가 네‍트‍워‍크‍에 전‍달‍됐‍을 수 있‍어‍요. 다‍시 시‍도‍하‍기 전‍에 활‍동‍을 확‍인‍해 주‍세‍요.';
 
   @override
   String get homeLedgerContextChanged =>
@@ -2071,7 +2071,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeLedgerNoFundsRemain =>
-      '사‍용‍할 수 있‍는 투‍명 자‍금‍이 남‍아 있‍지 않‍아‍요. 지‍갑‍으‍로 돌‍아‍가 주‍세‍요.';
+      '사‍용‍할 수 있‍는 공‍개 자‍금‍이 남‍아 있‍지 않‍아‍요. 지‍갑‍으‍로 돌‍아‍가 주‍세‍요.';
 
   @override
   String get homeLedgerNoSapling =>
@@ -2079,17 +2079,17 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeLedgerPausedBelowThreshold =>
-      '남‍은 자‍금‍이 차‍폐 최‍소 금‍액‍보‍다 적‍어‍요.';
+      '남‍은 자‍금‍이 비‍공‍개 전‍환‍에 필‍요‍한 최‍소 금‍액‍보‍다 적‍어‍요.';
 
   @override
-  String get homeLedgerPausedTitle => '차‍폐‍가 일‍시 중‍지‍됐‍어‍요';
+  String get homeLedgerPausedTitle => '비‍공‍개 전‍환 일‍시 중‍지';
 
   @override
   String get homeLedgerPausedWalletChanges =>
-      '지‍갑 변‍경‍이 끝‍나‍는 동‍안 차‍폐‍를 일‍시 중‍지‍했‍어‍요. 지‍갑‍으‍로 돌‍아‍가 주‍세‍요.';
+      '지‍갑 변‍경‍이 끝‍날 때‍까‍지 비‍공‍개 전‍환‍을 일‍시 중‍지‍했‍어‍요. 지‍갑‍으‍로 돌‍아‍가 주‍세‍요.';
 
   @override
-  String get homeLedgerRejected => 'Ledger‍에‍서 차‍폐 거‍래‍를 거‍부‍했‍어‍요.';
+  String get homeLedgerRejected => 'Ledger‍에‍서 비‍공‍개 전‍환 거‍래‍를 거‍부‍했‍어‍요.';
 
   @override
   String get homeLedgerRoundFeeNotice =>
@@ -2097,12 +2097,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String homeLedgerRoundSentBelowThreshold(int round) {
-    return '$round‍번‍째 거‍래‍를 전‍송‍했‍어‍요. 남‍은 자‍금‍이 차‍폐 최‍소 금‍액‍보‍다 적‍어‍요.';
+    return '$round‍번‍째 거‍래‍를 전‍송‍했‍어‍요. 남‍은 자‍금‍이 비‍공‍개 전‍환‍에 필‍요‍한 최‍소 금‍액‍보‍다 적‍어‍요.';
   }
 
   @override
   String homeLedgerRoundSentNoReduction(int round) {
-    return '$round‍번‍째 거‍래‍는 전‍송‍했‍지‍만 사‍용 가‍능‍한 자‍금‍이 줄‍었‍는‍지 확‍인‍하‍지 못‍했‍어‍요. 동‍기‍화‍를 기‍다‍린 뒤 다‍시 차‍폐‍해 주‍세‍요.';
+    return '$round‍번‍째 거‍래‍는 전‍송‍했‍지‍만 사‍용 가‍능‍한 자‍금‍이 줄‍었‍는‍지 확‍인‍하‍지 못‍했‍어‍요. 동‍기‍화‍를 기‍다‍린 뒤 다‍시 비‍공‍개‍로 전‍환‍해 주‍세‍요.';
   }
 
   @override
@@ -2111,10 +2111,11 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get homeLedgerShieldTitle => 'Ledger‍로 차‍폐‍하‍기';
+  String get homeLedgerShieldTitle => 'Ledger‍로 비‍공‍개 전‍환';
 
   @override
-  String get homeLedgerShieldingFailed => 'Ledger‍로 차‍폐‍를 완‍료‍하‍지 못‍했‍어‍요.';
+  String get homeLedgerShieldingFailed =>
+      'Ledger‍로 비‍공‍개 전‍환‍을 완‍료‍하‍지 못‍했‍어‍요.';
 
   @override
   String homeLoadFailed(String details) {
@@ -2144,10 +2145,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeNu7ThroughputBody =>
-      '블‍록‍당 처‍리‍할 수 있‍는 차‍폐 거‍래‍가 2.3‍배 늘‍어‍요.';
+      '블‍록‍당 처‍리‍할 수 있‍는 비‍공‍개 거‍래‍가 2.3‍배 늘‍어‍요.';
 
   @override
-  String get homeNu7ThroughputTitle => '차‍폐 거‍래 처‍리‍량 증‍가';
+  String get homeNu7ThroughputTitle => '비‍공‍개 거‍래 처‍리‍량 증‍가';
 
   @override
   String get homeNu7Title => 'NU7 업‍데‍이‍트‍가 적‍용‍됐‍어‍요.\n무‍엇‍이 달‍라‍질‍까‍요?';
@@ -2189,7 +2190,7 @@ class AppLocalizationsKo extends AppLocalizations {
       'Zcash‍가 프‍라‍이‍버‍시‍를 어‍떻‍게 보‍호‍하‍는‍지, 어‍떤 주‍소‍를 써‍야 하‍는‍지 알‍아‍보‍세‍요.';
 
   @override
-  String get homeShield => '차‍폐‍하‍기';
+  String get homeShield => '비‍공‍개‍로 전‍환';
 
   @override
   String get homeShieldAfterScan => '스‍캔‍한 뒤 서‍명 가‍져‍오‍기‍를 누‍르‍세‍요.';
@@ -2198,59 +2199,60 @@ class AppLocalizationsKo extends AppLocalizations {
   String get homeShieldApproveTitle => 'Keystone‍에‍서 승‍인‍하‍기';
 
   @override
-  String get homeShieldAttentionTitle => '차‍폐 상‍태‍를 확‍인‍해 주‍세‍요';
+  String get homeShieldAttentionTitle => '비‍공‍개 전‍환 상‍태‍를 확‍인‍해 주‍세‍요';
 
   @override
   String get homeShieldBackToWalletTitleCase => '지‍갑‍으‍로 돌‍아‍가‍기';
 
   @override
-  String get homeShieldBalanceTitle => '투‍명 잔‍액';
+  String get homeShieldBalanceTitle => '공‍개 잔‍액';
 
   @override
   String get homeShieldBroadcastNotStored =>
-      '차‍폐 거‍래‍가 네‍트‍워‍크‍에 전‍달‍됐‍지‍만 Vizor‍가 기‍기‍에 저‍장‍하‍지 못‍했‍어‍요. 동‍기‍화‍나 블‍록 탐‍색‍기‍에‍서 최‍신 상‍태‍를 확‍인‍하‍기 전‍에‍는 다‍시 시‍도‍하‍지 마‍세‍요.';
+      '비‍공‍개 전‍환 거‍래‍가 네‍트‍워‍크‍에 전‍달‍됐‍지‍만 Vizor‍가 기‍기‍에 저‍장‍하‍지 못‍했‍어‍요. 동‍기‍화‍나 블‍록 탐‍색‍기‍에‍서 최‍신 상‍태‍를 확‍인‍하‍기 전‍에‍는 다‍시 시‍도‍하‍지 마‍세‍요.';
 
   @override
   String get homeShieldBroadcastUnknown =>
-      '차‍폐 거‍래‍가 네‍트‍워‍크‍에 전‍달‍됐‍을 수 있‍지‍만 확‍인 시‍간‍이 초‍과‍됐‍어‍요. 다‍시 시‍도‍하‍기 전‍에 활‍동‍을 확‍인‍해 주‍세‍요.';
+      '비‍공‍개 전‍환 거‍래‍가 네‍트‍워‍크‍에 전‍달‍됐‍을 수 있‍지‍만 확‍인 시‍간‍이 초‍과‍됐‍어‍요. 다‍시 시‍도‍하‍기 전‍에 활‍동‍을 확‍인‍해 주‍세‍요.';
 
   @override
-  String get homeShieldBroadcastingTitle => '차‍폐 거‍래 전‍송 중';
+  String get homeShieldBroadcastingTitle => '비‍공‍개 전‍환 거‍래 전‍송 중';
 
   @override
   String get homeShieldCameraDenied =>
       'Keystone 서‍명‍을 스‍캔‍하‍려‍면 설‍정‍에‍서 카‍메‍라 접‍근‍을 허‍용‍해 주‍세‍요.';
 
   @override
-  String get homeShieldCancelled => '차‍폐‍를 취‍소‍했‍어‍요.';
+  String get homeShieldCancelled => '비‍공‍개 전‍환‍을 취‍소‍했‍어‍요.';
 
   @override
   String get homeShieldCancelledBeforeParams =>
-      '증‍명 매‍개‍변‍수‍를 내‍려‍받‍기 전‍에 차‍폐‍가 취‍소‍됐‍어‍요.';
+      '증‍명 매‍개‍변‍수‍를 내‍려‍받‍기 전‍에 비‍공‍개 전‍환‍이 취‍소‍됐‍어‍요.';
 
   @override
   String get homeShieldComplete => '완‍료';
 
   @override
-  String get homeShieldDrag => '밀‍어‍서 차‍폐‍하‍기';
+  String get homeShieldDrag => '밀‍어‍서 비‍공‍개‍로 전‍환';
 
   @override
-  String get homeShieldErrorBroadcast => '차‍폐 거‍래‍를 전‍송‍하‍지 못‍했‍어‍요.';
+  String get homeShieldErrorBroadcast => '비‍공‍개 전‍환 거‍래‍를 전‍송‍하‍지 못‍했‍어‍요.';
 
   @override
   String get homeShieldErrorBroadcastFailed =>
-      '차‍폐 거‍래‍를 전‍송‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+      '비‍공‍개 전‍환 거‍래‍를 전‍송‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
   String get homeShieldErrorCouldNotShield =>
-      '잔‍액‍을 차‍폐‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+      '잔‍액‍을 비‍공‍개‍로 전‍환‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
   String get homeShieldErrorGeneric =>
-      '잔‍액‍을 차‍폐‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+      '잔‍액‍을 비‍공‍개‍로 전‍환‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
-  String get homeShieldErrorNotFinalized => '차‍폐 거‍래‍를 마‍무‍리‍하‍지 못‍했‍어‍요.';
+  String get homeShieldErrorNotFinalized =>
+      '비‍공‍개 전‍환 거‍래‍를 마‍무‍리‍하‍지 못‍했‍어‍요.';
 
   @override
   String get homeShieldErrorSeedUnavailable =>
@@ -2258,17 +2260,17 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeShieldErrorSyncFirst =>
-      '투‍명 잔‍액‍을 차‍폐‍하‍기 전‍에 지‍갑‍을 동‍기‍화‍해 주‍세‍요.';
+      '공‍개 잔‍액‍을 비‍공‍개‍로 전‍환‍하‍기 전‍에 지‍갑‍을 동‍기‍화‍해 주‍세‍요.';
 
   @override
   String get homeShieldErrorTooSmall =>
-      '수‍수‍료‍를 내‍고 나‍면 차‍폐‍하‍기‍에‍는 투‍명 잔‍액‍이 너‍무 적‍어‍요.';
+      '수‍수‍료‍를 내‍고 나‍면 공‍개 잔‍액‍이 너‍무 적‍어 비‍공‍개‍로 전‍환‍할 수 없‍어‍요.';
 
   @override
-  String get homeShieldErrorWaitForSync => '동‍기‍화‍가 끝‍난 뒤 차‍폐‍해 주‍세‍요.';
+  String get homeShieldErrorWaitForSync => '동‍기‍화‍가 끝‍난 뒤 비‍공‍개‍로 전‍환‍해 주‍세‍요.';
 
   @override
-  String get homeShieldFailedTitle => '차‍폐‍를 완‍료‍하‍지 못‍했‍어‍요';
+  String get homeShieldFailedTitle => '비‍공‍개 전‍환‍을 완‍료‍하‍지 못‍했‍어‍요';
 
   @override
   String get homeShieldGetSignature => '서‍명 가‍져‍오‍기';
@@ -2277,14 +2279,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get homeShieldKeystoneQrSemantics => 'Keystone 거‍래 QR';
 
   @override
-  String get homeShieldNow => '지‍금 차‍폐‍하‍기';
+  String get homeShieldNow => '지‍금 비‍공‍개‍로 전‍환';
 
   @override
   String get homeShieldQueuedForRetry =>
-      '차‍폐‍를 자‍동‍으‍로 다‍시 시‍도‍할 예‍정‍이‍에‍요. 활‍동‍에‍서 상‍태‍를 확‍인‍해 주‍세‍요.';
+      '비‍공‍개 전‍환‍을 자‍동‍으‍로 다‍시 시‍도‍할 예‍정‍이‍에‍요. 활‍동‍에‍서 상‍태‍를 확‍인‍해 주‍세‍요.';
 
   @override
-  String get homeShieldQueuedTitle => '차‍폐‍를 다‍시 시‍도‍할 예‍정‍이‍에‍요';
+  String get homeShieldQueuedTitle => '비‍공‍개 전‍환 재‍시‍도 예‍정';
 
   @override
   String get homeShieldReject => '거‍부';
@@ -2297,7 +2299,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeShieldScanWrongQr =>
-      'Keystone‍에‍서 서‍명‍된 차‍폐 QR‍을 열‍고 다‍시 스‍캔‍해 주‍세‍요.';
+      'Keystone‍에‍서 서‍명‍된 비‍공‍개 전‍환 QR‍을 열‍고 다‍시 스‍캔‍해 주‍세‍요.';
 
   @override
   String homeShieldScanning(int progress) {
@@ -2312,18 +2314,18 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeShieldStatusUncertain =>
-      '차‍폐 거‍래‍의 상‍태‍가 불‍확‍실‍해‍요. 다‍시 시‍도‍하‍기 전‍에 활‍동‍을 확‍인‍해 주‍세‍요.';
+      '비‍공‍개 전‍환 거‍래‍의 상‍태‍가 불‍확‍실‍해‍요. 다‍시 시‍도‍하‍기 전‍에 활‍동‍을 확‍인‍해 주‍세‍요.';
 
   @override
   String get homeShieldWaitingForPrivateRecovery =>
       '비‍공‍개 복‍구‍가 최‍신 블‍록‍을 따‍라‍잡‍는 중‍이‍에‍요. 잠‍시 후 다‍시 시‍도‍해 주‍세‍요. Keystone 서‍명‍은 그‍대‍로 보‍관‍돼‍요.';
 
   @override
-  String get homeShieldingBalance => '잔‍액‍을 차‍폐‍하‍는 중…';
+  String get homeShieldingBalance => '잔‍액‍을 비‍공‍개‍로 전‍환‍하‍는 중…';
 
   @override
   String homeTransparentBalance(String balance) {
-    return '투‍명: $balance';
+    return '공‍개: $balance';
   }
 
   @override
@@ -2341,15 +2343,15 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeTransparentStopLegacyDiscrepancy =>
-      '이‍전‍의 공‍개 기‍록‍이 비‍공‍개 복‍구 결‍과‍와 맞‍지 않‍아‍요. 비‍공‍개 조‍회‍를 끄‍면 비‍공‍개‍로 복‍구‍한 기‍록‍을 버‍리‍고 투‍명 자‍금‍을 공‍개‍적‍으‍로 조‍회‍해‍요.';
+      '이‍전‍의 공‍개 기‍록‍이 비‍공‍개 복‍구 결‍과‍와 맞‍지 않‍아‍요. 비‍공‍개 조‍회‍를 끄‍면 비‍공‍개‍로 복‍구‍한 기‍록‍을 버‍리‍고 공‍개 자‍금‍을 공‍개‍적‍으‍로 조‍회‍해‍요.';
 
   @override
   String get homeTransparentStopOptOutUnfinished =>
-      '비‍공‍개 조‍회 끄‍기‍가 완‍료‍되‍지 않‍았‍어‍요. 설‍정‍에‍서 다‍시 끄‍면 투‍명 자‍금‍을 공‍개‍적‍으‍로 조‍회‍해‍요.';
+      '비‍공‍개 조‍회 끄‍기‍가 완‍료‍되‍지 않‍았‍어‍요. 설‍정‍에‍서 다‍시 끄‍면 공‍개 자‍금‍을 공‍개‍적‍으‍로 조‍회‍해‍요.';
 
   @override
   String get homeTransparentStopQuarantined =>
-      '비‍공‍개 복‍구‍에‍서 이 계‍정‍의 기‍록‍이 서‍로 맞‍지 않‍는 것‍을 발‍견‍했‍어‍요. 비‍공‍개 조‍회‍를 끄‍면 비‍공‍개‍로 복‍구‍한 기‍록‍을 버‍리‍고 투‍명 자‍금‍을 공‍개‍적‍으‍로 조‍회‍해‍요.';
+      '비‍공‍개 복‍구‍에‍서 이 계‍정‍의 기‍록‍이 서‍로 맞‍지 않‍는 것‍을 발‍견‍했‍어‍요. 비‍공‍개 조‍회‍를 끄‍면 비‍공‍개‍로 복‍구‍한 기‍록‍을 버‍리‍고 공‍개 자‍금‍을 공‍개‍적‍으‍로 조‍회‍해‍요.';
 
   @override
   String get homeTransparentStopStalled =>
@@ -3075,7 +3077,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerFailureMsgShieldTooLarge =>
-      'Ledger‍가 처‍리‍하‍기‍엔 입‍력‍값‍이 너‍무 많‍아‍요. 다‍시 시‍도‍해 주‍세‍요. 차‍폐‍된 것‍은 없‍어‍요.';
+      'Ledger‍가 처‍리‍하‍기‍엔 입‍력‍값‍이 너‍무 많‍아‍요. 다‍시 시‍도‍해 주‍세‍요. 비‍공‍개‍로 전‍환‍된 자‍금‍은 없‍어‍요.';
 
   @override
   String get ledgerFailureMsgSwapTooLarge =>
@@ -3862,7 +3864,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationAnnouncementBody =>
-      'Ironwood‍는 Zcash‍의 최‍신 차‍폐 풀‍이‍에‍요.\n형‍식 검‍증‍을 거‍친 최‍초‍의 풀‍로,\n최‍첨‍단 암‍호 기‍술‍을 사‍용‍해‍요.';
+      'Ironwood‍는 Zcash‍의 최‍신 비‍공‍개 풀‍이‍에‍요.\n형‍식 검‍증‍을 거‍친 최‍초‍의 풀‍로,\n최‍첨‍단 암‍호 기‍술‍을 사‍용‍해‍요.';
 
   @override
   String get migrationAnnouncementReleaseNote => '공‍식 릴‍리‍스 노‍트';
@@ -4123,10 +4125,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationHowFrozenBody =>
-      '기‍존 차‍폐 잔‍액‍을 사‍용‍하‍려‍면 Ironwood‍로 한 번 마‍이‍그‍레‍이‍션‍해‍야 해‍요.';
+      '기‍존 비‍공‍개 잔‍액‍을 사‍용‍하‍려‍면 Ironwood‍로 한 번 마‍이‍그‍레‍이‍션‍해‍야 해‍요.';
 
   @override
-  String get migrationHowFrozenTitle => 'Orchard(레‍거‍시 차‍폐) 잔‍액‍이 동‍결‍돼‍요';
+  String get migrationHowFrozenTitle => 'Orchard(레‍거‍시 비‍공‍개) 잔‍액‍이 동‍결‍돼‍요';
 
   @override
   String get migrationHowPreparationBody =>
@@ -4227,11 +4229,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationIntroBody(String amount) {
-    return '현‍재 $amount ZEC‍가 Orchard‍에 있‍어‍요.\n이 자‍금‍을 계‍속 차‍폐 결‍제‍에 쓰‍려‍면 Ironwood‍로 옮‍겨‍야 해‍요. 자‍금‍이 이‍동‍하‍기 전‍에 마‍이‍그‍레‍이‍션 계‍획‍을 검‍토‍하‍게 돼‍요.';
+    return '현‍재 $amount ZEC‍가 Orchard‍에 있‍어‍요.\n이 자‍금‍을 계‍속 비‍공‍개 결‍제‍에 쓰‍려‍면 Ironwood‍로 옮‍겨‍야 해‍요. 자‍금‍이 이‍동‍하‍기 전‍에 마‍이‍그‍레‍이‍션 계‍획‍을 검‍토‍하‍게 돼‍요.';
   }
 
   @override
-  String get migrationIntroTagline => 'Zcash‍를 위‍한 새‍로‍운 차‍폐 풀.';
+  String get migrationIntroTagline => 'Zcash‍를 위‍한 새‍로‍운 비‍공‍개 풀.';
 
   @override
   String get migrationKeystoneApplyingSignature =>
@@ -4586,7 +4588,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileAnnouncementBody =>
-      'Zcash‍의 최‍신 차‍폐 풀‍로, 최‍첨‍단 암‍호 기‍술‍과 형‍식 검‍증‍을 적‍용‍했‍어‍요.\n\n차‍폐 잔‍액‍은 Ironwood‍로 한 번 마‍이‍그‍레‍이‍션‍해‍야 해‍요.';
+      'Zcash‍의 최‍신 비‍공‍개 풀‍로, 최‍첨‍단 암‍호 기‍술‍과 형‍식 검‍증‍을 적‍용‍했‍어‍요.\n\n비‍공‍개 잔‍액‍은 Ironwood‍로 한 번 마‍이‍그‍레‍이‍션‍해‍야 해‍요.';
 
   @override
   String get migrationMobileAnnouncementOfficial => '공‍식 발‍표';
@@ -4712,7 +4714,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationMobileIntroBody(String amount) {
-    return '현‍재 $amount ZEC‍가 Orchard‍에 있‍어‍요. 이 자‍금‍을 계‍속 차‍폐 결‍제‍에 쓰‍려‍면 Ironwood‍로 옮‍겨‍야 해‍요. 자‍금‍을 옮‍기‍기 전‍에 마‍이‍그‍레‍이‍션 계‍획‍을 먼‍저 확‍인‍할 수 있‍어‍요.';
+    return '현‍재 $amount ZEC‍가 Orchard‍에 있‍어‍요. 이 자‍금‍을 계‍속 비‍공‍개 결‍제‍에 쓰‍려‍면 Ironwood‍로 옮‍겨‍야 해‍요. 자‍금‍을 옮‍기‍기 전‍에 마‍이‍그‍레‍이‍션 계‍획‍을 먼‍저 확‍인‍할 수 있‍어‍요.';
   }
 
   @override
@@ -6171,18 +6173,18 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get onboardingAddressShieldedTitleMobile => '차‍폐 주‍소';
+  String get onboardingAddressShieldedTitleMobile => '비‍공‍개 주‍소';
 
   @override
   String get onboardingAddressTransparentDescription =>
       '주‍소‍는 t‍로 시‍작‍하‍며 Bitcoin‍과 비‍슷‍해‍요. 이 주‍소‍의 잔‍액‍과 거‍래 내‍역‍은 누‍구‍나 볼 수 있‍어‍요.';
 
   @override
-  String get onboardingAddressTransparentTitleMobile => '투‍명 주‍소';
+  String get onboardingAddressTransparentTitleMobile => '공‍개 주‍소';
 
   @override
   String get onboardingAddressTypesSubtitle =>
-      'Zcash‍에‍는 두 가‍지 주‍소 유‍형‍이 있‍어‍요.\n하‍나‍는 프‍라‍이‍버‍시‍용, 하‍나‍는 투‍명‍성‍용‍이‍에‍요.';
+      'Zcash‍에‍는 두 가‍지 주‍소 유‍형‍이 있‍어‍요.\n비‍공‍개 주‍소‍와 공‍개 주‍소‍예‍요.';
 
   @override
   String get onboardingAddressTypesTitle => 'Zcash 주‍소 유‍형';
@@ -6497,7 +6499,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingIntroCard =>
-      'Bitcoin‍이‍나 Ethereum‍과 달‍리 차‍폐‍된 Zcash 거‍래‍는 보‍낸 사‍람, 받‍는 사‍람, 금‍액‍을 숨‍겨‍요. 신‍뢰‍가 아‍니‍라 암‍호‍학‍으‍로 검‍증‍돼‍요.';
+      'Bitcoin‍이‍나 Ethereum‍과 달‍리 비‍공‍개 Zcash 거‍래‍는 보‍낸 사‍람, 받‍는 사‍람, 금‍액‍을 숨‍겨‍요. 신‍뢰‍가 아‍니‍라 암‍호‍학‍으‍로 검‍증‍돼‍요.';
 
   @override
   String get onboardingIntroClosing =>
@@ -6745,7 +6747,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingThingsKeepPrivacyBody =>
-      '일‍부 거‍래‍소‍는 차‍폐 주‍소‍로 보‍낼 수 없‍어‍요. 거‍래‍소‍에‍서 출‍금‍한‍다‍면 투‍명 주‍소‍를 사‍용‍하‍세‍요. ZEC‍가 도‍착‍한 뒤‍에 차‍폐‍할 수 있‍어‍요.';
+      '일‍부 거‍래‍소‍는 비‍공‍개 주‍소‍로 보‍낼 수 없‍어‍요. 거‍래‍소‍에‍서 출‍금‍한‍다‍면 공‍개 주‍소‍를 사‍용‍하‍세‍요. ZEC‍가 도‍착‍한 뒤 비‍공‍개‍로 전‍환‍할 수 있‍어‍요.';
 
   @override
   String get onboardingThingsKeepPrivacyTitle => '프‍라‍이‍버‍시 지‍키‍는 방‍법';
@@ -6765,7 +6767,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingUnknownHeightBody =>
-      '지‍갑 생‍성 높‍이 없‍이 계‍속‍하‍면 Vizor‍가 지‍원‍하‍는 가‍장 오‍래‍된 차‍폐 블‍록‍부‍터 스‍캔‍해‍요. 안‍전‍하‍지‍만 첫 동‍기‍화‍에 아‍주 오‍랜 시‍간‍이 걸‍릴 수 있‍어‍요.';
+      '지‍갑 생‍성 높‍이 없‍이 계‍속‍하‍면 Vizor‍가 지‍원‍하‍는 가‍장 오‍래‍된 비‍공‍개 블‍록‍부‍터 스‍캔‍해‍요. 안‍전‍하‍지‍만 첫 동‍기‍화‍에 아‍주 오‍랜 시‍간‍이 걸‍릴 수 있‍어‍요.';
 
   @override
   String get onboardingUnknownHeightHint => '대‍략‍적‍인 날‍짜‍만 골‍라‍도 훨‍씬 빨‍라‍요.';
@@ -7230,7 +7232,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String paymentLinkBatchRejectedLedgerRecipientLimit(String max) {
-    return '이 그‍룹‍은 차‍폐 수‍신 주‍소‍가 Ledger‍가 표‍시‍할 수 있‍는 수(최‍대 $max‍개)보‍다 많‍아‍요. 카‍드 수‍를 줄‍이‍거‍나 카‍드‍당 금‍액‍을 낮‍춰 보‍세‍요.';
+    return '이 그‍룹‍은 비‍공‍개 수‍신 주‍소‍가 Ledger‍가 표‍시‍할 수 있‍는 수(최‍대 $max‍개)보‍다 많‍아‍요. 카‍드 수‍를 줄‍이‍거‍나 카‍드‍당 금‍액‍을 낮‍춰 보‍세‍요.';
   }
 
   @override
@@ -8336,14 +8338,14 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 요‍청 링‍크‍는 Vizor‍가 아‍직 지‍원‍하‍지 않‍는 기‍능‍을 사‍용‍해‍요.';
 
   @override
-  String get poolShielded => '차‍폐‍됨';
+  String get poolShielded => '비‍공‍개';
 
   @override
-  String get poolTransparent => '투‍명';
+  String get poolTransparent => '공‍개';
 
   @override
   String get privateQueriesOptOutUnfinished =>
-      '비‍공‍개 조‍회 끄‍기‍가 완‍료‍되‍지 않‍았‍어‍요. 투‍명 자‍금‍을 사‍용‍하‍려‍면 설‍정‍에‍서 다‍시 끄‍세‍요.';
+      '비‍공‍개 조‍회 끄‍기‍가 완‍료‍되‍지 않‍았‍어‍요. 공‍개 자‍금‍을 사‍용‍하‍려‍면 설‍정‍에‍서 다‍시 끄‍세‍요.';
 
   @override
   String get profilePictureChange => '프‍로‍필 사‍진 변‍경';
@@ -8389,10 +8391,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '주‍소‍를 불‍러‍오‍지 못‍했‍어‍요. 잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
-  String get receiveCopyTransparentAddress => '투‍명 주‍소 복‍사';
+  String get receiveCopyTransparentAddress => '공‍개 주‍소 복‍사';
 
   @override
-  String get receiveGenerateNewShieldedAddress => '새 차‍폐 주‍소 만‍들‍기';
+  String get receiveGenerateNewShieldedAddress => '새 비‍공‍개 주‍소 만‍들‍기';
 
   @override
   String get receiveInfoShieldedDiversified =>
@@ -8408,11 +8410,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get receiveInfoShieldedRenewClick =>
-      '새 Zcash 차‍폐 주‍소‍는 갱‍신 버‍튼‍을 클‍릭‍할 때‍만 만‍들‍어‍져‍요.';
+      '새 Zcash 비‍공‍개 주‍소‍는 갱‍신 버‍튼‍을 클‍릭‍할 때‍만 만‍들‍어‍져‍요.';
 
   @override
   String get receiveInfoShieldedRenewTap =>
-      '새 Zcash 차‍폐 주‍소‍는 갱‍신 버‍튼‍을 탭‍할 때‍만 만‍들‍어‍져‍요.';
+      '새 Zcash 비‍공‍개 주‍소‍는 갱‍신 버‍튼‍을 탭‍할 때‍만 만‍들‍어‍져‍요.';
 
   @override
   String get receiveInfoShieldedSubtitle =>
@@ -8420,7 +8422,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get receiveInfoTransparentExchanges =>
-      '투‍명‍성‍이‍나 규‍제 준‍수‍가 필‍요‍한 거‍래‍소‍에‍서 흔‍히 사‍용‍해‍요. 여‍러 지‍갑‍과‍의 호‍환‍성‍을 위‍한 기‍본‍값‍이‍기‍도 해‍요.';
+      '거‍래 정‍보 공‍개‍나 명‍확‍한 규‍제 준‍수‍를 요‍구‍하‍는 거‍래‍소‍에‍서 흔‍히 사‍용‍해‍요. 여‍러 지‍갑‍과‍의 호‍환‍성‍을 위‍한 기‍본‍값‍이‍기‍도 해‍요.';
 
   @override
   String get receiveInfoTransparentPublicDesktop =>
@@ -8432,11 +8434,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get receiveInfoTransparentRotates =>
-      '이 주‍소‍로 ZEC‍를 받‍고 Vizor‍가 동‍기‍화‍하‍면 다‍음 투‍명 주‍소‍로 자‍동‍으‍로 바‍뀌‍어‍요. 이‍전 주‍소‍도 계‍속 이 지‍갑‍에 속‍해‍요.';
+      '이 주‍소‍로 ZEC‍를 받‍고 Vizor‍가 동‍기‍화‍하‍면 다‍음 공‍개 주‍소‍로 자‍동‍으‍로 바‍뀌‍어‍요. 이‍전 주‍소‍도 계‍속 이 지‍갑‍에 속‍해‍요.';
 
   @override
   String receiveInfoTransparentShieldFirst(String ticker) {
-    return '투‍명 주‍소‍로 $ticker‍를 받‍은 뒤‍에‍는 Vizor‍가 잔‍액‍을 차‍폐‍하‍도‍록 안‍내‍해‍요. 차‍폐‍하‍지 않‍으‍면 보‍낼 수 없‍어‍요.';
+    return '공‍개 주‍소‍로 $ticker‍를 받‍으‍면 Vizor‍가 비‍공‍개 전‍환‍을 안‍내‍해‍요. 잔‍액‍을 비‍공‍개‍로 전‍환‍한 뒤‍에 보‍낼 수 있‍어‍요.';
   }
 
   @override
@@ -8456,7 +8458,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get receiveRenewAddressError =>
-      '차‍폐 주‍소‍를 새‍로 만‍들‍지 못‍했‍어‍요. 다‍시 시‍도‍하‍거‍나 현‍재 주‍소‍를 계‍속 사‍용‍해 주‍세‍요.';
+      '비‍공‍개 주‍소‍를 새‍로 만‍들‍지 못‍했‍어‍요. 다‍시 시‍도‍하‍거‍나 현‍재 주‍소‍를 계‍속 사‍용‍해 주‍세‍요.';
 
   @override
   String get receiveRequestAmountDecimalsError =>
@@ -8494,7 +8496,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get receiveRequestMessageHelp =>
-      '차‍폐 주‍소‍에‍서‍만 쓸 수 있‍어‍요. 이 링‍크‍를 가‍진 사‍람‍은 누‍구‍나 읽‍을 수 있‍어‍요.';
+      '비‍공‍개 주‍소‍에‍서‍만 쓸 수 있‍어‍요. 이 링‍크‍를 가‍진 사‍람‍은 누‍구‍나 읽‍을 수 있‍어‍요.';
 
   @override
   String get receiveRequestMessageHint =>
@@ -8520,14 +8522,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get receiveShareFailed => '이 주‍소‍를 공‍유‍하‍지 못‍했‍어‍요. 대‍신 복‍사‍해 주‍세‍요.';
 
   @override
-  String get receiveShareShieldedAddress => '차‍폐 주‍소 공‍유';
+  String get receiveShareShieldedAddress => '비‍공‍개 주‍소 공‍유';
 
   @override
-  String get receiveShareTransparentAddress => '투‍명 주‍소 공‍유';
+  String get receiveShareTransparentAddress => '공‍개 주‍소 공‍유';
 
   @override
   String get receiveShieldedAddressLoadFailed =>
-      '차‍폐 주‍소‍를 불‍러‍오‍지 못‍했‍어‍요. 잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';
+      '비‍공‍개 주‍소‍를 불‍러‍오‍지 못‍했‍어‍요. 잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
   String receiveTitle(String ticker) {
@@ -8536,7 +8538,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get receiveTransparentAddressLoadFailed =>
-      '투‍명 주‍소‍를 불‍러‍오‍지 못‍했‍어‍요. 잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';
+      '공‍개 주‍소‍를 불‍러‍오‍지 못‍했‍어‍요. 잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
   String get secretPassphraseCopy => '복‍구 문‍구 복‍사';
@@ -8645,7 +8647,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendErrorInsufficientShielded =>
-      '금‍액‍과 수‍수‍료‍를 낼 차‍폐 잔‍액‍이 부‍족‍해‍요.';
+      '금‍액‍과 수‍수‍료‍를 낼 비‍공‍개 잔‍액‍이 부‍족‍해‍요.';
 
   @override
   String get sendErrorNetwork =>
@@ -8686,34 +8688,34 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendInsufficientBalanceIncludingFeeShielded =>
-      '수‍수‍료‍를 포‍함‍하‍면 차‍폐 잔‍액‍이 부‍족‍해‍요';
+      '수‍수‍료‍를 포‍함‍하‍면 비‍공‍개 잔‍액‍이 부‍족‍해‍요';
 
   @override
   String get sendInsufficientBalanceIncludingFeeTex =>
       '수‍수‍료‍를 포‍함‍하‍면 잔‍액‍이 부‍족‍해‍요';
 
   @override
-  String get sendInsufficientBalanceSentenceShielded => '차‍폐 잔‍액‍이 부‍족‍해‍요.';
+  String get sendInsufficientBalanceSentenceShielded => '비‍공‍개 잔‍액‍이 부‍족‍해‍요.';
 
   @override
   String get sendInsufficientBalanceSentenceTex => '잔‍액‍이 부‍족‍해‍요.';
 
   @override
-  String get sendInsufficientBalanceShielded => '차‍폐 잔‍액‍이 부‍족‍해‍요';
+  String get sendInsufficientBalanceShielded => '비‍공‍개 잔‍액‍이 부‍족‍해‍요';
 
   @override
   String get sendInsufficientBalanceTex => '잔‍액‍이 부‍족‍해‍요';
 
   @override
   String get sendInsufficientBalanceToCoverFeeShielded =>
-      '수‍수‍료‍를 낼 차‍폐 잔‍액‍이 부‍족‍해‍요';
+      '수‍수‍료‍를 낼 비‍공‍개 잔‍액‍이 부‍족‍해‍요';
 
   @override
   String get sendInsufficientBalanceToCoverFeeTex => '수‍수‍료‍를 낼 잔‍액‍이 부‍족‍해‍요';
 
   @override
   String sendInsufficientBalanceWithFeeShielded(String fee) {
-    return '차‍폐 잔‍액‍이 부‍족‍해‍요 (수‍수‍료: $fee)';
+    return '비‍공‍개 잔‍액‍이 부‍족‍해‍요 (수‍수‍료: $fee)';
   }
 
   @override
@@ -8851,7 +8853,8 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendMemoCollapse => '접‍기';
 
   @override
-  String get sendMemoEncryptedHint => '암‍호‍화‍되‍며 차‍폐 주‍소‍로 보‍낼 때‍만 쓸 수 있‍어‍요.';
+  String get sendMemoEncryptedHint =>
+      '암‍호‍화‍되‍며 비‍공‍개 주‍소‍로 보‍낼 때‍만 쓸 수 있‍어‍요.';
 
   @override
   String get sendMemoRecipientOnly => '받‍는 사‍람‍만 읽‍을 수 있‍어‍요';
@@ -8860,7 +8863,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendMemoSheetAdd => '메‍모 추‍가';
 
   @override
-  String get sendMemoShieldedOnly => '메‍시‍지‍는 차‍폐 주‍소‍로 보‍낼 때‍만 쓸 수 있‍어‍요';
+  String get sendMemoShieldedOnly => '메‍시‍지‍는 비‍공‍개 주‍소‍로 보‍낼 때‍만 쓸 수 있‍어‍요';
 
   @override
   String get sendMemoWhitespaceOnly => '공‍백‍만 있‍어‍요';
@@ -9187,7 +9190,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sendSpendableTooltipBody =>
-      '자‍금‍을 사‍용‍하‍려‍면 먼‍저 확‍인‍이 필‍요‍해‍요. 내 지‍갑‍에‍서 돌‍아‍온 잔‍돈‍은 3‍회, 다‍른 사‍람‍에‍게 받‍은 자‍금‍은 6‍회‍예‍요. 차‍폐 노‍트‍도 모‍두 스‍캔‍되‍어‍야 해‍요. 곧 사‍용‍할 수 있‍게 돼‍요.';
+      '자‍금‍을 사‍용‍하‍려‍면 먼‍저 확‍인‍이 필‍요‍해‍요. 내 지‍갑‍에‍서 돌‍아‍온 잔‍돈‍은 3‍회, 다‍른 사‍람‍에‍게 받‍은 자‍금‍은 6‍회‍예‍요. 비‍공‍개 노‍트‍도 모‍두 스‍캔‍되‍어‍야 해‍요. 곧 사‍용‍할 수 있‍게 돼‍요.';
 
   @override
   String get sendSpendableTooltipTitle =>
@@ -9619,7 +9622,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsPrivateQueriesCopy =>
-      '실‍험‍적 기‍능‍이‍에‍요. 투‍명 자‍금‍을 비‍공‍개‍로 복‍구‍해 서‍버‍가 내 투‍명 주‍소‍를 알‍지 못‍하‍게 해‍요. 지‍원‍되‍는 거‍래‍는 서‍버‍에 ID‍를 알‍리‍지 않‍고 조‍회‍해‍요.';
+      '실‍험‍적 기‍능‍이‍에‍요. 공‍개 자‍금‍을 비‍공‍개‍로 복‍구‍해 서‍버‍가 내 공‍개 주‍소‍를 알‍지 못‍하‍게 해‍요. 지‍원‍되‍는 거‍래‍는 서‍버‍에 ID‍를 알‍리‍지 않‍고 조‍회‍해‍요.';
 
   @override
   String get settingsPrivateQueriesIosNote =>
@@ -9630,11 +9633,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsPrivateQueriesTurnOffBody =>
-      'Vizor‍가 투‍명 내‍역‍을 공‍개 방‍식‍으‍로 다‍시 구‍성‍하‍며, 서‍버‍가 모‍든 주‍소‍를 알‍게 돼‍요.';
+      'Vizor‍가 공‍개 내‍역‍을 공‍개 방‍식‍으‍로 다‍시 구‍성‍하‍며, 서‍버‍가 모‍든 주‍소‍를 알‍게 돼‍요.';
 
   @override
   String get settingsPrivateQueriesTurnOffDisclosure =>
-      '서‍버‍가 모‍든 계‍정‍의 투‍명 주‍소 전‍부‍와 비‍공‍개 복‍구‍로 찾‍은 거‍래 ID‍를 받‍아‍요. 서‍버‍는 이‍를 서‍로 연‍결‍할 수 있‍고, Tor‍를 쓰‍지 않‍으‍면 IP 주‍소‍와‍도 연‍결‍할 수 있‍어‍요.';
+      '서‍버‍가 모‍든 계‍정‍의 공‍개 주‍소 전‍부‍와 비‍공‍개 복‍구‍로 찾‍은 거‍래 ID‍를 받‍아‍요. 서‍버‍는 이‍를 서‍로 연‍결‍할 수 있‍고, Tor‍를 쓰‍지 않‍으‍면 IP 주‍소‍와‍도 연‍결‍할 수 있‍어‍요.';
 
   @override
   String get settingsPrivateQueriesTurnOffTitle => '비‍공‍개 조‍회‍를 끌‍까‍요?';
@@ -10025,7 +10028,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsViewingKeyChoiceSharingWarning =>
-      '신‍뢰‍하‍는 상‍대‍에‍게‍만 공‍유‍하‍세‍요. 두 키 모‍두 투‍명 잔‍액‍과 지‍출‍을 드‍러‍낼 수 있‍어‍요.';
+      '신‍뢰‍하‍는 상‍대‍에‍게‍만 공‍유‍하‍세‍요. 두 키 모‍두 공‍개 잔‍액‍과 지‍출‍을 드‍러‍낼 수 있‍어‍요.';
 
   @override
   String get settingsViewingKeyChooseTitle =>
@@ -10153,7 +10156,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sidebarMyAccounts => '내 계‍정';
 
   @override
-  String get sidebarShieldedAddressCopied => '차‍폐 주‍소‍를 복‍사‍했‍어‍요';
+  String get sidebarShieldedAddressCopied => '비‍공‍개 주‍소‍를 복‍사‍했‍어‍요';
 
   @override
   String get sidebarShowBalance => '잔‍액 보‍기';
@@ -10266,7 +10269,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String swapActivityDetailSourceTxShielded(String symbol) {
-    return '$symbol 거‍래(차‍폐)';
+    return '$symbol 거‍래(비‍공‍개)';
   }
 
   @override
@@ -10387,7 +10390,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapActivityStepConvertDescription =>
-      '차‍폐 잔‍액‍에‍서 나‍간 금‍액‍을 결‍제 자‍산‍으‍로 변‍환‍하‍고 있‍어‍요.';
+      '비‍공‍개 잔‍액‍에‍서 나‍간 금‍액‍을 결‍제 자‍산‍으‍로 변‍환‍하‍고 있‍어‍요.';
 
   @override
   String get swapActivityStepConverting => '변‍환 중...';
@@ -10482,7 +10485,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get swapActivityStepSpendDescription => '차‍폐 잔‍액‍에‍서 사‍용‍하‍고 있‍어‍요.';
+  String get swapActivityStepSpendDescription => '비‍공‍개 잔‍액‍에‍서 사‍용‍하‍고 있‍어‍요.';
 
   @override
   String swapActivityStepSpending(String symbol) {
@@ -11161,11 +11164,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get transparentLedgerNeedsNewerBuild =>
-      '이 지‍갑‍의 투‍명 자‍금‍을 사‍용‍하‍려‍면 더 최‍신 버‍전‍의 Vizor‍가 필‍요‍해‍요.';
+      '이 지‍갑‍의 공‍개 자‍금‍을 사‍용‍하‍려‍면 더 최‍신 버‍전‍의 Vizor‍가 필‍요‍해‍요.';
 
   @override
   String get transparentRecoveryIncomplete =>
-      '비‍공‍개 복‍구‍가 끝‍날 때‍까‍지 투‍명 자‍금‍을 사‍용‍할 수 없‍어‍요.';
+      '비‍공‍개 복‍구‍가 끝‍날 때‍까‍지 공‍개 자‍금‍을 사‍용‍할 수 없‍어‍요.';
 
   @override
   String get txFeeHelpTooltip =>
@@ -11549,12 +11552,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String votingErrorMinimumWeight(String amount, String snapshot) {
-    return '투‍표‍하‍려‍면 $snapshot‍에 $amount 이‍상‍의 자‍격 있‍는 차‍폐 노‍트 묶‍음‍이 하‍나 이‍상 필‍요‍해‍요. 자‍격‍이 있‍는 계‍정‍으‍로 전‍환‍해 투‍표‍해 주‍세‍요.';
+    return '투‍표‍하‍려‍면 $snapshot‍에 $amount 이‍상‍의 자‍격 있‍는 비‍공‍개 노‍트 묶‍음‍이 하‍나 이‍상 필‍요‍해‍요. 자‍격‍이 있‍는 계‍정‍으‍로 전‍환‍해 투‍표‍해 주‍세‍요.';
   }
 
   @override
   String votingErrorMinimumWeightReason(String amount, String snapshot) {
-    return '투‍표‍하‍려‍면 $snapshot‍에 $amount 이‍상‍의 자‍격 있‍는 차‍폐 노‍트 묶‍음‍이 하‍나 이‍상 필‍요‍해‍요';
+    return '투‍표‍하‍려‍면 $snapshot‍에 $amount 이‍상‍의 자‍격 있‍는 비‍공‍개 노‍트 묶‍음‍이 하‍나 이‍상 필‍요‍해‍요';
   }
 
   @override
@@ -11562,12 +11565,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String votingErrorNoSpendableNotes(String snapshot) {
-    return '이 계‍정‍은 이‍번 투‍표 라‍운‍드‍에 참‍여‍할 수 없‍어‍요. $snapshot‍에 투‍표 자‍격‍이 있‍는 차‍폐 자‍금‍이 없‍었‍어‍요. 자‍격‍이 있‍는 계‍정‍으‍로 전‍환‍해 투‍표‍해 주‍세‍요.';
+    return '이 계‍정‍은 이‍번 투‍표 라‍운‍드‍에 참‍여‍할 수 없‍어‍요. $snapshot‍에 투‍표 자‍격‍이 있‍는 비‍공‍개 자‍금‍이 없‍었‍어‍요. 자‍격‍이 있‍는 계‍정‍으‍로 전‍환‍해 투‍표‍해 주‍세‍요.';
   }
 
   @override
   String votingErrorNoSpendableNotesReason(String snapshot) {
-    return '이 계‍정‍은 이‍번 투‍표 라‍운‍드‍에 참‍여‍할 수 없‍어‍요. $snapshot‍에 투‍표 자‍격‍이 있‍는 차‍폐 자‍금‍이 없‍었‍어‍요';
+    return '이 계‍정‍은 이‍번 투‍표 라‍운‍드‍에 참‍여‍할 수 없‍어‍요. $snapshot‍에 투‍표 자‍격‍이 있‍는 비‍공‍개 자‍금‍이 없‍었‍어‍요';
   }
 
   @override

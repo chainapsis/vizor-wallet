@@ -26,9 +26,11 @@ until a `zh_Hant` translation exists.
 ## Terms
 
 - Use the glossary term for every wallet and Zcash concept.
-- `屏蔽` is the Zcash community term for shielded, but in everyday Chinese it
-  also means blocked or muted. Check that a short label cannot read as
-  "blocked"; the glossary note tracks the final choice.
+- Translate `shielded / transparent` as `隐私 / 公开`: `隐私地址`,
+  `公开余额`. For shielding, use `转为隐私余额` for an action and
+  `隐私转换` for a transaction title. This moves funds on-chain; keep it
+  distinct from hiding the balance on screen and from `隐私查询`.
+  Avoid `屏蔽`, which can read as blocked or muted, and the literal `透明`.
 - Write `密钥`, never `秘钥`.
 - Keep brand and protocol names in Latin script: `Vizor`, `Zcash`, `Ledger`,
   `Keystone`, `Tor`.

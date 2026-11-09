@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/locale_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -358,7 +359,7 @@ class _AddressTypeDescription extends StatelessWidget {
       const legacyPrefix = 'zs'; // l10n-ignore: address prefix
       return Text.rich(
         TextSpan(
-          style: bodyStyle,
+          style: withLocaleFontFallback(context, bodyStyle),
           children: emphasisSpans(
             context.l10n.onboardingAddressShieldedDescription(
               unifiedPrefix,

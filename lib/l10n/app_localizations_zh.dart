@@ -17,7 +17,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aboutLegalPlaceholderBody =>
-      '与 Bitcoin 或 Ethereum 不同，屏蔽 Zcash 交易会隐藏发送方、接收方和金额。';
+      '与 Bitcoin 或 Ethereum 不同，隐私 Zcash 交易会隐藏发送方、接收方和金额。';
 
   @override
   String get aboutLegalPlaceholderHeading => '来自打造 Keplr 钱包的团队。';
@@ -42,10 +42,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aboutShieldedBody =>
-      'Vizor 围绕屏蔽交易构建，发送方、接收方和金额均保持私密。也支持透明 Zcash，但默认是私密的。';
+      'Vizor 以隐私交易为核心，发送方、接收方和金额均不公开。也支持 Zcash 公开交易，但默认保护隐私。';
 
   @override
-  String get aboutShieldedHeading => '为屏蔽 Zcash 而设计';
+  String get aboutShieldedHeading => '为隐私 Zcash 而设计';
 
   @override
   String get aboutTermsTitle => '使用条款';
@@ -231,7 +231,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityBalanceFromOrchard => '来自 Orchard 余额';
 
   @override
-  String get activityBalanceFromTransparent => '来自透明余额';
+  String get activityBalanceFromTransparent => '来自公开余额';
 
   @override
   String get activityBalanceIronwood => 'Ironwood 余额';
@@ -378,14 +378,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityOmissionSharedFunding => '来自其他钱包的输入';
 
   @override
-  String get activityOmissionShieldedFunding => '资金中的屏蔽部分';
+  String get activityOmissionShieldedFunding => '资金中的隐私部分';
 
   @override
-  String get activityPayFromShielded => '来自屏蔽 ZEC';
+  String get activityPayFromShielded => '来自隐私 ZEC';
 
   @override
   String activityPayFromShieldedOnChain(String network) {
-    return '来自屏蔽 ZEC · $network';
+    return '来自隐私 ZEC · $network';
   }
 
   @override
@@ -476,7 +476,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activitySectionThisWeek => '本周';
 
   @override
-  String get activitySenderShielded => '屏蔽的发送方';
+  String get activitySenderShielded => '发送方未公开';
 
   @override
   String get activitySenderUnknown => '未知发送方';
@@ -558,16 +558,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityTitleSent => '已发送';
 
   @override
-  String get activityTitleShielded => '已屏蔽';
+  String get activityTitleShielded => '隐私转换';
 
   @override
-  String get activityTitleShieldingFailed => '屏蔽失败';
+  String get activityTitleShieldingFailed => '隐私转换失败';
 
   @override
-  String get activityTitleShieldingInProgress => '屏蔽中...';
+  String get activityTitleShieldingInProgress => '隐私转换中...';
 
   @override
-  String get activityTitleShieldingVerb => '屏蔽中';
+  String get activityTitleShieldingVerb => '隐私转换';
 
   @override
   String get activityTitleTransaction => '交易';
@@ -1137,7 +1137,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonCancelFailedRetry => '未能完成取消操作，请重试。';
 
   @override
-  String get commonCancelShielding => '取消屏蔽操作';
+  String get commonCancelShielding => '取消隐私转换';
 
   @override
   String get commonCancellationFailed => '未能完成取消操作，请重试。';
@@ -1236,7 +1236,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonCopyLink => '复制链接';
 
   @override
-  String get commonCopyShieldedAddress => '复制屏蔽地址';
+  String get commonCopyShieldedAddress => '复制隐私地址';
 
   @override
   String get commonCouldnTCloseTheCardTry => '无法关闭卡片。请重试。';
@@ -1507,7 +1507,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonPreparingEllipsis => '准备中…';
 
   @override
-  String get commonPrivatelyFromShieldedBalance => '从屏蔽余额私密支付';
+  String get commonPrivatelyFromShieldedBalance => '从隐私余额支付';
 
   @override
   String get commonProvingParamsFailed => '无法准备所需的证明参数。';
@@ -1644,16 +1644,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonSentSuccessfully => '发送成功';
 
   @override
-  String get commonShieldedAddress => '屏蔽地址';
+  String get commonShieldedAddress => '隐私地址';
 
   @override
-  String get commonShieldedBalance => '屏蔽余额';
+  String get commonShieldedBalance => '隐私余额';
 
   @override
-  String get commonShieldedSuccessfully => '屏蔽成功';
+  String get commonShieldedSuccessfully => '已转为隐私余额';
 
   @override
-  String get commonShielding => '屏蔽中...';
+  String get commonShielding => '隐私转换中...';
 
   @override
   String get commonShowDetails => '查看详情';
@@ -1743,7 +1743,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonTransactionHashCopied => '交易哈希已复制';
 
   @override
-  String get commonTransparentAddress => '透明地址';
+  String get commonTransparentAddress => '公开地址';
 
   @override
   String get commonTryAgain => '重试';
@@ -1926,7 +1926,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get enhancePirOptOutPending => '隐私查询仍处于开启状态。请再次尝试关闭。';
 
   @override
-  String get enhancePirRaisePending => '隐私查询已开启。透明资金的私密恢复暂时无法启动，稍后会重试。';
+  String get enhancePirRaisePending => '隐私查询已开启。公开资金的私密恢复暂时无法启动，稍后会重试。';
 
   @override
   String get enhancePirUnchanged => '设置未更改。请重试。';
@@ -1994,46 +1994,47 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeLedgerApprovalNotAccepted => '你的 Ledger 无法接受此次批准。之前的批准已发送。';
 
   @override
-  String get homeLedgerBroadcastNotStored => '屏蔽交易已到达网络，但未保存在本地。在同步确认之前，请勿重试。';
+  String get homeLedgerBroadcastNotStored =>
+      '隐私转换交易已到达网络，但未保存在本地。在同步确认之前，请勿重试。';
 
   @override
-  String get homeLedgerBroadcastUnknown => '屏蔽交易可能已到达网络。重试前请先查看活动记录。';
+  String get homeLedgerBroadcastUnknown => '隐私转换交易可能已到达网络。重试前请先查看活动记录。';
 
   @override
   String get homeLedgerContextChanged => '所选账户或网络已更改。请返回钱包。';
 
   @override
-  String get homeLedgerInputsRemaining => '仍有资金未屏蔽';
+  String get homeLedgerInputsRemaining => '仍有资金未转为隐私余额';
 
   @override
-  String get homeLedgerNoFundsRemain => '没有可花费的透明资金。请返回钱包。';
+  String get homeLedgerNoFundsRemain => '没有可花费的公开资金。请返回钱包。';
 
   @override
   String get homeLedgerNoSapling => '此 Ledger 预览版不支持 Sapling 输入或输出。';
 
   @override
-  String get homeLedgerPausedBelowThreshold => '剩余资金低于屏蔽门槛。';
+  String get homeLedgerPausedBelowThreshold => '剩余资金低于隐私转换所需的最低金额。';
 
   @override
-  String get homeLedgerPausedTitle => '屏蔽已暂停';
+  String get homeLedgerPausedTitle => '隐私转换已暂停';
 
   @override
-  String get homeLedgerPausedWalletChanges => '屏蔽已暂停，需等待钱包更改完成。请返回钱包。';
+  String get homeLedgerPausedWalletChanges => '隐私转换已暂停，需等待钱包更改完成。请返回钱包。';
 
   @override
-  String get homeLedgerRejected => '屏蔽交易已在你的 Ledger 上被拒绝。';
+  String get homeLedgerRejected => 'Ledger 已拒绝隐私转换交易。';
 
   @override
   String get homeLedgerRoundFeeNotice => '每次批准都会创建一笔单独的交易，并各自产生网络手续费。';
 
   @override
   String homeLedgerRoundSentBelowThreshold(int round) {
-    return '第 $round 轮已发送。剩余资金低于屏蔽门槛。';
+    return '第 $round 轮已发送。剩余资金低于隐私转换所需的最低金额。';
   }
 
   @override
   String homeLedgerRoundSentNoReduction(int round) {
-    return '第 $round 轮已发送，但无法确认可花费输入是否减少。请等待同步完成后再次屏蔽。';
+    return '第 $round 轮已发送，但无法确认可花费输入是否减少。请等待同步完成后再次进行隐私转换。';
   }
 
   @override
@@ -2042,10 +2043,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get homeLedgerShieldTitle => '使用 Ledger 屏蔽';
+  String get homeLedgerShieldTitle => '使用 Ledger 转为隐私余额';
 
   @override
-  String get homeLedgerShieldingFailed => '无法使用 Ledger 完成屏蔽。';
+  String get homeLedgerShieldingFailed => '无法使用 Ledger 完成隐私转换。';
 
   @override
   String homeLoadFailed(String details) {
@@ -2073,10 +2074,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeNu7GotIt => '知道了';
 
   @override
-  String get homeNu7ThroughputBody => '网络每个区块可处理的屏蔽交易数量提升至 2.3 倍。';
+  String get homeNu7ThroughputBody => '网络每个区块可处理的隐私交易数量提升至 2.3 倍。';
 
   @override
-  String get homeNu7ThroughputTitle => '屏蔽交易吞吐量提高';
+  String get homeNu7ThroughputTitle => '隐私交易吞吐量提高';
 
   @override
   String get homeNu7Title => 'NU7 升级已上线。\n这意味着什么？';
@@ -2115,7 +2116,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeSetupEducationMessage => '了解 Zcash 如何保护你的隐私，以及该使用哪种地址。';
 
   @override
-  String get homeShield => '屏蔽';
+  String get homeShield => '转为隐私余额';
 
   @override
   String get homeShieldAfterScan => '扫描后，请点击“获取签名”。';
@@ -2124,68 +2125,68 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeShieldApproveTitle => '在 Keystone 上批准';
 
   @override
-  String get homeShieldAttentionTitle => '屏蔽需要处理';
+  String get homeShieldAttentionTitle => '请检查隐私转换状态';
 
   @override
   String get homeShieldBackToWalletTitleCase => '返回钱包';
 
   @override
-  String get homeShieldBalanceTitle => '透明余额';
+  String get homeShieldBalanceTitle => '公开余额';
 
   @override
   String get homeShieldBroadcastNotStored =>
-      '屏蔽交易已到达网络，但 Vizor 无法将其保存在本地。在同步或区块浏览器确认最新状态之前，请勿重试。';
+      '隐私转换交易已到达网络，但 Vizor 无法将其保存在本地。在同步或区块浏览器确认最新状态之前，请勿重试。';
 
   @override
-  String get homeShieldBroadcastUnknown => '屏蔽交易可能已到达网络，但确认超时。重试前请先查看活动记录。';
+  String get homeShieldBroadcastUnknown => '隐私转换交易可能已到达网络，但确认超时。重试前请先查看活动记录。';
 
   @override
-  String get homeShieldBroadcastingTitle => '正在广播屏蔽交易';
+  String get homeShieldBroadcastingTitle => '正在广播隐私转换交易';
 
   @override
   String get homeShieldCameraDenied => '请在设置中允许访问摄像头，以扫描 Keystone 签名。';
 
   @override
-  String get homeShieldCancelled => '屏蔽操作已取消。';
+  String get homeShieldCancelled => '已取消隐私转换。';
 
   @override
-  String get homeShieldCancelledBeforeParams => '在下载证明参数之前，屏蔽操作已取消。';
+  String get homeShieldCancelledBeforeParams => '在下载证明参数之前，隐私转换已取消。';
 
   @override
   String get homeShieldComplete => '完成';
 
   @override
-  String get homeShieldDrag => '拖动以屏蔽';
+  String get homeShieldDrag => '拖动以转为隐私余额';
 
   @override
-  String get homeShieldErrorBroadcast => '无法广播屏蔽交易。';
+  String get homeShieldErrorBroadcast => '无法广播隐私转换交易。';
 
   @override
-  String get homeShieldErrorBroadcastFailed => '无法广播你的屏蔽交易。请重试。';
+  String get homeShieldErrorBroadcastFailed => '无法广播隐私转换交易。请重试。';
 
   @override
-  String get homeShieldErrorCouldNotShield => '无法屏蔽你的余额。请重试。';
+  String get homeShieldErrorCouldNotShield => '无法将余额转为隐私余额。请重试。';
 
   @override
-  String get homeShieldErrorGeneric => '屏蔽余额失败，请重试。';
+  String get homeShieldErrorGeneric => '无法将余额转为隐私余额。请重试。';
 
   @override
-  String get homeShieldErrorNotFinalized => '无法完成屏蔽交易。';
+  String get homeShieldErrorNotFinalized => '无法完成隐私转换交易。';
 
   @override
   String get homeShieldErrorSeedUnavailable => '此账户的助记词不可用。';
 
   @override
-  String get homeShieldErrorSyncFirst => '屏蔽透明余额之前，请先同步钱包。';
+  String get homeShieldErrorSyncFirst => '将公开余额转为隐私余额前，请先同步钱包。';
 
   @override
-  String get homeShieldErrorTooSmall => '扣除手续费后，透明余额太少，无法屏蔽。';
+  String get homeShieldErrorTooSmall => '扣除手续费后，公开余额太少，无法转为隐私余额。';
 
   @override
-  String get homeShieldErrorWaitForSync => '请等待同步完成后再屏蔽。';
+  String get homeShieldErrorWaitForSync => '请等待同步完成后再转为隐私余额。';
 
   @override
-  String get homeShieldFailedTitle => '无法完成屏蔽';
+  String get homeShieldFailedTitle => '无法完成隐私转换';
 
   @override
   String get homeShieldGetSignature => '获取签名';
@@ -2194,13 +2195,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeShieldKeystoneQrSemantics => 'Keystone 交易二维码';
 
   @override
-  String get homeShieldNow => '立即屏蔽';
+  String get homeShieldNow => '立即转为隐私余额';
 
   @override
-  String get homeShieldQueuedForRetry => '已安排自动重试屏蔽操作。请在活动记录中查看状态。';
+  String get homeShieldQueuedForRetry => '已安排自动重试隐私转换。请在活动记录中查看状态。';
 
   @override
-  String get homeShieldQueuedTitle => '已安排重试屏蔽操作';
+  String get homeShieldQueuedTitle => '已安排重试隐私转换';
 
   @override
   String get homeShieldReject => '拒绝';
@@ -2212,7 +2213,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeShieldScanToSign => '扫描二维码进行签名';
 
   @override
-  String get homeShieldScanWrongQr => '请在 Keystone 上打开已签名的屏蔽二维码，然后重新扫描。';
+  String get homeShieldScanWrongQr => '请在 Keystone 上打开已签名的隐私转换二维码，然后重新扫描。';
 
   @override
   String homeShieldScanning(int progress) {
@@ -2226,18 +2227,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeShieldSignTitle => '在 Keystone 上签名交易';
 
   @override
-  String get homeShieldStatusUncertain => '屏蔽交易的状态不确定。重试前请先查看活动记录。';
+  String get homeShieldStatusUncertain => '隐私转换交易的状态不确定。重试前请先查看活动记录。';
 
   @override
   String get homeShieldWaitingForPrivateRecovery =>
       '私密恢复正在同步最新区块。请稍后重试，Keystone 签名已保留。';
 
   @override
-  String get homeShieldingBalance => '正在屏蔽你的余额…';
+  String get homeShieldingBalance => '正在转为隐私余额…';
 
   @override
   String homeTransparentBalance(String balance) {
-    return '透明：$balance';
+    return '公开：$balance';
   }
 
   @override
@@ -2255,15 +2256,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeTransparentStopLegacyDiscrepancy =>
-      '之前的公开记录与私密恢复结果不一致。关闭隐私查询会丢弃私密恢复的记录，并公开查询透明资金。';
+      '之前的公开记录与私密恢复结果不一致。关闭隐私查询会丢弃私密恢复的记录，并公开查询公开资金。';
 
   @override
   String get homeTransparentStopOptOutUnfinished =>
-      '关闭隐私查询未完成。请在设置中再次关闭，以公开查询透明资金。';
+      '关闭隐私查询未完成。请在设置中再次关闭，以公开查询公开资金。';
 
   @override
   String get homeTransparentStopQuarantined =>
-      '私密恢复发现此账户的记录相互冲突。关闭隐私查询会丢弃私密恢复的记录，并公开查询透明资金。';
+      '私密恢复发现此账户的记录相互冲突。关闭隐私查询会丢弃私密恢复的记录，并公开查询公开资金。';
 
   @override
   String get homeTransparentStopStalled => '此账户的私密恢复无法继续。Vizor 稍后会重试。';
@@ -2922,7 +2923,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerFailureMsgSetPin => '请在 Ledger 上设置 PIN，然后重试。';
 
   @override
-  String get ledgerFailureMsgShieldTooLarge => '输入过多，Ledger 无法处理。请重试。未屏蔽任何资金。';
+  String get ledgerFailureMsgShieldTooLarge =>
+      '输入过多，Ledger 无法处理。请重试。未将任何资金转为隐私余额。';
 
   @override
   String get ledgerFailureMsgSwapTooLarge => '请用较小的金额发起新的兑换。此次兑换已作废。';
@@ -3649,7 +3651,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationAnnouncementBody =>
-      'Ironwood 是 Zcash 最新的屏蔽资金池。\n它是首个经过形式化验证的资金池，\n采用前沿密码学技术。';
+      'Ironwood 是 Zcash 最新的隐私资金池。\n它是首个经过形式化验证的资金池，\n采用前沿密码学技术。';
 
   @override
   String get migrationAnnouncementReleaseNote => '官方发布说明';
@@ -3894,10 +3896,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationHowDelayedTitle => '延迟且随机的迁移';
 
   @override
-  String get migrationHowFrozenBody => '要使用现有的屏蔽余额，需要先迁移到 Ironwood（只需迁移一次）。';
+  String get migrationHowFrozenBody => '要使用现有的隐私余额，需要先迁移到 Ironwood（只需迁移一次）。';
 
   @override
-  String get migrationHowFrozenTitle => 'Orchard（旧版屏蔽）余额已冻结';
+  String get migrationHowFrozenTitle => 'Orchard（旧版隐私）余额已冻结';
 
   @override
   String get migrationHowPreparationBody =>
@@ -3994,11 +3996,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String migrationIntroBody(String amount) {
-    return '你的 $amount ZEC 目前在 Orchard 中。\n要继续将这些资金用于屏蔽支付，你需要将其迁移到 Ironwood。资金转移前，你会先查看迁移计划。';
+    return '你的 $amount ZEC 目前在 Orchard 中。\n要继续将这些资金用于隐私支付，你需要将其迁移到 Ironwood。资金转移前，你会先查看迁移计划。';
   }
 
   @override
-  String get migrationIntroTagline => 'Zcash 全新的屏蔽资金池。';
+  String get migrationIntroTagline => 'Zcash 全新的隐私资金池。';
 
   @override
   String get migrationKeystoneApplyingSignature => '正在应用 Keystone 签名。';
@@ -4324,7 +4326,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationMobileAnnouncementBody =>
-      'Zcash 最新的屏蔽资金池，采用前沿密码学和形式化验证。\n\n你的屏蔽余额需要迁移到 Ironwood（只需迁移一次）。';
+      'Zcash 最新的隐私资金池，采用前沿密码学和形式化验证。\n\n你的隐私余额需要迁移到 Ironwood（只需迁移一次）。';
 
   @override
   String get migrationMobileAnnouncementOfficial => '官方公告';
@@ -4442,7 +4444,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String migrationMobileIntroBody(String amount) {
-    return '你的 $amount ZEC 目前在 Orchard 中。要继续将这些资金用于屏蔽支付，你需要将其迁移到 Ironwood。资金转移前，你会先查看迁移计划。';
+    return '你的 $amount ZEC 目前在 Orchard 中。要继续将这些资金用于隐私支付，你需要将其迁移到 Ironwood。资金转移前，你会先查看迁移计划。';
   }
 
   @override
@@ -5803,17 +5805,18 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get onboardingAddressShieldedTitleMobile => '屏蔽地址';
+  String get onboardingAddressShieldedTitleMobile => '隐私地址';
 
   @override
   String get onboardingAddressTransparentDescription =>
       '地址以 t 开头，与 Bitcoin 类似，该地址的余额和交易记录对所有人公开可见。';
 
   @override
-  String get onboardingAddressTransparentTitleMobile => '透明地址';
+  String get onboardingAddressTransparentTitleMobile => '公开地址';
 
   @override
-  String get onboardingAddressTypesSubtitle => 'Zcash 有两种地址类型。\n一种保护隐私，一种公开透明。';
+  String get onboardingAddressTypesSubtitle =>
+      'Zcash 有两种地址类型。\n隐私地址保护交易信息，公开地址则公开这些信息。';
 
   @override
   String get onboardingAddressTypesTitle => 'Zcash 地址类型';
@@ -6115,7 +6118,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingIntroCard =>
-      '与 Bitcoin 或 Ethereum 不同，屏蔽的 Zcash 交易会隐藏发送方、接收方和金额——由密码学验证，而非依赖信任。';
+      '与 Bitcoin 或 Ethereum 不同，隐私 Zcash 交易会隐藏发送方、接收方和金额——由密码学验证，而非依赖信任。';
 
   @override
   String get onboardingIntroClosing => '距离你的第一个隐私钱包只差几步。\n让我们开始设置吧。';
@@ -6343,7 +6346,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingThingsKeepPrivacyBody =>
-      '部分交易所无法向屏蔽地址转账。如果从交易所提现，请使用你的透明地址，ZEC 到账后再进行屏蔽。';
+      '部分交易所无法向隐私地址转账。从交易所提现时，请使用公开地址，ZEC 到账后可转为隐私余额。';
 
   @override
   String get onboardingThingsKeepPrivacyTitle => '如何保护隐私';
@@ -6363,7 +6366,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingUnknownHeightBody =>
-      '如果在没有钱包创建高度的情况下继续，Vizor 将从受支持的最早屏蔽高度开始扫描。这是安全的，但首次同步可能需要很长时间。';
+      '如果在没有钱包创建高度的情况下继续，Vizor 将从受支持的最早隐私高度开始扫描。这是安全的，但首次同步可能需要很长时间。';
 
   @override
   String get onboardingUnknownHeightHint => '即使只选一个大概的日期，速度也会快得多。';
@@ -6800,7 +6803,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String paymentLinkBatchRejectedLedgerRecipientLimit(String max) {
-    return '此卡片组的屏蔽收款方超过你的 Ledger 可显示的数量（最多 $max 个）。请减少卡片数量或降低每张卡片的金额。';
+    return '此卡片组的隐私收款方超过你的 Ledger 可显示的数量（最多 $max 个）。请减少卡片数量或降低每张卡片的金额。';
   }
 
   @override
@@ -7820,13 +7823,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentUriUnsupported => '此收款链接使用了 Vizor 尚不支持的功能。';
 
   @override
-  String get poolShielded => '屏蔽';
+  String get poolShielded => '隐私';
 
   @override
-  String get poolTransparent => '透明';
+  String get poolTransparent => '公开';
 
   @override
-  String get privateQueriesOptOutUnfinished => '关闭隐私查询未完成。请在设置中再次关闭，以使用透明资金。';
+  String get privateQueriesOptOutUnfinished => '关闭隐私查询未完成。请在设置中再次关闭，以使用公开资金。';
 
   @override
   String get profilePictureChange => '更换头像';
@@ -7870,10 +7873,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveAddressLoadFailed => '无法加载你的地址。请稍后重试。';
 
   @override
-  String get receiveCopyTransparentAddress => '复制透明地址';
+  String get receiveCopyTransparentAddress => '复制公开地址';
 
   @override
-  String get receiveGenerateNewShieldedAddress => '生成新的屏蔽地址';
+  String get receiveGenerateNewShieldedAddress => '生成新的隐私地址';
 
   @override
   String get receiveInfoShieldedDiversified =>
@@ -7888,17 +7891,17 @@ class AppLocalizationsZh extends AppLocalizations {
       '交易详情——发送方、接收方和金额——在链上经过加密并被隐藏。';
 
   @override
-  String get receiveInfoShieldedRenewClick => '只有在你点击刷新按钮时，才会生成新的 Zcash 屏蔽地址。';
+  String get receiveInfoShieldedRenewClick => '只有在你点击刷新按钮时，才会生成新的 Zcash 隐私地址。';
 
   @override
-  String get receiveInfoShieldedRenewTap => '只有在你点按刷新按钮时，才会生成新的 Zcash 屏蔽地址。';
+  String get receiveInfoShieldedRenewTap => '只有在你点按刷新按钮时，才会生成新的 Zcash 隐私地址。';
 
   @override
   String get receiveInfoShieldedSubtitle => '默认提供强隐私保护。';
 
   @override
   String get receiveInfoTransparentExchanges =>
-      '常用于要求透明或有明确合规要求的交易所。为了兼容，许多钱包也默认使用这种地址。';
+      '常用于要求交易信息公开或有明确合规要求的交易所。为了兼容，许多钱包也默认使用这种地址。';
 
   @override
   String get receiveInfoTransparentPublicDesktop =>
@@ -7910,11 +7913,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get receiveInfoTransparentRotates =>
-      '此地址收到 ZEC 且 Vizor 同步后，你的下一个透明地址会自动更换。之前的地址仍属于此钱包。';
+      '此地址收到 ZEC 且 Vizor 同步后，你的下一个公开地址会自动更换。之前的地址仍属于此钱包。';
 
   @override
   String receiveInfoTransparentShieldFirst(String ticker) {
-    return '透明地址收到 $ticker 后，Vizor 会引导你屏蔽该余额，否则你将无法发送。';
+    return '公开地址收到 $ticker 后，Vizor 会引导你将其转为隐私余额，完成转换后才能发送。';
   }
 
   @override
@@ -7932,7 +7935,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveQrUnavailable => '二维码不可用';
 
   @override
-  String get receiveRenewAddressError => '无法刷新你的屏蔽地址。请重试，或继续使用当前地址。';
+  String get receiveRenewAddressError => '无法刷新你的隐私地址。请重试，或继续使用当前地址。';
 
   @override
   String get receiveRequestAmountDecimalsError => '最多输入 8 位小数';
@@ -7967,7 +7970,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveRequestLinkCopied => '已复制收款链接';
 
   @override
-  String get receiveRequestMessageHelp => '仅限屏蔽地址——任何拿到此链接的人都能读取。';
+  String get receiveRequestMessageHelp => '仅限隐私地址——任何拿到此链接的人都能读取。';
 
   @override
   String get receiveRequestMessageHint => '任何收到链接的人都能读取此内容';
@@ -7991,13 +7994,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveShareFailed => '无法分享此地址。请改为复制。';
 
   @override
-  String get receiveShareShieldedAddress => '分享屏蔽地址';
+  String get receiveShareShieldedAddress => '分享隐私地址';
 
   @override
-  String get receiveShareTransparentAddress => '分享透明地址';
+  String get receiveShareTransparentAddress => '分享公开地址';
 
   @override
-  String get receiveShieldedAddressLoadFailed => '无法加载你的屏蔽地址。请稍后重试。';
+  String get receiveShieldedAddressLoadFailed => '无法加载你的隐私地址。请稍后重试。';
 
   @override
   String receiveTitle(String ticker) {
@@ -8005,7 +8008,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get receiveTransparentAddressLoadFailed => '无法加载你的透明地址。请稍后重试。';
+  String get receiveTransparentAddressLoadFailed => '无法加载你的公开地址。请稍后重试。';
 
   @override
   String get secretPassphraseCopy => '复制助记词';
@@ -8106,7 +8109,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendErrorExpiredTryAgain => '交易在发送前已过期。请重试。';
 
   @override
-  String get sendErrorInsufficientShielded => '屏蔽余额不足以支付金额和手续费。';
+  String get sendErrorInsufficientShielded => '隐私余额不足以支付金额和手续费。';
 
   @override
   String get sendErrorNetwork => '网络错误。请检查网络连接后重试。';
@@ -8139,32 +8142,32 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendFinishingSync => '正在完成钱包同步。';
 
   @override
-  String get sendInsufficientBalanceIncludingFeeShielded => '含手续费后屏蔽余额不足';
+  String get sendInsufficientBalanceIncludingFeeShielded => '含手续费后隐私余额不足';
 
   @override
   String get sendInsufficientBalanceIncludingFeeTex => '含手续费后余额不足';
 
   @override
-  String get sendInsufficientBalanceSentenceShielded => '屏蔽余额不足。';
+  String get sendInsufficientBalanceSentenceShielded => '隐私余额不足。';
 
   @override
   String get sendInsufficientBalanceSentenceTex => '余额不足。';
 
   @override
-  String get sendInsufficientBalanceShielded => '屏蔽余额不足';
+  String get sendInsufficientBalanceShielded => '隐私余额不足';
 
   @override
   String get sendInsufficientBalanceTex => '余额不足';
 
   @override
-  String get sendInsufficientBalanceToCoverFeeShielded => '屏蔽余额不足以支付手续费';
+  String get sendInsufficientBalanceToCoverFeeShielded => '隐私余额不足以支付手续费';
 
   @override
   String get sendInsufficientBalanceToCoverFeeTex => '余额不足以支付手续费';
 
   @override
   String sendInsufficientBalanceWithFeeShielded(String fee) {
-    return '屏蔽余额不足（手续费：$fee）';
+    return '隐私余额不足（手续费：$fee）';
   }
 
   @override
@@ -8292,7 +8295,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendMemoCollapse => '收起';
 
   @override
-  String get sendMemoEncryptedHint => '已加密，仅适用于屏蔽地址。';
+  String get sendMemoEncryptedHint => '已加密，仅适用于隐私地址。';
 
   @override
   String get sendMemoRecipientOnly => '仅收款方可以阅读';
@@ -8301,7 +8304,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendMemoSheetAdd => '添加备注';
 
   @override
-  String get sendMemoShieldedOnly => '仅屏蔽地址支持留言';
+  String get sendMemoShieldedOnly => '仅隐私地址支持留言';
 
   @override
   String get sendMemoWhitespaceOnly => '仅含空白字符';
@@ -8599,7 +8602,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sendSpendableTooltipBody =>
-      '资金需要先获得确认才能使用：来自自己钱包的找零需要 3 次确认，收到的他人转账需要 6 次确认。屏蔽票据还需要完整扫描。它们很快就会可用。';
+      '资金需要先获得确认才能使用：来自自己钱包的找零需要 3 次确认，收到的他人转账需要 6 次确认。隐私票据还需要完整扫描。它们很快就会可用。';
 
   @override
   String get sendSpendableTooltipTitle => '可用余额可能低于总余额。';
@@ -9003,7 +9006,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsPrivateQueriesCopy =>
-      '实验性功能。以隐私方式恢复透明资金，使服务器无法得知你的透明地址。查询受支持的交易时不会向服务器透露其 ID。';
+      '实验性功能。以隐私方式恢复公开资金，使服务器无法得知你的公开地址。查询受支持的交易时不会向服务器透露其 ID。';
 
   @override
   String get settingsPrivateQueriesIosNote => '开启期间，仅在 Vizor 打开时才会检查迁移交易的确认情况。';
@@ -9013,11 +9016,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsPrivateQueriesTurnOffBody =>
-      'Vizor 将以公开方式重建你的透明交易记录，服务器会获知你的所有地址。';
+      'Vizor 将以公开方式重建你的公开交易记录，服务器会获知你的所有地址。';
 
   @override
   String get settingsPrivateQueriesTurnOffDisclosure =>
-      '服务器会收到每个账户的所有透明地址，以及私密恢复找到的交易 ID。它可以将这些信息相互关联；不使用 Tor 时，还能与你的 IP 地址关联。';
+      '服务器会收到每个账户的所有公开地址，以及私密恢复找到的交易 ID。它可以将这些信息相互关联；不使用 Tor 时，还能与你的 IP 地址关联。';
 
   @override
   String get settingsPrivateQueriesTurnOffTitle => '要关闭隐私查询吗？';
@@ -9389,7 +9392,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsViewingKeyChoiceSharingWarning =>
-      '仅与可信方分享。两种密钥都可能泄露透明余额和支出。';
+      '仅与可信方分享。两种密钥都可能泄露公开余额和支出。';
 
   @override
   String get settingsViewingKeyChooseTitle => '选择他人可以查看的内容';
@@ -9509,7 +9512,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidebarMyAccounts => '我的账户';
 
   @override
-  String get sidebarShieldedAddressCopied => '屏蔽地址已复制';
+  String get sidebarShieldedAddressCopied => '隐私地址已复制';
 
   @override
   String get sidebarShowBalance => '显示余额';
@@ -9621,7 +9624,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String swapActivityDetailSourceTxShielded(String symbol) {
-    return '$symbol 交易（屏蔽）';
+    return '$symbol 交易（隐私）';
   }
 
   @override
@@ -9741,7 +9744,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapActivityStepConvert => '兑换';
 
   @override
-  String get swapActivityStepConvertDescription => '正在将花费的屏蔽资金兑换为支付资产。';
+  String get swapActivityStepConvertDescription => '正在将花费的隐私资金兑换为支付资产。';
 
   @override
   String get swapActivityStepConverting => '兑换中...';
@@ -9832,7 +9835,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get swapActivityStepSpendDescription => '正在从屏蔽余额中支付。';
+  String get swapActivityStepSpendDescription => '正在从隐私余额中支付。';
 
   @override
   String swapActivityStepSpending(String symbol) {
@@ -10460,10 +10463,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get syncVizorSynced => 'Vizor 已同步';
 
   @override
-  String get transparentLedgerNeedsNewerBuild => '此钱包的透明资金需要更新版本的 Vizor 才能使用。';
+  String get transparentLedgerNeedsNewerBuild => '此钱包的公开资金需要更新版本的 Vizor 才能使用。';
 
   @override
-  String get transparentRecoveryIncomplete => '在私密恢复完成之前，透明资金不可用。';
+  String get transparentRecoveryIncomplete => '在私密恢复完成之前，公开资金不可用。';
 
   @override
   String get txFeeHelpTooltip => '支付给 Zcash 网络、用于处理此交易的手续费。';
@@ -10820,12 +10823,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String votingErrorMinimumWeight(String amount, String snapshot) {
-    return '投票要求截至$snapshot，至少拥有一个包含 $amount 的符合条件的屏蔽票据包。请切换到符合条件的账户后再投票。';
+    return '投票要求截至$snapshot，至少拥有一个包含 $amount 的符合条件的隐私票据包。请切换到符合条件的账户后再投票。';
   }
 
   @override
   String votingErrorMinimumWeightReason(String amount, String snapshot) {
-    return '投票要求截至$snapshot，至少拥有一个包含 $amount 的符合条件的屏蔽票据包';
+    return '投票要求截至$snapshot，至少拥有一个包含 $amount 的符合条件的隐私票据包';
   }
 
   @override
@@ -10833,12 +10836,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String votingErrorNoSpendableNotes(String snapshot) {
-    return '此账户没有资格参与本轮投票。截至$snapshot，没有符合条件的屏蔽资金。请切换到符合条件的账户后再投票。';
+    return '此账户没有资格参与本轮投票。截至$snapshot，没有符合条件的隐私资金。请切换到符合条件的账户后再投票。';
   }
 
   @override
   String votingErrorNoSpendableNotesReason(String snapshot) {
-    return '此账户没有资格参与本轮投票。截至$snapshot，没有符合条件的屏蔽资金';
+    return '此账户没有资格参与本轮投票。截至$snapshot，没有符合条件的隐私资金';
   }
 
   @override

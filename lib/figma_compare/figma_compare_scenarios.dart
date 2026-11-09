@@ -4033,6 +4033,16 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'receive-desktop-live-shielded',
+    description: 'Production desktop receive pane with a shielded address',
+    builder: buildReceiveDesktopLiveShieldedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-desktop-live-transparent',
+    description: 'Production desktop receive pane with a transparent address',
+    builder: buildReceiveDesktopLiveTransparentUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'receive-desktop-shielded',
     description: 'Desktop receive pane with copy/share and a labelled request',
     builder: buildReceiveDesktopRequestEntryUseCase,
