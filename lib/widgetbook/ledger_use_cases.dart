@@ -564,7 +564,7 @@ Widget buildLedgerInlineConnectionHelpUseCase(BuildContext context) {
     child: MobileShieldScene(
       phase: MobileShieldPhase.hardware,
       amount: '0.9912331',
-      title: 'Shield with Ledger',
+      title: context.l10n.homeLedgerShieldTitle,
       animateHardware: true,
       onClose: () {},
       onPrevious: navigation.previous,

@@ -117,18 +117,18 @@ terms:
   - id: shielded
     en: shielded
     definition: Funds or addresses in an encrypted Zcash pool (Orchard, Sapling, Ironwood).
-    ko: {term: 차폐, status: candidate, note: "Stem: 차폐된 주소, 차폐됨, 차폐 잔액. Alternatives 보호됨, 실드. Confirm with Korean Zcash users."}
-    zh: {term: 屏蔽, status: candidate, note: "Zcash community usage, but everyday 屏蔽 also means blocked or muted; check that a label cannot read as 'blocked'."}
+    ko: {term: 비공개, status: candidate, forbidden: [차폐], note: "UI labels: 비공개 주소, 비공개 잔액. A completed shielding transaction is 비공개 전환; a hidden sender is 보낸 사람 비공개. Privacy-focused display headings may use natural prose rather than the literal label."}
+    zh: {term: 隐私, status: candidate, forbidden: [屏蔽], note: "UI labels: 隐私地址, 隐私余额. A completed shielding transaction is 隐私转换; a hidden sender is 发送方未公开. Avoid wording that implies blocking, muting, or guaranteed anonymity."}
   - id: transparent
     en: transparent
     definition: Funds or addresses whose amounts and parties are public on chain.
-    ko: {term: 투명, status: candidate}
-    zh: {term: 透明, status: candidate}
+    ko: {term: 공개, status: confirmed, forbidden: [투명], note: "공개 주소, 공개 잔액. Describes on-chain visibility, independently of whether Private queries is enabled."}
+    zh: {term: 公开, status: confirmed, forbidden: [透明], note: "公开地址, 公开余额. Describes on-chain visibility, independently of whether 隐私查询 is enabled."}
   - id: shield_verb
     en: shield
     definition: Move transparent funds into a shielded pool.
-    ko: {term: 차폐, status: candidate, note: "Stem: 차폐하기, 차폐하는 중, 차폐했어요."}
-    zh: {term: 屏蔽, status: candidate}
+    ko: {term: 비공개 전환, status: candidate, forbidden: [차폐], note: "Action: 비공개로 전환. Progress: 비공개 전환 중. Success: 잔액을 비공개로 전환했어요. Funds move on-chain; this is not the hide-balance display toggle."}
+    zh: {term: 隐私转换, status: candidate, forbidden: [屏蔽], note: "Action: 转为隐私余额. Progress: 隐私转换中. Success: 已转为隐私余额. Funds move on-chain; this is not the hide-balance display toggle."}
   - id: unified_address
     en: unified address
     ko: {term: 통합 주소, status: candidate}

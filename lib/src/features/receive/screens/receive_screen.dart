@@ -47,7 +47,12 @@ bool _shouldRefreshTransparentAddressAfterSyncUpdate(
 }
 
 class ReceiveScreen extends ConsumerStatefulWidget {
-  const ReceiveScreen({super.key});
+  const ReceiveScreen({
+    this.initialType = ReceiveAddressType.shielded,
+    super.key,
+  });
+
+  final ReceiveAddressType initialType;
 
   @override
   ConsumerState<ReceiveScreen> createState() => _ReceiveScreenState();
@@ -109,6 +114,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedType = widget.initialType;
     _qrPageController.addListener(_loadTransparentWhenRevealed);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;

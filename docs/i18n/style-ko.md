@@ -37,6 +37,11 @@
 - Keep brand and protocol names in Latin script: `Vizor`, `Zcash`, `Ledger`,
   `Keystone`, `Tor`.
 - Use the glossary term for every wallet and Zcash concept.
+- Translate `shielded / transparent` as `비공개 / 공개`: `비공개 주소`,
+  `공개 잔액`. For shielding, use `비공개로 전환` for an action and
+  `비공개 전환` for a transaction title. This moves funds on-chain; keep it
+  distinct from hiding the balance on screen and from `비공개 조회`.
+  Avoid the literal `차폐`.
 
 ## Line breaks
 

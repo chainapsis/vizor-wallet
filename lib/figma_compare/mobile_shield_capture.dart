@@ -1,38 +1,39 @@
 import '../src/features/home/widgets/mobile/shield/keystone_shield_morph.dart';
 import 'keystone_shield_capture.dart';
 import 'package:flutter/widgets.dart';
+import '../src/core/l10n/l10n.dart';
 import '../src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
 import '../src/features/ledger/widgets/mobile/mobile_ledger_sheet_content.dart';
 import '../src/features/ledger/widgets/mobile/mobile_ledger_signing_content.dart';
 import '../src/features/ledger/services/ledger_signing_progress.dart';
 import '../src/features/ledger/services/ledger_app_readiness_service.dart';
 
-Widget buildMobileShieldReview(BuildContext context) => const MobileShieldScene(
+Widget buildMobileShieldReview(BuildContext context) => MobileShieldScene(
   phase: MobileShieldPhase.review,
   amount: '0.9912331',
   resultAmount: '0.9911331',
-  title: 'Transparent Balance',
+  title: context.l10n.homeShieldBalanceTitle,
   onCommit: _noop,
   onClose: _noop,
 );
-Widget buildMobileShieldCloud(BuildContext context) => const MobileShieldScene(
+Widget buildMobileShieldCloud(BuildContext context) => MobileShieldScene(
   phase: MobileShieldPhase.working,
   amount: '0.9912331',
-  title: 'Shielding your balance…',
+  title: context.l10n.homeShieldingBalance,
   canLeave: false,
 );
-Widget buildMobileShieldResult(BuildContext context) => const MobileShieldScene(
+Widget buildMobileShieldResult(BuildContext context) => MobileShieldScene(
   phase: MobileShieldPhase.succeeded,
   amount: '0.9912331',
   resultAmount: '0.9911331',
-  title: 'Shielded successfully',
+  title: context.l10n.commonShieldedSuccessfully,
   onComplete: _noop,
   onClose: _noop,
 );
 Widget buildMobileShieldKeystone(BuildContext context) => MobileShieldScene(
   phase: MobileShieldPhase.hardware,
   amount: '0.9912331',
-  title: 'Approve with Keystone',
+  title: context.l10n.homeShieldApproveTitle,
   keystoneFocus: KeystoneShieldFocus(
     stage: KeystoneShieldFocusStage.qr,
     urParts: keystoneShieldPreviewParts,
@@ -40,11 +41,11 @@ Widget buildMobileShieldKeystone(BuildContext context) => MobileShieldScene(
   ),
   onClose: _noop,
 );
-Widget buildMobileShieldLedger(BuildContext context) => const MobileShieldScene(
+Widget buildMobileShieldLedger(BuildContext context) => MobileShieldScene(
   phase: MobileShieldPhase.hardware,
   amount: '0.9912331',
-  title: 'Shield with Ledger',
-  focusChild: LedgerInlinePresentation(
+  title: context.l10n.homeLedgerShieldTitle,
+  focusChild: const LedgerInlinePresentation(
     child: MobileLedgerSigningContent(
       title: 'Check your Ledger',
       message: 'Review and approve when prompted on your Ledger.',
@@ -71,11 +72,11 @@ void _noop() {}
 Widget buildMobileShieldReferenceReview(BuildContext context) =>
     _referenceViewport(
       context,
-      const MobileShieldScene(
+      MobileShieldScene(
         phase: MobileShieldPhase.review,
         amount: '14.12',
         resultAmount: '14.12',
-        title: 'Transparent Balance',
+        title: context.l10n.homeShieldBalanceTitle,
         onCommit: _noop,
         onClose: _noop,
       ),
@@ -83,11 +84,11 @@ Widget buildMobileShieldReferenceReview(BuildContext context) =>
 Widget buildMobileShieldReferenceResult(BuildContext context) =>
     _referenceViewport(
       context,
-      const MobileShieldScene(
+      MobileShieldScene(
         phase: MobileShieldPhase.succeeded,
         amount: '14.12',
         resultAmount: '14.12',
-        title: 'Shielded successfully',
+        title: context.l10n.commonShieldedSuccessfully,
         onComplete: _noop,
         onClose: _noop,
       ),

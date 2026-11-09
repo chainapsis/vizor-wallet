@@ -92,12 +92,12 @@ class _LedgerShieldMotionPreviewState extends State<LedgerShieldMotionPreview> {
           ? MobileShieldPhase.hardware
           : MobileShieldPhase.working,
       title: _stage == _Stage.review
-          ? 'Transparent Balance'
+          ? l10n.homeShieldBalanceTitle
           : done
-          ? 'Shielded successfully'
+          ? l10n.commonShieldedSuccessfully
           : hardware
-          ? 'Shield with Ledger'
-          : 'Shielding your balance…',
+          ? l10n.homeLedgerShieldTitle
+          : l10n.homeShieldingBalance,
       focusChild: hardware
           ? LedgerInlinePresentation(
               child: MobileLedgerSigningContent(

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/locale_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -432,8 +433,11 @@ class _EducationSections extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   Text.rich(
                     sections[i].bodySpan(
-                      AppTypography.bodyMedium.copyWith(
-                        color: colors.text.primary,
+                      withLocaleFontFallback(
+                        context,
+                        AppTypography.bodyMedium.copyWith(
+                          color: colors.text.primary,
+                        ),
                       ),
                     ),
                   ),
