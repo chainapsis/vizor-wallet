@@ -97,6 +97,45 @@ Future<ZnsRecipientLookup> lookUpZnsRecipient(
   }
 }
 
+/// What a check right before a send found for a recipient entered by name.
+enum ZnsSendCheck {
+  /// The name still resolves to the address the send pays.
+  matches,
+
+  /// The name now resolves to another address, or to nothing.
+  changed,
+
+  /// The name could not be looked up, so the address is unconfirmed.
+  unconfirmed,
+}
+
+/// Looks [displayName] (`alice.zcash`) up again right before a send that
+/// pays [address].
+///
+/// The send field keeps the address a name resolved to for as long as the
+/// user leaves it unchanged, which can outlast the resolver's refresh window
+/// on the review screen or in the background. This check uses the
+/// resolver's current copy, so a name updated or released meanwhile stops
+/// the send instead of paying its old address. It never throws.
+Future<ZnsSendCheck> checkZnsRecipientBeforeSend(
+  ZnsNameResolver? resolver,
+  String displayName,
+  String address,
+) async {
+  final name = znsNameFromRecipientInput(displayName);
+  if (name == null) return ZnsSendCheck.unconfirmed;
+  final lookup = await lookUpZnsRecipient(resolver, name);
+  return switch (lookup) {
+    ZnsRecipientFound(:final resolution) =>
+      resolution.address == address.trim()
+          ? ZnsSendCheck.matches
+          : ZnsSendCheck.changed,
+    ZnsRecipientMissing(status: ZnsLookupStatus.notRegistered) =>
+      ZnsSendCheck.changed,
+    ZnsRecipientMissing() => ZnsSendCheck.unconfirmed,
+  };
+}
+
 /// The Zcash name state of one send recipient field.
 ///
 /// The screen owns the field text and calls these methods inside `setState`.

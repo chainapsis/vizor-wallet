@@ -35,10 +35,12 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/src/core/naming/zns_name_resolver.dart';
 
 import '../../../tool/l10n/korean_arb.dart' show wordJoiner;
 import '../../fakes/fake_zec_market_data_cache.dart';
 import '../../support/test_l10n.dart';
+import '../../fakes/fake_zns_name_resolver.dart';
 
 void main() {
   final rustApi = _RustApiFake();
@@ -1391,6 +1393,10 @@ Widget _harness(
         const _FakeMarketDataSource(),
       ),
       zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
+      // A send to a name is looked up again right before it goes out.
+      znsNameResolverProvider.overrideWithValue(
+        FakeZnsNameResolver({'alice': _address}),
+      ),
       addressBookRepositoryProvider.overrideWithValue(
         addressBook ?? _FakeAddressBookRepository(),
       ),

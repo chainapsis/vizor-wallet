@@ -14,6 +14,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/naming/zns_name_resolver.dart';
+import '../../../core/naming/zns_recipient_lookup.dart';
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
@@ -860,6 +862,47 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
         .ensureReady();
     secretGuard.check();
     if (await abortRequested()) return aborted();
+
+    // A recipient entered by name is looked up again before anything is
+    // signed or broadcast; see checkZnsRecipientBeforeSend. A Keystone
+    // recovery retry re-sends a batch that was already checked.
+    final znsName = args.recipientZnsName;
+    if (znsName != null && !(keystone?.isRecoveryRetry ?? false)) {
+      final check = await checkZnsRecipientBeforeSend(
+        ref.read(znsNameResolverProvider),
+        znsName,
+        args.address,
+      );
+      if (check != ZnsSendCheck.matches) {
+        log('SendBroadcast: ZNS recipient $check before send');
+        if (!proposalReleased) {
+          if (ledger != null) {
+            await retainSendProposalLockUntilExpiry(
+              proposalId: args.proposalId,
+              sendFlowId: args.sendFlowId,
+              logContext: 'SendBroadcast(ledger-zns-check)',
+            );
+          } else {
+            proposalConsumed = await discardSendProposal(
+              proposalId: args.proposalId,
+              sendFlowId: args.sendFlowId,
+              logContext: 'SendBroadcast(zns-check)',
+              syncNotifier: syncNotifier,
+              accountUuid: args.proposalAccountUuid,
+            );
+          }
+          proposalReleased = true;
+        }
+        return SendBroadcastOutcome(
+          phase: SendBroadcastPhase.failed,
+          proposalConsumed: proposalConsumed,
+          error: check == ZnsSendCheck.changed
+              ? l10n.sendBroadcastZnsChanged(znsName)
+              : l10n.sendBroadcastZnsUnconfirmed(znsName),
+        );
+      }
+    }
+
     var saplingParams = await loadSaplingParamsStatus();
 
     if (args.needsSaplingParams) {

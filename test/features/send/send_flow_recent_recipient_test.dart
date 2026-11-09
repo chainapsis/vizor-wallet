@@ -15,6 +15,7 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/naming/zns_name_resolver.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/send/services/recent_send_recipients.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
@@ -25,6 +26,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../support/test_l10n.dart';
+import '../../fakes/fake_zns_name_resolver.dart';
 
 const _account = 'test-account';
 const _recipient = 'u1recipient000000000000000000000000000000';
@@ -48,8 +50,14 @@ void main() {
     bool software = false,
     SendFlowKind flowKind = SendFlowKind.send,
     bool isPaymentRequest = false,
+    String? znsName,
+    ZnsNameResolver? znsResolver,
+    void Function(SendBroadcastOutcome outcome)? onOutcome,
   }) async {
     rustApi.status = status;
+    rustApi.executeCalls = 0;
+    rustApi.discardCalls = 0;
+    rustApi.retainCalls = 0;
     final store = _MemoryRecentStore();
     late WidgetRef widgetRef;
     await tester.pumpWidget(
@@ -65,6 +73,8 @@ void main() {
             _FakeLedgerSignedOperationService(status),
           ),
           sendRecentRecipientStoreProvider.overrideWithValue(store),
+          if (znsResolver != null)
+            znsNameResolverProvider.overrideWithValue(znsResolver),
         ],
         child: MaterialApp(
           localizationsDelegates: appLocalizationsDelegates,
@@ -89,8 +99,9 @@ void main() {
       needsSaplingParams: false,
       flowKind: flowKind,
       isPaymentRequest: isPaymentRequest,
+      recipientZnsName: znsName,
     );
-    await tester.runAsync(
+    final outcome = await tester.runAsync(
       () => runSendBroadcast(
         ref: widgetRef,
         l10n: testL10n,
@@ -115,8 +126,97 @@ void main() {
         confirmSaplingParamsDownload: () async => false,
       ),
     );
+    onOutcome?.call(outcome!);
     return store;
   }
+
+  group('a recipient entered by Zcash name', () {
+    testWidgets('is sent when the name still resolves to the address', (
+      tester,
+    ) async {
+      final resolver = FakeZnsNameResolver({'alice': _recipient});
+      final store = await broadcast(
+        tester,
+        software: true,
+        znsName: 'alice.zcash',
+        znsResolver: resolver,
+      );
+
+      expect(resolver.lookups, ['alice']);
+      expect(rustApi.executeCalls, 1);
+      expect(store.records, [(_account, _recipient, true)]);
+    });
+
+    for (final (label, names, message) in [
+      (
+        'now points elsewhere',
+        {'alice': 'u1someoneelse'},
+        testL10n.sendBroadcastZnsChanged('alice.zcash'),
+      ),
+      (
+        'was released',
+        <String, String>{},
+        testL10n.sendBroadcastZnsChanged('alice.zcash'),
+      ),
+    ]) {
+      testWidgets('stops before sending when the name $label', (tester) async {
+        late SendBroadcastOutcome outcome;
+        final store = await broadcast(
+          tester,
+          software: true,
+          znsName: 'alice.zcash',
+          znsResolver: FakeZnsNameResolver(names),
+          onOutcome: (value) => outcome = value,
+        );
+
+        expect(outcome.phase, SendBroadcastPhase.failed);
+        expect(outcome.error, message);
+        expect(rustApi.executeCalls, 0);
+        expect(rustApi.discardCalls, 1);
+        expect(store.records, isEmpty);
+      });
+    }
+
+    testWidgets('stops when the name service cannot confirm it', (
+      tester,
+    ) async {
+      late SendBroadcastOutcome outcome;
+      await broadcast(
+        tester,
+        software: true,
+        znsName: 'alice.zcash',
+        znsResolver: FakeZnsNameResolver(
+          const {},
+          const ZnsLookupException('unreachable'),
+        ),
+        onOutcome: (value) => outcome = value,
+      );
+
+      expect(outcome.phase, SendBroadcastPhase.failed);
+      expect(
+        outcome.error,
+        testL10n.sendBroadcastZnsUnconfirmed('alice.zcash'),
+      );
+      expect(rustApi.executeCalls, 0);
+    });
+
+    testWidgets('a Ledger send keeps its lock and broadcasts nothing', (
+      tester,
+    ) async {
+      late SendBroadcastOutcome outcome;
+      final store = await broadcast(
+        tester,
+        znsName: 'alice.zcash',
+        znsResolver: FakeZnsNameResolver({'alice': 'u1someoneelse'}),
+        onOutcome: (value) => outcome = value,
+      );
+
+      expect(outcome.phase, SendBroadcastPhase.failed);
+      expect(rustApi.retainCalls, 1);
+      expect(rustApi.discardCalls, 0);
+      expect(store.records, isEmpty);
+    });
+  });
 
   for (final keystone in [false, true]) {
     final wallet = keystone ? 'Keystone' : 'Ledger';
@@ -277,6 +377,9 @@ class _FakeLedgerSignedOperationService
 // software sends broadcast through Rust.
 class _ProposalRustApi extends Fake implements RustLibApi {
   String status = 'broadcasted';
+  var executeCalls = 0;
+  var discardCalls = 0;
+  var retainCalls = 0;
 
   ExecuteProposalResult get _executed => ExecuteProposalResult(
     notices: const [],
@@ -295,7 +398,10 @@ class _ProposalRustApi extends Fake implements RustLibApi {
     required List<int> mnemonicBytes,
     String? spendParamsPath,
     String? outputParamsPath,
-  }) async => _executed;
+  }) async {
+    executeCalls++;
+    return _executed;
+  }
 
   @override
   Future<ExecuteProposalResult>
@@ -307,7 +413,10 @@ class _ProposalRustApi extends Fake implements RustLibApi {
     required String password,
     String? spendParamsPath,
     String? outputParamsPath,
-  }) async => _executed;
+  }) async {
+    executeCalls++;
+    return _executed;
+  }
 
   @override
   Future<StoreAndBroadcastPcztsResult>
@@ -333,13 +442,13 @@ class _ProposalRustApi extends Fake implements RustLibApi {
   Future<void> crateApiSyncDiscardProposal({
     required BigInt proposalId,
     required String sendFlowId,
-  }) async {}
+  }) async => discardCalls++;
 
   @override
   Future<void> crateApiSyncRetainProposalLockUntilExpiry({
     required BigInt proposalId,
     required String sendFlowId,
-  }) async {}
+  }) async => retainCalls++;
 }
 
 class _FakePathProviderPlatform extends Fake

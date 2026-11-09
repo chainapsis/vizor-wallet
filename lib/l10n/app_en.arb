@@ -11120,6 +11120,24 @@
   "@sendBroadcastTrackingFailed": {
     "description": "[security] Status when the transaction reached the network but the wallet failed to record it; the user must check Activity or an explorer before sending again."
   },
+  "sendBroadcastZnsChanged": "{name} now points to a different address. Nothing was sent. Go back and check the recipient.",
+  "@sendBroadcastZnsChanged": {
+    "description": "[security] Send failure shown when the Zcash name the user paid to was updated or released after they reviewed it, so the send stopped before anything was signed or broadcast; {name} is the name, such as alice.zcash.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "sendBroadcastZnsUnconfirmed": "Couldn't confirm {name} with the name service. Nothing was sent. Try again.",
+  "@sendBroadcastZnsUnconfirmed": {
+    "description": "Send failure shown when the Zcash name the user paid to could not be looked up again right before sending, so the send stopped before anything was signed or broadcast; {name} is the name, such as alice.zcash.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "sendCalculatingMax": "Calculating max amount",
   "@sendCalculatingMax": {
     "description": "Message shown while the maximum sendable amount is still being calculated."

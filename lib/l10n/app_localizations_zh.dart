@@ -8090,6 +8090,16 @@ class AppLocalizationsZh extends AppLocalizations {
       '交易已到达网络，但本地追踪失败。再次发送前请先查看“活动记录”或区块浏览器。';
 
   @override
+  String sendBroadcastZnsChanged(String name) {
+    return '$name 现在指向其他地址。未发送任何内容。请返回检查收款方。';
+  }
+
+  @override
+  String sendBroadcastZnsUnconfirmed(String name) {
+    return '无法通过名称服务确认 $name。未发送任何内容。请重试。';
+  }
+
+  @override
   String get sendCalculatingMax => '正在计算最大金额';
 
   @override

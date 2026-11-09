@@ -8753,6 +8753,16 @@ class AppLocalizationsEn extends AppLocalizations {
       'The transaction reached the network, but local tracking failed. Check Activity or an explorer before sending again.';
 
   @override
+  String sendBroadcastZnsChanged(String name) {
+    return '$name now points to a different address. Nothing was sent. Go back and check the recipient.';
+  }
+
+  @override
+  String sendBroadcastZnsUnconfirmed(String name) {
+    return 'Couldn\'t confirm $name with the name service. Nothing was sent. Try again.';
+  }
+
+  @override
   String get sendCalculatingMax => 'Calculating max amount';
 
   @override

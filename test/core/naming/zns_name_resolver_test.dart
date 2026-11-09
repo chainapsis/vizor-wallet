@@ -441,6 +441,21 @@ void main() {
       expect(listCalls, 4);
     });
 
+    test('a page with more names than its total is never kept', () async {
+      final bridge = _ScriptedTorBridge({
+        primary: _page([
+          _record(name: 'alice'),
+          _record(name: 'mallory'),
+        ], total: 1),
+        fallback: _page([_record(name: 'alice')]),
+      });
+      final resolver = resolverOver(bridge);
+
+      expect(await resolver.resolve('alice'), isNotNull);
+      expect(await resolver.resolve('mallory'), isNull);
+      expect(bridge.calls.last, (fallback, 'list_names'));
+    });
+
     test('refuses an index too large to download', () async {
       final bridge = _ScriptedTorBridge({
         primary: _page([_record()], total: kZnsMaxIndexNames + 1),

@@ -2355,6 +2355,8 @@
   "sendBroadcastProofParamsRequired": "重试这笔已签名的交易需要证明参数。",
   "sendBroadcastRejectedLocal": "交易已在本地创建，但未到达网络。钱包会持续重试直至其过期。除非此交易过期，否则请勿再次发送。",
   "sendBroadcastTrackingFailed": "交易已到达网络，但本地追踪失败。再次发送前请先查看“活动记录”或区块浏览器。",
+  "sendBroadcastZnsChanged": "{name} 现在指向其他地址。未发送任何内容。请返回检查收款方。",
+  "sendBroadcastZnsUnconfirmed": "无法通过名称服务确认 {name}。未发送任何内容。请重试。",
   "sendCalculatingMax": "正在计算最大金额",
   "sendContactPickerEmpty": "没有 Zcash 联系人",
   "sendContactPickerTitle": "Zcash 联系人",

@@ -2355,6 +2355,8 @@
   "sendBroadcastProofParamsRequired": "이 서‍명‍된 거‍래‍를 다‍시 시‍도‍하‍려‍면 증‍명 매‍개‍변‍수‍가 필‍요‍해‍요.",
   "sendBroadcastRejectedLocal": "거‍래‍가 로‍컬‍에‍서 만‍들‍어‍졌‍지‍만 네‍트‍워‍크‍에 도‍달‍하‍지 않‍았‍어‍요. 거‍래‍가 만‍료‍될 때‍까‍지 지‍갑‍이 계‍속 다‍시 시‍도‍해‍요. 이 거‍래‍가 만‍료‍되‍기 전‍에‍는 다‍시 보‍내‍지 마‍세‍요.",
   "sendBroadcastTrackingFailed": "거‍래‍가 네‍트‍워‍크‍에 도‍달‍했‍지‍만 로‍컬 추‍적‍에 실‍패‍했‍어‍요. 다‍시 보‍내‍기 전‍에 활‍동‍이‍나 블‍록 탐‍색‍기‍를 확‍인‍하‍세‍요.",
+  "sendBroadcastZnsChanged": "{name} 이‍름‍이 이‍제 다‍른 주‍소‍를 가‍리‍켜‍요. 아‍무‍것‍도 전‍송‍되‍지 않‍았‍어‍요. 돌‍아‍가‍서 받‍는 사‍람‍을 확‍인‍해 주‍세‍요.",
+  "sendBroadcastZnsUnconfirmed": "이‍름 서‍비‍스‍에‍서 {name} 이‍름‍을 확‍인‍하‍지 못‍했‍어‍요. 아‍무‍것‍도 전‍송‍되‍지 않‍았‍어‍요. 다‍시 시‍도‍해 주‍세‍요.",
   "sendCalculatingMax": "최‍대 금‍액‍을 계‍산‍하‍고 있‍어‍요",
   "sendContactPickerEmpty": "Zcash 연‍락‍처‍가 없‍어‍요",
   "sendContactPickerTitle": "Zcash 연‍락‍처",

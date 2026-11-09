@@ -14300,6 +14300,18 @@ abstract class AppLocalizations {
   /// **'The transaction reached the network, but local tracking failed. Check Activity or an explorer before sending again.'**
   String get sendBroadcastTrackingFailed;
 
+  /// [security] Send failure shown when the Zcash name the user paid to was updated or released after they reviewed it, so the send stopped before anything was signed or broadcast; {name} is the name, such as alice.zcash.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} now points to a different address. Nothing was sent. Go back and check the recipient.'**
+  String sendBroadcastZnsChanged(String name);
+
+  /// Send failure shown when the Zcash name the user paid to could not be looked up again right before sending, so the send stopped before anything was signed or broadcast; {name} is the name, such as alice.zcash.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t confirm {name} with the name service. Nothing was sent. Try again.'**
+  String sendBroadcastZnsUnconfirmed(String name);
+
   /// Message shown while the maximum sendable amount is still being calculated.
   ///
   /// In en, this message translates to:

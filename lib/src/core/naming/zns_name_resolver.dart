@@ -272,6 +272,11 @@ class ZnsIndexNameResolver implements ZnsNameResolver {
       if (page.names.isEmpty && received < total) {
         throw const _ZnsIndexChangedException();
       }
+      // A page cannot hold more names than the index it reports. Extra
+      // records would otherwise slip into the copy past the loop's end.
+      if (received + page.names.length > total) {
+        throw const _ZnsIndexChangedException();
+      }
       // The resolver lists names in order. A name out of order means a
       // registration moved the pages under the download. A release that
       // moves them the other way can hide one name from this copy; that
