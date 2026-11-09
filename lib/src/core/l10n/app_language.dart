@@ -4,8 +4,7 @@ import '../../../l10n/app_localizations.dart';
 
 /// Shows languages that are still being translated (`--dart-define=
 /// VIZOR_I18N_PREVIEW=true`). Without it a build offers released languages
-/// only, so a Korean or Chinese device keeps the English UI until those
-/// translations ship.
+/// only.
 const kI18nPreviewEnabled = bool.fromEnvironment('VIZOR_I18N_PREVIEW');
 
 /// The single list of app languages. Adding a language means one entry here
@@ -20,10 +19,10 @@ enum AppLanguage {
     nativeName: 'English', // l10n-ignore: language's own name
     released: true,
   ), // l10n-ignore: language's own name
-  ko(tag: 'ko', nativeName: '한국어', released: false),
+  ko(tag: 'ko', nativeName: '한국어', released: true),
 
   /// Simplified Chinese.
-  zh(tag: 'zh', nativeName: '简体中文', released: false);
+  zh(tag: 'zh', nativeName: '简体中文', released: true);
 
   const AppLanguage({
     required this.tag,

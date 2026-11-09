@@ -20,6 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/storage/enhance_pir_preference_store.dart';
+import 'package:zcash_wallet/src/providers/app_language_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -361,7 +362,15 @@ void main() {
     testWidgets('no language button while English is the only language', (
       tester,
     ) async {
-      await tester.pumpWidget(_welcomeScreen());
+      await tester.pumpWidget(
+        _welcomeScreen(
+          extraOverrides: [
+            availableAppLanguagesProvider.overrideWithValue(const [
+              AppLanguage.en,
+            ]),
+          ],
+        ),
+      );
       await tester.pump();
 
       expect(

@@ -372,8 +372,9 @@ signing, amounts, warnings). A translator or community contributor may propose
 it.
 
 Unreleased languages stay hidden behind `--dart-define=VIZOR_I18N_PREVIEW=true`.
-A change to English copy reaches users in the next release without that flag, so
-list it in the pull request description.
+A copy change in a released language (English, Korean, Simplified Chinese) reaches
+users in the next release, so list English changes in the pull request
+description.
 
 ## License
 

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/providers/app_language_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
@@ -708,7 +709,14 @@ void main() {
     testWidgets('no language button while English is the only language', (
       tester,
     ) async {
-      await pumpWelcome(tester);
+      await pumpWelcome(
+        tester,
+        extraOverrides: [
+          availableAppLanguagesProvider.overrideWithValue(const [
+            AppLanguage.en,
+          ]),
+        ],
+      );
 
       expect(
         find.byKey(const ValueKey('mobile_welcome_language')),

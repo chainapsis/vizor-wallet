@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_welcome_a
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_language_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
@@ -1721,7 +1722,15 @@ void main() {
     testWidgets(
       'the Language row is hidden while English is the only language',
       (tester) async {
-        await tester.pumpWidget(_app());
+        await tester.pumpWidget(
+          _app(
+            extraOverrides: [
+              availableAppLanguagesProvider.overrideWithValue(const [
+                AppLanguage.en,
+              ]),
+            ],
+          ),
+        );
         await tester.pump();
 
         expect(

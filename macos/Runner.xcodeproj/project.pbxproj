@@ -35,6 +35,7 @@
 		86D631C82662CFADA25E93A1 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34FFD12E0E0D09282CBC1131 /* Pods_Runner.framework */; };
 		CB9BE22086B38194355E9C44 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CD78EC47695D0CDAA4C59781 /* Sparkle */; };
 		LEDGERMAC010000000000003 /* LedgerMobileHandlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LEDGERMAC000000000000003 /* LedgerMobileHandlerTests.swift */; };
+		L10NPLIST000000000000001 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = L10NPLIST000000000000002 /* InfoPlist.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -98,6 +99,8 @@
 		BE859360348D2C1D6E8BE647 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		CD4D2BC101D79448151F3868 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		LEDGERMAC000000000000003 /* LedgerMobileHandlerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerMobileHandlerTests.swift; path = ../../ios/RunnerTests/LedgerMobileHandlerTests.swift; sourceTree = "<group>"; };
+		L10NPLIST000000000000003 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		L10NPLIST000000000000004 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -209,6 +212,7 @@
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
+				L10NPLIST000000000000002 /* InfoPlist.strings */,
 				33BA886A226E78AF003329D5 /* Configs */,
 			);
 			path = Runner;
@@ -309,6 +313,8 @@
 			knownRegions = (
 				en,
 				Base,
+				ko,
+				"zh-Hans",
 			);
 			mainGroup = 33CC10E42044A3C60003C045;
 			packageReferences = (
@@ -338,6 +344,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				L10NPLIST000000000000001 /* InfoPlist.strings in Resources */,
 				8A0F5C532F8B001200A1C001 /* AppIcon.icon in Resources */,
 				8A0F5C542F8B001200A1C001 /* TestnetAppIcon.icon in Resources */,
 				33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */,
@@ -493,6 +500,15 @@
 			);
 			name = MainMenu.xib;
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		L10NPLIST000000000000002 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				L10NPLIST000000000000003 /* ko */,
+				L10NPLIST000000000000004 /* zh-Hans */,
+			);
+			name = InfoPlist.strings;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */

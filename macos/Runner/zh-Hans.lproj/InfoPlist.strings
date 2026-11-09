@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Vizor 使用摄像头扫描 Keystone 二维码。";
+"NSBluetoothAlwaysUsageDescription" = "Vizor 使用蓝牙连接你的 Ledger 硬件钱包。";

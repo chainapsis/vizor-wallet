@@ -7,9 +7,17 @@ import '../../../tool/l10n/korean_arb.dart' show wordJoiner;
 
 void main() {
   group('availableAppLanguages', () {
-    test('offers released languages only without the preview define', () {
-      expect(availableAppLanguages(preview: false), [AppLanguage.en]);
-      expect(appSupportedLocales(preview: false), [const Locale('en')]);
+    test('offers English, Korean and Chinese without the preview define', () {
+      expect(availableAppLanguages(preview: false), [
+        AppLanguage.en,
+        AppLanguage.ko,
+        AppLanguage.zh,
+      ]);
+      expect(appSupportedLocales(preview: false), const [
+        Locale('en'),
+        Locale('ko'),
+        Locale('zh'),
+      ]);
     });
 
     test('previews every language with English first', () {
@@ -39,10 +47,14 @@ void main() {
     });
 
     test('a language this build does not offer shows English', () {
-      final released = availableAppLanguages(preview: false);
-      final all = availableAppLanguages(preview: true);
-      expect(appLocaleFor(AppLanguage.ko, released), const Locale('en'));
-      expect(appLocaleFor(AppLanguage.ko, all), const Locale('ko'));
+      expect(
+        appLocaleFor(AppLanguage.ko, const [AppLanguage.en]),
+        const Locale('en'),
+      );
+      expect(
+        appLocaleFor(AppLanguage.ko, AppLanguage.values),
+        const Locale('ko'),
+      );
     });
   });
 
@@ -51,15 +63,14 @@ void main() {
       WidgetTester tester,
       List<Locale> deviceLocales, {
       required AppLanguage saved,
-      required bool preview,
     }) async {
       tester.platformDispatcher.localesTestValue = deviceLocales;
       addTearDown(tester.platformDispatcher.clearLocalesTestValue);
       late Locale resolved;
       await tester.pumpWidget(
         MaterialApp(
-          locale: appLocaleFor(saved, availableAppLanguages(preview: preview)),
-          supportedLocales: appSupportedLocales(preview: preview),
+          locale: appLocaleFor(saved, availableAppLanguages()),
+          supportedLocales: appSupportedLocales(),
           localizationsDelegates: appLocalizationsDelegates,
           home: Builder(
             builder: (context) {
@@ -76,12 +87,9 @@ void main() {
       tester,
     ) async {
       expect(
-        await shown(
-          tester,
-          const [Locale('ko', 'KR')],
-          saved: decodeAppLanguagePreference(null),
-          preview: true,
-        ),
+        await shown(tester, const [
+          Locale('ko', 'KR'),
+        ], saved: decodeAppLanguagePreference(null)),
         const Locale('en'),
       );
     });
@@ -90,25 +98,8 @@ void main() {
       tester,
     ) async {
       expect(
-        await shown(
-          tester,
-          const [Locale('ja', 'JP')],
-          saved: AppLanguage.ko,
-          preview: true,
-        ),
+        await shown(tester, const [Locale('ja', 'JP')], saved: AppLanguage.ko),
         const Locale('ko'),
-      );
-    });
-
-    testWidgets('Korean stays English until it ships', (tester) async {
-      expect(
-        await shown(
-          tester,
-          const [Locale('ko', 'KR')],
-          saved: AppLanguage.ko,
-          preview: false,
-        ),
-        const Locale('en'),
       );
     });
   });

@@ -1,7 +1,6 @@
 # Translating Vizor
 
-Vizor ships English, with Korean and Simplified Chinese in progress. All app
-copy lives in `lib/l10n/app_<locale>.arb`; `app_en.arb` is the source.
+Vizor ships English, Korean and Simplified Chinese. All app copy lives in `lib/l10n/app_<locale>.arb`; `app_en.arb` is the source.
 
 Korean is the exception: edit `lib/l10n/source/app_ko.arb`, then run
 `fvm dart run tool/l10n/korean_arb.dart`. The generated `lib/l10n/app_ko.arb`
@@ -32,6 +31,10 @@ between words.
 
 Unreleased languages stay hidden behind `--dart-define=VIZOR_I18N_PREVIEW=true`
 until every message is translated and reviewed.
+
+Korean and Simplified Chinese were released with AI-reviewed translations, before
+this review. The native review, including approval of the `[security]` strings,
+is still to do.
 
 ## Checking a language on screen
 

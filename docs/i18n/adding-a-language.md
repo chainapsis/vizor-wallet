@@ -17,7 +17,8 @@
 6. Review it on screen with `--dart-define=VIZOR_I18N_PREVIEW=true`.
 7. Set `released: true` once every message is translated and an in-house
    native reviewer approved the `[security]` strings. The gate test then requires
-   complete coverage.
+   complete coverage. Korean and Simplified Chinese were an exception
+   ([README](README.md#how-a-string-gets-translated)).
 8. Add the [native resources at release](#native-resources-at-release).
 
 Right-to-left languages also need a layout audit first: most layouts use
@@ -38,12 +39,16 @@ placeholders only, no ICU plurals or selects.
 Native code follows the app language, not the device language: Dart sends the
 language the UI shows over `com.zcash.wallet/native_strings`, and native code
 stores it for background work. Until Dart sends one, native code uses English.
-A build without `VIZOR_I18N_PREVIEW` shows English only, so it sends `en`.
+A build without `VIZOR_I18N_PREVIEW` offers released languages only, so it sends
+one of those.
 
 The OS still draws its own buttons (Cancel, the passcode fallback) in the
 device language, so a system prompt can mix the two.
 
 ## Native resources at release
+
+Korean and Simplified Chinese already have these; the steps below show how they
+were added.
 
 Resources that the OS reads before the app runs follow the device language and
 change what the stores list, so they are added only when a language ships.
@@ -59,12 +64,13 @@ listings in an English-only build.
 2. Create `ko.lproj/InfoPlist.strings` and `zh-Hans.lproj/InfoPlist.strings`
    and add them to the Runner target as a variant group. The App Store lists
    the languages from these folders, and iOS then shows a per-app Language
-   setting whose choice Flutter receives as the device locale.
+   setting. The app's own text still follows its saved language, so that setting
+   changes only what the OS draws, such as permission prompts.
 3. Translate the usage descriptions in `ios/Runner/Info.plist`. Drafts:
 
 | Key | English | Korean | Simplified Chinese |
 | --- | --- | --- | --- |
-| `NSCameraUsageDescription` | Vizor uses the camera to scan addresses, gift cards, and Keystone QR codes. | Vizor는 주소, 기프트 카드, Keystone QR 코드를 스캔하는 데 카메라를 사용해요. | Vizor 使用相机扫描地址、礼品卡和 Keystone 二维码。 |
+| `NSCameraUsageDescription` | Vizor uses the camera to scan addresses, gift cards, and Keystone QR codes. | Vizor는 주소, 기프트 카드, Keystone QR 코드를 스캔하는 데 카메라를 사용해요. | Vizor 使用摄像头扫描地址、礼品卡和 Keystone 二维码。 |
 | `NSBluetoothAlwaysUsageDescription` | Vizor uses Bluetooth to connect to your Ledger device. | Vizor는 Ledger 기기에 연결하는 데 Bluetooth를 사용해요. | Vizor 使用蓝牙连接你的 Ledger 设备。 |
 | `NSFaceIDUsageDescription` | Vizor uses Face ID to unlock your wallet and confirm sensitive actions. | Vizor는 지갑 잠금을 해제하고 중요한 작업을 확인하는 데 Face ID를 사용해요. | Vizor 使用面容 ID 解锁钱包并确认敏感操作。 |
 
@@ -77,14 +83,15 @@ Same steps for the macOS target. Its usage descriptions differ from iOS:
 
 | Key | English | Korean | Simplified Chinese |
 | --- | --- | --- | --- |
-| `NSCameraUsageDescription` | Vizor uses the camera to scan Keystone QR codes. | Vizor는 Keystone QR 코드를 스캔하는 데 카메라를 사용해요. | Vizor 使用相机扫描 Keystone 二维码。 |
+| `NSCameraUsageDescription` | Vizor uses the camera to scan Keystone QR codes. | Vizor는 Keystone QR 코드를 스캔하는 데 카메라를 사용해요. | Vizor 使用摄像头扫描 Keystone 二维码。 |
 | `NSBluetoothAlwaysUsageDescription` | Vizor uses Bluetooth to connect to your Ledger hardware wallet. | Vizor는 Ledger 하드웨어 지갑에 연결하는 데 Bluetooth를 사용해요. | Vizor 使用蓝牙连接你的 Ledger 硬件钱包。 |
 
 ### Android (`android/app`)
 
 1. Add `res/xml/locales_config.xml` listing `en`, `ko` and `zh-CN`, and set
    `android:localeConfig="@xml/locales_config"` on `<application>`. Android
-   13 and later then offer a per-app language in system settings.
+   13 and later then offer a per-app language in system settings, which does
+   not change the app's own text either.
 2. `res/values` holds no strings today: the app label stays `Vizor`, Android
    draws permission dialogs with its own text, and native copy comes from
    `NativeStrings.kt`. Add `values-ko` and `values-zh-rCN` only when a

@@ -51,12 +51,12 @@ build also offers the unreleased ones:
 
 | Build | Languages offered | A Korean or Chinese device shows |
 | --- | --- | --- |
-| Default, including every release | Released only (English today) | English, with no language controls |
-| `--dart-define=VIZOR_I18N_PREVIEW=true` | Every entry | English until the user picks a language |
+| Default, including every release | Released: English, Korean, Simplified Chinese | English until the user picks a language |
+| `--dart-define=VIZOR_I18N_PREVIEW=true` | Every entry, including any unreleased one | English until the user picks a language |
 | Widgetbook, figma-compare | Every entry | Whatever the tool selects |
 
-An English change therefore reaches users in the next release, with or without
-the flag. A Korean or Chinese change does not until the language ships.
+A copy change in a released language reaches users in the next release. All
+three are released today, so none of them needs the flag.
 
 ### The saved preference
 
