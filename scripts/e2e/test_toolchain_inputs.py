@@ -6,10 +6,39 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import toolchain_inputs as INPUTS
+
+
+class TreeDigestLinkTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="vizor-tree-digest-test-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()/"package"
+        self.root.mkdir()
+        (self.root/"lib.rs").write_text("source")
+
+    def digest(self):
+        return INPUTS.tree_digest(self.root, threading.Event(), ignore_generated=False)
+
+    def test_dangling_link_inside_the_package_is_hashed_by_its_text(self):
+        link = self.root/"dangling"
+        link.symlink_to("missing-one")
+        first = self.digest()
+        link.unlink()
+        link.symlink_to("missing-two")
+        self.assertNotEqual(self.digest(), first)
+
+    def test_links_leaving_the_package_stay_refused_even_when_dangling(self):
+        for target in ("../missing", "/missing"):
+            link = self.root/"escaping"
+            link.symlink_to(target)
+            with self.subTest(target=target), self.assertRaises(INPUTS.ToolInputError):
+                self.digest()
+            link.unlink()
 
 
 class BuildEnvironmentTests(unittest.TestCase):

@@ -314,7 +314,8 @@ def tree_digest(root, cancel, *, capture=file_record, ignore_generated=True,
             info = path.lstat()
             if stat.S_ISLNK(info.st_mode):
                 target = os.readlink(path)
-                resolved = path.resolve(strict=True)
+                # A dangling link is hashed by its text; only its destination is bounded.
+                resolved = path.resolve(strict=False)
                 if Path(target).is_absolute() or (not resolved.is_relative_to(root)
                     and resolved not in linked_files
                     and not any(resolved.is_relative_to(other) for other in linked_roots)):
