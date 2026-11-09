@@ -22,6 +22,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_toast.dart';
+import '../../../core/widgets/untranslated_details.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -892,6 +893,8 @@ class _WindowsUpdateModal extends ConsumerWidget {
                   : context.colors.text.secondary,
             ),
           ),
+          if (state.status == WindowsUpdateStatus.failed)
+            ...untranslatedDetailsButton(state.failureDetails),
           if (state.status == WindowsUpdateStatus.downloading) ...[
             const SizedBox(height: AppSpacing.s),
             _UpdateProgressBar(progress: state.downloadProgress),

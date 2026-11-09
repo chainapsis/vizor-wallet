@@ -197,7 +197,9 @@ class _Visitor extends RecursiveAstVisitor<void> {
         if (_devTypes.contains(type)) return null;
         if (_textWidgets.contains(type)) slot = true;
       }
-      if (parent is VariableDeclaration) {
+      // `const fooKey = 'foo_bar'` names an identifier, but a widget built
+      // into `final helpKey = keySlot(label: 'Help')` still shows its copy.
+      if (parent is VariableDeclaration && parent.initializer == node) {
         final name = parent.name.lexeme;
         if (RegExp(
               r'(Key|Path|Url|Uri|Route|Id|Channel|Prefix)$',

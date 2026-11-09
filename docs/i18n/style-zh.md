@@ -20,6 +20,8 @@ until a `zh_Hant` translation exists.
 - Put a space between Chinese characters and Latin letters or numbers:
   `发送 0.5 ZEC`, `使用 Ledger 签名`.
 - No space between Chinese characters and full-width punctuation.
+- A biometric name (`{method}`, `{biometric}`) can be Latin (`Face ID`) or
+  Chinese (`指纹`), so no spacing suits both. Quote it: `使用“{method}”解锁`.
 
 ## Terms
 

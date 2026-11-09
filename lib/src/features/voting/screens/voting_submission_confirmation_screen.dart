@@ -10,6 +10,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/untranslated_details.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
@@ -86,6 +87,7 @@ class _VotingSubmissionConfirmationViewState
   BigInt? _refreshedVotingPowerZatoshi;
   bool _refreshedVotingEligibilityConfirmed = false;
   String? _votingPowerRefreshErrorMessage;
+  String? _votingPowerRefreshErrorDetails;
   bool _votingPowerRefreshErrorIsEligibility = false;
   VotingSessionState? _lastSubmissionState;
   String? _pollRefreshKey;
@@ -105,6 +107,7 @@ class _VotingSubmissionConfirmationViewState
     _refreshedVotingPowerZatoshi = null;
     _refreshedVotingEligibilityConfirmed = false;
     _votingPowerRefreshErrorMessage = null;
+    _votingPowerRefreshErrorDetails = null;
     _lastSubmissionState = null;
     _pollRefreshKey = null;
     _pollRefreshFuture = null;
@@ -145,8 +148,9 @@ class _VotingSubmissionConfirmationViewState
             title: context.l10n.votingConfirmationIncompleteTitle,
             pollTitle: context.l10n.votingTokenHolderTitle,
             message: context.l10n.votingConfirmationLoadFailed(
-              friendlyVotingErrorMessage(context.l10n, error),
+              friendlyVotingLoadErrorMessage(context.l10n, error),
             ),
+            details: friendlyVotingErrorDetails(error),
             votingPower: context.l10n.votingNotAvailable,
           ),
         );
@@ -212,10 +216,13 @@ class _VotingSubmissionConfirmationViewState
             ).text(context.l10n);
       final loadErrorMessage = loadError == null
           ? null
-          : friendlyVotingErrorMessage(context.l10n, loadError);
+          : friendlyVotingLoadErrorMessage(context.l10n, loadError);
       final latestRefreshMessage =
           _votingPowerRefreshErrorMessage ?? loadErrorMessage;
       final retryMessage = _refreshingVotingPower ? null : latestRefreshMessage;
+      final retryDetails = _votingPowerRefreshErrorMessage != null
+          ? _votingPowerRefreshErrorDetails
+          : (loadError == null ? null : friendlyVotingErrorDetails(loadError));
       final canRetry =
           latestRefreshMessage != null &&
           !_refreshingVotingPower &&
@@ -232,6 +239,9 @@ class _VotingSubmissionConfirmationViewState
               (_refreshingVotingPower
                   ? context.l10n.votingConfirmationCheckingEligibility
                   : context.l10n.votingConfirmationEligibilityUnconfirmed),
+          details: retryMessage != null
+              ? retryDetails
+              : votingMessageDetails(storedEligibilityError?.message),
           votingPower: context.l10n.votingNotAvailable,
           doneLabel: context.l10n.commonDone,
           retryLabel: canRetry ? context.l10n.commonRetry : null,
@@ -316,6 +326,7 @@ class _VotingSubmissionConfirmationViewState
       _refreshingVotingPower = true;
       _votingPowerRefreshAttempted = true;
       _votingPowerRefreshErrorMessage = null;
+      _votingPowerRefreshErrorDetails = null;
     });
     unawaited(
       _refreshVotingPower(state: state, jobKey: jobKey, key: refreshKey),
@@ -342,6 +353,7 @@ class _VotingSubmissionConfirmationViewState
       _refreshedVotingPowerZatoshi = null;
       _refreshedVotingEligibilityConfirmed = false;
       _votingPowerRefreshErrorMessage = null;
+      _votingPowerRefreshErrorDetails = null;
     }
     if (!confirmed || _refreshingVotingPower || _votingPowerRefreshAttempted) {
       return;
@@ -428,6 +440,10 @@ class _VotingSubmissionConfirmationViewState
             : normalizedVotingMessage(
                 refreshedError.message,
               ).text(context.l10n);
+        _votingPowerRefreshErrorDetails =
+            refreshedEligibilityConfirmed || refreshedError == null
+            ? null
+            : votingMessageDetails(refreshedError.message);
         _votingPowerRefreshErrorIsEligibility =
             !refreshedEligibilityConfirmed &&
             (refreshedError?.isEligibilityFailure ?? false);
@@ -445,6 +461,7 @@ class _VotingSubmissionConfirmationViewState
             context.l10n,
             error,
           );
+          _votingPowerRefreshErrorDetails = friendlyVotingErrorDetails(error);
           _votingPowerRefreshErrorIsEligibility =
               votingRustExceptionOf(error)?.isEligibilityFailure ?? false;
         });
@@ -467,6 +484,7 @@ class _ConfirmationScaffold extends StatelessWidget {
     required this.pollTitle,
     required this.message,
     required this.votingPower,
+    this.details,
     this.onDone,
     this.isReturningToPolls = false,
     this.doneEnabled = true,
@@ -481,6 +499,9 @@ class _ConfirmationScaffold extends StatelessWidget {
   final String title;
   final String pollTitle;
   final String message;
+
+  /// Untranslated text behind [message], behind a "Show details" button.
+  final String? details;
   final String votingPower;
   final VoidCallback? onDone;
   final bool isReturningToPolls;
@@ -580,6 +601,10 @@ class _ConfirmationScaffold extends StatelessWidget {
                           style: AppTypography.bodyMedium.copyWith(
                             color: colors.text.secondary,
                           ),
+                        ),
+                        ...untranslatedDetailsButton(
+                          details,
+                          alignment: AlignmentDirectional.centerStart,
                         ),
                         const SizedBox(height: AppSpacing.md),
                         _ReceiptCard(

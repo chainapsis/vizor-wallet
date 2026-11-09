@@ -1147,6 +1147,15 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_account_edit_save')));
     await tester.pump();
     expect(find.text('Account name'), findsOneWidget);
+    expect(find.text('Enter a name.'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_account_edit_name')),
+      'a' * 21,
+    );
+    await tester.tap(find.byKey(const ValueKey('mobile_account_edit_save')));
+    await tester.pump();
+    expect(find.text('Name can be up to 20 characters.'), findsOneWidget);
   });
 
   testWidgets('profile picture sheet wraps the grid on narrow phones', (

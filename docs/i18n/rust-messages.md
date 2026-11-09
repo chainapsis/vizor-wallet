@@ -25,9 +25,13 @@ Rules for new code:
 - **A function that returns `String` drops any code.** The cause is
   `From<WalletFailure> for String`. Every function between the coded error
   and the FRB boundary must return `WalletFailure`.
-- **English text stays only as secondary detail.** Rust text may stay English
-  as a detail under a localized headline, and only when it is diagnostic
-  (txids, transport status, storage errors).
+- **Screens show localized copy, with Rust's text behind "Show details".**
+  A screen that replaces untranslated text with its own copy puts the text
+  behind `untranslatedDetailsButton` (`core/widgets/untranslated_details.dart`),
+  which opens it with a copy button, and logs it with `logUntranslatedText`
+  (`core/l10n/untranslated_text_log.dart`). Rust's English still shows inline
+  in a broadcast notice's `detail`, the shield notice's tooltip, migration
+  status notes and the messages that wrap it in their own sentence.
 
 ## Codes
 
@@ -140,15 +144,17 @@ silently stops matching.
 | `payment_link_service.dart` `PaymentLinkBatchRejected.from` | prefix `This group ` | `sync/send.rs` `validate_payment_link_batch_proposal` | See raw display below |
 | `transparent_shielding_service.dart` `postBroadcastShieldErrorMessage`, `keystone_shield_signing_overlay.dart` `_postBroadcastErrorMessage` | `broadcast succeeded` | Only in `ExtractAndBroadcastPcztResult.message`, never in an error | Dead: no error carries the phrase |
 
-## Stays English by design (secondary detail)
+## Untranslated Rust text
 
 | Dart site | Rust source | Shown as |
 | --- | --- | --- |
 | `home_screen.dart` shield notice `shieldBalanceErrorDetails` | shielding errors | Detail under the localized `friendlyShieldBalanceError` headline |
-| `receive_screen.dart` renew-address, shielded and transparent address load errors | `get_next_available_address`, `get_unified_address`, `get_transparent_receive_address` | Detail inside `commonErrorWithDetails` |
-| migration `keystone_signing.dart` `ironwoodMigrationKeystoneProofFailureMessage` | `keystone_migration_proof_status`, `keystone_requests.rs` `proof_error` | Detail under `migrationKeystoneProofFailed` |
-| `voting_config_error_text.dart` `votingConfigSourceErrorText` (desktop panel, mobile sheet) | `resolve_static_voting_config` / `resolve_voting_config_from_attempts` (`VotingErrorView`) | Detail under `votingConfigLoadFailed`, as `kind: message` |
-| `mobile_ironwood_migration_review.dart` Fast migration warning | `IronwoodMigrationResult.message` ("The Immediate migration broadcast response was unavailable …") | Line under the localized `migrationMobileFastSubmittedBody` |
+| `receive_screen.dart` renew-address, shielded and transparent address load errors | `get_next_available_address`, `get_unified_address`, `get_transparent_receive_address` | Behind "Show details" under the screen's own copy |
+| migration `keystone_signing.dart` `ironwoodMigrationKeystoneProofFailureMessage` | `keystone_migration_proof_status`, `keystone_requests.rs` `proof_error` | Behind "Show details" under `migrationKeystoneProofFailed` |
+| `voting_config_error_text.dart` `votingConfigSourceErrorText` (desktop panel, mobile sheet) | `resolve_static_voting_config` / `resolve_voting_config_from_attempts` (`VotingErrorView`) | Behind "Show details", as `kind: message`, under `votingConfigLoadFailed` |
+| `voting_message.dart` `VotingLiteralMessage` (voting status, polls, results, review) | voting SDK errors with no code, chain diagnostics | Behind "Show details" under the session or chain summary, or under `votingLoadFailedRetry` on a screen that failed to load |
+| `mobile_ironwood_migration_review.dart` Fast migration warning | `IronwoodMigrationResult.message` ("The Immediate migration broadcast response was unavailable …") | Behind "Show details" under `migrationMobileFastSubmittedUnconfirmed` or `migrationMobileFastSubmittedNotTracked` |
+| `private_status.dart`, `mobile_ironwood_migration_redesigned_status.dart` | `migration_status` `last_error` | Detail under the phase title, labelled `commonDetails`. It also holds progress notes such as "Waiting for the anchor block". |
 | `onboarding_error_messages.dart` `onboardingSubmitErrorMessage`, errors other than the three duplicates | create/import FRB functions in `api/wallet.rs` | Logged; the one-line field message shows `onboardingSubmitFailed` |
 | Logs, `rpc_endpoint_failover_provider.dart` `lastFailure`, `NetworkPrivacyState.error` | various | Not displayed |
 

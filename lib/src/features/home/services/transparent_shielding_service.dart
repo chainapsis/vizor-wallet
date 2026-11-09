@@ -31,7 +31,29 @@ String? shieldBalanceBroadcastStatusMessage(
   rust_sync.ShieldTransparentResult result,
 ) => shieldBalanceQueuedForRetry(result) ? l10n.homeShieldQueuedForRetry : null;
 
+/// Why a shield attempt stopped before it reached Rust.
+enum ShieldPrecondition { balanceTooSmall, secretUnavailable, noActiveAccount }
+
+/// A shield attempt stopped before it reached Rust. The notice explains it,
+/// so it carries no detail of its own.
+class ShieldPreconditionException implements Exception {
+  const ShieldPreconditionException(this.reason);
+
+  final ShieldPrecondition reason;
+
+  @override
+  String toString() => 'ShieldPreconditionException: ${reason.name}'; // l10n-ignore: log text
+}
+
 String friendlyShieldBalanceError(AppLocalizations l10n, Object error) {
+  if (error is ShieldPreconditionException) {
+    return switch (error.reason) {
+      ShieldPrecondition.balanceTooSmall => l10n.homeShieldErrorTooSmall,
+      ShieldPrecondition.secretUnavailable =>
+        l10n.homeShieldErrorSeedUnavailable,
+      ShieldPrecondition.noActiveAccount => l10n.commonNoActiveAccountSentence,
+    };
+  }
   switch (walletErrorCode(error)) {
     case rust_sync.ApiWalletErrorCode.optOutUnfinished:
       return privateQueriesOptOutUnfinishedMessage(l10n);
@@ -69,6 +91,7 @@ String friendlyShieldBalanceError(AppLocalizations l10n, Object error) {
 }
 
 String? shieldBalanceErrorDetails(Object error) {
+  if (error is ShieldPreconditionException) return null;
   final message = error.toString().trim();
   final lower = message.toLowerCase();
   if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
@@ -107,7 +130,9 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
       accountUuid,
     );
     if (!sync.canShieldTransparentBalance) {
-      throw Exception('Transparent balance is too small to shield after fees.');
+      throw const ShieldPreconditionException(
+        ShieldPrecondition.balanceTooSmall,
+      );
     }
 
     final dbPath = await getWalletDbPath();
@@ -140,7 +165,9 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
       try {
         secretGuard.check();
         if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-          throw Exception('Mnemonic not found for the active account.');
+          throw const ShieldPreconditionException(
+            ShieldPrecondition.secretUnavailable,
+          );
         }
         resultFuture = rust_sync.shieldTransparentBalance(
           dbPath: dbPath,
@@ -266,17 +293,19 @@ String shieldPcztBroadcastStatusMessage(
 bool isHardwareBroadcastRetryable(Object error) =>
     walletErrorCode(error) == rust_sync.ApiWalletErrorCode.retryAfterRecovery;
 
-String? postBroadcastShieldErrorMessage(Object error) {
+/// The warning for a shield transaction that reached the network but was not
+/// stored locally, or null for any other error.
+String? postBroadcastShieldErrorMessage(AppLocalizations l10n, Object error) {
   final raw = error.toString();
   if (!raw.toLowerCase().contains('broadcast succeeded')) return null;
-  return raw.replaceFirst(RegExp(r'^Exception:\s*'), '');
+  return l10n.homeShieldBroadcastNotStored;
 }
 
 String activeShieldingAccountUuid(WidgetRef ref) {
   final wallet = ref.read(walletProvider).value;
   final accountUuid = wallet?.activeAccountUuid;
   if (accountUuid == null) {
-    throw Exception('No active account.');
+    throw const ShieldPreconditionException(ShieldPrecondition.noActiveAccount);
   }
   return accountUuid;
 }

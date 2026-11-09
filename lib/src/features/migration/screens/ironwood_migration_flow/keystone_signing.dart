@@ -1751,6 +1751,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 ),
               ),
             ),
+            if (proofFailed)
+              ...untranslatedDetailsButton(_proofStatus?.message),
           ],
           const SizedBox(height: AppSpacing.lg),
           AppButton(
@@ -1864,6 +1866,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 ),
               ),
             ),
+            if (proofFailed)
+              ...untranslatedDetailsButton(_proofStatus?.message),
           ],
           const SizedBox(height: AppSpacing.lg),
           AppButton(
@@ -2263,14 +2267,9 @@ String ironwoodMigrationKeystoneProofFailureMessage(
   AppLocalizations l10n,
   rust_sync.KeystoneMigrationProofStatus? status,
 ) {
-  final message = status?.message?.trim();
-  if (message == null || message.isEmpty) {
-    return l10n.migrationKeystoneProofFailed;
-  }
-  return l10n.commonErrorWithDetails(
-    l10n.migrationKeystoneProofFailed,
-    message,
-  );
+  // Rust's reason is untranslated, so only the log keeps it.
+  logUntranslatedText(status?.message ?? '');
+  return l10n.migrationKeystoneProofFailed;
 }
 
 @visibleForTesting

@@ -823,7 +823,10 @@ class _MobileMigrationRedesignedStatusState
           widget.status,
           requiresInput: true,
         ),
-        actionMessage: widget.status.message,
+        actionMessage: switch (widget.status.message) {
+          final message? => context.l10n.commonDetails(message),
+          null => null,
+        },
         actionLabel: _actionRunning
             ? paused
                   ? context.l10n.migrationMobileResuming

@@ -440,7 +440,10 @@ class _MobileKeystoneShieldScreenState
       if (!mounted || _closed) return;
       await _maybeSwitchBroadcastEndpoint(e, attemptedEndpoint);
       if (!mounted || _closed) return;
-      final postBroadcastMessage = postBroadcastShieldErrorMessage(e);
+      final postBroadcastMessage = postBroadcastShieldErrorMessage(
+        context.l10n,
+        e,
+      );
       if (postBroadcastMessage != null) {
         setState(() {
           _stage = _ShieldSignStage.broadcastWarning;

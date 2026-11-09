@@ -23,7 +23,10 @@ import '../../send/services/sapling_params.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
 import '../services/hardware_shielding_session.dart';
 import '../services/transparent_shielding_service.dart'
-    show isHardwareBroadcastRetryable, observeShieldingBroadcast;
+    show
+        isHardwareBroadcastRetryable,
+        observeShieldingBroadcast,
+        postBroadcastShieldErrorMessage;
 
 enum _KeystoneShieldPhase {
   preparing,
@@ -290,7 +293,10 @@ class _KeystoneShieldSigningOverlayState
       log('KeystoneShieldConfirm._broadcast: ERROR: $e\n$st');
       await _maybeSwitchBroadcastEndpoint(e, attemptedEndpoint);
       if (!mounted || _closed) return;
-      final postBroadcastMessage = _postBroadcastErrorMessage(e);
+      final postBroadcastMessage = postBroadcastShieldErrorMessage(
+        context.l10n,
+        e,
+      );
       if (postBroadcastMessage != null) {
         setState(() {
           _phase = _KeystoneShieldPhase.broadcastWarning;
@@ -360,12 +366,6 @@ class _KeystoneShieldSigningOverlayState
       return detail ?? context.l10n.homeShieldBroadcastNotStored;
     }
     return detail ?? context.l10n.homeShieldStatusUncertain;
-  }
-
-  String? _postBroadcastErrorMessage(Object error) {
-    final raw = error.toString();
-    if (!raw.toLowerCase().contains('broadcast succeeded')) return null;
-    return raw.replaceFirst(RegExp(r'^Exception:\s*'), '');
   }
 
   String _friendlyError(Object error) {

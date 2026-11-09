@@ -25,6 +25,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/primitives.dart';
 import '../../../../core/zcash/block_spacing.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/untranslated_details.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../providers/account_provider.dart';
@@ -48,6 +49,7 @@ import '../ironwood_migration_flow_screen.dart';
 import '../../../../core/zcash/network_upgrade_hold.dart';
 import '../../../../core/l10n/inline_spans.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/l10n/untranslated_text_log.dart';
 import '../../../../core/l10n/locale_typography.dart';
 
 part 'mobile_ironwood_migration_models.dart';

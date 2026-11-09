@@ -28,26 +28,35 @@ List<String> tokenizeMnemonicWords(String raw) => raw
     .where((word) => word.isNotEmpty)
     .toList();
 
-/// Validates a candidate phrase; returns an error message or null.
-const _kMnemonicCheckFailedMessage =
-    "That passphrase couldn't be checked. Try again."; // l10n-ignore: compared with == and returned by a context-free validator
+/// Why a candidate phrase cannot be imported.
+enum MnemonicIssue { wordCount, checksum, checkFailed }
 
-String? validateImportedMnemonic(List<String> words) {
+/// Checks a candidate phrase; null when it can be imported.
+MnemonicIssue? checkImportedMnemonic(List<String> words) {
   if (!kMnemonicWordCounts.contains(words.length)) {
-    return 'A secret passphrase has 12, 15, 18, 21, or 24 words — ' // l10n-ignore: context-free validator
-        'found ${words.length}.';
+    return MnemonicIssue.wordCount;
   }
   try {
     if (!rust_wallet.validateMnemonic(mnemonic: words.join(' '))) {
-      return 'These words are valid, but they do not form a valid secret ' // l10n-ignore: context-free validator
-          'passphrase. Check the order or replace any word that looks wrong.';
+      return MnemonicIssue.checksum;
     }
   } catch (e) {
-    log('validateImportedMnemonic: ERROR: $e');
-    return _kMnemonicCheckFailedMessage;
+    log('checkImportedMnemonic: ERROR: $e');
+    return MnemonicIssue.checkFailed;
   }
   return null;
 }
+
+/// The inline message for [issue] on the word-by-word import step.
+String mnemonicIssueText(
+  AppLocalizations l10n,
+  MnemonicIssue issue,
+  int wordCount,
+) => switch (issue) {
+  MnemonicIssue.wordCount => l10n.onboardingImportWordCountError(wordCount),
+  MnemonicIssue.checksum => l10n.onboardingImportChecksumError,
+  MnemonicIssue.checkFailed => l10n.onboardingImportCheckFailedRetry,
+};
 
 enum _ImportPasteState { idle, reading }
 
@@ -190,12 +199,12 @@ class _MobileImportScreenState extends State<MobileImportScreen> {
       return context.l10n.onboardingImportCheckFailedError;
     }
 
-    final error = validateImportedMnemonic(words);
-    if (error == null) return null;
-    if (error == _kMnemonicCheckFailedMessage) {
-      return context.l10n.onboardingImportCheckFailedError;
-    }
-    return context.l10n.onboardingImportInvalidPhraseError;
+    return switch (checkImportedMnemonic(words)) {
+      null => null,
+      MnemonicIssue.checkFailed =>
+        context.l10n.onboardingImportCheckFailedError,
+      _ => context.l10n.onboardingImportInvalidPhraseError,
+    };
   }
 
   void _openManual() {

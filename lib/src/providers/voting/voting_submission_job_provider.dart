@@ -942,7 +942,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     if (requests.isEmpty) {
-      throw StateError('No Keystone voting requests are ready to encode.');
+      throw const VotingMessageException(
+        VotingNotice(VotingNoticeKind.keystoneNoSigningRequest),
+      );
     }
     _keystoneSigningRound = null;
     state = state.copyWith(

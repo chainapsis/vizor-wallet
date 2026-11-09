@@ -50,16 +50,16 @@ class WindowsUpdateDownloadResult {
 
   final bool started;
 
-  /// Set when the app found the reason; otherwise [nativeMessage] holds the
-  /// native updater's text.
+  /// Set when the app found the reason; otherwise [nativeMessage] may hold the
+  /// native updater's untranslated text.
   final WindowsUpdateIssue? issue;
   final String nativeMessage;
 
   String message(AppLocalizations l10n) =>
-      issue?.message(l10n) ??
-      (nativeMessage.trim().isEmpty
-          ? WindowsUpdateIssue.generic.message(l10n)
-          : nativeMessage.trim());
+      (issue ?? WindowsUpdateIssue.generic).message(l10n);
+
+  /// The native updater's text, for a "Show details" button.
+  String? get details => _nativeDetails(issue, nativeMessage);
 }
 
 /// Why an update operation failed, and whether the user was waiting on it.
@@ -146,13 +146,13 @@ class WindowsUpdateState {
   /// Set when the app, not the native updater, found why the update failed.
   final WindowsUpdateIssue? issue;
 
-  /// The failure text to show: the app's own reason, else the native
-  /// updater's, else the generic one.
+  /// The failure text to show: the app's own reason, else the generic one.
   String failureMessage(AppLocalizations l10n) =>
-      issue?.message(l10n) ??
-      (message.trim().isEmpty
-          ? WindowsUpdateIssue.generic.message(l10n)
-          : message.trim());
+      (issue ?? WindowsUpdateIssue.generic).message(l10n);
+
+  /// The native updater's untranslated [message], for a "Show details"
+  /// button under [failureMessage].
+  String? get failureDetails => _nativeDetails(issue, message);
 
   /// Set only while [status] is [WindowsUpdateStatus.failed]. Carries what the
   /// prompt needs to decide whether the user should be interrupted, and to tell
@@ -238,7 +238,6 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
       // Callers start this unawaited, so an escaping error would surface as an
       // unhandled async error and leave the check permanently spent. Record it
       // silently and let route recovery run it again.
-      debugPrint('[zcash] Windows startup update check failed: $error');
       _setFailed(_updateErrorMessage(error));
       _startupCheckStarted = false;
     }
@@ -331,6 +330,10 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
       state = next;
       return;
     }
+    if (state.status != WindowsUpdateStatus.failed ||
+        state.message != next.message) {
+      debugPrint('[zcash] Windows update failed: ${next.message}');
+    }
     state = WindowsUpdateState.fromSnapshot(snapshot, failure: _nextFailure());
     // The native check runs detached and can report its failure through a
     // later polled snapshot rather than by throwing, so the startup check has
@@ -384,18 +387,24 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   }
 }
 
+/// Native text is shown only when the app has no reason of its own.
+String? _nativeDetails(WindowsUpdateIssue? issue, String nativeMessage) {
+  final details = nativeMessage.trim();
+  return issue == null && details.isNotEmpty ? details : null;
+}
+
 ({String message, WindowsUpdateIssue? issue}) _updateErrorMessage(
   Object error,
 ) {
+  debugPrint('[zcash] Windows update failed: $error');
   if (error is PlatformException) {
     final message = error.message?.trim();
     if (message != null && message.isNotEmpty) {
       return (message: message, issue: null);
     }
   }
-  // Only the native updater writes copy meant for the user. Anything else can
-  // carry local paths or transport internals, so it stays in the log.
-  debugPrint('[zcash] Windows update failed: $error');
+  // Anything but the native updater's message can carry local paths or
+  // transport internals, so it is not kept.
   return (message: '', issue: WindowsUpdateIssue.generic);
 }
 

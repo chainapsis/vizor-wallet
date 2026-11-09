@@ -2193,7 +2193,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       });
       if (kAppFormFactor == AppFormFactor.mobile) context.go('/home');
       if (matchingInFlight != null) {
-        _showError(const PaymentLinkClaimInFlightException().toString());
+        _showError(context.l10n.paymentLinkClaimInFlightError);
       }
       return;
     }
@@ -2318,7 +2318,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         setState(() => _redeemState = PaymentLinkRedeemVisualState.loading);
         await _prepareDecodedPaymentLink(link, allowLongSync: true);
       }
-    } on PaymentLinkClaimInFlightException catch (error) {
+    } on PaymentLinkClaimInFlightException {
       log('PaymentLinkClaim: ignored duplicate in-flight link');
       if (!mounted || !_isCurrentNavigation(epoch)) return;
       setState(() {
@@ -2328,7 +2328,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         _redeemState = PaymentLinkRedeemVisualState.paste;
         _page = PaymentLinksLocalPage.home;
       });
-      _showError(error.toString());
+      _showError(context.l10n.paymentLinkClaimInFlightError);
     } on PaymentLinkNetworkMismatchException catch (error) {
       log(
         'PaymentLinkClaim: rejected link for another network '
@@ -2343,7 +2343,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         _retryLink = null;
         _redeemState = PaymentLinkRedeemVisualState.paste;
       });
-      _showError(error.toString());
+      _showError(context.l10n.paymentLinkClaimOtherNetworkError);
     } on FormatException catch (error) {
       log(
         'PaymentLinkClaim: preparation rejected '

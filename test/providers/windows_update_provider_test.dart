@@ -84,7 +84,7 @@ void main() {
         .downloadUpdate();
 
     expect(result.started, isFalse);
-    expect(result.message(testL10n), 'Signed feed verification failed.');
+    expect(result.message(testL10n), testL10n.updateFailedMessage);
     expect(
       container.read(windowsUpdateProvider).message,
       'Signed feed verification failed.',
@@ -113,7 +113,7 @@ void main() {
         .downloadUpdate();
 
     expect(result.started, isFalse);
-    expect(result.message(testL10n), 'Software update routing is changing.');
+    expect(result.message(testL10n), testL10n.updateFailedMessage);
     expect(
       container.read(windowsUpdateProvider).status,
       WindowsUpdateStatus.failed,
@@ -244,7 +244,7 @@ void main() {
         .read(windowsUpdateProvider.notifier)
         .downloadUpdate();
 
-    expect(result.message(testL10n), 'Signed feed verification failed.');
+    expect(result.message(testL10n), testL10n.updateFailedMessage);
   });
 
   test('check reports the blocked Tor update route', () async {

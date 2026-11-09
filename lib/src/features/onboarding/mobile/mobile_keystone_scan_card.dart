@@ -229,12 +229,15 @@ class _KeystonePermissionMessage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.xxs),
-        for (final line in description.split('\n'))
+        for (final (index, line) in description.split('\n').indexed)
           Text(
             line,
             textAlign: TextAlign.center,
-            maxLines: 1,
-            softWrap: false,
+            // The first line may wrap: a translation can be longer than the
+            // English the design was drawn with. Later lines stay on one line
+            // so the card keeps its height.
+            maxLines: index == 0 ? 2 : 1,
+            softWrap: index == 0,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,

@@ -110,10 +110,13 @@ class _EditAccountSheetState extends State<_EditAccountSheet> {
 
   void _save() {
     final name = normalizeAccountName(_nameController.text);
-    try {
-      validateAccountName(name);
-    } catch (e) {
-      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    if (!isAccountNameLengthValid(name)) {
+      final l10n = context.l10n;
+      setState(
+        () => _error = name.isEmpty
+            ? l10n.accountNameRequired
+            : l10n.accountNameTooLong,
+      );
       return;
     }
     Navigator.of(context).pop(

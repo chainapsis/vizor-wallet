@@ -66,6 +66,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountNameLabel => 'Account name';
 
   @override
+  String get accountNameRequired => 'Enter a name.';
+
+  @override
   String get accountNameTooLong => 'Name can be up to 20 characters.';
 
   @override
@@ -763,6 +766,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Camera access is off. Allow it in Settings to scan addresses.';
 
   @override
+  String get addressScanCameraOpenFailed =>
+      'Couldn\'t open the camera. Close other apps using it.';
+
+  @override
   String get addressScanCameraRequired =>
       'Address QR scanning requires a camera on this device.';
 
@@ -1294,6 +1301,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonDefaultCamera => 'Default camera';
 
   @override
+  String commonDetails(String details) {
+    return 'Details: $details';
+  }
+
+  @override
   String get commonDismissNotification => 'Dismiss notification';
 
   @override
@@ -1326,9 +1338,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonEnterAmountInUsd => 'Enter amount in USD';
 
   @override
-  String commonErrorWithDetails(String message, String details) {
-    return '$message\nDetails: $details';
-  }
+  String get commonErrorDetailsHint =>
+      'This is the original error text. If the problem keeps happening, copy it and send it to support.';
+
+  @override
+  String get commonErrorDetailsTitle => 'Error details';
 
   @override
   String get commonFailed => 'Failed';
@@ -1694,6 +1708,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonShielding => 'Shielding...';
+
+  @override
+  String get commonShowDetails => 'Show details';
 
   @override
   String get commonShowFullAddress => 'Show full address';
@@ -4729,7 +4746,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get migrationMobileFastSubmittedNotTracked =>
+      'The network accepted this migration, but Vizor couldn\'t record it on this device. Sync will recover it.';
+
+  @override
   String get migrationMobileFastSubmittedTitle => 'Migration submitted';
+
+  @override
+  String get migrationMobileFastSubmittedUnconfirmed =>
+      'Vizor couldn\'t confirm that the network received this migration. It may already be on the network, so don\'t start it again until sync shows the result.';
 
   @override
   String get migrationMobileFastTitle => 'Fast Migration';
@@ -6475,6 +6500,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Couldn\'t check secret passphrase';
 
   @override
+  String get onboardingImportCheckFailedRetry =>
+      'That passphrase couldn\'t be checked. Try again.';
+
+  @override
+  String get onboardingImportChecksumError =>
+      'These words are valid, but they do not form a valid secret passphrase. Check the order or replace any word that looks wrong.';
+
+  @override
   String get onboardingImportClipboardEmpty => 'Clipboard is empty';
 
   @override
@@ -6539,6 +6572,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingImportWalletTitleMobile => 'Import Wallet';
+
+  @override
+  String onboardingImportWordCountError(int count) {
+    return 'A secret passphrase has 12, 15, 18, 21, or 24 words — found $count.';
+  }
 
   @override
   String get onboardingIntroCard =>
@@ -6630,9 +6668,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingPasscodeCreateTitle => 'Create Passcode';
 
   @override
+  String get onboardingPasscodeDeleteSemantics => 'Delete digit';
+
+  @override
   String onboardingPasscodeDigitSemantics(int digit) {
     return 'Digit $digit';
   }
+
+  @override
+  String get onboardingPasscodeHelpSemantics => 'Passcode help';
 
   @override
   String get onboardingPasscodeReEnter => 'Re-enter your passcode.';
@@ -7490,6 +7534,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentLinkClaimGiftButton => 'Claim gift';
 
   @override
+  String get paymentLinkClaimInFlightError =>
+      'This gift card is already being received.';
+
+  @override
+  String get paymentLinkClaimOtherNetworkError =>
+      'This gift card is for a different Zcash network.';
+
+  @override
   String get paymentLinkClaimQueueFull =>
       'Too many gift cards are waiting. Finish another card first.';
 
@@ -8129,6 +8181,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get paymentLinkScanCameraHint =>
       'Connect a camera to scan the gift card QR code, or go back to paste the card link.';
+
+  @override
+  String get paymentLinkScanNotGiftCard => 'This isn\'t a gift card QR code.';
+
+  @override
+  String get paymentLinkScanOtherNetwork =>
+      'This gift card is for a different network.';
 
   @override
   String get paymentLinkScanSheetSemantic => 'Scan the gift card QR code';
@@ -11442,6 +11501,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingConfigSettings => 'Voting config settings';
 
   @override
+  String get votingConfigSettingsLoadFailed =>
+      'Couldn\'t load voting config settings.';
+
+  @override
   String get votingConfigShowTestRounds => 'Show test rounds';
 
   @override
@@ -11645,6 +11708,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'This Ledger signature conflicts with the signature already saved for this voting bundle.';
 
   @override
+  String get votingErrorLedgerSignatureMismatch =>
+      'Ledger returned a signature that doesn\'t match this vote. Retry to sign again.';
+
+  @override
   String get votingErrorLedgerSignatureSaveFailed =>
       'Could not save the Ledger voting signature. Retry this bundle.';
 
@@ -11816,6 +11883,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get votingLedgerReconnect => 'Reconnect your Ledger and try again.';
+
+  @override
+  String get votingLoadFailedRetry => 'Try again in a moment.';
 
   @override
   String votingMobileAccountLoadFailed(String error) {

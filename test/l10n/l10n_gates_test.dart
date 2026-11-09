@@ -86,6 +86,28 @@ void main() {
     }
   });
 
+  test('Korean never hedges a particle after a placeholder', () {
+    // "{method}(으)로" or "{label}을(를)" reads as a form, not a sentence.
+    // docs/i18n/style-ko.md says how to rephrase.
+    final hedged = RegExp(r'\}["”’)]?[가-힣]?\([가-힣]{1,2}\)');
+    final korean = translations[AppLanguage.ko]!;
+    expect([
+      for (final key in _messageKeys(korean))
+        if (hedged.hasMatch(korean[key]! as String)) key,
+    ], isEmpty);
+  });
+
+  test('Chinese quotes biometric names, which may be Latin or Chinese', () {
+    // A space before Face ID is required and before 指纹 is wrong, so the
+    // name goes in full-width quotes, which need no space either way.
+    final chinese = translations[AppLanguage.zh]!;
+    final bare = RegExp(r'(?<!“)\{(method|biometric)\}');
+    expect([
+      for (final key in _messageKeys(chinese))
+        if (bare.hasMatch(chinese[key]! as String)) key,
+    ], isEmpty);
+  });
+
   test('message keys are sorted so parallel changes rarely conflict', () {
     expect(keys, [...keys]..sort());
     for (final arb in translations.values) {

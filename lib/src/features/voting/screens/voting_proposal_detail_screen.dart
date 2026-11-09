@@ -17,6 +17,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/untranslated_details.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_shape.dart';
 import '../../../providers/voting/voting_pir_warmup_provider.dart';
@@ -206,7 +207,8 @@ class _VotingProposalDetailViewState
       error: (error, _) => _stateView(
         _Message(
           title: context.l10n.votingDetailLoadFailedTitle,
-          message: friendlyVotingErrorMessage(context.l10n, error),
+          message: friendlyVotingLoadErrorMessage(context.l10n, error),
+          details: friendlyVotingErrorDetails(error),
         ),
       ),
       data: (state) {
@@ -2095,20 +2097,27 @@ String _daysLeftLabel(AppLocalizations l10n, DateTime endDate) {
 }
 
 class _Message extends StatelessWidget {
-  const _Message({required this.title, required this.message});
+  const _Message({required this.title, required this.message, this.details});
 
   final String title;
   final String message;
+  final String? details;
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Text(
-        '$title\n$message',
-        textAlign: TextAlign.center,
-        style: AppTypography.bodyMedium.copyWith(
-          color: context.colors.text.accent,
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$title\n$message',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.accent,
+            ),
+          ),
+          ...untranslatedDetailsButton(details),
+        ],
       ),
     );
   }

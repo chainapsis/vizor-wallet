@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../support/test_l10n.dart';
 import 'round_plan_test_utils.dart';
 
 const _roundId =
@@ -22,6 +23,8 @@ const _roundId =
 const _key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
 const _message =
     'an unclassified submission reservation survived process interruption';
+// The SDK text is only logged; the screen shows the session summary.
+final _shownMessage = testL10n.votingErrorSessionFailed;
 
 /// Exercises the real Retry path while wallet readiness remains pending.
 Future<void> expectVotingRetryClearsError(
@@ -71,14 +74,14 @@ Future<void> expectVotingRetryClearsError(
     ),
   );
   await tester.pumpAndSettle();
-  expect(find.text(_message), findsOneWidget);
+  expect(find.text(_shownMessage), findsOneWidget);
 
   await tester.tap(find.text('Retry'));
   // Observe the first frame while the next attempt is blocked on readiness.
   await tester.pump();
   expect(session.readinessRequested, isTrue);
   expect(find.text('Voting failed.'), findsNothing);
-  expect(find.text(_message), findsNothing);
+  expect(find.text(_shownMessage), findsNothing);
   expect(find.text('Retry'), findsNothing);
   expect(
     container.read(votingSubmissionJobProvider(_key)).status,

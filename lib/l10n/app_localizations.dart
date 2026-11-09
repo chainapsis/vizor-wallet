@@ -196,6 +196,12 @@ abstract class AppLocalizations {
   /// **'Account name'**
   String get accountNameLabel;
 
+  /// Validation message when the user saves an account name that is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a name.'**
+  String get accountNameRequired;
+
   /// Validation message when an account name is longer than 20 characters.
   ///
   /// In en, this message translates to:
@@ -1401,6 +1407,12 @@ abstract class AppLocalizations {
   /// **'Camera access is off. Allow it in Settings to scan addresses.'**
   String get addressScanCameraOff;
 
+  /// Description on the mobile QR scan card when the camera exists but failed to open, for example because another app is using it. A Try again button follows it. The card shows at most two lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open the camera. Close other apps using it.'**
+  String get addressScanCameraOpenFailed;
+
   /// Description in the desktop QR scanner when the device has no camera.
   ///
   /// In en, this message translates to:
@@ -2189,6 +2201,12 @@ abstract class AppLocalizations {
   /// **'Default camera'**
   String get commonDefaultCamera;
 
+  /// A technical details line under a screen that already says what happened. {details} is raw text from the wallet and is not translated.
+  ///
+  /// In en, this message translates to:
+  /// **'Details: {details}'**
+  String commonDetails(String details);
+
   /// Screen-reader label of the close button on a toast.
   ///
   /// In en, this message translates to:
@@ -2249,11 +2267,17 @@ abstract class AppLocalizations {
   /// **'Enter amount in USD'**
   String get commonEnterAmountInUsd;
 
-  /// An error summary line, then a technical details line. {details} is raw error text and is not translated. Shared by: receive, migration, voting.
+  /// Note above the untranslated error text in the dialog or sheet that commonShowDetails opens. The text below it is English from the wallet and is not translated.
   ///
   /// In en, this message translates to:
-  /// **'{message}\nDetails: {details}'**
-  String commonErrorWithDetails(String message, String details);
+  /// **'This is the original error text. If the problem keeps happening, copy it and send it to support.'**
+  String get commonErrorDetailsHint;
+
+  /// Title of the dialog or sheet that commonShowDetails opens.
+  ///
+  /// In en, this message translates to:
+  /// **'Error details'**
+  String get commonErrorDetailsTitle;
 
   /// Status value of a transaction or swap that failed. Shared by: activity, send, settings, swap.
   ///
@@ -2944,6 +2968,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Shielding...'**
   String get commonShielding;
+
+  /// Small button under an error whose cause is untranslated text from the wallet (Rust, SDK or platform). Opens that text with a copy button.
+  ///
+  /// In en, this message translates to:
+  /// **'Show details'**
+  String get commonShowDetails;
 
   /// Ghost button on a receipt row that opens the full address of the sender or recipient. Shared by: activity, pay, send, swap.
   ///
@@ -7789,11 +7819,23 @@ abstract class AppLocalizations {
   /// **'{amount} is on its way to Ironwood.'**
   String migrationMobileFastSubmittedBody(String amount);
 
+  /// Warning on the Immediate migration success screen when the network accepted the transaction but storing it on the device failed. Raw details follow on the next line.
+  ///
+  /// In en, this message translates to:
+  /// **'The network accepted this migration, but Vizor couldn\'t record it on this device. Sync will recover it.'**
+  String get migrationMobileFastSubmittedNotTracked;
+
   /// Heading of the success screen after the Immediate migration was broadcast.
   ///
   /// In en, this message translates to:
   /// **'Migration submitted'**
   String get migrationMobileFastSubmittedTitle;
+
+  /// Warning on the Immediate migration success screen when the broadcast response was lost, so the transaction may or may not be on the network. Raw details follow on the next line.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t confirm that the network received this migration. It may already be on the network, so don\'t start it again until sync shows the result.'**
+  String get migrationMobileFastSubmittedUnconfirmed;
 
   /// Title-case top bar title of the mobile Immediate (fast) migration success screen.
   ///
@@ -10598,6 +10640,18 @@ abstract class AppLocalizations {
   /// **'Couldn\'t check secret passphrase'**
   String get onboardingImportCheckFailedError;
 
+  /// [security] Inline error on the mobile word-by-word import step when the secret passphrase could not be checked.
+  ///
+  /// In en, this message translates to:
+  /// **'That passphrase couldn\'t be checked. Try again.'**
+  String get onboardingImportCheckFailedRetry;
+
+  /// [security] Inline error on the mobile word-by-word import step when every word is a valid word but the phrase as a whole is not a valid secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'These words are valid, but they do not form a valid secret passphrase. Check the order or replace any word that looks wrong.'**
+  String get onboardingImportChecksumError;
+
   /// Toast on the mobile import step when the clipboard has no text.
   ///
   /// In en, this message translates to:
@@ -10717,6 +10771,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Import Wallet'**
   String get onboardingImportWalletTitleMobile;
+
+  /// [security] Inline error on the mobile word-by-word import step when the number of entered words is not a valid secret passphrase length; {count} is the number entered.
+  ///
+  /// In en, this message translates to:
+  /// **'A secret passphrase has 12, 15, 18, 21, or 24 words — found {count}.'**
+  String onboardingImportWordCountError(int count);
 
   /// Explains what shielded transactions hide, in the Zcash intro card on desktop and mobile.
   ///
@@ -10868,11 +10928,23 @@ abstract class AppLocalizations {
   /// **'Create Passcode'**
   String get onboardingPasscodeCreateTitle;
 
+  /// Accessibility label of the passcode keypad key that deletes the last digit entered.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete digit'**
+  String get onboardingPasscodeDeleteSemantics;
+
   /// Accessibility label of a passcode keypad key; {digit} is the number on the key.
   ///
   /// In en, this message translates to:
   /// **'Digit {digit}'**
   String onboardingPasscodeDigitSemantics(int digit);
+
+  /// [security] Accessibility label of the help key on the unlock passcode keypad; it opens the option to reset the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Passcode help'**
+  String get onboardingPasscodeHelpSemantics;
 
   /// [security] Subtitle of the confirm-passcode step.
   ///
@@ -12297,6 +12369,18 @@ abstract class AppLocalizations {
   /// **'Claim gift'**
   String get paymentLinkClaimGiftButton;
 
+  /// Error toast when the user opens a Gift Card that the wallet is already receiving.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card is already being received.'**
+  String get paymentLinkClaimInFlightError;
+
+  /// Error toast when the user pastes a Gift Card made on another Zcash network (for example testnet) than the wallet uses.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card is for a different Zcash network.'**
+  String get paymentLinkClaimOtherNetworkError;
+
   /// Toast shown when a received Gift Card cannot be saved because too many other cards are already waiting to be redeemed.
   ///
   /// In en, this message translates to:
@@ -13340,6 +13424,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connect a camera to scan the gift card QR code, or go back to paste the card link.'**
   String get paymentLinkScanCameraHint;
+
+  /// Error in the Gift Card QR scanner when the scanned code is not a Gift Card.
+  ///
+  /// In en, this message translates to:
+  /// **'This isn\'t a gift card QR code.'**
+  String get paymentLinkScanNotGiftCard;
+
+  /// Error in the Gift Card QR scanner when the scanned Gift Card was made on another Zcash network than the wallet uses.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card is for a different network.'**
+  String get paymentLinkScanOtherNetwork;
 
   /// Screen reader label of the camera preview in the Gift Card QR scanner sheet.
   ///
@@ -18732,6 +18828,12 @@ abstract class AppLocalizations {
   /// **'Voting config settings'**
   String get votingConfigSettings;
 
+  /// Error in the voting config settings when the saved config sources could not be read from the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load voting config settings.'**
+  String get votingConfigSettingsLoadFailed;
+
   /// Title and accessibility label of the switch that shows test voting rounds.
   ///
   /// In en, this message translates to:
@@ -19038,6 +19140,12 @@ abstract class AppLocalizations {
   /// **'This Ledger signature conflicts with the signature already saved for this voting bundle.'**
   String get votingErrorLedgerSignatureConflict;
 
+  /// Voting error when the signature a Ledger returns does not match the vote bundle it was asked to sign. The status screen offers Retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger returned a signature that doesn\'t match this vote. Retry to sign again.'**
+  String get votingErrorLedgerSignatureMismatch;
+
   /// Error shown when the Ledger voting signature could not be stored.
   ///
   /// In en, this message translates to:
@@ -19287,6 +19395,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reconnect your Ledger and try again.'**
   String get votingLedgerReconnect;
+
+  /// Shown in place of an untranslated voting SDK error when a voting screen fails to load: alone under a load-failed title, or as {error} in votingResultsLoadFailed, votingResultsRoundLoadFailed, votingReviewLoadFailed and votingConfirmationLoadFailed. The English error stays behind commonShowDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again in a moment.'**
+  String get votingLoadFailedRetry;
 
   /// Error on the mobile voting pages when the wallet account could not be loaded; {error} is the reason on a new line.
   ///

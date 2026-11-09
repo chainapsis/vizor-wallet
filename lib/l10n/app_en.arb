@@ -74,6 +74,10 @@
   "@accountNameLabel": {
     "description": "Label of the account name field or row."
   },
+  "accountNameRequired": "Enter a name.",
+  "@accountNameRequired": {
+    "description": "Validation message when the user saves an account name that is empty."
+  },
   "accountNameTooLong": "Name can be up to 20 characters.",
   "@accountNameTooLong": {
     "description": "Validation message when an account name is longer than 20 characters."
@@ -1009,6 +1013,10 @@
   "@addressScanCameraOff": {
     "description": "Message over the full-screen scanner when camera permission is off."
   },
+  "addressScanCameraOpenFailed": "Couldn't open the camera. Close other apps using it.",
+  "@addressScanCameraOpenFailed": {
+    "description": "Description on the mobile QR scan card when the camera exists but failed to open, for example because another app is using it. A Try again button follows it. The card shows at most two lines."
+  },
   "addressScanCameraRequired": "Address QR scanning requires a camera on this device.",
   "@addressScanCameraRequired": {
     "description": "Description in the desktop QR scanner when the device has no camera."
@@ -1732,6 +1740,15 @@
   "@commonDefaultCamera": {
     "description": "Fallback name of the camera in the desktop QR scanner footer. Shared by: address, keystone."
   },
+  "commonDetails": "Details: {details}",
+  "@commonDetails": {
+    "description": "A technical details line under a screen that already says what happened. {details} is raw text from the wallet and is not translated.",
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
   "commonDismissNotification": "Dismiss notification",
   "@commonDismissNotification": {
     "description": "Screen-reader label of the close button on a toast."
@@ -1777,17 +1794,13 @@
   "@commonEnterAmountInUsd": {
     "description": "Accessibility label of the toggle that switches the mobile Pay amount input to US dollars. Shared by: pay, receive."
   },
-  "commonErrorWithDetails": "{message}\nDetails: {details}",
-  "@commonErrorWithDetails": {
-    "description": "An error summary line, then a technical details line. {details} is raw error text and is not translated. Shared by: receive, migration, voting.",
-    "placeholders": {
-      "message": {
-        "type": "String"
-      },
-      "details": {
-        "type": "String"
-      }
-    }
+  "commonErrorDetailsHint": "This is the original error text. If the problem keeps happening, copy it and send it to support.",
+  "@commonErrorDetailsHint": {
+    "description": "Note above the untranslated error text in the dialog or sheet that commonShowDetails opens. The text below it is English from the wallet and is not translated."
+  },
+  "commonErrorDetailsTitle": "Error details",
+  "@commonErrorDetailsTitle": {
+    "description": "Title of the dialog or sheet that commonShowDetails opens."
   },
   "commonFailed": "Failed",
   "@commonFailed": {
@@ -2258,6 +2271,10 @@
   "commonShielding": "Shielding...",
   "@commonShielding": {
     "description": "Title of the mobile receipt of a pending shielding transaction. Shared by: activity, home."
+  },
+  "commonShowDetails": "Show details",
+  "@commonShowDetails": {
+    "description": "Small button under an error whose cause is untranslated text from the wallet (Rust, SDK or platform). Opens that text with a copy button."
   },
   "commonShowFullAddress": "Show full address",
   "@commonShowFullAddress": {
@@ -6014,9 +6031,17 @@
       }
     }
   },
+  "migrationMobileFastSubmittedNotTracked": "The network accepted this migration, but Vizor couldn't record it on this device. Sync will recover it.",
+  "@migrationMobileFastSubmittedNotTracked": {
+    "description": "Warning on the Immediate migration success screen when the network accepted the transaction but storing it on the device failed. Raw details follow on the next line."
+  },
   "migrationMobileFastSubmittedTitle": "Migration submitted",
   "@migrationMobileFastSubmittedTitle": {
     "description": "Heading of the success screen after the Immediate migration was broadcast."
+  },
+  "migrationMobileFastSubmittedUnconfirmed": "Vizor couldn't confirm that the network received this migration. It may already be on the network, so don't start it again until sync shows the result.",
+  "@migrationMobileFastSubmittedUnconfirmed": {
+    "description": "Warning on the Immediate migration success screen when the broadcast response was lost, so the transaction may or may not be on the network. Raw details follow on the next line."
   },
   "migrationMobileFastTitle": "Fast Migration",
   "@migrationMobileFastTitle": {
@@ -8311,6 +8336,14 @@
   "@onboardingImportCheckFailedError": {
     "description": "[security] Toast on the mobile import step when the pasted secret passphrase could not be checked."
   },
+  "onboardingImportCheckFailedRetry": "That passphrase couldn't be checked. Try again.",
+  "@onboardingImportCheckFailedRetry": {
+    "description": "[security] Inline error on the mobile word-by-word import step when the secret passphrase could not be checked."
+  },
+  "onboardingImportChecksumError": "These words are valid, but they do not form a valid secret passphrase. Check the order or replace any word that looks wrong.",
+  "@onboardingImportChecksumError": {
+    "description": "[security] Inline error on the mobile word-by-word import step when every word is a valid word but the phrase as a whole is not a valid secret passphrase."
+  },
   "onboardingImportClipboardEmpty": "Clipboard is empty",
   "@onboardingImportClipboardEmpty": {
     "description": "Toast on the mobile import step when the clipboard has no text."
@@ -8390,6 +8423,15 @@
   "onboardingImportWalletTitleMobile": "Import Wallet",
   "@onboardingImportWalletTitleMobile": {
     "description": "Heading of the mobile step where the user imports a secret passphrase."
+  },
+  "onboardingImportWordCountError": "A secret passphrase has 12, 15, 18, 21, or 24 words — found {count}.",
+  "@onboardingImportWordCountError": {
+    "description": "[security] Inline error on the mobile word-by-word import step when the number of entered words is not a valid secret passphrase length; {count} is the number entered.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "onboardingIntroCard": "Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount — verified by cryptography, not trust.",
   "@onboardingIntroCard": {
@@ -8509,6 +8551,10 @@
   "@onboardingPasscodeCreateTitle": {
     "description": "[security] Heading of the step where the user chooses the 6-digit passcode of the wallet on mobile."
   },
+  "onboardingPasscodeDeleteSemantics": "Delete digit",
+  "@onboardingPasscodeDeleteSemantics": {
+    "description": "Accessibility label of the passcode keypad key that deletes the last digit entered."
+  },
   "onboardingPasscodeDigitSemantics": "Digit {digit}",
   "@onboardingPasscodeDigitSemantics": {
     "description": "Accessibility label of a passcode keypad key; {digit} is the number on the key.",
@@ -8517,6 +8563,10 @@
         "type": "int"
       }
     }
+  },
+  "onboardingPasscodeHelpSemantics": "Passcode help",
+  "@onboardingPasscodeHelpSemantics": {
+    "description": "[security] Accessibility label of the help key on the unlock passcode keypad; it opens the option to reset the wallet."
   },
   "onboardingPasscodeReEnter": "Re-enter your passcode.",
   "@onboardingPasscodeReEnter": {
@@ -9610,6 +9660,14 @@
   "@paymentLinkClaimGiftButton": {
     "description": "Button in the receiving-account sheet that claims the Gift Card into the selected account."
   },
+  "paymentLinkClaimInFlightError": "This gift card is already being received.",
+  "@paymentLinkClaimInFlightError": {
+    "description": "Error toast when the user opens a Gift Card that the wallet is already receiving."
+  },
+  "paymentLinkClaimOtherNetworkError": "This gift card is for a different Zcash network.",
+  "@paymentLinkClaimOtherNetworkError": {
+    "description": "Error toast when the user pastes a Gift Card made on another Zcash network (for example testnet) than the wallet uses."
+  },
   "paymentLinkClaimQueueFull": "Too many gift cards are waiting. Finish another card first.",
   "@paymentLinkClaimQueueFull": {
     "description": "Toast shown when a received Gift Card cannot be saved because too many other cards are already waiting to be redeemed."
@@ -10374,6 +10432,14 @@
   "paymentLinkScanCameraHint": "Connect a camera to scan the gift card QR code, or go back to paste the card link.",
   "@paymentLinkScanCameraHint": {
     "description": "Message shown on the desktop scan screen when no camera is available."
+  },
+  "paymentLinkScanNotGiftCard": "This isn't a gift card QR code.",
+  "@paymentLinkScanNotGiftCard": {
+    "description": "Error in the Gift Card QR scanner when the scanned code is not a Gift Card."
+  },
+  "paymentLinkScanOtherNetwork": "This gift card is for a different network.",
+  "@paymentLinkScanOtherNetwork": {
+    "description": "Error in the Gift Card QR scanner when the scanned Gift Card was made on another Zcash network than the wallet uses."
   },
   "paymentLinkScanSheetSemantic": "Scan the gift card QR code",
   "@paymentLinkScanSheetSemantic": {
@@ -14613,6 +14679,10 @@
   "@votingConfigSettings": {
     "description": "Accessibility label of the settings button on the voting list that opens the voting configuration."
   },
+  "votingConfigSettingsLoadFailed": "Couldn't load voting config settings.",
+  "@votingConfigSettingsLoadFailed": {
+    "description": "Error in the voting config settings when the saved config sources could not be read from the device."
+  },
   "votingConfigShowTestRounds": "Show test rounds",
   "@votingConfigShowTestRounds": {
     "description": "Title and accessibility label of the switch that shows test voting rounds."
@@ -14853,6 +14923,10 @@
   "votingErrorLedgerSignatureConflict": "This Ledger signature conflicts with the signature already saved for this voting bundle.",
   "@votingErrorLedgerSignatureConflict": {
     "description": "Error shown when the Ledger signature differs from one already saved for the same voting bundle."
+  },
+  "votingErrorLedgerSignatureMismatch": "Ledger returned a signature that doesn't match this vote. Retry to sign again.",
+  "@votingErrorLedgerSignatureMismatch": {
+    "description": "Voting error when the signature a Ledger returns does not match the vote bundle it was asked to sign. The status screen offers Retry."
   },
   "votingErrorLedgerSignatureSaveFailed": "Could not save the Ledger voting signature. Retry this bundle.",
   "@votingErrorLedgerSignatureSaveFailed": {
@@ -15114,6 +15188,10 @@
   "votingLedgerReconnect": "Reconnect your Ledger and try again.",
   "@votingLedgerReconnect": {
     "description": "Fallback body of the Ledger panel when the device has a problem and no detail is known."
+  },
+  "votingLoadFailedRetry": "Try again in a moment.",
+  "@votingLoadFailedRetry": {
+    "description": "Shown in place of an untranslated voting SDK error when a voting screen fails to load: alone under a load-failed title, or as {error} in votingResultsLoadFailed, votingResultsRoundLoadFailed, votingReviewLoadFailed and votingConfirmationLoadFailed. The English error stays behind commonShowDetails."
   },
   "votingMobileAccountLoadFailed": "Couldn't load account.\n{error}",
   "@votingMobileAccountLoadFailed": {

@@ -118,10 +118,12 @@ enum _SeedPhraseCopyTarget {
   birthdayHeight,
 }
 
-class _SeedPhraseUnavailableException implements Exception {
-  const _SeedPhraseUnavailableException(this.message);
+enum _SeedPhraseUnavailable { account, hardware, secret }
 
-  final String message;
+class _SeedPhraseUnavailableException implements Exception {
+  const _SeedPhraseUnavailableException(this.reason);
+
+  final _SeedPhraseUnavailable reason;
 }
 
 class _SettingsSeedPhraseScreenState
@@ -245,7 +247,7 @@ class _SettingsSeedPhraseScreenState
       final targetAccount = _targetAccount(accountState);
       if (targetAccount == null) {
         throw const _SeedPhraseUnavailableException(
-          'The selected account is no longer available.',
+          _SeedPhraseUnavailable.account,
         );
       }
       final targetAccountUuid = targetAccount.uuid;
@@ -284,7 +286,7 @@ class _SettingsSeedPhraseScreenState
 
       if (targetAccount.isHardware) {
         throw const _SeedPhraseUnavailableException(
-          'Secret passphrase is not available for hardware accounts.',
+          _SeedPhraseUnavailable.hardware,
         );
       }
 
@@ -295,7 +297,7 @@ class _SettingsSeedPhraseScreenState
       final mnemonic = secret?.mnemonic;
       if (mnemonic == null || mnemonic.isEmpty) {
         throw const _SeedPhraseUnavailableException(
-          'Secret passphrase is not available for this account.',
+          _SeedPhraseUnavailable.secret,
         );
       }
 
@@ -336,8 +338,14 @@ class _SettingsSeedPhraseScreenState
       });
     } on _SeedPhraseUnavailableException catch (e) {
       if (!mounted) return;
+      final l10n = context.l10n;
       setState(() {
-        _revealError = e.message;
+        _revealError = switch (e.reason) {
+          _SeedPhraseUnavailable.account => l10n.settingsAccountUnavailable,
+          _SeedPhraseUnavailable.hardware =>
+            l10n.settingsSeedUnavailableHardware,
+          _SeedPhraseUnavailable.secret => l10n.settingsSeedUnavailableAccount,
+        };
         _stage = _SettingsSeedPhraseStage.reveal;
         _isSubmitting = false;
       });

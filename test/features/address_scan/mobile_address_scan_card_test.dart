@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_sc
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../support/localized_test_scope.dart';
+import '../../support/test_l10n.dart';
 
 const _cameraKey = ValueKey('mobile_address_scan_card_camera');
 
@@ -270,6 +271,31 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Try again'), findsOneWidget);
+  });
+
+  testWidgets('a plugin error message stays off the card', (tester) async {
+    final controller = MobileScannerController(autoStart: false);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_host(_card(controller)));
+    await tester.pump();
+
+    controller.value = controller.value.copyWith(
+      error: const MobileScannerException(
+        errorCode: MobileScannerErrorCode.genericError,
+        errorDetails: MobileScannerErrorDetails(message: 'AVFoundation -11814'),
+      ),
+    );
+    await tester.pump();
+
+    // A camera that failed to open is not a missing camera. The plugin's
+    // text is only logged.
+    expect(find.text(testL10n.addressScanCameraOpenFailed), findsOneWidget);
+    expect(
+      find.text('Address QR scanning needs a camera on this device.'),
+      findsNothing,
+    );
+    expect(find.textContaining('AVFoundation -11814'), findsNothing);
   });
 
   testWidgets('restricted access explains the block instead of asking again', (

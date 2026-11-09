@@ -65,6 +65,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountNameLabel => '账户名称';
 
   @override
+  String get accountNameRequired => '请输入名称。';
+
+  @override
   String get accountNameTooLong => '名称最多 20 个字符。';
 
   @override
@@ -721,6 +724,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressScanCameraOff => '摄像头访问已关闭。请在设置中允许以扫描地址。';
 
   @override
+  String get addressScanCameraOpenFailed => '无法打开摄像头。请关闭正在使用摄像头的其他应用。';
+
+  @override
   String get addressScanCameraRequired => '扫描地址二维码需要此设备配备摄像头。';
 
   @override
@@ -1242,6 +1248,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonDefaultCamera => '默认摄像头';
 
   @override
+  String commonDetails(String details) {
+    return '详细信息：$details';
+  }
+
+  @override
   String get commonDismissNotification => '关闭通知';
 
   @override
@@ -1274,9 +1285,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonEnterAmountInUsd => '以 USD 输入金额';
 
   @override
-  String commonErrorWithDetails(String message, String details) {
-    return '$message\n详细信息：$details';
-  }
+  String get commonErrorDetailsHint => '这是原始错误信息。如果问题持续，请复制并发送给支持团队。';
+
+  @override
+  String get commonErrorDetailsTitle => '错误详情';
 
   @override
   String get commonFailed => '失败';
@@ -1630,6 +1642,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonShielding => '屏蔽中...';
+
+  @override
+  String get commonShowDetails => '查看详情';
 
   @override
   String get commonShowFullAddress => '显示完整地址';
@@ -4395,7 +4410,15 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get migrationMobileFastSubmittedNotTracked =>
+      '网络已接受此迁移，但 Vizor 无法在此设备上记录它。同步后会恢复。';
+
+  @override
   String get migrationMobileFastSubmittedTitle => '迁移已提交';
+
+  @override
+  String get migrationMobileFastSubmittedUnconfirmed =>
+      'Vizor 无法确认网络是否已收到此迁移。它可能已在网络上，在同步显示结果之前请勿再次发起。';
 
   @override
   String get migrationMobileFastTitle => '快速迁移';
@@ -5785,12 +5808,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String onboardingBiometricEnableFailed(String method) {
-    return '无法启用 $method。你可以稍后在设置中重试。';
+    return '无法启用“$method”。你可以稍后在设置中重试。';
   }
 
   @override
   String onboardingBiometricSetUpFirst(String method) {
-    return '请先在设备设置中设置 $method。';
+    return '请先在设备设置中设置“$method”。';
   }
 
   @override
@@ -5798,7 +5821,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String onboardingBiometricTitle(String method) {
-    return '使用 $method\n解锁你的钱包';
+    return '使用“$method”\n解锁你的钱包';
   }
 
   @override
@@ -6004,6 +6027,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingImportCheckFailedError => '无法检查助记词';
 
   @override
+  String get onboardingImportCheckFailedRetry => '无法检查该助记词，请重试。';
+
+  @override
+  String get onboardingImportChecksumError =>
+      '这些单词都有效，但组合起来不是有效的助记词。请检查顺序，或替换看起来有误的单词。';
+
+  @override
   String get onboardingImportClipboardEmpty => '剪贴板为空';
 
   @override
@@ -6065,6 +6095,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingImportWalletTitleMobile => '导入钱包';
+
+  @override
+  String onboardingImportWordCountError(int count) {
+    return '助记词应为 12、15、18、21 或 24 个单词，当前为 $count 个。';
+  }
 
   @override
   String get onboardingIntroCard =>
@@ -6150,9 +6185,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingPasscodeCreateTitle => '创建数字密码';
 
   @override
+  String get onboardingPasscodeDeleteSemantics => '删除数字';
+
+  @override
   String onboardingPasscodeDigitSemantics(int digit) {
     return '数字 $digit';
   }
+
+  @override
+  String get onboardingPasscodeHelpSemantics => '数字密码帮助';
 
   @override
   String get onboardingPasscodeReEnter => '请再次输入数字密码。';
@@ -6950,6 +6991,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkClaimGiftButton => '领取礼物';
 
   @override
+  String get paymentLinkClaimInFlightError => '此礼品卡正在领取中。';
+
+  @override
+  String get paymentLinkClaimOtherNetworkError => '此礼品卡适用于其他 Zcash 网络。';
+
+  @override
   String get paymentLinkClaimQueueFull => '等待中的礼品卡过多。请先完成另一张卡片。';
 
   @override
@@ -7517,6 +7564,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get paymentLinkScanCameraHint => '请连接摄像头扫描礼品卡二维码，或返回粘贴卡片链接。';
+
+  @override
+  String get paymentLinkScanNotGiftCard => '这不是礼品卡二维码。';
+
+  @override
+  String get paymentLinkScanOtherNetwork => '此礼品卡适用于其他网络。';
 
   @override
   String get paymentLinkScanSheetSemantic => '扫描礼品卡二维码';
@@ -8654,22 +8707,22 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String settingsBiometricSetupFirst(String biometric) {
-    return '请先在设备设置中设置$biometric。';
+    return '请先在设备设置中设置“$biometric”。';
   }
 
   @override
   String settingsBiometricTurnOffBody(String feature) {
-    return '你将使用数字密码解锁 Vizor。你可以随时在设置中重新开启$feature。';
+    return '你将使用数字密码解锁 Vizor。你可以随时在设置中重新开启“$feature”。';
   }
 
   @override
   String settingsBiometricTurnOffTitle(String feature) {
-    return '要关闭$feature吗？';
+    return '要关闭“$feature”吗？';
   }
 
   @override
   String settingsBiometricUpdateFailed(String feature) {
-    return '无法更新$feature。';
+    return '无法更新“$feature”。';
   }
 
   @override
@@ -10554,6 +10607,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingConfigSettings => '投票配置设置';
 
   @override
+  String get votingConfigSettingsLoadFailed => '无法加载投票配置设置。';
+
+  @override
   String get votingConfigShowTestRounds => '显示测试轮次';
 
   @override
@@ -10735,6 +10791,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '此 Ledger 签名与已为此投票票据包保存的签名冲突。';
 
   @override
+  String get votingErrorLedgerSignatureMismatch =>
+      'Ledger 返回的签名与此投票不匹配。请重试并再次签名。';
+
+  @override
   String get votingErrorLedgerSignatureSaveFailed =>
       '无法保存 Ledger 投票签名。请重试此票据包。';
 
@@ -10896,6 +10956,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get votingLedgerReconnect => '请重新连接你的 Ledger 并重试。';
+
+  @override
+  String get votingLoadFailedRetry => '请稍后重试。';
 
   @override
   String votingMobileAccountLoadFailed(String error) {

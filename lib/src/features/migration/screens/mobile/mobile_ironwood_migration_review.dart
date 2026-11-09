@@ -72,7 +72,13 @@ class _MobileMigrationFastReviewState
   bool _isBroadcasting = false;
   String? _broadcastError;
   rust_sync.OrchardMigrationImmediatePlan? _submittedPlan;
+
+  /// Rust's English account of a broadcast that did not fully finish, shown
+  /// behind a "Show details" button.
   String? _submittedMessage;
+
+  /// Whether the network may not have received the transaction.
+  bool _submittedUnconfirmed = false;
   String? _ledgerAccountUuid;
   rust_sync.OrchardMigrationImmediatePlan? _ledgerPlan;
 
@@ -152,12 +158,16 @@ class _MobileMigrationFastReviewState
     await _refreshPrivateMigrationDraftPresentation(ref);
     if (!mounted) return;
 
-    final message = result.message?.trim();
+    // The notice words Rust's English account; the account itself goes to
+    // the log and behind the notice's "Show details" button.
+    final message = result.message?.trim() ?? '';
+    logUntranslatedText(message);
     setState(() {
       _ledgerAccountUuid = null;
       _ledgerPlan = null;
       _submittedPlan = plan;
-      _submittedMessage = message == null || message.isEmpty ? null : message;
+      _submittedMessage = message.isEmpty ? null : message;
+      _submittedUnconfirmed = result.status == 'pending_broadcast';
     });
   }
 
@@ -238,7 +248,9 @@ class _MobileMigrationFastReviewState
                   if (_submittedMessage != null) ...[
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      _submittedMessage!,
+                      _submittedUnconfirmed
+                          ? context.l10n.migrationMobileFastSubmittedUnconfirmed
+                          : context.l10n.migrationMobileFastSubmittedNotTracked,
                       key: const ValueKey(
                         'mobile_ironwood_immediate_submitted_notice',
                       ),
@@ -247,6 +259,7 @@ class _MobileMigrationFastReviewState
                         color: colors.text.warning,
                       ),
                     ),
+                    ...untranslatedDetailsButton(_submittedMessage),
                   ],
                 ],
               ),

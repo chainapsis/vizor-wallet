@@ -12,6 +12,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/untranslated_details.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../voting_error_messages.dart';
@@ -208,8 +209,9 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
       error: (error, _) => _stateView(
         _Message(
           context.l10n.votingReviewLoadFailed(
-            friendlyVotingErrorMessage(context.l10n, error),
+            friendlyVotingLoadErrorMessage(context.l10n, error),
           ),
+          details: friendlyVotingErrorDetails(error),
         ),
       ),
       data: (state) {
@@ -399,19 +401,26 @@ String? _votingEligibilityMessage(
 }
 
 class _Message extends StatelessWidget {
-  const _Message(this.message);
+  const _Message(this.message, {this.details});
 
   final String message;
+  final String? details;
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Text(
-        message,
-        textAlign: TextAlign.center,
-        style: AppTypography.bodyMedium.copyWith(
-          color: context.colors.text.secondary,
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
+          ...untranslatedDetailsButton(details),
+        ],
       ),
     );
   }

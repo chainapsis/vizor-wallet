@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show immutable, listEquals;
 
 import '../../core/formatting/duration_format.dart';
 import '../../core/l10n/l10n.dart';
+import '../../core/l10n/untranslated_text_log.dart';
 import '../../providers/account_models.dart';
 import '../../rust/third_party/zcash_voting/wire.dart';
 import '../../services/voting/pir_snapshot_resolver.dart';
@@ -41,6 +42,7 @@ enum VotingNoticeKind {
   keystoneSkipNeedsSignature,
   ledgerCancelled,
   ledgerNoPendingBundle,
+  ledgerSignatureMismatch,
   ledgerSignatureConflict,
   ledgerSignatureSaveFailed,
   chainRejected,
@@ -62,6 +64,18 @@ sealed class VotingMessage {
 /// `toString()`, which stays English for logs.
 abstract interface class VotingMessageSource {
   VotingMessage get votingMessage;
+}
+
+/// Carries a [VotingMessage] through code that reports failures by throwing;
+/// screens show the message.
+class VotingMessageException implements Exception, VotingMessageSource {
+  const VotingMessageException(this.votingMessage);
+
+  @override
+  final VotingMessage votingMessage;
+
+  @override
+  String toString() => 'VotingMessageException($votingMessage)';
 }
 
 final class VotingNotice extends VotingMessage {
@@ -114,6 +128,8 @@ final class VotingNotice extends VotingMessage {
     VotingNoticeKind.ledgerCancelled => l10n.votingErrorLedgerCancelled,
     VotingNoticeKind.ledgerNoPendingBundle =>
       l10n.votingErrorLedgerNoPendingBundle,
+    VotingNoticeKind.ledgerSignatureMismatch =>
+      l10n.votingErrorLedgerSignatureMismatch,
     VotingNoticeKind.ledgerSignatureConflict =>
       l10n.votingErrorLedgerSignatureConflict,
     VotingNoticeKind.ledgerSignatureSaveFailed =>
@@ -384,14 +400,17 @@ final class VotingBatchFailure extends VotingMessage {
   final String details;
 
   @override
-  String text(AppLocalizations l10n) => votingTextMessage(switch (kind) {
-    VotingBatchFailureKind.voteCasting => l10n.votingErrorVoteCastingFailed(
-      details,
-    ),
-    VotingBatchFailureKind.delegation => l10n.votingErrorDelegationFailed(
-      details,
-    ),
-  }).text(l10n);
+  String text(AppLocalizations l10n) {
+    final details = _normalizedVotingErrorText(this.details);
+    return switch (kind) {
+      VotingBatchFailureKind.voteCasting => l10n.votingErrorVoteCastingFailed(
+        details,
+      ),
+      VotingBatchFailureKind.delegation => l10n.votingErrorDelegationFailed(
+        details,
+      ),
+    };
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -413,8 +432,12 @@ final class VotingKeystoneQrFailure extends VotingMessage {
   final VotingMessage reason;
 
   @override
-  String text(AppLocalizations l10n) =>
-      l10n.votingErrorKeystoneQrPrepareFailed(reason.text(l10n));
+  String text(AppLocalizations l10n) {
+    final reason = this.reason;
+    return l10n.votingErrorKeystoneQrPrepareFailed(
+      reason is VotingLiteralMessage ? reason.value : reason.text(l10n),
+    );
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -478,22 +501,31 @@ final class VotingPrivacyTrimNotice extends VotingMessage {
   String toString() => 'VotingPrivacyTrimNotice($droppedValueZatoshi)';
 }
 
-/// Text shown as it is: Rust and SDK errors and other text no code
-/// describes.
+/// Rust and SDK error text no code describes. Screens show the [summary]
+/// copy and log the untranslated [value].
 final class VotingLiteralMessage extends VotingMessage {
-  const VotingLiteralMessage(this.value);
+  const VotingLiteralMessage(
+    this.value, {
+    this.summary = VotingNoticeKind.sessionFailed,
+  });
 
   final String value;
+  final VotingNoticeKind summary;
 
   @override
-  String text(AppLocalizations l10n) => value;
+  String text(AppLocalizations l10n) {
+    logUntranslatedText(value);
+    return VotingNotice(summary).text(l10n);
+  }
 
   @override
   bool operator ==(Object other) =>
-      other is VotingLiteralMessage && other.value == value;
+      other is VotingLiteralMessage &&
+      other.value == value &&
+      other.summary == summary;
 
   @override
-  int get hashCode => value.hashCode;
+  int get hashCode => Object.hash(value, summary);
 
   @override
   String toString() => 'VotingLiteralMessage($value)';
@@ -539,7 +571,19 @@ VotingMessage votingTextMessage(String text) {
 /// passes through unchanged.
 VotingMessage normalizedVotingMessage(VotingMessage message) =>
     message is VotingLiteralMessage
-    ? votingTextMessage(message.value)
+    ? _withSummary(votingTextMessage(message.value), message.summary)
+    : message;
+
+/// The untranslated text behind [message], for a "Show details" button, or
+/// null when the message is the app's own copy.
+String? votingMessageDetails(VotingMessage? message) {
+  final normalized = message == null ? null : normalizedVotingMessage(message);
+  return normalized is VotingLiteralMessage ? normalized.value : null;
+}
+
+VotingMessage _withSummary(VotingMessage message, VotingNoticeKind summary) =>
+    message is VotingLiteralMessage
+    ? VotingLiteralMessage(message.value, summary: summary)
     : message;
 
 /// Every stable `ledger_*:` code Rust prefixes an error with, including ones

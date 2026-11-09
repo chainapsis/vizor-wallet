@@ -664,7 +664,10 @@ LedgerAppReadinessState _readinessState(
     LedgerSigningPlaygroundReadiness.failed =>
       const LedgerAppReadinessState.failed(
         failure: LedgerAppReadinessFailure.disconnected,
-        message: 'Reconnect your Ledger and open the Zcash app.',
+        error: LedgerAppReadinessException(
+          LedgerAppReadinessFailure.disconnected,
+          'Reconnect your Ledger and open the Zcash app.',
+        ),
       ),
   };
 }

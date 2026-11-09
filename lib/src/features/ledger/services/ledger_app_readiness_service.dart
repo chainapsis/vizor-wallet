@@ -43,7 +43,7 @@ class LedgerAppReadinessState {
   const LedgerAppReadinessState._({
     required this.phase,
     this.failure,
-    this.message,
+    this.error,
     this.version,
   });
 
@@ -57,7 +57,7 @@ class LedgerAppReadinessState {
             phase != LedgerAppReadinessPhase.failed,
       ),
       failure = null,
-      message = null,
+      error = null,
       version = null;
 
   const LedgerAppReadinessState.ready(String version)
@@ -65,16 +65,18 @@ class LedgerAppReadinessState {
 
   const LedgerAppReadinessState.failed({
     required LedgerAppReadinessFailure failure,
-    required String message,
+    required LedgerAppReadinessException error,
   }) : this._(
          phase: LedgerAppReadinessPhase.failed,
          failure: failure,
-         message: message,
+         error: error,
        );
 
   final LedgerAppReadinessPhase phase;
   final LedgerAppReadinessFailure? failure;
-  final String? message;
+
+  /// What failed; screens word it with `ledgerFailureGuidance`.
+  final LedgerAppReadinessException? error;
   final String? version;
 }
 
@@ -205,7 +207,7 @@ class LedgerAppReadinessService {
       _onState(
         LedgerAppReadinessState.failed(
           failure: failure.failure,
-          message: failure.message,
+          error: failure,
         ),
       );
       throw failure;

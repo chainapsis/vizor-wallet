@@ -1,4 +1,5 @@
 import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/untranslated_text_log.dart';
 import '../../../providers/voting/voting_config_source_provider.dart';
 import '../../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../../services/voting/voting_config_loader.dart';
@@ -25,9 +26,16 @@ String staticVotingConfigSourceProblemText(
     l10n.votingConfigChecksumFormat,
 };
 
-/// Whether [votingConfigSourceErrorText] adds a details line for [error].
-bool votingConfigErrorHasDetails(Object error) =>
+/// Whether the SDK refused what the source served, rather than the URL.
+bool votingConfigErrorIsSdkRefusal(Object error) =>
     error is rust_wire.VotingErrorView || error is VotingRustException;
+
+/// The SDK's untranslated reason behind [votingConfigSourceErrorText], for a
+/// "Show details" button.
+String? votingConfigSourceErrorDetails(Object error) =>
+    votingConfigErrorIsSdkRefusal(error)
+    ? describeVotingConfigMirrorError(error)
+    : null;
 
 /// What the voting config settings show when adding, choosing or deleting a
 /// source fails. [fallback] covers failures with no copy of their own.
@@ -42,12 +50,10 @@ String votingConfigSourceErrorText(
   if (error is DuplicateVotingConfigSource) return l10n.votingConfigDuplicate;
   if (error is VotingHttpException) return l10n.votingConfigLoadFailed;
   // The SDK refused what the source served (a pin, signature or version);
-  // its English says which.
-  if (votingConfigErrorHasDetails(error)) {
-    return l10n.commonErrorWithDetails(
-      l10n.votingConfigLoadFailed,
-      describeVotingConfigMirrorError(error),
-    );
+  // its English says which, so the log keeps it.
+  if (votingConfigErrorIsSdkRefusal(error)) {
+    logUntranslatedText(describeVotingConfigMirrorError(error));
+    return l10n.votingConfigLoadFailed;
   }
   return fallback;
 }

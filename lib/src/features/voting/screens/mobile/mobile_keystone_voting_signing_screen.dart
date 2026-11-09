@@ -9,6 +9,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
+import '../../voting_error_messages.dart';
 import '../voting_status_screen.dart';
 
 class MobileKeystoneVotingSigningScreen extends StatelessWidget {
@@ -76,7 +77,8 @@ class MobileKeystoneVotingSigningScreen extends StatelessWidget {
         onSigned: (_, _, _, responseCbor) =>
             presentation.onSigned(responseCbor),
         friendlyError: (error) =>
-            presentation.scanError ?? _friendlyVotingScanError(error),
+            presentation.scanError ??
+            friendlyVotingErrorMessage(context.l10n, error),
         scannerBuilder: scannerBuilder,
         forceScannerActiveForTesting: forceScannerActiveForTesting,
         startInScannerForTesting: startInScannerForTesting,
@@ -84,13 +86,6 @@ class MobileKeystoneVotingSigningScreen extends StatelessWidget {
       ),
     );
   }
-}
-
-String _friendlyVotingScanError(Object error) {
-  final message = error.toString();
-  return message
-      .replaceFirst(RegExp(r'^(Bad state|StateError):\s*'), '')
-      .trim();
 }
 
 /// Lines of the memo shown before its final line. The leading text is the same

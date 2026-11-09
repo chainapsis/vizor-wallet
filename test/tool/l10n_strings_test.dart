@@ -13,6 +13,8 @@ Widget build(BuildContext context) {
   final legal = 'Apache License 2.0'; // l10n-ignore: legal name
   showAppToast(context, 'Passcode updated');
   final note = 'Wallet data could not be read.';
+  const cacheKey = 'zcash_wallet_cache';
+  final helpKey = onHelp == null ? keySlot() : keySlot(label: 'Passcode help');
   return Column(children: [
     Text('Import wallet'),
     AppButton(label: 'Get started'),
@@ -31,6 +33,8 @@ void main() {
     expect(kindOf('Get started'), 'slot');
     expect(kindOf('Passcode updated'), 'slot');
     expect(kindOf('{} accounts'), 'slot');
+    // A variable named like a key can still hold a widget with copy.
+    expect(kindOf('Passcode help'), 'slot');
   });
 
   test('copy outside a slot is likely user-facing', () {
@@ -42,6 +46,7 @@ void main() {
       'Loaded settings screen',
       'Sync finished',
       'settings_theme_row',
+      'zcash_wallet_cache',
       'Proposal not found',
       'Young Serif',
       'SendBroadcast(ledger-terminal)',

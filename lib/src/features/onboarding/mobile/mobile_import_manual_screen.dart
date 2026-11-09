@@ -53,7 +53,7 @@ class MobileImportManualScreen extends StatefulWidget {
   final List<String>? wordListOverride;
 
   /// Preview boundary; production validates the phrase checksum through Rust.
-  final String? Function(List<String> words)? mnemonicValidator;
+  final MnemonicIssue? Function(List<String> words)? mnemonicValidator;
 
   /// Test/Widgetbook seam for previewing later word-entry states.
   @visibleForTesting
@@ -339,9 +339,13 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
 
   void _continueToReview() {
     final words = [..._accepted];
-    final error = (widget.mnemonicValidator ?? validateImportedMnemonic)(words);
-    if (error != null) {
-      setState(() => _error = OnboardingSubmitError.text(error));
+    final issue = (widget.mnemonicValidator ?? checkImportedMnemonic)(words);
+    if (issue != null) {
+      setState(
+        () => _error = OnboardingSubmitError.localized(
+          (l10n) => mnemonicIssueText(l10n, issue, words.length),
+        ),
+      );
       return;
     }
     // The shield stays engaged through the push transition and drops only once

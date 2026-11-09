@@ -4,9 +4,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/untranslated_text_log.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/untranslated_details.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
@@ -49,7 +51,16 @@ class _VotingConfigSettingsPanelState
   bool _isSubmitting = false;
   bool _isSavingSelection = false;
   bool _isSavingTestRoundVisibility = false;
-  String? _submitError;
+  String? _submitErrorText;
+
+  /// Untranslated text behind [_submitError]; any new error clears it.
+  String? _submitErrorDetails;
+  String? get _submitError => _submitErrorText;
+  set _submitError(String? value) {
+    _submitErrorText = value;
+    _submitErrorDetails = null;
+  }
+
   String? _testRoundVisibilityError;
   String? _validationField;
   _ConfigSourceSelection? _pendingSelection;
@@ -169,9 +180,10 @@ class _VotingConfigSettingsPanelState
       if (!mounted) return;
       setState(() {
         _submitError = _messageFromError(error);
+        _submitErrorDetails = votingConfigSourceErrorDetails(error);
         // The field message has one line; an SDK refusal with its details
         // goes above the editor instead.
-        _validationField = votingConfigErrorHasDetails(error) ? null : 'url';
+        _validationField = votingConfigErrorIsSdkRefusal(error) ? null : 'url';
         _isSubmitting = false;
       });
     }
@@ -265,6 +277,7 @@ class _VotingConfigSettingsPanelState
       if (!mounted) return;
       setState(() {
         _submitError = _messageFromError(error);
+        _submitErrorDetails = votingConfigSourceErrorDetails(error);
         _validationField = null;
         _isSubmitting = false;
         _isSavingSelection = false;
@@ -315,6 +328,7 @@ class _VotingConfigSettingsPanelState
       if (!mounted) return;
       setState(() {
         _submitError = _messageFromError(error);
+        _submitErrorDetails = votingConfigSourceErrorDetails(error);
         _validationField = null;
         _isSubmitting = false;
         _isSavingSelection = false;
@@ -427,8 +441,14 @@ class _VotingConfigSettingsPanelState
               height: 220,
               child: Center(child: AppIcon(AppIcons.loader)),
             ),
-            error: (error, _) =>
-                _PanelError(message: error.toString(), onClose: widget.onClose),
+            error: (error, _) {
+              logUntranslatedText(error.toString());
+              return _PanelError(
+                message: context.l10n.votingConfigSettingsLoadFailed,
+                details: error.toString(),
+                onClose: widget.onClose,
+              );
+            },
             data: (source) {
               final nameMessage = _nameMessage();
               final urlMessage = _urlMessage(source);
@@ -447,6 +467,7 @@ class _VotingConfigSettingsPanelState
                         color: colors.text.destructive,
                       ),
                     ),
+                    ...untranslatedDetailsButton(_submitErrorDetails),
                   ],
                   const SizedBox(height: AppSpacing.sm),
                   Flexible(
@@ -1115,9 +1136,10 @@ class _PanelHeader extends StatelessWidget {
 }
 
 class _PanelError extends StatelessWidget {
-  const _PanelError({required this.message, this.onClose});
+  const _PanelError({required this.message, this.details, this.onClose});
 
   final String message;
+  final String? details;
   final VoidCallback? onClose;
 
   @override
@@ -1134,6 +1156,7 @@ class _PanelError extends StatelessWidget {
             color: context.colors.text.destructive,
           ),
         ),
+        ...untranslatedDetailsButton(details),
       ],
     );
   }

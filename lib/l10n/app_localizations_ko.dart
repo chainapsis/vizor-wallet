@@ -65,6 +65,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get accountNameLabel => '계‍정 이‍름';
 
   @override
+  String get accountNameRequired => '이‍름‍을 입‍력‍해 주‍세‍요.';
+
+  @override
   String get accountNameTooLong => '이‍름‍은 20‍자‍까‍지 입‍력‍할 수 있‍어‍요.';
 
   @override
@@ -674,7 +677,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String addressBookRemoveBody(String label) {
-    return '$label‍을(를) 연‍락‍처‍에‍서 삭‍제‍해‍요.';
+    return '$label 연‍락‍처‍를 삭‍제‍해‍요.';
   }
 
   @override
@@ -682,7 +685,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String addressBookRemoveConfirmBody(String label) {
-    return '\"$label\"을(를) 연‍락‍처‍에‍서 삭‍제‍해‍요. 지‍난 거‍래‍에‍는 영‍향‍이 없‍어‍요.';
+    return '\"$label\" 연‍락‍처‍를 삭‍제‍해‍요. 지‍난 거‍래‍에‍는 영‍향‍이 없‍어‍요.';
   }
 
   @override
@@ -745,6 +748,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '카‍메‍라 접‍근‍이 꺼‍져 있‍어‍요. 주‍소‍를 스‍캔‍하‍려‍면 설‍정‍에‍서 허‍용‍해 주‍세‍요.';
 
   @override
+  String get addressScanCameraOpenFailed =>
+      '카‍메‍라‍를 열 수 없‍어‍요. 카‍메‍라‍를 쓰‍는 다‍른 앱‍을 닫‍아 주‍세‍요.';
+
+  @override
   String get addressScanCameraRequired =>
       '주‍소 QR‍을 스‍캔‍하‍려‍면 이 기‍기‍에 카‍메‍라‍가 필‍요‍해‍요.';
 
@@ -799,12 +806,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String appLinuxUpdateAvailable(String version) {
-    return 'Vizor $version‍을(를) 사‍용‍할 수 있‍어‍요.';
+    return 'Vizor $version 버‍전‍을 사‍용‍할 수 있‍어‍요.';
   }
 
   @override
   String appLinuxUpdateAvailableTor(String version) {
-    return 'Vizor $version‍을(를) 사‍용‍할 수 있‍어‍요. 릴‍리‍스 페‍이‍지‍는 Vizor‍의 Tor 연‍결 밖‍에‍서 브‍라‍우‍저‍로 열‍려‍요.';
+    return 'Vizor $version 버‍전‍을 사‍용‍할 수 있‍어‍요. 릴‍리‍스 페‍이‍지‍는 Vizor‍의 Tor 연‍결 밖‍에‍서 브‍라‍우‍저‍로 열‍려‍요.';
   }
 
   @override
@@ -1108,7 +1115,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String commonBackTo(String destination) {
-    return '$destination(으)로 돌‍아‍가‍기';
+    return '$destination 화‍면‍으‍로 돌‍아‍가‍기';
   }
 
   @override
@@ -1275,6 +1282,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonDefaultCamera => '기‍본 카‍메‍라';
 
   @override
+  String commonDetails(String details) {
+    return '세‍부 정‍보: $details';
+  }
+
+  @override
   String get commonDismissNotification => '알‍림 닫‍기';
 
   @override
@@ -1307,9 +1319,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonEnterAmountInUsd => 'USD 단‍위‍로 금‍액 입‍력';
 
   @override
-  String commonErrorWithDetails(String message, String details) {
-    return '$message\n세‍부 정‍보: $details';
-  }
+  String get commonErrorDetailsHint =>
+      '번‍역‍되‍지 않‍은 원‍래 오‍류 문‍구‍예‍요. 문‍제‍가 계‍속‍되‍면 복‍사‍해‍서 고‍객 지‍원‍에 보‍내 주‍세‍요.';
+
+  @override
+  String get commonErrorDetailsTitle => '오‍류 세‍부 정‍보';
 
   @override
   String get commonFailed => '실‍패';
@@ -1673,6 +1687,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonShielding => '차‍폐‍하‍는 중...';
+
+  @override
+  String get commonShowDetails => '자‍세‍히 보‍기';
 
   @override
   String get commonShowFullAddress => '전‍체 주‍소 보‍기';
@@ -4157,7 +4174,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String migrationImmediateTradeoffBody(String amount, String highlight) {
-    return '눈‍에 보‍이‍는 한 번‍의 단‍계‍로 넘‍어‍가‍므‍로 $amount‍과(와) 시‍점‍이 $highlight.';
+    return '눈‍에 보‍이‍는 한 번‍의 단‍계‍로 넘‍어‍가‍므‍로 금‍액($amount)과 시‍점‍이 $highlight.';
   }
 
   @override
@@ -4662,7 +4679,15 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get migrationMobileFastSubmittedNotTracked =>
+      '네‍트‍워‍크‍가 이 마‍이‍그‍레‍이‍션‍을 받‍았‍지‍만 Vizor‍가 이 기‍기‍에 기‍록‍하‍지 못‍했‍어‍요. 동‍기‍화‍하‍면 복‍구‍돼‍요.';
+
+  @override
   String get migrationMobileFastSubmittedTitle => '마‍이‍그‍레‍이‍션‍을 제‍출‍했‍어‍요';
+
+  @override
+  String get migrationMobileFastSubmittedUnconfirmed =>
+      '네‍트‍워‍크‍가 이 마‍이‍그‍레‍이‍션‍을 받‍았‍는‍지 Vizor‍가 확‍인‍하‍지 못‍했‍어‍요. 이‍미 네‍트‍워‍크‍에 있‍을 수 있‍으‍니 동‍기‍화‍로 결‍과‍를 확‍인‍할 때‍까‍지 다‍시 시‍작‍하‍지 마‍세‍요.';
 
   @override
   String get migrationMobileFastTitle => '빠‍른 마‍이‍그‍레‍이‍션';
@@ -6149,12 +6174,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String onboardingBiometricEnableFailed(String method) {
-    return '$method‍을(를) 켜‍지 못‍했‍어‍요. 설‍정‍에‍서 다‍시 시‍도‍할 수 있‍어‍요.';
+    return '$method 잠‍금 해‍제‍를 켜‍지 못‍했‍어‍요. 설‍정‍에‍서 다‍시 시‍도‍할 수 있‍어‍요.';
   }
 
   @override
   String onboardingBiometricSetUpFirst(String method) {
-    return '먼‍저 기‍기 설‍정‍에‍서 $method‍을(를) 설‍정‍해 주‍세‍요.';
+    return '먼‍저 기‍기 설‍정‍에‍서 $method 설‍정‍을 마‍쳐 주‍세‍요.';
   }
 
   @override
@@ -6163,7 +6188,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String onboardingBiometricTitle(String method) {
-    return '$method(으)로\n지‍갑 잠‍금 해‍제';
+    return '지‍갑 잠‍금 해‍제‍에\n$method 사‍용';
   }
 
   @override
@@ -6379,6 +6404,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingImportCheckFailedError => '복‍구 문‍구‍를 확‍인‍하‍지 못‍했‍어‍요';
 
   @override
+  String get onboardingImportCheckFailedRetry =>
+      '복‍구 문‍구‍를 확‍인‍하‍지 못‍했‍어‍요. 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get onboardingImportChecksumError =>
+      '단‍어‍는 모‍두 맞‍지‍만 올‍바‍른 복‍구 문‍구‍가 아‍니‍에‍요. 순‍서‍를 확‍인‍하‍거‍나 잘‍못‍된 것 같‍은 단‍어‍를 바‍꿔 주‍세‍요.';
+
+  @override
   String get onboardingImportClipboardEmpty => '클‍립‍보‍드‍가 비‍어 있‍어‍요';
 
   @override
@@ -6441,6 +6474,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingImportWalletTitleMobile => '지‍갑 가‍져‍오‍기';
+
+  @override
+  String onboardingImportWordCountError(int count) {
+    return '복‍구 문‍구‍는 12, 15, 18, 21, 24‍개 단‍어‍로 되‍어 있‍어‍요. 지‍금‍은 $count‍개‍예‍요.';
+  }
 
   @override
   String get onboardingIntroCard =>
@@ -6533,9 +6571,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingPasscodeCreateTitle => '암‍호 만‍들‍기';
 
   @override
+  String get onboardingPasscodeDeleteSemantics => '숫‍자 지‍우‍기';
+
+  @override
   String onboardingPasscodeDigitSemantics(int digit) {
     return '숫‍자 $digit';
   }
+
+  @override
+  String get onboardingPasscodeHelpSemantics => '암‍호 도‍움‍말';
 
   @override
   String get onboardingPasscodeReEnter => '암‍호‍를 다‍시 입‍력‍해 주‍세‍요.';
@@ -6953,7 +6997,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String payTitleAmount(String symbol) {
-    return '$symbol(으)로 결‍제';
+    return '$symbol 결‍제';
   }
 
   @override
@@ -7381,6 +7425,13 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get paymentLinkClaimGiftButton => '선‍물 받‍기';
+
+  @override
+  String get paymentLinkClaimInFlightError => '이‍미 받‍고 있‍는 기‍프‍트 카‍드‍예‍요.';
+
+  @override
+  String get paymentLinkClaimOtherNetworkError =>
+      '다‍른 Zcash 네‍트‍워‍크‍용 기‍프‍트 카‍드‍예‍요.';
 
   @override
   String get paymentLinkClaimQueueFull =>
@@ -8004,6 +8055,12 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get paymentLinkScanCameraHint =>
       '카‍메‍라‍를 연‍결‍해 기‍프‍트 카‍드 QR 코‍드‍를 스‍캔‍하‍거‍나, 돌‍아‍가‍서 카‍드 링‍크‍를 붙‍여‍넣‍으‍세‍요.';
+
+  @override
+  String get paymentLinkScanNotGiftCard => '기‍프‍트 카‍드 QR 코‍드‍가 아‍니‍에‍요.';
+
+  @override
+  String get paymentLinkScanOtherNetwork => '다‍른 네‍트‍워‍크‍용 기‍프‍트 카‍드‍예‍요.';
 
   @override
   String get paymentLinkScanSheetSemantic => '기‍프‍트 카‍드 QR 코‍드 스‍캔';
@@ -9242,22 +9299,22 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String settingsBiometricSetupFirst(String biometric) {
-    return '먼‍저 기‍기 설‍정‍에‍서 $biometric‍을(를) 설‍정‍하‍세‍요.';
+    return '먼‍저 기‍기 설‍정‍에‍서 $biometric 설‍정‍을 마‍쳐 주‍세‍요.';
   }
 
   @override
   String settingsBiometricTurnOffBody(String feature) {
-    return '앞‍으‍로‍는 암‍호‍로 Vizor 잠‍금‍을 해‍제‍해‍요. $feature‍은(는) 언‍제‍든 설‍정‍에‍서 다‍시 켤 수 있‍어‍요.';
+    return '앞‍으‍로‍는 암‍호‍로 Vizor 잠‍금‍을 해‍제‍해‍요. $feature‍는 언‍제‍든 설‍정‍에‍서 다‍시 켤 수 있‍어‍요.';
   }
 
   @override
   String settingsBiometricTurnOffTitle(String feature) {
-    return '$feature‍을(를) 끌‍까‍요?';
+    return '$feature‍를 끌‍까‍요?';
   }
 
   @override
   String settingsBiometricUpdateFailed(String feature) {
-    return '$feature‍을(를) 변‍경‍하‍지 못‍했‍어‍요.';
+    return '$feature‍를 변‍경‍하‍지 못‍했‍어‍요.';
   }
 
   @override
@@ -9904,7 +9961,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String settingsUpdateStatusAvailable(String version) {
-    return '버‍전 $version‍을(를) 사‍용‍할 수 있‍어‍요.';
+    return '$version 버‍전‍을 사‍용‍할 수 있‍어‍요.';
   }
 
   @override
@@ -10261,12 +10318,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String swapActivityStateAssetUnsupported(String symbol, String chain) {
-    return '$chain‍의 $symbol‍은(는) 현‍재 지‍원‍되‍지 않‍아‍요.';
+    return '$chain‍의 $symbol 스‍왑‍은 현‍재 지‍원‍되‍지 않‍아‍요.';
   }
 
   @override
   String swapActivityStateDecimalPlaces(String symbol, int decimals) {
-    return '$symbol‍은(는) 소‍수‍점 $decimals‍자‍리‍까‍지 지‍원‍해‍요.';
+    return '$symbol 금‍액‍은 소‍수‍점 $decimals‍자‍리‍까‍지 지‍원‍해‍요.';
   }
 
   @override
@@ -10288,7 +10345,7 @@ class AppLocalizationsKo extends AppLocalizations {
     String estimateAmount,
     String symbol,
   ) {
-    return '실‍시‍간 견‍적‍은 $estimateAmount $symbol 대‍신 $liveAmount $symbol‍을(를) 사‍용‍해‍요. 계‍속‍하‍기 전‍에 최‍소 보‍장 수‍량‍을 확‍인‍하‍세‍요.';
+    return '실‍시‍간 견‍적‍은 $estimateAmount $symbol 대‍신 $liveAmount $symbol 수‍량‍을 사‍용‍해‍요. 계‍속‍하‍기 전‍에 최‍소 보‍장 수‍량‍을 확‍인‍하‍세‍요.';
   }
 
   @override
@@ -10466,7 +10523,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String swapAddressRecipientDescription(String symbol) {
-    return '$symbol‍이(가) 이 주‍소‍로 전‍송‍돼‍요.';
+    return '스‍왑‍한 $symbol 자‍산‍은 이 주‍소‍로 전‍송‍돼‍요.';
   }
 
   @override
@@ -10479,7 +10536,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String swapAddressRefundDescription(String symbol, String chain) {
-    return '스‍왑‍이 실‍패‍하‍거‍나 환‍율‍이 변‍동‍되‍면 수‍수‍료‍를 제‍외‍한 금‍액‍을 $chain‍의 $symbol(으)로 환‍불‍해 드‍려‍요.';
+    return '스‍왑‍이 실‍패‍하‍거‍나 환‍율‍이 변‍동‍되‍면 수‍수‍료‍를 제‍외‍한 금‍액‍을 $chain‍의 $symbol 자‍산‍으‍로 환‍불‍해 드‍려‍요.';
   }
 
   @override
@@ -11259,6 +11316,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get votingConfigSettings => '투‍표 설‍정 열‍기';
 
   @override
+  String get votingConfigSettingsLoadFailed => '투‍표 설‍정‍을 불‍러‍오‍지 못‍했‍어‍요.';
+
+  @override
   String get votingConfigShowTestRounds => '테‍스‍트 라‍운‍드 표‍시';
 
   @override
@@ -11459,6 +11519,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 Ledger 서‍명‍이 이 투‍표 묶‍음‍에 이‍미 저‍장‍된 서‍명‍과 충‍돌‍해‍요.';
 
   @override
+  String get votingErrorLedgerSignatureMismatch =>
+      'Ledger‍에‍서 받‍은 서‍명‍이 이 투‍표‍와 일‍치‍하‍지 않‍아‍요. 다‍시 시‍도‍해 서‍명‍해 주‍세‍요.';
+
+  @override
   String get votingErrorLedgerSignatureSaveFailed =>
       'Ledger 투‍표 서‍명‍을 저‍장‍하‍지 못‍했‍어‍요. 이 묶‍음‍을 다‍시 시‍도‍해 주‍세‍요.';
 
@@ -11514,12 +11578,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String votingErrorSignBundleFirst(int bundle, String signer) {
-    return '제‍출‍하‍기 전‍에 $signer(으)로 위‍임 묶‍음 $bundle‍에 서‍명‍해 주‍세‍요.';
+    return '제‍출‍하‍기 전‍에 $signer 기‍기‍에‍서 위‍임 묶‍음 $bundle‍에 서‍명‍해 주‍세‍요.';
   }
 
   @override
   String votingErrorSignBundlesFirst(String signer) {
-    return '제‍출‍하‍기 전‍에 $signer(으)로 위‍임 묶‍음‍에 서‍명‍해 주‍세‍요.';
+    return '제‍출‍하‍기 전‍에 $signer 기‍기‍에‍서 위‍임 묶‍음‍에 서‍명‍해 주‍세‍요.';
   }
 
   @override
@@ -11627,6 +11691,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get votingLedgerReconnect => 'Ledger‍를 다‍시 연‍결‍하‍고 다‍시 시‍도‍해 주‍세‍요.';
+
+  @override
+  String get votingLoadFailedRetry => '잠‍시 후 다‍시 시‍도‍해 주‍세‍요.';
 
   @override
   String votingMobileAccountLoadFailed(String error) {
@@ -11807,7 +11874,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String votingPrivacyTrimNotice(String amount) {
-    return '제‍출‍한 투‍표‍가 덜 식‍별‍되‍도‍록 $amount‍은(는) 이‍번 투‍표‍에‍서 제‍외‍돼‍요.';
+    return '제‍출‍한 투‍표‍가 덜 식‍별‍되‍도‍록 $amount‍만‍큼‍은 이‍번 투‍표‍에‍서 제‍외‍돼‍요.';
   }
 
   @override
@@ -12039,7 +12106,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String votingTerminalSingle(String bundle) {
-    return '위‍임 $bundle‍은(는) 계‍속‍할 수 없‍어‍요. 거‍래‍가 이‍미 체‍인‍에 있‍을 수 있‍으‍니 다‍시 시‍도‍하‍지 마‍세‍요.';
+    return '위‍임 $bundle‍은 계‍속‍할 수 없‍어‍요. 거‍래‍가 이‍미 체‍인‍에 있‍을 수 있‍으‍니 다‍시 시‍도‍하‍지 마‍세‍요.';
   }
 
   @override
