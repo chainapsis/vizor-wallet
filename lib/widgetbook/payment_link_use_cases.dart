@@ -21,11 +21,11 @@ import '../src/features/payment_links/widgets/payment_link_bulk_desktop_flow.dar
 import '../src/features/payment_links/widgets/payment_link_batch_detail_desktop_view.dart';
 import '../src/features/payment_links/widgets/payment_link_card_motion.dart';
 import '../src/features/payment_links/widgets/payment_link_confetti.dart';
-import '../src/features/payment_links/widgets/payment_link_copy.dart';
 import '../src/features/payment_links/widgets/payment_link_desktop_views.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
 import 'payment_link_amount_preview.dart';
+import '../src/core/l10n/l10n.dart';
 
 const _previewWindowSize = Size(1080, 720);
 const _message = 'Hey there! Welcome to the Shielded\nWorld ;)';
@@ -495,8 +495,8 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         onBack: _noop,
         onCopy: null,
         waitingHeading: 'Your Gift Card\nis almost ready!',
-        waitingPrimaryText: kPaymentLinkClaimWaitingDescription,
-        waitingSecondaryText: kPaymentLinkWaitingDescription,
+        waitingPrimaryText: context.l10n.paymentLinkClaimWaitingDescription,
+        waitingSecondaryText: context.l10n.paymentLinkWaitingDescription,
         waitingStatusLabel: 'Wait 1:15 to claim',
       ),
       PaymentLinkPreviewState.ready => const _PaymentLinkReadyPreview(),
@@ -520,9 +520,9 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
                   ],
                 ),
               ]
-            : const [
+            : [
                 PaymentLinkCardsSection(
-                  label: kPaymentLinkPendingSectionLabel,
+                  label: context.l10n.commonPending,
                   cards: [
                     PaymentLinkCardListRow(
                       thumbnail: _PaymentLinkThumbnail(
@@ -536,7 +536,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
                   ],
                 ),
                 PaymentLinkCardsSection(
-                  label: kPaymentLinkUnusedSectionLabel,
+                  label: context.l10n.paymentLinkUnusedSectionLabel,
                   cards: [
                     PaymentLinkCardListRow(
                       thumbnail: _PaymentLinkThumbnail(
@@ -561,7 +561,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
                   ],
                 ),
                 PaymentLinkCardsSection(
-                  label: kPaymentLinkUsedSectionLabel,
+                  label: context.l10n.paymentLinkUsedSectionLabel,
                   cards: [
                     PaymentLinkCardListRow(
                       thumbnail: _PaymentLinkThumbnail(
@@ -784,14 +784,14 @@ class _PaymentLinkBatchDetailPreview extends StatelessWidget {
       ),
       sections: [
         PaymentLinkCardsSection(
-          label: kPaymentLinkUnusedSectionLabel,
+          label: context.l10n.paymentLinkUnusedSectionLabel,
           cards: [
             for (final row in rows)
               if (!row.used) row,
           ],
         ),
         PaymentLinkCardsSection(
-          label: kPaymentLinkUsedSectionLabel,
+          label: context.l10n.paymentLinkUsedSectionLabel,
           cards: [
             for (final row in rows)
               if (row.used) row,
@@ -904,6 +904,7 @@ class _PaymentLinkBulkPreviewState extends State<_PaymentLinkBulkPreview> {
           : null,
     ),
     spendable: BigInt.from(_count > 30 ? 1000000000 : 400000000),
+    privacyModeEnabled: false,
     quote:
         widget.initialPreparing || widget.error != null || _amount.text.isEmpty
         ? null
@@ -1191,7 +1192,7 @@ class _PaymentLinkInteractiveMessageDesktopPreviewState
                   ? _noop
                   : null,
               errorText: _messageExceedsByteLimit
-                  ? kPaymentLinkMessageTooLargeText
+                  ? context.l10n.paymentLinkMessageTooLarge
                   : null,
             ),
           ),

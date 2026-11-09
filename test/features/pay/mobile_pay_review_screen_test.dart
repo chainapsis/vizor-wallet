@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dar
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_review_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -407,6 +408,7 @@ Widget _app(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

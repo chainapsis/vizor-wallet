@@ -15,8 +15,10 @@ import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 
 const _address =
     'u1l8xunezsvhq8fgzfl7404m450nwnd76zshe7f5dxv5z3w4gthawuwukdn5aalh6g'
@@ -37,6 +39,7 @@ final _args = SendReviewArgs(
 MobileSendBroadcastRunner _runner(Future<SendBroadcastOutcome> outcome) {
   return ({
     required ref,
+    required l10n,
     required args,
     keystone,
     ledger,
@@ -54,6 +57,7 @@ Widget _app({
   return ProviderScope(
     overrides: [syncProvider.overrideWith(FakeSyncNotifier.new)],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(
           context,
@@ -83,6 +87,7 @@ bool _sendStatusTerminal(WidgetTester tester) {
 Widget _ledgerApp({required MobileSendBroadcastRunner broadcastRunner}) {
   return ProviderScope(
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendStatusScreen(
@@ -254,6 +259,7 @@ void main() {
           broadcastRunner:
               ({
                 required ref,
+                required l10n,
                 required args,
                 keystone,
                 ledger,
@@ -376,6 +382,7 @@ void main() {
         broadcastRunner:
             ({
               required ref,
+              required l10n,
               required args,
               keystone,
               ledger,
@@ -538,17 +545,18 @@ void main() {
     await tester.pump();
 
     broadcast.complete(
-      const SendBroadcastOutcome(
+      SendBroadcastOutcome(
         phase: SendBroadcastPhase.failed,
         proposalConsumed: true,
-        error: kNetworkUpgradeHoldMessage,
+        error: networkUpgradeHoldText(testL10n),
+        errorHold: NetworkUpgradeHold.hold,
       ),
     );
     await tester.pump();
     await tester.pump();
 
     expect(find.text('Send failed'), findsOneWidget);
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
     expect(find.text('Return home'), findsOneWidget);
     await tester.pumpAndSettle();
   });
@@ -593,7 +601,7 @@ void main() {
     expect(_statusRouteCanPop(tester), isFalse);
 
     broadcast.complete(
-      const SendBroadcastOutcome(
+      SendBroadcastOutcome(
         phase: SendBroadcastPhase.failed,
         proposalConsumed: true,
         error: 'failed',
@@ -682,6 +690,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: MobileSendStatusScreen(
@@ -716,7 +725,10 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: SizedBox.shrink()),
+        child: const MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
+          home: SizedBox.shrink(),
+        ),
       ),
     );
     await tester.pump();
@@ -776,6 +788,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: MobileSendStatusScreen(
@@ -797,7 +810,10 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: SizedBox.shrink()),
+        child: const MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
+          home: SizedBox.shrink(),
+        ),
       ),
     );
     await tester.pump();
@@ -910,7 +926,7 @@ void main() {
     await tester.pump();
 
     broadcast.complete(
-      const SendBroadcastOutcome(
+      SendBroadcastOutcome(
         phase: SendBroadcastPhase.failed,
         proposalConsumed: true,
         error: 'failed',
@@ -944,6 +960,7 @@ void main() {
       ProviderScope(
         overrides: [syncProvider.overrideWith(FakeSyncNotifier.new)],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (context, child) =>
               AppTheme(data: AppThemeData.light, child: child!),

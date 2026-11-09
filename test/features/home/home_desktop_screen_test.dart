@@ -46,10 +46,13 @@ import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   registerHomeInitializationChecks(
@@ -112,6 +115,40 @@ void main() {
       expect(find.text('****** ZEC ZEC'), findsNothing);
     },
   );
+
+  for (final privacyModeEnabled in [false, true]) {
+    testWidgets(
+      'home desktop zero balance with privacy mode $privacyModeEnabled',
+      (tester) async {
+        final semantics = tester.ensureSemantics();
+        await tester.pumpWidget(
+          _appHarness(
+            '/home',
+            privacyModeEnabled: privacyModeEnabled,
+            syncState: SyncState(
+              accountUuid: 'account-1',
+              hasAccountScopedData: true,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final amount = find.byKey(
+          const ValueKey('home_desktop_balance_amount_text'),
+        );
+        final expected = privacyModeEnabled ? '******' : '0';
+        expect(tester.widget<Text>(amount).data, expected);
+        expect(tester.getSemantics(amount).label, expected);
+        expect(
+          find.text('0'),
+          privacyModeEnabled ? findsNothing : findsOneWidget,
+        );
+        expect(find.textContaining('ZEC ZEC'), findsNothing);
+        expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+        semantics.dispose();
+      },
+    );
+  }
 
   testWidgets('home desktop shows fiat balance when pricing is available', (
     tester,
@@ -1130,7 +1167,7 @@ void main() {
       _appHarness(
         '/home',
         swapEnabled: false,
-        etaLabels: const {'pending-receive': 'Est. 1–3 min'},
+        etaLabels: const {'pending-receive': ActivityEta.standard},
         syncState: SyncState(
           accountUuid: 'account-1',
           hasAccountScopedData: true,
@@ -1691,7 +1728,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
       ),
@@ -1699,7 +1735,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('home_notice_card')), findsOneWidget);
-    expect(find.text('Network connection lost.'), findsOneWidget);
+    expect(find.text(testL10n.syncFailureNetwork), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
   });
 
@@ -1970,7 +2006,7 @@ SwapIntentRecord _swapActivityRecord({
     sellAmountText: '1.0000 ZEC',
     receiveEstimateText: '70.170000 USDC',
     status: status,
-    nextAction: status.label,
+    nextAction: status.name,
     direction: SwapDirection.zecToExternal,
     externalAsset: SwapAsset.usdc,
     depositAddress: 't1home-deposit',
@@ -2077,7 +2113,7 @@ rust_sync.MigrationStatus _migrationStatus(
 
 Widget _appHarness(
   String initialLocation, {
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   GoRouter? router,
   bool? swapEnabled,
   bool privacyModeEnabled = false,
@@ -2223,6 +2259,7 @@ Widget _appHarness(
     child: router == null
         ? const ZcashWalletApp()
         : MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.dark, child: child!),

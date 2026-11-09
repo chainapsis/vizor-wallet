@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'payment_link_action.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// A quiet disclosure row; the entire row supports pointer and keyboard input.
 class PaymentLinkArchiveHeader extends StatelessWidget {
@@ -20,7 +21,7 @@ class PaymentLinkArchiveHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) => PaymentLinkAction(
     expanded: expanded,
-    semanticLabel: 'Archived ($count)',
+    semanticLabel: context.l10n.paymentLinkArchivedCount(count),
     onPressed: onToggle,
     builder: (context, hovered, focused) => Container(
       constraints: const BoxConstraints(minHeight: 48),
@@ -38,7 +39,7 @@ class PaymentLinkArchiveHeader extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              'Archived ($count)',
+              context.l10n.paymentLinkArchivedCount(count),
               style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.secondary,
               ),

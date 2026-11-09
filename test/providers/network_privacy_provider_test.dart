@@ -96,7 +96,7 @@ void main() {
       addTearDown(container.dispose);
       expect(
         container.read(networkPrivacyProvider).startupNotice,
-        kTorStartupFailureNotice,
+        NetworkPrivacyNotice.torStartupFailure,
       );
       container.read(networkPrivacyProvider.notifier).clearStartupNotice();
       expect(container.read(networkPrivacyProvider).startupNotice, isNull);
@@ -576,7 +576,7 @@ void main() {
           .having(
             (state) => state.startupNotice,
             'startupNotice',
-            kTorDisableUpdateInProgressNotice,
+            NetworkPrivacyNotice.torDisableUpdateInProgress,
           ),
     );
   });
@@ -669,7 +669,7 @@ void main() {
           .having(
             (state) => state.startupNotice,
             'startupNotice',
-            kTorUpdateInProgressNotice,
+            NetworkPrivacyNotice.torUpdateInProgress,
           ),
     );
   });
@@ -918,7 +918,7 @@ void main() {
             .having(
               (state) => state.startupNotice,
               'startupNotice',
-              kSoftwareUpdateUnavailableNotice,
+              NetworkPrivacyNotice.softwareUpdateUnavailable,
             ),
       );
     },
@@ -966,7 +966,7 @@ void main() {
             .having(
               (state) => state.startupNotice,
               'startupNotice',
-              kTorUpdateUnavailableNotice,
+              NetworkPrivacyNotice.torUpdateUnavailable,
             )
             .having(
               (state) => state.softwareUpdatesAvailable,

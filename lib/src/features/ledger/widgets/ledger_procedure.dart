@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
@@ -93,8 +94,14 @@ class _LedgerProcedureState extends State<LedgerProcedure> {
                 container: true,
                 liveRegion: index == widget.currentStep,
                 label: index < widget.currentStep
-                    ? 'Step ${index + 1} of ${widget.steps.length}, complete'
-                    : 'Step ${index + 1} of ${widget.steps.length}',
+                    ? context.l10n.ledgerProcedureStepComplete(
+                        '${index + 1}',
+                        '${widget.steps.length}',
+                      )
+                    : context.l10n.ledgerProcedureStep(
+                        '${index + 1}',
+                        '${widget.steps.length}',
+                      ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

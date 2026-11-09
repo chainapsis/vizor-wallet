@@ -29,6 +29,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _mnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse access accident';
@@ -220,6 +221,7 @@ Widget _app({
         ),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
           textScaler: textScaler,
@@ -259,6 +261,7 @@ Widget _routerApp(
       ],
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(
         data: AppThemeData.light,
@@ -871,6 +874,7 @@ void main() {
     );
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: Builder(
           builder: (context) => TextButton(
             onPressed: () => Navigator.of(context).push(

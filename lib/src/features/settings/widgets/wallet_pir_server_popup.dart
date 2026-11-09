@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
@@ -17,7 +18,7 @@ Future<void> showWalletPirServerPopup(BuildContext context) async {
     await showAppMobileSheet<void>(
       context: context,
       builder: (context) => MobileModalScaffold(
-        title: 'Private query server',
+        title: context.l10n.settingsPirServerTitle,
         onClose: () => Navigator.of(context).pop(),
         constrainBody: true,
         child: SingleChildScrollView(
@@ -58,7 +59,7 @@ class WalletPirServerSettingsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: 'Private query server settings',
+    label: context.l10n.settingsPirServerSettingsLabel,
     button: true,
     enabled: enabled,
     child: AppButton(
@@ -113,7 +114,7 @@ class _DesktopServerPanel extends StatelessWidget {
                   alignment: Alignment.center,
                   children: [
                     Text(
-                      'Private query server',
+                      context.l10n.settingsPirServerTitle,
                       style: AppTypography.headlineMedium.copyWith(
                         color: colors.text.accent,
                       ),
@@ -122,7 +123,7 @@ class _DesktopServerPanel extends StatelessWidget {
                       alignment: Alignment.centerRight,
                       child: AppIconHoverButton(
                         icon: AppIcons.cross,
-                        semanticLabel: 'Close private query server settings',
+                        semanticLabel: context.l10n.settingsPirServerCloseLabel,
                         onTap: () => Navigator.of(context).pop(),
                       ),
                     ),

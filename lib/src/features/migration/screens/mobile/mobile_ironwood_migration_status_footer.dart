@@ -13,9 +13,12 @@ class _MigrationCanLeaveMessage extends StatelessWidget {
     );
     return Column(
       children: [
-        Text(primary ?? 'You can leave this screen.', style: style),
+        Text(primary ?? context.l10n.migrationMobileCanLeave, style: style),
         const SizedBox(height: AppSpacing.xs),
-        Text(secondary ?? 'But keep Vizor open & running.', style: style),
+        Text(
+          secondary ?? context.l10n.migrationMobileKeepRunning,
+          style: style,
+        ),
       ],
     );
   }
@@ -24,12 +27,12 @@ class _MigrationCanLeaveMessage extends StatelessWidget {
 class _MobileStatusBackHomeButton extends StatelessWidget {
   const _MobileStatusBackHomeButton({
     required this.onPressed,
-    this.label = 'Back home',
+    this.label,
     super.key,
   });
 
   final VoidCallback onPressed;
-  final String label;
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -41,14 +44,14 @@ class _MobileStatusBackHomeButton extends StatelessWidget {
         height: 50,
         variant: AppButtonVariant.secondary,
         onPressed: onPressed,
-        child: Text(label),
+        child: Text(label ?? context.l10n.migrationBackHome),
       ),
     );
   }
 }
 
-List<MobileIronwoodMigrationPartPresentation>
-_mobilePreparingPartPresentations({
+List<MobileIronwoodMigrationPartPresentation> _mobilePreparingPartPresentations(
+  AppLocalizations l10n, {
   required rust_sync.MigrationStatus? status,
   required rust_sync.OrchardMigrationPrivatePlan? previewPlan,
 }) {
@@ -58,7 +61,7 @@ _mobilePreparingPartPresentations({
     return [
       for (final part in statusParts)
         MobileIronwoodMigrationPartPresentation(
-          label: 'Part ${part.partIndex + 1}',
+          label: l10n.migrationMobilePartLabel(part.partIndex + 1),
           status: MobileIronwoodMigrationPartStatus.pending,
           valueZatoshi: part.valueZatoshi,
         ),
@@ -76,7 +79,7 @@ _mobilePreparingPartPresentations({
   return [
     for (var index = 0; index < count; index++)
       MobileIronwoodMigrationPartPresentation(
-        label: 'Part ${index + 1}',
+        label: l10n.migrationMobilePartLabel(index + 1),
         status: MobileIronwoodMigrationPartStatus.pending,
         valueZatoshi: values.isNotEmpty
             ? values[index]

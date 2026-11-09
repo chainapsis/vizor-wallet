@@ -1,9 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-const kVotingSubmissionInProgressMessage =
-    'Vote submission is still running. Wait for it to finish before '
-    'removing an account or resetting the wallet.';
+import '../../features/voting/voting_message.dart';
 
 /// Marker for a vote submission that is using account state in this process.
 ///
@@ -22,19 +20,24 @@ class VotingSubmissionGuard {
   final String accountUuid;
   final String roundId;
 
-  String get message => kVotingSubmissionInProgressMessage;
+  /// Why destructive wallet changes are blocked while this guard is held.
+  VotingMessage get message =>
+      const VotingNotice(VotingNoticeKind.submissionInProgress);
 }
 
 /// Thrown when a wallet mutation cannot run during vote submission.
-class VotingSubmissionInProgressException implements Exception {
+class VotingSubmissionInProgressException
+    implements Exception, VotingMessageSource {
   const VotingSubmissionInProgressException(this.guard);
 
   final VotingSubmissionGuard guard;
 
-  String get message => guard.message;
+  @override
+  VotingMessage get votingMessage => guard.message;
 
   @override
-  String toString() => message;
+  String toString() =>
+      'VotingSubmissionInProgressException(token: ${guard.token})';
 }
 
 /// Tracks active vote submissions that should block destructive wallet changes.

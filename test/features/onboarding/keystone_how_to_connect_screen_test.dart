@@ -1,4 +1,4 @@
-import 'dart:ui' show Size;
+import 'dart:ui' show Locale, Size;
 
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
@@ -11,6 +11,8 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/keystone/keystone_how_to_connect_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/keystone/keystone_onboarding_flow.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/src/core/l10n/l10n.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -68,10 +70,14 @@ void main() {
   });
 
   test('sidebar metadata matches the Keystone navigation labels', () {
+    final l10n = lookupAppLocalizations(const Locale('en'));
     expect(KeystoneOnboardingStep.howToConnect.iconName, AppIcons.book);
-    expect(KeystoneOnboardingStep.selectAccount.label, 'Select Account');
+    expect(KeystoneOnboardingStep.selectAccount.label(l10n), 'Select Account');
     expect(KeystoneOnboardingStep.selectAccount.iconName, AppIcons.user);
-    expect(KeystoneOnboardingStep.customiseAccount.label, 'Customise wallet');
+    expect(
+      KeystoneOnboardingStep.customiseAccount.label(l10n),
+      'Customise wallet',
+    );
     expect(KeystoneOnboardingStep.customiseAccount.iconName, AppIcons.user);
     expect(
       KeystoneOnboardingStep.customiseAccount.routePath,
@@ -111,6 +117,7 @@ Widget _keystoneScreen() {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: const KeystoneHowToConnectScreen(),
@@ -125,6 +132,7 @@ Widget _routerHarness(GoRouter router) {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

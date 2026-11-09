@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
 
@@ -13,11 +14,13 @@ import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/privacy_mode_provider.dart';
 import '../../../address_book/contact_label_generator.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
@@ -101,7 +104,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         context: context,
         useRootNavigator: true,
         barrierDismissible: true,
-        barrierLabel: 'Dismiss',
+        barrierLabel: context.l10n.swapDismissBarrierLabel,
         barrierColor: context.colors.background.neutralScrim,
         transitionDuration: Duration.zero,
         pageBuilder: (_, _, _) => _buildSwapModal(),
@@ -211,8 +214,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 resolve: (raw) async {
                   final address = normalizeAddressScanPayload(raw);
                   if (address == null || address.isEmpty) {
-                    return const MobileScanOutcome.rejected(
-                      'QR code did not include an address.',
+                    return MobileScanOutcome.rejected(
+                      context.l10n.commonQrNoAddress,
                     );
                   }
                   return MobileScanOutcome.accepted(address);
@@ -223,9 +226,12 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 onClose: _openAddressEditor,
               ),
               _SwapModalSurface.contactPicker => AddressBookContactPickerModal(
-                title: swapContactPickerTitle(swapState),
+                title: swapContactPickerTitle(context.l10n, swapState),
                 networks: swapContactPickerNetworks(swapState),
-                emptyTitle: swapContactPickerEmptyTitle(swapState),
+                emptyTitle: swapContactPickerEmptyTitle(
+                  context.l10n,
+                  swapState,
+                ),
                 onSelected: _selectAddressBookContact,
                 onCancel: _openAddressEditor,
               ),
@@ -294,7 +300,10 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
       if (alreadySaved) {
         final toastContext = _toastOverlayContextKey.currentContext;
         if (toastContext != null && toastContext.mounted) {
-          showAppToast(toastContext, 'Already in your address book');
+          showAppToast(
+            toastContext,
+            toastContext.l10n.swapContactAlreadyInAddressBook,
+          );
         }
         return;
       }
@@ -335,9 +344,12 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     final migrationSpendable = ref.watch(
       ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
     );
-    final zecAvailableText = ZecAmount.fromZatoshi(
-      migrationSpendable,
-    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+    final zecAvailableText = hideAmountIfPrivacyMode(
+      ZecAmount.fromZatoshi(
+        migrationSpendable,
+      ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
+      privacyModeEnabled: ref.watch(privacyModeProvider),
+    );
 
     void openReview() {
       final generation = _sidebarExitGeneration;
@@ -354,9 +366,9 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     }
 
     final quoteError =
-        swapState.quoteAmountPrecisionError ??
-        swapState.externalAssetSupportError ??
-        swapState.quoteError;
+        swapState.quoteAmountPrecisionError(context.l10n) ??
+        swapState.externalAssetSupportError(context.l10n) ??
+        swapState.quoteError?.text(context.l10n);
 
     return NearIntentsServiceNoticeHost(
       direction: swapState.direction,
@@ -369,7 +381,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
             Column(
               children: [
                 MobileTopNav.back(
-                  title: 'Swap',
+                  title: context.l10n.swapPageTitle,
                   trailing: const SwapNearIntentsAttribution(alignEnd: true),
                 ),
                 Expanded(
@@ -496,7 +508,8 @@ class _MobileSwapReviewButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
-    final destinationFormatError = state.destinationAddressFormatError;
+    final destinationFormatError = state.destinationAddressFormatIssue
+        ?.localizedMessage(context.l10n);
     final balanceExceeded = _balanceExceeded;
     final canReview = state.canReviewQuote && !balanceExceeded;
     final onPressed = needsDestinationAddress
@@ -506,14 +519,14 @@ class _MobileSwapReviewButton extends StatelessWidget {
         : null;
     final label = needsDestinationAddress
         ? (state.direction.sendsZec
-              ? 'Add recipient address'
-              : 'Add refund address')
+              ? context.l10n.swapActionAddRecipientAddress
+              : context.l10n.swapActionAddRefundAddress)
         : destinationFormatError ??
               (balanceExceeded
-                  ? 'Not enough ZEC'
+                  ? context.l10n.commonNotEnoughZec
                   : state.quoteLoading
-                  ? 'Getting quote'
-                  : 'Continue to review');
+                  ? context.l10n.swapActionGettingQuote
+                  : context.l10n.commonContinueToReview);
 
     return AppButton(
       key: const ValueKey('mobile_swap_review_button'),

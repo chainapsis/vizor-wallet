@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
@@ -58,7 +59,7 @@ String ironwoodMigrationCompletionSeenStorageKey({
   required String accountUuid,
   required String completionId,
 }) {
-  return 'zcash_ironwood_migration_completion_seen_'
+  return 'zcash_ironwood_migration_completion_seen_' // l10n-ignore: storage key
       '${network}_${accountUuid}_$completionId';
 }
 
@@ -494,11 +495,11 @@ class IronwoodHomeMigrationCtaState {
 
   bool get visible => mode != IronwoodHomeMigrationCtaMode.hidden;
 
-  String get buttonLabel => switch (mode) {
-    IronwoodHomeMigrationCtaMode.start => 'Migrate to Ironwood Pool',
-    IronwoodHomeMigrationCtaMode.resume => 'Continue migration',
+  String buttonLabel(AppLocalizations l10n) => switch (mode) {
+    IronwoodHomeMigrationCtaMode.start => l10n.migrationCtaStart,
+    IronwoodHomeMigrationCtaMode.resume => l10n.migrationContinueMigration,
     IronwoodHomeMigrationCtaMode.stopped =>
-      'Migration stopped by network upgrade',
+      l10n.commonMigrationStoppedByNetworkUpgrade,
     IronwoodHomeMigrationCtaMode.hidden => '',
   };
 }
@@ -628,7 +629,9 @@ final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
 
       return _IronwoodMigrationAccountInputs(
         accountUuid: activeAccountUuid,
-        accountName: activeAccount?.name ?? 'Username',
+        accountName:
+            activeAccount?.name ??
+            'Username', // l10n-ignore: placeholder account name
         profilePictureId:
             activeAccount?.profilePictureId ?? kDefaultProfilePictureId,
       );

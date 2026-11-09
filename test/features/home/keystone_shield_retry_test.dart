@@ -22,8 +22,10 @@ import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.da
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 
 /// A Keystone shield refused only because private recovery has not yet
 /// covered the wallet's latest block keeps the user's signature: the overlay
@@ -82,7 +84,10 @@ void main() {
     expect(container.read(pendingActivityEvidenceProvider).observedAt, isEmpty);
 
     expect(api.broadcasts, [_signature]);
-    expect(find.text(kShieldWaitingForPrivateRecoveryMessage), findsOneWidget);
+    expect(
+      find.text(testL10n.homeShieldWaitingForPrivateRecovery),
+      findsOneWidget,
+    );
     final retry = find.text('Try again');
     expect(retry, findsOneWidget);
     expect(completed, 0);
@@ -110,7 +115,7 @@ void main() {
     await tester.pumpWidget(_app(onComplete: () {}));
     await _settle(tester);
 
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
     expect(find.text('Shield balance failed. Please try again.'), findsNothing);
     expect(find.text('Get Signature'), findsNothing);
     expect(api.broadcasts, isEmpty);
@@ -128,7 +133,10 @@ void main() {
 
     expect(api.broadcasts, [_signature]);
     expect(find.text('Try again'), findsNothing);
-    expect(find.text(kShieldWaitingForPrivateRecoveryMessage), findsNothing);
+    expect(
+      find.text(testL10n.homeShieldWaitingForPrivateRecovery),
+      findsNothing,
+    );
     expect(find.text('Back to Wallet'), findsOneWidget);
   });
 }
@@ -185,7 +193,10 @@ Widget _app({required VoidCallback onComplete}) {
     ],
     child: AppTheme(
       data: AppThemeData.dark,
-      child: MaterialApp.router(routerConfig: router),
+      child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
+        routerConfig: router,
+      ),
     ),
   );
 }
@@ -291,6 +302,7 @@ class _ShieldApi extends RustLibApi {
     broadcasts.add(List.of(pcztWithSignatures.single));
     if (refusals.isNotEmpty) throw refusals.removeAt(0);
     return const StoreAndBroadcastPcztsResult(
+      notices: [],
       broadcastedCount: 1,
       totalCount: 1,
       txids: 'ab',

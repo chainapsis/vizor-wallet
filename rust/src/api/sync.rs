@@ -96,6 +96,31 @@ pub enum ApiWalletErrorCode {
     /// The wallet still requires private recovery while Private queries is
     /// off: turning it off did not finish.
     OptOutUnfinished,
+    /// A scanned QR is not a UR. Skip the frame.
+    InvalidUr,
+    /// A scanned UR has a different type from the one expected: the device
+    /// is showing another QR.
+    UnexpectedUrType,
+    /// The multi-part UR decoder rejected a fragment and was reset; restart
+    /// the scan session.
+    UrSessionReset,
+    /// More spend signatures than one Keystone batch round can return.
+    KeystoneBatchSignatureLimit,
+    /// Transparent or Sapling inputs, which Keystone batch signing cannot
+    /// sign.
+    KeystoneBatchUnsupportedInput,
+    /// A Gift Card group that needs more than one funding transaction.
+    PaymentLinkBatchNotOneTransaction,
+    /// A Gift Card group spending Sapling funds a Keystone cannot sign.
+    PaymentLinkBatchKeystoneSapling,
+    /// A Gift Card group needing more signatures than one Keystone batch.
+    PaymentLinkBatchKeystoneSignatureLimit,
+    /// A Gift Card group with more shielded recipients than a Ledger shows.
+    PaymentLinkBatchLedgerRecipientLimit,
+    /// A Gift Card group spending Sapling funds a Ledger cannot sign.
+    PaymentLinkBatchLedgerSapling,
+    /// A Gift Card group too large for a Ledger to sign.
+    PaymentLinkBatchLedgerTooLarge,
 }
 
 /// An error from a call whose failures the app acts on. Its Dart
@@ -122,6 +147,33 @@ impl From<WalletFailure> for ApiWalletError {
                 }
                 Some(FailureCode::RecoveryIncomplete) => ApiWalletErrorCode::RecoveryIncomplete,
                 Some(FailureCode::OptOutUnfinished) => ApiWalletErrorCode::OptOutUnfinished,
+                Some(FailureCode::InvalidUr) => ApiWalletErrorCode::InvalidUr,
+                Some(FailureCode::UnexpectedUrType) => ApiWalletErrorCode::UnexpectedUrType,
+                Some(FailureCode::UrSessionReset) => ApiWalletErrorCode::UrSessionReset,
+                Some(FailureCode::KeystoneBatchSignatureLimit) => {
+                    ApiWalletErrorCode::KeystoneBatchSignatureLimit
+                }
+                Some(FailureCode::KeystoneBatchUnsupportedInput) => {
+                    ApiWalletErrorCode::KeystoneBatchUnsupportedInput
+                }
+                Some(FailureCode::PaymentLinkBatchNotOneTransaction) => {
+                    ApiWalletErrorCode::PaymentLinkBatchNotOneTransaction
+                }
+                Some(FailureCode::PaymentLinkBatchKeystoneSapling) => {
+                    ApiWalletErrorCode::PaymentLinkBatchKeystoneSapling
+                }
+                Some(FailureCode::PaymentLinkBatchKeystoneSignatureLimit) => {
+                    ApiWalletErrorCode::PaymentLinkBatchKeystoneSignatureLimit
+                }
+                Some(FailureCode::PaymentLinkBatchLedgerRecipientLimit) => {
+                    ApiWalletErrorCode::PaymentLinkBatchLedgerRecipientLimit
+                }
+                Some(FailureCode::PaymentLinkBatchLedgerSapling) => {
+                    ApiWalletErrorCode::PaymentLinkBatchLedgerSapling
+                }
+                Some(FailureCode::PaymentLinkBatchLedgerTooLarge) => {
+                    ApiWalletErrorCode::PaymentLinkBatchLedgerTooLarge
+                }
             },
             message: failure.message,
         }
@@ -1169,8 +1221,46 @@ pub struct ExecuteProposalResult {
     pub broadcasted_count: u32,
     pub total_count: u32,
     pub message: Option<String>,
+    /// `message` as sentences the app can show in the display language;
+    /// empty when `message` has no fixed shape.
+    pub notices: Vec<BroadcastNotice>,
     /// Server rejection is distinct from a missing response, but is not finality.
     pub broadcast_failure_kind: Option<String>,
+}
+
+/// One sentence of a broadcast result's English `message`. The result's
+/// `message` is these sentences in English, one space apart. Dart builds them
+/// from ARB keys by `kind` and shows `message` for a kind it does not know.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BroadcastNotice {
+    pub kind: String,
+    pub index: Option<u32>,
+    pub total: Option<u32>,
+    pub txid: Option<String>,
+    /// Rust, dependency or server text, shown untranslated.
+    pub detail: Option<String>,
+    pub expiry_height: Option<u32>,
+    pub chain_height: Option<u64>,
+}
+
+impl From<crate::wallet::sync::broadcast_notice::BroadcastNotice> for BroadcastNotice {
+    fn from(notice: crate::wallet::sync::broadcast_notice::BroadcastNotice) -> Self {
+        Self {
+            kind: notice.kind,
+            index: notice.index,
+            total: notice.total,
+            txid: notice.txid,
+            detail: notice.detail,
+            expiry_height: notice.expiry_height,
+            chain_height: notice.chain_height,
+        }
+    }
+}
+
+pub(crate) fn api_broadcast_notices(
+    notices: Vec<crate::wallet::sync::broadcast_notice::BroadcastNotice>,
+) -> Vec<BroadcastNotice> {
+    notices.into_iter().map(BroadcastNotice::from).collect()
 }
 
 pub struct IronwoodMigrationResult {
@@ -1437,6 +1527,8 @@ pub struct ExtractAndBroadcastPcztResult {
     pub txid: String,
     pub status: String,
     pub message: Option<String>,
+    /// `message` as sentences; see [`BroadcastNotice`].
+    pub notices: Vec<BroadcastNotice>,
 }
 
 pub struct StoreAndBroadcastPcztsResult {
@@ -1445,6 +1537,8 @@ pub struct StoreAndBroadcastPcztsResult {
     pub broadcasted_count: u32,
     pub total_count: u32,
     pub message: Option<String>,
+    /// `message` as sentences; see [`BroadcastNotice`].
+    pub notices: Vec<BroadcastNotice>,
 }
 
 pub struct SendMaxEstimateResult {
@@ -1493,7 +1587,7 @@ pub fn estimate_payment_link_batch_fee(
     account_uuid: String,
     addresses: Vec<String>,
     amount_zatoshi: u64,
-) -> Result<u64, String> {
+) -> Result<u64, ApiWalletError> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         wallet_sync::estimate_payment_link_batch_fee(
@@ -1502,6 +1596,7 @@ pub fn estimate_payment_link_batch_fee(
             &account_uuid,
             &payment_link_batch_pairs(addresses, amount_zatoshi),
         )
+        .map_err(ApiWalletError::from)
     })
 }
 
@@ -1513,7 +1608,7 @@ pub fn propose_payment_link_batch(
     send_flow_id: String,
     addresses: Vec<String>,
     amount_zatoshi: u64,
-) -> Result<ProposalResult, String> {
+) -> Result<ProposalResult, ApiWalletError> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         wallet_sync::propose_payment_link_batch(
@@ -1524,6 +1619,7 @@ pub fn propose_payment_link_batch(
             &payment_link_batch_pairs(addresses, amount_zatoshi),
         )
         .map(api_proposal_result)
+        .map_err(ApiWalletError::from)
     })
 }
 
@@ -1715,6 +1811,7 @@ pub fn execute_proposal(
             broadcasted_count: r.broadcasted_count,
             total_count: r.total_count,
             message: r.message,
+            notices: api_broadcast_notices(r.notices),
             broadcast_failure_kind: r.broadcast_failure_kind,
         })
     })
@@ -1756,6 +1853,7 @@ pub fn execute_proposal_with_macos_stored_mnemonic(
             broadcasted_count: r.broadcasted_count,
             total_count: r.total_count,
             message: r.message,
+            notices: api_broadcast_notices(r.notices),
             broadcast_failure_kind: r.broadcast_failure_kind,
         })
     })
@@ -3629,7 +3727,9 @@ pub fn redact_pczt_for_signer(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
 /// Prepare one PCZT for Keystone's `zcash-sign-batch` request. This rejects
 /// input types that the signatures-only response cannot represent and signing
 /// sets above the device's 96-signature per-transaction limit.
-pub fn prepare_pczt_for_keystone_batch(pczt_bytes: Vec<u8>) -> Result<KeystoneBatchPczt, String> {
+pub fn prepare_pczt_for_keystone_batch(
+    pczt_bytes: Vec<u8>,
+) -> Result<KeystoneBatchPczt, ApiWalletError> {
     let prepared = wallet_sync::prepare_pczt_for_keystone_batch(&pczt_bytes)?;
     Ok(KeystoneBatchPczt {
         redacted_pczt: prepared.redacted_pczt,
@@ -3681,6 +3781,7 @@ pub async fn store_and_broadcast_signed_pczts_for_proposal(
         broadcasted_count: result.broadcasted_count,
         total_count: result.total_count,
         message: result.message,
+        notices: api_broadcast_notices(result.notices),
     })
 }
 
@@ -3752,6 +3853,7 @@ pub async fn store_and_broadcast_pczts_with_keystone_signatures_for_proposal(
         broadcasted_count: result.broadcasted_count,
         total_count: result.total_count,
         message: result.message,
+        notices: api_broadcast_notices(result.notices),
     })
 }
 
@@ -3803,6 +3905,7 @@ pub async fn extract_and_broadcast_pczt(
         txid: result.txid,
         status: result.status,
         message: result.message,
+        notices: api_broadcast_notices(result.notices),
     })
 }
 

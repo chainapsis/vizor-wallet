@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 
 /// Fixtures for the transparent details receipt tests, desktop and mobile.
 const transparentDetailsTxid =
@@ -190,7 +191,7 @@ void transparentDetailsRefreshTests({
       available,
     ]);
     await pump(tester, details, sync);
-    expect(find.text(kTransparentDetailsNotCoveredText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsNotCovered), findsOneWidget);
     final initialReads = details.calls;
     // A completed snapshot repeated by an unrelated update is not a new run.
     sync.emit(completed.copyWith(transparentBalance: BigInt.one));
@@ -200,7 +201,7 @@ void transparentDetailsRefreshTests({
     await flush(tester);
     expect(details.calls, initialReads + 1);
     expect(transactionOutputShown, findsOneWidget);
-    expect(find.text(kTransparentDetailsNotCoveredText), findsNothing);
+    expect(find.text(testL10n.activityDetailsNotCovered), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -257,7 +258,7 @@ void transparentDetailsRefreshTests({
     delayedPoll.complete(pending);
     await flush(tester);
     expect(transactionOutputShown, findsOneWidget);
-    expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsNothing);
     await tester.pump(kTransparentDetailsPollInterval * 2);
     expect(details.calls, 3, reason: 'stale results cannot restart polling');
     await tester.pumpWidget(const SizedBox());
@@ -277,7 +278,7 @@ void transparentDetailsRefreshTests({
     await flush(tester);
     failed.completeError(StateError('read failed'));
     await flush(tester);
-    expect(find.text(kTransparentDetailsUnavailableText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsOneWidget);
     await tester.pump(kTransparentDetailsPollInterval);
     await flush(tester);
     expect(details.calls, 3);
@@ -391,7 +392,7 @@ void transparentDetailsPublicLookupTests({required PublicLookupPump pump}) {
     expect(omitted, findsOneWidget);
     expect(find.text('1 more output, other sending addresses'), findsOneWidget);
     expect(load, findsOneWidget);
-    expect(find.text(kLoadDetailsPubliclyText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsLoadPublicly), findsOneWidget);
     expect(lookups, 0, reason: 'nothing is loaded without a tap');
     await tester.pumpWidget(const SizedBox());
   });
@@ -437,7 +438,7 @@ void transparentDetailsPublicLookupTests({required PublicLookupPump pump}) {
       ]),
       lookup: (_) async {},
     );
-    expect(find.text(kTransparentDetailsNotCoveredText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsNotCovered), findsOneWidget);
     expect(load, findsOneWidget);
     expect(omitted, findsNothing);
     await tester.pumpWidget(const SizedBox());
@@ -495,7 +496,7 @@ void transparentDetailsPublicLookupTests({required PublicLookupPump pump}) {
       },
     );
     await tapLoad(tester);
-    expect(find.text(kLoadDetailsPubliclyLoadingText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsLoading), findsOneWidget);
     await tapLoad(tester);
     expect((asked, lookups), (1, 1));
     pending.complete();
@@ -517,7 +518,7 @@ void transparentDetailsPublicLookupTests({required PublicLookupPump pump}) {
       confirm: (_) async => true,
     );
     await tapLoad(tester);
-    expect(find.text(kLoadDetailsPubliclyFailedText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsLoadFailed), findsOneWidget);
     expect(omitted, findsOneWidget);
     await tapLoad(tester);
     await tester.pumpAndSettle();
@@ -555,7 +556,7 @@ void transparentDetailsPublicLookupTests({required PublicLookupPump pump}) {
     );
     await flush(tester);
     expect(details.calls, 2, reason: 'the sync refreshed the receipt');
-    expect(find.text(kLoadDetailsPubliclyLoadingText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsLoading), findsOneWidget);
     await tapLoad(tester);
     expect(asked, 1, reason: 'the running load is not offered again');
     pending.complete();
@@ -756,7 +757,7 @@ rust_sync.TransactionInfo mixedSend() {
 void _expectUnknownRecipientShell({required String title}) {
   expect(find.text(title), findsOneWidget);
   expect(find.text('To'), findsOneWidget);
-  expect(find.text(kUnknownRecipientText), findsOneWidget);
+  expect(find.text(testL10n.activityDetailsUnknownRecipient), findsOneWidget);
   expect(find.text('Show full address'), findsNothing);
   expect(find.text('Recipient'), findsNothing);
 }
@@ -768,8 +769,11 @@ void _expectNeutralOutputs({
   required List<int> hidden,
 }) {
   expect(_supplementalCard, findsOneWidget);
-  expect(find.text(kTransactionOutputsText), findsOneWidget);
-  expect(find.text(kTransactionOutputsUnattributedText), findsOneWidget);
+  expect(find.text(testL10n.activityDetailsOutputsLabel), findsOneWidget);
+  expect(
+    find.text(testL10n.activityDetailsOutputsUnattributed),
+    findsOneWidget,
+  );
   expect(find.text('Output'), findsNWidgets(listed.length));
   for (final index in listed) {
     expect(find.byKey(ValueKey('transaction_output_$index')), findsOneWidget);
@@ -840,7 +844,7 @@ void transparentReceiptParityTests({
       expect(find.text('To'), findsOneWidget);
       expect(_showsAddress(transparentRecipientAddress), findsWidgets);
       expect(find.text('Show full address'), findsOneWidget);
-      expect(find.text(kUnknownRecipientText), findsNothing);
+      expect(find.text(testL10n.activityDetailsUnknownRecipient), findsNothing);
       // The account's change is not a payment.
       expect(_showsAddress(transparentOwnAddress), findsNothing);
       expect(_supplementalCard, findsNothing);
@@ -1072,7 +1076,7 @@ void transparentReceiptParityTests({
     );
     // Its role may still change, so it has no To row at all.
     expect(find.text('To'), findsNothing);
-    expect(find.text(kUnknownRecipientText), findsNothing);
+    expect(find.text(testL10n.activityDetailsUnknownRecipient), findsNothing);
     expect(find.text('Show full address'), findsNothing);
     _expectNeutralOutputs(listed: [0], hidden: [1]);
     await tester.pumpWidget(const SizedBox());
@@ -1112,9 +1116,9 @@ void transparentReceiptParityTests({
       transaction: tx,
       privateQueries: true,
     );
-    expect(find.text(kNetChangeText), findsOneWidget);
+    expect(find.text(testL10n.activityReceiptNetChange), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
-    expect(find.text(kUnknownRecipientText), findsNothing);
+    expect(find.text(testL10n.activityDetailsUnknownRecipient), findsNothing);
     expect(find.text('To'), findsNothing);
     expect(find.text('Show full address'), findsNothing);
     expect(find.text('0.0002 ZEC'), findsOneWidget, reason: 'one fee line');
@@ -1340,8 +1344,8 @@ void transparentReceiptParityTests({
       expect(find.text('Unknown sender'), findsOneWidget);
       expect(_showsAddress(transparentOwnAddress), findsWidgets);
       expect(_supplementalCard, findsNothing);
-      expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
-      expect(find.text(kTransparentDetailsNotCoveredText), findsNothing);
+      expect(find.text(testL10n.activityDetailsUnavailable), findsNothing);
+      expect(find.text(testL10n.activityDetailsNotCovered), findsNothing);
       // Awaited details are still asked for first and polled.
       final awaited = state != rust_sync.TransparentDetailsState.notCovered;
       expect(prioritized, awaited ? [transparentDetailsTxid] : isEmpty);
@@ -1392,9 +1396,9 @@ void transparentReceiptParityTests({
     );
     expect(find.text('Transaction'), findsOneWidget);
     expect(find.text('To'), findsNothing);
-    expect(find.text(kUnknownRecipientText), findsNothing);
+    expect(find.text(testL10n.activityDetailsUnknownRecipient), findsNothing);
     // The fee is the entry's one line.
-    expect(find.text(kNetChangeText), findsOneWidget);
+    expect(find.text(testL10n.activityReceiptNetChange), findsOneWidget);
     expect(_supplementalCard, findsNothing);
     await tester.pumpWidget(const SizedBox());
   });

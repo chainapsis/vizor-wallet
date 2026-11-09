@@ -7,6 +7,7 @@ import 'package:flutter/material.dart'
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_icon.dart';
@@ -276,7 +277,7 @@ class MobileModalCard extends StatelessWidget {
                     container: true,
                     button: true,
                     enabled: backEnabled,
-                    label: 'Back',
+                    label: context.l10n.commonBack,
                     child: AppButton(
                       key: const ValueKey('mobile_modal_back_button'),
                       variant: AppButtonVariant.secondary,
@@ -520,7 +521,7 @@ class _ModalCloseButtonState extends State<_ModalCloseButton> {
         ? secondary.bgHover
         : secondary.bg;
     return Semantics(
-      label: 'Close',
+      label: context.l10n.commonClose,
       button: true,
       enabled: widget.onTap != null,
       child: MouseRegion(

@@ -117,7 +117,7 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
             Transform.translate(
               offset: const Offset(0, 20),
               child: MobileTopNav.back(
-                title: 'Fast Migration',
+                title: context.l10n.migrationMobileFastTitle,
                 titleStyle: AppTypography.headlineSmall,
                 onBack: onBack,
               ),
@@ -133,7 +133,7 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
                 child: Column(
                   children: [
                     Text(
-                      'Review Migration Plan',
+                      context.l10n.migrationImmediateReviewTitle,
                       textAlign: TextAlign.center,
                       style: AppTypography.headlineLarge.copyWith(
                         color: colors.text.accent,

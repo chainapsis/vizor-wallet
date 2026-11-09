@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import 'fakes/fake_sync_notifier.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   testWidgets('startup Tor failure stays fail-closed and shows one notice', (
@@ -22,7 +23,7 @@ void main() {
     await tester.pumpWidget(_appHarness());
     await tester.pump();
 
-    expect(find.text(kTorStartupFailureNotice), findsOneWidget);
+    expect(find.text(testL10n.networkPrivacyTorStartupFailed), findsOneWidget);
     final container = ProviderScope.containerOf(
       tester.element(find.byType(ZcashWalletApp)),
     );
@@ -33,7 +34,7 @@ void main() {
 
     await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
-    expect(find.text(kTorStartupFailureNotice), findsNothing);
+    expect(find.text(testL10n.networkPrivacyTorStartupFailed), findsNothing);
   });
 }
 
@@ -70,6 +71,6 @@ class _StartupTorFailureNotifier extends NetworkPrivacyNotifier {
     torEnabled: true,
     status: NetworkPrivacyConnectionStatus.failed,
     error: 'Bootstrap Tor: unavailable',
-    startupNotice: kTorStartupFailureNotice,
+    startupNotice: NetworkPrivacyNotice.torStartupFailure,
   );
 }

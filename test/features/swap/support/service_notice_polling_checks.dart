@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_in
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/near_intents_service_status_provider.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/near_intents_service_notice_host.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'service_status_fixture.dart';
 
@@ -268,6 +269,7 @@ class _Harness {
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
     ),

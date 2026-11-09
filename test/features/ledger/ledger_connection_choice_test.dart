@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_device_selectio
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'ledger_pairing_recovery_test.dart' as fixture;
 import 'ledger_device_selection_test.dart' show pumpFrames;
 
@@ -154,6 +155,7 @@ Widget _modal(ProviderContainer c, LedgerDeviceSelectionRequest request) =>
     UncontrolledProviderScope(
       container: c,
       child: MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Center(

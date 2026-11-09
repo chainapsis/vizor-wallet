@@ -313,7 +313,7 @@ class RoutedWalletPirConfigFetcher implements WalletPirConfigFetcher {
       throw const WalletPirConfigException('Config URLs must use HTTPS.');
     }
     final response = await _client.request(
-      'GET',
+      'GET', // l10n-ignore: HTTP method
       uri,
       headers: const {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'},
       timeout: timeout,

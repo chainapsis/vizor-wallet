@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../services/ledger_bluetooth_access.dart';
 import '../services/ledger_device_request.dart';
 import '../services/ledger_failure_guidance.dart';
@@ -17,7 +18,7 @@ class LedgerBluetoothSession extends ConsumerStatefulWidget {
     this.onRetry,
     this.onClose,
     this.onBusyChanged,
-    this.retryLabel = 'Reconnect',
+    this.retryLabel,
     this.enabled = true,
     super.key,
   });
@@ -26,7 +27,7 @@ class LedgerBluetoothSession extends ConsumerStatefulWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onClose;
   final ValueChanged<bool>? onBusyChanged;
-  final String retryLabel;
+  final String? retryLabel;
   final LedgerMobileBleService? service;
 
   @override
@@ -92,9 +93,10 @@ class _LedgerBluetoothSessionState extends ConsumerState<LedgerBluetoothSession>
         _check!();
         if (!mounted) return;
         if (!opened) {
+          final l10n = context.l10n;
           error = _status?.permission == LedgerBluetoothPermission.restricted
-              ? 'Could not open Settings. Open your device settings manually to review access for Vizor.'
-              : 'Could not open Settings. Open your device settings manually and allow access for Vizor.';
+              ? l10n.ledgerBtCouldNotOpenSettingsRestricted
+              : l10n.ledgerBtCouldNotOpenSettingsAllow;
         }
       }
       final status = await access.bluetoothAccessStatus();
@@ -117,10 +119,11 @@ class _LedgerBluetoothSessionState extends ConsumerState<LedgerBluetoothSession>
         return;
       }
       if (mounted) {
+        final l10n = context.l10n;
         setState(
           () => _error =
-              ledgerFailureGuidance(error)?.message ??
-              'Could not check access. Open Settings manually, then check again.',
+              ledgerFailureGuidance(l10n, error)?.message ??
+              l10n.ledgerBtCouldNotCheckAccess,
         );
       }
     } finally {
@@ -148,33 +151,34 @@ class _LedgerBluetoothSessionState extends ConsumerState<LedgerBluetoothSession>
         status?.permission == LedgerBluetoothPermission.requestable &&
         !_requestAttempted;
     final ready = granted && !radioOff && !locationOff;
+    final l10n = context.l10n;
     final title = status == null
-        ? 'Checking Bluetooth access'
+        ? l10n.ledgerBtTitleChecking
         : radioOff
-        ? 'Turn on Bluetooth'
+        ? l10n.ledgerBtTitleTurnOnBluetooth
         : locationOff
-        ? 'Turn on location services'
+        ? l10n.ledgerBtTitleTurnOnLocation
         : restricted
-        ? 'Access is restricted'
+        ? l10n.ledgerBtTitleRestricted
         : ready
-        ? 'Ready to reconnect'
+        ? l10n.ledgerBtTitleReady
         : requestable
         ? (status.locationPermission
-              ? 'Allow location access'
-              : 'Allow Bluetooth access')
+              ? l10n.ledgerBtTitleAllowLocation
+              : l10n.ledgerBtTitleAllowBluetooth)
         : (status.locationPermission
-              ? 'Allow location in Settings'
-              : 'Allow Bluetooth in Settings');
+              ? l10n.ledgerBtTitleAllowLocationSettings
+              : l10n.ledgerBtTitleAllowBluetoothSettings);
     final message =
         (restricted && _error != null
-            ? '${status!.message}\n\n$_error'
+            ? '${status!.message(l10n)}\n\n$_error'
             : _error) ??
         (ready
-            ? 'Turn on your Ledger and unlock it to continue.'
+            ? l10n.ledgerBtMsgReady
             : requestable
             ? (status!.locationPermission
-                  ? 'This Android version needs location access to find your Ledger.'
-                  : 'Vizor needs Bluetooth access to connect to your Ledger.')
+                  ? l10n.ledgerBtMsgLocationNeeded
+                  : l10n.ledgerBtMsgBluetoothNeeded)
             : (_requestAttempted &&
                           status?.permission ==
                               LedgerBluetoothPermission.requestable
@@ -182,22 +186,22 @@ class _LedgerBluetoothSessionState extends ConsumerState<LedgerBluetoothSession>
                           LedgerBluetoothPermission.settings,
                           locationPermission: status!.locationPermission,
                           macOS: status.macOS,
-                        ).message
-                      : status?.message) ??
-                  'Checking whether Vizor can connect to your Ledger.');
+                        ).message(l10n)
+                      : status?.message(l10n)) ??
+                  l10n.ledgerBtMsgChecking);
     final label = _busy
-        ? 'Checking access'
+        ? l10n.ledgerBtLabelChecking
         : restricted
-        ? 'Close'
+        ? l10n.commonClose
         : _error != null || status == null
-        ? 'Check again'
+        ? l10n.commonCheckAgain
         : radioOff || locationOff
-        ? 'Check again'
+        ? l10n.commonCheckAgain
         : ready
-        ? widget.retryLabel
+        ? (widget.retryLabel ?? l10n.ledgerBtLabelReconnect)
         : requestable
-        ? 'Allow access'
-        : 'Open settings';
+        ? l10n.ledgerBtLabelAllowAccess
+        : l10n.commonOpenSettings;
     bool canAct() {
       if (!mounted || !widget.enabled || _busy || _invalidated) return false;
       try {

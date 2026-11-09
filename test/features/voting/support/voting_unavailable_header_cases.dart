@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/widgetbook/voting_unavailable_preview.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void votingUnavailableHeaderTests() {
   for (final scale in [1.0, 2.0]) {
@@ -19,6 +20,7 @@ void votingUnavailableHeaderTests() {
       var retries = 0;
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.dark,
             child: MediaQuery(

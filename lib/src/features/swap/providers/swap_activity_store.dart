@@ -187,8 +187,12 @@ Map<String, Object?> _recordToJson(SwapIntentRecord record) {
     'lastStatusCheckedAt': record.lastStatusCheckedAt
         ?.toUtc()
         .toIso8601String(),
-    'statusError': record.statusError,
-    'broadcastNotice': record.broadcastNotice,
+    // Released builds read and show only the English text; this build reads
+    // the code first.
+    'statusError': swapMessageLegacyText(record.statusError),
+    'statusErrorCode': swapMessageCodeToJson(record.statusError),
+    'broadcastNotice': swapMessageLegacyText(record.broadcastNotice),
+    'broadcastNoticeCode': swapMessageCodeToJson(record.broadcastNotice),
     'broadcastStatus': record.broadcastStatus,
     'oneClickRecipient': record.oneClickRecipient,
     'oneClickRefundTo': record.oneClickRefundTo,
@@ -215,7 +219,7 @@ SwapIntentRecord _recordFromJson(Map<String, dynamic> json) {
       json['status'],
       SwapIntentStatus.processing,
     ),
-    nextAction: _string(json['nextAction']),
+    nextAction: SwapNextAction.normalizeStored(_string(json['nextAction'])),
     sellAmountBaseUnits: _optionalBigInt(json['sellAmountBaseUnits']),
     direction: _optionalEnumByName(SwapDirection.values, json['direction']),
     externalAsset: SwapAsset.fromPersistedJson(json['externalAsset']),
@@ -235,8 +239,14 @@ SwapIntentRecord _recordFromJson(Map<String, dynamic> json) {
     providerRefundInfo: _providerRefundInfoFromJson(json['providerRefundInfo']),
     fiatValueBasis: _fiatValueBasisFromJson(json['fiatValueBasis']),
     lastStatusCheckedAt: _optionalDateTime(json['lastStatusCheckedAt']),
-    statusError: _optionalString(json['statusError']),
-    broadcastNotice: _optionalString(json['broadcastNotice']),
+    statusError: swapMessageFromStored(
+      code: json['statusErrorCode'],
+      text: json['statusError'],
+    ),
+    broadcastNotice: swapMessageFromStored(
+      code: json['broadcastNoticeCode'],
+      text: json['broadcastNotice'],
+    ),
     broadcastStatus: _optionalString(json['broadcastStatus']),
     oneClickRecipient: _optionalString(json['oneClickRecipient']),
     oneClickRefundTo: _optionalString(json['oneClickRefundTo']),

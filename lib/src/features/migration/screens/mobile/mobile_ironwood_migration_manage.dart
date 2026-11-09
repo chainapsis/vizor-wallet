@@ -23,7 +23,7 @@ class _MobileMigrationManageDialogState
   _MobileMigrationManageChoice? _choice;
   bool _submitting = false;
   bool _stopAttempted = false;
-  String? _error;
+  bool _updateFailed = false;
 
   bool _canStop(rust_sync.MigrationStatus? status) {
     if (ref.read(ironwoodMigrationInputsProvider).statusRequest !=
@@ -48,7 +48,7 @@ class _MobileMigrationManageDialogState
     setState(() {
       _submitting = true;
       _stopAttempted = true;
-      _error = null;
+      _updateFailed = false;
     });
     try {
       await ref
@@ -60,7 +60,7 @@ class _MobileMigrationManageDialogState
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = 'The migration could not be updated. Please try again.';
+        _updateFailed = true;
       });
       ref.invalidate(ironwoodMigrationStatusProvider(widget.request));
     }
@@ -71,11 +71,12 @@ class _MobileMigrationManageDialogState
     ref.watch(ironwoodMigrationInputsProvider);
     final status = ref.watch(ironwoodMigrationStatusProvider(widget.request));
     final canStop = _canStop(status.asData?.value);
+    final l10n = context.l10n;
     final statusMessage = status.isLoading
-        ? 'Checking migration status...'
+        ? l10n.migrationMobileManageChecking
         : status.hasError
-        ? "Couldn't check the migration status. Please try again."
-        : 'This migration is no longer available to manage.';
+        ? l10n.migrationMobileManageCheckError
+        : l10n.migrationMobileManageUnavailable;
     final colors = context.colors;
     final choice = _choice;
     final fast = choice == _MobileMigrationManageChoice.fast;
@@ -96,10 +97,10 @@ class _MobileMigrationManageDialogState
                 children: [
                   Text(
                     choice == null
-                        ? 'Manage migration'
+                        ? l10n.migrationMobileManageTitle
                         : fast
-                        ? 'Switch to Fast?'
-                        : 'Stop migration?',
+                        ? l10n.migrationMobileManageSwitchTitle
+                        : l10n.migrationMobileManageStopTitle,
                     style: AppTypography.bodyLarge.copyWith(
                       color: colors.text.accent,
                       fontWeight: FontWeight.w600,
@@ -115,7 +116,7 @@ class _MobileMigrationManageDialogState
                               _choice = _MobileMigrationManageChoice.fast;
                             })
                           : null,
-                      child: const Text('Switch to Fast'),
+                      child: Text(l10n.migrationMobileManageSwitchAction),
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     AppButton(
@@ -127,24 +128,20 @@ class _MobileMigrationManageDialogState
                               _choice = _MobileMigrationManageChoice.stop;
                             })
                           : null,
-                      child: const Text('Stop migration'),
+                      child: Text(l10n.migrationMobileManageStopAction),
                     ),
                   ] else ...[
                     Text(
                       fast
-                          ? 'Stop the private schedule and review a Fast '
-                                'migration for your remaining balance. Fast '
-                                'migration increases traceability and cannot '
-                                'be reversed once submitted.'
-                          : 'Stop the remaining migration. Funds already '
-                                'migrated will stay in Ironwood.',
+                          ? l10n.migrationMobileManageSwitchBody
+                          : l10n.migrationMobileManageStopBody,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      'Transactions already broadcast will not be reverted.',
+                      l10n.migrationMobileManageNoRevert,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
                       ),
@@ -154,23 +151,28 @@ class _MobileMigrationManageDialogState
                       key: const ValueKey('mobile_ironwood_manage_confirm'),
                       expand: true,
                       onPressed: !_submitting && canStop ? _confirm : null,
-                      child: Text(_submitting ? 'Stopping...' : 'Confirm'),
+                      child: Text(
+                        _submitting
+                            ? l10n.migrationManageStopping
+                            : l10n.migrationManageConfirm,
+                      ),
                     ),
                   ],
                   if (_submitting) ...[
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      'Waiting for any active broadcast to finish before '
-                      'stopping the remaining migration.',
+                      l10n.migrationMobileManageWaitingBroadcast,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
                       ),
                     ),
                   ],
-                  if (_error != null || (!canStop && !_submitting)) ...[
+                  if (_updateFailed || (!canStop && !_submitting)) ...[
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      _error ?? statusMessage,
+                      _updateFailed
+                          ? l10n.migrationManageUpdateFailed
+                          : statusMessage,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
                       ),
@@ -186,7 +188,7 @@ class _MobileMigrationManageDialogState
                       onPressed: () => ref.invalidate(
                         ironwoodMigrationStatusProvider(widget.request),
                       ),
-                      child: const Text('Retry status check'),
+                      child: Text(l10n.migrationMobileManageRetryStatus),
                     ),
                   ],
                   const SizedBox(height: AppSpacing.xs),
@@ -197,7 +199,7 @@ class _MobileMigrationManageDialogState
                     onPressed: _submitting
                         ? null
                         : () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                    child: Text(l10n.commonCancel),
                   ),
                 ],
               ),

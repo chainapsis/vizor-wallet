@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../ledger_device_label.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
@@ -62,7 +63,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
         service: c.service,
         onRetry: c.scan,
         onClose: onClose,
-        retryLabel: 'Find my Ledger',
+        retryLabel: context.l10n.ledgerFindMyLedger,
         enabled: enabled,
         onBusyChanged: onBusyChanged,
       );
@@ -78,43 +79,44 @@ class LedgerPairingRecovery extends ConsumerWidget {
     final settingsLink =
         platform != TargetPlatform.iOS &&
         c.service is LedgerBluetoothPairingSettings;
+    final l10n = context.l10n;
     final title = switch (c.stage) {
       LedgerPairingStage.failed =>
-        c.pairingInvalid ? 'Pair your Ledger again' : c.requestFailure.title,
+        c.pairingInvalid
+            ? l10n.ledgerTitlePairAgain
+            : c.requestFailure.title(l10n),
       LedgerPairingStage.scanning || LedgerPairingStage.devices =>
         c.devices.isEmpty
             ? (c.stage == LedgerPairingStage.scanning
-                  ? 'Finding your Ledger'
-                  : 'No Ledger devices found')
-            : 'Select your Ledger',
+                  ? l10n.ledgerTitleFindingLedger
+                  : l10n.ledgerNoDevicesFound)
+            : l10n.ledgerTitleSelectYourLedger,
       LedgerPairingStage.verifying =>
-        c.sameSavedDevice ? 'Connecting to your Ledger' : 'Check your Ledger',
-      LedgerPairingStage.saving => 'Saving your connection',
-      LedgerPairingStage.saved => 'Ledger saved',
-      LedgerPairingStage.ready => 'Your Ledger is connected',
-      LedgerPairingStage.mismatch => 'This Ledger doesn’t match',
+        c.sameSavedDevice
+            ? l10n.ledgerTitleConnectingToLedger
+            : l10n.ledgerSigningTitleReviewing,
+      LedgerPairingStage.saving => l10n.ledgerTitleSavingConnection,
+      LedgerPairingStage.saved => l10n.ledgerTitleLedgerSaved,
+      LedgerPairingStage.ready => l10n.ledgerTitleLedgerConnected,
+      LedgerPairingStage.mismatch => l10n.ledgerTitleMismatch,
     };
     final message = switch (c.stage) {
       LedgerPairingStage.failed =>
         c.pairingInvalid
-            ? 'Your Ledger no longer recognizes this Bluetooth pairing. Remove the old pairing, then reconnect.'
-            : c.failureMessage,
+            ? l10n.ledgerPairingNoLongerRecognizedRemove
+            : c.failureMessage(l10n),
       LedgerPairingStage.scanning || LedgerPairingStage.devices =>
         c.devices.isEmpty
-            ? 'Keep your Ledger nearby and unlocked.'
-            : 'Choose the Ledger you want to use for this account.',
+            ? l10n.ledgerKeepNearbyUnlockedShort
+            : l10n.ledgerChooseLedgerForAccount,
       LedgerPairingStage.verifying =>
         c.sameSavedDevice
-            ? 'Unlock your Ledger and open the Zcash app. Approve opening it if prompted.'
-            : 'Complete pairing if prompted, then open the Zcash app and approve sharing the viewing key.',
-      LedgerPairingStage.saving =>
-        'Your account matches. Saving the verified connection.',
-      LedgerPairingStage.saved =>
-        'This Ledger matches your account and is now saved. Find it again to continue.',
-      LedgerPairingStage.ready =>
-        'Continue when you’re ready to review the transaction on your Ledger.',
-      LedgerPairingStage.mismatch =>
-        'Connect the Ledger that holds this account. Your saved connection hasn’t changed.',
+            ? l10n.ledgerUnlockOpenZcashApprove
+            : l10n.ledgerCompletePairingOpenZcash,
+      LedgerPairingStage.saving => l10n.ledgerSavingVerified,
+      LedgerPairingStage.saved => l10n.ledgerSavedMatchesFindAgain,
+      LedgerPairingStage.ready => l10n.ledgerReadyReviewOnLedger,
+      LedgerPairingStage.mismatch => l10n.ledgerMismatchConnectHolder,
     };
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -182,10 +184,12 @@ class LedgerPairingRecovery extends ConsumerWidget {
                       _step(
                         context,
                         '1',
-                        'Remove the old pairing',
+                        l10n.ledgerRemoveOldPairing,
                         platform == TargetPlatform.iOS
-                            ? 'Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device.'
-                            : 'Open ${platform == TargetPlatform.macOS ? 'System Settings > Bluetooth' : 'Bluetooth settings'}. If your Ledger is listed, remove its saved pairing.',
+                            ? l10n.ledgerRemovePairingIos
+                            : platform == TargetPlatform.macOS
+                            ? l10n.ledgerRemovePairingMacos
+                            : l10n.ledgerRemovePairingOther,
                         settingsLink
                             ? AppButton(
                                 variant: AppButtonVariant.ghost,
@@ -200,7 +204,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
                                     ? c.settings
                                     : null,
                                 child: Text(
-                                  'Open settings',
+                                  l10n.commonOpenSettings,
                                   style: AppTypography.bodySmall.copyWith(
                                     decoration: TextDecoration.underline,
                                   ),
@@ -212,8 +216,8 @@ class LedgerPairingRecovery extends ConsumerWidget {
                       _step(
                         context,
                         '2',
-                        'Come back and reconnect',
-                        'Keep your Ledger unlocked, then select “Find my Ledger” below.',
+                        l10n.ledgerComeBackReconnect,
+                        l10n.ledgerComeBackFindMyLedger,
                         null,
                       ),
                     ],
@@ -271,7 +275,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
                           )) ...[
                             const SizedBox(height: AppSpacing.xxs),
                             Text(
-                              'Different from saved connection',
+                              l10n.ledgerDifferentFromSaved,
                               style: AppTypography.bodySmall.copyWith(
                                 color: context.colors.text.secondary,
                               ),
@@ -292,14 +296,14 @@ class LedgerPairingRecovery extends ConsumerWidget {
             label: switch (c.stage) {
               LedgerPairingStage.scanning =>
                 c.devices.isEmpty
-                    ? 'Searching nearby…'
-                    : 'Still searching nearby…',
+                    ? l10n.ledgerStatusSearchingNearby
+                    : l10n.ledgerStatusStillSearching,
               LedgerPairingStage.verifying =>
                 c.sameSavedDevice
-                    ? 'Connecting…'
-                    : 'Follow the prompts on your Ledger',
-              LedgerPairingStage.saving => 'Saving connection…',
-              _ => 'Opening Bluetooth settings…',
+                    ? l10n.commonConnecting
+                    : l10n.ledgerStatusFollowPrompts,
+              LedgerPairingStage.saving => l10n.ledgerStatusSavingConnection,
+              _ => l10n.ledgerStatusOpeningBluetoothSettings,
             },
           )
         else
@@ -313,16 +317,20 @@ class LedgerPairingRecovery extends ConsumerWidget {
                 ? c.continueSigning
                 : c.scan,
             child: Text(switch (c.stage) {
-              LedgerPairingStage.scanning => 'Searching',
+              LedgerPairingStage.scanning => l10n.ledgerButtonSearching,
               LedgerPairingStage.verifying =>
-                c.sameSavedDevice ? 'Connecting' : 'Checking account',
-              LedgerPairingStage.saving => 'Saving',
-              LedgerPairingStage.ready => 'Continue signing',
-              LedgerPairingStage.mismatch => 'Choose another Ledger',
-              LedgerPairingStage.devices => 'Search again',
+                c.sameSavedDevice
+                    ? l10n.ledgerButtonConnecting
+                    : l10n.ledgerButtonCheckingAccount,
+              LedgerPairingStage.saving => l10n.commonSaving,
+              LedgerPairingStage.ready => l10n.ledgerContinueSigning,
+              LedgerPairingStage.mismatch => l10n.ledgerChooseAnother,
+              LedgerPairingStage.devices => l10n.ledgerSearchAgain,
               LedgerPairingStage.failed when !c.pairingInvalid =>
-                c.failureRetryable ? 'Try again' : 'Choose another Ledger',
-              _ => 'Find my Ledger',
+                c.failureRetryable
+                    ? l10n.commonTryAgain
+                    : l10n.ledgerChooseAnother,
+              _ => l10n.ledgerFindMyLedger,
             }),
           ),
       ],

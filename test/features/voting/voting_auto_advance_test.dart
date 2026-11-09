@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets
 import 'package:zcash_wallet/src/features/voting/widgets/voting_auto_advance_indicator.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/widgetbook/voting_navigation_preview.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 final proposals = [
   for (final id in [7, 21, 45, 91])
@@ -33,6 +34,7 @@ Future<void> pumpBallot(WidgetTester tester, Map<int, int> choices) async {
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) =>
           AppTheme(data: AppThemeData.light, child: child!),
       home: Scaffold(

@@ -343,6 +343,26 @@ List<VotingProposalView> proposalsFromJson(Map<String, dynamic> json) {
   ];
 }
 
+// Server JSON keys and the labels used when the server omits a title or the
+// options of a proposal. They are data, not app copy: the choice palette
+// recognizes the Yes/No fallbacks by their label.
+const _titleKeys = ['title']; // l10n-ignore: JSON key
+const _descriptionKeys = ['description']; // l10n-ignore: JSON key
+const _optionLabelKeys = [
+  'label', // l10n-ignore: JSON key
+  'short_title', // l10n-ignore: JSON key
+  'shortTitle', // l10n-ignore: JSON key
+  'title', // l10n-ignore: JSON key
+];
+const _fallbackYesLabel = 'Yes'; // l10n-ignore: matched by the choice palette
+const _fallbackNoLabel = 'No'; // l10n-ignore: matched by the choice palette
+
+String _fallbackProposalTitle(int number) =>
+    'Proposal $number'; // l10n-ignore: fallback for missing server data
+
+String _fallbackOptionLabel(int number) =>
+    'Option $number'; // l10n-ignore: fallback for missing server data
+
 VotingProposalView _proposalFromJson(
   Map<String, dynamic> json, {
   required int fallbackId,
@@ -358,8 +378,9 @@ VotingProposalView _proposalFromJson(
   return VotingProposalView(
     id: id,
     title:
-        _stringFromJson(json, const ['title']) ?? 'Proposal ${fallbackId + 1}',
-    description: _stringFromJson(json, const ['description']) ?? '',
+        _stringFromJson(json, _titleKeys) ??
+        _fallbackProposalTitle(fallbackId + 1),
+    description: _stringFromJson(json, _descriptionKeys) ?? '',
     zipNumber:
         _stringFromJson(json, const [
           'zip_number',
@@ -377,8 +398,8 @@ VotingProposalView _proposalFromJson(
         '',
     options: options.isEmpty
         ? const [
-            VotingOptionView(index: 0, label: 'Yes'),
-            VotingOptionView(index: 1, label: 'No'),
+            VotingOptionView(index: 0, label: _fallbackYesLabel),
+            VotingOptionView(index: 1, label: _fallbackNoLabel),
           ]
         : options,
   );
@@ -510,6 +531,8 @@ List<String> votingZipBadgesFromText(String value) {
   ]);
 }
 
+String _zipLabel(String id) => 'ZIP-$id'; // l10n-ignore: protocol label
+
 String? _normalizeExplicitZipLabel(String value) {
   final trimmed = value.trim();
   if (trimmed.isEmpty) return null;
@@ -517,8 +540,8 @@ String? _normalizeExplicitZipLabel(String value) {
     r'^ZIP[-\s]?([A-Z0-9]+)$',
     caseSensitive: false,
   ).firstMatch(trimmed);
-  if (prefixed != null) return 'ZIP-${prefixed.group(1)!.toUpperCase()}';
-  if (RegExp(r'^\d+$').hasMatch(trimmed)) return 'ZIP-$trimmed';
+  if (prefixed != null) return _zipLabel(prefixed.group(1)!.toUpperCase());
+  if (RegExp(r'^\d+$').hasMatch(trimmed)) return _zipLabel(trimmed);
   return null;
 }
 
@@ -548,14 +571,9 @@ VotingOptionView _optionFromJson(Object? value, {required int fallbackIndex}) {
   return VotingOptionView(
     index: _intFromJson(json, const ['index']) ?? fallbackIndex,
     label:
-        _stringFromJson(json, const [
-          'label',
-          'short_title',
-          'shortTitle',
-          'title',
-        ]) ??
-        'Option ${fallbackIndex + 1}',
-    description: _stringFromJson(json, const ['description']) ?? '',
+        _stringFromJson(json, _optionLabelKeys) ??
+        _fallbackOptionLabel(fallbackIndex + 1),
+    description: _stringFromJson(json, _descriptionKeys) ?? '',
   );
 }
 

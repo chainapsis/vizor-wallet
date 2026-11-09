@@ -63,6 +63,15 @@ String _formatZecAmountCompact(BigInt zatoshi) {
   ).compactBalancePretty(minFractionDigits: 0, maxFractionDigits: 4).amountText;
 }
 
+/// Bare compact amount for display; callers append their own `ZEC`.
+String _displayZecAmountCompact(
+  BigInt zatoshi, {
+  required bool privacyModeEnabled,
+}) => hideIfPrivacyMode(
+  _formatZecAmountCompact(zatoshi),
+  privacyModeEnabled: privacyModeEnabled,
+);
+
 double _transferProgress(rust_sync.MigrationStatus status) {
   final partProgress = _migrationPartProgress(status);
   if (partProgress != null) return partProgress;
@@ -234,33 +243,58 @@ _TransferAmount _currentTransferBatchAmount(
   );
 }
 
-String _currentTransferBatchStatus(rust_sync.MigrationStatus status) {
+String _currentTransferBatchStatus(
+  AppLocalizations l10n,
+  rust_sync.MigrationStatus status,
+) {
   return switch (status.phase) {
-    kIronwoodMigrationBroadcastScheduledPhase => 'Scheduled',
-    kIronwoodMigrationBroadcastingPhase => 'Broadcasting...',
-    kIronwoodMigrationWaitingConfirmationsPhase => 'Confirming...',
-    _ => 'In progress',
+    kIronwoodMigrationBroadcastScheduledPhase => l10n.migrationRingScheduled,
+    kIronwoodMigrationBroadcastingPhase => l10n.migrationBatchBroadcasting,
+    kIronwoodMigrationWaitingConfirmationsPhase =>
+      l10n.migrationBatchConfirming,
+    _ => l10n.commonInProgress,
   };
 }
 
-String _transferEstimatedArrival(rust_sync.MigrationStatus status) {
+String _transferEstimatedArrival(
+  AppLocalizations l10n,
+  rust_sync.MigrationStatus status,
+) {
   if (status.phase == kIronwoodMigrationCompletePhase) {
-    return 'Completed';
+    return l10n.commonCompleted;
   }
 
   final nextScheduledBroadcast = _nextScheduledBroadcast(status);
   if (nextScheduledBroadcast != null) {
-    return 'Block ${nextScheduledBroadcast.scheduledHeight}';
+    return l10n.migrationBlockHeight(
+      nextScheduledBroadcast.scheduledHeight.toString(),
+    );
   }
 
   if (status.phase == kIronwoodMigrationWaitingConfirmationsPhase) {
-    return 'Confirming';
+    return l10n.commonConfirming;
   }
 
-  return '~${status.scheduleMeanDelayBlocks} blocks';
+  return l10n.migrationBlocksEstimate(
+    status.scheduleMeanDelayBlocks.toString(),
+  );
 }
 
-String _transferEstimatedCompletion(
+/// A completion estimate. [approximate] marks a block-based duration such as
+/// `~5 mins`, which the status display rewrites into a sentence.
+typedef _CompletionEstimate = ({String text, bool approximate});
+
+_CompletionEstimate _durationEstimate(
+  AppLocalizations l10n,
+  int blocks,
+  BlockTimeEstimate blockTimes,
+) => (
+  text: _formatMigrationBlockDurationEstimate(l10n, blocks, blockTimes),
+  approximate: blocks > 0,
+);
+
+_CompletionEstimate _transferEstimatedCompletion(
+  AppLocalizations l10n,
   rust_sync.MigrationStatus status, {
   required BlockTimeEstimate blockTimes,
   required int currentHeight,
@@ -268,11 +302,11 @@ String _transferEstimatedCompletion(
   List<rust_sync.MigrationPartStatus>? parts,
 }) {
   if (status.phase == kIronwoodMigrationCompletePhase) {
-    return 'Completed';
+    return (text: l10n.commonCompleted, approximate: false);
   }
   final displayParts = parts ?? _displayMigrationParts(status);
   if (needsInput || _migrationNeedsUserInput(status, parts: displayParts)) {
-    return 'After signing';
+    return (text: l10n.migrationEstimateAfterSigning, approximate: false);
   }
 
   final waitingForAnchor =
@@ -281,7 +315,7 @@ String _transferEstimatedCompletion(
   if (waitingForAnchor && status.nextActionHeight == null) {
     // Before Rust publishes the proof retry height, a projection based only
     // on the transaction construction height does not include anchor aging.
-    return 'Schedule pending';
+    return (text: l10n.migrationSchedulePending, approximate: false);
   }
 
   final estimatedCompletionHeight = status.estimatedCompletionHeight;
@@ -295,7 +329,7 @@ String _transferEstimatedCompletion(
       // current transaction to be mined and reach trusted depth.
       remainingBlocks = math.max(1, status.denominationConfirmationTarget);
     }
-    return _formatMigrationBlockDurationEstimate(remainingBlocks, blockTimes);
+    return _durationEstimate(l10n, remainingBlocks, blockTimes);
   }
 
   // Active runs publish an authoritative completion projection from Rust.
@@ -303,7 +337,7 @@ String _transferEstimatedCompletion(
   // are being rescheduled), a short generic fallback would be misleading,
   // especially while the run is waiting for an aged anchor.
   if (status.activeRunId != null) {
-    return 'Schedule pending';
+    return (text: l10n.migrationSchedulePending, approximate: false);
   }
 
   final remainingBlocks = _remainingMigrationCompletionBlocks(
@@ -312,18 +346,17 @@ String _transferEstimatedCompletion(
     parts: displayParts,
   );
   if (remainingBlocks == null) {
-    return _formatMigrationBlockDurationEstimate(
+    return _durationEstimate(
+      l10n,
       _fallbackRemainingMigrationBlocks(status),
       blockTimes,
     );
   }
-  return _formatMigrationBlockDurationEstimate(
-    math.max(1, remainingBlocks),
-    blockTimes,
-  );
+  return _durationEstimate(l10n, math.max(1, remainingBlocks), blockTimes);
 }
 
 String _migrationCompletionEstimateDisplay(
+  AppLocalizations l10n,
   rust_sync.MigrationStatus status, {
   required BlockTimeEstimate blockTimes,
   required int currentHeight,
@@ -331,27 +364,28 @@ String _migrationCompletionEstimateDisplay(
   required List<rust_sync.MigrationPartStatus> parts,
 }) {
   final estimate = _transferEstimatedCompletion(
+    l10n,
     status,
     blockTimes: blockTimes,
     currentHeight: currentHeight,
     needsInput: needsInput,
     parts: parts,
   );
-  if (!estimate.startsWith('~')) return estimate;
+  if (!estimate.approximate) return estimate.text;
 
   final estimatedCompletionHeight = status.estimatedCompletionHeight;
   if (currentHeight <= 0 || estimatedCompletionHeight == null) {
-    return 'in $estimate';
+    return l10n.migrationEstimateIn(estimate.text);
   }
-  if (estimatedCompletionHeight <= currentHeight) return 'in $estimate';
+  if (estimatedCompletionHeight <= currentHeight) {
+    return l10n.migrationEstimateIn(estimate.text);
+  }
   final seconds = blockTimes.secondsBetween(
     currentHeight,
     estimatedCompletionHeight,
   );
   final minutes = (seconds / Duration.secondsPerMinute).ceil();
-  if (minutes < 60) {
-    return 'in ~$minutes ${minutes == 1 ? 'minute' : 'minutes'}';
-  }
+  if (minutes < 60) return l10n.migrationEstimateInMinutes(minutes);
 
   final hours = seconds / Duration.secondsPerHour;
   if (hours < 48) {
@@ -359,11 +393,13 @@ String _migrationCompletionEstimateDisplay(
     final text = roundedHalfHours == roundedHalfHours.roundToDouble()
         ? roundedHalfHours.toInt().toString()
         : roundedHalfHours.toStringAsFixed(1);
-    return 'in ~$text ${roundedHalfHours == 1 ? 'hour' : 'hours'}';
+    return roundedHalfHours == 1
+        ? l10n.migrationEstimateInOneHour
+        : l10n.migrationEstimateInHours(text);
   }
 
   final days = (seconds / Duration.secondsPerDay).ceil();
-  return 'in ~$days ${days == 1 ? 'day' : 'days'}';
+  return l10n.migrationEstimateInDays(days);
 }
 
 bool _migrationNeedsUserInput(
@@ -513,23 +549,20 @@ rust_sync.MigrationScheduledBroadcast? _nextScheduledBroadcast(
 }
 
 String _formatMigrationBlockDurationEstimate(
+  AppLocalizations l10n,
   int blocks,
   BlockTimeEstimate blockTimes,
 ) {
-  if (blocks <= 0) return 'Not scheduled';
+  if (blocks <= 0) return l10n.migrationNotScheduled;
   final duration = Duration(seconds: blockTimes.secondsForBlocks(blocks));
   final minutes = (duration.inSeconds / Duration.secondsPerMinute).ceil();
-  if (minutes < 60) {
-    return minutes == 1 ? '~1 min' : '~$minutes mins';
-  }
+  if (minutes < 60) return l10n.migrationDurationMinutes(minutes);
 
   final hours = (duration.inSeconds / Duration.secondsPerHour).ceil();
-  if (hours < 48) {
-    return hours == 1 ? '~1 hr' : '~$hours hrs';
-  }
+  if (hours < 48) return l10n.migrationDurationHours(hours);
 
   final days = (duration.inSeconds / Duration.secondsPerDay).ceil();
-  return days == 1 ? '~1 day' : '~$days days';
+  return l10n.migrationDurationDays(days);
 }
 
 enum _MigrationStage { preparation, migration, finish }
@@ -542,10 +575,10 @@ class _MigrationStageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    const stages = [
-      (_MigrationStage.preparation, 'Preparation'),
-      (_MigrationStage.migration, 'Migration'),
-      (_MigrationStage.finish, 'Finish'),
+    final stages = [
+      (_MigrationStage.preparation, context.l10n.migrationStagePreparation),
+      (_MigrationStage.migration, context.l10n.migrationStageMigration),
+      (_MigrationStage.finish, context.l10n.migrationStageFinish),
     ];
     return Row(
       children: [
@@ -707,14 +740,20 @@ class _DarkBadge extends StatelessWidget {
 }
 
 class _PoolMigrationHero extends StatelessWidget {
-  const _PoolMigrationHero({required this.data});
+  const _PoolMigrationHero({
+    required this.data,
+    required this.privacyModeEnabled,
+  });
 
   final IronwoodMigrationFlowData data;
+  final bool privacyModeEnabled;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final amount = '${data.amountText} $kZcashDefaultCurrencyTicker';
+    final amount =
+        '${hideIfPrivacyMode(data.amountText, privacyModeEnabled: privacyModeEnabled)} ' // l10n-ignore: amount format
+        '$kZcashDefaultCurrencyTicker';
     final isDark = colors.background.window == AppColors.dark.background.window;
 
     return ClipRRect(
@@ -758,7 +797,7 @@ class _PoolMigrationHero extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '(Legacy)',
+                  context.l10n.migrationPoolLegacy,
                   style: AppTypography.labelMedium.copyWith(
                     color: colors.text.secondary,
                     fontWeight: FontWeight.w400,
@@ -766,7 +805,7 @@ class _PoolMigrationHero extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Orchard Pool',
+                  context.l10n.migrationPoolOrchard,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: colors.text.accent,
                   ),
@@ -789,7 +828,7 @@ class _PoolMigrationHero extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
-                  'Ironwood Pool',
+                  context.l10n.migrationPoolIronwood,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: colors.text.positiveStrong,
                   ),

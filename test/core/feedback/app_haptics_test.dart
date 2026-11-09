@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_copy_feedback.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -83,6 +84,7 @@ void main() {
         clipboardFails = denied;
         await tester.pumpWidget(
           MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: Builder(

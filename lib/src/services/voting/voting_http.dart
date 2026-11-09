@@ -67,7 +67,7 @@ class DartIoVotingHttpClient implements VotingHttpClient {
     Future<void>? cancelSignal,
   }) {
     return _send(
-      'GET',
+      'GET', // l10n-ignore: HTTP method
       uri,
       headers: headers,
       timeout: timeout,
@@ -82,7 +82,7 @@ class DartIoVotingHttpClient implements VotingHttpClient {
     Duration? timeout,
   }) {
     return _send(
-      'POST',
+      'POST', // l10n-ignore: HTTP method
       uri,
       bodyBytes: utf8.encode(jsonEncode(body)),
       contentType: ContentType.json,

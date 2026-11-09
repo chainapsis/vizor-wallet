@@ -1,22 +1,11 @@
 import '../../providers/network_privacy_provider.dart';
+import '../l10n/l10n.dart';
 import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
 
 /// Presentation of the wallet sync state shared by the desktop sidebar
 /// status row and the mobile top nav sync widget.
 enum SyncStatusKind { syncing, failed, synced }
-
-/// Shown while the wallet waits on Tor: the client is still bootstrapping, or
-/// the sync's first lightwalletd connection over it has not answered yet
-/// (otherwise the row sits on the preflight "1% Syncing..." floor). Copy is
-/// provisional.
-const kSyncStatusConnectingToTorLabel = 'Connecting to Tor…';
-const kSyncStatusConnectingToTorSemanticsLabel = 'Connecting to Tor';
-
-/// Shown once the Tor bootstrap has failed: nothing retries on its own, so
-/// this is a paused state, not a transient one.
-const kSyncStatusTorFailedLabel = "Tor couldn't connect...";
-const kSyncStatusTorFailedSemanticsLabel = "Tor couldn't connect";
 
 class SyncStatusLabel {
   const SyncStatusLabel({
@@ -32,7 +21,13 @@ class SyncStatusLabel {
   /// [networkPrivacy] wins over the sync-derived state: a failed Tor route is
   /// the root cause of whatever the sync recorded, and while Tor is still
   /// coming up the carried-over sync state is stale.
+  ///
+  /// While the wallet waits on Tor (still bootstrapping, or the first
+  /// lightwalletd connection over it has not answered) the label says so
+  /// instead of the preflight "1% Syncing..." floor. A failed Tor bootstrap
+  /// is a paused state: nothing retries on its own.
   factory SyncStatusLabel.from(
+    AppLocalizations l10n,
     SyncState sync, {
     int? displayWholePercentage,
     NetworkPrivacyState? networkPrivacy,
@@ -42,27 +37,27 @@ class SyncStatusLabel {
       // Tor and not on its way off it (see `torRouteRetained`).
       if (networkPrivacy.torRouteRetained &&
           networkPrivacy.status == NetworkPrivacyConnectionStatus.failed) {
-        return const SyncStatusLabel(
+        return SyncStatusLabel(
           kind: SyncStatusKind.failed,
-          label: kSyncStatusTorFailedLabel,
-          semanticsLabel: kSyncStatusTorFailedSemanticsLabel,
+          label: l10n.syncTorFailed,
+          semanticsLabel: l10n.syncTorFailedSemantics,
         );
       }
       if (syncIsWaitingOnTor(networkPrivacy, sync)) {
-        return const SyncStatusLabel(
+        return SyncStatusLabel(
           kind: SyncStatusKind.syncing,
-          label: kSyncStatusConnectingToTorLabel,
-          semanticsLabel: kSyncStatusConnectingToTorSemanticsLabel,
+          label: l10n.syncConnectingToTor,
+          semanticsLabel: l10n.syncConnectingToTorSemantics,
         );
       }
     }
     final failure = sync.failure;
     if (failure != null) {
-      final reason = _syncFailureReason(failure.kind);
+      final reason = _syncFailureReason(l10n, failure.kind);
       return SyncStatusLabel(
         kind: SyncStatusKind.failed,
-        label: 'Syncing failed. $reason...',
-        semanticsLabel: 'Syncing failed. $reason',
+        label: l10n.syncFailed(reason),
+        semanticsLabel: l10n.syncFailedSemantics(reason),
       );
     }
 
@@ -81,22 +76,28 @@ class SyncStatusLabel {
           );
       return SyncStatusLabel(
         kind: SyncStatusKind.syncing,
-        label: formatSyncProgressLabel(pct, isChecking: sync.isChecking),
-        semanticsLabel:
-            '${sync.isChecking ? 'Checking' : 'Syncing'} $pct percent',
+        label: formatSyncProgressLabel(l10n, pct, isChecking: sync.isChecking),
+        semanticsLabel: sync.isChecking
+            ? l10n.syncCheckingPercentSemantics(pct)
+            : l10n.syncSyncingPercentSemantics(pct),
       );
     }
 
-    return const SyncStatusLabel(
+    return SyncStatusLabel(
       kind: SyncStatusKind.synced,
-      label: 'Vizor is synced',
-      semanticsLabel: 'Vizor is synced',
+      label: l10n.syncVizorSynced,
+      semanticsLabel: l10n.syncVizorSynced,
     );
   }
 }
 
-String formatSyncProgressLabel(Object percentage, {required bool isChecking}) =>
-    isChecking ? '$percentage% checking' : '$percentage% Syncing...';
+String formatSyncProgressLabel(
+  AppLocalizations l10n,
+  String percentage, {
+  required bool isChecking,
+}) => isChecking
+    ? l10n.syncCheckingProgress(percentage)
+    : l10n.syncSyncingProgress(percentage);
 
 /// Whether Tor is where the route is heading. A disable in progress keeps
 /// `torEnabled` true while it drains, so the flag alone would read a route
@@ -128,16 +129,16 @@ String formatSyncStatusPercentage(double progress) {
   return pct.clamp(0.0, 99.0).toStringAsFixed(0);
 }
 
-String _syncFailureReason(SyncFailureKind kind) {
+String _syncFailureReason(AppLocalizations l10n, SyncFailureKind kind) {
   return switch (kind) {
-    SyncFailureKind.network => 'Network error',
-    SyncFailureKind.torUnavailable => kSyncStatusTorFailedSemanticsLabel,
-    SyncFailureKind.privateStatusCoverage => 'Private lookup',
-    SyncFailureKind.endpoint => 'Endpoint error',
-    SyncFailureKind.databaseBusy => 'Wallet data busy',
-    SyncFailureKind.databaseFatal => 'Wallet data error',
-    SyncFailureKind.chainRecovery => 'Chain recovery',
-    SyncFailureKind.parseFatal => 'Data error',
-    SyncFailureKind.unknown => 'Unknown error',
+    SyncFailureKind.network => l10n.syncErrorNetwork,
+    SyncFailureKind.torUnavailable => l10n.syncTorFailedSemantics,
+    SyncFailureKind.privateStatusCoverage => l10n.syncErrorPrivateLookup,
+    SyncFailureKind.endpoint => l10n.syncErrorEndpoint,
+    SyncFailureKind.databaseBusy => l10n.syncErrorWalletDataBusy,
+    SyncFailureKind.databaseFatal => l10n.syncErrorWalletData,
+    SyncFailureKind.chainRecovery => l10n.syncErrorChainRecovery,
+    SyncFailureKind.parseFatal => l10n.syncErrorData,
+    SyncFailureKind.unknown => l10n.syncErrorUnknown,
   };
 }

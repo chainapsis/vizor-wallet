@@ -72,6 +72,24 @@ import UIKit
     FlutterMethodChannel(name: "com.zcash.wallet/modal_corners", binaryMessenger: messenger)
       .setMethodCallHandler { call, result in modalCorners.handle(call, result: result) }
 
+    // Background work posts notifications after Dart is gone, so the app
+    // language is stored for it rather than passed per call.
+    FlutterMethodChannel(name: "com.zcash.wallet/native_strings", binaryMessenger: messenger)
+      .setMethodCallHandler { call, result in
+        guard call.method == "setLanguage" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        guard let arguments = call.arguments as? [String: Any],
+          let tag = arguments["tag"] as? String, !tag.isEmpty
+        else {
+          result(FlutterError(code: "invalid_arguments", message: "Expected tag argument.", details: nil))
+          return
+        }
+        NativeStrings.setLanguage(tag)
+        result(nil)
+      }
+
     ledgerMobileHandler?.close()
     let ledgerMobileHandler = LedgerMobileHandler()
     self.ledgerMobileHandler = ledgerMobileHandler

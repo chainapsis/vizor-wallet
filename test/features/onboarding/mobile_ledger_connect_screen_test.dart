@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 import '../../support/ledger_discovery_channel.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
@@ -36,6 +37,7 @@ import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.da
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _captureDirectory = String.fromEnvironment('LEDGER_CAPTURE_DIR');
 const _captureKey = ValueKey('mobile_ledger_connect_capture');
@@ -192,6 +194,7 @@ void main() {
             ),
           ],
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) => AppTheme(
               data: AppThemeData.light,
@@ -251,7 +254,10 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
-            child: MaterialApp.router(routerConfig: router),
+            child: MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
+              routerConfig: router,
+            ),
           ),
         );
         await tester.pumpAndSettle();
@@ -1152,6 +1158,7 @@ void main() {
       AppTheme(
         data: AppThemeData.light,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: MobileLedgerDeviceSheet(
             service: ble,
             onSelected: (_) => selections++,
@@ -1202,6 +1209,7 @@ void main() {
       expect(
         find.text(
           ledgerFailureGuidance(
+            testL10n,
             const LedgerMobileException(
               LedgerMobileFailure.permissionDenied,
               'permission',
@@ -1247,7 +1255,10 @@ void main() {
 
     await tester.pump();
     expect(connectorCalls, 1);
-    expect(find.text(kLedgerViewingKeyRequestRejectedMessage), findsOneWidget);
+    expect(
+      find.text(testL10n.ledgerFailureMsgViewingKeyRejected),
+      findsOneWidget,
+    );
     expect(find.textContaining('rejected on your Ledger'), findsNothing);
   });
 
@@ -1264,6 +1275,7 @@ void main() {
         AppTheme(
           data: AppThemeData.light,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: MobileLedgerDeviceSheet(
               service: ble,
               onSelected: (_) {},
@@ -1290,12 +1302,18 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Ledger Nano X · Recovery Ledger'), findsOneWidget);
-      expect(find.text(ledgerFailureGuidance(error)!.message), findsOneWidget);
+      expect(
+        find.text(ledgerFailureGuidance(testL10n, error)!.message),
+        findsOneWidget,
+      );
       ble.pendingConnect = null;
       await tester.tap(find.text('Try again'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text(ledgerFailureGuidance(error)!.message), findsNothing);
+      expect(
+        find.text(ledgerFailureGuidance(testL10n, error)!.message),
+        findsNothing,
+      );
     });
   }
 
@@ -1352,6 +1370,7 @@ void main() {
           AppTheme(
             data: AppThemeData.light,
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: MobileLedgerDeviceSheet(
                 service: ble,
                 onSelected: (_) => selections++,
@@ -1398,6 +1417,7 @@ void main() {
         AppTheme(
           data: AppThemeData.light,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: MobileLedgerDeviceSheet(
               service: ble,
               onSelected: (_) {},
@@ -1552,7 +1572,10 @@ Widget _hardwareHarness({
   ],
   child: AppTheme(
     data: AppThemeData.light,
-    child: const MaterialApp(home: MobileHardwareSelectionScreen()),
+    child: const MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
+      home: MobileHardwareSelectionScreen(),
+    ),
   ),
 );
 
@@ -1615,6 +1638,7 @@ Widget _ledgerHarness({
     child: RepaintBoundary(
       key: _captureKey,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         debugShowCheckedModeBanner: false,
         routerConfig: router,
         builder: (context, child) => MediaQuery(

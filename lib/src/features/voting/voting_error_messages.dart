@@ -1,107 +1,49 @@
-import '../../services/voting/voting_rust_exception.dart';
+import '../../core/l10n/l10n.dart';
+import '../../core/l10n/untranslated_text_log.dart';
 import '../ledger/services/ledger_failure_guidance.dart';
-import 'voting_formatters.dart';
-import '../../rust/third_party/zcash_voting/wire.dart';
-
-/// Default bundle weight the round requires when the SDK payload omits it.
-const kMinimumVotingBundleWeightZatoshi = 12500000;
-
-const kLedgerVotingCancelledMessage = 'Ledger voting approval was cancelled.';
-
-/// Every stable `ledger_*:` code Rust prefixes an error with, including ones
-/// added after this file, so none of them can reach the screen.
-final _ledgerCodePrefix = RegExp(r'ledger_[a-z0-9_]+:\s*');
+import 'voting_message.dart';
 
 /// Copy for a failed Ledger vote approval, chosen by failure kind so codes
 /// such as `ledger_status_6985:` never reach the screen.
 String ledgerVotingErrorMessage(
+  AppLocalizations l10n,
   Object error, {
   required String appInstruction,
 }) {
   return switch (LedgerRequestFailure.fromError(error)) {
-    LedgerRequestFailure.declined =>
-      'The vote signature was rejected on your Ledger. Retry to sign again.',
-    LedgerRequestFailure.cancelled => kLedgerVotingCancelledMessage,
-    LedgerRequestFailure.deviceLocked => 'Unlock your Ledger. $appInstruction',
-    LedgerRequestFailure.wrongApp => '$appInstruction Then retry.',
+    LedgerRequestFailure.declined => l10n.votingErrorLedgerRejected,
+    LedgerRequestFailure.cancelled => l10n.votingErrorLedgerCancelled,
+    LedgerRequestFailure.deviceLocked => l10n.votingErrorLedgerLocked(
+      appInstruction,
+    ),
+    LedgerRequestFailure.wrongApp => l10n.votingErrorLedgerWrongApp(
+      appInstruction,
+    ),
     _ =>
       ledgerFailureGuidance(
+            l10n,
             error,
             requestKind: LedgerRequestKind.voting,
           )?.message ??
-          friendlyVotingErrorMessage(error),
+          friendlyVotingErrorMessage(l10n, error),
   };
 }
 
-String friendlyVotingErrorMessage(Object error) {
-  final rustError = votingRustExceptionOf(error);
-  if (rustError != null) return friendlyVotingRustError(rustError);
-  return friendlyVotingErrorText(error.toString());
+String friendlyVotingErrorMessage(AppLocalizations l10n, Object error) =>
+    votingMessageForError(error).text(l10n);
+
+/// The untranslated text behind [error], for a "Show details" button.
+String? friendlyVotingErrorDetails(Object error) =>
+    votingMessageDetails(votingMessageForError(error));
+
+/// Copy for a voting screen that failed to load: the error's own copy, or a
+/// retry hint where the error is untranslated text with no copy of its own.
+String friendlyVotingLoadErrorMessage(AppLocalizations l10n, Object error) {
+  final details = friendlyVotingErrorDetails(error);
+  if (details == null) return friendlyVotingErrorMessage(l10n, error);
+  logUntranslatedText(details);
+  return l10n.votingLoadFailedRetry;
 }
 
-/// User-facing text for a typed bridge failure, keyed by its kind.
-String friendlyVotingRustError(VotingRustException error) {
-  return switch (error.kind) {
-    VotingErrorKindView.noSpendableNotes =>
-      'This account is not eligible for this voting round. It had no eligible '
-          'shielded funds at ${_snapshotText(error.snapshotHeight)}. Switch to '
-          'an eligible account to vote.',
-    VotingErrorKindView.insufficientEligibility =>
-      minimumVotingEligibilityMessage(
-        snapshotHeight: error.snapshotHeight?.toInt(),
-        requiredWeightZatoshi: error.requiredWeightZatoshi,
-      ),
-    _ => friendlyVotingErrorText(error.message),
-  };
-}
-
-/// The message shown when the account's eligible weight is below the round's
-/// minimum bundle weight.
-String minimumVotingEligibilityMessage({
-  required int? snapshotHeight,
-  BigInt? requiredWeightZatoshi,
-}) {
-  final required =
-      requiredWeightZatoshi ?? BigInt.from(kMinimumVotingBundleWeightZatoshi);
-  return 'Voting requires at least one eligible shielded note bundle with '
-      '${_formatZec(required)} '
-      'at ${_snapshotText(snapshotHeight == null ? null : BigInt.from(snapshotHeight))}. '
-      'Switch to an eligible account to vote.';
-}
-
-String friendlyVotingErrorText(String text) {
-  final message = _normalizedVotingErrorText(text);
-  return message.isEmpty ? 'Voting session action failed.' : message;
-}
-
-String _snapshotText(BigInt? height) {
-  return height == null
-      ? 'the voting round snapshot block'
-      : 'snapshot block ${formatBlockHeight(height.toInt())}';
-}
-
-String _formatZec(BigInt zatoshi) {
-  final whole = zatoshi ~/ BigInt.from(100000000);
-  final fraction = (zatoshi % BigInt.from(100000000))
-      .toString()
-      .padLeft(8, '0')
-      .replaceFirst(RegExp(r'0+$'), '');
-  return fraction.isEmpty ? '$whole ZEC' : '$whole.$fraction ZEC';
-}
-
-String _normalizedVotingErrorText(String text) {
-  var message = text.replaceAll(_ledgerCodePrefix, '').trim();
-  for (final prefix in const [
-    'Exception: ',
-    'StateError: ',
-    'Bad state: ',
-    'VotingHotkeyUnavailable: ',
-    'Invalid input: ',
-  ]) {
-    if (message.startsWith(prefix)) {
-      message = message.substring(prefix.length).trim();
-      break;
-    }
-  }
-  return message;
-}
+String friendlyVotingErrorText(AppLocalizations l10n, String text) =>
+    votingTextMessage(text).text(l10n);

@@ -357,7 +357,9 @@ String _encodeSavedSources(List<SavedVotingConfigSource> sources) {
 
 String _normalizeSavedSourceName(String name) {
   final trimmed = name.trim();
-  return trimmed.isEmpty ? 'Custom source' : trimmed;
+  return trimmed.isEmpty
+      ? 'Custom source' // l10n-ignore: persisted default source name, prefilled for editing
+      : trimmed;
 }
 
 String _newSavedSourceId() {

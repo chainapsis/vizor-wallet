@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Vizor는 Keystone QR 코드를 스캔하는 데 카메라를 사용해요.";
+"NSBluetoothAlwaysUsageDescription" = "Vizor는 Ledger 하드웨어 지갑에 연결하는 데 Bluetooth를 사용해요.";

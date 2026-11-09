@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
 import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/review_wrap_card.dart';
 import 'package:zcash_wallet/widgetbook/review_components_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('review info row gallery renders all variants', (tester) async {
@@ -80,6 +81,7 @@ Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Center(

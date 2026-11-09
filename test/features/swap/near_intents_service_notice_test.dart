@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/near_intents_service_status_provider.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/near_intents_service_notice_host.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'support/service_notice_widget_checks.dart';
 import 'support/service_status_fixture.dart';
 
@@ -27,6 +28,7 @@ void main() {
             ),
           ],
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.dark,
               child: Row(

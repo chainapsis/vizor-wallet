@@ -13,6 +13,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'payment_link_gift_card.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// The exportable 396×270 Gift Card artwork and QR composite.
 class PaymentLinkQrShareCard extends StatelessWidget {
@@ -35,7 +36,7 @@ class PaymentLinkQrShareCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       container: true,
-      label: 'Gift card QR code',
+      label: context.l10n.paymentLinkQrCardSemantic,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppRadii.large),
         child: SizedBox.fromSize(
@@ -63,7 +64,7 @@ class PaymentLinkQrShareCard extends StatelessWidget {
                 left: 25,
                 top: 25,
                 child: Text(
-                  'You’ve\ngot ZEC',
+                  context.l10n.paymentLinkQrCardHeading,
                   style: AppTypography.headlineLarge.copyWith(
                     color: _foreground,
                   ),
@@ -73,7 +74,7 @@ class PaymentLinkQrShareCard extends StatelessWidget {
                 left: 25,
                 top: 107,
                 child: Text(
-                  'Scan to redeem',
+                  context.l10n.paymentLinkQrCardScanToRedeem,
                   style: AppTypography.bodyMedium.copyWith(color: _secondary),
                 ),
               ),
@@ -103,11 +104,12 @@ class PaymentLinkQrShareCard extends StatelessWidget {
                       quietZone: PrettyQrQuietZone.zero,
                       shape: PrettyQrSmoothSymbol(roundFactor: 0.5),
                     ),
-                    errorBuilder: (context, error, stackTrace) => const Center(
+                    errorBuilder: (context, error, stackTrace) => Center(
                       child: AppIcon(
                         AppIcons.warning,
                         color: Color(0xFF141818),
-                        semanticLabel: 'QR code could not be generated',
+                        semanticLabel:
+                            context.l10n.paymentLinkQrCouldNotBeGenerated,
                       ),
                     ),
                   ),
@@ -143,7 +145,7 @@ class _PaymentLinkShareBrand extends StatelessWidget {
         ),
         const SizedBox(width: 9),
         Text(
-          'vizor.cash',
+          'vizor.cash', // l10n-ignore: domain shown on the shareable image
           style: AppTypography.labelMedium.copyWith(
             color: PaymentLinkQrShareCard._foreground,
             fontSize: 12.5,

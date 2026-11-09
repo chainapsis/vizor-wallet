@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_round_visibility_provid
 import 'package:zcash_wallet/src/providers/voting/voting_poll_eligibility_provider.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets(
@@ -25,6 +26,7 @@ void main() {
       var result = Completer<VotingPollEligibility>();
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.dark,
             child: Builder(
@@ -67,6 +69,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         theme: ThemeData.dark(),
         home: AppTheme(
           data: AppThemeData.dark,
