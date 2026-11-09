@@ -15,6 +15,9 @@ enum ZnsLookupStatus {
   /// The wallet's network has no ZNS registry (regtest).
   unsupportedNetwork("Names aren't available on this network"),
 
+  /// The user has not turned Zcash names on in Settings.
+  namesOff('Turn on Zcash names in Settings'),
+
   /// No resolver answered, or its reply could not be read.
   failed("Couldn't reach the name service"),
 
@@ -34,7 +37,10 @@ enum ZnsLookupStatus {
   String get addressType => switch (this) {
     resolving => '',
     failed => 'error',
-    notRegistered || unsupportedNetwork || unusableAddress => 'invalid',
+    notRegistered ||
+    unsupportedNetwork ||
+    namesOff ||
+    unusableAddress => 'invalid',
   };
 }
 
@@ -75,6 +81,8 @@ Future<ZnsRecipientLookup> lookUpZnsRecipient(
     return resolution == null
         ? const ZnsRecipientMissing(ZnsLookupStatus.notRegistered)
         : ZnsRecipientFound(resolution);
+  } on ZnsNamesOffException {
+    return const ZnsRecipientMissing(ZnsLookupStatus.namesOff);
   } catch (e) {
     log('ZNS: lookup error: $e');
     return const ZnsRecipientMissing(ZnsLookupStatus.failed);

@@ -4,6 +4,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import 'mobile_tor_control.dart';
 import 'mobile_private_queries_control.dart';
+import 'mobile_zns_names_control.dart';
 export 'mobile_tor_control.dart' show MobilePrivacyToggle;
 
 /// Mobile Tor control.
@@ -41,6 +42,7 @@ class MobileNetworkPrivacyCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.s),
           const MobileTorControl(),
           const MobilePrivateQueriesControl(),
+          const MobileZnsNamesControl(),
         ],
       ),
     );

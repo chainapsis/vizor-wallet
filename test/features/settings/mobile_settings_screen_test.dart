@@ -35,6 +35,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
+import 'package:zcash_wallet/src/core/naming/zns_names_setting.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -165,6 +166,7 @@ Widget _app({
   bool enhancePirEnabled = false,
   EnhancePirNotifier Function()? enhancePir,
   bool walletTransparentPrivate = false,
+  ZnsNamesSettingStore? znsNamesStore,
 }) {
   Widget themedBuilder(BuildContext context, Widget? child) => AppTheme(
     data: themeData ?? AppThemeData.dark,
@@ -213,6 +215,8 @@ Widget _app({
           ),
         ),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
+      if (znsNamesStore != null)
+        znsNamesSettingStoreProvider.overrideWithValue(znsNamesStore),
       if (enhancePir != null) enhancePirProvider.overrideWith(enhancePir),
       if (walletTransparentPrivate)
         walletTransparentPrivateProvider.overrideWith(_PrivateWallet.new),
@@ -315,6 +319,29 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
 }
 
 void main() {
+  testWidgets('Zcash names start off and turn on from the Privacy card', (
+    tester,
+  ) async {
+    final store = _MemoryZnsNamesStore();
+    await tester.pumpWidget(_app(znsNamesStore: store));
+    await tester.pumpAndSettle();
+    final row = find.byKey(const ValueKey('mobile_settings_zns_names_row'));
+    await tester.scrollUntilVisible(row, 200);
+    await tester.pumpAndSettle();
+
+    expect(find.text(kZnsNamesSettingsCopy), findsOneWidget);
+    final status = find.byKey(
+      const ValueKey('mobile_settings_zns_names_status'),
+    );
+    expect(tester.widget<Text>(status).data, 'Off');
+
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    expect(store.enabled, isTrue);
+    expect(tester.widget<Text>(status).data, 'On');
+  });
+
   testWidgets('mobile private recovery is labelled experimental', (
     tester,
   ) async {
@@ -1732,4 +1759,14 @@ class _RecordingToggle extends EnhancePirNotifier {
 class _PrivateWallet extends WalletTransparentPrivateNotifier {
   @override
   bool build() => true;
+}
+
+class _MemoryZnsNamesStore implements ZnsNamesSettingStore {
+  bool enabled = false;
+
+  @override
+  Future<bool> readEnabled() async => enabled;
+
+  @override
+  Future<void> writeEnabled(bool value) async => enabled = value;
 }
