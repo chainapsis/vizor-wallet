@@ -967,6 +967,7 @@ void main() {
     ActivityRowData? row;
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -985,7 +986,11 @@ void main() {
     );
 
     expect(row!.title, 'Swap refunded');
-    expect(row!.amountText, kSwapNotReportedToken, reason: 'not the 70 quoted');
+    expect(
+      row!.amountText,
+      testL10n.swapActivityNotReported,
+      reason: 'not the 70 quoted',
+    );
   });
 
   testWidgets('refunded ZEC->external swap labels the ZEC refund', (

@@ -9179,7 +9179,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final state = container.read(swapStateProvider);
-      expect(state.quoteError, message);
+      expect(state.quoteError?.text(testL10n), message);
       expect(state.quoteLoading, isFalse);
       expect(state.reviewVisible, isFalse);
       expect(find.text(message), findsOneWidget);
@@ -9241,7 +9241,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final state = container.read(swapStateProvider);
-      expect(state.quoteError, message);
+      expect(state.quoteError?.text(testL10n), message);
       expect(state.quoteLoading, isFalse);
       expect(state.reviewVisible, isFalse);
       // One round ran, and the address was asked for again after it.
@@ -9705,7 +9705,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      container.read(swapStateProvider).statusError,
+      container.read(swapStateProvider).statusError?.text(testL10n),
       'Preparing a private swap address. Try again in a moment.',
     );
     // The swap saved before the wallet start is removed, as if never started.
@@ -9745,7 +9745,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      container.read(swapStateProvider).statusError,
+      container.read(swapStateProvider).statusError?.text(testL10n),
       'This swap address is no longer available. Request a new quote.',
     );
     expect(container.read(swapStateProvider).intents, isEmpty);
@@ -9858,7 +9858,7 @@ void main() {
         await notifier.showReview();
         await tester.pumpAndSettle();
         expect(
-          container.read(swapStateProvider).quoteError,
+          container.read(swapStateProvider).quoteError?.text(testL10n),
           "Vizor couldn't read your NEAR swap privacy setting. Choose it "
           'again in Settings to swap.',
         );

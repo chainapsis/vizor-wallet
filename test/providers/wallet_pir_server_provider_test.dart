@@ -510,6 +510,7 @@ void main() {
         UncontrolledProviderScope(
           container: h.container,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.dark,
               child: Scaffold(

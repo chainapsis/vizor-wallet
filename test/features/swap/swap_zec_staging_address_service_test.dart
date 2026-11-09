@@ -91,10 +91,9 @@ void main() {
         service.prepareForQuote(accountUuid: 'hardware'),
         throwsA(
           isA<SwapZecStagingAddressUnavailableException>().having(
-            (e) => e.toString(),
-            'message',
-            'Could not prepare a fresh wallet receive address. '
-                'Try again after wallet sync.',
+            (e) => e.privateAddress,
+            'privateAddress',
+            isTrue,
           ),
         ),
       );
@@ -116,11 +115,9 @@ void main() {
         () => service.prepareForQuote(accountUuid: 'account-1'),
         throwsA(
           isA<SwapZecStagingAddressUnavailableException>().having(
-            (e) => e.toString(),
-            'message',
-            'Could not prepare a fresh wallet receive address. '
-                'Retry after wallet sync or close older pending swaps before '
-                'requesting a new quote.',
+            (e) => e.privateAddress,
+            'privateAddress',
+            isFalse,
           ),
         ),
       );

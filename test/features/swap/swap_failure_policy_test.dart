@@ -422,7 +422,10 @@ void main() {
       SwapFailureCategory.zecDepositIronwoodFunding,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.sendZecDeposit, error),
+      swapFailureMessage(
+        SwapFailureOperation.sendZecDeposit,
+        error,
+      ).text(testL10n),
       'Private swaps are funded from your Ironwood balance, which cannot '
       'cover this swap and its network fee.\n'
       'Move funds to Ironwood first or try a smaller amount.',

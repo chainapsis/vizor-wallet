@@ -148,6 +148,7 @@ ActivityRowData buildSwapActivityRow({
   final sellAsset = _swapActivitySellAsset(item);
   final receiveAsset = _swapActivityReceiveAsset(item);
   final progress = _swapActivityProgress(item);
+  final starting = item.startPending && !item.status.isTerminal;
   final payMode = item.payMode && item.direction == SwapDirection.zecToExternal;
 
   return ActivityRowData(
@@ -176,10 +177,11 @@ ActivityRowData buildSwapActivityRow({
     amountSubtitle: timedOut ? l10n.activitySwapTimeout : null,
     amountSubtitleIconName: timedOut ? AppIcons.time : null,
     amountSubtitleIconColor: timedOut ? colors.text.secondary : null,
-    statusText: item.startPending && !item.status.isTerminal
+    statusText: starting
         ? l10n.swapStartPending
         : _swapActivityStatusText(l10n, item.status, progress),
-    statusIsRoutine: _swapActivityStatusIsRoutine(item.status),
+    // The feed shows a starting swap's status, not its timestamp.
+    statusIsRoutine: !starting && _swapActivityStatusIsRoutine(item.status),
     statusIconName: failed
         ? AppIcons.skull
         : item.status == SwapIntentStatus.refunded
