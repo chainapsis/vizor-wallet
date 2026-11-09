@@ -29,14 +29,11 @@
 //! migration reconciliation) resolve the same policy through this module.
 
 mod auxiliary;
+pub(crate) mod content_failures;
 mod payload;
 mod policy;
 pub(crate) mod status;
 mod transport;
-
-/// Default mainnet endpoint shared by payload and status PIR. Each lane keeps
-/// its own env-var override.
-pub(super) const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargroup.dev";
 
 pub(super) use auxiliary::transparent_history::store_address_transaction;
 pub(super) use payload::public::decode_enhancement_payload;
@@ -63,8 +60,6 @@ use super::{block_source::MemoryBlockSource, SyncError, TransparentLookupGate, W
 use auxiliary::{fees::backfill_stored_fees, transparent_history::HistoryPass};
 use payload::{EnhancePirRunError, ProductionEnhancementEffects, RoutedPayloadEnhancement};
 use transport::RoutedTransport;
-
-const MAX_CHECKPOINT_PASSES: usize = 3;
 
 /// One immutable policy and private payload session for a foreground sync.
 pub(super) struct EnhancementSession {
@@ -109,7 +104,7 @@ impl EnhancementSession {
     }
 
     /// Runs status and auxiliary metadata first, then drains the routed payload
-    /// snapshot that those lanes may have populated.
+    /// work that existed before them.
     pub(super) async fn run_checkpoint(
         &mut self,
         db: &mut WalletDatabase,
@@ -117,8 +112,62 @@ impl EnhancementSession {
         cached: Option<&MemoryBlockSource>,
         should_exit: &(impl Fn() -> bool + Sync),
     ) -> Result<bool, SyncError> {
-        self.ready_resubmission.clear();
+        let db_path = self.db_path.clone();
+        let private_status = status::PrivateStatusSource::new(&db_path, self.network, should_exit);
+        let route = RoutedTransport::new(should_exit);
+        self.checkpoint_with(db, client, cached, private_status, &route, should_exit)
+            .await
+    }
+
+    /// [`Self::run_checkpoint`] with the private status source and the
+    /// Enhance transport given.
+    pub(super) async fn checkpoint_with<S: zakura_pir_client::status::policy::StatusSource>(
+        &mut self,
+        db: &mut WalletDatabase,
+        client: &mut CompactTxStreamerClient<Channel>,
+        cached: Option<&MemoryBlockSource>,
+        private_status: S,
+        route: &impl zakura_pir_client::enhance::transport::Transport,
+        should_exit: &(impl Fn() -> bool + Sync),
+    ) -> Result<bool, SyncError> {
         self.policy.configure_db(db);
+        // The private work as it stands before any reply at this drain point.
+        // The work replies add waits for the next block: whether more
+        // lookups follow, now or after a restart at this tip, must not
+        // depend on what a reply said.
+        let before = private_work(db)?;
+        let result = self
+            .checkpoint_from(
+                db,
+                client,
+                cached,
+                private_status,
+                route,
+                &before,
+                should_exit,
+            )
+            .await;
+        let after = private_work(db);
+        if let Ok(after) = &after {
+            content_failures::unlocked(&self.db_path, &before, after);
+        }
+        let ran = result?;
+        after?;
+        Ok(ran)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn checkpoint_from<S: zakura_pir_client::status::policy::StatusSource>(
+        &mut self,
+        db: &mut WalletDatabase,
+        client: &mut CompactTxStreamerClient<Channel>,
+        cached: Option<&MemoryBlockSource>,
+        private_status: S,
+        route: &impl zakura_pir_client::enhance::transport::Transport,
+        before: &content_failures::PrivateWork,
+        should_exit: &(impl Fn() -> bool + Sync),
+    ) -> Result<bool, SyncError> {
+        self.ready_resubmission.clear();
         // Captured once per checkpoint; the gate re-checks the durable
         // generation before every public request and completing commit.
         let gate = TransparentLookupGate::for_sync(
@@ -128,57 +177,54 @@ impl EnhancementSession {
         )?;
         backfill_stored_fees(client, db, &self.db_path, should_exit).await?;
 
-        // The public source reuses the caller-owned lightwalletd channel, while
-        // `status::reader` constructs the private source from wallet context.
-        // Both remain lazy: only the source selected by policy is opened.
+        // The public source reuses the caller-owned lightwalletd channel; the
+        // private source is opened only if private work is asked.
         let public_source = status::lightwalletd_source(client.clone(), gate.clone(), should_exit);
-        let mut status_reader =
-            status::reader(&self.db_path, self.network, should_exit, public_source);
+        let mut status_reader = status::RoutedStatusReader::new(public_source, private_status);
         let mut attempted_statuses = HashSet::new();
         let mut history = HistoryPass::default();
 
-        for _ in 0..MAX_CHECKPOINT_PASSES {
-            let requests = db
-                .transaction_data_requests()
-                .map_err(|error| SyncError::db(format!("transaction_data_requests: {error}")))?;
-            let status_work = db
-                .transaction_status_work()
-                .map_err(|error| SyncError::db(format!("transaction_status_work: {error}")))?;
-            let status_actionable = status::run_requests(
-                &mut status_reader,
+        // One pass per checkpoint. Work a reply unlocks (a status that makes
+        // a transaction mined, history that names another transaction) waits
+        // for the next block. That includes the payload drain that ends the
+        // checkpoint: it asks only the private work that existed before.
+        let requests = db
+            .transaction_data_requests()
+            .map_err(|error| SyncError::db(format!("transaction_data_requests: {error}")))?;
+        let status_work = db
+            .transaction_status_work()
+            .map_err(|error| SyncError::db(format!("transaction_status_work: {error}")))?;
+        status::run_requests(
+            &mut status_reader,
+            db,
+            &status_work,
+            &gate,
+            &mut attempted_statuses,
+            &mut self.private_status_failed,
+            &self.db_path,
+            &mut self.ready_resubmission,
+            should_exit,
+        )
+        .await?;
+        if should_exit() {
+            return Ok(true);
+        }
+        history
+            .run_requests(
+                client,
                 db,
-                &status_work,
-                &gate,
-                &mut attempted_statuses,
-                &mut self.private_status_failed,
                 &self.db_path,
-                &mut self.ready_resubmission,
+                &requests,
+                self.network,
+                &gate,
                 should_exit,
             )
             .await?;
-            if should_exit() {
-                return Ok(true);
-            }
-            let history_actionable = history
-                .run_requests(
-                    client,
-                    db,
-                    &self.db_path,
-                    &requests,
-                    self.network,
-                    &gate,
-                    should_exit,
-                )
-                .await?;
-            if should_exit() {
-                return Ok(true);
-            }
-            if !status_actionable && !history_actionable {
-                break;
-            }
+        if should_exit() {
+            return Ok(true);
         }
 
-        self.run_payload_recovery(db, client, cached, should_exit)
+        self.drain(db, client, cached, route, before, should_exit)
             .await
     }
 
@@ -191,6 +237,32 @@ impl EnhancementSession {
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, SyncError> {
         self.policy.configure_db(db);
+        let before = private_work(db)?;
+        let route = RoutedTransport::new(should_exit);
+        let result = self
+            .drain(db, client, cached, &route, &before, should_exit)
+            .await;
+        let after = private_work(db);
+        if let Ok(after) = &after {
+            content_failures::unlocked(&self.db_path, &before, after);
+        }
+        let ran = result?;
+        after?;
+        Ok(ran)
+    }
+
+    /// Drains the routed payload work, asking only the private work in
+    /// `snapshot`.
+    async fn drain(
+        &mut self,
+        db: &mut WalletDatabase,
+        client: &mut CompactTxStreamerClient<Channel>,
+        cached: Option<&MemoryBlockSource>,
+        route: &impl zakura_pir_client::enhance::transport::Transport,
+        snapshot: &content_failures::PrivateWork,
+        should_exit: &impl Fn() -> bool,
+    ) -> Result<bool, SyncError> {
+        self.policy.configure_db(db);
         let gate = TransparentLookupGate::for_sync(
             self.policy.public_transparent_lookups(db)?,
             &self.db_path,
@@ -198,8 +270,10 @@ impl EnhancementSession {
         )?;
         let mut effects =
             ProductionEnhancementEffects::new(self.network, &self.db_path, client, cached, gate);
-        let route = RoutedTransport::new(should_exit);
-        match Box::pin(self.payload.run(db, &route, &mut effects, should_exit)).await {
+        self.payload.snapshot = Some(snapshot.clone());
+        let result = Box::pin(self.payload.run(db, route, &mut effects, should_exit)).await;
+        self.payload.snapshot = None;
+        match result {
             Ok(()) => effects.finish().map(|()| false),
             Err(EnhancePirRunError::ExitRequested) => Ok(true),
             Err(EnhancePirRunError::HttpStatus(status)) => Err(SyncError::net(format!(
@@ -208,6 +282,18 @@ impl EnhancementSession {
             Err(EnhancePirRunError::Failed(error)) => Err(error),
         }
     }
+}
+
+/// The wallet's private Enhance work and private status lookups as they
+/// stand now.
+fn private_work(db: &WalletDatabase) -> Result<content_failures::PrivateWork, SyncError> {
+    use zcash_client_backend::data_api::enhance_pir::EnhancePirRead;
+    Ok(content_failures::PrivateWork::new(
+        db.transaction_enhancement_work()
+            .map_err(|error| SyncError::db(format!("transaction_enhancement_work: {error}")))?,
+        db.transaction_status_work()
+            .map_err(|error| SyncError::db(format!("transaction_status_work: {error}")))?,
+    ))
 }
 
 #[cfg(test)]

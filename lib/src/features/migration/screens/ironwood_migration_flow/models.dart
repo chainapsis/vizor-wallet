@@ -13,14 +13,11 @@ enum IronwoodMigrationFlowStep {
 enum IronwoodMigrationReviewPreviewStage { review, analyzing }
 
 const _privateStatusStartVerificationTimeout = Duration(seconds: 2);
-const _defaultMigrationAnalyzingMinimumDuration = Duration(seconds: 6);
+const _defaultMigrationAnalyzingMinimumDuration = Duration(seconds: 2);
 const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
-const _migrationEstimatedSecondsPerBlock = 75;
 const _migrationPrepareConfirmationBlocks = 3;
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
 const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
-const _keystoneMigrationFirmwareUpdateError =
-    'Update Keystone firmware to sign Ironwood migrations, then try again.';
 const _ironwoodMigrationIntroBannerLightAsset =
     'assets/illustrations/desktop/ironwood_migration_intro_banner_light.webp';
 const _ironwoodMigrationIntroBannerDarkAsset =
@@ -85,7 +82,12 @@ final ironwoodMigrationFlowDataProvider =
 
       final cta = ref.watch(ironwoodHomeMigrationPresentationProvider);
       final status = cta.accountUuid == inputs.accountUuid ? cta.status : null;
-      final targetTotal = _sumTargetValues(status);
+      // A stopped run's targets include what it already moved; moving the
+      // rest starts from the balance.
+      final targetTotal =
+          status?.phase == kIronwoodMigrationStoppedByUpgradePhase
+          ? BigInt.zero
+          : _sumTargetValues(status);
       final amount = targetTotal > BigInt.zero
           ? targetTotal
           : inputs.orchardBalance + inputs.orchardPendingBalance;
@@ -104,6 +106,13 @@ final ironwoodMigrationPrivatePlanProvider =
       final request = ref.watch(
         ironwoodMigrationInputsProvider.select(
           (inputs) => inputs.statusRequest,
+        ),
+      );
+      // Rust refuses a schedule drawn before an upgrade, so draw again once
+      // the next block is on the new branch.
+      ref.watch(
+        networkUpgradeWindowProvider.select(
+          (window) => (window.nextActivationHeight, window.holdsTransactions),
         ),
       );
       if (request == null) return null;
@@ -150,7 +159,9 @@ bool _routeShouldResumeMigration(rust_sync.MigrationStatus status) {
 }
 
 bool _routeShouldStartMigration(String phase) {
-  return kIronwoodMigrationStartPhases.contains(phase);
+  // A stopped run's remainder starts a new run, as on the home CTA.
+  return kIronwoodMigrationStartPhases.contains(phase) ||
+      phase == kIronwoodMigrationStoppedByUpgradePhase;
 }
 
 bool _isEmptyCompletedMigrationStatus(rust_sync.MigrationStatus status) {
@@ -164,7 +175,7 @@ bool _isEmptyCompletedMigrationStatus(rust_sync.MigrationStatus status) {
 IronwoodMigrationFlowData _fallbackMigrationFlowData() {
   return IronwoodMigrationFlowData(
     amountZatoshi: BigInt.zero,
-    accountName: 'Username',
+    accountName: 'Username', // l10n-ignore: placeholder account name
     profilePictureId: kDefaultProfilePictureId,
   );
 }

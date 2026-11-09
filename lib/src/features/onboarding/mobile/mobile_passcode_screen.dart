@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/feedback/app_haptics.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
@@ -23,6 +24,7 @@ import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_progress_scope.dart';
 import 'passcode_widgets.dart';
+import 'adaptive_passcode_layout.dart';
 import '../shared/account_setup_submission.dart';
 import '../../../core/widgets/app_button.dart';
 
@@ -73,7 +75,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
   var _phase = _PasscodePhase.create;
   var _entry = '';
   String? _firstPasscode;
-  String? _error;
+  OnboardingSubmitError? _error;
   final _submission = AccountSetupSubmission();
 
   void _onDigit(int digit) {
@@ -110,7 +112,9 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
             _entry = '';
             _firstPasscode = null;
             _phase = _PasscodePhase.create;
-            _error = "Passcodes didn't match. Try again.";
+            _error = OnboardingSubmitError.localized(
+              (l10n) => l10n.passcodesDidNotMatch,
+            );
           });
         }
       case _PasscodePhase.submitting:
@@ -128,9 +132,10 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         await _submission.run(ref, () => onConfirmed(passcode));
       } catch (error) {
         if (mounted) {
-          _error = _submission.requiresRecovery
-              ? 'Setup interrupted. Retry to recover your wallet.'
-              : onboardingSubmitErrorMessage(error);
+          _error = OnboardingSubmitError.fromError(
+            error,
+            requiresRecovery: _submission.requiresRecovery,
+          );
         }
       }
       if (!mounted) return;
@@ -161,9 +166,10 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
       } catch (error, stack) {
         log('MobilePasscode: account setup failed: $error\n$stack');
         if (mounted) {
-          _error = _submission.requiresRecovery
-              ? 'Setup interrupted. Retry to recover your wallet.'
-              : onboardingSubmitErrorMessage(error);
+          _error = OnboardingSubmitError.fromError(
+            error,
+            requiresRecovery: _submission.requiresRecovery,
+          );
         }
       }
       if (!mounted) return;
@@ -266,7 +272,9 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         _phase = _PasscodePhase.create;
         _entry = '';
         _firstPasscode = null;
-        _error = onboardingSubmitErrorMessage(e);
+        _error = OnboardingSubmitError.text(
+          onboardingSubmitErrorMessage(context.l10n, e),
+        );
       });
     }
   }
@@ -279,10 +287,10 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     final canNavigateBack =
         widget.onBack != null || Navigator.of(context).canPop();
     final subtitle = isSubmitting
-        ? 'Setting up your wallet...'
+        ? context.l10n.onboardingPasscodeSettingUp
         : isConfirm
-        ? 'Re-enter your passcode.'
-        : '6 digits length';
+        ? context.l10n.onboardingPasscodeReEnter
+        : context.l10n.passcodeSixDigits;
 
     // A custom body rather than MobileOnboardingStepScaffold: the keypad is
     // pinned at the bottom and the dots + error are centred in the gap
@@ -322,91 +330,118 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                     : widget.onBack ?? () => Navigator.of(context).maybePop(),
               ),
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
+                child: AdaptivePasscodeLayout(
+                  title: isConfirm
+                      ? context.l10n.passcodeConfirmTitle
+                      : context.l10n.onboardingPasscodeCreateTitle,
+                  subtitle: subtitle,
+                  prompt: PasscodePromptField(
+                    length: kMobilePasscodeLength,
+                    filled: _entry.length,
+                    error: _error?.resolve(context.l10n),
+                    minGap: 0,
+                  ),
+                  keypad: PasscodeNumpad(
+                    onDigit: _onDigit,
+                    onBackspace: _onBackspace,
+                    canDelete: _entry.isNotEmpty,
+                    enabled: !isSubmitting,
+                  ),
+                  legacyPadding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.sm,
                     vertical: AppSpacing.md,
                   ),
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                isConfirm
-                                    ? 'Confirm Passcode'
-                                    : 'Create Passcode',
-                                textAlign: TextAlign.center,
-                                style: AppTypography.displayLarge.copyWith(
-                                  color: colors.text.accent,
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.s),
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  maxWidth: 320,
-                                ),
-                                child: Text(
-                                  subtitle,
+                  subtitleMaxWidth: 320,
+                  adapt: !_submission.requiresRecovery,
+
+                  legacy: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm,
+                      vertical: AppSpacing.md,
+                    ),
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  isConfirm
+                                      ? context.l10n.passcodeConfirmTitle
+                                      : context
+                                            .l10n
+                                            .onboardingPasscodeCreateTitle,
                                   textAlign: TextAlign.center,
-                                  style: AppTypography.bodyMediumStrong
-                                      .copyWith(color: colors.text.primary),
+                                  style: AppTypography.displayLarge.copyWith(
+                                    color: colors.text.accent,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: AppSpacing.md),
-                              SizedBox(
-                                height: kPasscodePromptDigitsHeight,
-                                child: PasscodePromptField(
-                                  length: kMobilePasscodeLength,
-                                  filled: _entry.length,
-                                  error: _error,
-                                  minGap: 0,
+                                const SizedBox(height: AppSpacing.s),
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 320,
+                                  ),
+                                  child: Text(
+                                    subtitle,
+                                    textAlign: TextAlign.center,
+                                    style: AppTypography.bodyMediumStrong
+                                        .copyWith(color: colors.text.primary),
+                                  ),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: AppSpacing.md),
+                                SizedBox(
+                                  height: kPasscodePromptDigitsHeight,
+                                  child: PasscodePromptField(
+                                    length: kMobilePasscodeLength,
+                                    filled: _entry.length,
+                                    error: _error?.resolve(context.l10n),
+                                    minGap: 0,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      if (_submission.requiresRecovery)
-                        AppButton(
-                          key: const ValueKey('mobile_passcode_retry_setup'),
-                          expand: true,
-                          onPressed: isSubmitting
-                              ? null
-                              : () async {
-                                  setState(
-                                    () => _phase = _PasscodePhase.submitting,
-                                  );
-                                  try {
-                                    final recover = widget.recoverSetup;
-                                    if (recover != null) {
-                                      await recover();
-                                    } else {
-                                      await _submission.recover(ref);
+                        if (_submission.requiresRecovery)
+                          AppButton(
+                            key: const ValueKey('mobile_passcode_retry_setup'),
+                            expand: true,
+                            onPressed: isSubmitting
+                                ? null
+                                : () async {
+                                    setState(
+                                      () => _phase = _PasscodePhase.submitting,
+                                    );
+                                    try {
+                                      final recover = widget.recoverSetup;
+                                      if (recover != null) {
+                                        await recover();
+                                      } else {
+                                        await _submission.recover(ref);
+                                      }
+                                    } catch (_) {
+                                      if (mounted) {
+                                        setState(() {
+                                          _phase = _PasscodePhase.create;
+                                          _error =
+                                              OnboardingSubmitError.resumeFailed();
+                                        });
+                                      }
                                     }
-                                  } catch (_) {
-                                    if (mounted) {
-                                      setState(() {
-                                        _phase = _PasscodePhase.create;
-                                        _error =
-                                            "Couldn't resume setup. Please try again.";
-                                      });
-                                    }
-                                  }
-                                },
-                          child: const Text('Retry setup'),
-                        )
-                      else
-                        PasscodeNumpad(
-                          onDigit: _onDigit,
-                          onBackspace: _onBackspace,
-                          canDelete: _entry.isNotEmpty,
-                          enabled: !isSubmitting,
-                        ),
-                      const SizedBox(height: AppSpacing.md),
-                    ],
+                                  },
+                            child: Text(context.l10n.onboardingRetrySetup),
+                          )
+                        else
+                          PasscodeNumpad(
+                            onDigit: _onDigit,
+                            onBackspace: _onBackspace,
+                            canDelete: _entry.isNotEmpty,
+                            enabled: !isSubmitting,
+                          ),
+                        const SizedBox(height: AppSpacing.md),
+                      ],
+                    ),
                   ),
                 ),
               ),

@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_device_selectio
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'ledger_pairing_recovery_test.dart' as fixture;
 import 'ledger_device_selection_test.dart' show pumpFrames;
 
@@ -35,10 +36,11 @@ void main() {
       expect(ble.calls, isEmpty);
       await tester.tap(find.text('USB'));
       await pumpFrames(tester);
-      expect(find.text('Couldn’t connect to your Ledger'), findsOneWidget);
+      expect(find.text('Connect Ledger'), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
       await tester.tap(find.bySemanticsLabel('Change connection'));
       await pumpFrames(tester);
-      expect(find.text('How would you like to connect?'), findsOneWidget);
+      expect(find.text('Connect the Ledger for this account.'), findsOneWidget);
       expect(usbCalls, 1);
       expect(ble.calls, isEmpty);
       await tester.tap(find.text('USB'));
@@ -48,53 +50,56 @@ void main() {
     },
   );
 
-  testWidgets('returning from Bluetooth stops discovery before enabling USB', (
-    tester,
-  ) async {
-    final ble = fixture.FakeBle();
-    final c = fixture.containerFor(ble, fixture.FakeAccounts());
-    addTearDown(c.dispose);
-    final stop = Completer<void>();
-    var stops = 0;
-    var usbCalls = 0;
-    LedgerConnectionTransport? chosen;
-    final request = LedgerDeviceSelectionRequest(
-      accountUuid: 'a',
-      check: () {},
-      canChooseTransport: true,
-      onTransportChanged: (value) => chosen = value,
-      prepareDiscovery: () async {},
-      verify: (_, _, _) async => false,
-      stopDiscovery: () async {
-        stops++;
-        await ble.stopDiscovery();
-        await stop.future;
-      },
-      prepareUsb: () async {
-        usbCalls++;
+  for (final heldStream in [false, true]) {
+    testWidgets(
+      'returning from Bluetooth drains discovery before enabling USB (held stream: $heldStream)',
+      (tester) async {
+        final ble = heldStream ? _HeldDiscoveryBle() : fixture.FakeBle();
+        final c = fixture.containerFor(ble, fixture.FakeAccounts());
+        addTearDown(c.dispose);
+        final stop = Completer<void>();
+        var stops = 0;
+        var usbCalls = 0;
+        LedgerConnectionTransport? chosen;
+        final request = LedgerDeviceSelectionRequest(
+          accountUuid: 'a',
+          check: () {},
+          canChooseTransport: true,
+          onTransportChanged: (value) => chosen = value,
+          prepareDiscovery: () async {},
+          verify: (_, _, _) async => false,
+          stopDiscovery: () async {
+            stops++;
+            await ble.stopDiscovery();
+            await stop.future;
+          },
+          prepareUsb: () async {
+            usbCalls++;
+          },
+        );
+        final result = request.result;
+        await tester.pumpWidget(_modal(c, request));
+        await tester.tap(find.text('Bluetooth'));
+        await pumpFrames(tester);
+        expect(chosen, LedgerConnectionTransport.bluetooth);
+        expect(find.text('Find Ledger'), findsOneWidget);
+        await tester.tap(find.bySemanticsLabel('Change connection'));
+        await pumpFrames(tester);
+        expect(stops, 1);
+        expect(find.text('USB'), findsNothing);
+        expect(usbCalls, 0);
+        stop.complete();
+        await pumpFrames(tester);
+        expect(chosen, isNull);
+        expect(ble.calls.where((call) => call == 'stop'), hasLength(1));
+        expect(find.text('USB'), findsOneWidget);
+        await tester.tap(find.text('USB'));
+        await pumpFrames(tester);
+        await result;
+        expect(usbCalls, 1);
       },
     );
-    final result = request.result;
-    await tester.pumpWidget(_modal(c, request));
-    await tester.tap(find.text('Bluetooth'));
-    await pumpFrames(tester);
-    expect(chosen, LedgerConnectionTransport.bluetooth);
-    expect(find.text('Select your Ledger'), findsOneWidget);
-    await tester.tap(find.bySemanticsLabel('Change connection'));
-    await pumpFrames(tester);
-    expect(stops, 1);
-    expect(find.text('USB'), findsNothing);
-    expect(usbCalls, 0);
-    stop.complete();
-    await pumpFrames(tester);
-    expect(chosen, isNull);
-    expect(ble.calls.where((call) => call == 'stop'), hasLength(1));
-    expect(find.text('USB'), findsOneWidget);
-    await tester.tap(find.text('USB'));
-    await pumpFrames(tester);
-    await result;
-    expect(usbCalls, 1);
-  });
+  }
 
   test(
     'cancelling USB readiness drains its work and cannot select a device',
@@ -128,10 +133,29 @@ void main() {
   );
 }
 
+/// Some streams cannot finish cancellation until the native scan has stopped.
+class _HeldDiscoveryBle extends fixture.FakeBle {
+  final _stopped = Completer<void>();
+
+  @override
+  Stream<LedgerDiscoveryUpdate> discoverDevices() async* {
+    yield const LedgerDevicesDiscovered([fixture.device]);
+    await _stopped.future;
+    yield const LedgerDiscoveryEnded();
+  }
+
+  @override
+  Future<void> stopDiscovery() async {
+    await super.stopDiscovery();
+    if (!_stopped.isCompleted) _stopped.complete();
+  }
+}
+
 Widget _modal(ProviderContainer c, LedgerDeviceSelectionRequest request) =>
     UncontrolledProviderScope(
       container: c,
       child: MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Center(

@@ -14,16 +14,19 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/home/widgets/ledger_shield_signing_overlay.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
-import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_modal.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_procedure.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_estimator.dart';
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
@@ -56,10 +59,12 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/screens/payment_links_screen.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../test/support/wallet_path_read_blocker.dart';
 
 import 'support/speculos_review.dart';
@@ -69,295 +74,374 @@ void main() {
 
   setUpAll(initializeZcashWalletRuntime);
 
-  testWidgets(
-    'imports and sends with Ledger through Speculos',
-    (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1280, 900));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+  testWidgets('imports and sends with Ledger through Speculos', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      final fixture = _Fixture.load();
-      final sandboxDirectory = await Directory.systemTemp.createTemp(
-        'vizor-ledger-speculos-e2e.',
-      );
-      final dbPath = '${sandboxDirectory.path}/wallet.db';
-      await File(
-        dbPath,
-      ).writeAsBytes(gzip.decode(fixture.dbGzipBytes), flush: true);
-      final security = _LedgerFirstAccountSecurityNotifier();
-      final firstAccountDbPath =
-          '${sandboxDirectory.path}/first-account-wallet.db';
-      final firstAccountImport = _RecordingLedgerFirstAccountImport(
-        firstAccountDbPath,
-      );
+    final fixture = _Fixture.load();
+    final sandboxDirectory = await Directory.systemTemp.createTemp(
+      'vizor-ledger-speculos-e2e.',
+    );
+    final dbPath = '${sandboxDirectory.path}/wallet.db';
+    await File(
+      dbPath,
+    ).writeAsBytes(gzip.decode(fixture.dbGzipBytes), flush: true);
+    final security = _LedgerFirstAccountSecurityNotifier();
+    final firstAccountDbPath =
+        '${sandboxDirectory.path}/first-account-wallet.db';
+    final firstAccountImport = _RecordingLedgerFirstAccountImport(
+      firstAccountDbPath,
+    );
 
-      await tester.pumpWidget(
-        ProviderScope(
-          key: const ValueKey('ledger_speculos_import_scope'),
-          overrides: [
-            appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
-            appSecurityProvider.overrideWith(() => security),
-            syncProvider.overrideWith(
-              () => _FakeSyncNotifier(fixture.accountUuid),
-            ),
-            ledgerTargetPlatformProvider.overrideWithValue(
-              defaultTargetPlatform,
-            ),
-            ledgerOperationCancellerProvider.overrideWithValue(() async {}),
-            ledgerAccountImporterProvider.overrideWithValue(
-              firstAccountImport.call,
-            ),
-            rpcEndpointFailoverProvider.overrideWith(
-              _LedgerOnboardingRpcFailoverNotifier.new,
-            ),
-          ],
-          child: const _LedgerFirstAccountOnboardingHarness(),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        find.byKey(const ValueKey('welcome_connect_ledger_button')),
-        findsOneWidget,
-      );
-      await tester.tap(
-        find.byKey(const ValueKey('welcome_connect_ledger_button')),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Connect Ledger'), findsWidgets);
-      expect(
-        find.byKey(const ValueKey('ledger_connect_button')),
-        findsOneWidget,
-      );
-
-      await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
-      await tester.pump();
-      final connectSpinner = find.byKey(
-        const ValueKey('ledger_connect_spinner'),
-      );
-      expect(connectSpinner, findsOneWidget);
-      expect(
-        tester.getCenter(connectSpinner).dx,
-        greaterThan(
-          tester
-              .getCenter(find.byKey(const ValueKey('ledger_connect_button')))
-              .dx,
-        ),
-      );
-      final importApproval = approveNextSpeculosReview(fixture.ufvkApiUrl);
-      await _pumpUntil(
-        tester,
-        () => tester.any(
-          find.byKey(const ValueKey('import_birthday_submit_button')),
-        ),
-        description: 'Ledger birthday route',
-        timeout: const Duration(minutes: 2),
-      );
-      expect(await importApproval, isTrue);
-      // The harness advances onboarding faster than a person. Let the shared
-      // Speculos instance finish its UFVK status screen before the send flow.
-      await Future<void>.delayed(const Duration(seconds: 4));
-
-      await tester.tap(find.text('Enter the block height'));
-      await tester.pump();
-      await tester.enterText(find.byType(TextField), '2500000');
-      await tester.pump();
-      await tester.tap(
-        find.byKey(const ValueKey('import_birthday_submit_button')),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.enterText(
-        find.byKey(const ValueKey('customise_account_name_field')),
-        'Speculos Ledger',
-      );
-      await tester.pump();
-      await tester.tap(
-        find.byKey(const ValueKey('customise_account_finish_button')),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('set_password_password_field')),
-        findsOneWidget,
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('set_password_password_field')),
-        'LedgerE2e1!',
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('set_password_confirm_field')),
-        'LedgerE2e1!',
-      );
-      await tester.pump();
-      await tester.tap(
-        find.byKey(const ValueKey('set_password_submit_button')),
-      );
-      await tester.pumpAndSettle();
-
-      await _pumpUntil(
-        tester,
-        () =>
-            tester.any(find.byKey(const ValueKey('ledger_first_account_home'))),
-        description: 'Home after first Ledger account creation',
-        timeout: const Duration(minutes: 2),
-      );
-
-      final exported = firstAccountImport.account;
-      expect(exported, isNotNull);
-      expect(exported!.ufvk, fixture.ufvk);
-      expect(exported.seedFingerprint, fixture.seedFingerprint);
-      expect(exported.accountIndex, fixture.accountIndex);
-      expect(exported.appVersion, '3.9.4');
-      expect(firstAccountImport.name, 'Speculos Ledger');
-      expect(firstAccountImport.birthdayHeight, 2500000);
-      expect(security.preparedPassword, 'LedgerE2e1!');
-      expect(security.commitCount, 1);
-      expect(security.rollbackCount, 0);
-      final storedFirstAccounts = await rust_wallet.listAccounts(
-        dbPath: firstAccountDbPath,
-        network: 'main',
-      );
-      expect(storedFirstAccounts, hasLength(1));
-      expect(storedFirstAccounts.single.name, 'Speculos Ledger');
-      expect(storedFirstAccounts.single.isHardware, isTrue);
-      expect(storedFirstAccounts.single.hardwareSignerKind, 'ledger');
-      expect(
-        storedFirstAccounts.single.zip32AccountIndex,
-        fixture.accountIndex,
-      );
-      // Mainnet imports start scanning after the preceding compiled checkpoint.
-      expect(storedFirstAccounts.single.birthdayHeight, 2490001);
-
-      final lightwalletd = _AcceptingLightwalletd();
-      await lightwalletd.start();
-      addTearDown(lightwalletd.stop);
-      final reviewArgs = SendReviewArgs(
-        proposalId: BigInt.one,
-        sendFlowId: 'ledger-speculos-send',
-        proposalAccountUuid: fixture.accountUuid,
-        address: fixture.transparentAddress,
-        addressType: 'transparent',
-        amountZatoshi: BigInt.from(990000),
-        feeZatoshi: BigInt.from(10000),
-        needsSaplingParams: false,
-      );
-      final operationService = _TrackingLedgerSignedOperationService(
-        RustLedgerSignedOperationService(
-          network: 'main',
-          lightwalletdUrl: lightwalletd.url,
-          loadWalletDbPath: () async => dbPath,
-        ),
-      );
-      final sendRouter = GoRouter(
-        initialLocation: '/send/review?flow=${reviewArgs.sendFlowId}',
-        initialExtra: reviewArgs,
-        routes: [
-          GoRoute(path: '/send', builder: (_, _) => const SizedBox()),
-          GoRoute(path: '/home', builder: (_, _) => const SizedBox()),
-          GoRoute(
-            path: '/send/review',
-            builder: (_, state) =>
-                SendReviewScreen(args: state.extra! as SendReviewArgs),
+    await tester.pumpWidget(
+      ProviderScope(
+        key: const ValueKey('ledger_speculos_import_scope'),
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          appSecurityProvider.overrideWith(() => security),
+          syncProvider.overrideWith(
+            () => _FakeSyncNotifier(fixture.accountUuid),
           ),
-          GoRoute(
-            path: '/send/status',
-            builder: (_, state) {
-              final payload = state.extra! as LedgerBroadcastArgs;
-              return SendStatusScreen(
-                args: payload.reviewArgs,
-                ledger: payload,
-              );
-            },
+          ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
+          ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+          ledgerAccountImporterProvider.overrideWithValue(
+            firstAccountImport.call,
+          ),
+          rpcEndpointFailoverProvider.overrideWith(
+            _LedgerOnboardingRpcFailoverNotifier.new,
           ),
         ],
-      );
-      addTearDown(sendRouter.dispose);
+        child: const _LedgerFirstAccountOnboardingHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.pumpWidget(
-        ProviderScope(
-          key: const ValueKey('ledger_speculos_send_scope'),
-          overrides: [
-            appBootstrapProvider.overrideWithValue(
-              _ledgerBootstrap(
-                fixture,
-                lightwalletd.url,
-                initialLocation: '/send/review',
-              ),
-            ),
-            syncProvider.overrideWith(
-              () => _FakeSyncNotifier(fixture.accountUuid),
-            ),
-            addressBookRepositoryProvider.overrideWithValue(
-              _EmptyAddressBookRepository(),
-            ),
-            zecMarketDataSourceProvider.overrideWithValue(
-              const _EmptyMarketDataSource(),
-            ),
-            zecMarketDataCacheProvider.overrideWithValue(
-              _MemoryMarketDataCache(),
-            ),
-            ledgerTargetPlatformProvider.overrideWithValue(
-              defaultTargetPlatform,
-            ),
-            ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
-            ledgerSendBasePcztCreatorProvider.overrideWithValue(({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required proposalId,
-              required sendFlowId,
-            }) async {
-              expect(dbPath, endsWith('/wallet.db'));
-              expect(lightwalletdUrl, lightwalletd.url);
-              expect(network, 'main');
-              expect(proposalId, reviewArgs.proposalId);
-              expect(sendFlowId, reviewArgs.sendFlowId);
-              return Uint8List.fromList(fixture.pcztBytes);
-            }),
-            ledgerSignedOperationServiceProvider.overrideWithValue(
-              operationService,
-            ),
-          ],
-          child: MaterialApp.router(
-            routerConfig: sendRouter,
-            builder: (_, child) =>
-                AppTheme(data: AppThemeData.light, child: child!),
-          ),
-        ),
-      );
+    for (final key in [
+      'welcome_import_wallet_button',
+      'desktop_import_hardware_card',
+      'desktop_hardware_ledger_card',
+    ]) {
+      final action = find.byKey(ValueKey(key));
+      expect(action, findsOneWidget);
+      await tester.tap(action);
       await tester.pumpAndSettle();
-      expect(find.text('Review send'), findsOneWidget);
-      expect(find.byKey(const ValueKey('send_confirm_button')), findsOneWidget);
+    }
+    expect(find.text('Connect Ledger'), findsWidgets);
+    expect(find.byKey(const ValueKey('ledger_connect_button')), findsOneWidget);
 
-      final signingApproval = approveNextSpeculosReview(fixture.signingApiUrl);
-      await tester.tap(find.byKey(const ValueKey('send_confirm_button')));
-      await tester.pump();
-      await _pumpUntil(
-        tester,
-        () =>
-            tester.any(_ledgerSigningText(LedgerSigningStage.reviewing.status)),
-        description: 'Ledger device approval prompt',
-        timeout: const Duration(minutes: 2),
-      );
-      await _pumpUntil(
-        tester,
-        () => tester.any(find.byKey(const ValueKey('send_status_completed'))),
-        description: 'Ledger Send status completion',
-        timeout: const Duration(minutes: 2),
-      );
-      expect(await signingApproval, isTrue);
-      expect(find.text('Sent successfully'), findsOneWidget);
-      expect(operationService.checkpointCount, 1);
-      expect(operationService.broadcastCount, 1);
-      expect(
-        operationService.lastOperationId,
-        'send:${fixture.accountUuid}:ledger-speculos-send',
-      );
-      expect(lightwalletd.sendTransactionCount, 1);
-      expect(lightwalletd.lastRawTransaction, isNotEmpty);
-      expect(await operationService.list(), isEmpty);
-    },
-    timeout: const Timeout(Duration(minutes: 4)),
-  );
+    await tester.tap(find.byKey(const ValueKey('ledger_connect_button')));
+    await tester.pump();
+    final procedureFinder = find.byType(LedgerProcedure);
+    expect(procedureFinder, findsOneWidget);
+    final procedure = tester.widget<LedgerProcedure>(procedureFinder);
+    expect(procedure.currentStep, inInclusiveRange(1, 2));
+    expect(procedure.steps[procedure.currentStep].busy, isTrue);
+    final connectSpinner = find.descendant(
+      of: procedureFinder,
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is AppIcon &&
+            widget.name == AppIcons.loader &&
+            widget.animated,
+      ),
+    );
+    expect(connectSpinner, findsOneWidget);
+    final activeLabel = find.descendant(
+      of: procedureFinder,
+      matching: find.text(procedure.steps[procedure.currentStep].label),
+    );
+    expect(
+      tester.getRect(connectSpinner).left,
+      greaterThan(tester.getRect(activeLabel).right),
+    );
+    expect(
+      (tester.getCenter(connectSpinner).dy - tester.getCenter(activeLabel).dy)
+          .abs(),
+      lessThanOrEqualTo(1),
+    );
+    final importApproval = approveNextSpeculosReview(fixture.ufvkApiUrl);
+    await _pumpUntil(
+      tester,
+      () {
+        if (tester.any(find.text('Could not connect Ledger'))) {
+          throw StateError(
+            'Ledger account connection failed: ${_visibleTestText(tester)}',
+          );
+        }
+        return tester.any(
+          find.byKey(const ValueKey('import_birthday_submit_button')),
+        );
+      },
+      description: 'Ledger birthday route',
+      timeout: const Duration(minutes: 2),
+    );
+    expect(await importApproval, isTrue);
+    // The harness advances onboarding faster than a person. Let the shared
+    // Speculos instance finish its UFVK status screen before the send flow.
+    await Future<void>.delayed(const Duration(seconds: 4));
+
+    await tester.tap(find.text('Enter the block height'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), '2500000');
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('import_birthday_submit_button')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('customise_account_name_field')),
+      'Speculos Ledger',
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('customise_account_finish_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('set_password_password_field')),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('set_password_password_field')),
+      'LedgerE2e1!',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('set_password_confirm_field')),
+      'LedgerE2e1!',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('set_password_submit_button')));
+    await tester.pumpAndSettle();
+
+    await _pumpUntil(
+      tester,
+      () => tester.any(find.byKey(const ValueKey('ledger_first_account_home'))),
+      description: 'Home after first Ledger account creation',
+      timeout: const Duration(minutes: 2),
+    );
+
+    final exported = firstAccountImport.account;
+    expect(exported, isNotNull);
+    expect(exported!.ufvk, fixture.ufvk);
+    expect(exported.seedFingerprint, fixture.seedFingerprint);
+    expect(exported.accountIndex, fixture.accountIndex);
+    expect(exported.appVersion, '3.10.0');
+    expect(firstAccountImport.name, 'Speculos Ledger');
+    expect(firstAccountImport.birthdayHeight, 2500000);
+    expect(security.preparedPassword, 'LedgerE2e1!');
+    expect(security.commitCount, 1);
+    expect(security.rollbackCount, 0);
+    final storedFirstAccounts = await rust_wallet.listAccounts(
+      dbPath: firstAccountDbPath,
+      network: 'main',
+    );
+    expect(storedFirstAccounts, hasLength(1));
+    expect(storedFirstAccounts.single.name, 'Speculos Ledger');
+    expect(storedFirstAccounts.single.isHardware, isTrue);
+    expect(storedFirstAccounts.single.hardwareSignerKind, 'ledger');
+    expect(storedFirstAccounts.single.zip32AccountIndex, fixture.accountIndex);
+    // Mainnet imports start scanning after the preceding compiled checkpoint.
+    expect(storedFirstAccounts.single.birthdayHeight, 2490001);
+
+    final lightwalletd = _AcceptingLightwalletd();
+    await lightwalletd.start();
+    addTearDown(lightwalletd.stop);
+    final reviewArgs = SendReviewArgs(
+      proposalId: BigInt.one,
+      sendFlowId: 'ledger-speculos-send',
+      proposalAccountUuid: fixture.accountUuid,
+      address: fixture.transparentAddress,
+      addressType: 'transparent',
+      amountZatoshi: BigInt.from(990000),
+      feeZatoshi: BigInt.from(10000),
+      needsSaplingParams: false,
+    );
+    final operationService = _TrackingLedgerSignedOperationService(
+      RustLedgerSignedOperationService(
+        network: 'main',
+        lightwalletdUrl: lightwalletd.url,
+        loadWalletDbPath: () async => dbPath,
+      ),
+    );
+    var pcztCreations = 0;
+    final sendRouter = GoRouter(
+      initialLocation: '/send/review?flow=${reviewArgs.sendFlowId}',
+      initialExtra: reviewArgs,
+      routes: [
+        GoRoute(path: '/send', builder: (_, _) => const SizedBox()),
+        GoRoute(path: '/home', builder: (_, _) => const SizedBox()),
+        GoRoute(
+          path: '/send/review',
+          builder: (_, state) =>
+              SendReviewScreen(args: state.extra! as SendReviewArgs),
+        ),
+        GoRoute(
+          path: '/send/status',
+          builder: (_, state) {
+            final payload = state.extra! as LedgerBroadcastArgs;
+            return SendStatusScreen(args: payload.reviewArgs, ledger: payload);
+          },
+        ),
+      ],
+    );
+    addTearDown(sendRouter.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        key: const ValueKey('ledger_speculos_send_scope'),
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            _ledgerBootstrap(
+              fixture,
+              lightwalletd.url,
+              initialLocation: '/send/review',
+            ),
+          ),
+          syncProvider.overrideWith(
+            () => _FakeSyncNotifier(fixture.accountUuid),
+          ),
+          addressBookRepositoryProvider.overrideWithValue(
+            _EmptyAddressBookRepository(),
+          ),
+          zecMarketDataSourceProvider.overrideWithValue(
+            const _EmptyMarketDataSource(),
+          ),
+          zecMarketDataCacheProvider.overrideWithValue(
+            _MemoryMarketDataCache(),
+          ),
+          ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
+          ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
+          ledgerSendBasePcztCreatorProvider.overrideWithValue(({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required proposalId,
+            required sendFlowId,
+          }) async {
+            pcztCreations++;
+            expect(dbPath, endsWith('/wallet.db'));
+            expect(lightwalletdUrl, lightwalletd.url);
+            expect(network, 'main');
+            expect(proposalId, reviewArgs.proposalId);
+            expect(sendFlowId, reviewArgs.sendFlowId);
+            return Uint8List.fromList(fixture.pcztBytes);
+          }),
+          ledgerSignedOperationServiceProvider.overrideWithValue(
+            operationService,
+          ),
+        ],
+        child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
+          routerConfig: sendRouter,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Review send'), findsOneWidget);
+    expect(find.byKey(const ValueKey('send_confirm_button')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('send_confirm_button')));
+    await tester.pump();
+    await _pumpUntil(
+      tester,
+      () => tester.any(_ledgerReviewPrompt()),
+      description: 'Ledger device approval prompt',
+      timeout: const Duration(minutes: 2),
+    );
+    final rejection = approveNextSpeculosReview(
+      fixture.signingApiUrl,
+      reject: true,
+    );
+    await _pumpUntil(
+      tester,
+      () => tester.any(
+        _ledgerSigningText(
+          'Signing was declined on Ledger. Try again when you’re ready.',
+        ),
+      ),
+      description: 'Ledger device rejection',
+      timeout: const Duration(seconds: 30),
+    );
+    expect(await rejection, isTrue);
+    expect(
+      tester.widget<LedgerProcedure>(find.byType(LedgerProcedure)).currentStep,
+      1,
+    );
+    expect(pcztCreations, 1);
+    expect(operationService.checkpointCount, 0);
+    expect(lightwalletd.sendTransactionCount, 0);
+    await tester.tap(find.text('Try again'));
+    await tester.pump();
+    // USB readiness can temporarily replace the procedure during retry.
+    // Keep checking the prepared transaction while waiting for device review.
+    await _pumpUntil(
+      tester,
+      () {
+        final modal = tester.widget<LedgerSigningModal>(
+          find.byType(LedgerSigningModal),
+        );
+        expect(modal.resumingApproval, isTrue);
+        expect(
+          modal.phase,
+          anyOf(
+            LedgerSigningModalPhase.preparing,
+            LedgerSigningModalPhase.awaitingDevice,
+          ),
+        );
+        expect(pcztCreations, 1);
+        expect(operationService.checkpointCount, 0);
+        expect(operationService.broadcastCount, 0);
+        expect(lightwalletd.sendTransactionCount, 0);
+        final procedures = find.byType(LedgerProcedure);
+        if (tester.any(procedures)) {
+          expect(
+            tester.widget<LedgerProcedure>(procedures).currentStep,
+            1,
+            reason: 'Retry must retain the completed preparation step.',
+          );
+        } else {
+          final recovery = tester.widget<LedgerAccessRecoveryModal>(
+            find.byType(LedgerAccessRecoveryModal),
+          );
+          expect(recovery.selectionRequest, isNotNull);
+          expect(
+            recovery.selectionRequest!.initialTransport,
+            LedgerConnectionTransport.usb,
+          );
+        }
+        return tester.any(_ledgerReviewPrompt());
+      },
+      description: 'Ledger retry approval prompt',
+      timeout: const Duration(minutes: 2),
+    );
+    expect(
+      tester.widget<LedgerProcedure>(find.byType(LedgerProcedure)).currentStep,
+      1,
+      reason: 'Retry must retain the completed preparation step.',
+    );
+    final signingApproval = approveNextSpeculosReview(fixture.signingApiUrl);
+    await _pumpUntil(
+      tester,
+      () => tester.any(find.byKey(const ValueKey('send_status_completed'))),
+      description: 'Ledger Send status completion',
+      timeout: const Duration(minutes: 2),
+    );
+    expect(await signingApproval, isTrue);
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(pcztCreations, 1, reason: 'Rejection must reuse the original PCZT.');
+    expect(operationService.checkpointCount, 1);
+    expect(operationService.broadcastCount, 1);
+    expect(
+      operationService.lastOperationId,
+      'send:${fixture.accountUuid}:ledger-speculos-send',
+    );
+    expect(lightwalletd.sendTransactionCount, 1);
+    expect(lightwalletd.lastRawTransaction, isNotEmpty);
+    expect(await operationService.list(), isEmpty);
+  }, timeout: const Timeout(Duration(minutes: 4)));
 
   testWidgets(
     'sends to TEX with two Ledger approvals through Speculos',
@@ -401,49 +485,47 @@ void main() {
     timeout: const Timeout(Duration(minutes: 4)),
   );
 
-  testWidgets(
-    'signs sequential Ledger operations in one app lifecycle',
-    (tester) async {
-      final fixture = _Fixture.load();
-      final sandboxDirectory = await Directory.systemTemp.createTemp(
-        'vizor-ledger-sequential-speculos-e2e.',
-      );
-      final dbPath = '${sandboxDirectory.path}/wallet.db';
-      await File(
-        dbPath,
-      ).writeAsBytes(gzip.decode(fixture.dbGzipBytes), flush: true);
-      final container = ProviderContainer(
-        overrides: [
-          appBootstrapProvider.overrideWithValue(
-            _ledgerBootstrap(
-              fixture,
-              'http://127.0.0.1:1',
-              initialLocation: '/home',
-            ),
+  testWidgets('signs sequential Ledger operations in one app lifecycle', (
+    tester,
+  ) async {
+    final fixture = _Fixture.load();
+    final sandboxDirectory = await Directory.systemTemp.createTemp(
+      'vizor-ledger-sequential-speculos-e2e.',
+    );
+    final dbPath = '${sandboxDirectory.path}/wallet.db';
+    await File(
+      dbPath,
+    ).writeAsBytes(gzip.decode(fixture.dbGzipBytes), flush: true);
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _ledgerBootstrap(
+            fixture,
+            'http://127.0.0.1:1',
+            initialLocation: '/home',
           ),
-          ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
-          ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
-        ],
+        ),
+        ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
+        ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+
+    Future<void> signRound() async {
+      final approval = approveNextSpeculosReview(fixture.signingApiUrl);
+      final signed = container.read(ledgerPcztSignerProvider)(
+        fixture.accountUuid,
+        fixture.pcztBytes,
       );
-      addTearDown(container.dispose);
-      await container.read(accountProvider.future);
+      await _chooseUsbForHeadlessSigning(container);
+      expect(await approval, isTrue);
+      expect(await signed, isNotEmpty);
+    }
 
-      Future<void> signRound() async {
-        final approval = approveNextSpeculosReview(fixture.signingApiUrl);
-        final signed = container.read(ledgerPcztSignerProvider)(
-          fixture.accountUuid,
-          fixture.pcztBytes,
-        );
-        await _chooseUsbForHeadlessSigning(container);
-        expect(await approval, isTrue);
-        expect(await signed, isNotEmpty);
-      }
-
-      await signRound();
-      await signRound();
-    },
-    timeout: const Timeout(Duration(minutes: 4)),
-  );
+    await signRound();
+    await signRound();
+  }, timeout: const Timeout(Duration(minutes: 4)));
 }
 
 Future<void> _runLedgerGiftCardScenario(WidgetTester tester) async {
@@ -531,6 +613,7 @@ Future<void> _runLedgerGiftCardScenario(WidgetTester tester) async {
         ledgerSignedOperationServiceProvider.overrideWithValue(operations),
       ],
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
@@ -681,7 +764,7 @@ Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
 
   final unsigned = fixture.orchardToIronwoodV6Pczt;
   final approval = approveNextSpeculosReview(fixture.signingApiUrl);
-  final signed = container.read(ledgerPcztTransportSignerProvider)(
+  final signed = container.read(ledgerPcztSignerProvider)(
     fixture.accountUuid,
     unsigned,
   );
@@ -690,6 +773,75 @@ Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
   final signedBytes = await signed;
   expect(signedBytes, isNotEmpty);
   expect(signedBytes, isNot(equals(unsigned)));
+
+  await _migrateOrchardImmediately(fixture);
+}
+
+/// Immediate migration of a scanned Orchard note: the app builds the PCZT,
+/// Speculos signs it with the compact signer, and the transaction is sent.
+Future<void> _migrateOrchardImmediately(_Fixture fixture) async {
+  const dbBase64 = String.fromEnvironment(
+    'VIZOR_LEDGER_E2E_MIGRATION_DB_GZIP_BASE64',
+  );
+  const accountUuid = String.fromEnvironment(
+    'VIZOR_LEDGER_E2E_MIGRATION_ACCOUNT_UUID',
+  );
+  expect(dbBase64, isNotEmpty);
+  expect(accountUuid, isNotEmpty);
+  final sandbox = await Directory.systemTemp.createTemp(
+    'vizor-ledger-immediate-e2e.',
+  );
+  addTearDown(() => sandbox.delete(recursive: true));
+  final dbPath = '${sandbox.path}/wallet.db';
+  await File(
+    dbPath,
+  ).writeAsBytes(gzip.decode(base64Decode(dbBase64)), flush: true);
+  WalletPathReadBlocker().complete(sandbox.path);
+  FlutterSecureStorage.setMockInitialValues({kWalletDbNameKey: 'wallet.db'});
+  addTearDown(() => FlutterSecureStorage.setMockInitialValues({}));
+  final status = await rust_sync.getSyncStatus(dbPath: dbPath, network: 'main');
+  final lightwalletd = _AcceptingLightwalletd(
+    chainHeight: status.chainTipHeight.toInt(),
+  );
+  await lightwalletd.start();
+  addTearDown(lightwalletd.stop);
+  final container = ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _ledgerBootstrap(
+          fixture,
+          lightwalletd.url,
+          initialLocation: '/home',
+          accountUuid: accountUuid,
+        ),
+      ),
+      networkPrivacyProvider.overrideWith(_DirectNetworkPrivacyNotifier.new),
+      ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
+      ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
+    ],
+  );
+  addTearDown(container.dispose);
+  await container.read(accountProvider.future);
+
+  final plan = await container
+      .read(ironwoodMigrationServiceProvider)
+      .immediatePlan(network: 'main', accountUuid: accountUuid);
+  expect(plan, isNotNull);
+  final approval = approveNextSpeculosReview(fixture.signingApiUrl);
+  final migration = container
+      .read(ledgerImmediateMigrationServiceProvider)
+      .migrate(
+        accountUuid: accountUuid,
+        approvedPlan: plan!,
+        cancellation: LedgerImmediateMigrationCancellation(),
+        onPhaseChanged: (_) {},
+      );
+  await _chooseUsbForHeadlessSigning(container);
+  expect(await approval, isTrue);
+  final result = await migration;
+  expect(result.broadcastedCount, 1);
+  expect(result.migratedZatoshi, plan.migratedZatoshi);
+  expect(lightwalletd.sendTransactionCount, 1);
 }
 
 Future<void> _runLedgerVotingSigningScenario(WidgetTester tester) async {
@@ -783,6 +935,7 @@ class _LedgerFirstAccountOnboardingHarnessState
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: _router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     );
@@ -958,6 +1111,7 @@ Future<void> _runLedgerShieldScenario(WidgetTester tester) async {
         ),
       ],
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
@@ -966,7 +1120,7 @@ Future<void> _runLedgerShieldScenario(WidgetTester tester) async {
   );
   await _pumpUntil(
     tester,
-    () => tester.any(_ledgerSigningText(LedgerSigningStage.reviewing.status)),
+    () => tester.any(_ledgerReviewPrompt()),
     description: 'Ledger shield approval prompt',
     timeout: const Duration(minutes: 2),
   );
@@ -1094,6 +1248,7 @@ Future<void> _runLedgerTexSendScenario(WidgetTester tester) async {
         ),
       ],
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
@@ -1199,12 +1354,27 @@ Future<void> _runLedgerSwapScenario(
     );
     await tester.enterText(amountInput, '0.693');
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('pay_recipient_search_field')),
-      _externalRecipient,
+    final continueButton = find.byKey(
+      const ValueKey('pay_amount_continue_button'),
     );
+    await _pumpUntil(
+      tester,
+      () => tester.widget<AppButton>(continueButton).onPressed != null,
+      description: 'Pay amount Continue enabled',
+      timeout: const Duration(seconds: 30),
+    );
+    expect(tester.widget<TextField>(amountInput).controller!.text, '0.693');
+    await tester.tap(continueButton);
+    final recipientInput = find.byKey(
+      const ValueKey('pay_recipient_search_field'),
+    );
+    await _pumpUntil(
+      tester,
+      () => tester.any(recipientInput),
+      description: 'Pay recipient input',
+      timeout: const Duration(seconds: 30),
+    );
+    await tester.enterText(recipientInput, _externalRecipient);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('pay_select_recipient_button')));
     await _pumpUntil(
@@ -1241,7 +1411,7 @@ Future<void> _runLedgerSwapScenario(
   await tester.pump();
   await _pumpUntil(
     tester,
-    () => tester.any(_ledgerSigningText(LedgerSigningStage.reviewing.status)),
+    () => tester.any(_ledgerReviewPrompt()),
     description: '${scenario.label} Ledger approval prompt',
     timeout: const Duration(minutes: 2),
   );
@@ -1420,6 +1590,7 @@ Widget _ledgerSwapHarness({
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) {
         final media = MediaQuery.maybeOf(context);
@@ -2082,6 +2253,16 @@ Finder _ledgerSigningText(String text) => find.descendant(
   matching: find.text(text),
 );
 
+Finder _ledgerReviewPrompt() => _ledgerSigningText(
+  'When prompted, check the amount and recipient on Ledger.',
+);
+
+String _visibleTestText(WidgetTester tester) => tester
+    .widgetList<Text>(find.byType(Text))
+    .map((widget) => widget.data ?? widget.textSpan?.toPlainText())
+    .whereType<String>()
+    .join(' | ');
+
 Future<void> _pumpUntil(
   WidgetTester tester,
   bool Function() condition, {
@@ -2089,15 +2270,23 @@ Future<void> _pumpUntil(
   required Duration timeout,
 }) async {
   final deadline = DateTime.now().add(timeout);
+  var lastVisibleText = '';
   while (DateTime.now().isBefore(deadline)) {
     if (condition()) return;
+    final visibleText = _visibleTestText(tester);
+    if (visibleText != lastVisibleText) {
+      debugPrint('Ledger E2E [$description]: $visibleText');
+      lastVisibleText = visibleText;
+    }
     final usbChoice = find.byKey(const ValueKey('ledger_choose_usb'));
     if (usbChoice.evaluate().isNotEmpty) {
       await tester.tap(usbChoice);
     }
     await tester.pump(const Duration(milliseconds: 100));
   }
-  throw TimeoutException('Timed out waiting for $description.');
+  throw TimeoutException(
+    'Timed out waiting for $description. Visible UI: ${_visibleTestText(tester)}',
+  );
 }
 
 class _FakeSyncNotifier extends SyncNotifier {

@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_amount_s
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_recipient_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_review_content.dart';
 import 'package:zcash_wallet/widgetbook/mobile_pay_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('amount preview uses the production 393x852 mobile layout', (
@@ -80,8 +81,8 @@ void main() {
       AppThemeData.dark,
     );
     expect(find.byType(MobilePayRecipientStep), findsOneWidget);
-    expect(find.text('Recently sent'), findsOneWidget);
-    expect(find.text('2 contacts'), findsOneWidget);
+    expect(find.text('Recents'), findsOneWidget);
+    expect(find.text('Contacts'), findsOneWidget);
 
     await _pumpUseCase(
       tester,
@@ -175,6 +176,7 @@ Future<void> _pumpUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: theme,
         child: Align(

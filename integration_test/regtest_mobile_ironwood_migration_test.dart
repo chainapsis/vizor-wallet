@@ -87,7 +87,7 @@ void main() {
       expect(started.activeRunId, isNotNull);
 
       await postDriver('/mine', const {'blocks': 10});
-      final scheduled = await waitForMobileRegtestMigrationStatus(
+      final scheduled = await prepareMobilePrivateMigrationSchedule(
         tester,
         accountUuid,
         (status) => status.scheduledBroadcasts.isNotEmpty,
@@ -155,9 +155,7 @@ void main() {
       await pumpUntil(
         tester,
         () => !tester.any(
-          find.byKey(
-            const ValueKey('mobile_home_ironwood_migration_required_pill'),
-          ),
+          find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
         ),
         description: 'completed migration CTA to disappear',
       );

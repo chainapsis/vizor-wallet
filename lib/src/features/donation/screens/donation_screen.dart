@@ -6,9 +6,13 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/mobile/mobile_bottom_safe_area.dart';
+import '../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -21,9 +25,13 @@ import '../../send/services/send_flow.dart';
 import '../../send/services/send_proving_key_warmup.dart';
 import '../donation_config.dart';
 import '../widgets/donation_views.dart';
+import '../widgets/mobile/mobile_donation_views.dart';
+import 'mobile/mobile_donation_review_screen.dart';
 
 class DonationScreen extends ConsumerStatefulWidget {
-  const DonationScreen({super.key});
+  const DonationScreen({this.loadWalletDbPath = getWalletDbPath, super.key});
+
+  final Future<String> Function() loadWalletDbPath;
 
   @override
   ConsumerState<DonationScreen> createState() => _DonationScreenState();
@@ -49,10 +57,12 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
     } catch (error) {
       log('Donation: Orchard proving-key warmup failed to start: $error');
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
-    });
+    if (kAppFormFactor == AppFormFactor.desktop) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
+      });
+    }
   }
 
   @override
@@ -177,9 +187,9 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
 
     String? localError;
     if (_controller.text.trim().isNotEmpty && amount == null) {
-      localError = 'Invalid amount';
+      localError = context.l10n.sendInvalidAmount;
     } else if (amount != null && amount > available) {
-      localError = 'Insufficient shielded balance';
+      localError = context.l10n.sendInsufficientBalanceShielded;
     }
     if (!mounted || sequence != _validationSequence) return;
     setState(() => _amountError = localError);
@@ -200,7 +210,7 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
               if (!mounted || sequence != _validationSequence) return null;
               final endpoint = ref.read(rpcEndpointProvider);
               return rust_sync.estimateFee(
-                dbPath: await getWalletDbPath(),
+                dbPath: await widget.loadWalletDbPath(),
                 network: endpoint.networkName,
                 accountUuid: activeAccountUuid,
                 toAddress: kVizorDonationAddress,
@@ -212,14 +222,15 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
       if (!mounted || sequence != _validationSequence || fee == null) return;
       setState(() {
         _amountError = amount + fee > available
-            ? 'Insufficient shielded balance including fee'
+            ? context.l10n.sendInsufficientBalanceIncludingFeeShielded
             : null;
       });
     } catch (error) {
       if (!mounted || sequence != _validationSequence) return;
       if (error.toString().toLowerCase().contains('insufficient')) {
         setState(() {
-          _amountError = 'Insufficient shielded balance including fee';
+          _amountError =
+              context.l10n.sendInsufficientBalanceIncludingFeeShielded;
         });
       } else {
         log('Donation: fee estimation failed (non-blocking): $error');
@@ -233,6 +244,18 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (amount == null || amount <= BigInt.zero || accountUuid == null) return;
 
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      FocusScope.of(context).unfocus();
+      await context.push(
+        '/donation/review',
+        extra: MobileDonationReviewArgs(
+          amountText: ZecAmount.fromZatoshi(amount).pretty().amountText,
+          sendFlowId: newSendFlowId(),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _submitting = true;
       _globalError = null;
@@ -244,6 +267,7 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
     try {
       final args = await proposeSendTransfer(
         ref: ref,
+        loadDbPath: widget.loadWalletDbPath,
         accountUuid: accountUuid,
         sendFlowId: flowId,
         address: kVizorDonationAddress,
@@ -261,7 +285,7 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _globalError = friendlyProposeSendError(error.toString());
+        _globalError = friendlyProposeSendError(context.l10n, error.toString());
       });
     } finally {
       if (proposalId != null && !openedReview) {
@@ -315,7 +339,7 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
     final price = ref.watch(zecLiveUsdUnitPriceProvider);
     final amount = _amountZatoshi(price);
     final conversionText = _isUsd
-        ? '${amount == null ? '0' : ZecAmount.fromZatoshi(amount).pretty().amountText} ZEC'
+        ? '${amount == null ? '0' : ZecAmount.fromZatoshi(amount).pretty().amountText} ZEC' // l10n-ignore: currency code/amount format
         : amount == null || amount <= BigInt.zero || price == null
         ? r'$ 0'
         : r'$ ' + sendUsdDisplayTextForZatoshi(amount, price);
@@ -326,6 +350,48 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
         amount > BigInt.zero &&
         amount <= available &&
         accountUuid != null;
+
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      return Scaffold(
+        backgroundColor: context.colors.background.window,
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              const SizedBox(height: AppSpacing.s),
+              MobileTopNav.back(
+                title: context.l10n.commonSupportVizor,
+                onBack: () =>
+                    context.canPop() ? context.pop() : context.go('/settings'),
+              ),
+              Expanded(
+                child: MobileBottomSafeArea(
+                  bottomPadding: AppSpacing.md,
+                  child: MobileDonationComposeView(
+                    controller: _controller,
+                    mode: _mode,
+                    conversionText: price == null && !_isUsd
+                        ? context.l10n.donationPriceUnavailable
+                        : conversionText,
+                    balanceText: ZecAmount.fromZatoshi(
+                      available,
+                    ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
+                    selectedPreset: _selectedPreset,
+                    errorText: _amountError ?? _globalError,
+                    onAmountChanged: _handleAmountChanged,
+                    onToggleMode: _isUsd || price != null ? _toggleMode : null,
+                    onPresetSelected: _selectPreset,
+                    onContinue: canContinue
+                        ? () => unawaited(_openReview())
+                        : null,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(suppressActiveSelection: true),

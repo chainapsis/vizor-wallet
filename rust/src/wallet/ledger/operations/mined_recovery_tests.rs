@@ -17,7 +17,7 @@ impl Signed {
         Self::with_key(
             prevout,
             value,
-            secp256k1::SecretKey::from_slice(&[7; 32]).unwrap(),
+            secp256k1::SecretKey::from_secret_bytes([7; 32]).unwrap(),
         )
     }
 
@@ -57,51 +57,13 @@ struct SignedProposal {
 impl SignedProposal {
     fn new(wallet: &Wallet) -> Self {
         use crate::wallet::sync::{proposal_locks, StoredProposalLock, PROPOSAL_STORE};
-        use std::collections::BTreeMap;
-        use transparent::{address::TransparentAddress, bundle::TxOut};
-        use zcash_client_backend::{
-            data_api::wallet::ConfirmationsPolicy,
-            fees::TransactionBalance,
-            proposal::Proposal,
-            wallet::{LockOwner, OutputRef, WalletTransparentOutput},
-            zip321::{Payment, TransactionRequest},
-        };
-        use zcash_keys::address::Address;
-        use zcash_protocol::{consensus::BlockHeight, value::Zatoshis, PoolType};
-
-        let address = TransparentAddress::PublicKeyHash([7; 20]);
-        let input = WalletTransparentOutput::from_parts(
-            OutPoint::new([1; 32], 0),
-            TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
-            Some(BlockHeight::from_u32(150)),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        let payment = Payment::new(
-            Address::Transparent(address).to_zcash_address(&WalletNetwork::Regtest),
-            Some(Zatoshis::const_from_u64(990_000)),
-            None,
-            None,
-            None,
-            vec![],
-        )
-        .unwrap();
-        let proposal = Proposal::single_step(
-            TransactionRequest::new(vec![payment]).unwrap(),
-            BTreeMap::from([(0, PoolType::TRANSPARENT)]),
-            vec![input],
-            None,
-            BlockHeight::from_u32(200),
-            TransactionBalance::new(vec![], Zatoshis::const_from_u64(10_000)).unwrap(),
-            crate::wallet::sync::ConservativeZip317FeeRule,
-            wallet.signed[0].tx.expiry_height().into(),
-            ConfirmationsPolicy::default(),
-            false,
-            false,
-        )
-        .unwrap();
+        use zcash_client_backend::wallet::{LockOwner, OutputRef};
+        use zcash_protocol::PoolType;
+        let inputs = vec![OutputRef::new(
+            zcash_primitives::transaction::TxId::from_bytes([1; 32]),
+            PoolType::TRANSPARENT,
+            0,
+        )];
         let id = {
             let mut store = PROPOSAL_STORE.lock().unwrap();
             let id = store.next_id;
@@ -115,18 +77,14 @@ impl SignedProposal {
         proposal_locks::persist(
             &wallet.path,
             owner,
-            &[OutputRef::new(
-                zcash_primitives::transaction::TxId::from_bytes([1; 32]),
-                PoolType::TRANSPARENT,
-                0,
-            )],
+            &inputs,
             wallet.signed[0].tx.expiry_height(),
         )
         .unwrap();
         PROPOSAL_STORE.lock().unwrap().locks.insert(
             id,
             StoredProposalLock {
-                proposal,
+                inputs,
                 network: WalletNetwork::Regtest,
                 db_path: wallet.path.clone(),
                 owner,
@@ -282,8 +240,7 @@ impl Wallet {
         .transparent()
         .derive_external_secret_key(NonHardenedChildIndex::ZERO)
         .unwrap();
-        let address =
-            TransparentAddress::from_pubkey(&key.public_key(&secp256k1::Secp256k1::new()));
+        let address = TransparentAddress::from_pubkey(&key.public_key());
         // Pending-transaction storage requires the wallet's observed chain tip.
         let mut db = crate::wallet::db::open_wallet_db_with_timeout(
             &path,
@@ -343,7 +300,11 @@ impl Wallet {
             operation_id,
             "account-1",
             kind,
-            Some("deposit-1"),
+            if matches!(kind, "send" | "shield") {
+                None
+            } else {
+                Some("deposit-1")
+            },
             &self
                 .signed
                 .iter()
@@ -384,6 +345,8 @@ impl Wallet {
 #[derive(Clone)]
 struct Lightwalletd {
     tip: u64,
+    /// Tips served before [`Self::tip`], one per request.
+    next_tips: Arc<Mutex<Vec<u64>>>,
     tip_unavailable: Arc<Mutex<bool>>,
     responses: Arc<Mutex<Vec<i32>>>,
     calls: Arc<Mutex<Vec<&'static str>>>,
@@ -420,8 +383,16 @@ impl tower_service::Service<http::Request<tonic::body::Body>> for Lightwalletd {
                         .body(tonic::body::Body::empty())
                         .unwrap());
                 }
+                let height = {
+                    let mut next_tips = this.next_tips.lock().unwrap();
+                    if next_tips.is_empty() {
+                        this.tip
+                    } else {
+                        next_tips.remove(0)
+                    }
+                };
                 zcash_client_backend::proto::service::BlockId {
-                    height: this.tip,
+                    height,
                     hash: vec![1; 32],
                 }
                 .encode_to_vec()
@@ -489,6 +460,7 @@ async fn server(
     let url = format!("http://{}", listener.local_addr().unwrap());
     let service = Lightwalletd {
         tip,
+        next_tips: Default::default(),
         tip_unavailable: Default::default(),
         responses: Arc::new(Mutex::new(vec![response])),
         calls: Default::default(),
@@ -687,6 +659,24 @@ async fn an_unobserved_transaction_still_expires_normally() {
 }
 
 #[tokio::test]
+async fn a_transaction_that_expires_while_waiting_to_submit_is_not_sent() {
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    let wallet = Wallet::funded(false);
+    let (url, service, handle) = server(1_000, 0).await;
+    // The first check passes; the fresh tip read at submission is past expiry.
+    *service.next_tips.lock().unwrap() = vec![205];
+    let result = wallet.recover(&url).await.unwrap();
+    assert_eq!(
+        (result.status.as_str(), result.broadcasted_count),
+        ("expired", 0)
+    );
+    assert_eq!(*service.calls.lock().unwrap(), ["tip", "tip"]);
+    assert!(service.submitted.lock().unwrap().is_empty());
+    handle.abort();
+}
+
+#[tokio::test]
 async fn partially_mined_batch_preserves_count_and_mined_row() {
     let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
     crate::network_privacy::disable_tor();
@@ -852,8 +842,7 @@ async fn partial_storage_failure_retains_real_inputs_after_acknowledgement() {
             .unwrap()
             .derive_external_secret_key(NonHardenedChildIndex::from_index(0).unwrap())
             .unwrap();
-            let address =
-                TransparentAddress::from_pubkey(&key.public_key(&secp256k1::Secp256k1::new()));
+            let address = TransparentAddress::from_pubkey(&key.public_key());
             wallet.signed[0] = Signed::with_key(OutPoint::new([1; 32], 0), 1_000_000, key);
             wallet.signed[1] = Signed::with_key(
                 OutPoint::new(*wallet.signed[0].tx.txid().as_ref(), 0),
@@ -915,7 +904,11 @@ async fn partial_storage_failure_retains_real_inputs_after_acknowledgement() {
             .unwrap();
             assert_eq!(result.status, "partial_broadcast");
             assert!(result.requires_ack);
-            assert_eq!(*service.calls.lock().unwrap(), ["tip", "send", "send"]);
+            // The first submission reads a fresh tip before it is sent.
+            assert_eq!(
+                *service.calls.lock().unwrap(),
+                ["tip", "tip", "send", "send"]
+            );
             let storage_failure = result
                 .message
                 .as_deref()
@@ -1156,7 +1149,7 @@ async fn interrupted_outcome_write_recovers_in_a_fresh_offline_process() {
     .unwrap()
     .derive_external_secret_key(NonHardenedChildIndex::from_index(0).unwrap())
     .unwrap();
-    let address = TransparentAddress::from_pubkey(&key.public_key(&secp256k1::Secp256k1::new()));
+    let address = TransparentAddress::from_pubkey(&key.public_key());
     wallet.signed[0] = Signed::with_key(OutPoint::new([1; 32], 0), 1_000_000, key);
     let signed = &wallet.signed[0];
     let mut db =
@@ -1299,4 +1292,193 @@ async fn offline_restart_child() {
     .unwrap();
     assert_eq!(result.status, "broadcasted");
     assert!(result.requires_ack);
+}
+
+#[test]
+fn legacy_shield_checkpoint_restores_reservation_before_balance_idempotently() {
+    let wallet = Wallet::funded(false);
+    wallet.checkpoint("legacy-shield", "shield");
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    let original: (Vec<u8>, Vec<u8>) = conn
+        .query_row(
+            "SELECT proof_pczt, signature_pczt FROM vizor_ledger_signed_operations",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    crate::wallet::keys::ensure_db_migrated_once(&wallet.path, WalletNetwork::Regtest).unwrap();
+    recover_shield_reservations(&wallet.path, WalletNetwork::Regtest).unwrap();
+    let owners: Vec<Vec<u8>> = conn
+        .prepare("SELECT lock_owner FROM transparent_received_outputs WHERE lock_owner IS NOT NULL")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(owners.len(), 1);
+    let reservation: (Vec<u8>, String, bool) = conn.query_row(
+        "SELECT owner, phase, retain_until_expiry FROM vizor_send_proposal_locks WHERE operation_id = 'legacy-shield'", [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    ).unwrap();
+    assert_eq!(reservation, (owners[0].clone(), "signed".into(), true));
+    let after: (Vec<u8>, Vec<u8>) = conn
+        .query_row(
+            "SELECT proof_pczt, signature_pczt FROM vizor_ledger_signed_operations",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(after, original, "legacy signed payload must not change");
+    conn.execute(
+        "UPDATE vizor_send_proposal_locks SET session_id = zeroblob(16)",
+        [],
+    )
+    .unwrap();
+    proposal_locks::recover_before_balance(&wallet.path, WalletNetwork::Regtest).unwrap();
+    let count: u32 = conn
+        .query_row("SELECT COUNT(*) FROM vizor_send_proposal_locks", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(count, 1, "signed reservation must survive a new session");
+    proposal_locks::release_operation(&conn, "legacy-shield").unwrap();
+    proposal_locks::recover_before_balance(&wallet.path, WalletNetwork::Regtest).unwrap();
+    let count: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM transparent_received_outputs WHERE lock_owner IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        count, 0,
+        "settled checkpoint releases only its own reservation"
+    );
+}
+
+#[test]
+fn legacy_shield_recovery_cannot_steal_foreign_reservations() {
+    use zcash_client_backend::{
+        data_api::OutputLockStore,
+        wallet::{LockOwner, OutputRef},
+    };
+    use zcash_protocol::{consensus::BlockHeight, PoolType};
+    let wallet = Wallet::funded(false);
+    wallet.checkpoint("legacy-conflict", "shield");
+    let owner = LockOwner::new([42; 32]);
+    let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+        &wallet.path,
+        WalletNetwork::Regtest,
+        WALLET_DB_BUSY_TIMEOUT,
+    )
+    .unwrap();
+    db.lock_outputs(
+        &[OutputRef::new(
+            zcash_primitives::transaction::TxId::from_bytes([1; 32]),
+            PoolType::TRANSPARENT,
+            0,
+        )],
+        owner,
+        BlockHeight::from_u32(300),
+    )
+    .unwrap();
+    drop(db);
+    assert!(recover_shield_reservations(&wallet.path, WalletNetwork::Regtest).is_err());
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    let actual: Vec<u8> = conn
+        .query_row(
+            "SELECT lock_owner FROM transparent_received_outputs",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(actual, owner.as_bytes());
+    let count: u32 = conn
+        .query_row("SELECT COUNT(*) FROM vizor_send_proposal_locks", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        count, 0,
+        "failed restoration must leave no partial metadata"
+    );
+}
+
+#[test]
+fn shield_checkpoint_atomically_promotes_process_owner_and_rejects_late_save() {
+    let mut wallet = Wallet::funded(false);
+    let proposal = SignedProposal::new(&wallet);
+    let owner = crate::wallet::sync::PROPOSAL_STORE.lock().unwrap().locks[&proposal.id].owner;
+    wallet.signed[0].proof =
+        proposal_locks::bind_pczt(pczt::Pczt::parse(&wallet.signed[0].proof).unwrap(), owner)
+            .serialize()
+            .unwrap();
+    wallet.checkpoint("shield-owner", "shield");
+    crate::wallet::sync::discard_proposal(proposal.id, &proposal.flow).unwrap();
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    let durable: bool = conn
+        .query_row(
+            "SELECT retain_until_expiry FROM vizor_send_proposal_locks",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        durable,
+        "ordinary cancellation must preserve the signed outbox owner"
+    );
+    assert!(checkpoint_batch(
+        &wallet.path,
+        WalletNetwork::Regtest,
+        "another-shield",
+        "account-1",
+        "shield",
+        None,
+        &[wallet.signed[0].proof.clone()],
+        &[wallet.signed[0].signature.clone()],
+    )
+    .is_err());
+    let count: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM vizor_ledger_signed_operations",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        count, 1,
+        "a refused ownership transfer must roll back its outbox insert"
+    );
+}
+
+#[test]
+fn shield_checkpoint_after_cancellation_cannot_recreate_reservation() {
+    let mut wallet = Wallet::funded(false);
+    let proposal = SignedProposal::new(&wallet);
+    let owner = crate::wallet::sync::PROPOSAL_STORE.lock().unwrap().locks[&proposal.id].owner;
+    wallet.signed[0].proof =
+        proposal_locks::bind_pczt(pczt::Pczt::parse(&wallet.signed[0].proof).unwrap(), owner)
+            .serialize()
+            .unwrap();
+    crate::wallet::sync::discard_proposal(proposal.id, &proposal.flow).unwrap();
+    assert!(checkpoint_batch(
+        &wallet.path,
+        WalletNetwork::Regtest,
+        "late-shield",
+        "account-1",
+        "shield",
+        None,
+        &[wallet.signed[0].proof.clone()],
+        &[wallet.signed[0].signature.clone()],
+    )
+    .is_err());
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    let count: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM vizor_ledger_signed_operations",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0);
 }

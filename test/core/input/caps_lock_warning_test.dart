@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/password_text_field.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/confirm_access_card.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   late CapsLockMonitor monitor;
@@ -22,6 +23,7 @@ void main() {
   }) => ProviderScope(
     overrides: [capsLockMonitorProvider.overrideWithValue(monitor)],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) => AppTheme(data: theme, child: child!),
       home: Scaffold(
         body: Align(

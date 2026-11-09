@@ -15,8 +15,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use bytes::Bytes;
 use http_body_util::Full;
 use transparent::{address::TransparentAddress, bundle::OutPoint};
-use zakura_pir_transparent::testing::{unsupported_txid_init, TxidPublication};
-use zakura_pir_transparent::{
+use zakura_pir_client::transparent::testing::{unsupported_txid_init, TxidPublication};
+use zakura_pir_client::transparent::{
     AddressKind, DetailAnswer, DisplayEntry, DisplayLookup, EntryAddress, EntryOutput,
     HttpExchange, HttpFailure, HttpReply, HttpRequest, MapCheck, MapChecked, Placement,
     ProtocolKind, Provenance, Tier, TxidDisplayService, TxidError, TxidLookup,
@@ -58,6 +58,10 @@ pub(crate) const MAIN: WalletNetwork = WalletNetwork::Main;
 /// Below the live service's publications, so no fixture height is real.
 pub(crate) const BIRTHDAY: u32 = 3_000_000;
 pub(crate) const TOP: u32 = BIRTHDAY + 9;
+/// After NU6.3, for fixtures holding a real shielded bundle: the wallet
+/// libraries no longer build one for an earlier height.
+const SHIELDED_BIRTHDAY: u32 = 3_430_000;
+const SHIELDED_TOP: u32 = SHIELDED_BIRTHDAY + (TOP - BIRTHDAY);
 const VALUE: u64 = 2_000_000;
 /// A script paying someone else.
 const PAYEE: [u8; 25] = {
@@ -87,31 +91,37 @@ pub(crate) fn wallet() -> Fixture {
 
 /// [`wallet`], for a test that holds [`paused_writer`].
 fn paused_wallet() -> Fixture {
-    let mut fixture = unguarded_wallet().0;
+    let mut fixture = unguarded_wallet(BIRTHDAY).0;
     fixture._serial = None;
     fixture
 }
 
 /// [`wallet`], with the account's seed.
 fn wallet_with_seed() -> (Fixture, Vec<u8>) {
+    wallet_with_seed_at(BIRTHDAY)
+}
+
+/// [`wallet_with_seed`], scanned from `birthday`.
+fn wallet_with_seed_at(birthday: u32) -> (Fixture, Vec<u8>) {
     let serial = Shared::take();
-    let (mut fixture, seed) = unguarded_wallet();
+    let (mut fixture, seed) = unguarded_wallet(birthday);
     fixture._serial = Some(serial);
     (fixture, seed)
 }
 
-fn unguarded_wallet() -> (Fixture, Vec<u8>) {
+fn unguarded_wallet(birthday: u32) -> (Fixture, Vec<u8>) {
     use secrecy::ExposeSecret as _;
+    let top = birthday + (TOP - BIRTHDAY);
     let _ = rustls::crypto::ring::default_provider().install_default();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
     let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
     let (uuid, _) =
-        keys::init_db_and_create_account(&path, MAIN, &seed, Some(u64::from(BIRTHDAY)), "details")
+        keys::init_db_and_create_account(&path, MAIN, &seed, Some(u64::from(birthday)), "details")
             .unwrap();
     let account = keys::parse_account_uuid(&uuid).unwrap();
     let conn = rusqlite::Connection::open(&path).unwrap();
-    for height in BIRTHDAY..=TOP {
+    for height in birthday..=top {
         let mut hash = [0u8; 32];
         hash[..4].copy_from_slice(&height.to_le_bytes());
         hash[31] = 1;
@@ -127,8 +137,8 @@ fn unguarded_wallet() -> (Fixture, Vec<u8>) {
     conn.execute_batch(&format!(
         "DELETE FROM scan_queue;
          INSERT INTO scan_queue (block_range_start, block_range_end, priority)
-         VALUES ({BIRTHDAY}, {}, 10);",
-        TOP + 1
+         VALUES ({birthday}, {}, 10);",
+        top + 1
     ))
     .unwrap();
     let db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
@@ -377,8 +387,8 @@ fn found(facts: &TransparentDisplayFacts) -> TxidLookup {
     }
     TxidLookup::Found {
         entry: DisplayEntry {
-            tag: zakura_pir_transparent::testing::transparent_shard::txid::Tag::of(
-                &zakura_pir_transparent::testing::transparent_events::Txid(*facts.txid.as_ref()),
+            tag: zakura_pir_client::transparent::testing::shard::txid::Tag::of(
+                &zakura_pir_client::transparent::testing::events::Txid(*facts.txid.as_ref()),
             ),
             coinbase: facts.coinbase,
             shielded_components: facts.shielded_components,
@@ -652,7 +662,7 @@ impl HttpExchange for Unreachable {
 
 /// Returns once no lookup holds `service`'s client: a map refresh waits for
 /// it, then fails at once.
-fn wait_for_client(service: &zakura_pir_transparent::TxidDisplayService) {
+fn wait_for_client(service: &zakura_pir_client::transparent::TxidDisplayService) {
     let _ = service.refresh_map(&Unreachable, &|| false);
 }
 
@@ -682,7 +692,7 @@ async fn private_required_zero_get_transaction_even_when_pir_down() {
         matches!(outcome, Some(RunOutcome::Unavailable(stats)) if stats.lookups == 1),
         "{outcome:?}"
     );
-    assert_eq!(paths(&service), ["/v1/txid/init"]);
+    assert_eq!(paths(&service), ["/transparent/v1/txid/init"]);
     assert_eq!(
         view(&fixture, &tx.txid()),
         Some(TransparentDisplayView::Unavailable)
@@ -693,6 +703,28 @@ async fn private_required_zero_get_transaction_even_when_pir_down() {
     assert_eq!(outcome, None);
     assert_eq!(lwd.count("/GetTransaction"), 0);
     assert_eq!(paths(&service).len(), 1);
+    assert_eq!(balance(&fixture), before);
+}
+
+/// With no server selected, a `PrivateRequired` wallet has no private
+/// source: nothing is sent to any PIR origin or to lightwalletd, and the
+/// receipt keeps no private facts.
+#[tokio::test(flavor = "multi_thread")]
+async fn private_required_with_no_server_sends_nothing() {
+    let fixture = wallet();
+    utxo_receipt(&fixture, 0xa2, TOP - 1);
+    let _mode = require_private(&fixture.path);
+    let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
+    let before = balance(&fixture);
+
+    // No seam: what a release build with no selected server sees.
+    assert_eq!(followup_with(&fixture, required(), &lwd).await, None);
+
+    let service = refusing(503);
+    let _seam = test_seam::set_unserved(&fixture.path, service.clone());
+    assert_eq!(followup_with(&fixture, required(), &lwd).await, None);
+    assert!(paths(&service).is_empty());
+    assert_eq!(lwd.count("/GetTransaction"), 0);
     assert_eq!(balance(&fixture), before);
 }
 
@@ -731,7 +763,11 @@ async fn private_required_public_enhance_only_on_consent() {
     .unwrap()
     .unwrap();
     assert_eq!(lwd.count("/GetTransaction"), 1);
-    assert_eq!(paths(&service), ["/v1/txid/init"], "no private request");
+    assert_eq!(
+        paths(&service),
+        ["/transparent/v1/txid/init"],
+        "no private request"
+    );
     let Some(TransparentDisplayView::Available(details)) = view(&fixture, &tx.txid()) else {
         panic!("the stored payload shows its outputs");
     };
@@ -1243,11 +1279,13 @@ async fn stage_failure_protocol_sync_ok_balances_unchanged() {
     let lwd = CapturingLwd::start_with(Vec::new(), 0, |_| {}).await;
     let before = balance(&fixture);
     let outcome = followup_with(&fixture, required(), &lwd).await;
+    // A malformed display map is chosen without knowing any txid, so it is
+    // an outage, not a content failure against this transaction.
     assert!(
-        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.deferred == 1),
+        matches!(outcome, Some(RunOutcome::Unavailable(stats)) if stats.deferred == 1),
         "{outcome:?}"
     );
-    assert_eq!(paths(&service), ["/v1/txid/init"]);
+    assert_eq!(paths(&service), ["/transparent/v1/txid/init"]);
     assert_eq!(
         view(&fixture, &tx.txid()),
         Some(TransparentDisplayView::Unavailable)
@@ -1562,6 +1600,45 @@ fn logs_txid_free_private() {
             }
         }
     }
+}
+
+/// Three content failures at one mined height, without public authority,
+/// give the lookup up. The view says so, distinct from an unavailable lookup,
+/// and so does the receipt's detail state, so the receipt can stop waiting
+/// for it.
+#[tokio::test]
+async fn three_content_failures_give_the_lookup_up() {
+    let fixture = wallet();
+    let tx = utxo_receipt(&fixture, 0x86, TOP - 1).txid();
+    let _mode = require_private(&fixture.path);
+    let mut source = Scripted::new(|_| deferred(TransparentDetailOutcome::Protocol));
+    for failures in 1..=3 {
+        run_scripted(&fixture, &mut source).await;
+        assert_eq!(source.looked_up().len(), failures);
+        let view = view(&fixture, &tx);
+        if failures < 3 {
+            assert_eq!(view, Some(TransparentDisplayView::Unavailable));
+        } else {
+            assert_eq!(view, Some(TransparentDisplayView::GaveUp));
+        }
+        advance_wall(PAST_BACKOFF);
+    }
+    // Given up: no later run asks again.
+    run_scripted(&fixture, &mut source).await;
+    assert_eq!(source.looked_up().len(), 3);
+
+    let detail = crate::api::sync::get_transaction_detail(
+        fixture.path.clone(),
+        "main".to_owned(),
+        fixture.uuid.clone(),
+        hex::encode(tx.as_ref()),
+        "received".to_owned(),
+    )
+    .unwrap();
+    assert!(matches!(
+        detail.transparent_details_state,
+        Some(crate::api::sync::TransparentDetailsState::GaveUp)
+    ));
 }
 
 #[tokio::test]
@@ -2069,7 +2146,7 @@ async fn shielded_payment_to_a_transparent_recipient_keeps_the_view() {
 }
 
 /// A real mixed transaction: an external transparent input pays the
-/// account an Orchard note and an external transparent recipient.
+/// account an Ironwood note and an external transparent recipient.
 fn genuine_mixed(fixture: &Fixture, height: u32) -> Transaction {
     use sapling_crypto::prover::mock::{MockOutputProver, MockSpendProver};
     use zcash_client_backend::data_api::Account as _;
@@ -2087,7 +2164,7 @@ fn genuine_mixed(fixture: &Fixture, height: u32) -> Transaction {
         .unwrap()
         .address_at(0u32, orchard::keys::Scope::External);
     let mut keys = transparent::builder::TransparentSigningSet::new();
-    let pubkey = keys.add_key(secp256k1::SecretKey::from_slice(&[0x5a; 32]).unwrap());
+    let pubkey = keys.add_key(secp256k1::SecretKey::from_secret_bytes([0x5a; 32]).unwrap());
     let coin = transparent::bundle::TxOut::new(
         Zatoshis::const_from_u64(1_000_000),
         TransparentAddress::from_pubkey(&pubkey).script().into(),
@@ -2097,8 +2174,8 @@ fn genuine_mixed(fixture: &Fixture, height: u32) -> Transaction {
         BlockHeight::from_u32(height),
         BuildConfig::Standard {
             sapling_anchor: None,
-            orchard_anchor: Some(orchard::Anchor::empty_tree()),
-            ironwood_anchor: None,
+            orchard_anchor: None,
+            ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             orchard_padding: BundlePadding::DEFAULT,
             ironwood_padding: BundlePadding::DEFAULT,
         },
@@ -2114,7 +2191,7 @@ fn genuine_mixed(fixture: &Fixture, height: u32) -> Transaction {
         )
         .unwrap();
     builder
-        .add_orchard_output::<zip317::FeeError>(
+        .add_ironwood_output::<zip317::FeeError>(
             None,
             recipient,
             Zatoshis::const_from_u64(1_000_000 - 5_000 - 15_000),
@@ -2136,32 +2213,32 @@ fn genuine_mixed(fixture: &Fixture, height: u32) -> Transaction {
         .clone()
 }
 
-/// A real mixed transaction whose only part for the account is an Orchard
+/// A real mixed transaction whose only part for the account is an Ironwood
 /// note keeps its view once public raw recovery stores it: loop 4 fetches
 /// the raw bytes, the wallet decrypts the account's note and clears the
 /// work, and the view shows the external recipient as not the account's.
 /// Another account has no view.
 #[tokio::test]
 async fn genuine_mixed_raw_details_stay_visible() {
-    let fixture = wallet();
+    let fixture = wallet_with_seed_at(SHIELDED_BIRTHDAY).0;
     let other_seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
     let (other_uuid, _) = keys::add_account(
         &fixture.path,
         MAIN,
         "other",
         &other_seed,
-        Some(u64::from(BIRTHDAY)),
+        Some(u64::from(SHIELDED_BIRTHDAY)),
     )
     .unwrap();
     let other = keys::parse_account_uuid(&other_uuid).unwrap();
-    let tx = genuine_mixed(&fixture, TOP - 1);
-    assert!(tx.orchard_bundle().is_some() && tx.transparent_bundle().is_some());
+    let tx = genuine_mixed(&fixture, SHIELDED_TOP - 1);
+    assert!(tx.ironwood_bundle().is_some() && tx.transparent_bundle().is_some());
     // The wallet knows the transaction without its raw bytes, as mixed.
     let conn = rusqlite::Connection::open(&fixture.path).unwrap();
     conn.execute(
         "INSERT INTO transactions (txid, mined_height, min_observed_height)
          VALUES (?1, ?2, ?2)",
-        rusqlite::params![tx.txid().as_ref().as_slice(), TOP - 1],
+        rusqlite::params![tx.txid().as_ref().as_slice(), SHIELDED_TOP - 1],
     )
     .unwrap();
     let id = conn.last_insert_rowid();
@@ -2178,7 +2255,7 @@ async fn genuine_mixed_raw_details_stay_visible() {
     let mut bytes = Vec::new();
     tx.write(&mut bytes).unwrap();
     let lwd = CapturingLwd::start_serving(
-        vec![(*tx.txid().as_ref(), bytes, u64::from(TOP - 1))],
+        vec![(*tx.txid().as_ref(), bytes, u64::from(SHIELDED_TOP - 1))],
         0,
         |_| {},
     )
@@ -2202,7 +2279,7 @@ async fn genuine_mixed_raw_details_stay_visible() {
         count(
             &fixture.path,
             &format!(
-                "SELECT COUNT(*) FROM orchard_received_notes n
+                "SELECT COUNT(*) FROM ironwood_received_notes n
                  JOIN transactions t ON t.id_tx = n.transaction_id
                  WHERE t.id_tx = {id} AND n.account_id = {account}"
             )
@@ -2435,7 +2512,7 @@ async fn held_work_learns_of_new_coverage_through_the_cached_client() {
         "{outcome:?}"
     );
     let sent = paths_since(&service, sent);
-    assert_eq!(sent[0], "/v1/txid/map", "{sent:?}");
+    assert_eq!(sent[0], "/transparent/v1/txid/map", "{sent:?}");
     assert!(sent.iter().any(|path| path.contains("/query/")), "{sent:?}");
     assert_eq!(
         work_row(&fixture.path, &txid),
@@ -2466,7 +2543,7 @@ async fn held_work_learns_of_new_coverage_after_a_restart() {
     let sent = service.requests().len();
     let outcome = followup_with(&fixture, required(), &lwd).await;
     assert!(finished_with(outcome, 1), "{outcome:?}");
-    assert_eq!(paths_since(&service, sent)[0], "/v1/txid/map");
+    assert_eq!(paths_since(&service, sent)[0], "/transparent/v1/txid/map");
     assert_eq!(
         work_row(&fixture.path, &txid),
         Some((Some(ABSENT_CODE), Some(new_map)))
@@ -2492,7 +2569,7 @@ async fn map_refresh_honors_cancellation() {
             if !refreshing.load(Ordering::SeqCst) {
                 return (held.answer)(request);
             }
-            if request.path == "/v1/txid/map" {
+            if request.path == "/transparent/v1/txid/map" {
                 exit.store(true, Ordering::SeqCst);
             }
             covering(request)
@@ -2517,7 +2594,7 @@ async fn map_refresh_honors_cancellation() {
     )
     .await;
     assert_eq!(outcome, Some(RunOutcome::Exited(RunStats::default())));
-    assert_eq!(paths_since(&service, sent), ["/v1/txid/map"]);
+    assert_eq!(paths_since(&service, sent), ["/transparent/v1/txid/map"]);
     assert_eq!(
         work_row(&fixture.path, &txid),
         Some((Some(NOT_COVERED_CODE), Some(map)))
@@ -2553,7 +2630,7 @@ async fn a_service_that_comes_to_support_the_client_is_found_again() {
         let supported = supported.clone();
         let covering = covering.answer;
         move |request| {
-            if request.path == "/v1/txid/init" && !supported.load(Ordering::SeqCst) {
+            if request.path == "/transparent/v1/txid/init" && !supported.load(Ordering::SeqCst) {
                 return response(unsupported_txid_init());
             }
             covering(request)
@@ -2577,7 +2654,10 @@ async fn a_service_that_comes_to_support_the_client_is_found_again() {
     let outcome = followup_with(&fixture, required(), &lwd).await;
     assert!(finished_with(outcome, 1), "{outcome:?}");
     let sent = paths_since(&service, sent);
-    assert!(sent.contains(&"/v1/txid/init".to_owned()), "{sent:?}");
+    assert!(
+        sent.contains(&"/transparent/v1/txid/init".to_owned()),
+        "{sent:?}"
+    );
     assert!(sent.iter().any(|path| path.contains("/query/")), "{sent:?}");
     assert_eq!(
         work_row(&fixture.path, &txid),
@@ -2973,18 +3053,18 @@ fn genuine_payment(seed: &[u8], height: u32) -> (Transaction, [u8; 32], u64) {
 /// transparent input, and a shielded part; another account has none.
 #[tokio::test]
 async fn genuine_shielded_payment_to_a_transparent_recipient_stays_visible() {
-    let (fixture, seed) = wallet_with_seed();
+    let (fixture, seed) = wallet_with_seed_at(SHIELDED_BIRTHDAY);
     let other_seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
     let (other_uuid, _) = keys::add_account(
         &fixture.path,
         MAIN,
         "other",
         &other_seed,
-        Some(u64::from(BIRTHDAY)),
+        Some(u64::from(SHIELDED_BIRTHDAY)),
     )
     .unwrap();
     let other = keys::parse_account_uuid(&other_uuid).unwrap();
-    let (tx, nullifier, value) = genuine_payment(&seed, TOP - 1);
+    let (tx, nullifier, value) = genuine_payment(&seed, SHIELDED_TOP - 1);
     assert!(tx.orchard_bundle().is_some());
     assert!(tx
         .transparent_bundle()
@@ -2997,7 +3077,7 @@ async fn genuine_shielded_payment_to_a_transparent_recipient_stays_visible() {
     conn.execute(
         "INSERT INTO transactions (txid, mined_height, min_observed_height, tx_index)
          VALUES (?1, ?2, ?2, 1)",
-        rusqlite::params![[0x77u8; 32].as_slice(), TOP - 2],
+        rusqlite::params![[0x77u8; 32].as_slice(), SHIELDED_TOP - 2],
     )
     .unwrap();
     let funding = conn.last_insert_rowid();
@@ -3012,7 +3092,7 @@ async fn genuine_shielded_payment_to_a_transparent_recipient_stays_visible() {
     conn.execute(
         "INSERT INTO transactions (txid, mined_height, min_observed_height)
          VALUES (?1, ?2, ?2)",
-        rusqlite::params![tx.txid().as_ref().as_slice(), TOP - 1],
+        rusqlite::params![tx.txid().as_ref().as_slice(), SHIELDED_TOP - 1],
     )
     .unwrap();
     let id = conn.last_insert_rowid();
@@ -3035,7 +3115,7 @@ async fn genuine_shielded_payment_to_a_transparent_recipient_stays_visible() {
     let mut bytes = Vec::new();
     tx.write(&mut bytes).unwrap();
     let lwd = CapturingLwd::start_serving(
-        vec![(*tx.txid().as_ref(), bytes, u64::from(TOP - 1))],
+        vec![(*tx.txid().as_ref(), bytes, u64::from(SHIELDED_TOP - 1))],
         0,
         |_| {},
     )

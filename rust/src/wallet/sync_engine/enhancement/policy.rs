@@ -25,15 +25,14 @@ pub(crate) fn set_preference_confirmed(confirmed: bool) {
 /// The transparent ledger mode for the private queries `preference` on
 /// `network`.
 ///
-/// `PrivateRequired` only on mainnet with private queries on, outside
-/// masquerade builds; otherwise `Public`. It never weakens a wallet: reads
-/// honor a stricter durable policy, and only an explicit toggle-off lowers
-/// one.
+/// `PrivateRequired` only on mainnet with private queries on; otherwise
+/// `Public`. It never weakens a wallet: reads honor a stricter durable policy,
+/// and only an explicit toggle-off lowers one.
 pub(crate) fn transparent_mode_for_preference(
     network: WalletNetwork,
     preference: bool,
 ) -> TransparentLedgerMode {
-    if network == WalletNetwork::Main && preference && !cfg!(ironwood_masquerade) {
+    if network == WalletNetwork::Main && preference {
         TransparentLedgerMode::PrivateRequired
     } else {
         TransparentLedgerMode::Public
@@ -170,8 +169,17 @@ impl EnhancementPolicy {
     /// Captures the private queries preference for the supported network.
     pub(crate) fn for_preference(network: WalletNetwork, preference: bool) -> Self {
         Self {
-            private: network == WalletNetwork::Main && preference && !cfg!(ironwood_masquerade),
+            private: network == WalletNetwork::Main && preference,
             transparent: transparent_mode_for_preference(network, preference),
+        }
+    }
+
+    /// Test seam for private queries on a network that has no service.
+    #[cfg(test)]
+    pub(crate) fn with_private_queries(self) -> Self {
+        Self {
+            private: true,
+            ..self
         }
     }
 
@@ -312,8 +320,7 @@ mod tests {
             WalletNetwork::Regtest,
         ] {
             for preference in [false, true] {
-                let enabled =
-                    network == WalletNetwork::Main && preference && !cfg!(ironwood_masquerade);
+                let enabled = network == WalletNetwork::Main && preference;
                 let expected = if enabled {
                     TransparentLedgerMode::PrivateRequired
                 } else {
@@ -330,7 +337,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn private_preference_selects_private_status_and_payload_on_mainnet() {
         let policy = EnhancementPolicy::for_preference(WalletNetwork::Main, true);
@@ -339,20 +345,10 @@ mod tests {
         assert_eq!(policy.payload_mode(), EnhancementMode::PrivateIronwood);
     }
 
-    #[cfg(ironwood_masquerade)]
-    #[test]
-    fn private_preference_is_unavailable_in_masquerade_builds() {
-        let policy = EnhancementPolicy::for_preference(WalletNetwork::Main, true);
-        assert!(!policy.is_private());
-        assert_eq!(policy.status_mode(), TransactionStatusMode::Public);
-        assert_eq!(policy.payload_mode(), EnhancementMode::Standard);
-    }
-
     /// A supplemental source guard: release builds must ignore every
     /// development switch, so each environment read in the crate's sources
     /// sits under a debug-build gate (`cfg(debug_assertions)` or
-    /// `cfg!(debug_assertions)` at most a few lines above it, or the
-    /// debug-only `origin_override` it hands its reader to), or in a test.
+    /// `cfg!(debug_assertions)` at most a few lines above it), or in a test.
     /// It cannot prove a gate is correct; it catches a new read added without
     /// one. Run the gate tests themselves with `cargo test --release` to see
     /// the switches off.
@@ -403,16 +399,15 @@ mod tests {
                 if code.starts_with("//") || !reads {
                     continue;
                 }
-                let gated = code.contains("origin_override(")
-                    || lines[index.saturating_sub(WINDOW)..=index]
-                        .iter()
-                        .any(|above| {
-                            above.contains("cfg(debug_assertions)")
-                                || above.contains("cfg!(debug_assertions)")
-                                || above.contains("#[test]")
-                                || above.contains("#[tokio::test")
-                                || above.contains("#[cfg(test)]")
-                        });
+                let gated = lines[index.saturating_sub(WINDOW)..=index]
+                    .iter()
+                    .any(|above| {
+                        above.contains("cfg(debug_assertions)")
+                            || above.contains("cfg!(debug_assertions)")
+                            || above.contains("#[test]")
+                            || above.contains("#[tokio::test")
+                            || above.contains("#[cfg(test)]")
+                    });
                 if !gated {
                     ungated.push(format!("{}:{}: {}", relative.display(), index + 1, code));
                 }

@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,13 +15,15 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 /// Intercepts the two security calls the screen makes so no secure
 /// storage is touched.
 class _FakeSecurityNotifier extends AppSecurityNotifier {
-  _FakeSecurityNotifier({this.confirmResult = true});
+  _FakeSecurityNotifier({this.confirmResult = true, this.changeResult});
 
   final bool confirmResult;
+  final Future<bool>? changeResult;
   final confirmedWith = <String>[];
   ({String current, String next})? changedWith;
 
@@ -35,7 +39,7 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
     required String newPassword,
   }) async {
     changedWith = (current: currentPassword, next: newPassword);
-    return true;
+    return await (changeResult ?? Future.value(true));
   }
 }
 
@@ -134,6 +138,7 @@ Widget _app(
         ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),
@@ -161,6 +166,34 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
+
+  testWidgets('wide flow retains the existing phase identifiers', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(951, 669);
+    addTearDown(tester.view.resetPhysicalSize);
+    final security = _FakeSecurityNotifier();
+    final popResult = <bool?>[];
+    await tester.pumpWidget(_app(security, popResult: popResult));
+    await open(tester);
+    expect(
+      find.byKey(const ValueKey('mobile_change_passcode_verify')),
+      findsOneWidget,
+    );
+    await _enterPasscode(tester, '111111');
+    expect(
+      find.byKey(const ValueKey('mobile_change_passcode_create')),
+      findsOneWidget,
+    );
+    await _enterPasscode(tester, '222222');
+    expect(
+      find.byKey(const ValueKey('mobile_change_passcode_confirm')),
+      findsOneWidget,
+    );
+    await _enterPasscode(tester, '222222');
+    expect(popResult, [true]);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('a wrong current passcode shows Incorrect Passcode and stays '
       'on the verify phase', (tester) async {
@@ -202,6 +235,34 @@ void main() {
     expect(security.changedWith, (current: '111111', next: '222222'));
     expect(popResult, [true]);
     expect(find.text('open'), findsOneWidget);
+  });
+
+  testWidgets('late rotation completion cannot pop a locked passcode screen', (
+    tester,
+  ) async {
+    final rotation = Completer<bool>();
+    final security = _FakeSecurityNotifier(changeResult: rotation.future);
+    final popResult = <bool?>[];
+    await tester.pumpWidget(
+      _app(
+        security,
+        popResult: popResult,
+        biometric: _FakeBiometricController(
+          initialState: _faceBiometricState.copyWith(enabled: false),
+        ),
+      ),
+    );
+    await open(tester);
+    await _enterPasscode(tester, '111111');
+    await _enterPasscode(tester, '222222');
+    await _enterPasscode(tester, '222222');
+    expect(security.changedWith, (current: '111111', next: '222222'));
+    security.lock();
+    rotation.complete(true);
+    await tester.pumpAndSettle();
+    expect(popResult, isEmpty);
+    expect(find.byType(MobileChangePasscodeScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a confirm mismatch restarts the new-passcode phase', (

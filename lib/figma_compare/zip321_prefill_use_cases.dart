@@ -17,6 +17,7 @@ import '../src/features/migration/providers/ironwood_migration_announcement_prov
 import '../src/features/send/models/send_prefill_args.dart';
 import '../src/features/send/screens/mobile/mobile_send_screen.dart';
 import '../src/features/send/screens/send_screen.dart';
+import '../src/features/send/services/recent_send_recipients.dart';
 import '../src/features/send/services/send_proving_key_warmup.dart';
 import '../src/features/send/widgets/send_recipient_resolver.dart';
 import '../src/providers/account_models.dart';
@@ -151,6 +152,9 @@ Widget _captureScope({required Widget child}) => ProviderScope(
       const _CaptureAddressBookRepository(),
     ),
     ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+    recentSendRecipientsProvider.overrideWith(
+      (ref, accountUuid) async => const [],
+    ),
   ],
   child: child,
 );

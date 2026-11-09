@@ -8,7 +8,7 @@ import 'ledger_bluetooth_access.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
 
 const kLedgerPairingInvalidMessage =
-    'Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.';
+    'Your Bluetooth pairing is no longer valid. Forget this Ledger in your device’s Bluetooth settings, then reconnect.'; // l10n-ignore: compared against error text; shown via ledgerMobilePairingInvalid
 
 bool ledgerPairingNeedsReset(Object? error) =>
     (error is LedgerMobileException &&
@@ -30,12 +30,22 @@ enum LedgerMobileFailure {
   unavailable,
 }
 
+/// A message Vizor writes itself when the platform supplies none.
+enum LedgerMobileFallback {
+  emptyResponse,
+  unknownDiscoveryEvent,
+  discoveryFailed,
+  connectionFailed,
+}
+
 class LedgerMobileException implements Exception {
   const LedgerMobileException(
     this.failure,
     this.message, {
     this.nativeDomain,
     this.nativeCode,
+    this.platformText = false,
+    this.fallback,
   });
 
   final String? nativeDomain;
@@ -43,6 +53,13 @@ class LedgerMobileException implements Exception {
 
   final LedgerMobileFailure failure;
   final String message;
+
+  /// [message] was written by the platform (possibly with device-specific
+  /// instructions) rather than by Vizor, so it is not translated.
+  final bool platformText;
+
+  /// Which Vizor-written [message] this is, so screens can translate it.
+  final LedgerMobileFallback? fallback;
 
   @override
   String toString() => message;
@@ -231,25 +248,56 @@ class MethodChannelLedgerMobileBleService
   String? get connectedDeviceId => _connectedDeviceId;
 
   @override
-  Stream<LedgerDiscoveryUpdate> discoverDevices() async* {
-    _stopPairingEvidence();
-    final controller = StreamController<Object?>();
-    final subscription = _events.receiveBroadcastStream().listen(
-      controller.add,
-      onError: controller.addError,
-      onDone: controller.close,
-    );
-    try {
-      await _methods.invokeMethod<void>('startDiscovery');
-      await for (final event in controller.stream) {
-        yield _decodeDiscoveryEvent(event);
+  Stream<LedgerDiscoveryUpdate> discoverDevices() {
+    late StreamController<LedgerDiscoveryUpdate> controller;
+    late StreamSubscription<Object?> subscription;
+    var cancelled = false;
+
+    void fail(Object error, StackTrace stack) {
+      if (cancelled || controller.isClosed) return;
+      if (error is PlatformException) {
+        controller.add(LedgerDiscoveryFailed(_mapPlatformError(error)));
+      } else {
+        controller.addError(error, stack);
       }
-    } on PlatformException catch (error) {
-      yield LedgerDiscoveryFailed(_mapPlatformError(error));
-    } finally {
-      await subscription.cancel();
-      if (!controller.isClosed) await controller.close();
+      unawaited(controller.close());
     }
+
+    controller = StreamController<LedgerDiscoveryUpdate>(
+      onListen: () {
+        _stopPairingEvidence();
+        subscription = _events.receiveBroadcastStream().listen(
+          (event) {
+            if (cancelled || controller.isClosed) return;
+            try {
+              final update = _decodeDiscoveryEvent(event);
+              controller.add(update);
+              if (update is LedgerDiscoveryEnded ||
+                  update is LedgerDiscoveryFailed) {
+                unawaited(controller.close());
+              }
+            } catch (error, stack) {
+              fail(error, stack);
+            }
+          },
+          onError: fail,
+          onDone: () => unawaited(controller.close()),
+        );
+        unawaited(
+          _methods.invokeMethod<void>('startDiscovery').catchError(fail),
+        );
+      },
+      onPause: () => subscription.pause(),
+      onResume: () => subscription.resume(),
+      onCancel: () {
+        cancelled = true;
+        // An async* wrapper would wait for its next event before reaching
+        // finally. Native stop can be silent, so detach the event listener
+        // directly before a picker connects, closes, or starts another scan.
+        return subscription.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   @override
@@ -457,7 +505,8 @@ class MethodChannelLedgerMobileBleService
       if (result == null) {
         throw const LedgerMobileException(
           LedgerMobileFailure.unavailable,
-          'Ledger returned an empty response.',
+          'Ledger returned an empty response.', // l10n-ignore: exception text
+          fallback: LedgerMobileFallback.emptyResponse,
         );
       }
       return result;
@@ -523,15 +572,21 @@ class MethodChannelLedgerMobileBleService
         return LedgerDiscoveryFailed(
           _errorFromCode(
             value['code'] as String? ?? 'unavailable',
-            value['message'] as String? ?? 'Ledger discovery failed.',
+            value['message'] as String? ??
+                'Ledger discovery failed.', // l10n-ignore: exception text
             details: value['details'],
+            platformText: value['message'] is String,
+            fallback: value['message'] is String
+                ? null
+                : LedgerMobileFallback.discoveryFailed,
           ),
         );
       default:
         return const LedgerDiscoveryFailed(
           LedgerMobileException(
             LedgerMobileFailure.unavailable,
-            'Ledger discovery returned an unknown event.',
+            'Ledger discovery returned an unknown event.', // l10n-ignore: exception text
+            fallback: LedgerMobileFallback.unknownDiscoveryEvent,
           ),
         );
     }
@@ -542,8 +597,13 @@ class MethodChannelLedgerMobileBleService
       error.code,
       error.code == 'pairing_invalid'
           ? kLedgerPairingInvalidMessage
-          : error.message ?? 'Ledger mobile connection failed.',
+          : error.message ??
+                'Ledger mobile connection failed.', // l10n-ignore: exception text
       details: error.details,
+      platformText: error.code != 'pairing_invalid' && error.message != null,
+      fallback: error.code != 'pairing_invalid' && error.message == null
+          ? LedgerMobileFallback.connectionFailed
+          : null,
     );
     if (ledgerFailureInvalidatesConnection(mapped.failure)) {
       _connectedDeviceId = null;
@@ -555,6 +615,8 @@ class MethodChannelLedgerMobileBleService
     String code,
     String message, {
     Object? details,
+    bool platformText = false,
+    LedgerMobileFallback? fallback,
   }) {
     final failure = switch (code) {
       'busy' => LedgerMobileFailure.busy,
@@ -579,6 +641,8 @@ class MethodChannelLedgerMobileBleService
       nativeCode: details is Map && details['nativeCode'] is int
           ? details['nativeCode'] as int
           : null,
+      platformText: platformText,
+      fallback: fallback,
     );
   }
 }

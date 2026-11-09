@@ -2,7 +2,7 @@
 //!
 //! It answers from a configurable set of mined receives and spends, by default
 //! with one `Ready` commit per pass, in real adapter batches built with
-//! `zakura_pir_transparent::testing`, reported as the adapter's pass reports
+//! `zakura_pir_client::transparent::testing`, reported as the adapter's pass reports
 //! them. Its revisions use [`FIXTURE_SOURCE`] as their source id. It is
 //! untrusted unless [`FixtureSource::trust`] makes it trusted, as the
 //! transparent PIR source is, so the coordinator qualifies its revisions only
@@ -15,7 +15,9 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use transparent::address::TransparentAddress;
-use zakura_pir_transparent::{testing, Outcome, Progress, RecoveryBatch, WithdrawnCause};
+use zakura_pir_client::transparent::{
+    testing, FailedEntries, Outcome, Progress, RecoveryBatch, WithdrawnCause,
+};
 use zcash_client_backend::data_api::transparent_ledger::{
     AddressRange, ChainPoint, PageRequest, PublicationAnchor, ReceiveEvent, RecoveryRevision,
     SpendEvent, TransparentLedgerCommit,
@@ -63,6 +65,8 @@ struct State {
     withdrawn: HashMap<AccountUuid, WithdrawnCause>,
     /// Replaces the outcome of every `Ready` answer.
     next: Option<Outcome>,
+    /// Directory entries every `Ready` answer reports failed on content.
+    failed_entries: FailedEntries,
     trusted: bool,
     /// Every `Ready` answer resolves retired revisions until one is
     /// acknowledged as reconciled, as the adapter's do.
@@ -99,6 +103,7 @@ impl FixtureSource {
                 pending: None,
                 withdrawn: HashMap::new(),
                 next: None,
+                failed_entries: FailedEntries::default(),
                 trusted: false,
                 retiring: false,
                 hooks: VecDeque::new(),
@@ -201,6 +206,12 @@ impl FixtureSource {
     /// Replaces the outcome of every `Ready` answer, until cleared.
     pub(crate) fn next(&self, outcome: Option<Outcome>) -> &Self {
         self.with(|state| state.next = outcome)
+    }
+
+    /// Reports `failed` with every `Ready` answer, as a pass whose replies for
+    /// some directory entries failed on content does.
+    pub(crate) fn failed_entries(&self, failed: FailedEntries) -> &Self {
+        self.with(|state| state.failed_entries = failed)
     }
 
     /// Makes the source trusted: under `PrivateRequired` the coordinator
@@ -390,6 +401,7 @@ fn report(state: BatchState, progress: Progress) -> PassReport {
         commits: 0,
         retired: 0,
         publication_changed: false,
+        failed_entries: FailedEntries::default(),
     }
 }
 
@@ -540,6 +552,7 @@ impl State {
         let ready = PassReport {
             commits: commits.len(),
             retired: retired.len(),
+            failed_entries: self.failed_entries,
             ..report(BatchState::Ready, progress)
         };
         self.unacknowledged.insert(

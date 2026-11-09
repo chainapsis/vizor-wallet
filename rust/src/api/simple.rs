@@ -5,7 +5,10 @@ pub fn greet(name: String) -> String {
 
 #[flutter_rust_bridge::frb(init)]
 pub fn init_app() {
-    flutter_rust_bridge::setup_default_user_utils();
+    // Instead of `flutter_rust_bridge::setup_default_user_utils()`, which would
+    // install an unredacted logger first: same backend and panic backtraces,
+    // with identifiers masked.
+    crate::log_redaction::install();
 
     // Filter out verbose TLS/gRPC debug logs — only show our sync logs
     log::set_max_level(log::LevelFilter::Info);
@@ -20,6 +23,12 @@ pub fn init_app() {
 /// node. Production builds leave the default activation-at-height-1 behavior.
 pub fn configure_regtest_ironwood_activation_height(height: u32) -> Result<(), String> {
     crate::wallet::network::configure_regtest_nu6_3_activation_height(height)
+}
+
+/// Activates NU7 on regtest at the local node's height. Call after the NU6.3
+/// height; production builds leave NU7 inactive on regtest.
+pub fn configure_regtest_nu7_activation_height(height: u32) -> Result<(), String> {
+    crate::wallet::network::configure_regtest_nu7_activation_height(height)
 }
 
 /// Enables Regtest-speed migration timing on Testnet only. Mainnet and

@@ -2,9 +2,6 @@ part of 'mobile_ironwood_migration_flow_screen.dart';
 
 void _noopMigrationPreviewAction() {}
 
-const _keystonePreparationSignatureMessage =
-    'Preparation needs another Keystone signature.';
-
 enum _MigrationBackdropGlow { positive, neutral }
 
 class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
@@ -40,7 +37,7 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
         _MigrationPreparationPreview(
           state: _MigrationPreparationState.paused,
           isKeystone: true,
-          pausedMessage: _keystonePreparationSignatureMessage,
+          pausedMessage: context.l10n.migrationMobilePrepKeystoneSignature,
           onContinue: _noopMigrationPreviewAction,
         ),
       MobileIronwoodMigrationPreviewSurface.preparationSyncing =>
@@ -69,8 +66,8 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
             for (var index = 0; index < _migrationPreviewPartsPerBatch; index++)
               index,
           },
-          migratedAmountText: '777.888 ZEC',
-          totalAmountText: '999.999 ZEC',
+          migratedAmountText: '777.888 ZEC', // l10n-ignore: preview fixture
+          totalAmountText: '999.999 ZEC', // l10n-ignore: preview fixture
         ),
       MobileIronwoodMigrationPreviewSurface.migrationKeystoneSignAll =>
         _MigrationProgressPreview(
@@ -79,11 +76,11 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
           currentSigningPartIndices: {
             for (var index = 0; index < 50; index++) index,
           },
-          migratedAmountText: '0 ZEC',
-          totalAmountText: '50 ZEC',
-          actionLabel: 'Sign migration transactions',
-          actionBatchLabel: 'All transactions',
-          actionBatchValue: '50 ZEC (100%)',
+          migratedAmountText: '0 ZEC', // l10n-ignore: preview fixture
+          totalAmountText: '50 ZEC', // l10n-ignore: preview fixture
+          actionLabel: context.l10n.migrationMobileActionSign,
+          actionBatchLabel: context.l10n.migrationMobileActionAllTransactions,
+          actionBatchValue: '50 ZEC (100%)', // l10n-ignore: preview fixture
         ),
       MobileIronwoodMigrationPreviewSurface.migrationBroadcasting =>
         _MigrationProgressPreview(
@@ -95,13 +92,32 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
           ],
         ),
       MobileIronwoodMigrationPreviewSurface.migrationComplete =>
-        const _MigrationCompletePreview(amountText: '142.992 ZEC'),
+        const _MigrationCompletePreview(
+          amountText: '142.992 ZEC', // l10n-ignore: amount format
+        ), // l10n-ignore: preview fixture
       MobileIronwoodMigrationPreviewSurface.homeAttention =>
         const _MigrationHomeAttentionPreview(),
       MobileIronwoodMigrationPreviewSurface.homeAttentionModal =>
         const _MigrationHomeAttentionPreview(showModal: true),
       MobileIronwoodMigrationPreviewSurface.keystoneScanHelp =>
         const _MigrationKeystoneHelpPreview(),
+      MobileIronwoodMigrationPreviewSurface.migrationUpgradeStopped =>
+        const _MigrationUpgradeStoppedView(
+          stop: _previewUpgradeStop,
+          onMoveRemaining: _noopMigrationPreviewAction,
+          onBack: _noopMigrationPreviewAction,
+        ),
+      MobileIronwoodMigrationPreviewSurface.homeAttentionUpgradeStopped =>
+        const _MigrationHomeAttentionPreview(
+          kind: MobileIronwoodMigrationAttentionKind.upgradeStopped,
+          count: 1,
+        ),
+      MobileIronwoodMigrationPreviewSurface.homeAttentionUpgradeStoppedModal =>
+        const _MigrationHomeAttentionPreview(
+          kind: MobileIronwoodMigrationAttentionKind.upgradeStopped,
+          count: 1,
+          showModal: true,
+        ),
     };
   }
 }
@@ -246,7 +262,7 @@ class _MobileMigrationNotificationPermissionScreenState
     extends ConsumerState<_MobileMigrationNotificationPermissionScreen> {
   AppLifecycleListener? _lifecycleListener;
   var _busy = false;
-  String? _continueError;
+  var _continueFailed = false;
 
   @override
   void initState() {
@@ -282,7 +298,7 @@ class _MobileMigrationNotificationPermissionScreenState
     if (_busy) return;
     setState(() {
       _busy = true;
-      _continueError = null;
+      _continueFailed = false;
     });
     try {
       final service = ref.read(ironwoodMigrationServiceProvider);
@@ -305,9 +321,7 @@ class _MobileMigrationNotificationPermissionScreenState
           // The system dialog was just dismissed, and the same button now
           // routes to Settings instead. Say so rather than looking inert.
           setState(() {
-            _continueError =
-                'Notifications are still off. Allow them from Settings, or '
-                'continue without notifications.';
+            _continueFailed = true;
           });
         }
       }
@@ -361,7 +375,9 @@ class _MobileMigrationNotificationPermissionScreenState
       onFallback: () => context.go('/migration/options'),
       child: _MigrationNotificationPromptPreview(
         busy: _busy,
-        errorMessage: _continueError,
+        errorMessage: _continueFailed
+            ? context.l10n.migrationMobileNotifyStillOff
+            : null,
         onBack: () => context.go('/migration/options'),
         onAllow: () => unawaited(_allowNotifications()),
         onNotNow: () => unawaited(_confirmNotNow()),
@@ -392,7 +408,7 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = _MigrationPreviewPage(
-      navTitle: 'Enable notifications',
+      navTitle: context.l10n.migrationMobileNotifyTitle,
       backgroundColor: const Color(0xFF007F49),
       navForegroundColor: const Color(0xFFFFFFFF),
       onBack: onBack,
@@ -419,7 +435,7 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
             pressedBackgroundColor: const Color(0x1A052C1B),
             enabledLabelColor: const Color(0xFF052C1B),
             pressedLabelColor: const Color(0xFF052C1B),
-            child: const Text('Not now'),
+            child: Text(context.l10n.onboardingNotNow),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -435,7 +451,11 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
             pressedLabelColor: const Color(0xFFDDEAE4),
             enabledBorderColor: const Color(0x1AFFFFFF),
             leading: const AppIcon(AppIcons.notificationBell, size: 20),
-            child: Text(busy ? 'Checking...' : 'Allow notifications'),
+            child: Text(
+              busy
+                  ? context.l10n.commonChecking
+                  : context.l10n.migrationMobileNotifyAllow,
+            ),
           ),
         ],
       ),
@@ -457,7 +477,7 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
                     child: SizedBox(
                       width: 310,
                       child: Text(
-                        'Keep your migration on schedule',
+                        context.l10n.migrationMobileNotifyHeading,
                         textAlign: TextAlign.center,
                         style: AppTypography.displayLarge.copyWith(
                           color: const Color(0xFFFFFFFF),
@@ -470,9 +490,7 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
                     child: SizedBox(
                       width: 320,
                       child: Text(
-                        'Some migration steps require approval. We’ll notify '
-                        'you when it’s time, so you can respond quickly and '
-                        'avoid unnecessary delays.',
+                        context.l10n.migrationMobileNotifyBody,
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMedium.copyWith(
                           color: const Color(0xFFFFFFFF),
@@ -529,7 +547,7 @@ class _MigrationNotificationConfirmationContent extends StatelessWidget {
           child: SizedBox(
             width: 260,
             child: Text(
-              'Continue without notifications?',
+              context.l10n.migrationMobileNotifyConfirmTitle,
               textAlign: TextAlign.center,
               style: AppTypography.bodyLarge.copyWith(
                 color: context.colors.text.accent,
@@ -543,8 +561,7 @@ class _MigrationNotificationConfirmationContent extends StatelessWidget {
           child: SizedBox(
             width: 280,
             child: Text(
-              'Without notifications, you’ll need to remember to open Vizor '
-              'regularly and approve the next migration step when it’s ready.',
+              context.l10n.migrationMobileNotifyConfirmBody,
               style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.primary,
               ),
@@ -553,7 +570,7 @@ class _MigrationNotificationConfirmationContent extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Otherwise, your migration may take longer.',
+          context.l10n.migrationMobileNotifyConfirmNote,
           style: AppTypography.bodyMedium.copyWith(
             color: context.colors.text.primary,
           ),
@@ -564,7 +581,7 @@ class _MigrationNotificationConfirmationContent extends StatelessWidget {
           constrainContent: true,
           height: 50,
           onPressed: busy ? null : onAllow,
-          child: const Text('Allow notifications'),
+          child: Text(context.l10n.migrationMobileNotifyAllow),
         ),
         const SizedBox(height: AppSpacing.s),
         AppButton(
@@ -573,7 +590,7 @@ class _MigrationNotificationConfirmationContent extends StatelessWidget {
           height: 50,
           variant: AppButtonVariant.ghost,
           onPressed: busy ? null : onContinueWithoutNotifications,
-          child: const Text('Continue without notifications'),
+          child: Text(context.l10n.migrationMobileNotifyContinueWithout),
         ),
       ],
     );
@@ -617,20 +634,6 @@ enum _MigrationPreparationState {
       this == active || this == advancing || this == backgroundTracking;
 }
 
-const _migrationPreparationAdvancingMessage =
-    'Preparing the next transactions. Keep Vizor open.';
-// Rendered inside the 200px-wide preparation ring — keep it two short
-// sentences or it fills the dial.
-const _migrationPreparationBackgroundTrackingMessage =
-    'Confirming in the background. You can close Vizor.';
-const _migrationPreparationNotificationsDisabledMessage =
-    'Allow notifications to continue in the background, or keep Vizor open.';
-// Deliberately distinct from the message above: this device has no background
-// preparation lane at all, so telling the user to allow notifications would
-// promise something granting them cannot deliver.
-const _migrationPreparationBackgroundUnsupportedMessage =
-    'This device can\u2019t confirm in the background. Keep Vizor open.';
-
 class _MigrationPreparationPreview extends StatelessWidget {
   const _MigrationPreparationPreview({
     required this.state,
@@ -659,7 +662,7 @@ class _MigrationPreparationPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final paused = state == _MigrationPreparationState.paused;
     return _MigrationPreviewPage(
-      navTitle: 'Preparing your migration',
+      navTitle: context.l10n.migrationMobilePreparingTitle,
       onBack: onBack,
       contentGap: AppSpacing.base,
       bottom: paused
@@ -679,8 +682,8 @@ class _MigrationPreparationPreview extends StatelessWidget {
                 ),
                 child: Text(
                   isKeystone
-                      ? 'Continue with Keystone'
-                      : 'Continue preparation',
+                      ? context.l10n.migrationMobilePrepContinueKeystone
+                      : context.l10n.migrationMobilePrepContinue,
                 ),
               ),
             )
@@ -755,21 +758,21 @@ class _MigrationPreparationDial extends StatelessWidget {
                   paused
                       ? deviceLimitMessage ??
                             pausedMessage ??
-                            'Preparation was paused because you left.'
+                            context.l10n.migrationMobilePrepPausedLeft
                       : syncing
-                      ? 'Syncing your wallet…'
+                      ? context.l10n.migrationMobilePrepSyncingWallet
                       : switch (state) {
                           _MigrationPreparationState.advancing =>
-                            _migrationPreparationAdvancingMessage,
+                            context.l10n.migrationMobilePrepAdvancing,
                           _MigrationPreparationState.backgroundTracking =>
-                            _migrationPreparationBackgroundTrackingMessage,
+                            context.l10n.migrationMobilePrepBackgroundTracking,
                           // A waiting device that cannot track in the
                           // background must say so here too: the neutral
                           // duration copy would let the user close Vizor and
                           // silently stall the run.
                           _ =>
                             deviceLimitMessage ??
-                                'Preparation will\ntake 10–20 min',
+                                context.l10n.migrationMobilePrepDuration,
                         },
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMediumStrong.copyWith(
@@ -1117,14 +1120,12 @@ class _MigrationPreparationInfoCard extends StatelessWidget {
         children: [
           _MigrationIconTextRow(
             icon: AppIcons.wallet,
-            text:
-                'We’re organizing your balance into common-sized parts. '
-                'This makes your migration harder to link.',
+            text: context.l10n.migrationPreparationTipOrganizing,
           ),
           const SizedBox(height: AppSpacing.sm),
-          const _MigrationIconTextRow(
+          _MigrationIconTextRow(
             icon: AppIcons.history,
-            text: 'Once preparation finishes, your migration can begin.',
+            text: context.l10n.migrationMobilePrepInfoThenBegin,
           ),
         ],
       ),
@@ -1147,6 +1148,7 @@ const _migrationPreviewPartsPerBatch = 8;
 class _MigrationProgressPreview extends StatelessWidget {
   const _MigrationProgressPreview({
     required this.state,
+    this.privacyModeEnabled = false,
     this.isHardware = false,
     this.showPreparationCompleteModal = false,
     this.completedParts,
@@ -1178,6 +1180,10 @@ class _MigrationProgressPreview extends StatelessWidget {
   });
 
   final _MigrationProgressState state;
+
+  /// Previews pass sample text and leave this off; the live status masks the
+  /// strings it passes and sets this for the amount formatted here.
+  final bool privacyModeEnabled;
   final bool isHardware;
   final bool showPreparationCompleteModal;
   final int? completedParts;
@@ -1242,7 +1248,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     final resolvedNextActionPresentation =
         nextActionPresentation ??
         MigrationNextActionPresentation(
-          label: 'Next migration',
+          label: context.l10n.migrationNextActionLabelNext,
           amountZatoshi: BigInt.from(2_000_000_000_000),
           detail: 'at',
           scheduledHeight: 3_428_143,
@@ -1253,7 +1259,7 @@ class _MigrationProgressPreview extends StatelessWidget {
       _ => _MigrationBackdropGlow.positive,
     };
     final body = _MigrationPreviewPage(
-      navTitle: 'Ironwood Migration',
+      navTitle: context.l10n.migrationFlowTitle,
       onBack: onBack,
       contentGap: AppSpacing.md,
       scrollableContent: state != _MigrationProgressState.syncing,
@@ -1268,6 +1274,7 @@ class _MigrationProgressPreview extends StatelessWidget {
               children: [
                 _MigrationBatchDial(
                   state: state,
+                  privacyModeEnabled: privacyModeEnabled,
                   completedBatches: resolvedCompletedBatches,
                   totalBatches: resolvedTotalBatches,
                   totalParts: totalParts,
@@ -1293,9 +1300,12 @@ class _MigrationProgressPreview extends StatelessWidget {
                   completedParts: resolvedCompletedParts,
                   state: state,
                   availableAmountText: availableAmountText,
-                  leftToMigrateText: leftToMigrateText ?? '142.23 ZEC',
+                  leftToMigrateText:
+                      leftToMigrateText ??
+                      '142.23 ZEC', // l10n-ignore: preview fixture
                   completionEstimateText:
-                      completionEstimateText ?? 'in ~4.5 hours',
+                      completionEstimateText ??
+                      'in ~4.5 hours', // l10n-ignore: preview fixture
                   statusValueOverride: statusValueOverride,
                 ),
                 const Spacer(),
@@ -1330,6 +1340,7 @@ class _MigrationProgressPreview extends StatelessWidget {
 class _MigrationBatchDial extends StatelessWidget {
   const _MigrationBatchDial({
     required this.state,
+    required this.privacyModeEnabled,
     required this.completedBatches,
     required this.totalBatches,
     required this.totalParts,
@@ -1345,6 +1356,7 @@ class _MigrationBatchDial extends StatelessWidget {
   });
 
   final _MigrationProgressState state;
+  final bool privacyModeEnabled;
   final int completedBatches;
   final int totalBatches;
   final int totalParts;
@@ -1362,8 +1374,10 @@ class _MigrationBatchDial extends StatelessWidget {
   Widget build(BuildContext context) {
     final presentation = nextActionPresentation;
     final migrated = migratedAmountText?.replaceFirst(RegExp(r'\s+ZEC$'), '');
-    final total = totalAmountText ?? '100 ZEC';
-    final combinedAmount = migrated == null ? '0/100 ZEC' : '$migrated/$total';
+    final total = totalAmountText ?? '100 ZEC'; // l10n-ignore: preview fixture
+    final combinedAmount = migrated == null
+        ? '0/100 ZEC' // l10n-ignore: amount format
+        : '$migrated/$total'; // l10n-ignore: preview fixture
     final amountStyle = AppTypography.headlineSmall.copyWith(
       color: context.colors.text.accent,
     );
@@ -1371,6 +1385,7 @@ class _MigrationBatchDial extends StatelessWidget {
       text: TextSpan(text: combinedAmount, style: amountStyle),
       maxLines: 1,
       textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
     )..layout();
     final splitAmount =
         amountPainter.width > dimension * 0.75 || combinedAmount.length >= 18;
@@ -1390,7 +1405,8 @@ class _MigrationBatchDial extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                presentation?.label ?? 'Next migration',
+                presentation?.label ??
+                    context.l10n.migrationNextActionLabelNext,
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.accent,
                 ),
@@ -1402,7 +1418,7 @@ class _MigrationBatchDial extends StatelessWidget {
                     ? FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          '${_migrationDisplayZec(presentation.amountZatoshi)} ZEC',
+                          '${hideIfPrivacyMode(_migrationDisplayZec(presentation.amountZatoshi), privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
                           maxLines: 1,
                           style: amountStyle,
                         ),
@@ -1450,7 +1466,10 @@ class _MigrationBatchDial extends StatelessWidget {
                 )
               else
                 Text(
-                  '$completedBatches/$totalBatches Batch',
+                  context.l10n.migrationMobileBatchProgress(
+                    completedBatches,
+                    totalBatches,
+                  ),
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.accent,
                   ),
@@ -1520,13 +1539,13 @@ class _MigrationViewScheduleButton extends StatelessWidget {
           child: FittedBox(
             fit: BoxFit.scaleDown,
             child: Semantics(
-              label: 'View schedule',
+              label: context.l10n.migrationMobileViewSchedule,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'View schedule',
+                    context.l10n.migrationMobileViewSchedule,
                     style: AppTypography.labelMedium.copyWith(
                       color: context.colors.text.accent,
                     ),
@@ -1583,7 +1602,7 @@ class _MigrationSyncingContent extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Next migration',
+                    context.l10n.migrationNextActionLabelNext,
                     style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.secondary,
                     ),
@@ -1603,14 +1622,14 @@ class _MigrationSyncingContent extends StatelessWidget {
           ),
         ),
         SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
-        const _MigrationSummaryRows(
+        _MigrationSummaryRows(
           first: _MigrationSkeletonValueRow(
-            label: 'Left to migrate',
+            label: context.l10n.migrationSummaryLeftToMigrate,
             valueWidth: 90,
             accented: true,
           ),
           second: _MigrationSkeletonValueRow(
-            label: 'Est. completion',
+            label: context.l10n.migrationSummaryEstCompletion,
             valueWidth: 184,
           ),
         ),
@@ -1628,7 +1647,7 @@ class _MigrationSyncingContent extends StatelessWidget {
               ),
               SizedBox(height: compact ? AppSpacing.s : AppSpacing.md),
               Text(
-                'Syncing the migration progress.',
+                context.l10n.migrationMobileSyncingProgress,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.accent,
@@ -1665,9 +1684,13 @@ class _MigrationSkeletonValueRow extends StatelessWidget {
       builder: (context, constraints) {
         const minimumBarWidth = 48.0;
         final labelPainter = TextPainter(
-          text: TextSpan(text: label, style: labelStyle),
+          text: TextSpan(
+            text: label,
+            style: withLocaleFontFallback(context, labelStyle),
+          ),
           maxLines: 1,
           textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
         )..layout();
         final maxLabelWidth = math.max(
           0.0,
@@ -1679,7 +1702,7 @@ class _MigrationSkeletonValueRow extends StatelessWidget {
           math.max(0.0, constraints.maxWidth - labelWidth),
         );
         return SizedBox(
-          height: 20,
+          height: math.max(20, labelPainter.height),
           child: Row(
             children: [
               SizedBox(
@@ -1811,27 +1834,31 @@ class _MigrationProgressSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     return _MigrationSummaryRows(
       first: _MigrationValueRow(
-        label: 'Left to migrate',
+        label: context.l10n.migrationSummaryLeftToMigrate,
         value:
             leftToMigrateText ??
             availableAmountText ??
-            (completedParts == 0 ? '100 ZEC' : '60 ZEC'),
+            (completedParts == 0
+                ? '100 ZEC' // l10n-ignore: amount format
+                : '60 ZEC'), // l10n-ignore: preview fixture
         accented: true,
       ),
       second: _MigrationValueRow(
-        label: 'Est. completion',
+        label: context.l10n.migrationSummaryEstCompletion,
         value:
             statusValueOverride ??
             completionEstimateText ??
             switch (state) {
-              _MigrationProgressState.syncing => 'Syncing',
-              _MigrationProgressState.broadcasting => 'Migration in progress',
-              _MigrationProgressState.confirming => 'Waiting for confirmations',
+              _MigrationProgressState.syncing => context.l10n.commonSyncing,
+              _MigrationProgressState.broadcasting =>
+                context.l10n.migrationStatusDefaultButton,
+              _MigrationProgressState.confirming =>
+                context.l10n.migrationNextActionDetailWaitingForConfirmations,
               _MigrationProgressState.needsInput =>
-                'Waiting for your confirmation',
+                context.l10n.migrationMobileProgressYourConfirmation,
               _MigrationProgressState.readyToSubmit =>
-                'Scheduled transaction ready',
-              _ => 'Waiting for next migration step',
+                context.l10n.migrationMobileProgressScheduledReady,
+              _ => context.l10n.migrationMobileProgressNextStep,
             },
       ),
     );
@@ -1877,47 +1904,46 @@ class _MigrationProgressStatus extends StatelessWidget {
     final (icon, title, body) = switch (state) {
       _MigrationProgressState.syncing => (
         AppIcons.loader,
-        'Syncing migration progress',
-        'Checking the latest confirmations and migration status.',
+        context.l10n.migrationMobileProgressSyncingTitle,
+        context.l10n.migrationMobileProgressSyncingBody,
       ),
       _MigrationProgressState.waitingNotificationsOn => (
         AppIcons.notificationBell,
-        '~2 hrs 15 mins',
-        'Preparation is complete, but we are waiting\n'
-            'for the next available signing window.\n'
-            'We’ll let you know when it’s time to take action.',
+        '~2 hrs 15 mins', // l10n-ignore: preview fixture
+        context.l10n.migrationMobileProgressWaitingWindowBody,
       ),
       _MigrationProgressState.waitingNotificationsOff => (
         AppIcons.warningCircle,
-        'Waiting for next migration step',
-        'Notifications are disabled. Open Vizor after block 123456 '
-            '(~1 hr 30 mins) and approve the next migration batch.',
+        context.l10n.migrationMobileProgressNextStep,
+        context.l10n.migrationMobileNextNotificationsOffBlock(
+          123456, // l10n-ignore: preview fixture
+          '~1 hr 30 mins', // l10n-ignore: preview fixture
+        ),
       ),
       _MigrationProgressState.readyToSubmit => (
         AppIcons.migrationTimer,
-        'Ready now',
-        'The scheduled transaction is ready for automatic submission. '
-            'Keep Vizor open.',
+        context.l10n.migrationMobileProgressReadyNow,
+        context.l10n.migrationMobileNextReadyAuto,
       ),
       _MigrationProgressState.broadcasting => (
         AppIcons.notificationBell,
         isHardware
-            ? 'All clear. Processing batch #$currentBatchNumber'
-            : 'All clear. Migration is in progress',
-        'Next migration step expected in\n'
-            '~2 hrs 15 mins.\n'
-            'Notifications are on. You can leave Vizor and check back later.',
+            ? context.l10n.migrationMobileProgressAllClearBatch(
+                currentBatchNumber,
+              )
+            : context.l10n.migrationMobileProgressAllClear,
+        '${context.l10n.migrationMobileNextExpectedIn('~2 hrs 15 mins')}\n' // l10n-ignore: preview fixture
+            '${context.l10n.migrationMobileNextNotificationsOnLeave}',
       ),
       _MigrationProgressState.confirming => (
         AppIcons.migrationTimer,
-        'Waiting for confirmations',
-        'Confirmations are still arriving.\nYou can leave Vizor and check '
-            'again later.',
+        context.l10n.migrationNextActionDetailWaitingForConfirmations,
+        context.l10n.migrationMobileNextConfirmationsArriving,
       ),
       _MigrationProgressState.needsInput => (
         AppIcons.migrationSign,
-        'Waiting for your confirmation',
-        'Batch #1 is ready.',
+        context.l10n.migrationMobileProgressYourConfirmation,
+        context.l10n.migrationMobileProgressBatchReady(1),
       ),
     };
     final waitingWithNotifications =
@@ -2046,8 +2072,9 @@ class _MigrationNeedsInputCard extends StatelessWidget {
           _MigrationPreviewCard(
             child: _MigrationValueRow(
               icon: AppIcons.checkCircle,
-              label: batchLabel ?? 'Batch #1',
-              value: batchValue ?? '40 ZEC (30%)',
+              label: batchLabel ?? context.l10n.migrationMobileActionBatch(1),
+              value:
+                  batchValue ?? '40 ZEC (30%)', // l10n-ignore: preview fixture
               emphasized: true,
             ),
           ),
@@ -2056,8 +2083,8 @@ class _MigrationNeedsInputCard extends StatelessWidget {
           _MigrationPreviewCard(
             child: _MigrationValueRow(
               icon: AppIcons.checkCircle,
-              label: 'Batch #1',
-              value: '40 ZEC (30%)',
+              label: context.l10n.migrationMobileActionBatch(1),
+              value: '40 ZEC (30%)', // l10n-ignore: preview fixture
               emphasized: true,
             ),
           ),
@@ -2070,14 +2097,16 @@ class _MigrationNeedsInputCard extends StatelessWidget {
           height: 50,
           onPressed: actionRunning ? null : onAction ?? () {},
           leading: actionRunning
-              ? const AppIcon(
+              ? AppIcon(
                   AppIcons.loader,
-                  semanticLabel: 'Migration action in progress',
+                  semanticLabel: context.l10n.migrationMobileActionInProgress,
                 )
               : null,
           child: FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text(actionLabel ?? 'Sign batch #1'),
+            child: Text(
+              actionLabel ?? context.l10n.migrationMobileActionSignBatch(1),
+            ),
           ),
         ),
       ],
@@ -2102,7 +2131,7 @@ class _PreparationCompleteModalBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Preparation is done',
+            context.l10n.migrationMobilePrepDoneTitle,
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
               color: context.colors.text.accent,
@@ -2110,8 +2139,7 @@ class _PreparationCompleteModalBody extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.s),
           Text(
-            'Preparation is complete. Check your migration status for '
-            'progress and any action needed.',
+            context.l10n.migrationMobilePrepDoneBody,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
@@ -2131,7 +2159,7 @@ class _PreparationCompleteModalBody extends StatelessWidget {
             expand: true,
             height: 50,
             onPressed: onDone ?? () {},
-            child: const Text('Done'),
+            child: Text(context.l10n.commonDone),
           ),
         ],
       ),
@@ -2193,6 +2221,14 @@ class _AnimatedMigrationWaitLoopState extends State<_AnimatedMigrationWaitLoop>
                 labelStyle: AppTypography.bodyLarge.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
+                waitHighlight: context.l10n.migrationMobileWaitLoopWait,
+                waitLine: context.l10n.migrationMobileWaitLoopWaitLine(
+                  context.l10n.migrationMobileWaitLoopWait,
+                ),
+                signHighlight: context.l10n.migrationMobileWaitLoopSign,
+                signLine: context.l10n.migrationMobileWaitLoopSignLine(
+                  context.l10n.migrationMobileWaitLoopSign,
+                ),
               ),
             ),
           ),
@@ -2210,9 +2246,7 @@ class _AnimatedMigrationWaitLoopState extends State<_AnimatedMigrationWaitLoop>
                 SizedBox(
                   width: 177,
                   child: Text(
-                    'Repeat several times,\n'
-                    'waiting could take 2–10\n'
-                    'hours',
+                    context.l10n.migrationMobileWaitLoopCaption,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.secondary,
@@ -2250,7 +2284,7 @@ String migrationCompletedAmountText(
   final text = total > BigInt.zero
       ? ZecAmount.fromZatoshi(total).compactBalance.amountText
       : fallbackAmountText;
-  return '$text ZEC';
+  return '$text ZEC'; // l10n-ignore: amount format
 }
 
 /// The finished-migration result, with the behaviour that has to accompany it.
@@ -2326,11 +2360,172 @@ class _MigrationCompleteSurfaceState
   @override
   Widget build(BuildContext context) {
     return _MigrationCompletePreview(
-      amountText: migrationCompletedAmountText(
-        widget.status,
-        fallbackAmountText: widget.fallbackAmountText,
+      amountText: hideAmountIfPrivacyMode(
+        migrationCompletedAmountText(
+          widget.status,
+          fallbackAmountText: widget.fallbackAmountText,
+        ),
+        privacyModeEnabled: ref.watch(privacyModeProvider),
+        denomination: 'ZEC', // l10n-ignore: currency ticker
       ),
       onDone: widget.onDone,
+    );
+  }
+}
+
+const _previewUpgradeStop = IronwoodMigrationUpgradeStop(
+  migratedAmountText: '2.10 ZEC', // l10n-ignore: preview fixture
+  remainingAmountText: '3.40 ZEC', // l10n-ignore: preview fixture
+  completedParts: 7,
+  totalParts: 20,
+);
+
+/// Result for a run the network upgrade stopped; the live status uses it too.
+class _MigrationUpgradeStoppedView extends StatelessWidget {
+  const _MigrationUpgradeStoppedView({
+    required this.stop,
+    this.completedSegments,
+    this.segmentValuesZatoshi,
+    this.onMoveRemaining,
+    this.onBack,
+  });
+
+  final IronwoodMigrationUpgradeStop stop;
+  final Set<int>? completedSegments;
+  final List<BigInt>? segmentValuesZatoshi;
+  final VoidCallback? onMoveRemaining;
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final segments = math.max(1, stop.totalParts);
+    final usesLargeText = MediaQuery.textScalerOf(context).scale(1) > 1;
+    final body = Text(
+      context.l10n.migrationUpgradeStopBody,
+      textAlign: TextAlign.center,
+      style: AppTypography.bodyMedium.copyWith(color: colors.text.secondary),
+    );
+    final summary = _MigrationSummaryRows(
+      first: _MigrationValueRow(
+        label: context.l10n.migrationUpgradeStopMovedLabel,
+        value: stop.migratedAmountText,
+      ),
+      second: _MigrationValueRow(
+        label: context.l10n.migrationUpgradeStopRemainingLabel,
+        value: stop.remainingAmountText,
+        accented: true,
+      ),
+    );
+    final message = Semantics(
+      liveRegion: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppIcon(AppIcons.warning, size: 20, color: colors.icon.warning),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            context.l10n.migrationUpgradeStopRingMessage,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMediumStrong.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+        ],
+      ),
+    );
+    Widget ring(double dimension) => SizedBox.square(
+      dimension: dimension,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          _AnimatedMigrationAttentionRing(
+            dimension: dimension,
+            segmentWeights: _normalizedMigrationRingWeights(
+              segments: segments,
+              valuesZatoshi: segmentValuesZatoshi,
+            ),
+            completedSegments:
+                completedSegments ??
+                {
+                  for (
+                    var index = 0;
+                    index < stop.completedParts.clamp(0, segments);
+                    index++
+                  )
+                    index,
+                },
+            awaitingSegments: const {},
+            highlightedSegments: const {},
+          ),
+          // Large text shrinks the message to stay inside the ring.
+          if (usesLargeText)
+            SizedBox.square(
+              dimension: dimension * 0.7,
+              child: FittedBox(fit: BoxFit.scaleDown, child: message),
+            )
+          else
+            message,
+        ],
+      ),
+    );
+    return _MigrationPreviewPage(
+      navTitle: context.l10n.migrationFlowTitle,
+      onBack: onBack,
+      contentGap: AppSpacing.md,
+      // Large text scrolls the page rather than shrinking the ring away.
+      scrollableContent: usesLargeText,
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!usesLargeText) ...[body, const SizedBox(height: AppSpacing.md)],
+          AppButton(
+            key: const ValueKey('mobile_ironwood_upgrade_stop_move_remaining'),
+            expand: true,
+            height: 50,
+            growWithContent: true,
+            constrainContent: true,
+            onPressed: onMoveRemaining,
+            child: Text(
+              context.l10n.migrationUpgradeStopMoveRemainingLabel,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+      child: usesLargeText
+          ? Column(
+              children: [
+                ring(
+                  math.min(
+                    256.0,
+                    MediaQuery.sizeOf(context).width - 2 * AppSpacing.sm,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                summary,
+                const SizedBox(height: AppSpacing.md),
+                body,
+              ],
+            )
+          : Column(
+              children: [
+                // The ring shrinks on short screens so the page never scrolls.
+                Flexible(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => ring(
+                      math.min(
+                        256.0,
+                        math.min(constraints.maxHeight, constraints.maxWidth),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                summary,
+              ],
+            ),
     );
   }
 }
@@ -2348,7 +2543,7 @@ class _MigrationCompletePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _MigrationPreviewPage(
-      navTitle: 'You’re all set!',
+      navTitle: context.l10n.migrationMobileCompleteTitle,
       onBack: onDone,
       backgroundColor: const Color(0xFF007F49),
       navForegroundColor: const Color(0xFFFFFFFF),
@@ -2365,7 +2560,7 @@ class _MigrationCompletePreview extends StatelessWidget {
             ),
             alignment: Alignment.center,
             child: Text(
-              'Done',
+              context.l10n.commonDone,
               style: AppTypography.labelLarge.copyWith(
                 color: const Color(0xFF1B1F1F),
               ),
@@ -2387,7 +2582,7 @@ class _MigrationCompletePreview extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
           Text(
-            'Your\n$amountText\nare on Ironwood!',
+            context.l10n.migrationMobileCompleteHeading(amountText),
             textAlign: TextAlign.center,
             style: AppTypography.displayLarge.copyWith(
               color: const Color(0xFFFFFFFF),
@@ -2395,8 +2590,7 @@ class _MigrationCompletePreview extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'Migration went successfully and you can spend your funds as '
-            'usual.',
+            context.l10n.migrationMobileCompleteBody,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: const Color(0xFFFFFFFF),
@@ -2409,14 +2603,20 @@ class _MigrationCompletePreview extends StatelessWidget {
 }
 
 class _MigrationHomeAttentionPreview extends StatelessWidget {
-  const _MigrationHomeAttentionPreview({this.showModal = false});
+  const _MigrationHomeAttentionPreview({
+    this.showModal = false,
+    this.kind = MobileIronwoodMigrationAttentionKind.signature,
+    this.count = 2,
+  });
 
   final bool showModal;
+  final MobileIronwoodMigrationAttentionKind kind;
+  final int count;
 
   @override
   Widget build(BuildContext context) {
     final background = _MigrationPreviewPage(
-      navTitle: 'Wallet 1',
+      navTitle: 'Wallet 1', // l10n-ignore: preview fixture
       contentGap: AppSpacing.md,
       child: Column(
         children: [
@@ -2425,20 +2625,20 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Ironwood balance',
+                  context.l10n.activityBalanceIronwood,
                   style: AppTypography.labelLarge.copyWith(
                     color: context.colors.text.secondary,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  r'$1,200.12',
+                  r'$1,200.12', // l10n-ignore: preview fixture
                   style: AppTypography.displayLarge.copyWith(
                     color: context.colors.text.accent,
                   ),
                 ),
                 Text(
-                  '40.01 ZEC',
+                  '40.01 ZEC', // l10n-ignore: preview fixture
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.secondary,
                   ),
@@ -2449,8 +2649,8 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           MobileIronwoodMigrationBanner(
             inProgress: false,
-            attentionKind: MobileIronwoodMigrationAttentionKind.signature,
-            actionNeededCount: 2,
+            attentionKind: kind,
+            actionNeededCount: count,
             remainingText: null,
             onTap: () {},
           ),
@@ -2458,7 +2658,7 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'Recent activity',
+              context.l10n.homeRecentActivity,
               style: AppTypography.bodyLarge.copyWith(
                 color: context.colors.text.accent,
                 fontWeight: FontWeight.w600,
@@ -2466,10 +2666,10 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          const _MigrationValueRow(
+          _MigrationValueRow(
             icon: AppIcons.history,
-            label: 'Received',
-            value: '+31.10 ZEC',
+            label: context.l10n.commonReceived,
+            value: '+31.10 ZEC', // l10n-ignore: preview fixture
           ),
         ],
       ),
@@ -2478,8 +2678,8 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
     return _MigrationModalPreview(
       background: background,
       child: MobileIronwoodMigrationAttentionSheetBody(
-        kind: MobileIronwoodMigrationAttentionKind.signature,
-        count: 2,
+        kind: kind,
+        count: count,
         onOpenMigration: () {},
         onLater: () {},
       ),
@@ -2493,7 +2693,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final background = _MigrationPreviewPage(
-      navTitle: 'Step 1/2',
+      navTitle: context.l10n.commonStepOneOfTwo,
       bottom: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2501,7 +2701,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
             expand: true,
             height: 50,
             onPressed: () {},
-            child: const Text('Next step'),
+            child: Text(context.l10n.commonNextStep),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -2509,7 +2709,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
             height: 50,
             variant: AppButtonVariant.ghost,
             onPressed: () {},
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
         ],
       ),
@@ -2517,7 +2717,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            'Scan with Keystone',
+            context.l10n.commonScanWithKeystone,
             style: appSerifDisplayStyle(color: context.colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.base),
@@ -2539,7 +2739,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.base),
           Text(
-            'Tap QR on your Keystone,\nthen scan this QR code.',
+            context.l10n.migrationMobileKeystoneHelpPrompt,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.primary,
@@ -2661,65 +2861,51 @@ class _MigrationValueRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 20,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final style =
-              (emphasized
-                      ? AppTypography.labelLarge
-                      : AppTypography.labelLarge.copyWith(
-                          fontWeight: FontWeight.w400,
-                        ))
-                  .copyWith(
-                    color: emphasized || accented
-                        ? context.colors.text.accent
-                        : context.colors.text.primary,
-                  );
-          final labelPainter = TextPainter(
-            text: TextSpan(text: label, style: style),
-            maxLines: 1,
-            textDirection: Directionality.of(context),
-          )..layout();
-          final fixedWidth = icon == null ? 0.0 : 20 + AppSpacing.xs;
-          const minimumValueWidth = 80.0;
-          final labelWidth = math.min(
-            labelPainter.width,
-            math.max(
-              0.0,
-              constraints.maxWidth - fixedWidth - minimumValueWidth,
-            ),
-          );
-          final labelText = Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: style,
-          );
-          final valueText = Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.end,
-            style: style,
-          );
-          return Row(
+    final style =
+        (emphasized
+                ? AppTypography.labelLarge
+                : AppTypography.labelLarge.copyWith(
+                    fontWeight: FontWeight.w400,
+                  ))
+            .copyWith(
+              color: emphasized || accented
+                  ? context.colors.text.accent
+                  : context.colors.text.primary,
+            );
+    final labelText = Text(label, style: style);
+    // Label and value share a line while they fit; with large text the value
+    // wraps below the label rather than either being cut off.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 20),
+      child: Center(
+        // Full width, so spaceBetween puts the value at the trailing edge.
+        child: SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              if (icon != null) ...[
-                AppIcon(
-                  icon!,
-                  size: 20,
-                  color: emphasized || accented
-                      ? context.colors.text.accent
-                      : context.colors.text.primary,
+              if (icon == null)
+                labelText
+              else
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppIcon(
+                      icon!,
+                      size: 20,
+                      color: emphasized || accented
+                          ? context.colors.text.accent
+                          : context.colors.text.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Flexible(child: labelText),
+                  ],
                 ),
-                const SizedBox(width: AppSpacing.xs),
-              ],
-              SizedBox(width: labelWidth, child: labelText),
-              Expanded(child: valueText),
+              Text(value, textAlign: TextAlign.end, style: style),
             ],
-          );
-        },
+          ),
+        ),
       ),
     );
   }
@@ -3124,11 +3310,19 @@ class _MigrationWaitLoopPainter extends CustomPainter {
     required this.lineColor,
     required this.successColor,
     required this.labelStyle,
+    required this.waitLine,
+    required this.waitHighlight,
+    required this.signLine,
+    required this.signHighlight,
   });
 
   final Color lineColor;
   final Color successColor;
   final TextStyle labelStyle;
+  final String waitLine;
+  final String waitHighlight;
+  final String signLine;
+  final String signHighlight;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -3157,14 +3351,18 @@ class _MigrationWaitLoopPainter extends CustomPainter {
       }
     }
 
-    final topSegments = [
-      _MigrationArcTextSegment('Wait', successColor),
-      _MigrationArcTextSegment(' for the window', lineColor),
-    ];
-    final bottomSegments = [
-      _MigrationArcTextSegment('Sign', successColor),
-      _MigrationArcTextSegment(' the batch of transactions', lineColor),
-    ];
+    final topSegments = _arcSegments(
+      waitLine,
+      waitHighlight,
+      successColor,
+      lineColor,
+    );
+    final bottomSegments = _arcSegments(
+      signLine,
+      signHighlight,
+      successColor,
+      lineColor,
+    );
     const textRadius = 131.0;
     const labelClearance = 12.0;
     final clearanceAngle = labelClearance / textRadius;
@@ -3293,6 +3491,28 @@ class _MigrationWaitLoopPainter extends CustomPainter {
         successColor != oldDelegate.successColor ||
         labelStyle != oldDelegate.labelStyle;
   }
+}
+
+/// Splits a localized [line] around its [highlight], wherever the translation
+/// puts it.
+List<_MigrationArcTextSegment> _arcSegments(
+  String line,
+  String highlight,
+  Color highlightColor,
+  Color baseColor,
+) {
+  final start = line.indexOf(highlight);
+  if (start < 0 || highlight.isEmpty) {
+    return [_MigrationArcTextSegment(line, baseColor)];
+  }
+  final end = start + highlight.length;
+  return [
+    if (start > 0)
+      _MigrationArcTextSegment(line.substring(0, start), baseColor),
+    _MigrationArcTextSegment(highlight, highlightColor),
+    if (end < line.length)
+      _MigrationArcTextSegment(line.substring(end), baseColor),
+  ];
 }
 
 class _MigrationArcTextSegment {

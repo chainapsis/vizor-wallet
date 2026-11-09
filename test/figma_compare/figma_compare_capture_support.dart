@@ -14,6 +14,10 @@ import 'figma_compare_font_loader.dart';
 const _windowAppearanceChannel = MethodChannel(
   'com.zcash.wallet/window_appearance',
 );
+const _privacyExposureChannel = MethodChannel(
+  'com.zcash.wallet/privacy_exposure',
+);
+const _privacyShieldChannel = MethodChannel('com.zcash.wallet/privacy_shield');
 
 void runFigmaCompareCaptureTest({
   required AppFormFactor expectedFormFactor,
@@ -23,8 +27,10 @@ void runFigmaCompareCaptureTest({
   Future<void> Function(WidgetTester tester)? beforeCapture,
   TargetPlatform mobilePlatform = TargetPlatform.iOS,
 }) {
+  final languageTag = overrideConfiguration?.language?.tag;
   final testName =
-      'captures ${overrideConfiguration?.scenarioId ?? 'configured scenario'} ${overrideConfiguration?.themeMode.name ?? ''}';
+      'captures ${overrideConfiguration?.scenarioId ?? 'configured scenario'} ${overrideConfiguration?.themeMode.name ?? ''}'
+      '${languageTag == null ? '' : ' $languageTag'}';
   testWidgets(testName, (tester) async {
     expect(
       kAppFormFactor,
@@ -86,14 +92,33 @@ void runFigmaCompareCaptureTest({
     addTearDown(
       () => messenger.setMockMethodCallHandler(_windowAppearanceChannel, null),
     );
+    // Widget captures render app content without the native privacy plugins.
+    // Keep secret-screen previews in a deterministic, foreground-safe state.
+    messenger.setMockMethodCallHandler(
+      _privacyExposureChannel,
+      (_) async => null,
+    );
+    messenger.setMockMethodCallHandler(_privacyShieldChannel, (call) async {
+      final visible = (call.arguments as Map?)?['visible'] == true;
+      return {'visible': visible, 'state': visible ? 'applied' : 'disabled'};
+    });
+    addTearDown(() async {
+      // Cancel EventChannel subscriptions before removing their mocks.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      messenger.setMockMethodCallHandler(_privacyExposureChannel, null);
+      messenger.setMockMethodCallHandler(_privacyShieldChannel, null);
+    });
 
     await loadFigmaCompareFonts();
+    final language = configuration.language;
     final captureBoundaryKey = GlobalKey();
     await tester.pumpWidget(
       FigmaCompareApp(
         scenario: scenario,
         themeMode: configuration.themeMode,
         captureBoundaryKey: captureBoundaryKey,
+        locale: language?.locale,
       ),
     );
     await tester.pump();
@@ -104,6 +129,10 @@ void runFigmaCompareCaptureTest({
     // resting state without using pumpAndSettle, which would hang on the
     // intentionally looping home-screen illustration motion.
     await tester.pump(const Duration(milliseconds: 400));
+    // Prepared iOS sheets first lay out offstage for native corners, then
+    // start their entrance on a post-frame callback. Advance that entrance
+    // too; a single pump may capture its first, almost invisible frame.
+    await tester.pump(const Duration(milliseconds: 400));
 
     if (scenario.scrollToEnd) {
       final scrollable = find.byType(Scrollable);
@@ -113,6 +142,25 @@ void runFigmaCompareCaptureTest({
       await tester.pump();
     }
 
+    if (scenario.id.startsWith('mobile-shield-')) {
+      // Rasterized glyph targets are prepared by the real engine outside the
+      // test clock. Use a fixed seed and fixed timestamps for motion captures.
+      for (var i = 0; i < 30; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump(const Duration(milliseconds: 17));
+      }
+      for (var i = 0; i < 180; i++) {
+        await tester.pump(const Duration(milliseconds: 17));
+      }
+      if (scenario.id == 'mobile-shield-result' ||
+          scenario.id == 'mobile-shield-reference-result') {
+        for (var i = 0; i < 240; i++) {
+          await tester.pump(const Duration(milliseconds: 17));
+        }
+      }
+    }
     if (beforeCapture != null) await beforeCapture(tester);
     expect(tester.takeException(), isNull);
 

@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 
 import '../profile_pictures.dart';
-import '../theme/app_theme.dart';
 
 enum AppProfilePictureSize {
   medium(24),
@@ -31,19 +30,16 @@ class AppProfilePicture extends StatelessWidget {
   Widget build(BuildContext context) {
     final option = resolveProfilePictureOption(profilePictureId);
 
-    return Container(
+    return SizedBox(
       width: size.dimension,
       height: size.dimension,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: context.colors.background.raised,
-        shape: BoxShape.circle,
-      ),
-      child: Image.asset(
-        option.assetPath,
-        width: size.dimension,
-        height: size.dimension,
-        fit: BoxFit.cover,
+      child: ClipOval(
+        child: Image.asset(
+          option.assetPath,
+          width: size.dimension,
+          height: size.dimension,
+          fit: BoxFit.cover,
+        ),
       ),
     );
   }

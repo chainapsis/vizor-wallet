@@ -55,7 +55,7 @@ class LedgerImmediateMigrationCancelled implements Exception {
   const LedgerImmediateMigrationCancelled();
 
   @override
-  String toString() => 'Ledger Immediate migration was cancelled.';
+  String toString() => 'Ledger Immediate migration was cancelled.'; // l10n-ignore: exception text
 }
 
 class LedgerImmediateMigrationService {
@@ -183,7 +183,7 @@ final ledgerImmediateMigrationServiceProvider =
     Provider<LedgerImmediateMigrationService>((ref) {
       final migrationService = ref.watch(ironwoodMigrationServiceProvider);
       return LedgerImmediateMigrationService(
-        prepare: migrationService.prepareHardwareImmediateMigrationRequest,
+        prepare: migrationService.prepareLedgerImmediateMigrationRequest,
         complete: migrationService.completeHardwareImmediateMigrationRequest,
         loadProofStatus: migrationService.hardwareMigrationProofStatus,
         discard: migrationService.discardHardwareMigrationRequest,

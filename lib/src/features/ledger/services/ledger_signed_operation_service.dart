@@ -42,9 +42,11 @@ class LedgerSignedOperationMetadata {
     required this.state,
     this.externalRef,
     this.expiryHeight,
+    this.shieldedZatoshi,
     this.txid,
     this.status,
     this.message,
+    this.notices = const [],
   });
 
   final String operationId;
@@ -52,10 +54,17 @@ class LedgerSignedOperationMetadata {
   final LedgerSignedOperationKind kind;
   final String? externalRef;
   final int? expiryHeight;
+  final BigInt? shieldedZatoshi;
   final String state;
   final String? txid;
   final String? status;
+
+  /// Rust's English result text; [notices] when it has a fixed shape.
   final String? message;
+
+  /// [message] as sentences for the display language
+  /// (`broadcastResultText`). Empty for rows earlier builds stored.
+  final List<rust_sync.BroadcastNotice> notices;
 }
 
 class LedgerSignedOperationBroadcastResult {
@@ -65,12 +74,19 @@ class LedgerSignedOperationBroadcastResult {
     required this.status,
     required this.requiresAck,
     this.message,
+    this.notices = const [],
   });
 
   final String operationId;
   final String txid;
   final String status;
+
+  /// Rust's English result text; [notices] when it has a fixed shape.
   final String? message;
+
+  /// [message] as sentences for the display language
+  /// (`broadcastResultText`).
+  final List<rust_sync.BroadcastNotice> notices;
   final bool requiresAck;
 }
 
@@ -117,14 +133,15 @@ final ledgerSignedOperationServiceProvider =
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         loadWalletDbPath: ref.watch(ledgerWalletDbPathProvider),
         readBroadcastEndpoint: () =>
-            ref.read(rpcEndpointFailoverProvider).current,
+            ref.read(rpcEndpointFailoverProvider.notifier).ensureReady(),
         reportBroadcastFailure: (error, attemptedEndpoint) async {
           final switched = await ref
               .read(rpcEndpointFailoverProvider.notifier)
               .switchToFallbackFor(
                 error,
                 endpoint: attemptedEndpoint,
-                operation: 'ledger signed operation broadcast',
+                operation:
+                    'ledger signed operation broadcast', // l10n-ignore: log label
               );
           if (switched) {
             unawaited(
@@ -165,7 +182,7 @@ class RustLedgerSignedOperationService
   // Resolve after loading the DB, on every call, including when startup recovery
   // holds this service across multiple operations. Fixed URLs remain available
   // to standalone integration harnesses.
-  final RpcEndpointConfig Function()? readBroadcastEndpoint;
+  final FutureOr<RpcEndpointConfig> Function()? readBroadcastEndpoint;
   final Future<void> Function(Object, RpcEndpointConfig)?
   reportBroadcastFailure;
 
@@ -240,7 +257,7 @@ class RustLedgerSignedOperationService
     String? outputParamsPath,
   }) => _run(() async {
     final dbPath = await loadWalletDbPath();
-    final endpoint = readBroadcastEndpoint?.call();
+    final endpoint = await readBroadcastEndpoint?.call();
     if (endpoint != null && endpoint.networkName != network) {
       throw StateError('Ledger operation belongs to a different network.');
     }
@@ -263,6 +280,7 @@ class RustLedgerSignedOperationService
         txid: result.txid,
         status: result.status,
         message: result.message,
+        notices: result.notices,
         requiresAck: result.requiresAck,
       );
     } catch (error) {
@@ -291,10 +309,12 @@ LedgerSignedOperationMetadata _metadataFromRust(
     kind: LedgerSignedOperationKind.parse(operation.kind),
     externalRef: operation.externalRef,
     expiryHeight: operation.expiryHeight,
+    shieldedZatoshi: operation.shieldedZatoshi,
     state: operation.state,
     txid: operation.txid,
     status: operation.status,
     message: operation.message,
+    notices: operation.notices,
   );
 }
 

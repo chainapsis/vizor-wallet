@@ -162,7 +162,7 @@ SwapIntent swapIntentFromSnapshot({
 
 SwapIntent swapIntentWithBroadcastNotice(
   SwapIntent intent, {
-  required String notice,
+  required SwapMessage notice,
   String? broadcastStatus,
   DateTime? updatedAt,
 }) {
@@ -179,8 +179,8 @@ SwapIntent swapIntentWithBroadcastNotice(
 SwapIntent swapIntentWithDepositCheckpoint(
   SwapIntent intent, {
   required String txHash,
-  String? statusError,
-  String? broadcastNotice,
+  SwapMessage? statusError,
+  SwapMessage? broadcastNotice,
   String? broadcastStatus,
   required bool clearStatusError,
   required bool clearBroadcastNotice,
@@ -204,7 +204,7 @@ SwapIntent swapIntentWithDepositSnapshot(
   SwapIntent intent,
   SwapIntentSnapshot snapshot, {
   required String txHash,
-  String? broadcastNotice,
+  SwapMessage? broadcastNotice,
   DateTime? updatedAt,
 }) {
   final timestamp = updatedAt ?? DateTime.now().toUtc();
@@ -329,11 +329,11 @@ String _nextActionForResolvedStatus(
 ) {
   if (status == SwapIntentStatus.expired &&
       snapshot.status != SwapIntentStatus.expired) {
-    return 'Start a fresh quote';
+    return SwapNextAction.startFreshQuote.name;
   }
   if (status == SwapIntentStatus.refunded &&
       snapshot.status == SwapIntentStatus.failed) {
-    return 'Refund sent to your refund address';
+    return SwapNextAction.refundSent.name;
   }
   return snapshot.nextAction;
 }
@@ -344,11 +344,11 @@ String _nextActionForRestoredStatus(
 ) {
   if (status == SwapIntentStatus.expired &&
       record.status != SwapIntentStatus.expired) {
-    return 'Start a fresh quote';
+    return SwapNextAction.startFreshQuote.name;
   }
   if (status == SwapIntentStatus.refunded &&
       record.status == SwapIntentStatus.failed) {
-    return 'Refund sent to your refund address';
+    return SwapNextAction.refundSent.name;
   }
   return record.nextAction;
 }

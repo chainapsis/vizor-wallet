@@ -33,7 +33,12 @@ class _MobileMigrationOptionCard extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: onTap,
+          onTap: onTap == null
+              ? null
+              : () {
+                  if (!selected) unawaited(AppHaptics.selection());
+                  onTap!();
+                },
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: colors.background.ground,
@@ -106,7 +111,9 @@ class _MobileMigrationOptionCard extends StatelessWidget {
                                           vertical: AppSpacing.xxs,
                                         ),
                                         child: Text(
-                                          'Recommended',
+                                          context
+                                              .l10n
+                                              .migrationOptionRecommended,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: AppTypography.labelLarge

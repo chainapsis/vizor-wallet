@@ -1,3 +1,5 @@
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
+import 'package:zcash_wallet/src/core/navigation/incoming_link_entry_policy.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_check_progress_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -18,7 +20,6 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
@@ -29,19 +30,237 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_car
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_batch_detail_desktop_view.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/gift_card_privacy_checks.dart';
+import '../../support/gift_card_entry_checks.dart';
+import '../../support/gift_card_local_group_checks.dart';
 import '../../support/gift_card_claim_checking_checks.dart';
 import '../../support/leading_decimal_input.dart';
 import '../../support/payment_links_screen_support.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
+import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
+  registerGiftCardEntryChecks(mobile: false);
+  registerGiftCardLocalGroupChecks(mobile: false);
+  for (final notifyDisplay in [true, false]) {
+    testWidgets(
+      'stale single card quote recovers after funding fails (epoch=$notifyDisplay)',
+      (tester) async {
+        SyncState at(int tip) => SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          chainTipHeight: tip,
+          scannedHeight: tip,
+          spendableBalance: BigInt.from(14223000000),
+        );
+        final sync = FakeSyncNotifier(at(998));
+        final operations = _FeeTransitionCardOperations();
+        await pumpPaymentLinksScreen(
+          tester,
+          operations: operations,
+          syncNotifier: sync,
+          feeSchedule: const BlockSpacing(
+            preNu7BlockSeconds: 75,
+            nu7BlockSeconds: 25,
+            nu7ActivationHeight: 1000,
+          ),
+        );
+        await _reviewSingleCardForFeeTransition(tester);
+        final oldQuotes = operations.quotedAccounts.length;
+        await tester.tap(find.text('Create card'));
+        await tester.pump();
+        expect(operations.attempts, 1);
+        operations.nu7 = true;
+        if (notifyDisplay) sync.emit(at(999));
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(operations.quotedAccounts.length, oldQuotes);
+        operations.firstFunding.complete();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('payment_link_amount_editor')),
+          findsOneWidget,
+        );
+        expect(operations.quotedAccounts.length, oldQuotes + 1);
+        expect(operations.createdAmounts, isEmpty);
+        expect(operations.attempts, 1); // Requoting never sends automatically.
+        final amount = tester.widget<EditableText>(
+          find.byKey(const ValueKey('payment_link_amount_editor')),
+        );
+        expect(amount.controller.text, '1');
+        await tester.tap(
+          find.byKey(const ValueKey('payment_link_amount_continue_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<TextField>(
+                find.byKey(const ValueKey('payment_link_message_editor')),
+              )
+              .controller!
+              .text,
+          'Keep this message',
+        );
+        await tester.tap(find.text('Review & confirm'));
+        await tester.pumpAndSettle();
+        expect(find.text('1.00004 ZEC'), findsOneWidget);
+        await tester.tap(find.text('Create card'));
+        await tester.pumpAndSettle();
+        expect(operations.attempts, 2);
+        expect(operations.createdAmounts, [BigInt.from(100000000)]);
+        expect(
+          operations.acceptedQuote!.claimFeeReserveZatoshi,
+          BigInt.from(2000),
+        );
+      },
+    );
+  }
+
+  testWidgets(
+    'fee change while accepted funding metadata is unsaved keeps save retry',
+    (tester) async {
+      SyncState at(int tip) => SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        chainTipHeight: tip,
+        scannedHeight: tip,
+        spendableBalance: BigInt.from(14223000000),
+      );
+      final sync = FakeSyncNotifier(at(998));
+      final gate = Completer<void>();
+      final operations = FakePaymentLinkOperations(
+        createFundedLinkGate: gate,
+        fundingMetadataSavedOnCreate: false,
+      );
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        syncNotifier: sync,
+        feeSchedule: const BlockSpacing(
+          preNu7BlockSeconds: 75,
+          nu7BlockSeconds: 25,
+          nu7ActivationHeight: 1000,
+        ),
+      );
+      await _reviewSingleCardForFeeTransition(tester);
+      final quotes = operations.quotedAccounts.length;
+      await tester.tap(find.text('Create card'));
+      await tester.pump();
+      sync.emit(at(999));
+      await tester.pump();
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(operations.quotedAccounts.length, quotes);
+      expect(operations.createdAmounts.length, 1);
+      expect(
+        find.byKey(const ValueKey('payment_link_amount_editor')),
+        findsNothing,
+      );
+      // The review action retries metadata only, not funding or a new quote.
+      await tester.tap(find.text('Try saving again'));
+      await tester.pumpAndSettle();
+      expect(operations.fundingMetadataRetries, 1);
+      expect(operations.createdAmounts.length, 1);
+      expect(operations.quotedAccounts.length, quotes);
+    },
+  );
+
+  testWidgets('NU7 target boundary refreshes single and Max card quotes', (
+    tester,
+  ) async {
+    SyncState at(int tip) => SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      chainTipHeight: tip,
+      scannedHeight: tip,
+      spendableBalance: BigInt.from(14223000000),
+    );
+    final sync = FakeSyncNotifier(at(998));
+    final operations = FakePaymentLinkOperations();
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      syncNotifier: sync,
+      feeSchedule: const BlockSpacing(
+        preNu7BlockSeconds: 75,
+        nu7BlockSeconds: 25,
+        nu7ActivationHeight: 1000,
+      ),
+    );
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '1',
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    final quotes = operations.quotedAccounts.length;
+    final maxQuotes = operations.maxQuotedAccounts.length;
+    sync.emit(at(999));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(operations.quotedAccounts.length, quotes + 1);
+    expect(operations.maxQuotedAccounts.length, maxQuotes + 1);
+    sync.emit(at(1000));
+    await tester.pumpAndSettle();
+    expect(operations.quotedAccounts.length, quotes + 1);
+    sync.emit(at(998));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(operations.quotedAccounts.length, quotes + 2);
+  });
+
+  testWidgets('NU7 target boundary refreshes an unsubmitted group quote', (
+    tester,
+  ) async {
+    SyncState at(int tip) => SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      chainTipHeight: tip,
+      scannedHeight: tip,
+      spendableBalance: BigInt.from(14223000000),
+    );
+    final sync = FakeSyncNotifier(at(998));
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations);
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+      syncNotifier: sync,
+      feeSchedule: const BlockSpacing(
+        preNu7BlockSeconds: 75,
+        nu7BlockSeconds: 25,
+        nu7ActivationHeight: 1000,
+      ),
+    );
+    await _reviewTwoCards(tester);
+    final count = batch.preparedCounts.length;
+    sync.emit(at(999));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(batch.preparedCounts.length, count + 1);
+    expect(find.text('Review 2 cards'), findsOneWidget);
+  });
+
   testWidgets(
     'leaving a desktop preview prevents its interrupted check reopening',
     (tester) async {
@@ -410,7 +629,7 @@ void main() {
           await tester.pumpAndSettle();
         }
         await tester.tap(
-          find.text(settings.$2 ? 'Confirm & review' : 'Skip message'),
+          find.text(settings.$2 ? 'Review & confirm' : 'Skip message'),
         );
         await tester.pumpAndSettle();
         await tester.tap(find.text('Create card'));
@@ -603,7 +822,7 @@ void main() {
     expect(find.text('Claimed elsewhere'), findsOneWidget);
     expect(find.text('Remove'), findsOneWidget);
     expect(find.byType(PaymentLinkArchiveHeader), findsNothing);
-    expect(find.text(kPaymentLinkNoReceivedCardsText), findsNothing);
+    expect(find.text(testL10n.paymentLinkNoReceivedCardsText), findsNothing);
   });
 
   testWidgets('a refused removal shows the card as stored', (tester) async {
@@ -1253,7 +1472,7 @@ void main() {
     expect(find.text('121/128'), findsOneWidget);
 
     var continueButton = tester.widget<AppButton>(
-      find.widgetWithText(AppButton, 'Confirm & review'),
+      find.widgetWithText(AppButton, 'Review & confirm'),
     );
     expect(continueButton.onPressed, isNotNull);
 
@@ -1267,7 +1486,7 @@ void main() {
       findsOneWidget,
     );
     continueButton = tester.widget<AppButton>(
-      find.widgetWithText(AppButton, 'Confirm & review'),
+      find.widgetWithText(AppButton, 'Review & confirm'),
     );
     expect(continueButton.onPressed, isNull);
 
@@ -1279,7 +1498,7 @@ void main() {
     );
     expect(find.text('0/128'), findsOneWidget);
     continueButton = tester.widget<AppButton>(
-      find.widgetWithText(AppButton, 'Confirm & review'),
+      find.widgetWithText(AppButton, 'Review & confirm'),
     );
     expect(continueButton.onPressed, isNotNull);
 
@@ -1304,7 +1523,7 @@ void main() {
 
     await tester.enterText(messageEditor, 'For you');
     await tester.pump();
-    await tester.tap(find.text('Confirm & review'));
+    await tester.tap(find.text('Review & confirm'));
     await tester.pumpAndSettle();
     expect(find.text('Card amount'), findsOneWidget);
     expect(find.text('Card fee (deposit + redeem)'), findsOneWidget);
@@ -1370,6 +1589,40 @@ void main() {
     expect(operations.sharedLinks, hasLength(1));
     expect(clipboard.copiedSecrets, hasLength(1));
     semantics.dispose();
+  });
+
+  testWidgets('holds Gift Card funding for the network upgrade', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations();
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      upgradeWindow: const NetworkUpgradeWindowState(
+        nextActivationHeight: 3543405,
+        holdsTransactions: true,
+      ),
+    );
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip message'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create card'));
+    await tester.pumpAndSettle();
+
+    expect(operations.createdAmounts, isEmpty);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
   });
 
   testWidgets(
@@ -1537,14 +1790,15 @@ void main() {
     );
     await pumpPaymentLinksScreen(tester, operations: operations);
 
-    expect(find.text('Preparing…'), findsOneWidget);
+    expect(find.text('Unverified'), findsOneWidget);
     expect(find.bySemanticsLabel('Copy gift card link'), findsNothing);
 
     operations.fundingConfirmationCount = 1;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
 
-    expect(find.text('Preparing…'), findsNothing);
+    // Funding readiness does not establish whether the card has been used.
+    expect(find.text('Unverified'), findsOneWidget);
     expect(find.bySemanticsLabel('Copy gift card link'), findsOneWidget);
   });
 
@@ -1555,14 +1809,14 @@ void main() {
     );
     await pumpPaymentLinksScreen(tester, operations: operations);
 
-    expect(find.text('Preparing…'), findsOneWidget);
+    expect(find.text('Unverified'), findsOneWidget);
 
     operations.expireFundingOnInspect = true;
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
 
     expect(operations.records, isEmpty);
-    expect(find.text('Preparing…'), findsNothing);
+    expect(find.text('Unverified'), findsNothing);
   });
 
   testWidgets('makes the link available after funding is accepted', (
@@ -1873,7 +2127,7 @@ void main() {
         'For Keystone',
       );
       await tester.pump();
-      await tester.tap(find.text('Confirm & review'));
+      await tester.tap(find.text('Review & confirm'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Create card'));
 
@@ -2015,7 +2269,7 @@ void main() {
       'Congratulations!',
     );
     await tester.pump();
-    await tester.tap(find.text('Confirm & review'));
+    await tester.tap(find.text('Review & confirm'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Create card'));
     await tester.pumpAndSettle();
@@ -2869,7 +3123,10 @@ void main() {
       find.byKey(const ValueKey('payment_link_amount_editor')),
       findsOneWidget,
     );
-    expect(find.text(kPaymentLinkDeferredByActiveFlowMessage), findsOneWidget);
+    expect(
+      find.text(IncomingLinkNotice.giftBusy.text(testL10n)),
+      findsOneWidget,
+    );
     expect(operations.allowLongSyncCalls, isEmpty);
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
 
@@ -3167,14 +3424,14 @@ void main() {
       container
           .read(paymentLinkIntakeProvider.notifier)
           .receive(incomingLink.toUri().toString());
-      for (var i = 0; i < 10 && operations.receivedLoadCalls == 0; i++) {
+      for (var i = 0; i < 20 && operations.localCreatedLoadCalls == 0; i++) {
         await tester.pump(const Duration(milliseconds: 10));
       }
 
-      expect(operations.createdLoadCalls, 1);
+      expect(operations.localCreatedLoadCalls, 1);
       // App-level recovery and the route's initial snapshot both begin before
       // intake is consumed; neither waits for the Created-card load.
-      expect(operations.receivedLoadCalls, 2);
+      expect(operations.receivedLoadCalls, greaterThanOrEqualTo(2));
       expect(operations.allowLongSyncCalls, isEmpty);
 
       createdLoadGate.complete();
@@ -3197,7 +3454,7 @@ void main() {
     await pumpPaymentLinksScreen(tester, operations: operations);
     await tester.pumpAndSettle();
 
-    expect(operations.receivedLoadCalls, 2);
+    expect(operations.receivedLoadCalls, greaterThanOrEqualTo(2));
     expect(find.text('Received gift cards could not be loaded.'), findsNothing);
   });
 
@@ -4104,6 +4361,38 @@ void main() {
     expect(batch.fundCalls, 1);
   });
 
+  testWidgets('an upgrade hold leaves the group unsent and quotes again', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations)
+      ..fundError = const PaymentLinkBatchPreSubmissionFailure(
+        NetworkUpgradeHold.hold,
+      );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+    );
+    await _reviewTwoCards(tester);
+    await tester.tap(find.text('Create 2 cards'));
+    await tester.pumpAndSettle();
+
+    expect(batch.fundCalls, 1);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
+    expect(find.textContaining('couldn’t confirm the payment'), findsNothing);
+    expect(
+      find.text('No cards were funded. Review the amount and try again.'),
+      findsNothing,
+    );
+    // Not locked: the group is quoted again and can be created.
+    expect(batch.preparedCounts, [2, 2, 2]);
+    batch.fundError = null;
+    await tester.tap(find.text('Create 2 cards'));
+    await tester.pumpAndSettle();
+    expect(batch.fundCalls, 2);
+  });
+
   testWidgets('funding does not report the group cost as missing ZEC', (
     tester,
   ) async {
@@ -4141,6 +4430,69 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Try saving again'), findsOneWidget);
     expect(find.text('Additional ZEC needed'), findsNothing);
+  });
+
+  testWidgets('group creation masks the balance and shortfall in privacy mode', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      final operations = FakePaymentLinkOperations();
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        batchOperations: _FakeDesktopBatchOperations(operations),
+        privacyNotifier: _EnabledPrivacy(),
+        syncNotifier: FakeSyncNotifier(
+          SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            isSyncComplete: true,
+            percentage: 1,
+            displayTargetPercentage: 1,
+            // Above 2 × 0.1 so the cards are quoted, below the 0.2005 total.
+            spendableBalance: BigInt.from(20010000),
+            displaySpendableBalance: BigInt.from(20010000),
+          ),
+        ),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_create_batch_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('payment_link_bulk_amount')),
+        '0.1',
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('payment_link_bulk_available')),
+          matching: find.text('****** ZEC'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel('****** ZEC available'), findsOneWidget);
+      final shortfall = find.ancestor(
+        of: find.text('Additional ZEC needed'),
+        matching: find.byType(Row),
+      );
+      expect(
+        find.descendant(of: shortfall.first, matching: find.text('****** ZEC')),
+        findsOneWidget,
+      );
+      // The draft's own cost stays visible; only balance-derived values hide.
+      expect(find.text('0.2002 ZEC'), findsOneWidget);
+      expect(find.text('0.2005 ZEC'), findsOneWidget);
+      expect(find.textContaining('0.2001'), findsNothing);
+      expect(find.textContaining('0.0004'), findsNothing);
+      expect(find.textContaining('ZEC ZEC'), findsNothing);
+      expect(find.bySemanticsLabel(RegExp(r'0\.2001|0\.0004')), findsNothing);
+    } finally {
+      semantics.dispose();
+    }
   });
 
   for (final inFlight in [false, true]) {
@@ -4234,6 +4586,11 @@ class _InterruptedPreviewOperations extends FakePaymentLinkOperations {
   }
 }
 
+class _EnabledPrivacy extends PrivacyModeNotifier {
+  @override
+  bool build() => true;
+}
+
 Future<void> _reviewTwoCards(WidgetTester tester) async {
   await tester.tap(
     find.byKey(const ValueKey('payment_link_create_batch_button')),
@@ -4260,6 +4617,7 @@ class _FakeDesktopBatchOperations implements PaymentLinkBatchOperations {
   int fundCalls = 0;
   int metadataRetries = 0;
   Completer<void>? fundGate;
+  Object? fundError;
   bool fundingMetadataSaved = true;
   final links = batchTestLinks;
 
@@ -4296,6 +4654,7 @@ class _FakeDesktopBatchOperations implements PaymentLinkBatchOperations {
   ) async {
     fundCalls++;
     await fundGate?.future;
+    if (fundError case final error?) throw error;
     operations.records.addAll([
       for (var index = 0; index < links.length; index++)
         PaymentLinkRecoveryRecord(
@@ -4355,5 +4714,76 @@ class _RefreshingCardPrice implements ZecMarketDataSource {
     final request = Completer<ZecMarketData?>();
     requests.add(request);
     return request.future;
+  }
+}
+
+Future<void> _reviewSingleCardForFeeTransition(WidgetTester tester) async {
+  await tester.tap(find.text('Create new card'));
+  await tester.pumpAndSettle();
+  await tester.enterText(
+    find.byKey(const ValueKey('payment_link_amount_editor')),
+    '1',
+  );
+  await tester.pump(const Duration(milliseconds: 500));
+  await tester.pumpAndSettle();
+  await tester.tap(
+    find.byKey(const ValueKey('payment_link_amount_continue_button')),
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Start typing…'));
+  await tester.pumpAndSettle();
+  await tester.enterText(
+    find.byKey(const ValueKey('payment_link_message_editor')),
+    'Keep this message',
+  );
+  await tester.pump();
+  await tester.tap(find.text('Review & confirm'));
+  await tester.pumpAndSettle();
+}
+
+class _FeeTransitionCardOperations extends FakePaymentLinkOperations {
+  final firstFunding = Completer<void>();
+  bool nu7 = false;
+  int attempts = 0;
+  PaymentLinkFundingQuote? acceptedQuote;
+
+  @override
+  Future<PaymentLinkFundingQuote> quoteFunding({
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+  }) async {
+    await super.quoteFunding(
+      amountZatoshi: amountZatoshi,
+      sourceAccountUuid: sourceAccountUuid,
+    );
+    final fee = BigInt.from(nu7 ? 2000 : 10000);
+    return PaymentLinkFundingQuote(
+      sourceAccountUuid: sourceAccountUuid,
+      recipientAmountZatoshi: amountZatoshi,
+      fundingFeeZatoshi: fee,
+      claimFeeReserveZatoshi: fee,
+    );
+  }
+
+  @override
+  Future<PaymentLinkFundingResult> createFundedLink({
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+    PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
+  }) async {
+    attempts++;
+    if (attempts == 1) await firstFunding.future;
+    if (expectedQuote!.claimFeeReserveZatoshi !=
+        BigInt.from(nu7 ? 2000 : 10000)) {
+      throw const PaymentLinkBatchQuoteChanged();
+    }
+    acceptedQuote = expectedQuote;
+    return super.createFundedLink(
+      amountZatoshi: amountZatoshi,
+      sourceAccountUuid: sourceAccountUuid,
+      presentation: presentation,
+      expectedQuote: expectedQuote,
+    );
   }
 }

@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/feedback/app_haptics.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
@@ -10,20 +14,6 @@ import '../../../core/widgets/app_modal_shape.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../accounts/widgets/mobile/account_edit_sheets.dart'
     show MobileSheetCancel;
-
-/// Title of the confirmation before private queries turn off.
-const kPrivateQueriesTurnOffTitle = 'Turn off private queries?';
-
-/// What turning private queries off does to the wallet's transparent funds.
-const kPrivateQueriesTurnOffBody =
-    'Vizor will rebuild your transparent history publicly, allowing the '
-    'server to learn all your addresses.';
-
-/// What the server learns once private queries are off.
-const kPrivateQueriesTurnOffDisclosure =
-    'The server receives every transparent address of every account and the '
-    'IDs of transactions private recovery found. It can link them to each '
-    'other and, without Tor, to your IP address.';
 
 /// Asks whether to turn private queries off. Resolves to true only when the
 /// user confirms. Overridable through [privateQueriesTurnOffConfirmerProvider].
@@ -61,7 +51,13 @@ Future<void> togglePrivateQueries(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
   // A second confirmation may finish after the first has applied its change.
   // Apply the choice the user confirmed, regardless of the current state.
+  final previous = ref.read(privateQueriesControlEnabledProvider);
   await ref.read(enhancePirProvider.notifier).set(enabled);
+  if (context.mounted &&
+      previous != enabled &&
+      ref.read(privateQueriesControlEnabledProvider) == enabled) {
+    unawaited(AppHaptics.selection());
+  }
 }
 
 Future<bool> _confirmTurnOff(BuildContext context, WidgetRef ref) async {
@@ -88,21 +84,21 @@ class PrivateQueriesTurnOffDialog extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                kPrivateQueriesTurnOffTitle,
+                context.l10n.settingsPrivateQueriesTurnOffTitle,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: colors.text.accent,
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                kPrivateQueriesTurnOffBody,
+                context.l10n.settingsPrivateQueriesTurnOffBody,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                kPrivateQueriesTurnOffDisclosure,
+                context.l10n.settingsPrivateQueriesTurnOffDisclosure,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.warning,
                 ),
@@ -113,7 +109,7 @@ class PrivateQueriesTurnOffDialog extends StatelessWidget {
                 expand: true,
                 variant: AppButtonVariant.destructive,
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Turn off'),
+                child: Text(context.l10n.settingsTurnOffConfirm),
               ),
               const SizedBox(height: AppSpacing.xs),
               AppButton(
@@ -121,7 +117,7 @@ class PrivateQueriesTurnOffDialog extends StatelessWidget {
                 expand: true,
                 variant: AppButtonVariant.ghost,
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
+                child: Text(context.l10n.commonCancel),
               ),
             ],
           ),
@@ -139,7 +135,7 @@ class PrivateQueriesTurnOffSheet extends StatelessWidget {
     final colors = context.colors;
     return MobileModalScaffold(
       key: const ValueKey('private_queries_turn_off_sheet'),
-      title: kPrivateQueriesTurnOffTitle,
+      title: context.l10n.settingsPrivateQueriesTurnOffTitle,
       onClose: () => Navigator.of(context).pop(false),
       leading: AppIcon(AppIcons.eye, size: 20, color: colors.icon.accent),
       child: Column(
@@ -147,12 +143,12 @@ class PrivateQueriesTurnOffSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            kPrivateQueriesTurnOffBody,
+            context.l10n.settingsPrivateQueriesTurnOffBody,
             style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            kPrivateQueriesTurnOffDisclosure,
+            context.l10n.settingsPrivateQueriesTurnOffDisclosure,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.warning,
             ),
@@ -163,7 +159,7 @@ class PrivateQueriesTurnOffSheet extends StatelessWidget {
             variant: AppButtonVariant.destructive,
             expand: true,
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Turn off'),
+            child: Text(context.l10n.settingsTurnOffConfirm),
           ),
           const SizedBox(height: AppSpacing.s),
           MobileSheetCancel(onTap: () => Navigator.of(context).pop(false)),

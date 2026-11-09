@@ -7,6 +7,7 @@ import '../../figma_compare/figma_compare_font_loader.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
@@ -25,10 +26,12 @@ import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dar
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/donation/donation_config.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/models/send_scan_result.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
+import 'package:zcash_wallet/src/features/send/services/recent_send_recipients.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_host.dart';
@@ -38,16 +41,29 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_zec_market_data_cache.dart';
 
 import '../../support/leading_decimal_input.dart';
+import '../../support/test_l10n.dart';
 
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
 const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _invalidAddress = 'not-an-address';
+const _otherAccountAddress =
+    'u1otheraccountaddress0000000000000000000000000000000000000000000000';
+const _aliceContact = AddressBookContact(
+  id: 'alice',
+  label: 'Alice',
+  network: AddressBookNetwork.zcash,
+  address: _shieldedAddress,
+  profilePictureId: 'pfp-01',
+  createdAtMs: 1,
+  updatedAtMs: 1,
+);
 
 /// A real address that this build cannot pay because it belongs to another
 /// Zcash network — Rust reports it as not-valid plus `wrongNetwork`.
@@ -76,8 +92,13 @@ Completer<void>? _discardGate;
 bool _discardFails = false;
 int _discardCalls = 0;
 int _proposeCalls = 0;
+bool _nativeSyncRunning = false;
+int _nativeBalanceReads = 0;
 
 class _RustApiFake implements RustLibApi {
+  @override
+  bool crateApiSyncIsSyncRunning() => _nativeSyncRunning;
+
   @override
   Future<void> crateApiSyncDiscardProposal({
     required BigInt proposalId,
@@ -215,7 +236,10 @@ class _TestZecUsdPriceNotifier extends Notifier<double?> {
   }
 }
 
-AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
+AppBootstrapState _bootstrap({
+  AccountState? accountState,
+  bool privacyModeEnabled = false,
+}) => AppBootstrapState(
   initialLocation: '/send',
   initialAccountState:
       accountState ??
@@ -228,7 +252,7 @@ AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
   themeMode: ThemeMode.light,
-  privacyModeEnabled: false,
+  privacyModeEnabled: privacyModeEnabled,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
@@ -387,6 +411,71 @@ class _ControllableSnapshotSyncNotifier extends SyncNotifier {
   }
 }
 
+/// Keeps the UI at its carried balance while the real spend gate reads native
+/// readiness and balance. History publication is independent of that gate.
+class _PendingHistorySyncNotifier extends SyncNotifier {
+  _PendingHistorySyncNotifier({this.initiallyCarried = true})
+    : super(walletDbPathResolver: () async => '/tmp/zcash-test');
+
+  final bool initiallyCarried;
+
+  SyncState _snapshot(bool carried) => SyncState(
+    accountUuid: 'account-1',
+    hasAccountScopedData: true,
+    isSyncing: carried,
+    isSyncComplete: !carried,
+    percentage: carried ? 0.99 : 1,
+    scannedHeight: 101,
+    chainTipHeight: 101,
+    spendableBalance: BigInt.from(500000000),
+    displaySpendableBalance: BigInt.from(500000000),
+    displaySpendableFreshness: carried
+        ? SpendableBalanceFreshness.lastCompletedSync
+        : SpendableBalanceFreshness.authoritative,
+    totalBalance: BigInt.from(500000000),
+  );
+
+  @override
+  Future<SyncState> build() async => _snapshot(initiallyCarried);
+
+  SyncState get snapshot => state.requireValue;
+
+  void beginRefresh() => state = AsyncData(_snapshot(true));
+
+  @override
+  Future<WalletBalance> readWalletBalance({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async {
+    _nativeBalanceReads++;
+    final amount = BigInt.from(550000000);
+    return WalletBalance(
+      availability: WalletBalanceAvailability.available,
+      transparentAuthority: TransparentBalanceAuthority.current,
+      transparentPrivate: false,
+      transparent: BigInt.zero,
+      sapling: BigInt.zero,
+      orchard: amount,
+      ironwood: BigInt.zero,
+      transparentLocked: BigInt.zero,
+      saplingLocked: BigInt.zero,
+      orchardLocked: BigInt.zero,
+      ironwoodLocked: BigInt.zero,
+      transparentPending: BigInt.zero,
+      saplingPending: BigInt.zero,
+      orchardPending: BigInt.zero,
+      ironwoodPending: BigInt.zero,
+      changePendingConfirmation: BigInt.zero,
+      valuePendingSpendability: BigInt.zero,
+      uneconomicValue: BigInt.zero,
+      spendable: amount,
+      locked: BigInt.zero,
+      total: amount,
+    );
+  }
+}
+
 class _FakeAddressBookRepository implements AddressBookRepository {
   _FakeAddressBookRepository(this.contacts);
 
@@ -400,9 +489,15 @@ class _FakeAddressBookRepository implements AddressBookRepository {
 }
 
 Widget _app({
+  bool initialReview = false,
+  bool useRouteSteps = false,
+  SendFlowKind flowKind = SendFlowKind.send,
+  ValueChanged<SendReviewArgs>? onStatusRoute,
   List<AddressBookContact> contacts = const [],
   AccountState? accountState,
   Map<String, AccountInfo> ownAccounts = const {},
+  List<SendRecentRecipient> recents = const [],
+  Future<List<SendRecentRecipient>> Function()? loadRecents,
   EdgeInsets viewPadding = EdgeInsets.zero,
   MobileSendScanner? openScanner,
   String? initialRecipient,
@@ -435,6 +530,9 @@ Widget _app({
           initialRecipient: initialRecipient,
           initialAmount: initialAmount,
           initialAmountReady: initialAmountReady,
+          initialReview: initialReview,
+          useRouteSteps: useRouteSteps,
+          flowKind: flowKind,
           initialFeeZatoshi: initialFeeZatoshi,
           initialMemo: initialMemo,
           validateAddress: validateAddress,
@@ -452,6 +550,14 @@ Widget _app({
         },
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
+      GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
+      GoRoute(
+        path: '/send/status',
+        builder: (_, state) {
+          onStatusRoute?.call(state.extra! as SendReviewArgs);
+          return const Text('donation status');
+        },
+      ),
     ],
   );
   return ProviderScope(
@@ -474,10 +580,14 @@ Widget _app({
         _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+      recentSendRecipientsProvider.overrideWith(
+        (ref, accountUuid) => loadRecents?.call() ?? Future.value(recents),
+      ),
       if (precheck != null)
         paymentRequestPrecheckProvider.overrideWithValue(precheck),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, c) {
         final mediaQuery = MediaQuery.of(
@@ -497,10 +607,12 @@ Widget _app({
   );
 }
 
-Widget _amountStepWithPriceLoadingApp() {
+Widget _amountStepWithPriceLoadingApp({bool privacyModeEnabled = false}) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(privacyModeEnabled: privacyModeEnabled),
+      ),
       sendProvingKeyWarmupProvider.overrideWithValue(() {}),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       zecLiveUsdUnitPriceProvider.overrideWithValue(null),
@@ -508,8 +620,12 @@ Widget _amountStepWithPriceLoadingApp() {
         _FakeAddressBookRepository(const []),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+      recentSendRecipientsProvider.overrideWith(
+        (ref, accountUuid) async => const [],
+      ),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendScreen(
@@ -548,8 +664,12 @@ Widget _reviewApp({
         _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+      recentSendRecipientsProvider.overrideWith(
+        (ref, accountUuid) async => const [],
+      ),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendScreen(
@@ -739,8 +859,12 @@ Widget _sendFlowRouterApp({
         _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+      recentSendRecipientsProvider.overrideWith(
+        (ref, accountUuid) async => const [],
+      ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),
@@ -833,6 +957,8 @@ void main() {
     _discardFails = false;
     _discardCalls = 0;
     _proposeCalls = 0;
+    _nativeSyncRunning = false;
+    _nativeBalanceReads = 0;
     _proposeSendSucceeds = false;
     _proposeSendCompleter = null;
     _proposalFeeZatoshi = BigInt.from(10000);
@@ -847,6 +973,146 @@ void main() {
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
   });
+
+  testWidgets(
+    'donation review fixes the recipient and preserves donation on proposal',
+    (tester) async {
+      _proposeSendSucceeds = true;
+      SendReviewArgs? submitted;
+      await tester.pumpWidget(
+        _app(
+          initialReview: true,
+          flowKind: SendFlowKind.donation,
+          initialRecipient: _shieldedAddress,
+          initialAmount: '0.02',
+          initialAmountReady: true,
+          initialFeeZatoshi: BigInt.from(10000),
+          initialMemo: 'must not be sent',
+          onStatusRoute: (args) => submitted = args,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Review donation'), findsOneWidget);
+      expect(find.byKey(const ValueKey('mobile_send_cancel')), findsNothing);
+      expect(find.text('Vizor Wallet'), findsOneWidget);
+      expect(find.text('Total'), findsOneWidget);
+      expect(find.byKey(const ValueKey('mobile_send_memo_row')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+      expect(_lastProposeToAddress, kVizorDonationAddress);
+      expect(_lastProposeMemo, isNull);
+      expect(submitted?.flowKind, SendFlowKind.donation);
+      expect(submitted?.amountZatoshi, BigInt.from(2000000));
+    },
+  );
+
+  testWidgets(
+    'donation proposal failure keeps donation copy and returns to settings',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          initialReview: true,
+          useRouteSteps: true,
+          flowKind: SendFlowKind.donation,
+          initialAmount: '0.02',
+          initialAmountReady: true,
+          initialFeeZatoshi: BigInt.from(10000),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(_proposeCalls, 1);
+      expect(find.text('Donation failed'), findsNWidgets(2));
+      expect(find.textContaining('to Vizor Wallet'), findsOneWidget);
+      expect(find.text('Send failed'), findsNothing);
+      expect(find.text('Donation failed. Try again.'), findsOneWidget);
+      expect(find.text('Send failed. Try again.'), findsNothing);
+      expect(find.text('Back to wallet'), findsNothing);
+      expect(
+        find.textContaining(kVizorDonationAddress.substring(0, 13)),
+        findsNothing,
+      );
+
+      await tester.tap(find.text('Return to settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('settings'), findsOneWidget);
+      expect(find.text('home'), findsNothing);
+    },
+  );
+
+  testWidgets('donation proposal failure can retry the same donation', (
+    tester,
+  ) async {
+    SendReviewArgs? submitted;
+    await tester.pumpWidget(
+      _app(
+        initialReview: true,
+        useRouteSteps: true,
+        flowKind: SendFlowKind.donation,
+        initialAmount: '0.02',
+        initialAmountReady: true,
+        initialFeeZatoshi: BigInt.from(10000),
+        onStatusRoute: (args) => submitted = args,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('Donation failed'), findsNWidgets(2));
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_try_again')));
+    await tester.pumpAndSettle();
+    expect(find.text('Review donation'), findsOneWidget);
+    expect(find.text('Vizor Wallet'), findsOneWidget);
+
+    _proposeSendSucceeds = true;
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(_proposeCalls, 2);
+    expect(_lastProposeToAddress, kVizorDonationAddress);
+    expect(submitted?.flowKind, SendFlowKind.donation);
+    expect(submitted?.amountZatoshi, BigInt.from(2000000));
+  });
+
+  testWidgets(
+    'donation review uses existing Ledger signing with donation args',
+    (tester) async {
+      _proposeSendSucceeds = true;
+      Object? handedOff;
+      await tester.pumpWidget(
+        _app(
+          initialReview: true,
+          flowKind: SendFlowKind.donation,
+          accountState: const AccountState(
+            accounts: [
+              AccountInfo(
+                uuid: 'account-1',
+                name: 'Ledger',
+                order: 0,
+                isHardware: true,
+                hardwareSignerKind: HardwareSignerKind.ledger,
+              ),
+            ],
+            activeAccountUuid: 'account-1',
+          ),
+          initialRecipient: kVizorDonationAddress,
+          initialAmount: '0.02',
+          initialAmountReady: true,
+          initialFeeZatoshi: BigInt.from(10000),
+          onLedgerRoute: (args) => handedOff = args,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Confirm with Ledger'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+      expect(handedOff, isA<SendReviewArgs>());
+      expect((handedOff as SendReviewArgs).flowKind, SendFlowKind.donation);
+      expect((handedOff as SendReviewArgs).address, kVizorDonationAddress);
+    },
+  );
 
   testWidgets('starts Orchard proving-key warmup when mobile send loads', (
     tester,
@@ -1145,7 +1411,7 @@ void main() {
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
     expect(amountInput.controller?.text, '1.5');
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('the pushed amount page hands its edit back to the recipient', (
@@ -1307,7 +1573,7 @@ void main() {
             find.bySemanticsLabel(RegExp('Enter amount in USD')),
             findsOneWidget,
           );
-          expect(find.text('Finish & review'), findsNothing);
+          expect(find.text('Review & finish'), findsNothing);
         } finally {
           semantics.dispose();
         }
@@ -1492,7 +1758,7 @@ void main() {
       await tester.tap(find.bySemanticsLabel('Back'));
       await tester.pumpAndSettle();
       expect(find.text('Enter Amount'), findsOneWidget);
-      expect(find.text('Finish & review'), findsOneWidget);
+      expect(find.text('Review & finish'), findsOneWidget);
 
       // Cancelling the amount step discards the memo as well as the amount.
       await tester.tap(find.bySemanticsLabel('Back'));
@@ -1752,6 +2018,166 @@ void main() {
           .onPressed,
       isNotNull,
     );
+  });
+
+  for (final maxMode in [false, true]) {
+    testWidgets(
+      'pending history allows ${maxMode ? "Max" : "typed"} confirmation after native sync',
+      (tester) async {
+        final sync = _PendingHistorySyncNotifier();
+        _nativeSyncRunning = true;
+        _sendMaxEstimateBuilder = ({required toAddress, memo}) =>
+            SendMaxEstimateResult(
+              amountZatoshi: BigInt.from(549990000),
+              feeZatoshi: BigInt.from(10000),
+              needsSaplingParams: false,
+            );
+        var feeCalls = 0;
+        await tester.pumpWidget(
+          _reviewApp(
+            syncNotifier: sync,
+            initialMaxMode: maxMode,
+            initialAmount: '4.99995',
+            estimateFee:
+                ({
+                  required dbPath,
+                  required network,
+                  required accountUuid,
+                  required toAddress,
+                  required amountZatoshi,
+                  memo,
+                }) async {
+                  feeCalls++;
+                  return BigInt.from(10000);
+                },
+          ),
+        );
+        await tester.pumpAndSettle();
+        final before = sync.snapshot;
+        expect(_confirmButton(tester).onPressed, isNull);
+        expect(feeCalls, 0);
+        expect(_estimateSendMaxCalls, 0);
+        expect(_nativeBalanceReads, 0);
+
+        _nativeSyncRunning = false;
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pumpAndSettle();
+        expect(_nativeBalanceReads, greaterThan(0));
+        expect(_confirmButton(tester).onPressed, isNotNull);
+        expect(find.text('Confirm & Send'), findsOneWidget);
+        expect(sync.snapshot, same(before));
+        expect(before.isUsingCompletedSpendableSnapshot, isTrue);
+        expect(before.percentage, 0.99);
+        expect(feeCalls, maxMode ? 0 : 1);
+        expect(_estimateSendMaxCalls, maxMode ? 1 : 0);
+        if (maxMode) expect(find.text('5.4999 ZEC'), findsOneWidget);
+
+        // The native proposal is still reached; its failure is not bypassed.
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+        expect(_proposeCalls, 1);
+        expect(sync.snapshot, same(before));
+        expect(find.text('Confirm & Send'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'pending history reaches signing for ${maxMode ? "Max" : "typed"} sends',
+      (tester) async {
+        final sync = _PendingHistorySyncNotifier();
+        _nativeSyncRunning = true;
+        _proposeSendSucceeds = true;
+        await tester.pumpWidget(
+          _cancelRecoveryApp(
+            sync,
+            isMaxMode: maxMode,
+            signerKind: HardwareSignerKind.ledger,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(_confirmButton(tester).onPressed, isNull);
+        final before = sync.snapshot;
+        _nativeSyncRunning = false;
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pumpAndSettle();
+        expect(find.text('Confirm with Ledger'), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+        expect(_proposeCalls, 1);
+        expect(find.text('ledger sign'), findsOneWidget);
+        expect(sync.snapshot, same(before));
+      },
+    );
+
+    testWidgets(
+      'pending history requotes ${maxMode ? "Max" : "typed"} review after a new sync',
+      (tester) async {
+        final sync = _PendingHistorySyncNotifier(initiallyCarried: false);
+        var feeCalls = 0;
+        await tester.pumpWidget(
+          _reviewApp(
+            syncNotifier: sync,
+            initialMaxMode: maxMode,
+            estimateFee:
+                ({
+                  required dbPath,
+                  required network,
+                  required accountUuid,
+                  required toAddress,
+                  required amountZatoshi,
+                  memo,
+                }) async {
+                  feeCalls++;
+                  return BigInt.from(10000);
+                },
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(_confirmButton(tester).onPressed, isNotNull);
+        final callsBefore = maxMode ? _estimateSendMaxCalls : feeCalls;
+        _nativeSyncRunning = true;
+        sync.beginRefresh();
+        await tester.pumpAndSettle();
+        expect(_confirmButton(tester).onPressed, isNull);
+        expect(maxMode ? _estimateSendMaxCalls : feeCalls, callsBefore);
+
+        _nativeSyncRunning = false;
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pumpAndSettle();
+        expect(maxMode ? _estimateSendMaxCalls : feeCalls, callsBefore + 1);
+        expect(_confirmButton(tester).onPressed, isNotNull);
+        expect(find.text('Confirm & Send'), findsOneWidget);
+        expect(sync.snapshot.isUsingCompletedSpendableSnapshot, isTrue);
+      },
+    );
+  }
+
+  testWidgets('pending history keeps a native fee shortfall blocked', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _reviewApp(
+        syncNotifier: _PendingHistorySyncNotifier(),
+        estimateFee:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required toAddress,
+              required amountZatoshi,
+              memo,
+            }) async {
+              throw StateError(
+                'Insufficient balance (have 100, need 200 including fee)',
+              );
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(_nativeBalanceReads, greaterThan(0));
+    expect(_confirmButton(tester).onPressed, isNull);
+    expect(find.text('Try again'), findsNothing);
+    expect(_proposeCalls, 0);
   });
 
   testWidgets('failed review fee estimate exposes a working retry action', (
@@ -2546,7 +2972,7 @@ void main() {
       kZcashDefaultNetworkName,
       reason: 'validation has to be asked about the network we actually pay on',
     );
-    expect(find.text(kWrongNetworkAddressMessage), findsOneWidget);
+    expect(find.text(testL10n.sendRecipientWrongNetwork), findsOneWidget);
     expect(
       find.text('Invalid address'),
       findsNothing,
@@ -2561,7 +2987,7 @@ void main() {
     );
 
     await _enterAddress(tester, _shieldedAddress);
-    expect(find.text(kWrongNetworkAddressMessage), findsNothing);
+    expect(find.text(testL10n.sendRecipientWrongNetwork), findsNothing);
   });
 
   testWidgets('recipient step names a matched saved contact', (tester) async {
@@ -2664,7 +3090,10 @@ void main() {
     expect(editable.controller.text, _shieldedAddress);
     expect(
       find.text(
-        sendScanDowngradeMessage(SendScanDowngrade.multipleRecipients)!,
+        sendScanDowngradeMessage(
+          testL10n,
+          SendScanDowngrade.multipleRecipients,
+        )!,
       ),
       findsOneWidget,
     );
@@ -2684,7 +3113,7 @@ void main() {
 
     for (final downgrade in SendScanDowngrade.values) {
       expect(
-        find.text(sendScanDowngradeMessage(downgrade)!),
+        find.text(sendScanDowngradeMessage(testL10n, downgrade)!),
         findsNothing,
         reason: '$downgrade',
       );
@@ -2738,6 +3167,142 @@ void main() {
       expect(editable.controller.text, isEmpty);
     },
   );
+
+  group('a payment link in the address field', () {
+    const link = 'zcash:$_shieldedAddress?amount=0.25&label=Coffee%20shop';
+
+    Finder addressInput() => find.descendant(
+      of: find.byKey(const ValueKey('mobile_send_address_field')),
+      matching: find.byType(EditableText),
+    );
+
+    String fieldText(WidgetTester tester) =>
+        tester.widget<EditableText>(addressInput()).controller.text;
+
+    Future<void> pumpScreen(WidgetTester tester) async {
+      await tester.pumpWidget(_app(precheck: _readyPaymentRequestPrecheck()));
+      await tester.pumpAndSettle();
+    }
+
+    void mockClipboard(WidgetTester tester) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async => switch (call.method) {
+          'Clipboard.getData' => {'text': link},
+          'Clipboard.hasStrings' => {'value': true},
+          _ => null,
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+    }
+
+    /// The card leads with the same check an incoming link gets, but a pasted
+    /// link has no original QR to scan, so reviewing it is the way on.
+    void expectPastedLinkWarning() {
+      expect(
+        find.byKey(const ValueKey('external_request_warning')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('payment_request_scan')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('payment_request_link_details')),
+        findsOneWidget,
+      );
+    }
+
+    testWidgets('Paste opens it as a pasted link', (tester) async {
+      mockClipboard(tester);
+      await pumpScreen(tester);
+
+      await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste'));
+      await tester.pumpAndSettle();
+
+      expectPastedLinkWarning();
+      expect(fieldText(tester), isEmpty);
+    });
+
+    testWidgets('pasting from the long-press menu opens it too', (
+      tester,
+    ) async {
+      mockClipboard(tester);
+      await pumpScreen(tester);
+
+      await tester.longPress(addressInput());
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(TextSelectionToolbarTextButton, 'Paste'),
+      );
+      await tester.pumpAndSettle();
+
+      expectPastedLinkWarning();
+      expect(fieldText(tester), isEmpty);
+    });
+
+    testWidgets('pasting it into the field opens the card', (tester) async {
+      await pumpScreen(tester);
+
+      await _enterAddress(tester, link);
+
+      expectPastedLinkWarning();
+      expect(fieldText(tester), isEmpty);
+    });
+
+    testWidgets('a link that names only an address leaves the address', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+
+      await _enterAddress(tester, 'zcash:$_shieldedAddress');
+
+      expect(fieldText(tester), _shieldedAddress);
+      expect(
+        find.byKey(const ValueKey('external_request_warning')),
+        findsNothing,
+      );
+      expect(find.text('Invalid address'), findsNothing);
+    });
+
+    testWidgets('an edit that completes a link opens it', (tester) async {
+      await pumpScreen(tester);
+
+      await _enterAddress(tester, link.substring(1));
+      await _enterAddress(tester, link);
+
+      expectPastedLinkWarning();
+      expect(fieldText(tester), isEmpty);
+    });
+
+    testWidgets('a link that is not a request or an address says so', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          // Rust refuses a `zcash:` link as an address.
+          validateAddress: ({required address, required network}) async =>
+              const AddressValidationResult(
+                isValid: false,
+                addressType: '',
+                wrongNetwork: false,
+              ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _enterAddress(tester, 'zcash:?amount=0.25');
+
+      expect(
+        find.text(testL10n.sendRecipientUnreadableRequestLink),
+        findsOneWidget,
+      );
+    });
+  });
 
   testWidgets(
     'recipient focus keeps the address field mounted and stationary',
@@ -2885,7 +3450,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('1 contact'), findsOneWidget);
+    expect(find.text('Contacts'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('mobile_send_contact_alice')));
     await tester.pumpAndSettle();
 
@@ -2922,20 +3487,300 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('2 contacts'), findsOneWidget);
+    expect(find.text('Contacts'), findsOneWidget);
     expect(find.text('Alice'), findsOneWidget);
     expect(find.text('Bob'), findsOneWidget);
 
     await _enterAddress(tester, 'ali');
 
-    expect(find.text('1 contact'), findsOneWidget);
+    expect(find.text('Contacts'), findsOneWidget);
     expect(find.text('Alice'), findsOneWidget);
     expect(find.text('Bob'), findsNothing);
   });
 
-  testWidgets('recipient text does not filter contacts by address', (
+  testWidgets('a full contact address keeps that contact listed', (
     tester,
   ) async {
+    await tester.pumpWidget(_app(contacts: const [_aliceContact]));
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, _shieldedAddress);
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_contacts_section')),
+        matching: find.text('Alice'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('an address start finds the contact past the u1 prefix', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(contacts: const [_aliceContact]));
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, 'u1tes');
+    expect(find.text('Alice'), findsNothing);
+
+    await _enterAddress(tester, 'u1test');
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_contacts_section')),
+        matching: find.text('Alice'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a contact name search does not report an invalid address', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [_aliceContact],
+        validateAddress: ({required address, required network}) async =>
+            const AddressValidationResult(
+              isValid: false,
+              addressType: '',
+              wrongNetwork: false,
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, 'ali');
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Invalid address'), findsNothing);
+
+    await _enterAddress(tester, 'zzz');
+    expect(find.text('Alice'), findsNothing);
+    expect(find.text('Invalid address'), findsOneWidget);
+  });
+
+  testWidgets('a saved contact address that is invalid still reports it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [_aliceContact],
+        validateAddress: ({required address, required network}) async =>
+            const AddressValidationResult(
+              isValid: false,
+              addressType: '',
+              wrongNetwork: false,
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, _aliceContact.address);
+    expect(find.text('Alice'), findsWidgets);
+    expect(find.text('Invalid address'), findsOneWidget);
+  });
+
+  testWidgets('the address error waits for the lists to load', (tester) async {
+    final recents = Completer<List<SendRecentRecipient>>();
+    await tester.pumpWidget(
+      _app(
+        contacts: const [_aliceContact],
+        loadRecents: () => recents.future,
+        validateAddress: ({required address, required network}) async =>
+            const AddressValidationResult(
+              isValid: false,
+              addressType: '',
+              wrongNetwork: false,
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, 'ali');
+    expect(find.text('Invalid address'), findsNothing);
+
+    recents.complete(const []);
+    await tester.pumpAndSettle();
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Invalid address'), findsNothing);
+  });
+
+  testWidgets('recents list recent recipients above contacts', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [_aliceContact],
+        ownAccounts: const {
+          _otherAccountAddress: AccountInfo(
+            uuid: 'account-2',
+            name: 'Savings',
+            order: 1,
+          ),
+        },
+        recents: const [
+          SendRecentRecipient(address: _shieldedAddress, isShielded: true),
+          SendRecentRecipient(address: _otherAccountAddress, isShielded: true),
+          SendRecentRecipient(address: _transparentAddress, isShielded: false),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final recents = find.byKey(const ValueKey('mobile_send_recents_section'));
+    final contacts = find.byKey(const ValueKey('mobile_send_contacts_section'));
+    expect(find.text('Recents'), findsOneWidget);
+    expect(
+      tester.getTopLeft(recents).dy,
+      lessThan(tester.getTopLeft(contacts).dy),
+    );
+    Finder inRecents(String text) =>
+        find.descendant(of: recents, matching: find.text(text));
+    expect(inRecents('Alice'), findsOneWidget);
+    expect(inRecents('Savings'), findsOneWidget);
+    // Named rows show the address; only the bare address shows its pool.
+    expect(inRecents('Transparent'), findsOneWidget);
+    expect(inRecents('Shielded'), findsNothing);
+  });
+
+  testWidgets('a recent sent to another account is found by its name', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        ownAccounts: const {
+          _otherAccountAddress: AccountInfo(
+            uuid: 'account-2',
+            name: 'Savings',
+            order: 1,
+          ),
+        },
+        recents: const [
+          SendRecentRecipient(address: _otherAccountAddress, isShielded: true),
+          SendRecentRecipient(address: _transparentAddress, isShielded: false),
+        ],
+        validateAddress: ({required address, required network}) async =>
+            const AddressValidationResult(
+              isValid: false,
+              addressType: '',
+              wrongNetwork: false,
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, 'sav');
+
+    final recents = find.byKey(const ValueKey('mobile_send_recents_section'));
+    expect(
+      find.descendant(of: recents, matching: find.text('Savings')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: recents, matching: find.text('Transparent')),
+      findsNothing,
+    );
+    expect(find.text('Invalid address'), findsNothing);
+  });
+
+  testWidgets('recents and contacts appear together once recents load', (
+    tester,
+  ) async {
+    final recents = Completer<List<SendRecentRecipient>>();
+    await tester.pumpWidget(
+      _app(contacts: const [_aliceContact], loadRecents: () => recents.future),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('mobile_send_scan_row')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_send_contacts_section')),
+      findsNothing,
+    );
+
+    recents.complete(const [
+      SendRecentRecipient(address: _transparentAddress, isShielded: false),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_send_recents_section')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_send_contacts_section')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a failed recents load still shows contacts', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [_aliceContact],
+        loadRecents: () => Future.error(StateError('wallet db busy')),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_send_recents_section')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_send_contacts_section')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('tapping a recent fills its address', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        recents: const [
+          SendRecentRecipient(address: _transparentAddress, isShielded: false),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_recent_$_transparentAddress')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter Amount'), findsOneWidget);
+  });
+
+  testWidgets('a recent that is a contact keeps its name on a failed send', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [_aliceContact],
+        recents: const [
+          SendRecentRecipient(address: _shieldedAddress, isShielded: true),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_recent_$_shieldedAddress')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+    await _enterAmount(tester, '1.5');
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+    // The fake Rust API has no proposeSend, so the send fails.
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Send failed'), findsNWidgets(2));
+    expect(find.textContaining('to Alice'), findsOneWidget);
+  });
+
+  testWidgets('an address prefix does not filter contacts', (tester) async {
     await tester.pumpWidget(
       _app(
         contacts: const [
@@ -2955,7 +3800,7 @@ void main() {
 
     await _enterAddress(tester, 'testshielded');
 
-    expect(find.text('1 contact'), findsNothing);
+    expect(find.text('Contacts'), findsNothing);
     expect(find.text('Alice'), findsNothing);
   });
 
@@ -3189,6 +4034,36 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('amount step masks the spendable balance in privacy mode', (
+    tester,
+  ) async {
+    final visibleBalance = ZecAmount.fromZatoshi(
+      BigInt.from(500000000),
+    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+    final balanceRow = find.byKey(
+      const ValueKey('mobile_send_amount_balance_row'),
+    );
+
+    await tester.pumpWidget(_amountStepWithPriceLoadingApp());
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(of: balanceRow, matching: find.text(visibleBalance)),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(
+      _amountStepWithPriceLoadingApp(privacyModeEnabled: true),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(of: balanceRow, matching: find.text('****** ZEC')),
+      findsOneWidget,
+    );
+    expect(find.textContaining(visibleBalance), findsNothing);
+  });
+
   testWidgets('amount input displays a leading zero and keeps the cursor', (
     tester,
   ) async {
@@ -3330,7 +4205,7 @@ void main() {
 
     await _enterAmount(tester, '1.5');
     expect(find.text('Not enough ZEC'), findsNothing);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   // Rust reports this as "Propose failed: Insufficient balance (have …, need …
@@ -3413,7 +4288,7 @@ void main() {
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
     expect(amountInput.controller?.text, '4.9999');
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('Max estimate failure is shown through the disabled CTA', (
@@ -3487,7 +4362,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('1.5 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
     await tester.pumpAndSettle();
@@ -3518,7 +4393,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('1.5 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
 
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MobileSendScreen)),
@@ -3532,7 +4407,7 @@ void main() {
     );
     expect(amountInput.controller?.text, '105');
     expect(find.text('0 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsNothing);
+    expect(find.text('Review & finish'), findsNothing);
     expect(find.text('Enter amount to continue'), findsOneWidget);
     expect(
       tester
@@ -3548,7 +4423,7 @@ void main() {
 
     expect(amountInput.controller?.text, '105');
     expect(find.text('0.5 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('USD mode clears ZEC amounts that round to zero cents', (
@@ -3559,7 +4434,7 @@ void main() {
     await _toAmountStep(tester, _shieldedAddress);
 
     await _enterAmount(tester, '0.00000001');
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_send_amount_mode_toggle')),
@@ -3571,7 +4446,7 @@ void main() {
     );
     expect(amountInput.controller?.text, isEmpty);
     expect(find.text('0 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsNothing);
+    expect(find.text('Review & finish'), findsNothing);
     expect(find.text('Enter amount to continue'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
@@ -3629,7 +4504,7 @@ void main() {
     expect(amountInput.decoration?.hintText, '0');
     expect(amountInput.controller?.text, '349.99');
     expect(find.text('4.9999 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('Max in USD mode does not leave a hidden sub-cent amount', (
@@ -3659,7 +4534,7 @@ void main() {
     );
     expect(amountInput.controller?.text, isEmpty);
     expect(find.text('0 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsNothing);
+    expect(find.text('Review & finish'), findsNothing);
     expect(find.text('Enter amount to continue'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
@@ -3704,7 +4579,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('mobile_send_max_button')));
     await tester.pumpAndSettle();
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
 
     feeCompleter.complete(BigInt.from(12345));
     await tester.pumpAndSettle();
@@ -3713,7 +4588,7 @@ void main() {
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
     expect(amountInput.controller?.text, '4.9999');
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets(
@@ -3729,7 +4604,7 @@ void main() {
       expect(_estimateSendMaxCalls, 1);
       expect(_lastEstimateSendMaxToAddress, _transparentAddress);
       expect(_lastEstimateSendMaxMemo, isNull);
-      expect(find.text('Finish & review'), findsOneWidget);
+      expect(find.text('Review & finish'), findsOneWidget);
     },
   );
 
@@ -3810,7 +4685,7 @@ void main() {
 
     // Once the re-validation settles, 1.5 ZEC is spendable again.
     await tester.pumpAndSettle();
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('prefilled amount waits for recipient validation before review', (
@@ -4415,7 +5290,7 @@ AppButton _confirmButton(WidgetTester tester) =>
     tester.widget<AppButton>(find.byKey(const ValueKey('mobile_send_confirm')));
 
 Widget _cancelRecoveryApp(
-  _CancelRecoverySyncNotifier sync, {
+  SyncNotifier sync, {
   bool isMaxMode = false,
   HardwareSignerKind signerKind = HardwareSignerKind.keystone,
 }) => _sendFlowRouterApp(

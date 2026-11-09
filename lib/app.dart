@@ -13,15 +13,19 @@ import 'src/core/feedback/app_review.dart';
 import 'src/core/feedback/app_review_host.dart';
 import 'src/core/input/app_password_input_source.dart';
 import 'src/app_bootstrap.dart';
+import 'src/providers/wallet_pir_server_provider.dart';
 import 'src/providers/account_provider.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/lifecycle/app_shutdown_signal.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/config/network_config.dart';
 import 'src/core/layout/app_layout.dart';
+import 'src/core/layout/mobile/mobile_window_policy.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
+import 'src/core/navigation/mobile_sidebar_route_observer.dart';
+import 'src/core/navigation/route_owned_redirect.dart';
 import 'src/core/navigation/incoming_link_dispatch.dart';
 import 'src/core/navigation/incoming_link_entry_policy.dart';
 import 'src/core/navigation/external_action_guard_provider.dart';
@@ -33,7 +37,7 @@ import 'src/core/security/background_auto_lock_host.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
-import 'src/core/widgets/mobile/mobile_numeric_keyboard_toolbar.dart';
+import 'src/core/widgets/mobile/mobile_keyboard_toolbar.dart';
 import 'src/core/widgets/app_button.dart';
 import 'src/core/widgets/app_icon.dart';
 import 'src/core/widgets/app_toast.dart';
@@ -141,7 +145,13 @@ import 'src/features/voting/screens/voting_software_account_guard.dart';
 import 'src/features/voting/screens/voting_status_screen.dart';
 import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
+import 'src/providers/app_language_provider.dart';
+import 'src/core/l10n/app_language.dart';
+import 'src/core/l10n/l10n.dart';
+import 'src/core/l10n/locale_typography.dart';
+import 'src/core/l10n/native_language.dart';
 import 'src/providers/app_security_provider.dart';
+import 'src/providers/sync_keep_awake_provider.dart';
 import 'src/providers/enhance_pir_provider.dart';
 import 'src/core/storage/enhance_pir_preference_store.dart';
 import 'src/providers/linux_update_provider.dart';
@@ -154,6 +164,7 @@ import 'src/providers/payment_uri_prefill_provider.dart';
 import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
+import 'src/core/logging/log_redaction.dart';
 import 'src/core/storage/secure_storage_diagnostics.dart';
 import 'src/core/storage/wallet_paths.dart';
 import 'src/core/widgets/linux_keyring_gate.dart';
@@ -166,7 +177,9 @@ import 'src/rust/api/simple.dart' as rust_simple;
 import 'src/services/incoming_uri_service.dart';
 import 'src/providers/payment_request_flow_provider.dart';
 
-void log(String message) => debugPrint('[zcash] $message');
+/// Prints an app log line. Identifier-shaped values are masked in every build
+/// mode; see [redactLogText] for what that does and does not catch.
+void log(String message) => printRedactedLog('[zcash] $message');
 
 StreamSubscription<rust_voting.ApiVotingObservability>?
 _votingObservabilitySubscription;
@@ -218,6 +231,11 @@ Future<void> initializeZcashWalletRuntime() async {
     await rust_simple.configureRegtestIronwoodActivationHeight(
       height: kZcashRegtestIronwoodActivationHeight,
     );
+    if (kZcashRegtestNu7ActivationHeight != 0xFFFFFFFF) {
+      await rust_simple.configureRegtestNu7ActivationHeight(
+        height: kZcashRegtestNu7ActivationHeight,
+      );
+    }
   }
 
   // Order matters: window_manager creates and shows the NSWindow inside
@@ -509,6 +527,7 @@ class _BootstrappedZcashWalletAppState
 }
 
 Future<void> runZcashWalletApp() async {
+  installLogRedaction();
   log('runtime: starting');
   await initializeZcashWalletRuntime();
   final Widget app = Platform.isLinux
@@ -566,6 +585,9 @@ final _routerProvider = Provider<_AppRouter>((ref) {
     // to reach the card here or it would navigate — and on the second press
     // exit the app — underneath a modal the user is still looking at.
     handleBackAboveRouter: () {
+      if (ref.read(syncKeepAwakePrivacyLockBackProvider).handleBack()) {
+        return true;
+      }
       if (ref.read(paymentRequestFlowProvider) == null) return false;
       ref.read(paymentRequestFlowProvider.notifier).dismiss();
       return true;
@@ -573,18 +595,26 @@ final _routerProvider = Provider<_AppRouter>((ref) {
   );
   ref.onDispose(mobileExitBackDispatcher.dispose);
   final useMobileExitBackGuard = mobileExitBackGuard.enabled;
+  final routeOwnedNavigationObserver = RouteOwnedNavigationObserver();
+  ref.onDispose(routeOwnedNavigationObserver.dispose);
 
   router = GoRouter(
     navigatorKey: navigatorKey,
-    observers: kAppFormFactor == AppFormFactor.desktop
-        ? [
-            SendStatusRoutePayloadObserver(
-              onLeaveStatus: () => ref
-                  .read(sendStatusRoutePayloadProvider.notifier)
-                  .clearAfterNavigation(),
-            ),
-          ]
-        : [ref.watch(appReviewRouteObserverProvider)],
+    observers: [
+      routeOwnedNavigationObserver,
+      ...kAppFormFactor == AppFormFactor.desktop
+          ? [
+              SendStatusRoutePayloadObserver(
+                onLeaveStatus: () => ref
+                    .read(sendStatusRoutePayloadProvider.notifier)
+                    .clearAfterNavigation(),
+              ),
+            ]
+          : [
+              ref.watch(appReviewRouteObserverProvider),
+              ref.watch(mobileSidebarRouteObserverProvider),
+            ],
+    ],
     initialLocation: bootstrap.initialLocation,
     refreshListenable: refresh,
     redirect: (context, state) =>
@@ -776,39 +806,48 @@ List<RouteBase> appAuthRoutes(
   ),
   GoRoute(
     path: '/terms',
-    builder: (_, state) => kAppFormFactor == AppFormFactor.mobile
-        ? const MobileLegalScreen(title: 'Terms of Use')
+    builder: (context, state) => kAppFormFactor == AppFormFactor.mobile
+        ? MobileLegalScreen(title: context.l10n.appTermsOfUseTitle)
         : TermsScreen(
             forceFullPane: state.uri.queryParameters['from'] == 'onboarding',
           ),
   ),
   GoRoute(
     path: '/privacy',
-    builder: (_, state) => kAppFormFactor == AppFormFactor.mobile
-        ? const MobileLegalScreen(title: 'Privacy Policy')
+    builder: (context, state) => kAppFormFactor == AppFormFactor.mobile
+        ? MobileLegalScreen(title: context.l10n.appPrivacyPolicyTitle)
         : PrivacyPolicyScreen(
             forceFullPane: state.uri.queryParameters['from'] == 'onboarding',
           ),
   ),
 ];
 
-OnboardingBackTarget _desktopOnboardingEntryBackTarget(Ref ref) {
+OnboardingBackTarget _desktopOnboardingEntryBackTarget(
+  BuildContext context,
+  Ref ref,
+) {
   final hasWallet =
       ref.read(walletProvider).value?.hasWallet ??
       ref.read(appBootstrapProvider).hasWallet;
   return OnboardingBackTarget.route(
-    label: hasWallet ? 'Add account' : 'Welcome',
+    label: hasWallet
+        ? context.l10n.commonAddAccount
+        : context.l10n.onboardingWelcome,
     routePath: hasWallet ? '/add-account' : '/welcome',
   );
 }
 
-OnboardingBackTarget _desktopImportBackTarget(Ref ref, GoRouterState state) {
+OnboardingBackTarget _desktopImportBackTarget(
+  BuildContext context,
+  Ref ref,
+  GoRouterState state,
+) {
   final selection = desktopImportSelectionLocation(state.uri);
-  if (selection == null) return _desktopOnboardingEntryBackTarget(ref);
+  if (selection == null) return _desktopOnboardingEntryBackTarget(context, ref);
   return OnboardingBackTarget.route(
     label: selection.startsWith('/import/hardware')
-        ? 'Hardware wallets'
-        : 'Import methods',
+        ? context.l10n.appBackHardwareWallets
+        : context.l10n.appBackImportMethods,
     routePath: selection,
   );
 }
@@ -886,7 +925,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                   if (context.mounted) {
                     showAppToast(
                       context,
-                      'Couldn’t close the card. Try again.',
+                      context.l10n.commonCouldnTCloseTheCardTry,
                       iconName: AppIcons.warning,
                     );
                   }
@@ -958,7 +997,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       transitionDuration: kOnboardingForwardDuration,
       reverseTransitionDuration: kOnboardingReverseDuration,
       child: LedgerConnectScreen(
-        backTarget: _desktopImportBackTarget(ref, state),
+        backTarget: _desktopImportBackTarget(context, ref, state),
       ),
       transitionsBuilder: _onboardingFadeTransition,
     ),
@@ -1039,7 +1078,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           initialPersona: args.persona,
           continueToSecurity: needsPassword,
           ledgerBackTarget: OnboardingBackTarget.route(
-            label: 'Wallet Birthday Height',
+            label: context.l10n.onboardingStepWalletBirthdayHeight,
             routePath: preserveDesktopImportEntry(
               state.uri,
               '/onboarding/ledger/birthday',
@@ -1203,7 +1242,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           transitionDuration: kOnboardingForwardDuration,
           reverseTransitionDuration: kOnboardingReverseDuration,
           child: KeystoneHowToConnectScreen(
-            backTarget: _desktopImportBackTarget(ref, state),
+            backTarget: _desktopImportBackTarget(context, ref, state),
           ),
           transitionsBuilder: _onboardingFadeTransition,
         ),
@@ -1319,7 +1358,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             reverseTransitionDuration: kOnboardingReverseDuration,
             child: ImportSecretPassphraseScreen(
               args: args,
-              backTarget: _desktopImportBackTarget(ref, state),
+              backTarget: _desktopImportBackTarget(context, ref, state),
             ),
             transitionsBuilder: _onboardingFadeTransition,
           );
@@ -1828,23 +1867,29 @@ class ZcashWalletApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(votingShareTrackingRestorerProvider);
     ref.watch(paymentLinkClaimCoordinatorProvider);
+    ref.watch(walletPirServerActivatorProvider);
     final appRouter = ref.watch(_routerProvider);
     final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);
+    final appLanguage = ref.watch(appLanguageProvider);
+    final languages = ref.watch(availableAppLanguagesProvider);
 
     return MaterialApp.router(
-      title: 'Vizor',
+      title: 'Vizor', // l10n-ignore: product name
       debugShowCheckedModeBanner: false,
       theme: buildLegacyLightTheme(),
       darkTheme: buildLegacyDarkTheme(),
       themeMode: themeMode,
+      locale: appLocaleFor(appLanguage, languages),
+      supportedLocales: [for (final language in languages) language.locale],
+      localizationsDelegates: appLocalizationsDelegates,
       routeInformationProvider: router.routeInformationProvider,
       routeInformationParser: router.routeInformationParser,
       routerDelegate: router.routerDelegate,
       backButtonDispatcher: appRouter.backButtonDispatcher,
       onNavigationNotification: appRouter.onNavigationNotification,
       builder: (context, child) {
-        return AppThemeHost(
+        final app = AppThemeHost(
           themeMode: themeMode,
           // The inner `GestureDetector` handles global "tap outside clears
           // focus" — `HitTestBehavior.translucent` lets it receive pointer
@@ -1889,7 +1934,7 @@ class ZcashWalletApp extends ConsumerWidget {
                                     child: PaymentRequestHost(
                                       router: router,
                                       child: LedgerOperationRecoveryHost(
-                                        child: MobileNumericKeyboardToolbar(
+                                        child: MobileKeyboardToolbar(
                                           child: BackgroundAutoLockHost(
                                             router: router,
                                             child: AppReviewHost(
@@ -1914,6 +1959,18 @@ class ZcashWalletApp extends ConsumerWidget {
             ),
           ),
         );
+        // Root sheets and overlays sit outside the wallet pane's Navigator.
+        // Share the full-window decision before SafeArea or a keyboard can
+        // change their local metrics, including while a modal is already open.
+        final localized = NativeLanguageSync(
+          child: LocaleTypography(child: app),
+        );
+        return kAppFormFactor == AppFormFactor.mobile
+            ? MobileWindowPolicyScope(
+                policy: MobileWindowPolicy.resolve(MediaQuery.of(context)),
+                child: localized,
+              )
+            : localized;
       },
     );
   }
@@ -2193,10 +2250,10 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
         if (decision.action == IncomingLinkEntryAction.open) {
           _lastHomeNoticeLocation = null;
           widget.router.go('/home');
-        } else if (decision.message != null &&
+        } else if (decision.notice != null &&
             _lastHomeNoticeLocation != origin) {
           _lastHomeNoticeLocation = origin;
-          _showPaymentUriMessage(decision.message!);
+          _showIncomingLinkNotice(decision.notice!);
         }
       }),
     );
@@ -2220,14 +2277,19 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   }
 
   void _showRejectedPaymentLinkMessage() {
-    final message = ref.read(paymentLinkIntakeProvider).errorMessage;
-    if (message == null) return;
+    final error = ref.read(paymentLinkIntakeProvider).error;
+    if (error == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final toastContext = _toastScopeKey.currentContext;
       if (!mounted || toastContext == null) return;
+      final l10n = toastContext.l10n;
       showAppToast(
         toastContext,
-        message,
+        switch (error) {
+          PaymentLinkIntakeError.queueFull => l10n.paymentLinkIntakeQueueFull,
+          PaymentLinkIntakeError.couldNotOpen =>
+            l10n.paymentLinkIntakeCouldNotOpen,
+        },
         iconName: AppIcons.warning,
         tone: AppToastTone.destructive,
       );
@@ -2255,8 +2317,8 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     if (guard.blocks(ExternalAction.navigation) ||
         guard.blocks(ExternalAction.paymentRequest)) {
       final decision = _incomingEntry(IncomingLinkKind.giftCard);
-      if (decision.message != null) {
-        _showDeferredPaymentLinkMessage(pendingLink, decision.message!);
+      if (decision.notice != null) {
+        _showDeferredPaymentLinkNotice(pendingLink, decision.notice!);
       }
       return;
     }
@@ -2288,12 +2350,12 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       });
       return;
     }
-    final deferredMessage = _incomingEntry(IncomingLinkKind.giftCard).message;
-    if (deferredMessage != null) {
+    final deferredNotice = _incomingEntry(IncomingLinkKind.giftCard).notice;
+    if (deferredNotice != null) {
       final setupLink = ref.read(giftClaimSetupReturnProvider)?.link;
       for (final queued in ref.read(paymentLinkIntakeProvider).pendingLinks) {
         if (setupLink?.hasSameCanonicalPayload(queued) == true) continue;
-        _showDeferredPaymentLinkMessage(queued, deferredMessage);
+        _showDeferredPaymentLinkNotice(queued, deferredNotice);
         break;
       }
       return;
@@ -2331,13 +2393,20 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   bool get _paymentRequestCardPresented =>
       ref.read(paymentRequestFlowProvider) != null;
 
-  void _showDeferredPaymentLinkMessage(VizorPaymentLink link, String message) {
+  void _showDeferredPaymentLinkNotice(
+    VizorPaymentLink link,
+    IncomingLinkNotice notice,
+  ) {
     if (identical(_lastDeferredLink, link)) return;
     _lastDeferredLink = link;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final toastContext = _toastScopeKey.currentContext;
       if (!mounted || toastContext == null) return;
-      showAppToast(toastContext, message, iconName: AppIcons.warning);
+      showAppToast(
+        toastContext,
+        notice.text(toastContext.l10n),
+        iconName: AppIcons.warning,
+      );
     });
   }
 
@@ -2356,19 +2425,19 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
         // the first is still parked (locked wallet, wallet still loading).
         // Only the newest survives, so say so instead of silently dropping
         // the earlier one.
-        _showPaymentUriMessage(kPaymentUriReplacedMessage);
+        _showPaymentUriNotice(PaymentUriNotice.replaced);
       }
     } on Zip321UnsupportedRequestException catch (e) {
       // Do not clear here: a refused link must not wipe a prefill already
       // parked from an earlier valid one.
       log('Payment URI: unsupported: ${e.reason}');
-      _showPaymentUriMessage(paymentUriRejectionMessage(e));
+      _showPaymentUriNotice(paymentUriRejectionNotice(e));
     } on Zip321ParseException catch (e) {
       // The parser's message is spec wording written for us, and it echoes
       // fragments of the link's own text; keep it in the log and show the
       // payer one sentence they can act on.
       log('Payment URI: rejected: ${e.message}');
-      _showPaymentUriMessage(paymentUriRejectionMessage(e));
+      _showPaymentUriNotice(paymentUriRejectionNotice(e));
     } catch (e) {
       // Defensive: no current parse path reaches this. It shares the drain
       // policy's constant rather than a literal of its own so the two cannot
@@ -2376,7 +2445,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       // Only `zcash:` links reach this lane, so `$e` cannot carry a Gift
       // Card's mnemonic fragment.
       log('Payment URI: failed to parse: $e');
-      _showPaymentUriMessage(kPaymentUriUnavailableMessage);
+      _showPaymentUriNotice(PaymentUriNotice.unavailable);
     }
   }
 
@@ -2457,15 +2526,15 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     switch (decision.action) {
       case PaymentUriDrainAction.wait:
         if (prefill != null &&
-            decision.message != null &&
+            decision.notice != null &&
             _lastDeferredPrefillId != prefill.id) {
           _lastDeferredPrefillId = prefill.id;
-          _showPaymentUriMessage(decision.message!);
+          _showPaymentUriNotice(decision.notice!);
         }
         return;
       case PaymentUriDrainAction.dropWithMessage:
         prefillNotifier.clear();
-        _showPaymentUriMessage(decision.message!);
+        _showPaymentUriNotice(decision.notice!);
       case PaymentUriDrainAction.routeToUnlock:
         // Leave the prefill parked in paymentUriPrefillProvider. The unlock
         // flow claims it and presents the card, so the payment intent is not
@@ -2474,7 +2543,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       case PaymentUriDrainAction.routeToWelcome:
         prefillNotifier.clear();
         widget.router.go('/welcome');
-        _showPaymentUriMessage(decision.message!);
+        _showPaymentUriNotice(decision.notice!);
       case PaymentUriDrainAction.deliver:
         prefillNotifier.clear();
         // The request is presented over the current screen, not navigated to.
@@ -2489,13 +2558,19 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   /// The host outlives the screen that asked for the notice, which matters on
   /// the unlock path: the unlock screen navigates in the same turn, so a
   /// notice tied to its own `BuildContext` would never arrive.
-  void _showPaymentUriMessage(String message) {
+  void _showPaymentUriNotice(PaymentUriNotice notice) =>
+      _showLinkToast((l10n) => notice.text(l10n));
+
+  void _showIncomingLinkNotice(IncomingLinkNotice notice) =>
+      _showLinkToast((l10n) => notice.text(l10n));
+
+  void _showLinkToast(String Function(AppLocalizations l10n) text) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final toastContext = _toastScopeKey.currentContext;
       if (!mounted || toastContext == null) return;
       showAppToast(
         toastContext,
-        message,
+        text(toastContext.l10n),
         duration: _kIncomingLinkNoticeDuration,
         iconName: AppIcons.warning,
       );
@@ -2752,7 +2827,8 @@ class _WindowsUpdatePrompt extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final action = _primaryAction();
+    final l10n = context.l10n;
+    final action = _primaryAction(l10n);
 
     return DefaultTextStyle.merge(
       style: const TextStyle(decoration: TextDecoration.none),
@@ -2791,7 +2867,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _title(),
+                            _title(l10n),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: AppTypography.labelLarge.copyWith(
@@ -2801,7 +2877,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            _message(),
+                            _message(l10n),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: AppTypography.bodySmall.copyWith(
@@ -2830,8 +2906,8 @@ class _WindowsUpdatePrompt extends StatelessWidget {
                         size: AppButtonSize.small,
                         child: Text(
                           state.status == WindowsUpdateStatus.failed
-                              ? 'Dismiss'
-                              : 'Later',
+                              ? l10n.appUpdateDismiss
+                              : l10n.appUpdateLater,
                         ),
                       ),
                       const SizedBox(width: AppSpacing.xxs),
@@ -2852,29 +2928,28 @@ class _WindowsUpdatePrompt extends StatelessWidget {
     );
   }
 
-  String _title() {
+  String _title(AppLocalizations l10n) {
     return switch (state.status) {
-      WindowsUpdateStatus.available =>
-        'Update ${state.availableVersion} available',
-      WindowsUpdateStatus.downloading => 'Downloading update',
-      WindowsUpdateStatus.ready => 'Update ready',
-      WindowsUpdateStatus.applying => 'Restarting Vizor',
-      WindowsUpdateStatus.failed => 'Update failed',
-      _ => 'Update available',
+      WindowsUpdateStatus.available => l10n.appUpdateAvailableVersionTitle(
+        state.availableVersion,
+      ),
+      WindowsUpdateStatus.downloading => l10n.appUpdateDownloadingTitle,
+      WindowsUpdateStatus.ready => l10n.appUpdateReadyTitle,
+      WindowsUpdateStatus.applying => l10n.appUpdateRestartingTitle,
+      WindowsUpdateStatus.failed => l10n.commonUpdateFailed,
+      _ => l10n.appUpdateAvailableTitle,
     };
   }
 
-  String _message() {
+  String _message(AppLocalizations l10n) {
     return switch (state.status) {
-      WindowsUpdateStatus.available => 'Download now or keep working.',
-      WindowsUpdateStatus.downloading =>
-        '${state.downloadProgress}% downloaded.',
-      WindowsUpdateStatus.ready => 'Restart when you are ready.',
-      WindowsUpdateStatus.applying => 'Applying after Vizor closes.',
-      WindowsUpdateStatus.failed =>
-        state.message.trim().isEmpty
-            ? "Couldn't complete the update. Try again."
-            : state.message.trim(),
+      WindowsUpdateStatus.available => l10n.appUpdateAvailableMessage,
+      WindowsUpdateStatus.downloading => l10n.appUpdateDownloadingMessage(
+        state.downloadProgress,
+      ),
+      WindowsUpdateStatus.ready => l10n.appUpdateReadyMessage,
+      WindowsUpdateStatus.applying => l10n.appUpdateApplyingMessage,
+      WindowsUpdateStatus.failed => state.failureMessage(l10n),
       _ => '',
     };
   }
@@ -2885,27 +2960,27 @@ class _WindowsUpdatePrompt extends StatelessWidget {
         state.status == WindowsUpdateStatus.failed;
   }
 
-  _WindowsUpdatePromptAction _primaryAction() {
+  _WindowsUpdatePromptAction _primaryAction(AppLocalizations l10n) {
     return switch (state.status) {
       WindowsUpdateStatus.available => _WindowsUpdatePromptAction(
-        label: 'Download',
+        label: l10n.commonDownload,
         onPressed: onDownload,
       ),
       WindowsUpdateStatus.ready => _WindowsUpdatePromptAction(
-        label: 'Restart',
+        label: l10n.updateRestart,
         onPressed: onRestart,
       ),
-      WindowsUpdateStatus.downloading => const _WindowsUpdatePromptAction(
-        label: 'Downloading',
+      WindowsUpdateStatus.downloading => _WindowsUpdatePromptAction(
+        label: l10n.appUpdateDownloading,
       ),
-      WindowsUpdateStatus.applying => const _WindowsUpdatePromptAction(
-        label: 'Restarting',
+      WindowsUpdateStatus.applying => _WindowsUpdatePromptAction(
+        label: l10n.appUpdateRestarting,
       ),
       WindowsUpdateStatus.failed => _WindowsUpdatePromptAction(
-        label: 'Try again',
+        label: l10n.commonTryAgain,
         onPressed: onRetry,
       ),
-      _ => const _WindowsUpdatePromptAction(label: 'Update'),
+      _ => _WindowsUpdatePromptAction(label: l10n.commonUpdate),
     };
   }
 }
@@ -2997,20 +3072,21 @@ class _LinuxUpdateNoticeListener extends ConsumerWidget {
         final messenger = ScaffoldMessenger.maybeOf(context);
         if (messenger == null) return;
         final torEnabled = ref.read(networkPrivacyProvider).torEnabled;
+        final l10n = context.l10n;
 
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
           SnackBar(
             content: Text(
               torEnabled
-                  ? 'Vizor ${update.assetVersion} is available. The release '
-                        'page opens in your browser, outside Vizor’s Tor '
-                        'connection.'
-                  : 'Vizor ${update.assetVersion} is available.',
+                  ? l10n.appLinuxUpdateAvailableTor(update.assetVersion)
+                  : l10n.appLinuxUpdateAvailable(update.assetVersion),
             ),
             duration: const Duration(seconds: 8),
             action: SnackBarAction(
-              label: torEnabled ? 'Open in browser' : 'View release',
+              label: torEnabled
+                  ? l10n.appLinuxUpdateOpenInBrowser
+                  : l10n.appLinuxUpdateViewRelease,
               onPressed: () => unawaited(_openLinuxUpdateRelease(update)),
             ),
           ),
@@ -3072,7 +3148,7 @@ class _NetworkPrivacyStartupToastBridgeState
   @override
   void initState() {
     super.initState();
-    ref.listenManual<String?>(
+    ref.listenManual<NetworkPrivacyNotice?>(
       networkPrivacyProvider.select((state) => state.startupNotice),
       (previous, next) {
         if (next == null || next == previous) return;
@@ -3082,7 +3158,7 @@ class _NetworkPrivacyStartupToastBridgeState
           // sheet, including on the first frame before the modal is pushed.
           // Keep the existing startup toast for locked/existing wallets.
           if (kAppFormFactor == AppFormFactor.mobile &&
-              next == kTorStartupFailureNotice &&
+              next == NetworkPrivacyNotice.torStartupFailure &&
               ref.read(_routerProvider).router.state.matchedLocation ==
                   '/welcome' &&
               !(ref.read(walletProvider).value?.hasWallet ??
@@ -3092,7 +3168,7 @@ class _NetworkPrivacyStartupToastBridgeState
           }
           showNetworkFallbackToast(
             context,
-            next,
+            next.message(context.l10n),
             duration: const Duration(seconds: 4),
           );
           ref.read(networkPrivacyProvider.notifier).clearStartupNotice();
@@ -3121,11 +3197,12 @@ class _RpcEndpointFailoverToastBridge extends ConsumerWidget {
         if (next == null || next.sequence == previous?.sequence) return;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!context.mounted) return;
-          showNetworkFallbackToast(
-            context,
-            next.message,
-            duration: const Duration(seconds: 4),
-          );
+          showNetworkFallbackToast(context, switch (next.kind) {
+            RpcEndpointFailoverEventKind.switchedToFallback =>
+              context.l10n.endpointFailoverSwitchedToFallback,
+            RpcEndpointFailoverEventKind.switchedToPrimary =>
+              context.l10n.endpointFailoverSwitchedBack,
+          }, duration: const Duration(seconds: 4));
         });
       },
     );

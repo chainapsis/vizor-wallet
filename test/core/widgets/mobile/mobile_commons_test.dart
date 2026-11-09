@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('MobileListRow renders label, value, and chevron', (
@@ -44,18 +45,17 @@ void main() {
     await tester.pumpWidget(
       _harness(
         MobileListRow(
-          label: 'Password',
-          value: 'Change',
+          label: 'Change passcode',
           enabled: false,
           onTap: () => taps++,
         ),
       ),
     );
 
-    final label = tester.widget<Text>(find.text('Password'));
+    final label = tester.widget<Text>(find.text('Change passcode'));
     expect(label.style?.color, AppThemeData.dark.colors.text.disabled);
 
-    await tester.tap(find.text('Password'), warnIfMissed: false);
+    await tester.tap(find.text('Change passcode'), warnIfMissed: false);
     expect(taps, 0);
   });
 
@@ -124,6 +124,7 @@ void main() {
 
 Widget _harness(Widget child) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
       data: AppThemeData.dark,
       child: Center(child: child),

@@ -1,0 +1,114 @@
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../../../core/l10n/l10n.dart';
+import '../../../../core/navigation/external_action_guard_hold.dart';
+import '../../../../core/widgets/app_button.dart';
+import '../../../../providers/privacy_mode_provider.dart';
+import '../../../../providers/sync_provider.dart';
+import '../../services/transparent_shielding_service.dart';
+import '../../widgets/mobile/shield/mobile_shield_scene.dart';
+import '../../widgets/mobile/shield/mobile_shield_backdrop.dart';
+
+class MobileSoftwareShieldScreen extends ConsumerStatefulWidget {
+  const MobileSoftwareShieldScreen({this.backdrop, super.key});
+  final MobileShieldBackdrop? backdrop;
+  @override
+  ConsumerState<MobileSoftwareShieldScreen> createState() =>
+      _MobileSoftwareShieldScreenState();
+}
+
+class _MobileSoftwareShieldScreenState
+    extends ConsumerState<MobileSoftwareShieldScreen>
+    with ExternalActionGuardHoldMixin {
+  late final String _accountUuid;
+  late final BigInt _amount;
+  late final BigInt _expected;
+  var _phase = MobileShieldPhase.review;
+  String? _message;
+  BigInt? _resultAmount;
+  @override
+  void initState() {
+    super.initState();
+    _accountUuid = activeShieldingAccountUuid(ref);
+    final sync = (ref.read(syncProvider).value ?? SyncState()).scopedToAccount(
+      _accountUuid,
+    );
+    _amount = sync.shieldTransparentAmount + sync.shieldTransparentFee;
+    _expected = sync.shieldTransparentAmount;
+  }
+
+  void _close() {
+    if (_phase == MobileShieldPhase.working) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
+  }
+
+  Future<void> _commit() async {
+    if (_phase != MobileShieldPhase.review) return;
+    setState(() => _phase = MobileShieldPhase.working);
+    try {
+      final result = await ref.read(softwareTransparentShieldRunnerProvider)(
+        ref: ref,
+        accountUuid: _accountUuid,
+        logContext: 'MobileShield',
+      );
+      if (!mounted) return;
+      final warning = shieldBalanceBroadcastStatusMessage(context.l10n, result);
+      setState(() {
+        _phase = warning == null
+            ? MobileShieldPhase.succeeded
+            : MobileShieldPhase.pending;
+        _resultAmount = result.shieldedZatoshi;
+        _message = warning;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _phase = MobileShieldPhase.failed;
+        _message = friendlyShieldBalanceError(context.l10n, error);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
+    return MobileShieldScene(
+      backdrop: widget.backdrop,
+      phase: _phase,
+      amount: mobileShieldAmountText(
+        _amount,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
+      resultAmount: mobileShieldAmountText(
+        _resultAmount ?? _expected,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
+      title: switch (_phase) {
+        MobileShieldPhase.review => context.l10n.homeShieldBalanceTitle,
+        MobileShieldPhase.succeeded => context.l10n.commonShieldedSuccessfully,
+        MobileShieldPhase.pending => context.l10n.homeShieldQueuedTitle,
+        MobileShieldPhase.failed => context.l10n.homeShieldFailedTitle,
+        _ => context.l10n.homeShieldingBalance,
+      },
+      body: _message,
+      canLeave: _phase != MobileShieldPhase.working,
+      onCommit: _commit,
+      onClose: _close,
+      onComplete: _close,
+      footer:
+          _phase == MobileShieldPhase.failed ||
+              _phase == MobileShieldPhase.pending
+          ? AppButton(
+              onPressed: _close,
+              expand: true,
+              child: Text(context.l10n.commonBackToWallet),
+            )
+          : null,
+    );
+  }
+}

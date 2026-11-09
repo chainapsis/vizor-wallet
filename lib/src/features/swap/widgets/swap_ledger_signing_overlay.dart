@@ -3,13 +3,14 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
-import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/services/ledger_operation_lifecycle.dart';
@@ -54,8 +55,26 @@ class _SwapLedgerSigningOverlayState
   bool _showSaplingParamsPrompt = false;
   bool _cancelled = false;
   Completer<bool>? _saplingParamsPromptCompleter;
-  String? _error;
+  String? _errorText;
+
+  /// The upgrade hold [_error] explains, kept beside the localized text so
+  /// the modal can tell a hold apart without comparing copy.
+  NetworkUpgradeHold? _errorHold;
+
+  String? get _error => _errorText;
+
+  set _error(String? text) {
+    _errorText = text;
+    _errorHold = null;
+  }
+
+  void _setError(String text, NetworkUpgradeHold? hold) {
+    _errorText = text;
+    _errorHold = hold;
+  }
+
   LedgerFailureGuidance? _deviceGuidance;
+  LedgerRequestFailure? _requestFailure;
   SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
   List<int>? _pcztWithProofs;
@@ -218,7 +237,7 @@ class _SwapLedgerSigningOverlayState
       }
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
-        _error = _friendlyError(e);
+        _setError(_friendlyError(e), networkUpgradeHoldKind(e));
       });
     }
   }
@@ -231,6 +250,7 @@ class _SwapLedgerSigningOverlayState
         _phase = LedgerSigningModalPhase.saving;
         _error = null;
         _deviceGuidance = null;
+        _requestFailure = null;
       });
       try {
         var pendingResult = _pendingBroadcastResult;
@@ -254,7 +274,7 @@ class _SwapLedgerSigningOverlayState
         }
         setState(() {
           _phase = LedgerSigningModalPhase.failed;
-          _error = _friendlyError(e);
+          _setError(_friendlyError(e), networkUpgradeHoldKind(e));
         });
       }
       return;
@@ -266,6 +286,7 @@ class _SwapLedgerSigningOverlayState
         _phase = LedgerSigningModalPhase.preparing;
         _error = null;
         _deviceGuidance = null;
+        _requestFailure = null;
       });
       await _prepareAndSign();
       return;
@@ -275,6 +296,7 @@ class _SwapLedgerSigningOverlayState
       _phase = LedgerSigningModalPhase.awaitingDevice;
       _error = null;
       _deviceGuidance = null;
+      _requestFailure = null;
     });
     try {
       final accountUuid = widget.intent.accountUuid!;
@@ -301,7 +323,7 @@ class _SwapLedgerSigningOverlayState
       }
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
-        _error = _friendlyError(e);
+        _setError(_friendlyError(e), networkUpgradeHoldKind(e));
       });
     }
   }
@@ -346,6 +368,7 @@ class _SwapLedgerSigningOverlayState
         _phase = LedgerSigningModalPhase.broadcasting;
         _error = null;
         _deviceGuidance = null;
+        _requestFailure = null;
       });
     }
     late final LedgerSignedOperationBroadcastResult result;
@@ -432,6 +455,7 @@ class _SwapLedgerSigningOverlayState
         _phase = LedgerSigningModalPhase.saving;
         _error = null;
         _deviceGuidance = null;
+        _requestFailure = null;
       });
     }
     final draft = _draft;
@@ -452,6 +476,15 @@ class _SwapLedgerSigningOverlayState
     _pendingBroadcastResult = null;
     _releaseOperationClaim();
     if (!mounted) return;
+    // Explain an upgrade hold instead of closing without a word.
+    final upgradeHold = networkUpgradeHoldKind(result.message ?? '');
+    if (upgradeHold != null) {
+      setState(() {
+        _phase = LedgerSigningModalPhase.failed;
+        _setError(upgradeHold.message(context.l10n), upgradeHold);
+      });
+      return;
+    }
     _cancelled = true;
     widget.onCancel();
   });
@@ -464,6 +497,7 @@ class _SwapLedgerSigningOverlayState
         _phase = LedgerSigningModalPhase.saving;
         _error = null;
         _deviceGuidance = null;
+        _requestFailure = null;
       });
     }
     final draft = _draft;
@@ -484,6 +518,7 @@ class _SwapLedgerSigningOverlayState
           txHash: result.txid,
           status: result.status,
           message: result.message,
+          notices: result.notices,
         ),
       );
     } catch (error) {
@@ -505,6 +540,7 @@ class _SwapLedgerSigningOverlayState
       txid: txid,
       status: status,
       message: operation.message,
+      notices: operation.notices,
       requiresAck: true,
     );
   }
@@ -554,6 +590,7 @@ class _SwapLedgerSigningOverlayState
       _phase = LedgerSigningModalPhase.saving;
       _error = null;
       _deviceGuidance = null;
+      _requestFailure = null;
     });
     _cancelled = true;
     await _cancelLedgerOperationSafely();
@@ -568,7 +605,7 @@ class _SwapLedgerSigningOverlayState
       _cancelled = false;
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
-        _error = _friendlyError(error);
+        _setError(_friendlyError(error), networkUpgradeHoldKind(error));
       });
       return;
     }
@@ -646,40 +683,45 @@ class _SwapLedgerSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    _requestFailure = LedgerRequestFailure.fromError(error);
     _deviceGuidance = ledgerFailureGuidance(
+      context.l10n,
       error,
       requestKind: widget.intent.payMode
           ? LedgerRequestKind.payment
           : LedgerRequestKind.swap,
     );
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
+    if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
+      context.l10n,
       ref.read(rpcEndpointProvider).networkName,
     );
-    if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
-      return kLedgerLegacyOrchardRecoveryUnavailableMessage;
-    }
     if (_deviceGuidance != null) return _deviceGuidance!.message;
     if (LedgerRequestFailure.fromError(error) ==
         LedgerRequestFailure.declined) {
-      return 'The ZEC deposit was rejected on your Ledger.';
+      return context.l10n.swapLedgerDeclined;
     }
-    final usb = ledgerUsbErrorMessage(error, appInstruction: appInstruction);
+    final usb = ledgerUsbErrorMessage(
+      context.l10n,
+      error,
+      appInstruction: appInstruction,
+    );
     if (usb != null) return usb;
     if (lower.contains('sapling')) {
-      return kLedgerSaplingRecipientMessage;
+      return context.l10n.ledgerFailureMsgSaplingRecipient;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return 'The ZEC deposit could not be broadcast.';
+      return context.l10n.swapLedgerBroadcastFailed;
     }
-    return 'Ledger signing could not be completed.';
+    return context.l10n.swapLedgerSigningIncomplete;
   }
 
   @override
   Widget build(BuildContext context) {
     final canLeave = !_isBroadcasting;
-    final legacyOrchardRecoveryUnavailable =
-        _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
+    final upgradeHold = _errorHold == NetworkUpgradeHold.hold;
     final pendingBroadcastResult = _pendingBroadcastResult;
     final postBroadcastRecovery = pendingBroadcastResult != null;
     // Retrying the same request fails the same way on the device.
@@ -697,11 +739,13 @@ class _SwapLedgerSigningOverlayState
         pendingBroadcastResult?.status ==
             SwapDepositBroadcastStatus.broadcastedStorageFailed;
     final modal = LedgerSigningModal(
+      cancelling: _cancelled,
       connectionScope: _connectionScope,
       accountUuid: widget.intent.accountUuid,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              requestFailure: _requestFailure,
               pairingInvalid: _deviceGuidance?.pairingInvalid ?? false,
               pairingRecovery:
                   !postBroadcastRecovery &&
@@ -713,58 +757,55 @@ class _SwapLedgerSigningOverlayState
                   (_deviceGuidance?.bluetoothRecovery ?? false),
               title: postBroadcastRecovery
                   ? expiredRecovery
-                        ? 'Transaction expired'
+                        ? context.l10n.commonTransactionExpired
                         : broadcastConfirmed
-                        ? 'Transaction sent'
-                        : 'Transaction status pending'
+                        ? context.l10n.swapLedgerTitleSent
+                        : context.l10n.swapLedgerTitlePending
                   : _operationClaimUnavailable
-                  ? 'Transaction recovery in progress'
-                  : legacyOrchardRecoveryUnavailable
-                  ? 'Ledger app update required'
-                  : 'Ledger signing failed',
+                  ? context.l10n.swapLedgerTitleRecovery
+                  : upgradeHold
+                  ? networkUpgradeHoldActionLabel(context.l10n)
+                  : context.l10n.commonLedgerSigningFailed,
               statusLabel: postBroadcastRecovery
                   ? expiredRecovery
-                        ? 'Cleanup needed'
-                        : 'Saving transaction'
+                        ? context.l10n.swapLedgerStatusCleanup
+                        : context.l10n.swapLedgerStatusSaving
                   : _operationClaimUnavailable
-                  ? 'Please wait'
-                  : legacyOrchardRecoveryUnavailable
-                  ? 'Recovery unavailable'
-                  : 'Action needed',
+                  ? context.l10n.commonPleaseWait
+                  : context.l10n.commonActionNeeded,
+              actionNeeded:
+                  !postBroadcastRecovery && !_operationClaimUnavailable,
               message: postBroadcastRecovery
                   ? expiredRecovery
-                        ? 'The transaction expired before it was sent. Vizor still needs to release its reserved funds.'
+                        ? context.l10n.swapLedgerMessageExpired
                         : broadcastConfirmed
-                        ? 'The transaction was sent, but Vizor could not finish saving it.'
-                        : 'Vizor could not confirm whether the transaction was sent, and still needs to save its status.'
+                        ? context.l10n.swapLedgerMessageSentNotSaved
+                        : context.l10n.swapLedgerMessageUncertain
                   : _operationClaimUnavailable
-                  ? 'Vizor is already finishing this transaction in the background.'
-                  : _error ?? 'Ledger signing could not be completed.',
+                  ? context.l10n.swapLedgerMessageBackground
+                  : _error ?? context.l10n.swapLedgerSigningIncomplete,
               showDeviceAppPrompt:
                   !postBroadcastRecovery &&
                   !_operationClaimUnavailable &&
-                  !legacyOrchardRecoveryUnavailable &&
                   (_deviceGuidance?.showDeviceAppPrompt ?? false),
               showConnectionPicker:
-                  !postBroadcastRecovery && !_operationClaimUnavailable,
-              actionLabel:
-                  legacyOrchardRecoveryUnavailable ||
-                      _operationClaimUnavailable ||
-                      requestNeedsRebuilding
+                  !postBroadcastRecovery &&
+                  !_operationClaimUnavailable &&
+                  !upgradeHold,
+              actionLabel: _operationClaimUnavailable || requestNeedsRebuilding
                   ? null
                   : postBroadcastRecovery
                   ? expiredRecovery
-                        ? 'Retry cleanup'
-                        : 'Retry saving'
-                  : 'Try again',
+                        ? context.l10n.swapLedgerRetryCleanup
+                        : context.l10n.commonRetrySaving
+                  : context.l10n.commonTryAgain,
             )
           : null,
       onCancel: canLeave ? () => unawaited(_cancel()) : null,
-      cancelLabel: 'Back to activity',
+      cancelLabel: context.l10n.swapLedgerBackToActivity,
       onFailureAction:
           _phase == LedgerSigningModalPhase.failed &&
               !_operationClaimUnavailable &&
-              !legacyOrchardRecoveryUnavailable &&
               !requestNeedsRebuilding
           ? () => unawaited(_retry())
           : null,
@@ -775,7 +816,9 @@ class _SwapLedgerSigningOverlayState
         fit: StackFit.expand,
         children: [
           MobileLedgerSigningSurface(
-            title: widget.intent.payMode ? 'Sign payment' : 'Sign ZEC deposit',
+            title: widget.intent.payMode
+                ? context.l10n.swapSignPayment
+                : context.l10n.swapSignZecDeposit,
             canLeave: canLeave,
             onBack: () => unawaited(_cancel()),
             child: modal,

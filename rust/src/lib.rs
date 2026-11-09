@@ -4,6 +4,7 @@
 pub mod api;
 pub mod ffi;
 mod frb_generated;
+mod log_redaction;
 pub mod migration_preparation;
 pub mod network_privacy;
 mod tor_update_relay;

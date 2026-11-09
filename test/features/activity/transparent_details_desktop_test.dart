@@ -16,21 +16,22 @@ import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_enhance_pir_notifier.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import 'transparent_details_test_support.dart';
+import '../../support/test_l10n.dart';
 
 Future<List<String>> _pump(
   WidgetTester tester,
   ScriptedDetails details, {
   FakeSyncNotifier? sync,
   bool privacy = false,
-  bool showPrivateLookupDiagnostics = false,
-  Future<String> Function(rust_sync.TransactionInfo)? debugLookup,
   Future<void> Function(rust_sync.TransactionInfo)? publicLookup,
   Future<bool> Function(BuildContext)? confirmPublicLookup,
   rust_sync.TransactionInfo? transaction,
+  List<String>? rowReads,
   bool privateQueries = true,
   Map<String, AccountInfo> ownAccounts = const {},
 }) async {
@@ -49,14 +50,15 @@ Future<List<String>> _pump(
             txKind: tx.txKind,
             initialTransaction: tx,
           ),
-          historyLoader: (_) async => [tx],
+          historyLoader: (_, txid) async {
+            rowReads?.add(txid);
+            return [tx];
+          },
           detailLoader: details.load,
           transparentDetailsPrioritizer: (txid) async => prioritized.add(txid),
-          transparentDetailsDebugLookup: debugLookup,
           transparentDetailsPublicLookup: publicLookup,
           publicLookupConfirmation:
               confirmPublicLookup ?? confirmPublicDetailsLookup,
-          showPrivateLookupDiagnostics: showPrivateLookupDiagnostics,
         ),
       ),
       GoRoute(path: '/activity', builder: (_, _) => const Text('activity')),
@@ -86,6 +88,7 @@ Future<List<String>> _pump(
         ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
       ],
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
@@ -103,18 +106,6 @@ Future<void> _close(WidgetTester tester) async {
 }
 
 void main() {
-  transparentDetailsDebugTests(
-    pump: (tester, details, sync, privacy, lookup) async {
-      await _pump(
-        tester,
-        details,
-        sync: sync,
-        privacy: privacy,
-        showPrivateLookupDiagnostics: true,
-        debugLookup: lookup,
-      );
-    },
-  );
   transparentDetailsPublicLookupTests(
     pump: (tester, details, {required lookup, confirm, sync}) async {
       await _pump(
@@ -172,14 +163,14 @@ void main() {
     ]);
     final prioritized = await _pump(tester, details);
     expect(find.text('Sent successfully'), findsOneWidget);
-    expect(find.text(kUnknownRecipientText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnknownRecipient), findsOneWidget);
     expect(find.text('Show full address'), findsNothing);
     // The other party's output is listed as the transaction's; the change is
     // never listed.
     expect(transactionOutputShown, findsOneWidget);
     expect(find.byKey(const ValueKey('transaction_output_1')), findsNothing);
     expect(find.text('Your address'), findsNothing);
-    expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsNothing);
     expect(
       prioritized,
       isEmpty,
@@ -197,13 +188,27 @@ void main() {
     ) async {
       final details = ScriptedDetails([transparentDetail(state)]);
       final prioritized = await _pump(tester, details);
-      expect(find.text(kTransparentDetailsUnavailableText), findsOneWidget);
+      expect(find.text(testL10n.activityDetailsUnavailable), findsOneWidget);
       expect(prioritized, [
         transparentDetailsTxid,
       ], reason: 'asked once on open');
       await _close(tester);
     });
   }
+
+  testWidgets('desktop receipt shows a given-up lookup as unavailable and '
+      'stops waiting for it', (tester) async {
+    final details = ScriptedDetails([
+      transparentDetail(rust_sync.TransparentDetailsState.gaveUp),
+    ]);
+    final prioritized = await _pump(tester, details);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsOneWidget);
+    expect(prioritized, isEmpty, reason: 'no sync asks for it again');
+    final before = details.calls;
+    await tester.pump(kTransparentDetailsPollInterval * 3);
+    expect(details.calls, before, reason: 'nothing to wait for');
+    await _close(tester);
+  });
 
   testWidgets('desktop receipt says not covered in private mode', (
     tester,
@@ -212,8 +217,8 @@ void main() {
       transparentDetail(rust_sync.TransparentDetailsState.notCovered),
     ]);
     final prioritized = await _pump(tester, details);
-    expect(find.text(kTransparentDetailsNotCoveredText), findsOneWidget);
-    expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
+    expect(find.text(testL10n.activityDetailsNotCovered), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsNothing);
     expect(prioritized, isEmpty);
     final before = details.calls;
     await tester.pump(kTransparentDetailsPollInterval * 3);
@@ -232,48 +237,28 @@ void main() {
         recipients: transparentRecipients,
       ),
     ]);
-    final prioritized = await _pump(tester, details);
+    final rowReads = <String>[];
+    final prioritized = await _pump(tester, details, rowReads: rowReads);
     expect(details.calls, 1);
-    expect(find.text(kTransparentDetailsUnavailableText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsOneWidget);
     await tester.pump(kTransparentDetailsPollInterval);
     await tester.pump();
     expect(details.calls, 2);
-    expect(find.text(kTransparentDetailsUnavailableText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsOneWidget);
     await tester.pump(kTransparentDetailsPollInterval);
     await tester.pump();
     expect(details.calls, 3);
     expect(transactionOutputShown, findsOneWidget);
-    expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
+    expect(find.text(testL10n.activityDetailsUnavailable), findsNothing);
     await tester.pump(kTransparentDetailsPollInterval * 4);
     expect(details.calls, 3, reason: 'polling stopped');
     expect(prioritized, [transparentDetailsTxid]);
     await _close(tester);
+    // Polls re-read the detail only, never the transaction's rows.
+    expect(rowReads, [transparentDetailsTxid]);
   });
 
-  testWidgets('desktop dev builds offer a private lookup that stores nothing', (
-    tester,
-  ) async {
-    final details = ScriptedDetails([
-      transparentDetail(rust_sync.TransparentDetailsState.unavailable),
-    ]);
-    await _pump(
-      tester,
-      details,
-      showPrivateLookupDiagnostics: true,
-      debugLookup: (_) async => '1 outputs · 2 private queries',
-    );
-    final button = find.byKey(
-      const ValueKey('transparent_details_debug_lookup'),
-    );
-    expect(button, findsOneWidget);
-    await tester.tap(find.text('Look up'));
-    await tester.pump();
-    await tester.pump();
-    expect(find.text('1 outputs · 2 private queries'), findsOneWidget);
-    await _close(tester);
-  });
-
-  testWidgets('desktop hides private lookup diagnostics when disabled', (
+  testWidgets('desktop receipt has no private lookup diagnostic button', (
     tester,
   ) async {
     final details = ScriptedDetails([

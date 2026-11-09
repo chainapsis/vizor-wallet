@@ -298,11 +298,9 @@ void main() {
       1,
       reason: 'locked polling must not begin a refresh or recapture the epoch',
     );
-    expect(
-      harness.walletOpenTipHeights,
-      [1_000],
-      reason: 'locked polling must not attempt another scheduled broadcast',
-    );
+    expect(harness.walletOpenTipHeights, [
+      1_000,
+    ], reason: 'locked polling must not attempt another scheduled broadcast');
 
     harness.unlock();
     await harness.coordinator.refreshNow(forceAdvance: true);
@@ -348,11 +346,9 @@ void main() {
       1,
       reason: 'a lock shorter than the suspension threshold keeps the epoch',
     );
-    expect(
-      harness.walletOpenTipHeights,
-      [1_000],
-      reason: 'the consumed fallback allowance must not be replenished',
-    );
+    expect(harness.walletOpenTipHeights, [
+      1_000,
+    ], reason: 'the consumed fallback allowance must not be replenished');
   });
 
   test(
@@ -485,11 +481,9 @@ void main() {
       accountStatus: _scheduledStatus(scheduledHeight: 999),
     );
 
-    expect(
-      harness.walletOpenTipHeights,
-      [1_000],
-      reason: 'the broadcast must carry the first epoch\'s entry tip',
-    );
+    expect(harness.walletOpenTipHeights, [
+      1_000,
+    ], reason: 'the broadcast must carry the first epoch\'s entry tip');
 
     harness.sleep(kDesktopMigrationEpochSuspensionGap);
     await harness.coordinator.refreshNow(forceAdvance: true);

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
@@ -11,7 +12,7 @@ enum KeystonePcztQrStagePhase { preparing, ready, working, failed }
 const _scanOptimizedQrInk = Color(0xFF000000);
 // Keep every Keystone signing screen on the same camera-friendly cadence.
 // Screens select their layout, but cannot override the animation timing.
-const _keystoneQrFrameInterval = Duration(milliseconds: 200);
+const keystoneQrFrameInterval = Duration(milliseconds: 200);
 
 class KeystonePcztQrStage extends StatelessWidget {
   const KeystonePcztQrStage({
@@ -46,7 +47,7 @@ class KeystonePcztQrStage extends StatelessWidget {
         ),
         KeystonePcztQrStagePhase.failed => Center(
           child: Text(
-            error ?? 'Keystone signing could not be prepared.',
+            error ?? context.l10n.commonKeystoneSigningCouldNotBePrepared,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.destructive,
             ),
@@ -70,7 +71,7 @@ class _QrStageLoader extends StatelessWidget {
         AppIcons.loader,
         size: 24,
         color: context.colors.icon.regular,
-        semanticLabel: 'Preparing QR',
+        semanticLabel: context.l10n.keystonePreparingQr,
       ),
     );
   }
@@ -130,7 +131,7 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   void _startTimer() {
     _timer?.cancel();
     if (widget.urParts.length <= 1) return;
-    _timer = Timer.periodic(_keystoneQrFrameInterval, (_) {
+    _timer = Timer.periodic(keystoneQrFrameInterval, (_) {
       if (!mounted) return;
       setState(() {
         _index = (_index + 1) % widget.urParts.length;

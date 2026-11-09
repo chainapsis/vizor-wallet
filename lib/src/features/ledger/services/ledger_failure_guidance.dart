@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 
+import '../../../core/l10n/l10n.dart' show AppLocalizations;
 import '../ledger_capability.dart';
 import '../ledger_error_codes.dart';
 import 'ledger_app_readiness_service.dart';
@@ -48,58 +49,80 @@ class LedgerFailureGuidance {
 /// verified. Keep this identical to `LEDGER_APP_CHANGED` in
 /// `rust/src/wallet/ledger/mod.rs`.
 const ledgerAppChangedError =
-    'Your Ledger changed. Keep one Ledger connected and try again.';
+    'Your Ledger changed. Keep one Ledger connected and try again.'; // l10n-ignore: matches the Rust error; shown via ledgerChangedKeepOne
 
 LedgerFailureGuidance? ledgerFailureGuidance(
+  AppLocalizations l10n,
   Object error, {
   LedgerRequestKind requestKind = LedgerRequestKind.send,
 }) {
   if (isLedgerMemoHashUnsupported(error)) {
-    return const LedgerFailureGuidance(ledgerMemoHashUnsupportedError);
+    return LedgerFailureGuidance(l10n.ledgerFailureMsgMemoHashUnsupported);
+  }
+  if (isLedgerAppUpdateRequired(error)) {
+    return LedgerFailureGuidance(
+      l10n.ledgerFailureMsgAppUpdateRequired(kLedgerNu7AppVersion),
+    );
+  }
+  if (isLedgerOrchardChangeUnsupported(error)) {
+    return LedgerFailureGuidance(
+      l10n.ledgerFailureMsgOrchardChange,
+      retryable: false,
+    );
   }
   if (error.toString().contains(ledgerAppChangedError)) {
-    return const LedgerFailureGuidance(ledgerAppChangedError);
+    return LedgerFailureGuidance(l10n.ledgerChangedKeepOne);
   }
   if (error is LedgerConnectionRequiredException) {
     return (error.cause == null
             ? null
-            : ledgerFailureGuidance(error.cause!, requestKind: requestKind)) ??
-        LedgerFailureGuidance(error.message);
+            : ledgerFailureGuidance(
+                l10n,
+                error.cause!,
+                requestKind: requestKind,
+              )) ??
+        LedgerFailureGuidance(switch (error.reason) {
+          LedgerConnectionRequiredReason.bluetooth =>
+            l10n.ledgerConnectionRequiredBluetooth,
+          LedgerConnectionRequiredReason.usb =>
+            l10n.ledgerConnectionRequiredUsb,
+        });
   }
   if (error is LedgerAppReadinessException) {
-    return (error.cause == null
+    final cause = error.cause;
+    return (cause == null
             ? null
-            : ledgerFailureGuidance(error.cause!, requestKind: requestKind)) ??
-        LedgerFailureGuidance(error.message);
+            : ledgerFailureGuidance(l10n, cause, requestKind: requestKind)) ??
+        LedgerFailureGuidance(_readinessMessage(l10n, error));
   }
-  if (error is LedgerMobileException) return _mobileGuidance(error);
+  if (error is LedgerMobileException) return _mobileGuidance(l10n, error);
 
   final failure = LedgerRequestFailure.fromError(error);
   return switch (failure) {
     LedgerRequestFailure.requestRejected ||
     LedgerRequestFailure.requestTooLarge => LedgerFailureGuidance(
-      _rebuildMessage(error, requestKind),
+      _rebuildMessage(l10n, error, requestKind),
       retryable: false,
     ),
     // Only a running other app is fixed by opening Zcash; install and update
-    // failures need Ledger Live, so the open-app card would contradict them.
+    // failures need Ledger Wallet, so the open-app card would contradict them.
     LedgerRequestFailure.wrongApp => LedgerFailureGuidance(
-      failure.message,
+      failure.message(l10n),
       showDeviceAppPrompt: true,
     ),
     LedgerRequestFailure.appNotInstalled ||
     LedgerRequestFailure.appUpdateRequired => LedgerFailureGuidance(
-      failure.message,
+      failure.message(l10n),
     ),
     LedgerRequestFailure.unexpectedStatus => LedgerFailureGuidance(
-      _unexpectedStatusMessage(error),
+      _unexpectedStatusMessage(l10n, error),
     ),
     LedgerRequestFailure.deviceLocked ||
     LedgerRequestFailure.pinNotSet ||
     LedgerRequestFailure.appWrongState ||
     LedgerRequestFailure.busy ||
     LedgerRequestFailure.signatureMismatch => LedgerFailureGuidance(
-      failure.message,
+      failure.message(l10n),
     ),
     LedgerRequestFailure.declined ||
     LedgerRequestFailure.cancelled ||
@@ -108,54 +131,105 @@ LedgerFailureGuidance? ledgerFailureGuidance(
   };
 }
 
+/// Display text for a readiness failure whose cause carried no guidance. The
+/// exception's own text stays English for logs and matching.
+String _readinessMessage(
+  AppLocalizations l10n,
+  LedgerAppReadinessException error,
+) {
+  final cause = error.cause;
+  if (cause != null && cause is! LedgerMobileException) {
+    return switch (classifyLedgerError(cause)) {
+      LedgerFailureKind.usbPermission => l10n.ledgerReadinessUsbPermission,
+      LedgerFailureKind.userRejected => l10n.ledgerMobileRequestRejected,
+      LedgerFailureKind.cancelled => l10n.ledgerReadinessOperationCancelled,
+      LedgerFailureKind.transportLost =>
+        l10n.ledgerReadinessReconnectUnlockTryAgain,
+      _ => l10n.ledgerReadinessCouldNotPrepare,
+    };
+  }
+  switch (error.reason) {
+    case LedgerAppReadinessReason.appNotVerified:
+      return l10n.ledgerReadinessAppNotVerified;
+    case LedgerAppReadinessReason.openZcashApp:
+      return l10n.ledgerReadinessOpenZcashApp;
+    case LedgerAppReadinessReason.updateRequired:
+      return l10n.ledgerReadinessUpdateApp(error.requiredVersion ?? '');
+    case null:
+      break;
+  }
+  return switch (error.failure) {
+    LedgerAppReadinessFailure.locked => l10n.ledgerFailureMsgUnlock,
+    LedgerAppReadinessFailure.disconnected =>
+      l10n.ledgerReadinessReconnectUnlockTryAgain,
+    _ => error.message, // l10n-ignore: exception text from readiness checks
+  };
+}
+
 LedgerFailureGuidance _mobileGuidance(
+  AppLocalizations l10n,
   LedgerMobileException error,
 ) => switch (error.failure) {
-  LedgerMobileFailure.permissionDenied => const LedgerFailureGuidance(
-    'Check Bluetooth access below, then try connecting to your Ledger again.',
+  LedgerMobileFailure.permissionDenied => LedgerFailureGuidance(
+    l10n.ledgerMobileCheckBluetoothBelow,
     bluetoothRecovery: true,
   ),
-  LedgerMobileFailure.locationDisabled => const LedgerFailureGuidance(
-    'Turn on location services to find your Ledger on this Android version, then try again.',
+  LedgerMobileFailure.locationDisabled => LedgerFailureGuidance(
+    l10n.ledgerMobileTurnOnLocation,
     bluetoothRecovery: true,
   ),
-  LedgerMobileFailure.bluetoothOff => const LedgerFailureGuidance(
-    'Turn on Bluetooth, then try again.',
+  LedgerMobileFailure.bluetoothOff => LedgerFailureGuidance(
+    l10n.ledgerMobileTurnOnBluetooth,
     bluetoothRecovery: true,
   ),
-  LedgerMobileFailure.pairingInvalid => const LedgerFailureGuidance(
-    kLedgerPairingInvalidMessage,
+  LedgerMobileFailure.pairingInvalid => LedgerFailureGuidance(
+    l10n.ledgerMobilePairingInvalid,
     pairingInvalid: true,
     pairingRecovery: true,
   ),
-  LedgerMobileFailure.pairingRejected => const LedgerFailureGuidance(
-    'Bluetooth pairing was not completed. Reconnect your Ledger and approve the pairing request, then try again.',
+  LedgerMobileFailure.pairingRejected => LedgerFailureGuidance(
+    l10n.ledgerMobilePairingNotCompleted,
     pairingRecovery: true,
   ),
-  LedgerMobileFailure.disconnected => const LedgerFailureGuidance(
-    'The Bluetooth connection to your Ledger was lost or could not be established. Turn on and unlock your Ledger, keep it nearby, then try again.',
+  LedgerMobileFailure.disconnected => LedgerFailureGuidance(
+    l10n.ledgerMobileConnectionLost,
     pairingRecovery: true,
   ),
-  LedgerMobileFailure.busy => const LedgerFailureGuidance(
-    'Another Ledger request is still active. Complete or reject it on your Ledger, then try again.',
+  LedgerMobileFailure.busy => LedgerFailureGuidance(
+    l10n.ledgerMobileAnotherRequestActive,
   ),
-  LedgerMobileFailure.locked => const LedgerFailureGuidance(
-    'Unlock your Ledger, then try again.',
+  LedgerMobileFailure.locked => LedgerFailureGuidance(
+    l10n.ledgerFailureMsgUnlock,
   ),
-  LedgerMobileFailure.rejected => const LedgerFailureGuidance(
-    'The request was rejected on your Ledger. Try again when ready.',
+  LedgerMobileFailure.rejected => LedgerFailureGuidance(
+    l10n.ledgerMobileRequestRejected,
   ),
-  LedgerMobileFailure.cancelled => const LedgerFailureGuidance(
-    'The Ledger request was cancelled. Try again when ready.',
+  LedgerMobileFailure.cancelled => LedgerFailureGuidance(
+    l10n.ledgerMobileRequestCancelled,
   ),
   LedgerMobileFailure.wrongApp => LedgerFailureGuidance(
-    error.message,
+    l10n.ledgerFailureMsgOpenZcash,
     showDeviceAppPrompt: true,
   ),
   // Native unavailable messages can include instructions to finish a
   // pending device request. Preserve those instead of inventing a pairing
   // diagnosis.
-  LedgerMobileFailure.unavailable => LedgerFailureGuidance(error.message),
+  LedgerMobileFailure.unavailable => LedgerFailureGuidance(
+    error.platformText
+        ? error
+              .message // l10n-ignore: platform text, wording unknown
+        : switch (error.fallback) {
+            LedgerMobileFallback.emptyResponse =>
+              l10n.ledgerMobileEmptyResponse,
+            LedgerMobileFallback.unknownDiscoveryEvent =>
+              l10n.ledgerMobileUnknownDiscoveryEvent,
+            LedgerMobileFallback.discoveryFailed =>
+              l10n.ledgerMobileDiscoveryFailed,
+            LedgerMobileFallback.connectionFailed =>
+              l10n.ledgerMobileConnectionFailed,
+            null => l10n.ledgerMobileUnavailable,
+          },
+  ),
 };
 
 /// How a failed Ledger request is presented, derived from the stable codes
@@ -209,112 +283,103 @@ enum LedgerRequestFailure {
   /// Whether sending the same request again can succeed.
   bool get retryable => this != requestRejected && this != requestTooLarge;
 
-  String get title => switch (this) {
-    declined => 'Request declined',
-    requestRejected => 'Request not accepted',
-    requestTooLarge => 'Request too large',
-    deviceLocked => 'Ledger locked',
-    pinNotSet => 'PIN required',
-    wrongApp => 'Open the Zcash app',
-    appNotInstalled => 'Zcash app missing',
-    appUpdateRequired => 'Update the Zcash app',
-    appWrongState => 'Reopen the Zcash app',
-    busy => 'Ledger is busy',
-    cancelled => 'Request cancelled',
-    transportLost => 'Ledger not reachable',
-    signatureMismatch => 'Wrong Ledger',
-    unexpectedStatus => 'Ledger error',
-    other => 'Request failed',
+  String title(AppLocalizations l10n) => switch (this) {
+    declined => l10n.ledgerSheetDeclinedTitle,
+    requestRejected => l10n.ledgerFailureTitleRejected,
+    requestTooLarge => l10n.ledgerFailureTitleTooLarge,
+    deviceLocked => l10n.ledgerFailureTitleLocked,
+    pinNotSet => l10n.ledgerFailureTitlePinRequired,
+    wrongApp => l10n.ledgerFailureTitleOpenZcash,
+    appNotInstalled => l10n.ledgerFailureTitleZcashMissing,
+    appUpdateRequired => l10n.ledgerFailureTitleUpdateZcash,
+    appWrongState => l10n.ledgerFailureTitleReopenZcash,
+    busy => l10n.ledgerFailureTitleBusy,
+    cancelled => l10n.ledgerFailureTitleCancelled,
+    transportLost => l10n.ledgerFailureTitleNotReachable,
+    signatureMismatch => l10n.ledgerFailureTitleWrongLedger,
+    unexpectedStatus => l10n.ledgerFailureTitleError,
+    other => l10n.ledgerFailureTitleFailed,
   };
 
-  String get message => switch (this) {
-    declined => 'Declined on your Ledger. Try again when ready.',
-    requestRejected => kLedgerHostRequestRejectedMessage,
-    requestTooLarge => 'Too many inputs for your Ledger. Try a smaller amount.',
-    deviceLocked => 'Unlock your Ledger, then try again.',
-    pinNotSet => 'Set up a PIN on your Ledger, then try again.',
-    wrongApp => 'Open the Zcash app on your Ledger.',
-    appNotInstalled => 'Install the Zcash app with Ledger Live.',
-    appUpdateRequired =>
-      'Update the Zcash app to $kMinimumLedgerZcashAppVersion or newer.',
-    appWrongState => 'Close and reopen the Zcash app.',
-    busy => 'Your Ledger is busy. Try again in a moment.',
-    cancelled => 'Request cancelled. Try again when ready.',
-    transportLost => 'Reconnect and unlock your Ledger.',
-    signatureMismatch => 'Connect the Ledger that holds this account.',
-    unexpectedStatus =>
-      'Unexpected Ledger error. Reopen the Zcash app and try again.',
-    other => 'Check your Ledger and open the Zcash app, then try again.',
+  String message(AppLocalizations l10n) => switch (this) {
+    declined => l10n.ledgerFailureMsgDeclined,
+    requestRejected => l10n.ledgerFailureMsgRejectedNewRequest,
+    requestTooLarge => l10n.ledgerFailureMsgTooManyInputs,
+    deviceLocked => l10n.ledgerFailureMsgUnlock,
+    pinNotSet => l10n.ledgerFailureMsgSetPin,
+    wrongApp => l10n.ledgerFailureMsgOpenZcash,
+    appNotInstalled => l10n.ledgerFailureMsgInstallZcash,
+    appUpdateRequired => l10n.ledgerFailureMsgUpdateZcash(
+      kMinimumLedgerZcashAppVersion,
+    ),
+    appWrongState => l10n.ledgerFailureMsgReopenZcash,
+    busy => l10n.ledgerFailureMsgBusy,
+    cancelled => l10n.ledgerFailureMsgCancelledTryAgain,
+    transportLost => l10n.ledgerFailureMsgReconnectUnlock,
+    signatureMismatch => l10n.ledgerFailureMsgWrongLedger,
+    unexpectedStatus => l10n.ledgerFailureMsgUnexpected,
+    other => l10n.ledgerFailureMsgCheckOpenZcash,
   };
 }
-
-const kLedgerHostRequestRejectedMessage =
-    'Your Ledger couldn’t accept this request. Create a new one. Nothing was sent.';
-
-const kLedgerViewingKeyRequestRejectedMessage =
-    'Your Ledger couldn’t accept this viewing-key request. Check the account number.';
-
-const kLedgerSaplingRecipientMessage =
-    'Your Ledger can’t send to a Sapling address. Create a new request.';
 
 // Rust rejects a transparent output with several BIP-32 derivations before
 // any device exchange; its wallet-built message is the only evidence.
 bool _exceedsTransactionFormat(Object error) =>
     error.toString().toLowerCase().contains('ledger supports at most');
 
-String _rebuildMessage(Object error, LedgerRequestKind kind) {
+String _rebuildMessage(
+  AppLocalizations l10n,
+  Object error,
+  LedgerRequestKind kind,
+) {
   if (classifyLedgerError(error) == LedgerFailureKind.capacityExceeded) {
     return switch (kind) {
       LedgerRequestKind.send || LedgerRequestKind.viewingKey =>
-        LedgerRequestFailure.requestTooLarge.message,
-      LedgerRequestKind.swap =>
-        'Start a new swap with a smaller amount. This one is discarded.',
-      LedgerRequestKind.payment =>
-        'Start a new payment. Don’t send a smaller amount to this address.',
-      LedgerRequestKind.shield =>
-        'Too many inputs for your Ledger. Try again. Nothing was shielded.',
+        LedgerRequestFailure.requestTooLarge.message(l10n),
+      LedgerRequestKind.swap => l10n.ledgerFailureMsgSwapTooLarge,
+      LedgerRequestKind.payment => l10n.ledgerFailureMsgPaymentTooLarge,
+      LedgerRequestKind.shield => l10n.ledgerFailureMsgShieldTooLarge,
       // The planner does not size steps by Ledger limits, and retrying sends
       // the same step.
-      LedgerRequestKind.migration =>
-        'This migration step is too large for your Ledger to sign. Vizor can’t split it yet.',
+      LedgerRequestKind.migration => l10n.ledgerFailureMsgMigrationTooLarge,
       // The round's bundle policy fixes the vote's size.
-      LedgerRequestKind.voting =>
-        'This vote is too large for your Ledger to sign.',
-      LedgerRequestKind.giftCard =>
-        'Too large for your Ledger. Create a gift card with a smaller amount.',
+      LedgerRequestKind.voting => l10n.ledgerFailureMsgVoteTooLarge,
+      LedgerRequestKind.giftCard => l10n.ledgerFailureMsgGiftCardTooLarge,
     };
   }
   if (_exceedsTransactionFormat(error)) {
-    return 'Your Ledger can’t sign this transaction type. Create a new request.';
+    return l10n.ledgerFailureMsgUnsupportedTxType;
   }
   return switch (kind) {
-    LedgerRequestKind.voting =>
-      'Your Ledger couldn’t accept this vote request. Your vote was not signed.',
-    LedgerRequestKind.giftCard =>
-      'Your Ledger couldn’t accept this request. Create a new gift card. Nothing was sent.',
-    LedgerRequestKind.viewingKey => kLedgerViewingKeyRequestRejectedMessage,
-    _ => kLedgerHostRequestRejectedMessage,
+    LedgerRequestKind.voting => l10n.ledgerFailureMsgVoteRejected,
+    LedgerRequestKind.giftCard => l10n.ledgerFailureMsgGiftCardRejected,
+    LedgerRequestKind.viewingKey => l10n.ledgerFailureMsgViewingKeyRejected,
+    _ => l10n.ledgerFailureMsgRejectedNewRequest,
   };
 }
 
-String _unexpectedStatusMessage(Object error) {
+String _unexpectedStatusMessage(AppLocalizations l10n, Object error) {
   final status = ledgerStatusWord(error);
   final code = status == null
       ? ''
       : ' (0x${status.toRadixString(16).padLeft(4, '0')})';
-  return 'Unexpected Ledger error$code. Reopen the Zcash app and try again.';
+  return l10n.ledgerFailureMsgUnexpectedWithCode(code);
 }
 
-String ledgerUsbPermissionMessage(TargetPlatform platform) {
+String ledgerUsbPermissionMessage(
+  AppLocalizations l10n,
+  TargetPlatform platform,
+) {
   // Linux hidraw nodes stay root-only until a udev rule grants access.
   return platform == TargetPlatform.linux
-      ? "Vizor cannot access your Ledger over USB. Install Ledger's udev rules for Linux (github.com/LedgerHQ/udev-rules), then reconnect your Ledger and try again."
-      : 'Vizor cannot access your Ledger over USB. Check USB device permissions, then reconnect and try again.';
+      ? l10n.ledgerUsbPermissionLinux
+      : l10n.ledgerUsbPermissionOther;
 }
 
 /// Tells the Rust USB transport's failures apart, so "no Ledger plugged in"
 /// never reads as "Vizor cannot open the Ledger" or as a device rejection.
 String? ledgerUsbErrorMessage(
+  AppLocalizations l10n,
   Object error, {
   required String appInstruction,
   TargetPlatform? platform,
@@ -322,18 +387,21 @@ String? ledgerUsbErrorMessage(
   if (!isLedgerUsbTransportError(error)) return null;
   final text = error.toString().toLowerCase();
   if (text.contains('no ledger device')) {
-    return 'Connect and unlock your Ledger. $appInstruction';
+    return l10n.ledgerErrorConnectAndUnlock(appInstruction);
   }
   if (text.contains('open ledger hid device')) {
     if (text.contains('permission denied') ||
         text.contains('access is denied') ||
         text.contains('access denied')) {
-      return ledgerUsbPermissionMessage(platform ?? defaultTargetPlatform);
+      return ledgerUsbPermissionMessage(
+        l10n,
+        platform ?? defaultTargetPlatform,
+      );
     }
-    return 'Vizor found your Ledger but could not open it. Close other wallet apps that use the Ledger, reconnect it, then try again.';
+    return l10n.ledgerUsbCouldNotOpen;
   }
   if (text.contains('initialize ledger hid')) {
-    return 'Vizor could not start USB access for your Ledger. Reconnect the device, then try again.';
+    return l10n.ledgerUsbCouldNotStart;
   }
-  return 'The USB connection to your Ledger was interrupted. Reconnect and unlock your Ledger, then try again.';
+  return l10n.ledgerUsbInterrupted(appInstruction);
 }

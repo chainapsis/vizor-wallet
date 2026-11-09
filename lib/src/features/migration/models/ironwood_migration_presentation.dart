@@ -1,7 +1,11 @@
+import 'package:intl/intl.dart' show DateFormat;
+
+import '../../../core/formatting/date_format.dart';
+import '../../../core/l10n/l10n.dart';
+import '../../../core/zcash/block_spacing.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import 'ironwood_migration_phases.dart';
 
-const _estimatedSecondsPerBlock = 75;
 const _preparationConfirmationBlocks = 3;
 const _preparationBroadcastBufferBlocks = 1;
 
@@ -228,7 +232,8 @@ Map<int, int> projectedMigrationPartHeights({
   return projected;
 }
 
-MigrationNextActionPresentation migrationNextActionPresentation({
+MigrationNextActionPresentation migrationNextActionPresentation(
+  AppLocalizations l10n, {
   required rust_sync.MigrationStatus status,
   required int currentHeight,
   bool requiresInput = false,
@@ -268,9 +273,11 @@ MigrationNextActionPresentation migrationNextActionPresentation({
     final scheduledHeight =
         selected?.scheduledHeight ?? status.nextActionHeight;
     return MigrationNextActionPresentation(
-      label: 'Next migration',
+      label: l10n.migrationNextActionLabelNext,
       amountZatoshi: selected?.valueZatoshi ?? fallbackAmount,
-      detail: scheduledHeight == null ? 'Ready to sign' : 'at',
+      detail: scheduledHeight == null
+          ? l10n.migrationNextActionDetailReadyToSign
+          : l10n.migrationNextActionDetailAt,
       scheduledHeight: scheduledHeight,
     );
   }
@@ -304,22 +311,22 @@ MigrationNextActionPresentation migrationNextActionPresentation({
         currentHeight > 0 &&
         currentHeight >= nextProofWindowHeight) {
       return MigrationNextActionPresentation(
-        label: 'Opening migration window',
+        label: l10n.migrationNextActionLabelOpeningWindow,
         amountZatoshi: displayAmount,
-        detail: 'Waiting for wallet sync',
+        detail: l10n.commonWaitingForWalletSync,
       );
     }
     if (status.proofReady == true) {
       return MigrationNextActionPresentation(
-        label: 'Migration window ready',
+        label: l10n.migrationNextActionLabelWindowReady,
         amountZatoshi: displayAmount,
-        detail: 'Preparing migration',
+        detail: l10n.migrationNextActionDetailPreparing,
       );
     }
     return MigrationNextActionPresentation(
-      label: 'Next migration window',
+      label: l10n.migrationNextActionLabelNextWindow,
       amountZatoshi: displayAmount,
-      detail: 'Expected at',
+      detail: l10n.migrationNextActionDetailExpectedAt,
       scheduledHeight: nextProofWindowHeight,
     );
   }
@@ -333,9 +340,11 @@ MigrationNextActionPresentation migrationNextActionPresentation({
             ? fallbackAmount
             : status.targetValuesZatoshi.first);
     return MigrationNextActionPresentation(
-      label: 'Next migration',
+      label: l10n.migrationNextActionLabelNext,
       amountZatoshi: nextValue,
-      detail: nextPart?.scheduledHeight == null ? 'Schedule pending' : 'at',
+      detail: nextPart?.scheduledHeight == null
+          ? l10n.migrationSchedulePending
+          : l10n.migrationNextActionDetailAt,
       scheduledHeight: nextPart?.scheduledHeight,
     );
   }
@@ -355,16 +364,18 @@ MigrationNextActionPresentation migrationNextActionPresentation({
         currentHeight > 0 &&
         scheduledHeight <= currentHeight;
     return MigrationNextActionPresentation(
-      label: isDue ? 'Sending migration' : 'Next migration',
+      label: isDue
+          ? l10n.migrationNextActionLabelSending
+          : l10n.migrationNextActionLabelNext,
       amountZatoshi:
           scheduled?.valueZatoshi ??
           legacyBroadcast?.valueZatoshi ??
           fallbackAmount,
       detail: isDue
-          ? 'Sending now'
+          ? l10n.migrationNextActionDetailSendingNow
           : scheduledHeight == null
-          ? 'Schedule pending'
-          : 'at',
+          ? l10n.migrationSchedulePending
+          : l10n.migrationNextActionDetailAt,
       scheduledHeight: isDue ? null : scheduledHeight,
     );
   }
@@ -379,9 +390,11 @@ MigrationNextActionPresentation migrationNextActionPresentation({
         preparing.scheduledHeight ??
         status.nextActionHeight;
     return MigrationNextActionPresentation(
-      label: 'Next migration',
+      label: l10n.migrationNextActionLabelNext,
       amountZatoshi: preparing.valueZatoshi,
-      detail: scheduledHeight == null ? 'Schedule pending' : 'at',
+      detail: scheduledHeight == null
+          ? l10n.migrationSchedulePending
+          : l10n.migrationNextActionDetailAt,
       scheduledHeight: scheduledHeight,
     );
   }
@@ -404,25 +417,22 @@ MigrationNextActionPresentation migrationNextActionPresentation({
     final confirmingCount = inFlight.length - migratingCount;
     if (migratingCount > 0 && confirmingCount == 0) {
       return MigrationNextActionPresentation(
-        label: 'Awaiting mining',
+        label: l10n.migrationNextActionLabelAwaitingMining,
         amountZatoshi: amount,
-        detail: _migrationNoteCountLabel(migratingCount, 'broadcast'),
+        detail: l10n.migrationNotesBroadcast(migratingCount),
       );
     }
     if (confirmingCount > 0 && migratingCount == 0) {
       return MigrationNextActionPresentation(
-        label: 'Confirming',
+        label: l10n.commonConfirming,
         amountZatoshi: amount,
-        detail: _migrationNoteCountLabel(
-          confirmingCount,
-          'awaiting confirmation',
-        ),
+        detail: l10n.migrationNotesAwaitingConfirmation(confirmingCount),
       );
     }
     return MigrationNextActionPresentation(
-      label: 'Finalizing migration',
+      label: l10n.migrationNextActionLabelFinalizing,
       amountZatoshi: amount,
-      detail: _migrationNoteCountLabel(inFlight.length, 'remaining'),
+      detail: l10n.migrationNotesRemaining(inFlight.length),
     );
   }
 
@@ -435,9 +445,9 @@ MigrationNextActionPresentation migrationNextActionPresentation({
           (broadcast) => broadcast.status.toLowerCase() == 'confirmed',
         )) {
       return MigrationNextActionPresentation(
-        label: 'Finalizing migration',
+        label: l10n.migrationNextActionLabelFinalizing,
         amountZatoshi: fallbackAmount,
-        detail: 'Waiting for confirmations',
+        detail: l10n.migrationNextActionDetailWaitingForConfirmations,
       );
     }
     final values = status.targetValuesZatoshi;
@@ -456,11 +466,10 @@ MigrationNextActionPresentation migrationNextActionPresentation({
         amount += values[index];
       }
       return MigrationNextActionPresentation(
-        label: 'Confirming',
+        label: l10n.commonConfirming,
         amountZatoshi: amount > BigInt.zero ? amount : fallbackAmount,
-        detail: _migrationNoteCountLabel(
+        detail: l10n.migrationNotesAwaitingConfirmation(
           broadcastedCount - confirmedCount,
-          'awaiting confirmation',
         ),
       );
     }
@@ -470,30 +479,32 @@ MigrationNextActionPresentation migrationNextActionPresentation({
           : fallbackAmount;
       final nextHeight = status.nextActionHeight;
       return MigrationNextActionPresentation(
-        label: 'Next migration',
+        label: l10n.migrationNextActionLabelNext,
         amountZatoshi: amount,
-        detail: nextHeight == null ? 'Schedule pending' : 'at',
+        detail: nextHeight == null
+            ? l10n.migrationSchedulePending
+            : l10n.migrationNextActionDetailAt,
         scheduledHeight: nextHeight,
       );
     }
     return MigrationNextActionPresentation(
-      label: 'Finalizing migration',
+      label: l10n.migrationNextActionLabelFinalizing,
       amountZatoshi: fallbackAmount,
-      detail: 'Waiting for confirmations',
+      detail: l10n.migrationNextActionDetailWaitingForConfirmations,
     );
   }
 
   if (waitingForAnchor) {
     return MigrationNextActionPresentation(
-      label: 'Next migration',
+      label: l10n.migrationNextActionLabelNext,
       amountZatoshi: fallbackAmount,
-      detail: 'Schedule pending',
+      detail: l10n.migrationSchedulePending,
     );
   }
   return MigrationNextActionPresentation(
-    label: 'Migration complete',
+    label: l10n.migrationNextActionLabelComplete,
     amountZatoshi: fallbackAmount,
-    detail: 'All notes completed',
+    detail: l10n.migrationNextActionDetailAllNotesCompleted,
   );
 }
 
@@ -520,9 +531,6 @@ rust_sync.MigrationScheduledBroadcast? _nextScheduledMigrationBroadcast(
   }
   return earliest;
 }
-
-String _migrationNoteCountLabel(int count, String state) =>
-    '$count ${count == 1 ? 'note' : 'notes'} $state';
 
 bool migrationHasDueScheduledBroadcast(
   rust_sync.MigrationStatus status, {
@@ -567,73 +575,28 @@ bool migrationHasDueProofBatch(
       nextActionHeight < earliestScheduledHeight;
 }
 
-String plannedMigrationBatchesLabel(int count) =>
-    '$count planned ${_pluralized(count, 'batch', 'batches')}';
-
-String migrationBatchesLabel(int count) =>
-    '$count ${_pluralized(count, 'batch', 'batches')}';
-
-String migrationPlanPreparationDescription({
-  required rust_sync.OrchardMigrationPrivatePlan plan,
-  required String amountText,
-}) {
-  final splitTransactions = _counted(
-    plan.denominationSplitStageCount,
-    'split transaction',
-    'split transactions',
-  );
-  final migrationBatches = _counted(
-    plan.plannedBatchCount,
-    'migration batch',
-    'migration batches',
-  );
-  return 'Your $amountText ZEC balance is prepared in $splitTransactions, '
-      'then moved in $migrationBatches. Common-sized parts make each '
-      'transfer less distinctive.';
-}
-
-String privateMigrationMethodDescription(
-  rust_sync.OrchardMigrationPrivatePlan plan,
-) {
-  if (plan.plannedBatchCount <= 1) {
-    return 'Sends one migration part after preparation. No timing '
-        'separation is added.';
-  }
-  return 'Sends '
-      '${_counted(plan.plannedBatchCount, 'independent part', 'independent parts')} '
-      'over ${migrationPlanCompletionLabel(plan)}. Slower, harder to '
-      'associate.';
-}
-
-String migrationPlanCompletionLabel(
-  rust_sync.OrchardMigrationPrivatePlan plan,
-) {
-  var finalBlockOffset = 0;
-  for (final transfer in plan.scheduledTransfers) {
-    if (transfer.blockOffset > finalBlockOffset) {
-      finalBlockOffset = transfer.blockOffset;
-    }
-  }
-  return migrationBlockOffsetLabel(finalBlockOffset);
-}
-
 String migrationPlanCompletionDurationLabel(
-  rust_sync.OrchardMigrationPrivatePlan plan,
-) {
+  AppLocalizations l10n,
+  rust_sync.OrchardMigrationPrivatePlan plan, {
+  required BlockTimeEstimate blockTimes,
+}) {
   final blocks = _migrationPlanCompletionBlocks(plan);
-  if (blocks <= 0) return 'Not scheduled';
-  return _formatMigrationDuration(blocks);
+  if (blocks <= 0) return l10n.migrationNotScheduled;
+  return _formatMigrationDuration(l10n, blockTimes.secondsForBlocks(blocks));
 }
 
 String migrationPlanCompletionTimingLabel(
+  AppLocalizations l10n,
   rust_sync.OrchardMigrationPrivatePlan plan, {
+  required BlockTimeEstimate blockTimes,
   DateTime? now,
   bool abbreviateMonth = true,
 }) {
   final blocks = _migrationPlanCompletionBlocks(plan);
-  if (blocks <= 0) return 'Schedule pending';
+  if (blocks <= 0) return l10n.migrationSchedulePending;
   return _estimatedLocalCompletionTime(
-    blocks,
+    l10n,
+    blockTimes.secondsForBlocks(blocks),
     now: now,
     abbreviateMonth: abbreviateMonth,
   );
@@ -670,61 +633,93 @@ int migrationPlanNoteSplitDelayBlocks(
           _preparationBroadcastBufferBlocks;
 
 String migrationPlanNoteSplitDurationLabel(
-  rust_sync.OrchardMigrationPrivatePlan plan,
-) => _formatMigrationDuration(migrationPlanNoteSplitDelayBlocks(plan));
+  AppLocalizations l10n,
+  rust_sync.OrchardMigrationPrivatePlan plan, {
+  required BlockTimeEstimate blockTimes,
+}) => _formatMigrationDuration(
+  l10n,
+  blockTimes.secondsForBlocks(migrationPlanNoteSplitDelayBlocks(plan)),
+);
 
 int migrationPlanPartDelayBlocks({
   required int preparationDelayBlocks,
   required int scheduleOffsetBlocks,
 }) => preparationDelayBlocks + scheduleOffsetBlocks;
 
-String _formatMigrationDuration(int blocks) {
-  final seconds = blocks * _estimatedSecondsPerBlock;
+/// An Immediate migration completes once its transaction and two more blocks
+/// are mined.
+const kIronwoodImmediateMigrationConfirmationBlocks = 3;
+
+String ironwoodImmediateMigrationCompletionEstimate(
+  AppLocalizations l10n,
+  BlockTimeEstimate blockTimes,
+) => _formatMigrationDuration(
+  l10n,
+  blockTimes.secondsForBlocks(kIronwoodImmediateMigrationConfirmationBlocks),
+);
+
+String _formatMigrationDuration(AppLocalizations l10n, int seconds) {
   final minutes = (seconds / Duration.secondsPerMinute).ceil();
-  if (minutes < 60) return minutes == 1 ? '~1 min' : '~$minutes mins';
+  if (minutes < 60) return l10n.migrationDurationMinutes(minutes);
 
   final hours = (seconds / Duration.secondsPerHour).ceil();
-  if (hours < 48) return hours == 1 ? '~1 hr' : '~$hours hrs';
+  if (hours < 48) return l10n.migrationDurationHours(hours);
 
   final days = (seconds / Duration.secondsPerDay).ceil();
-  return days == 1 ? '~1 day' : '~$days days';
+  return l10n.migrationDurationDays(days);
 }
 
-String migrationBlockOffsetLabel(int blocks) =>
-    blocks > 0 ? '~$blocks blocks' : 'Schedule pending';
+String migrationBlockOffsetLabel(AppLocalizations l10n, int blocks) =>
+    blocks > 0
+    ? l10n.migrationBlocksEstimate(blocks.toString())
+    : l10n.migrationSchedulePending;
 
-String migrationBlockOffsetDurationLabel(int blocks) =>
-    blocks > 0 ? _formatMigrationDuration(blocks) : 'Schedule pending';
+String migrationBlockOffsetDurationLabel(
+  AppLocalizations l10n,
+  int blocks, {
+  required BlockTimeEstimate blockTimes,
+}) => blocks > 0
+    ? _formatMigrationDuration(l10n, blockTimes.secondsForBlocks(blocks))
+    : l10n.migrationSchedulePending;
 
 String migrationScheduledBroadcastLabel(
+  AppLocalizations l10n,
   rust_sync.MigrationScheduledBroadcast broadcast, {
   DateTime? now,
   bool approximate = false,
 }) {
-  if (broadcast.status == 'confirmed') return 'Confirmed';
-  if (broadcast.status == 'broadcasted') return 'Submitted';
-  if (broadcast.status != 'scheduled') return 'Pending';
+  if (broadcast.status == 'confirmed') return l10n.migrationBroadcastConfirmed;
+  if (broadcast.status == 'broadcasted') {
+    return l10n.migrationBroadcastSubmitted;
+  }
+  if (broadcast.status != 'scheduled') return l10n.commonPending;
 
   final scheduledAt = DateTime.fromMillisecondsSinceEpoch(
     broadcast.scheduledAtMs,
     isUtc: true,
   );
   final remaining = scheduledAt.difference((now ?? DateTime.now()).toUtc());
-  if (remaining <= Duration.zero) return 'Due now';
+  if (remaining <= Duration.zero) return l10n.migrationBroadcastDueNow;
 
   final minutes = (remaining.inSeconds + 59) ~/ 60;
-  final prefix = approximate ? '~' : '';
-  if (minutes < 60) return '${prefix}in $minutes min';
+  if (minutes < 60) {
+    return approximate
+        ? l10n.migrationBroadcastApproxInMinutes(minutes)
+        : l10n.migrationBroadcastInMinutes(minutes);
+  }
   final hours = (minutes + 59) ~/ 60;
-  return '${prefix}in $hours ${_pluralized(hours, 'hr', 'hrs')}';
+  return approximate
+      ? l10n.migrationBroadcastApproxInHours(hours)
+      : l10n.migrationBroadcastInHours(hours);
 }
 
 String migrationDispatchTimingLabel(
+  AppLocalizations l10n,
   rust_sync.MigrationStatus status, {
   DateTime? now,
 }) {
   if (status.phase == kIronwoodMigrationWaitingConfirmationsPhase) {
-    return 'Confirming';
+    return l10n.commonConfirming;
   }
 
   rust_sync.MigrationScheduledBroadcast? latest;
@@ -734,10 +729,11 @@ String migrationDispatchTimingLabel(
     }
   }
   if (latest == null) {
-    return migrationBlockOffsetLabel(status.scheduleMeanDelayBlocks);
+    return migrationBlockOffsetLabel(l10n, status.scheduleMeanDelayBlocks);
   }
 
   return _migrationDateTime(
+    l10n,
     DateTime.fromMillisecondsSinceEpoch(
       latest.scheduledAtMs,
       isUtc: true,
@@ -746,12 +742,38 @@ String migrationDispatchTimingLabel(
 }
 
 String migrationCompletionTimingLabel(
+  AppLocalizations l10n,
   rust_sync.MigrationStatus status, {
+  required BlockTimeEstimate blockTimes,
+  DateTime? now,
+  int? currentHeight,
+  bool abbreviateMonth = true,
+}) =>
+    _migrationCompletionTiming(
+      l10n,
+      status,
+      blockTimes: blockTimes,
+      now: now,
+      currentHeight: currentHeight,
+      abbreviateMonth: abbreviateMonth,
+    ) ??
+    l10n.migrationSchedulePending;
+
+/// The completion estimate, or null while the schedule is still pending.
+String? _migrationCompletionTiming(
+  AppLocalizations l10n,
+  rust_sync.MigrationStatus status, {
+  required BlockTimeEstimate blockTimes,
   DateTime? now,
   int? currentHeight,
   bool abbreviateMonth = true,
 }) {
   final useScheduledHeight = currentHeight != null && currentHeight > 0;
+  final fromHeight = currentHeight != null && currentHeight > 0
+      ? currentHeight
+      : blockTimes.tipHeight;
+  int secondsFor(int blocks) =>
+      blockTimes.secondsBetween(fromHeight, fromHeight + blocks);
   final estimatedCompletionHeight = status.estimatedCompletionHeight;
   if (useScheduledHeight && status.activeRunId != null) {
     final overdueScheduledCount = status.scheduledBroadcasts
@@ -762,7 +784,7 @@ String migrationCompletionTimingLabel(
         )
         .length;
     if (overdueScheduledCount > 1 || estimatedCompletionHeight == null) {
-      return 'Schedule pending';
+      return null;
     }
   }
   if (useScheduledHeight && estimatedCompletionHeight != null) {
@@ -776,7 +798,8 @@ String migrationCompletionTimingLabel(
       remainingBlocks = status.denominationConfirmationTarget;
     }
     return _estimatedLocalCompletionTime(
-      remainingBlocks,
+      l10n,
+      secondsFor(remainingBlocks),
       now: now,
       abbreviateMonth: abbreviateMonth,
     );
@@ -794,9 +817,10 @@ String migrationCompletionTimingLabel(
   if (latest == null) {
     final batchCount = status.totalCount < 1 ? 1 : status.totalCount;
     final estimatedBlocks = status.scheduleMeanDelayBlocks * batchCount;
-    if (estimatedBlocks <= 0) return 'Schedule pending';
+    if (estimatedBlocks <= 0) return null;
     return _estimatedLocalCompletionTime(
-      estimatedBlocks,
+      l10n,
+      secondsFor(estimatedBlocks),
       now: now,
       abbreviateMonth: abbreviateMonth,
     );
@@ -807,13 +831,15 @@ String migrationCompletionTimingLabel(
         ? latest.scheduledHeight - currentHeight
         : 0;
     return _estimatedLocalCompletionTime(
-      remainingBlocks,
+      l10n,
+      secondsFor(remainingBlocks),
       now: now,
       abbreviateMonth: abbreviateMonth,
     );
   }
 
   return _migrationDateTime(
+    l10n,
     DateTime.fromMillisecondsSinceEpoch(
       latest.scheduledAtMs,
       isUtc: true,
@@ -828,18 +854,23 @@ String migrationCompletionTimingLabel(
 /// This is intended for progress UI only. Scheduling and broadcast decisions
 /// continue to use the persisted Rust state.
 String migrationApproximateCompletionTimingLabel(
+  AppLocalizations l10n,
   rust_sync.MigrationStatus status, {
+  required BlockTimeEstimate blockTimes,
   DateTime? now,
   required int currentHeight,
   bool abbreviateMonth = true,
 }) {
-  final exact = migrationCompletionTimingLabel(
+  final exact = _migrationCompletionTiming(
+    l10n,
     status,
+    blockTimes: blockTimes,
     now: now,
     currentHeight: currentHeight,
     abbreviateMonth: abbreviateMonth,
   );
-  if (exact != 'Schedule pending' || currentHeight <= 0) return exact;
+  if (exact != null) return exact;
+  if (currentHeight <= 0) return l10n.migrationSchedulePending;
 
   final remainingPartCount = status.parts.isNotEmpty
       ? status.parts
@@ -851,7 +882,7 @@ String migrationApproximateCompletionTimingLabel(
           0,
           status.totalCount,
         );
-  if (remainingPartCount <= 0) return exact;
+  if (remainingPartCount <= 0) return l10n.migrationSchedulePending;
 
   final nextHeight = status.nextActionHeight ?? currentHeight;
   final blocksUntilNext = nextHeight > currentHeight
@@ -862,17 +893,20 @@ String migrationApproximateCompletionTimingLabel(
       blocksUntilNext +
       status.scheduleMeanDelayBlocks * remainingGaps +
       status.denominationConfirmationTarget;
-  if (estimatedBlocks <= 0) return exact;
+  if (estimatedBlocks <= 0) return l10n.migrationSchedulePending;
 
   return _estimatedLocalCompletionTime(
-    estimatedBlocks,
+    l10n,
+    blockTimes.secondsBetween(currentHeight, currentHeight + estimatedBlocks),
     now: now,
     abbreviateMonth: abbreviateMonth,
   );
 }
 
 String? migrationNextActionTimingLabel(
+  AppLocalizations l10n,
   rust_sync.MigrationStatus status, {
+  required BlockTimeEstimate blockTimes,
   required int? currentHeight,
   DateTime? now,
 }) {
@@ -881,24 +915,26 @@ String? migrationNextActionTimingLabel(
     return null;
   }
   return migrationHeightTimingLabel(
+    l10n,
     nextHeight,
+    blockTimes: blockTimes,
     currentHeight: currentHeight,
     now: now,
   );
 }
 
 String migrationHeightTimingLabel(
+  AppLocalizations l10n,
   int targetHeight, {
+  required BlockTimeEstimate blockTimes,
   required int currentHeight,
   DateTime? now,
 }) {
-  if (targetHeight <= currentHeight) return 'ready now';
+  if (targetHeight <= currentHeight) return l10n.migrationReadyNow;
 
   final localNow = (now ?? DateTime.now()).toLocal();
   final nextTime = localNow.add(
-    Duration(
-      seconds: (targetHeight - currentHeight) * _estimatedSecondsPerBlock,
-    ),
+    Duration(seconds: blockTimes.secondsBetween(currentHeight, targetHeight)),
   );
   final time = '${_twoDigits(nextTime.hour)}:${_twoDigits(nextTime.minute)}';
   if (nextTime.year == localNow.year &&
@@ -906,100 +942,82 @@ String migrationHeightTimingLabel(
       nextTime.day == localNow.day) {
     return '~$time';
   }
-  return '~${_shortMonth(nextTime.month)} ${nextTime.day}';
+  return '~${formatMonthDay(nextTime, l10n.localeName)}';
 }
 
+/// Time left until [targetHeight]. [relative] phrases minutes as "~in 5
+/// minutes"; otherwise as a value ("~5 minutes").
 String migrationHeightRemainingDurationLabel(
+  AppLocalizations l10n,
   int targetHeight, {
+  required BlockTimeEstimate blockTimes,
   required int currentHeight,
+  bool relative = true,
 }) {
-  if (targetHeight <= currentHeight) return 'ready now';
-  final remainingBlocks = targetHeight - currentHeight;
-  final seconds = remainingBlocks * _estimatedSecondsPerBlock;
+  if (targetHeight <= currentHeight) return l10n.migrationReadyNow;
+  final seconds = blockTimes.secondsBetween(currentHeight, targetHeight);
   final minutes = (seconds / Duration.secondsPerMinute).ceil();
   if (minutes < 60) {
-    return minutes == 1 ? '~in 1 minute' : '~in $minutes minutes';
+    return relative
+        ? l10n.migrationInMinutes(minutes)
+        : l10n.migrationAboutMinutes(minutes);
   }
-  return _formatMigrationDuration(remainingBlocks);
+  return _formatMigrationDuration(l10n, seconds);
 }
 
 String _estimatedLocalCompletionTime(
-  int blocks, {
+  AppLocalizations l10n,
+  int seconds, {
   DateTime? now,
   required bool abbreviateMonth,
 }) {
   final utcNow = (now ?? DateTime.now()).toUtc();
-  final completionUtc = utcNow.add(
-    Duration(seconds: blocks * _estimatedSecondsPerBlock),
-  );
+  final completionUtc = utcNow.add(Duration(seconds: seconds));
   return _migrationDateTime(
+    l10n,
     completionUtc.toLocal(),
     abbreviateMonth: abbreviateMonth,
   );
 }
 
-String _migrationDateTime(DateTime dateTime, {bool abbreviateMonth = true}) {
-  const shortMonths = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  const longMonths = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  final hour = dateTime.hour.toString().padLeft(2, '0');
-  final minute = dateTime.minute.toString().padLeft(2, '0');
-  final month = abbreviateMonth
-      ? shortMonths[dateTime.month - 1]
-      : longMonths[dateTime.month - 1];
-  return '$month ${dateTime.day}, $hour:$minute';
+String _migrationDateTime(
+  AppLocalizations l10n,
+  DateTime dateTime, {
+  bool abbreviateMonth = true,
+}) {
+  // English keeps the comma that the CLDR pattern omits.
+  final format = l10n.localeName == 'en'
+      ? DateFormat(
+          abbreviateMonth
+              ? 'MMM d, HH:mm' // l10n-ignore: date pattern
+              : 'MMMM d, HH:mm', // l10n-ignore: date pattern
+          'en',
+        )
+      : (abbreviateMonth
+                ? DateFormat.MMMd(l10n.localeName)
+                : DateFormat.MMMMd(l10n.localeName))
+            .add_Hm();
+  return format.format(dateTime);
 }
-
-String _shortMonth(int month) => const [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-][month - 1];
 
 String _twoDigits(int value) => value.toString().padLeft(2, '0');
 
-String migrationPreparationProgressLabel(rust_sync.MigrationStatus status) {
+String migrationPreparationProgressLabel(
+  AppLocalizations l10n,
+  rust_sync.MigrationStatus status,
+) {
   final total = status.denominationSplitTotalCount;
   final completed = status.denominationSplitCompletedCount.clamp(0, total);
-  if (total <= 0) return 'Preparing split transactions';
+  if (total <= 0) return l10n.migrationPreparationSplitTransactions;
 
   final confirmationTarget = status.denominationConfirmationTarget;
   final current = (completed + 1).clamp(1, total);
-  if (confirmationTarget <= 0) return 'Preparing split $current of $total';
+  if (confirmationTarget <= 0) {
+    return l10n.migrationPreparationSplitProgress(
+      current.toString(),
+      total.toString(),
+    );
+  }
   final confirmations = status.denominationConfirmationCount.clamp(
     0,
     confirmationTarget,
@@ -1008,13 +1026,13 @@ String migrationPreparationProgressLabel(rust_sync.MigrationStatus status) {
     final visibleConfirmations = completed >= total
         ? confirmationTarget
         : confirmations;
-    return '$visibleConfirmations of $confirmationTarget confirmations';
+    return l10n.migrationPreparationConfirmations(
+      visibleConfirmations.toString(),
+      confirmationTarget.toString(),
+    );
   }
-  return 'Split $current of $total';
+  return l10n.migrationPreparationSplitStep(
+    current.toString(),
+    total.toString(),
+  );
 }
-
-String _counted(int count, String singular, String plural) =>
-    '$count ${_pluralized(count, singular, plural)}';
-
-String _pluralized(int count, String singular, String plural) =>
-    count == 1 ? singular : plural;

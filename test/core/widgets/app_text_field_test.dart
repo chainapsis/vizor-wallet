@@ -4,8 +4,55 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
+  for (final scale in [1.0, 1.5]) {
+    testWidgets('compact multiline viewport scales and scrolls at $scale', (
+      tester,
+    ) async {
+      final text = List.generate(8, (i) => 'Memo line $i').join('\n');
+      final controller = TextEditingController(text: text);
+      final scrollController = ScrollController();
+      addTearDown(controller.dispose);
+      addTearDown(scrollController.dispose);
+      await tester.pumpWidget(
+        _ThemedHarness(
+          child: Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(scale)),
+              child: SizedBox(
+                width: 352,
+                child: AppTextField(
+                  label: 'Message',
+                  controller: controller,
+                  scrollController: scrollController,
+                  multilineVisibleLines: 2,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final editable = tester
+          .state<EditableTextState>(find.byType(EditableText))
+          .renderEditable;
+      expect(
+        tester.getSize(find.byType(TextField)).height,
+        closeTo(editable.preferredLineHeight * 2, 0.01),
+      );
+      expect(scrollController.position.maxScrollExtent, greaterThan(0));
+      scrollController.jumpTo(scrollController.position.maxScrollExtent);
+      await tester.pump();
+      expect(controller.text, text);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('secondary surface keeps its input shell in light mode', (
     tester,
   ) async {
@@ -496,6 +543,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Scaffold(
@@ -548,6 +596,7 @@ class _ThemedHarness extends StatelessWidget {
     final body = Center(child: child);
 
     return MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       theme: ThemeData(platform: TargetPlatform.macOS),
       home: AppTheme(
         data: AppThemeData.light,

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,7 +24,9 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../support/test_l10n.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../fixtures/orchard_receive_address.dart';
 import 'receive_qr_bitmap_cases.dart';
@@ -578,6 +581,110 @@ void main() {
     );
   });
 
+  testWidgets('slides the QR within the content column with the pool chip', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness());
+    await tester.pump();
+    await tester.pump();
+
+    final pagerFinder = find.byKey(const ValueKey('receive_qr_pager'));
+    final pager = tester.getRect(pagerFinder);
+    final tabs = find.byKey(const ValueKey('receive_address_type_tabs'));
+    expect(pager.width, 420);
+    expect(
+      pager.center.dx,
+      moreOrLessEquals(tester.getCenter(tabs).dx, epsilon: 1),
+    );
+    // Its edges feather rather than cut a sliding card.
+    expect(
+      find.ancestor(of: pagerFinder, matching: find.byType(ShaderMask)),
+      findsOneWidget,
+    );
+    final chip = find.byKey(
+      const ValueKey('receive_address_type_tabs_indicator'),
+    );
+    final chipStart = tester.getRect(chip).left;
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+    // Halfway through the 420ms slide.
+    await tester.pump(const Duration(milliseconds: 210));
+
+    Rect card(String pool) => tester.getRect(
+      find.descendant(
+        of: find.byKey(ValueKey('receive_qr_$pool'), skipOffstage: false),
+        matching: find.byType(ReceiveQrSurface, skipOffstage: false),
+      ),
+    );
+    expect(card('transparent').left - card('shielded').right, greaterThan(24));
+    final chipMidway = tester.getRect(chip).left;
+
+    await tester.pump(const Duration(milliseconds: 210));
+    expect(chipMidway, greaterThan(chipStart + 1));
+    expect(chipMidway, lessThan(tester.getRect(chip).left - 1));
+    expect(
+      card('transparent').center.dx,
+      moreOrLessEquals(tester.getCenter(tabs).dx, epsilon: 1),
+    );
+  });
+
+  testWidgets('a swipe loads an uncached transparent address before it shows', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    late _UncachedDelayedTransparentReceiveAddressService service;
+    await tester.pumpWidget(
+      _receiveHarness(
+        receiveAddressService: (ref) {
+          service = _UncachedDelayedTransparentReceiveAddressService(ref);
+          return service;
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(service.transparentReceiveLoads, 0);
+
+    // Short of the halfway point, so the page change has not fired yet.
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('receive_qr_pager'))),
+    );
+    await gesture.moveBy(const Offset(-40, 0));
+    await gesture.moveBy(const Offset(-40, 0));
+    await tester.pump();
+
+    expect(service.transparentReceiveLoads, 1);
+    final transparentCard = find.byKey(
+      const ValueKey('receive_qr_transparent'),
+      skipOffstage: false,
+    );
+    expect(
+      find.descendant(
+        of: transparentCard,
+        matching: find.byType(CircularProgressIndicator, skipOffstage: false),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining("couldn't load your address"), findsNothing);
+
+    await gesture.moveBy(const Offset(-400, 0));
+    await gesture.up();
+    service.completeTransparentRefresh();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(service.transparentReceiveLoads, 1);
+  });
+
   testWidgets('explains transparent address rotation and shielding', (
     tester,
   ) async {
@@ -592,7 +699,8 @@ void main() {
 
     await tester.tap(find.text('Transparent'));
     await tester.pump();
-    await tester.pump();
+    // Let the shielded card, and its renew icon, slide out first.
+    await tester.pump(const Duration(milliseconds: 420));
     await tester.tap(_findAppIcon(AppIcons.help));
     await tester.pump(const Duration(milliseconds: 200));
 
@@ -752,6 +860,16 @@ void main() {
     await tester.pumpWidget(
       _receiveHarness(receiveAddressService: _FailingReceiveAddressService.new),
     );
+    // The first frame is loading: request stays text-only while disabled.
+    final loadingRequest = find.byKey(const ValueKey('receive_request_button'));
+    expect(tester.widget<AppButton>(loadingRequest).onPressed, isNull);
+    final requestSurface = tester.widget<AnimatedContainer>(
+      find.descendant(
+        of: loadingRequest,
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+    expect((requestSurface.decoration as ShapeDecoration).color?.a, 0);
     await tester.pump();
     await tester.pump();
 
@@ -760,38 +878,158 @@ void main() {
     );
     final request = find.byKey(const ValueKey('receive_request_button'));
     expect(request, findsOneWidget);
-    // Icon only: the label lives in the tooltip, not on the pill.
-    expect(find.text('Request ZEC'), findsNothing);
+    final share = find.byKey(const ValueKey('receive_share_button'));
+    expect(find.text('Request ZEC'), findsOneWidget);
+    expect(tester.getSize(copy), const Size(230, 44));
+    expect(tester.getSize(request), const Size(298, 44));
+    expect(tester.widget<AppButton>(request).variant, AppButtonVariant.ghost);
     expect(
-      find.ancestor(of: request, matching: find.byType(AppTooltip)),
-      findsOneWidget,
+      find.descendant(of: request, matching: find.byType(AppIcon)),
+      findsNothing,
     );
+    expect(tester.getSize(share), const Size(60, 44));
     expect(
       tester
           .widget<AppTooltip>(
-            find.ancestor(of: request, matching: find.byType(AppTooltip)).first,
+            find.ancestor(of: share, matching: find.byType(AppTooltip)),
           )
           .message,
-      'Request ZEC',
+      'Share shielded address',
     );
-    expect(tester.getSize(request), const Size(60, 44));
-    expect(tester.getSize(copy), const Size(230, 44));
-    // Beside the copy pill on one row, not under it.
+    // Copy and share sit together above the independent request action.
     expect(
-      tester.getTopLeft(request).dy,
+      tester.getTopLeft(share).dy,
       moreOrLessEquals(tester.getTopLeft(copy).dy, epsilon: 0.1),
     );
     expect(
-      tester.getTopLeft(request).dx - tester.getTopRight(copy).dx,
+      tester.getTopLeft(share).dx - tester.getTopRight(copy).dx,
+      moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
+    );
+    expect(
+      tester.getTopLeft(request).dy - tester.getBottomLeft(copy).dy,
       moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
     );
 
     // The error slot still sits below the action row.
-    final error = find.textContaining('shielded address is unavailable');
+    final error = find.text(testL10n.receiveShieldedAddressLoadFailed);
     expect(error, findsOneWidget);
     expect(
       tester.getTopLeft(error).dy,
       greaterThan(tester.getBottomLeft(request).dy),
+    );
+  });
+
+  testWidgets('keeps the error details reachable with larger text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(() async {
+      tester.platformDispatcher.clearTextScaleFactorTestValue();
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    // The sidebar's account header overflows at this text size, a separate
+    // problem; this test checks only the receive pane.
+    final onError = FlutterError.onError;
+    FlutterError.onError = (details) {
+      if (details.toString().contains('app_main_sidebar.dart')) return;
+      onError?.call(details);
+    };
+    try {
+      await tester.pumpWidget(
+        _receiveHarness(
+          receiveAddressService: _FailingReceiveAddressService.new,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // The error sits in flow, so the pane scrolls far enough to reach it.
+      final details = find.text(testL10n.commonShowDetails);
+      await tester.drag(find.byType(Scrollable).last, const Offset(0, -2000));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.getRect(details).bottom, lessThanOrEqualTo(720));
+    } finally {
+      FlutterError.onError = onError;
+    }
+  });
+
+  for (final pool in ['Shielded', 'Transparent']) {
+    testWidgets('shares the selected $pool address', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final calls = <MethodCall>[];
+      const channel = MethodChannel('dev.fluttercommunity.plus/share');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        calls.add(call);
+        return 'dev.fluttercommunity.plus/share/success';
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        ),
+      );
+      await tester.pumpWidget(_receiveHarness());
+      await tester.pump();
+      await tester.pump();
+      if (pool == 'Transparent') {
+        await tester.tap(find.text('Transparent'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+      final shareSemantics = tester.getSemantics(
+        find.bySemanticsLabel('Share ${pool.toLowerCase()} address'),
+      );
+      final canActivate = shareSemantics.getSemanticsData().hasAction(
+        ui.SemanticsAction.tap,
+      );
+      semantics.dispose();
+      expect(canActivate, isTrue);
+      await tester.tap(find.byKey(const ValueKey('receive_share_button')));
+      await tester.pump();
+      expect(calls, hasLength(1));
+      expect(calls.single.method, 'share');
+      expect(
+        (calls.single.arguments as Map<Object?, Object?>)['text'],
+        pool == 'Shielded' ? _shieldedAddress : _transparentAddress,
+      );
+    });
+  }
+
+  testWidgets('a failed address share leaves copy available', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const channel = MethodChannel('dev.fluttercommunity.plus/share');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      _,
+    ) async {
+      throw PlatformException(code: 'share_failed');
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    await tester.pumpWidget(_receiveHarness());
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('receive_share_button')));
+    await tester.pump();
+    expect(
+      find.text("Couldn't share this address. Copy it instead."),
+      findsOneWidget,
+    );
+    expect(
+      find
+          .byKey(const ValueKey('receive_copy_shielded_address_button'))
+          .hitTestable(),
+      findsOneWidget,
     );
   });
 
@@ -1346,6 +1584,7 @@ Widget _receiveHarness({
       ...extraOverrides,
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: themeData, child: child!),
     ),
@@ -1381,6 +1620,7 @@ Widget _receiveRaceHarness({
       accountProvider.overrideWith(accountNotifier),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
@@ -1555,6 +1795,14 @@ class _DelayedTransparentReceiveAddressService
   void completeTransparentRefresh() {
     _transparentRefresh.complete(_freshTransparentAddress);
   }
+}
+
+class _UncachedDelayedTransparentReceiveAddressService
+    extends _DelayedTransparentReceiveAddressService {
+  _UncachedDelayedTransparentReceiveAddressService(super.ref);
+
+  @override
+  String? getCachedTransparentAddress(String accountUuid) => null;
 }
 
 class _RacyReceiveAddressService extends ReceiveAddressService {

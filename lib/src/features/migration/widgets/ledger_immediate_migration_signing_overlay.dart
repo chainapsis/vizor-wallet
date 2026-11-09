@@ -1,4 +1,5 @@
 import '../../ledger/services/ledger_device_selection.dart';
+import '../../../core/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -12,6 +13,7 @@ import '../../ledger/services/ledger_immediate_migration_service.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../../ledger/widgets/mobile_ledger_signing_surface.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 typedef LedgerImmediateMigrationCompleted =
     Future<void> Function(rust_sync.IronwoodMigrationResult result);
@@ -44,6 +46,7 @@ class _LedgerImmediateMigrationSigningOverlayState
   late final LedgerOperationCanceller _cancelLedgerOperation;
   String? _error;
   LedgerFailureGuidance? _deviceGuidance;
+  LedgerRequestFailure? _requestFailure;
 
   // Retrying the same request fails the same way on the device.
   bool get _requestNeedsRebuilding => _deviceGuidance?.retryable == false;
@@ -81,6 +84,7 @@ class _LedgerImmediateMigrationSigningOverlayState
         _phase = LedgerSigningModalPhase.preparing;
         _error = null;
         _deviceGuidance = null;
+        _requestFailure = null;
       });
     }
     try {
@@ -103,7 +107,7 @@ class _LedgerImmediateMigrationSigningOverlayState
       if (!mounted || _cancelled) return;
       setState(() {
         _phase = LedgerSigningModalPhase.failed;
-        _error = _friendlyError(error);
+        _error = _friendlyError(context.l10n, error);
       });
     }
   }
@@ -132,53 +136,62 @@ class _LedgerImmediateMigrationSigningOverlayState
     }
   }
 
-  String _friendlyError(Object error) {
+  String _friendlyError(AppLocalizations l10n, Object error) {
+    _requestFailure = LedgerRequestFailure.fromError(error);
     _deviceGuidance = ledgerFailureGuidance(
+      context.l10n,
       error,
       requestKind: LedgerRequestKind.migration,
     );
     if (_deviceGuidance != null) return _deviceGuidance!.message;
+    final upgradeHold = networkUpgradeHoldMessage(l10n, error);
+    if (upgradeHold != null) return upgradeHold;
     final message = error.toString().toLowerCase();
     if (LedgerRequestFailure.fromError(error) ==
         LedgerRequestFailure.declined) {
-      return 'The migration transaction was rejected on your Ledger.';
+      return l10n.migrationLedgerRejected;
     }
     if (isLedgerUsbTransportError(error)) {
-      return 'Connect and unlock your Ledger, then open the Zcash app.';
+      return l10n.migrationLedgerConnect;
     }
     if (message.contains('plan changed')) {
-      return 'The amount or fee changed. Return and review the updated plan.';
+      return l10n.migrationLedgerPlanChanged;
     }
     if (message.contains('proof')) {
-      return 'Vizor could not finish preparing migration proofs.';
+      return l10n.migrationLedgerProofs;
     }
     if (message.contains('broadcast') || message.contains('sendtransaction')) {
-      return 'The migration transaction could not be broadcast.';
+      return l10n.migrationLedgerBroadcast;
     }
-    return 'Ledger migration could not be completed.';
+    return l10n.migrationLedgerFailed;
   }
 
   @override
   Widget build(BuildContext context) {
     final modal = LedgerSigningModal(
+      cancelling: _cancelled,
       connectionScope: _connectionScope,
       accountUuid: widget.accountUuid,
       phase: _phase,
       failure: _phase == LedgerSigningModalPhase.failed
           ? LedgerSigningFailurePresentation(
+              requestFailure: _requestFailure,
               pairingInvalid: _deviceGuidance?.pairingInvalid ?? false,
               bluetoothRecovery: _deviceGuidance?.bluetoothRecovery ?? false,
               pairingRecovery: _deviceGuidance?.pairingRecovery ?? false,
-              title: 'Ledger migration failed',
-              statusLabel: 'Action needed',
-              message: _error ?? 'Ledger migration could not be completed.',
+              title: context.l10n.migrationLedgerFailedTitle,
+              statusLabel: context.l10n.commonActionNeeded,
+              actionNeeded: true,
+              message: _error ?? context.l10n.migrationLedgerFailed,
               showDeviceAppPrompt:
                   _deviceGuidance?.showDeviceAppPrompt ?? false,
-              actionLabel: _requestNeedsRebuilding ? null : 'Try again',
+              actionLabel: _requestNeedsRebuilding
+                  ? null
+                  : context.l10n.commonTryAgain,
             )
           : null,
       onCancel: _canLeave ? () => unawaited(_cancel()) : null,
-      cancelLabel: 'Back to review',
+      cancelLabel: context.l10n.migrationKeystoneBackToReview,
       onFailureAction:
           _phase == LedgerSigningModalPhase.failed && !_requestNeedsRebuilding
           ? () => unawaited(_retry())
@@ -187,7 +200,7 @@ class _LedgerImmediateMigrationSigningOverlayState
     if (widget.mobile) {
       return MobileLedgerSigningSurface(
         key: const ValueKey('mobile_ledger_immediate_migration_signing'),
-        title: 'Migrate with Ledger',
+        title: context.l10n.migrationLedgerTitle,
         canLeave: _canLeave,
         onBack: () => unawaited(_cancel()),
         child: modal,
@@ -201,6 +214,9 @@ class _LedgerImmediateMigrationSigningOverlayState
         children: [
           AppPaneModalOverlay(
             key: const ValueKey('ledger_immediate_migration_signing_overlay'),
+            // The modal replaces the review inside the migration card, so a
+            // scrim would only dim an empty card.
+            scrimColor: const Color(0x00000000),
             onDismiss: _canLeave ? () => unawaited(_cancel()) : () {},
             child: modal,
           ),

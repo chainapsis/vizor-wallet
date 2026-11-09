@@ -1,3 +1,4 @@
+// l10n-ignore-file: generated personas are saved as the contact name
 import 'dart:math';
 
 import '../../core/profile_pictures.dart';

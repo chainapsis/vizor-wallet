@@ -6,141 +6,136 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import '../../support/localized_test_scope.dart';
 
 void main() {
-  testWidgets(
-    'late native reply cannot overwrite a newer disabled state',
-    (tester) async {
-      const channel = MethodChannel('com.zcash.wallet/privacy_shield');
-      NativeSensitiveContentBridge.resetForTesting();
-      addTearDown(NativeSensitiveContentBridge.resetForTesting);
-      final pending = Completer<Object?>();
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
-        call,
-      ) async {
-        if ((call.arguments as Map)['visible'] == true) return pending.future;
-        return {'state': 'disabled', 'visible': false};
-      });
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          channel,
-          null,
-        ),
-      );
-      final token = NativeSensitiveContentBridge.createToken();
-      NativeSensitiveContentBridge.updateToken(token, true);
-      NativeSensitiveContentBridge.clearToken(token);
-      await tester.pump();
-      expect(NativeSensitiveContentBridge.status.value, 'disabled');
-      pending.complete({'state': 'applied', 'visible': true});
-      await tester.pump();
-      expect(NativeSensitiveContentBridge.status.value, 'disabled');
-    },
-    skip: !Platform.isMacOS,
-  );
-
-  testWidgets(
-    'native attachment reports pending then applied and disabled',
-    (tester) async {
-      const channel = MethodChannel('com.zcash.wallet/privacy_shield');
-      NativeSensitiveContentBridge.resetForTesting();
-      addTearDown(NativeSensitiveContentBridge.resetForTesting);
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+  testWidgets('late native reply cannot overwrite a newer disabled state', (
+    tester,
+  ) async {
+    const channel = MethodChannel('com.zcash.wallet/privacy_shield');
+    NativeSensitiveContentBridge.resetForTesting();
+    addTearDown(NativeSensitiveContentBridge.resetForTesting);
+    final pending = Completer<Object?>();
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if ((call.arguments as Map)['visible'] == true) return pending.future;
+      return {'state': 'disabled', 'visible': false};
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         channel,
-        (call) async => {
-          'state': (call.arguments as Map)['visible'] == true
-              ? 'pending'
-              : 'disabled',
-          'visible': (call.arguments as Map)['visible'],
-          'reason': '',
-        },
-      );
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          channel,
-          null,
-        ),
-      );
-      final token = NativeSensitiveContentBridge.createToken();
-      NativeSensitiveContentBridge.updateToken(token, true);
-      await tester.pump();
-      expect(NativeSensitiveContentBridge.status.value, 'pending');
-      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
-        channel.name,
-        const StandardMethodCodec().encodeMethodCall(
-          const MethodCall('protectionStatusChanged', {
-            'state': 'failed',
-            'visible': true,
-            'reason': 'secure_canvas_unavailable',
-          }),
-        ),
-        (_) {},
-      );
-      expect(NativeSensitiveContentBridge.status.value, 'failed');
-      expect(
-        NativeSensitiveContentBridge.failureReason,
-        'secure_canvas_unavailable',
-      );
-      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
-        channel.name,
-        const StandardMethodCodec().encodeMethodCall(
-          const MethodCall('protectionStatusChanged', {
-            'state': 'applied',
-            'visible': true,
-            'reason': '',
-          }),
-        ),
-        (_) {},
-      );
-      expect(NativeSensitiveContentBridge.status.value, 'applied');
-      NativeSensitiveContentBridge.clearToken(token);
-      await tester.pump();
-      expect(NativeSensitiveContentBridge.status.value, 'disabled');
-      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
-        channel.name,
-        const StandardMethodCodec().encodeMethodCall(
-          const MethodCall('protectionStatusChanged', {
-            'state': 'applied',
-            'visible': true,
-          }),
-        ),
-        (_) {},
-      );
-      expect(NativeSensitiveContentBridge.status.value, 'disabled');
-    },
-    skip: !Platform.isMacOS,
-  );
+        null,
+      ),
+    );
+    final token = NativeSensitiveContentBridge.createToken();
+    NativeSensitiveContentBridge.updateToken(token, true);
+    NativeSensitiveContentBridge.clearToken(token);
+    await tester.pump();
+    expect(NativeSensitiveContentBridge.status.value, 'disabled');
+    pending.complete({'state': 'applied', 'visible': true});
+    await tester.pump();
+    expect(NativeSensitiveContentBridge.status.value, 'disabled');
+  }, skip: !Platform.isMacOS);
 
-  testWidgets(
-    'failed native request can retry without visibility toggling',
-    (tester) async {
-      const channel = MethodChannel('com.zcash.wallet/privacy_shield');
-      NativeSensitiveContentBridge.resetForTesting();
-      addTearDown(NativeSensitiveContentBridge.resetForTesting);
-      var calls = 0;
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
-        call,
-      ) async {
-        if (++calls == 1) throw PlatformException(code: 'unavailable');
-        return {'state': 'applied', 'visible': true};
-      });
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          channel,
-          null,
-        ),
-      );
-      final token = NativeSensitiveContentBridge.createToken();
-      NativeSensitiveContentBridge.updateToken(token, true);
-      await tester.pump();
-      expect(NativeSensitiveContentBridge.status.value, 'failed');
-      NativeSensitiveContentBridge.updateToken(token, true);
-      await tester.pump();
-      expect(calls, 2);
-      expect(NativeSensitiveContentBridge.status.value, 'applied');
-    },
-    skip: !Platform.isMacOS,
-  );
+  testWidgets('native attachment reports pending then applied and disabled', (
+    tester,
+  ) async {
+    const channel = MethodChannel('com.zcash.wallet/privacy_shield');
+    NativeSensitiveContentBridge.resetForTesting();
+    addTearDown(NativeSensitiveContentBridge.resetForTesting);
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      (call) async => {
+        'state': (call.arguments as Map)['visible'] == true
+            ? 'pending'
+            : 'disabled',
+        'visible': (call.arguments as Map)['visible'],
+        'reason': '',
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    final token = NativeSensitiveContentBridge.createToken();
+    NativeSensitiveContentBridge.updateToken(token, true);
+    await tester.pump();
+    expect(NativeSensitiveContentBridge.status.value, 'pending');
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      channel.name,
+      const StandardMethodCodec().encodeMethodCall(
+        const MethodCall('protectionStatusChanged', {
+          'state': 'failed',
+          'visible': true,
+          'reason': 'secure_canvas_unavailable',
+        }),
+      ),
+      (_) {},
+    );
+    expect(NativeSensitiveContentBridge.status.value, 'failed');
+    expect(
+      NativeSensitiveContentBridge.failureReason,
+      'secure_canvas_unavailable',
+    );
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      channel.name,
+      const StandardMethodCodec().encodeMethodCall(
+        const MethodCall('protectionStatusChanged', {
+          'state': 'applied',
+          'visible': true,
+          'reason': '',
+        }),
+      ),
+      (_) {},
+    );
+    expect(NativeSensitiveContentBridge.status.value, 'applied');
+    NativeSensitiveContentBridge.clearToken(token);
+    await tester.pump();
+    expect(NativeSensitiveContentBridge.status.value, 'disabled');
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      channel.name,
+      const StandardMethodCodec().encodeMethodCall(
+        const MethodCall('protectionStatusChanged', {
+          'state': 'applied',
+          'visible': true,
+        }),
+      ),
+      (_) {},
+    );
+    expect(NativeSensitiveContentBridge.status.value, 'disabled');
+  }, skip: !Platform.isMacOS);
+
+  testWidgets('failed native request can retry without visibility toggling', (
+    tester,
+  ) async {
+    const channel = MethodChannel('com.zcash.wallet/privacy_shield');
+    NativeSensitiveContentBridge.resetForTesting();
+    addTearDown(NativeSensitiveContentBridge.resetForTesting);
+    var calls = 0;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (++calls == 1) throw PlatformException(code: 'unavailable');
+      return {'state': 'applied', 'visible': true};
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    final token = NativeSensitiveContentBridge.createToken();
+    NativeSensitiveContentBridge.updateToken(token, true);
+    await tester.pump();
+    expect(NativeSensitiveContentBridge.status.value, 'failed');
+    NativeSensitiveContentBridge.updateToken(token, true);
+    await tester.pump();
+    expect(calls, 2);
+    expect(NativeSensitiveContentBridge.status.value, 'applied');
+  }, skip: !Platform.isMacOS);
 
   test('platform privacy signals are macOS-only', () {
     expect(supportsPlatformPrivacySignals(isWeb: false, isMacOS: true), isTrue);
@@ -215,8 +210,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+        child: LocalizedTestScope(
           child: SensitivePrivacyOverlay(
             sensitiveContentVisible: true,
             controller: controller,
@@ -244,6 +238,59 @@ void main() {
     expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
   });
 
+  testWidgets('hides shielded content from screen readers until safe again', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final controller = SensitivePrivacyOverlayController(initiallySafe: true);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppTheme(
+        data: AppThemeData.light,
+        child: LocalizedTestScope(
+          child: SensitivePrivacyOverlay(
+            sensitiveContentVisible: true,
+            controller: controller,
+            child: const SizedBox(width: 320, height: 240, child: _SeedPane()),
+          ),
+        ),
+      ),
+    );
+
+    final seed = find.semantics.byLabel(RegExp(_seedWords));
+    final copy = find.semantics.byLabel(RegExp('Copy'));
+    final shieldLabel = find.semantics.byLabel('Sensitive content hidden');
+    expect(seed, findsOne);
+    expect(shieldLabel, findsNothing);
+    tester.semantics.tap(copy);
+    await tester.pump();
+    expect(find.text('Copied 1'), findsOneWidget);
+
+    controller.markUnsafe();
+    await tester.pump();
+
+    // The shield hides the seed from screen readers as well as from the
+    // screen, and nothing beneath it can be activated through them; the
+    // shield's icon is what they find instead.
+    expect(seed, findsNothing);
+    expect(copy, findsNothing);
+    expect(find.semantics.byLabel(RegExp('Copied')), findsNothing);
+    expect(shieldLabel, findsOne);
+
+    controller.markSafe();
+    await tester.pump();
+
+    // The pane comes back still mounted, with its state.
+    expect(seed, findsOne);
+    expect(shieldLabel, findsNothing);
+    expect(find.text('Copied 1'), findsOneWidget);
+    tester.semantics.tap(copy);
+    await tester.pump();
+    expect(find.text('Copied 2'), findsOneWidget);
+    semantics.dispose();
+  });
+
   testWidgets('does not show privacy shield when no sensitive content exists', (
     tester,
   ) async {
@@ -253,8 +300,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+        child: LocalizedTestScope(
           child: SensitivePrivacyOverlay(
             sensitiveContentVisible: false,
             controller: controller,
@@ -282,8 +328,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+        child: LocalizedTestScope(
           child: SensitivePrivacyOverlay(
             sensitiveContentVisible: true,
             controller: controller,
@@ -315,8 +360,7 @@ void main() {
       await tester.pumpWidget(
         AppTheme(
           data: AppThemeData.light,
-          child: Directionality(
-            textDirection: TextDirection.ltr,
+          child: LocalizedTestScope(
             child: SensitivePrivacyOverlay(
               sensitiveContentVisible: true,
               controller: controller,
@@ -351,8 +395,7 @@ void main() {
       await tester.pumpWidget(
         AppTheme(
           data: AppThemeData.light,
-          child: Directionality(
-            textDirection: TextDirection.ltr,
+          child: LocalizedTestScope(
             child: SensitivePrivacyOverlay(
               sensitiveContentVisible: true,
               controller: controller,
@@ -420,8 +463,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+        child: LocalizedTestScope(
           child: SensitivePrivacyOverlay(
             sensitiveContentVisible: true,
             controller: controller,
@@ -474,8 +516,7 @@ void main() {
       await tester.pumpWidget(
         AppTheme(
           data: AppThemeData.light,
-          child: const Directionality(
-            textDirection: TextDirection.ltr,
+          child: const LocalizedTestScope(
             child: SensitivePrivacyOverlay(
               sensitiveContentVisible: false,
               child: SizedBox(
@@ -493,8 +534,7 @@ void main() {
       await tester.pumpWidget(
         AppTheme(
           data: AppThemeData.light,
-          child: const Directionality(
-            textDirection: TextDirection.ltr,
+          child: const LocalizedTestScope(
             child: SensitivePrivacyOverlay(
               sensitiveContentVisible: true,
               child: SizedBox(
@@ -519,4 +559,37 @@ void main() {
     },
     skip: !Platform.isMacOS,
   );
+}
+
+const _seedWords = 'abandon ability able';
+
+/// A stand-in for a seed screen: the words, and a copy button that counts
+/// its taps, so a test can tell whether the pane kept its state.
+class _SeedPane extends StatefulWidget {
+  const _SeedPane();
+
+  @override
+  State<_SeedPane> createState() => _SeedPaneState();
+}
+
+class _SeedPaneState extends State<_SeedPane> {
+  var _copies = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Semantics(container: true, child: const Text(_seedWords)),
+        Semantics(
+          container: true,
+          button: true,
+          child: GestureDetector(
+            onTap: () => setState(() => _copies += 1),
+            child: const Text('Copy'),
+          ),
+        ),
+        Text('Copied $_copies'),
+      ],
+    );
+  }
 }

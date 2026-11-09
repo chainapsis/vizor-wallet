@@ -6,10 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_window_policy.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_network_settings_sheet.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'fakes/fake_sync_notifier.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   testWidgets(
@@ -31,7 +33,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byType(MobileNetworkSettingsSheet), findsOneWidget);
-      expect(find.text(kTorStartupFailureNotice), findsNothing);
+      expect(find.text(testL10n.networkPrivacyTorStartupFailed), findsNothing);
       expect(
         find.text(
           'Vizor could not connect to Tor. Requests stay blocked until it connects or you turn Tor off.',
@@ -46,6 +48,29 @@ void main() {
         NetworkPrivacyConnectionStatus.failed,
       );
       expect(container.read(networkPrivacyProvider).startupNotice, isNull);
+
+      // Exercise the real app-level scope: the startup modal is above the
+      // router and must receive live window policy changes without reopening.
+      final sheet = find.byType(MobileNetworkSettingsSheet);
+      final element = tester.element(sheet);
+      expect(
+        element.getInheritedWidgetOfExactType<MobileWindowPolicyScope>(),
+        isNotNull,
+      );
+      expect(tester.getSize(sheet).width, 361);
+      tester.view.physicalSize = const Size(951, 669);
+      await tester.pumpAndSettle();
+      expect(
+        MobileWindowPolicyScope.of(tester.element(sheet)).usesWideLayout,
+        isTrue,
+      );
+      expect(tester.getSize(sheet).width, 408);
+      expect(tester.element(sheet), same(element));
+      tester.view.physicalSize = const Size(466, 852);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(sheet).width, 434);
+      expect(tester.element(sheet), same(element));
+      expect(find.text(testL10n.networkPrivacyTorStartupFailed), findsNothing);
     },
   );
 }
@@ -55,6 +80,6 @@ class _FailedPrivacy extends NetworkPrivacyNotifier {
   NetworkPrivacyState build() => const NetworkPrivacyState(
     torEnabled: true,
     status: NetworkPrivacyConnectionStatus.failed,
-    startupNotice: kTorStartupFailureNotice,
+    startupNotice: NetworkPrivacyNotice.torStartupFailure,
   );
 }

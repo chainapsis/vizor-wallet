@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart' show AppLocalizations;
+
 /// Coarse user-facing stages, independent of device connection/readiness state.
 enum LedgerSigningStage { preparing, sending, reviewing, finishing }
 
@@ -72,44 +74,23 @@ final ledgerSigningProgressProvider =
     );
 
 extension LedgerSigningStageCopy on LedgerSigningStage {
-  String get title => switch (this) {
-    LedgerSigningStage.preparing => 'Preparing transaction',
-    LedgerSigningStage.sending => 'Processing with Ledger',
-    LedgerSigningStage.reviewing => 'Check your Ledger',
-    LedgerSigningStage.finishing => 'Finishing transaction',
+  String title(AppLocalizations l10n) => switch (this) {
+    LedgerSigningStage.preparing => l10n.ledgerSigningTitlePreparing,
+    LedgerSigningStage.sending => l10n.ledgerSigningTitleSending,
+    LedgerSigningStage.reviewing => l10n.ledgerSigningTitleReviewing,
+    LedgerSigningStage.finishing => l10n.ledgerSigningTitleFinishing,
   };
-  String get message => messageForDevice(null);
-
-  String messageForDevice(String? deviceModel) => switch (this) {
-    LedgerSigningStage.preparing =>
-      'Please wait while Vizor prepares your transaction.',
-    LedgerSigningStage.sending =>
-      ledgerHasShortSigningWait(deviceModel)
-          ? 'Your Ledger is preparing to sign. It may seem unresponsive for about 10 seconds. Keep your Ledger connected.'
-          : 'Your Ledger is preparing to sign. It may seem unresponsive for about 30 seconds. Keep your Ledger connected.',
-    LedgerSigningStage.reviewing =>
-      'Review and approve when prompted on your Ledger.',
-    LedgerSigningStage.finishing => 'Keep Vizor open.',
+  String message(AppLocalizations l10n) => switch (this) {
+    LedgerSigningStage.preparing => l10n.ledgerSigningMsgPreparing,
+    LedgerSigningStage.sending => l10n.ledgerSigningMsgSending(
+      l10n.ledgerSigningWaitInstruction,
+    ),
+    LedgerSigningStage.reviewing => l10n.ledgerSigningMsgReviewing,
+    LedgerSigningStage.finishing => l10n.ledgerSigningKeepVizorOpen,
   };
-  String get status => switch (this) {
-    LedgerSigningStage.sending => 'Preparing to sign',
-    LedgerSigningStage.reviewing => 'Review on device',
-    _ => 'Please wait',
+  String status(AppLocalizations l10n) => switch (this) {
+    LedgerSigningStage.sending => l10n.ledgerSigningStatusPreparing,
+    LedgerSigningStage.reviewing => l10n.ledgerSigningStatusReview,
+    _ => l10n.commonPleaseWait,
   };
-}
-
-/// Accept model identifiers exposed by USB and native Bluetooth discovery.
-/// Unknown and future models use the longer guidance.
-bool ledgerHasShortSigningWait(String? deviceModel) {
-  final model = (deviceModel ?? '')
-      .toLowerCase()
-      .replaceAll(RegExp('[^a-z0-9]'), '')
-      .replaceFirst(RegExp('^ledger'), '');
-  return const {
-    'stax',
-    'flex',
-    'staxflex',
-    'flexstax',
-    'europa',
-  }.contains(model);
 }

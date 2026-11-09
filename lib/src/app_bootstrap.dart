@@ -12,9 +12,11 @@ import 'core/config/app_version_config.dart';
 import 'core/config/rpc_endpoint_config.dart';
 import 'core/config/swap_remote_enable_config.dart';
 import 'core/config/zcash_explorer.dart';
+import 'core/l10n/app_language.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/enhance_pir_preference_store.dart';
 import 'core/storage/wallet_paths.dart';
+import 'core/storage/wallet_balance_cache.dart';
 import 'core/storage/secure_storage_diagnostics.dart';
 import 'providers/account_models.dart';
 import 'rust/api/sync.dart' as rust_sync;
@@ -55,6 +57,7 @@ class AppBootstrapState {
     required this.rpcEndpointConfig,
     this.explorerUrlTemplate = '',
     required this.themeMode,
+    this.appLanguage = AppLanguage.en,
     required this.privacyModeEnabled,
     required this.isPasswordConfigured,
     required this.isUnlocked,
@@ -75,6 +78,9 @@ class AppBootstrapState {
   final RpcEndpointConfig rpcEndpointConfig;
   final String explorerUrlTemplate;
   final ThemeMode themeMode;
+
+  /// The saved language; English when nothing is saved or it cannot be read.
+  final AppLanguage appLanguage;
   final bool privacyModeEnabled;
   final bool swapEnabledOverrideCachedForRelease;
   final bool syncKeepAwakeEnabled;
@@ -135,6 +141,7 @@ class AppSyncSnapshot {
   const AppSyncSnapshot({
     this.accountUuid,
     this.hasAccountScopedData = false,
+    this.cachedBalance,
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
@@ -163,6 +170,7 @@ class AppSyncSnapshot {
 
   final String? accountUuid;
   final bool hasAccountScopedData;
+  final CachedWalletBalance? cachedBalance;
   final int scannedHeight;
   final int chainTipHeight;
   final double percentage;
@@ -251,6 +259,7 @@ Future<AppBootstrapState> loadAppBootstrap({
       StorageBootstrapStage.started,
     );
     await ensureIosSecureStoreAccessibilityMigrated();
+    await storage.encodeLegacyLinuxKeyringValues();
     await storage.ensureWalletDbName();
     await _applyE2eBootstrapOverrides(storage);
     var passwordRotationRecoveryFailed = false;
@@ -272,6 +281,7 @@ Future<AppBootstrapState> loadAppBootstrap({
     final rpcEndpointConfig = await _readRpcEndpointConfig(storage, network);
     final explorerUrlTemplate = await _readExplorerUrlTemplate(storage);
     final themeMode = await _readThemeMode(storage);
+    final appLanguage = await _readAppLanguage(storage);
     final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
     final swapEnabledOverrideCachedForRelease =
         await _readSwapEnabledOverrideCachedForRelease();
@@ -279,12 +289,12 @@ Future<AppBootstrapState> loadAppBootstrap({
     final syncKeepAwakeEnabled = await _readPlainBool(
       storage,
       key: kSyncKeepAwakeEnabledKey,
-      label: 'sync keep-awake enabled flag',
+      label: 'sync keep-awake enabled flag', // l10n-ignore: log label
     );
     final syncKeepAwakePromptSeen = await _readPlainBool(
       storage,
       key: kSyncKeepAwakePromptSeenKey,
-      label: 'sync keep-awake prompt seen flag',
+      label: 'sync keep-awake prompt seen flag', // l10n-ignore: log label
     );
     final enhancePirEnabled = await readEnhancePirEnabledPreference(storage);
     var isPasswordConfigured = await storage.isPasswordConfigured();
@@ -336,7 +346,6 @@ Future<AppBootstrapState> loadAppBootstrap({
     );
 
     var rustAccounts = <AccountInfo>[];
-    final rustAddressesByUuid = <String, String>{};
     if (databaseExists) {
       try {
         final legacyHardwareAccounts = legacyHardwareAccountsForBackfill(
@@ -367,7 +376,6 @@ Future<AppBootstrapState> loadAppBootstrap({
               'Rust account ${account.uuid} returned inconsistent hardware signer metadata.',
             );
           }
-          rustAddressesByUuid[account.uuid] = account.unifiedAddress;
           final stored = storedAccountsByUuid[account.uuid];
           return mergeBootstrappedAccountInfo(
             rustAccount: AccountInfo(
@@ -429,9 +437,18 @@ Future<AppBootstrapState> loadAppBootstrap({
       }
     }
     final activeAccountUuid = _resolveActiveUuid(storedActiveUuid, accounts);
-    final activeAddress = !isUnlocked || activeAccountUuid == null
-        ? null
-        : rustAddressesByUuid[activeAccountUuid];
+    String? activeAddress;
+    if (isUnlocked && activeAccountUuid != null) {
+      try {
+        activeAddress = await rust_wallet.getUnifiedAddress(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: activeAccountUuid,
+        );
+      } catch (error) {
+        log('bootstrap: active address unavailable: $error');
+      }
+    }
     final hasWallet = accounts.isNotEmpty;
     var initialSyncSnapshot = AppSyncSnapshot.empty;
 
@@ -474,6 +491,7 @@ Future<AppBootstrapState> loadAppBootstrap({
       rpcEndpointConfig: rpcEndpointConfig,
       explorerUrlTemplate: explorerUrlTemplate,
       themeMode: themeMode,
+      appLanguage: appLanguage,
       privacyModeEnabled: privacyModeEnabled,
       swapEnabledOverrideCachedForRelease: swapEnabledOverrideCachedForRelease,
       biometricUnlockEnabled: biometricUnlockEnabled,
@@ -492,7 +510,7 @@ Future<AppBootstrapState> loadAppBootstrap({
     return AppBootstrapState.blocked(
       failureKind: AppBootstrapFailureKind.secureStorageUnavailable,
       failureMessage:
-          'Vizor needs access to secure storage before it can open your wallet.',
+          'Vizor needs access to secure storage before it can open your wallet.', // l10n-ignore: diagnostic; the screen words it by failureKind
     );
   } catch (e) {
     log('bootstrap: failed, blocking startup: $e');
@@ -501,7 +519,8 @@ Future<AppBootstrapState> loadAppBootstrap({
     );
     return AppBootstrapState.blocked(
       failureKind: AppBootstrapFailureKind.startupFailure,
-      failureMessage: 'Vizor could not load its startup state.',
+      failureMessage:
+          'Vizor could not load its startup state.', // l10n-ignore: diagnostic; the screen words it by failureKind
     );
   }
 }
@@ -524,19 +543,19 @@ String _walletDbMigrationFailureMessage(Object error) {
   if (message.contains('seedrequired') ||
       message.contains('seed is required') ||
       message.contains('wallet seed is required')) {
-    return 'This wallet requires a database update that cannot be completed automatically.';
+    return 'This wallet requires a database update that cannot be completed automatically.'; // l10n-ignore: diagnostic; the screen words it by failureKind
   }
   if (message.contains('seednotrelevant') ||
       message.contains('seed is not relevant') ||
       message.contains('not relevant to any derived accounts')) {
-    return 'The available wallet seed does not match the database update requirement.';
+    return 'The available wallet seed does not match the database update requirement.'; // l10n-ignore: diagnostic; the screen words it by failureKind
   }
   if (message.contains('sqlite') &&
       (message.contains('not supported') ||
           message.contains('database not supported'))) {
-    return 'The local SQLite version cannot open this wallet database.';
+    return 'The local SQLite version cannot open this wallet database.'; // l10n-ignore: diagnostic; the screen words it by failureKind
   }
-  return 'The wallet database update did not complete.';
+  return 'The wallet database update did not complete.'; // l10n-ignore: diagnostic; the screen words it by failureKind
 }
 
 Future<void> _applyE2eBootstrapOverrides(AppSecureStore storage) async {
@@ -635,6 +654,19 @@ Future<ThemeMode> _readThemeMode(AppSecureStore storage) async {
   }
 }
 
+Future<AppLanguage> _readAppLanguage(AppSecureStore storage) async {
+  try {
+    return decodeAppLanguagePreference(
+      await storage.readString(kAppLanguageKey),
+    );
+  } on SecureStorageUnavailableException {
+    rethrow;
+  } catch (e) {
+    log('bootstrap: failed to read app language: $e');
+    return AppLanguage.en;
+  }
+}
+
 ThemeMode _decodeThemeMode(String? raw) {
   return switch (raw) {
     'light' => ThemeMode.light,
@@ -660,7 +692,7 @@ Future<bool> _readBiometricUnlockEnabled(AppSecureStore storage) async {
   return _readPlainBool(
     storage,
     key: _biometricUnlockEnabledKey,
-    label: 'biometric unlock flag',
+    label: 'biometric unlock flag', // l10n-ignore: log label
   );
 }
 
@@ -775,85 +807,35 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
   required String accountUuid,
 }) async {
   try {
-    final syncStatus = await rust_sync.getSyncStatus(
-      dbPath: dbPath,
-      network: network,
-    );
-    final balance = await rust_sync.getBalance(
+    final cached = await readCachedWalletBalance(
       dbPath: dbPath,
       network: network,
       accountUuid: accountUuid,
     );
-    if (balance.availability != rust_sync.WalletBalanceAvailability.available) {
-      throw StateError(
-        'Wallet balance unavailable during bootstrap: '
-        '${balance.availability.name}',
-      );
-    }
-    final recentTransactions = await rust_sync.getTransactionHistory(
-      dbPath: dbPath,
-      network: network,
-      limit: 10,
-      accountUuid: accountUuid,
-    );
-    var canShieldTransparentBalance = false;
-    var shieldTransparentFee = BigInt.zero;
-    var shieldTransparentAmount = BigInt.zero;
-    if (balance.transparent > BigInt.zero) {
-      try {
-        final shieldStatus = await rust_sync.getShieldTransparentStatus(
-          dbPath: dbPath,
-          network: network,
-          accountUuid: accountUuid,
-        );
-        canShieldTransparentBalance = shieldStatus.canShield;
-        shieldTransparentFee = shieldStatus.feeZatoshi;
-        shieldTransparentAmount = shieldStatus.shieldedZatoshi;
-      } catch (e) {
-        log('bootstrap: failed to load shield transparent status: $e');
-      }
-    }
-    final scannedHeight = syncStatus.scannedHeight.toInt();
-    final chainTipHeight = syncStatus.chainTipHeight.toInt();
-    final percentage = chainTipHeight == 0
-        ? 0.0
-        : (scannedHeight / chainTipHeight).clamp(0.0, 1.0);
-
-    log(
-      'bootstrap: loaded initial sync snapshot '
-      '(scanned=$scannedHeight, tip=$chainTipHeight, txs=${recentTransactions.length})',
-    );
-
     return AppSyncSnapshot(
       accountUuid: accountUuid,
-      hasAccountScopedData: true,
-      scannedHeight: scannedHeight,
-      chainTipHeight: chainTipHeight,
-      percentage: percentage,
-      isSyncComplete: syncStatus.isComplete,
-      transparentBalance: balance.transparent,
-      saplingBalance: balance.sapling,
-      orchardBalance: balance.orchard,
-      ironwoodBalance: balance.ironwood,
-      orchardLockedBalance: balance.orchardLocked,
-      transparentPendingBalance: balance.transparentPending,
-      transparentLockedBalance: balance.transparentLocked,
-      transparentAuthority: balance.transparentAuthority,
-      transparentLastKnownBalance: balance.transparentLastKnown,
-      transparentStop: balance.transparentStop,
-      transparentPrivate: balance.transparentPrivate,
-      saplingPendingBalance: balance.saplingPending,
-      orchardPendingBalance: balance.orchardPending,
-      ironwoodPendingBalance: balance.ironwoodPending,
-      canShieldTransparentBalance: canShieldTransparentBalance,
-      shieldTransparentFee: shieldTransparentFee,
-      shieldTransparentAmount: shieldTransparentAmount,
-      spendableBalance: balance.spendable,
-      totalBalance: balance.total,
-      recentTransactions: recentTransactions,
+      cachedBalance: cached,
+      scannedHeight: 0,
+      chainTipHeight: 0,
+      percentage: 0,
+      transparentBalance: BigInt.zero,
+      saplingBalance: BigInt.zero,
+      orchardBalance: BigInt.zero,
+      ironwoodBalance: BigInt.zero,
+      orchardLockedBalance: BigInt.zero,
+      transparentPendingBalance: BigInt.zero,
+      saplingPendingBalance: BigInt.zero,
+      orchardPendingBalance: BigInt.zero,
+      ironwoodPendingBalance: BigInt.zero,
+      canShieldTransparentBalance: false,
+      shieldTransparentFee: BigInt.zero,
+      shieldTransparentAmount: BigInt.zero,
+      spendableBalance: BigInt.zero,
+      totalBalance: BigInt.zero,
+      recentTransactions: const [],
     );
   } catch (e) {
-    log('bootstrap: failed to load initial sync snapshot: $e');
+    log('bootstrap: failed to load balance cache: $e');
     return AppSyncSnapshot.emptyForAccount(accountUuid);
   }
 }

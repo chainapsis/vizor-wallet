@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/formatting/address_display.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
@@ -109,6 +110,7 @@ class ReceivedReceiptView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final l10n = context.l10n;
     final memo = memoText?.trim();
     final fromRecipient = this.fromRecipient;
     final fromAccount = fromRecipient == null ? this.fromAccount : null;
@@ -116,23 +118,23 @@ class ReceivedReceiptView extends StatelessWidget {
         ? this.unknownFromKind
         : null;
     final title = switch (status) {
-      ReceivedReceiptStatus.inProgress => 'Receive in progress...',
-      ReceivedReceiptStatus.completed => 'Received successfully',
-      ReceivedReceiptStatus.failed => 'Receive failed',
+      ReceivedReceiptStatus.inProgress => l10n.activityTitleReceiveInProgress,
+      ReceivedReceiptStatus.completed => l10n.activityTitleReceivedSuccessfully,
+      ReceivedReceiptStatus.failed => l10n.activityTitleReceiveFailed,
     };
     final (statusValue, statusIconName, statusColor) = switch (status) {
       ReceivedReceiptStatus.inProgress => (
-        'In progress',
+        l10n.commonInProgress,
         AppIcons.loader,
         colors.text.secondary,
       ),
       ReceivedReceiptStatus.completed => (
-        'Completed',
+        l10n.commonCompleted,
         AppIcons.checkCircle,
         colors.text.positiveStrong,
       ),
       ReceivedReceiptStatus.failed => (
-        'Failed',
+        l10n.commonFailed,
         AppIcons.cancel,
         colors.text.destructive,
       ),
@@ -153,22 +155,21 @@ class ReceivedReceiptView extends StatelessWidget {
         const SizedBox(height: AppSpacing.base),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+          child: ReviewInfoFlow(
+            connectorColor: context.colors.text.secondary,
+            rows: [
               if (detailsLoading ||
                   fromRecipient != null ||
                   fromAccount != null ||
-                  unknownFromKind != null) ...[
+                  unknownFromKind != null)
                 if (detailsLoading)
-                  const ReceiptCounterpartySkeleton(label: 'From')
+                  ReceiptCounterpartySkeleton(label: l10n.activityReceiptFrom)
                 else if (fromRecipient != null)
                   _fromRow(context, fromRecipient)
                 else if (fromAccount != null)
                   ReviewInfoRow(
                     key: const ValueKey('received_from_account'),
-                    label: 'From',
+                    label: l10n.activityReceiptFrom,
                     value: fromAccount.name,
                     leading: AppProfilePicture(
                       profilePictureId: fromAccount.profilePictureId,
@@ -182,16 +183,14 @@ class ReceivedReceiptView extends StatelessWidget {
                         : _poolIconColor(context, fromAccount.shieldedPool!),
                     bottomLeftText: switch (fromAccount.shieldedPool) {
                       null => null,
-                      true => 'Shielded',
-                      false => 'Transparent',
+                      true => l10n.poolShielded,
+                      false => l10n.poolTransparent,
                     },
                   )
                 else
                   _unknownFromRow(context, unknownFromKind!),
-                const _ReceivedArrowSeparator(),
-              ],
               ReviewInfoRow(
-                label: 'Amount',
+                label: l10n.commonAmount,
                 value: amountText,
                 leading: ClipOval(
                   child: Image.asset(
@@ -224,7 +223,7 @@ class ReceivedReceiptView extends StatelessWidget {
         ReviewWrapCard(
           children: [
             ReviewListRow(
-              label: 'Status',
+              label: l10n.activityReceiptStatus,
               value: statusValue,
               valueColor: statusColor,
               leadingIconName: statusIconName,
@@ -243,9 +242,12 @@ class ReceivedReceiptView extends StatelessWidget {
                     expanded: memoExpanded,
                     onToggle: onExpandMemo,
                   ),
-                ReviewListRow(label: 'Timestamp', value: timestampText),
                 ReviewListRow(
-                  label: 'Tx ID',
+                  label: l10n.commonTimestamp,
+                  value: timestampText,
+                ),
+                ReviewListRow(
+                  label: l10n.commonTxId,
                   value: txIdText,
                   trailingIconName: AppIcons.arrowTopRight,
                   onPressed: onTxIdPressed,
@@ -267,13 +269,15 @@ class ReceivedReceiptView extends StatelessWidget {
   Widget _fromRow(BuildContext context, SendReviewRecipient recipient) {
     return switch (recipient) {
       SendReviewAddressRecipient(:final address) => ReviewInfoRow(
-        label: 'From',
+        label: context.l10n.activityReceiptFrom,
         value: truncatedAddress(address),
         leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
         bottomLeftIconName: _poolIconName(isShieldedSource),
         bottomLeftIconColor: _poolIconColor(context, isShieldedSource),
-        bottomLeftText: isShieldedSource ? 'Shielded' : 'Transparent',
-        trailingActionLabel: 'Show full address',
+        bottomLeftText: isShieldedSource
+            ? context.l10n.poolShielded
+            : context.l10n.poolTransparent,
+        trailingActionLabel: context.l10n.commonShowFullAddress,
         onTrailingAction: onShowFullAddress,
       ),
       SendReviewContactRecipient(
@@ -282,14 +286,14 @@ class ReceivedReceiptView extends StatelessWidget {
         :final profilePictureId,
       ) =>
         ReviewInfoRow(
-          label: 'From',
+          label: context.l10n.activityReceiptFrom,
           value: name,
           leading: AppProfilePicture(
             profilePictureId: profilePictureId,
             size: AppProfilePictureSize.large,
           ),
           bottomLeftText: truncatedAddress(address),
-          trailingActionLabel: 'Show full address',
+          trailingActionLabel: context.l10n.commonShowFullAddress,
           onTrailingAction: onShowFullAddress,
         ),
     };
@@ -303,37 +307,16 @@ class ReceivedReceiptView extends StatelessWidget {
         kind == ReceivedReceiptUnknownFromKind.shieldedSender;
 
     return ReviewInfoRow(
-      label: 'From',
-      value: isShieldedSender ? 'Shielded sender' : 'Unknown sender',
+      label: context.l10n.activityReceiptFrom,
+      value: isShieldedSender
+          ? context.l10n.activitySenderShielded
+          : context.l10n.activitySenderUnknown,
       leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
       bottomLeftIconName: isShieldedSender ? _poolIconName(true) : null,
       bottomLeftIconColor: isShieldedSender
           ? _poolIconColor(context, true)
           : null,
-      bottomLeftText: isShieldedSender ? 'Shielded' : null,
-    );
-  }
-}
-
-/// The 24px arrow-down connector between the From and Amount rows, centered
-/// under the 32px leading-icon column.
-class _ReceivedArrowSeparator extends StatelessWidget {
-  const _ReceivedArrowSeparator();
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: SizedBox(
-        width: AppAssetSize.size,
-        child: Center(
-          child: AppIcon(
-            AppIcons.arrowDown,
-            size: AppIconSize.large,
-            color: context.colors.text.secondary,
-          ),
-        ),
-      ),
+      bottomLeftText: isShieldedSender ? context.l10n.poolShielded : null,
     );
   }
 }

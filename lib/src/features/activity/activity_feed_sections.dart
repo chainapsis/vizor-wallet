@@ -3,6 +3,9 @@
 /// under "This week" / month-year / "Earlier" titles.
 library;
 
+import 'package:intl/intl.dart' show DateFormat;
+
+import '../../core/l10n/l10n.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import 'models/activity_row_data.dart';
 import 'widgets/activity_feed.dart';
@@ -31,13 +34,16 @@ int compareActivityEntries(ActivityEntry a, ActivityEntry b) {
 /// An unmined, unexpired tx with no recorded time is treated as
 /// happening now — externally received mempool txs carry no block or
 /// creation time and must surface at the top, not sink to "Earlier".
-DateTime? transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
+DateTime? transactionActivityTimestamp(
+  rust_sync.TransactionInfo tx, {
+  DateTime? now,
+}) {
   final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
   if (seconds > BigInt.zero) {
     return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
   }
   if (tx.minedHeight == BigInt.zero && !tx.expiredUnmined) {
-    return DateTime.now();
+    return now ?? DateTime.now();
   }
   return null;
 }
@@ -45,15 +51,24 @@ DateTime? transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
 /// Sorts [entries] newest-first and groups consecutive entries that
 /// share a section title.
 List<ActivityFeedSectionData> buildActivityFeedSections(
-  List<ActivityEntry> entries,
-) {
-  final sorted = [...entries]..sort(compareActivityEntries);
+  AppLocalizations l10n,
+  List<ActivityEntry> entries, {
+  int? limit,
+}) {
+  // Dart List.sort is not stable. Preserve native/source order at equal
+  // timestamps so a later page cannot reshuffle rows already on screen.
+  final sorted = entries.indexed.toList()
+    ..sort((a, b) {
+      final order = compareActivityEntries(a.$2, b.$2);
+      return order != 0 ? order : a.$1.compareTo(b.$1);
+    });
+  final visible = limit == null ? sorted : sorted.take(limit);
   final sections = <ActivityFeedSectionData>[];
   List<ActivityRowData>? currentRows;
   String? currentTitle;
 
-  for (final entry in sorted) {
-    final title = _activitySectionTitle(entry.timestamp);
+  for (final (_, entry) in visible) {
+    final title = _activitySectionTitle(l10n, entry.timestamp);
     if (title != currentTitle) {
       currentTitle = title;
       currentRows = <ActivityRowData>[];
@@ -65,40 +80,21 @@ List<ActivityFeedSectionData> buildActivityFeedSections(
   return sections;
 }
 
-String _activitySectionTitle(DateTime? timestamp) {
-  if (timestamp == null) return 'Earlier';
+String _activitySectionTitle(AppLocalizations l10n, DateTime? timestamp) {
+  if (timestamp == null) return l10n.activitySectionEarlier;
 
   final local = timestamp.toLocal();
   final now = DateTime.now();
   final weekStart = _startOfWeek(now);
   final nextWeekStart = weekStart.add(const Duration(days: 7));
   if (!local.isBefore(weekStart) && local.isBefore(nextWeekStart)) {
-    return 'This week';
+    return l10n.activitySectionThisWeek;
   }
 
-  return '${_monthName(local.month)} ${local.year}';
+  return DateFormat.yMMMM(l10n.localeName).format(local);
 }
 
 DateTime _startOfWeek(DateTime date) {
   final localDate = DateTime(date.year, date.month, date.day);
   return localDate.subtract(Duration(days: date.weekday - DateTime.monday));
-}
-
-String _monthName(int month) {
-  const months = [
-    '',
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  return months[month];
 }

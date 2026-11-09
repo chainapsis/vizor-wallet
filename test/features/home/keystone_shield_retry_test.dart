@@ -14,14 +14,18 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/home/services/transparent_shielding_service.dart';
 import 'package:zcash_wallet/src/features/home/widgets/keystone_shield_signing_overlay.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 
 /// A Keystone shield refused only because private recovery has not yet
 /// covered the wallet's latest block keeps the user's signature: the overlay
@@ -74,8 +78,16 @@ void main() {
     await tester.pumpWidget(_app(onComplete: () => completed++));
     await _getSignature(tester);
 
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(KeystoneShieldSigningOverlay)),
+    );
+    expect(container.read(pendingActivityEvidenceProvider).observedAt, isEmpty);
+
     expect(api.broadcasts, [_signature]);
-    expect(find.text(kShieldWaitingForPrivateRecoveryMessage), findsOneWidget);
+    expect(
+      find.text(testL10n.homeShieldWaitingForPrivateRecovery),
+      findsOneWidget,
+    );
     final retry = find.text('Try again');
     expect(retry, findsOneWidget);
     expect(completed, 0);
@@ -87,6 +99,26 @@ void main() {
     expect(api.broadcasts, [_signature, _signature]);
     expect(api.scans, 1);
     expect(completed, 1);
+    expect(
+      container.read(pendingActivityEvidenceProvider).observedAt.keys,
+      contains(('account-1', 'ab')),
+    );
+  });
+
+  testWidgets('an upgrade hold before signing shows the upgrade copy', (
+    tester,
+  ) async {
+    api.createError = StateError(
+      "Transactions can't be sent this close to the network upgrade. "
+      'Try again after it activates.',
+    );
+    await tester.pumpWidget(_app(onComplete: () {}));
+    await _settle(tester);
+
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
+    expect(find.text('Shield balance failed. Please try again.'), findsNothing);
+    expect(find.text('Get Signature'), findsNothing);
+    expect(api.broadcasts, isEmpty);
   });
 
   testWidgets('a final refusal offers no retry', (tester) async {
@@ -101,7 +133,10 @@ void main() {
 
     expect(api.broadcasts, [_signature]);
     expect(find.text('Try again'), findsNothing);
-    expect(find.text(kShieldWaitingForPrivateRecoveryMessage), findsNothing);
+    expect(
+      find.text(testL10n.homeShieldWaitingForPrivateRecovery),
+      findsNothing,
+    );
     expect(find.text('Back to Wallet'), findsOneWidget);
   });
 }
@@ -158,7 +193,10 @@ Widget _app({required VoidCallback onComplete}) {
     ],
     child: AppTheme(
       data: AppThemeData.dark,
-      child: MaterialApp.router(routerConfig: router),
+      child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
+        routerConfig: router,
+      ),
     ),
   );
 }
@@ -186,6 +224,12 @@ class _SignedScanState extends State<_SignedScan> {
 }
 
 class _ShieldApi extends RustLibApi {
+  @override
+  Future<void> crateApiSyncDiscardProposal({
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) async {}
+
   _ShieldApi() {
     current = this;
   }
@@ -194,11 +238,13 @@ class _ShieldApi extends RustLibApi {
 
   final broadcasts = <List<int>>[];
   List<ApiWalletError> refusals = [];
+  Object? createError;
   int scans = 0;
 
   void reset() {
     broadcasts.clear();
     refusals = [];
+    createError = null;
     scans = 0;
   }
 
@@ -208,12 +254,17 @@ class _ShieldApi extends RustLibApi {
     required String lightwalletdUrl,
     required String network,
     required String accountUuid,
-  }) async => ShieldTransparentPcztResult(
-    pcztBytes: Uint8List.fromList([1]),
-    feeZatoshi: BigInt.from(10000),
-    shieldedZatoshi: BigInt.from(90000),
-    needsSaplingParams: false,
-  );
+    required String sendFlowId,
+  }) async {
+    if (createError case final error?) throw error;
+    return ShieldTransparentPcztResult(
+      proposalId: BigInt.from(77),
+      pcztBytes: Uint8List.fromList([1]),
+      feeZatoshi: BigInt.from(10000),
+      shieldedZatoshi: BigInt.from(90000),
+      needsSaplingParams: false,
+    );
+  }
 
   @override
   Future<Uint8List> crateApiSyncAddProofsToPczt({
@@ -236,19 +287,25 @@ class _ShieldApi extends RustLibApi {
   ];
 
   @override
-  Future<ExtractAndBroadcastPcztResult> crateApiSyncExtractAndBroadcastPczt({
+  Future<StoreAndBroadcastPcztsResult>
+  crateApiSyncStoreAndBroadcastSignedPcztsForProposal({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
-    required List<int> pcztWithProofsBytes,
-    required List<int> pcztWithSignaturesBytes,
+    required BigInt proposalId,
+    required String sendFlowId,
+    required List<Uint8List> pcztWithProofs,
+    required List<Uint8List> pcztWithSignatures,
     String? spendParamsPath,
     String? outputParamsPath,
   }) async {
-    broadcasts.add(List.of(pcztWithSignaturesBytes));
+    broadcasts.add(List.of(pcztWithSignatures.single));
     if (refusals.isNotEmpty) throw refusals.removeAt(0);
-    return const ExtractAndBroadcastPcztResult(
-      txid: 'ab',
+    return const StoreAndBroadcastPcztsResult(
+      notices: [],
+      broadcastedCount: 1,
+      totalCount: 1,
+      txids: 'ab',
       status: 'broadcasted',
     );
   }
@@ -284,7 +341,9 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   initialAccountState: _accountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  rpcEndpointConfig: defaultRpcEndpointConfig(
+    'main',
+  ).copyWith(presetId: kManualUsRpcEndpointPresetId),
   themeMode: ThemeMode.dark,
   privacyModeEnabled: false,
   isPasswordConfigured: true,

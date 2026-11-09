@@ -2,9 +2,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/rpc_endpoint_config.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
+import '../core/l10n/l10n.dart';
 
-typedef RpcEndpointChainNameGetter =
-    Future<String> Function(String lightwalletdUrl);
+typedef RpcEndpointProbeGetter =
+    Future<rust_wallet.LightwalletdEndpointProbe> Function(
+      String lightwalletdUrl,
+    );
 
 enum RpcEndpointLatencyStatus { checking, available, unavailable, wrongNetwork }
 
@@ -26,12 +29,12 @@ class RpcEndpointLatencySample {
   final RpcEndpointLatencyStatus status;
   final Duration? latency;
 
-  String get label {
+  String label(AppLocalizations l10n) {
     return switch (status) {
-      RpcEndpointLatencyStatus.checking => 'Checking...',
+      RpcEndpointLatencyStatus.checking => l10n.commonChecking,
       RpcEndpointLatencyStatus.available => '${latency!.inMilliseconds}ms',
-      RpcEndpointLatencyStatus.unavailable => 'Unavailable',
-      RpcEndpointLatencyStatus.wrongNetwork => 'Wrong network',
+      RpcEndpointLatencyStatus.unavailable => l10n.endpointLatencyUnavailable,
+      RpcEndpointLatencyStatus.wrongNetwork => l10n.endpointLatencyWrongNetwork,
     };
   }
 }
@@ -58,27 +61,26 @@ class RpcEndpointLatencyState {
 Future<RpcEndpointLatencySample> measureRpcEndpointLatency({
   required String lightwalletdUrl,
   required String expectedNetworkName,
-  required RpcEndpointChainNameGetter getChainName,
-  DateTime Function() now = DateTime.now,
+  required RpcEndpointProbeGetter getProbe,
 }) async {
-  // Use the same lightwalletd chain-info call as endpoint saving so the
-  // displayed latency reflects a real gRPC/TLS response, not only TCP reachability.
-  final startedAt = now();
+  // Rust times the existing connection and chain-info request after its bridge
+  // worker starts, so queued work is not reported as endpoint latency.
   try {
-    final chainName = await getChainName(lightwalletdUrl);
-    final elapsed = now().difference(startedAt);
-    if (chainName != expectedNetworkName) {
+    final probe = await getProbe(lightwalletdUrl);
+    if (probe.chainName != expectedNetworkName) {
       return const RpcEndpointLatencySample.wrongNetwork();
     }
-    return RpcEndpointLatencySample.available(elapsed);
+    return RpcEndpointLatencySample.available(
+      Duration(milliseconds: probe.latencyMs),
+    );
   } catch (_) {
     return const RpcEndpointLatencySample.unavailable();
   }
 }
 
-final rpcEndpointChainNameGetterProvider = Provider<RpcEndpointChainNameGetter>(
+final rpcEndpointProbeGetterProvider = Provider<RpcEndpointProbeGetter>(
   (ref) =>
-      (lightwalletdUrl) => rust_wallet.getLightwalletdChainName(
+      (lightwalletdUrl) => rust_wallet.probeLightwalletdEndpoint(
         lightwalletdUrl: lightwalletdUrl,
       ),
 );
@@ -91,8 +93,12 @@ class RpcEndpointLatencyNotifier extends Notifier<RpcEndpointLatencyState> {
 
   Future<void> refresh(String networkName) async {
     final generation = ++_generation;
-    final presets = rpcEndpointPresetsForNetwork(networkName);
-    final getChainName = ref.read(rpcEndpointChainNameGetterProvider);
+    // Automatic is a policy row, not a second physical server. Its
+    // compatibility URL is measured by the explicit US preset only.
+    final presets = rpcEndpointPresetsForNetwork(
+      networkName,
+    ).where((preset) => !preset.isAutomatic).toList();
+    final getProbe = ref.read(rpcEndpointProbeGetterProvider);
 
     var nextState = state;
     for (final preset in presets) {
@@ -108,7 +114,7 @@ class RpcEndpointLatencyNotifier extends Notifier<RpcEndpointLatencyState> {
         _measurePreset(
           preset: preset,
           networkName: networkName,
-          getChainName: getChainName,
+          getProbe: getProbe,
           generation: generation,
         ),
     ]);
@@ -117,7 +123,7 @@ class RpcEndpointLatencyNotifier extends Notifier<RpcEndpointLatencyState> {
   Future<void> _measurePreset({
     required RpcEndpointPreset preset,
     required String networkName,
-    required RpcEndpointChainNameGetter getChainName,
+    required RpcEndpointProbeGetter getProbe,
     required int generation,
   }) async {
     final normalizedUrl = normalizeRpcEndpointUrl(
@@ -127,7 +133,7 @@ class RpcEndpointLatencyNotifier extends Notifier<RpcEndpointLatencyState> {
     final sample = await measureRpcEndpointLatency(
       lightwalletdUrl: normalizedUrl,
       expectedNetworkName: networkName,
-      getChainName: getChainName,
+      getProbe: getProbe,
     );
     if (generation != _generation) return;
     state = state.copyWithSample(normalizedUrl, sample);

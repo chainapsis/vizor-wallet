@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/widgetbook/ledger_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   test('Ledger folder keeps its playgrounds separate from generic screens', () {
@@ -43,9 +44,10 @@ void main() {
       ),
     );
 
-    expect(find.text('Check your Ledger'), findsOne);
+    expect(find.text('Sign transaction'), findsOne);
+    expect(find.text('Review on Ledger'), findsOne);
     expect(find.text('Transaction 2 of 3'), findsOne);
-    expect(find.text('Zcash · Ledger'), findsOne);
+    expect(find.text('Ledger Flex · Bluetooth'), findsOne);
     expect(tester.takeException(), isNull);
   });
 
@@ -62,7 +64,7 @@ void main() {
     );
 
     expect(find.text('Ledger needs attention'), findsOne);
-    expect(find.text('Action needed'), findsOne);
+    expect(find.text('Reconnect'), findsOne);
     expect(
       find.text('Reconnect your Ledger and open the Zcash app.'),
       findsOne,
@@ -81,7 +83,8 @@ void main() {
     await _pumpUseCase(tester, buildLedgerDevicePickerEmptyUseCase);
     await _pumpAsyncState(tester);
     expect(find.text('No Ledger devices found'), findsOne);
-    expect(find.text('Try again'), findsOne);
+    expect(find.text('Search again'), findsOne);
+    expect(find.text('Connection help'), findsOne);
 
     await _pumpUseCase(tester, buildLedgerDevicePickerPermissionDeniedUseCase);
     await _pumpAsyncState(tester);
@@ -177,6 +180,7 @@ Future<void> _pumpUseCase(WidgetTester tester, WidgetBuilder builder) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, child) =>
           AppTheme(data: AppThemeData.light, child: child!),
       home: Builder(builder: builder),

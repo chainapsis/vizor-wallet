@@ -21,7 +21,7 @@ class ReceiveAddressBusyException implements Exception {
 
   @override
   String toString() {
-    return 'Wallet is busy. Try again in a moment.';
+    return 'Wallet is busy. Try again in a moment.'; // l10n-ignore: exception text; only logged
   }
 }
 
@@ -58,7 +58,7 @@ class ReceiveAddressService {
     final network = _network;
 
     return _withDatabaseLockRetry(
-      operationName: 'load shielded receive address',
+      operationName: 'load shielded receive address', // l10n-ignore: log label
       operation: () => rust_wallet.getUnifiedAddress(
         dbPath: dbPath,
         network: network,
@@ -78,7 +78,8 @@ class ReceiveAddressService {
     final network = _network;
 
     final transparentAddress = await _withDatabaseLockRetry(
-      operationName: 'load transparent receive address',
+      operationName:
+          'load transparent receive address', // l10n-ignore: log label
       operation: () => rust_wallet.getTransparentReceiveAddress(
         dbPath: dbPath,
         network: network,
@@ -117,7 +118,8 @@ class ReceiveAddressService {
     final network = _network;
 
     return _withDatabaseLockRetry(
-      operationName: 'reserve shielded receive address',
+      operationName:
+          'reserve shielded receive address', // l10n-ignore: log label
       operation: () => rust_sync.getNextAvailableAddress(
         dbPath: dbPath,
         network: network,

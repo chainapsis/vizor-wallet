@@ -15,8 +15,10 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart'
     show kZcashDefaultCurrencyTicker;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_segmented_control.dart';
 import '../../../core/widgets/dot_qr_shape.dart';
 
 /// Which receiving pool an address belongs to.
@@ -33,6 +35,7 @@ class ReceiveTabs extends StatelessWidget {
     this.labelStyle,
     this.labelFontWeight = FontWeight.w400,
     this.alwaysDarkSelected = false,
+    this.position,
     super.key,
   });
 
@@ -53,137 +56,57 @@ class ReceiveTabs extends StatelessWidget {
   /// desktop pane lightens it on the transparent tab.
   final bool alwaysDarkSelected;
 
+  /// Pager page to track mid-swipe; see [AppSegmentedControl.position].
+  final double? position;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final shieldedActive = selectedType == ReceiveAddressType.shielded;
-    final darkSelected = alwaysDarkSelected || shieldedActive;
-    final activeBg = darkSelected
-        ? colors.background.inverse
-        : colors.background.ground;
-    final activeText = darkSelected ? colors.text.inverse : colors.text.accent;
+    // 0 is the dark shielded chip, 1 the light transparent one; a tracked
+    // position blends them mid-slide instead of flipping halfway.
+    final lightness = alwaysDarkSelected
+        ? 0.0
+        : position?.clamp(0.0, 1.0) ??
+              (selectedType == ReceiveAddressType.shielded ? 0.0 : 1.0);
+    final activeBg = Color.lerp(
+      colors.background.inverse,
+      colors.background.ground,
+      lightness,
+    )!;
+    final activeText = Color.lerp(
+      colors.text.inverse,
+      colors.text.accent,
+      lightness,
+    )!;
 
-    return Container(
+    return AppSegmentedControl<ReceiveAddressType>(
       key: const ValueKey('receive_address_type_tabs'),
       width: width,
       height: height,
-      decoration: ShapeDecoration(
-        color: colors.background.raised,
-        shape: StadiumBorder(),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
-            alignment: selectedType == ReceiveAddressType.shielded
-                ? Alignment.centerLeft
-                : Alignment.centerRight,
-            child: Padding(
-              padding: const EdgeInsets.all(2),
-              child: Container(
-                key: const ValueKey('receive_address_type_tabs_indicator'),
-                width: (width - 8) / 2,
-                decoration: ShapeDecoration(
-                  color: activeBg,
-                  shape: const StadiumBorder(),
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              _ReceiveTab(
-                key: const ValueKey('receive_address_type_tab_shielded'),
-                label: 'Shielded',
-                iconName: AppIcons.shieldKeyhole,
-                active: selectedType == ReceiveAddressType.shielded,
-                activeTextColor: activeText,
-                inactiveTextColor: colors.text.accent,
-                iconSize: iconSize,
-                iconGap: iconGap,
-                labelStyle: labelStyle,
-                labelFontWeight: labelFontWeight,
-                onTap: () => onChanged(ReceiveAddressType.shielded),
-              ),
-              _ReceiveTab(
-                key: const ValueKey('receive_address_type_tab_transparent'),
-                label: 'Transparent',
-                iconName: AppIcons.transparentBalance,
-                active: selectedType == ReceiveAddressType.transparent,
-                activeTextColor: activeText,
-                inactiveTextColor: colors.text.accent,
-                iconSize: iconSize,
-                iconGap: iconGap,
-                labelStyle: labelStyle,
-                labelFontWeight: labelFontWeight,
-                onTap: () => onChanged(ReceiveAddressType.transparent),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReceiveTab extends StatelessWidget {
-  const _ReceiveTab({
-    required this.label,
-    required this.iconName,
-    required this.active,
-    required this.activeTextColor,
-    required this.inactiveTextColor,
-    required this.iconSize,
-    required this.iconGap,
-    required this.labelStyle,
-    required this.labelFontWeight,
-    required this.onTap,
-    super.key,
-  });
-
-  final String label;
-  final String iconName;
-  final bool active;
-  final Color activeTextColor;
-  final Color inactiveTextColor;
-  final double iconSize;
-  final double iconGap;
-  final TextStyle? labelStyle;
-  final FontWeight? labelFontWeight;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = active ? activeTextColor : inactiveTextColor;
-    return Expanded(
-      child: MouseRegion(
-        cursor: active ? SystemMouseCursors.basic : SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: active ? null : onTap,
-          child: SizedBox.expand(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AppIcon(iconName, size: iconSize, color: color),
-                SizedBox(width: iconGap),
-                Flexible(
-                  child: Text(
-                    label,
-                    overflow: TextOverflow.ellipsis,
-                    style: (labelStyle ?? AppTypography.labelMedium).copyWith(
-                      color: color,
-                      fontWeight: labelFontWeight,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+      selected: selectedType,
+      onChanged: onChanged,
+      selectedBackground: activeBg,
+      selectedForeground: activeText,
+      indicatorKey: const ValueKey('receive_address_type_tabs_indicator'),
+      iconSize: iconSize,
+      iconGap: iconGap,
+      labelStyle: labelStyle,
+      labelFontWeight: labelFontWeight,
+      position: position,
+      segments: [
+        AppSegment(
+          value: ReceiveAddressType.shielded,
+          label: context.l10n.poolShielded,
+          icon: AppIcons.shieldKeyhole,
+          key: ValueKey('receive_address_type_tab_shielded'),
         ),
-      ),
+        AppSegment(
+          value: ReceiveAddressType.transparent,
+          label: context.l10n.poolTransparent,
+          icon: AppIcons.transparentBalance,
+          key: ValueKey('receive_address_type_tab_transparent'),
+        ),
+      ],
     );
   }
 }
@@ -265,7 +188,7 @@ class ReceiveQrSurface extends StatelessWidget {
             )
           : Center(
               child: Text(
-                "We couldn't load your address. Try again in a moment.",
+                context.l10n.receiveAddressLoadFailed,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.secondary,
@@ -521,7 +444,7 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
         height: widget.size,
         child: Center(
           child: Text(
-            'QR unavailable',
+            context.l10n.receiveQrUnavailable,
             style: AppTypography.bodySmall.copyWith(
               color: context.colors.text.secondary,
             ),
@@ -622,7 +545,8 @@ class ReceiveRenewButton extends StatelessWidget {
                       AppIcons.renew,
                       size: AppIconSize.large,
                       color: colors.text.homeCard,
-                      semanticLabel: 'Generate new shielded address',
+                      semanticLabel:
+                          context.l10n.receiveGenerateNewShieldedAddress,
                     ),
             ),
           ),
@@ -696,7 +620,7 @@ class ReceiveAddressLine extends StatelessWidget {
             iconSize: helpIconSize,
             iconColor: helpIconColor,
             onTap: onShowHelp,
-            semanticLabel: 'About this address type',
+            semanticLabel: context.l10n.receiveAboutAddressType,
           ),
         ],
       ),
@@ -708,7 +632,7 @@ List<TextSpan> _addressSpans(BuildContext context, String address) {
   if (address.isEmpty) {
     return [
       TextSpan(
-        text: "Address couldn't be loaded. Try again.",
+        text: context.l10n.receiveAddressCouldNotLoad,
         style: TextStyle(color: context.colors.text.secondary),
       ),
     ];
@@ -724,7 +648,7 @@ String _compactAddress(String address) {
   if (address.length <= leadingLength + trailingLength + separator.length) {
     return address;
   }
-  return '${address.substring(0, leadingLength)}$separator'
+  return '${address.substring(0, leadingLength)}$separator' // l10n-ignore: address text
       '${address.substring(address.length - trailingLength)}';
 }
 
@@ -895,19 +819,24 @@ class ReceiveAddressInfoItem {
 /// Copy for the address-type explainer, shared by the desktop info
 /// dialog and the mobile info sheet so the two form factors cannot
 /// drift apart.
-String receiveAddressInfoTitle(ReceiveAddressType type) =>
-    type == ReceiveAddressType.shielded
-    ? 'Shielded address'
-    : 'Transparent address';
+String receiveAddressInfoTitle(
+  AppLocalizations l10n,
+  ReceiveAddressType type,
+) => type == ReceiveAddressType.shielded
+    ? l10n.commonShieldedAddress
+    : l10n.commonTransparentAddress;
 
-String receiveAddressInfoSubtitle(ReceiveAddressType type) =>
-    type == ReceiveAddressType.shielded
-    ? 'Strong privacy by default.'
-    : 'Publicly visible';
+String receiveAddressInfoSubtitle(
+  AppLocalizations l10n,
+  ReceiveAddressType type,
+) => type == ReceiveAddressType.shielded
+    ? l10n.receiveInfoShieldedSubtitle
+    : l10n.receiveInfoTransparentSubtitle;
 
 /// [touchUi] picks the interaction verb in the renew bullet ("tap" on
 /// phones, "click" with a pointer).
 List<ReceiveAddressInfoItem> receiveAddressInfoItems(
+  AppLocalizations l10n,
   ReceiveAddressType type, {
   required bool touchUi,
 }) {
@@ -916,19 +845,18 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
       ReceiveAddressInfoItem(
         iconName: AppIcons.shieldKeyhole,
         text: touchUi
-            ? 'Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.'
-            : 'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
+            ? l10n.receiveInfoShieldedHiddenMobile
+            : l10n.receiveInfoShieldedHiddenDesktop,
       ),
       ReceiveAddressInfoItem(
         iconName: AppIcons.renew,
-        text:
-            'A new Zcash shielded address is generated only when you '
-            '${touchUi ? 'tap' : 'click'} the renew button.',
+        text: touchUi
+            ? l10n.receiveInfoShieldedRenewTap
+            : l10n.receiveInfoShieldedRenewClick,
       ),
-      const ReceiveAddressInfoItem(
+      ReceiveAddressInfoItem(
         iconName: AppIcons.wallet,
-        text:
-            'Each new address is a diversified address derived from the same key. They all receive to the same wallet.',
+        text: l10n.receiveInfoShieldedDiversified,
       ),
     ];
   }
@@ -936,25 +864,20 @@ List<ReceiveAddressInfoItem> receiveAddressInfoItems(
     ReceiveAddressInfoItem(
       iconName: AppIcons.unlock,
       text: touchUi
-          ? 'All tx details — sender, receiver, and amount — are publicly visible on-chain.'
-          : 'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
+          ? l10n.receiveInfoTransparentPublicMobile
+          : l10n.receiveInfoTransparentPublicDesktop,
     ),
-    const ReceiveAddressInfoItem(
+    ReceiveAddressInfoItem(
       iconName: AppIcons.dragon,
-      text:
-          'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
+      text: l10n.receiveInfoTransparentExchanges,
     ),
-    const ReceiveAddressInfoItem(
+    ReceiveAddressInfoItem(
       iconName: AppIcons.renew,
-      text:
-          'After this address receives ZEC and Vizor syncs, your next transparent address will automatically change. Previous addresses still belong to this wallet.',
+      text: l10n.receiveInfoTransparentRotates,
     ),
     ReceiveAddressInfoItem(
       iconName: touchUi ? AppIcons.shieldKeyholeOutline : AppIcons.shieldAsset,
-      text:
-          'After receiving $kZcashDefaultCurrencyTicker to your transparent '
-          "address, Vizor will guide you to shield the balance. Otherwise, "
-          "you won't be able to send it.",
+      text: l10n.receiveInfoTransparentShieldFirst(kZcashDefaultCurrencyTicker),
     ),
   ];
 }

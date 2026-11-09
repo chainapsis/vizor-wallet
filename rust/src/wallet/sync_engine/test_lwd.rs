@@ -14,8 +14,8 @@ use zcash_client_backend::data_api::transparent_ledger::{
     TransparentLedgerMode, TransparentLedgerWrite,
 };
 use zcash_client_backend::proto::service::{
-    compact_tx_streamer_client::CompactTxStreamerClient, BlockId, RawTransaction, SendResponse,
-    TxFilter,
+    compact_tx_streamer_client::CompactTxStreamerClient, BlockId, LightdInfo, RawTransaction,
+    SendResponse, TxFilter,
 };
 
 use crate::wallet::{db::open_wallet_db_with_timeout, network::WalletNetwork};
@@ -244,6 +244,13 @@ impl CapturingLwd {
                                     };
                                     grpc.header("grpc-status", "0")
                                         .body(Full::new(grpc_frame(&message)))
+                                } else if path.ends_with("/GetLightdInfo") {
+                                    grpc.header("grpc-status", "0").body(Full::new(grpc_frame(
+                                        &LightdInfo {
+                                            chain_name: "main".to_string(),
+                                            ..Default::default()
+                                        },
+                                    )))
                                 } else if path.ends_with("/GetLatestBlock") {
                                     let message = BlockId {
                                         height: tip_height,

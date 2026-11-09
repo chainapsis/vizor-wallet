@@ -50,15 +50,16 @@ PY
 }
 
 run_flutter_phase() {
-  local test_file="$1"
-  local form_factor_args=()
+  # Never expand an empty array here: macOS bash 3.2 aborts on one under
+  # `set -u`, and inside the callers' `if` the runner then exits with 0.
+  local flutter_args=("$1" -d "$FLUTTER_DEVICE")
+  shift
+  flutter_args+=("$@")
   if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
-    form_factor_args+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
+    flutter_args+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
   fi
   fvm flutter test \
-    "$test_file" \
-    -d "$FLUTTER_DEVICE" \
-    "${form_factor_args[@]}" \
+    "${flutter_args[@]}" \
     --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
     --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
     --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
@@ -111,7 +112,11 @@ raise SystemExit("Timed out waiting for Ironwood E2E driver")
 PY
 
 echo "running migration restart preparation phase"
-if ! run_flutter_phase "$PREPARE_TEST_FILE"; then
+# `flutter test` uninstalls a mobile app when it finishes, and the first launch
+# of a reinstalled iOS app clears the Keychain it left behind. Keep the install
+# so the resume phase restarts the same app with its wallet DB, Keychain and
+# preferences. Desktop runs never uninstall.
+if ! run_flutter_phase "$PREPARE_TEST_FILE" --no-uninstall; then
   sed -n '1,320p' "$DRIVER_LOG" >&2 || true
   exit 1
 fi

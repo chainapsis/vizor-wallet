@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../core/feedback/app_haptics.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
@@ -60,7 +61,8 @@ class _MobileSecretPassphraseScreenState
   String? _mnemonic;
   bool _revealed = false;
   bool _copied = false;
-  String? _error;
+  // Worded in build: initState cannot read localizations.
+  Object? _error;
   Timer? _copyResetTimer;
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
@@ -100,7 +102,7 @@ class _MobileSecretPassphraseScreenState
       });
     } catch (e, st) {
       log('MobileSecretPassphrase: ERROR generating mnemonic: $e\n$st');
-      _error = onboardingSubmitErrorMessage(e);
+      _error = e;
     }
   }
 
@@ -186,15 +188,15 @@ class _MobileSecretPassphraseScreenState
           context,
         ).at(OnboardingFlow.create, OnboardingStage.secretPassphrase).value,
         onBack: () => Navigator.of(context).maybePop(),
-        title: 'Secret Passphrase',
-        subtitle: 'The Master Key to your wallet.',
+        title: context.l10n.secretPassphraseTitle,
+        subtitle: context.l10n.onboardingSecretPassphraseSubtitleMobile,
         bottomArea: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (_error != null) ...[
               Text(
-                _error!,
+                onboardingSubmitErrorMessage(context.l10n, _error!),
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.destructive,
@@ -207,7 +209,11 @@ class _MobileSecretPassphraseScreenState
               expand: true,
               onPressed: _error != null ? null : _continue,
               trailing: const AppIcon(AppIcons.chevronForward),
-              child: Text(_revealed ? 'Continue' : 'Reveal phrase'),
+              child: Text(
+                _revealed
+                    ? context.l10n.commonContinue
+                    : context.l10n.onboardingSecretPassphraseRevealMobile,
+              ),
             ),
           ],
         ),
@@ -270,7 +276,7 @@ class SecretPassphraseRevealWarningCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           Text(
-            'You are about to see your\nSecret Passphrase.',
+            context.l10n.onboardingSecretPassphraseAboutToSeeMobile,
             textAlign: TextAlign.center,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.text.homeCard,
@@ -280,9 +286,7 @@ class SecretPassphraseRevealWarningCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             child: Text(
-              'This phrase is the master key to your funds. Keep it safe, '
-              'keep it secret. If you lose it, no one can help you recover '
-              'your wallet. Not even us.',
+              context.l10n.onboardingSecretPassphraseWarning,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.homeCard.withValues(alpha: 0.7),

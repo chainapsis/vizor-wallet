@@ -1,3 +1,14 @@
+import '../src/core/navigation/external_action_guard_provider.dart';
+import '../src/core/layout/mobile/mobile_adaptive_frame.dart';
+import '../src/core/layout/mobile/mobile_navigation_scope.dart';
+import '../src/services/native_mobile_navigation_geometry.dart';
+import '../src/providers/sync_display_progress_provider.dart';
+import '../src/core/navigation/mobile_shield_page.dart';
+import '../figma_compare/ledger_shield_capture.dart';
+import '../figma_compare/keystone_shield_capture.dart';
+import '../src/features/home/widgets/mobile/shield/mobile_shield_backdrop.dart';
+import '../src/features/settings/widgets/viewing_key_content.dart';
+import '../src/rust/api/wallet.dart' show AccountViewingKeys;
 import '../src/features/onboarding/import/desktop_import_method_selection_screen.dart';
 import '../src/features/onboarding/import/desktop_hardware_selection_screen.dart';
 import '../src/providers/enhance_pir_provider.dart';
@@ -28,6 +39,7 @@ import '../src/features/payment_links/services/payment_link_received_store.dart'
 import '../src/features/payment_links/services/payment_link_recovery_reconciler.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/config/swap_feature_config.dart';
+import '../src/core/navigation/mobile_routes.dart';
 import '../src/core/layout/app_layout.dart';
 import '../src/features/activity/activity_eta_provider.dart';
 import '../src/features/swap/providers/swap_activity_store.dart';
@@ -38,18 +50,23 @@ import '../src/core/layout/mobile/app_mobile_tab_bar.dart';
 import '../src/core/privacy/sensitive_privacy_overlay.dart';
 import '../src/core/security/software_wallet_secret.dart';
 import '../src/core/profile_pictures.dart';
+import '../src/core/l10n/app_language.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/features/accounts/screens/accounts_screen.dart';
 import '../src/features/about/screens/about_screen.dart';
 import '../src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
+import '../src/features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
 import '../src/features/accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../src/features/activity/swap_activity_row_items_provider.dart';
 import '../src/features/activity/gift_card_activity_index.dart';
 import '../src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../src/features/home/screens/home_screen.dart';
 import '../src/features/home/screens/mobile/mobile_home_screen.dart';
+import '../src/features/home/providers/nu7_announcement_provider.dart';
+import '../src/features/home/widgets/nu7_announcement.dart';
+import '../src/features/home/services/transparent_shielding_service.dart';
 import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../src/features/migration/screens/ironwood_migration_flow_screen.dart';
@@ -100,6 +117,7 @@ import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
 import '../src/services/biometric_unlock.dart';
+import '../src/providers/pending_activity_evidence_provider.dart';
 
 const _previewMnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
@@ -117,6 +135,16 @@ bool _previewMnemonicValidator(String mnemonic) => mnemonic.isNotEmpty;
 /// wrapping, but not a real bech32-encoded UFVK.
 const _previewUfvk =
     'uview1qthqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    'previewonly';
+
+const _previewUivk =
+    'uivk1qthqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
     'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
     'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
     'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
@@ -324,6 +352,29 @@ Widget buildMobileUnlockFaceIdUseCase(BuildContext context) {
       ),
       enabled: true,
     ),
+  );
+}
+
+Widget buildMobileUnlockFaceIdOptInUseCase(BuildContext context) =>
+    _buildMobileUnlockOptInUseCase(BiometricKind.face);
+
+Widget buildMobileUnlockTouchIdOptInUseCase(BuildContext context) =>
+    _buildMobileUnlockOptInUseCase(BiometricKind.touchId);
+
+Widget buildMobileUnlockFingerprintOptInUseCase(BuildContext context) =>
+    _buildMobileUnlockOptInUseCase(BiometricKind.fingerprint);
+
+Widget _buildMobileUnlockOptInUseCase(BiometricKind kind) {
+  return _buildMobileUnlockUseCase(
+    BiometricUnlockState(
+      availability: BiometricAvailability(
+        supported: true,
+        enrolled: true,
+        kind: kind,
+      ),
+      enabled: false,
+    ),
+    constrainToDesignSize: false,
   );
 }
 
@@ -590,10 +641,17 @@ Widget buildMobileSecretPassphraseProtectedUseCase(BuildContext context) {
   return const _MobileSecretPassphraseProtectedPreview();
 }
 
-Widget buildMobileSettingsViewingKeyRevealUseCase(BuildContext context) {
-  return const _MobilePreviewFrame(
-    child: IgnorePointer(
-      child: MobileViewingKeyRevealPreview(ufvk: _previewUfvk),
+Widget buildMobileSettingsViewingKeyRevealUseCase(
+  BuildContext context, {
+  ViewingKeyType? type = ViewingKeyType.full,
+  ViewingKeyFormat format = ViewingKeyFormat.qr,
+}) {
+  return _MobilePreviewFrame(
+    child: MobileViewingKeyRevealPreview(
+      viewingKeys: AccountViewingKeys(ufvk: _previewUfvk, uivk: _previewUivk),
+      account: _accountsDesignState.activeAccount!,
+      initialType: type,
+      initialFormat: format,
     ),
   );
 }
@@ -737,7 +795,10 @@ Widget buildSettingsMainUseCase(BuildContext context) {
 }
 
 /// Real mobile settings pinned to the top of the Account group.
-Widget buildMobileSettingsMainUseCase(BuildContext context) {
+Widget buildMobileSettingsMainUseCase(
+  BuildContext context, {
+  bool interactive = false,
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -753,9 +814,12 @@ Widget buildMobileSettingsMainUseCase(BuildContext context) {
         () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
       ),
     ],
-    child: const _MobilePreviewFrame(
+    child: _MobilePreviewFrame(
       constrainToDesignSize: false,
-      child: IgnorePointer(child: _MobileSettingsMainPreview()),
+      child: IgnorePointer(
+        ignoring: !interactive,
+        child: const _MobileSettingsMainPreview(),
+      ),
     ),
   );
 }
@@ -1094,6 +1158,87 @@ Widget buildDesktopHomeSetupUseCase(BuildContext context) =>
 Widget buildDesktopHomeSetupImportingUseCase(BuildContext context) =>
     _buildDesktopSetupHomeUseCase(importing: true);
 
+Widget buildDesktopHomeCachedBalanceUseCase(BuildContext context) =>
+    _buildDesktopHomeStartupUseCase(cached: true);
+
+Widget buildDesktopHomeActivitySkeletonUseCase(BuildContext context) =>
+    _buildHomeActivityComparison(mobile: false, loading: true);
+
+Widget buildDesktopHomeFiveActivitiesUseCase(BuildContext context) =>
+    _buildHomeActivityComparison(mobile: false, loading: false);
+
+Widget buildMobileHomeActivitySkeletonUseCase(BuildContext context) =>
+    _buildHomeActivityComparison(mobile: true, loading: true);
+
+Widget buildMobileHomeFiveActivitiesUseCase(BuildContext context) =>
+    _buildHomeActivityComparison(mobile: true, loading: false);
+
+/// Identical account, balance, banners and viewport; only Activity changes.
+Widget _buildHomeActivityComparison({
+  required bool mobile,
+  required bool loading,
+}) {
+  final sync = _homeSyncedState(
+    orchardBalance: BigInt.from(250000000),
+    recentTransactions: loading
+        ? const []
+        : [for (var i = 1; i <= 5; i++) _homeTx(i)],
+  ).copyWith(hasRecentTransactionsData: !loading);
+  return mobile
+      ? _buildMobileHomeUseCase(
+          accountState: _accountsDesignState,
+          syncState: sync,
+          votingVisible: false,
+          constrainToPreviewFrame: false,
+        )
+      : _buildDesktopHomeUseCase(
+          accountState: _accountsDesignState,
+          syncState: sync,
+          migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+          zecUsdPrice: 70,
+        );
+}
+
+Widget buildDesktopHomeUnknownBalanceUseCase(BuildContext context) =>
+    _buildDesktopHomeStartupUseCase();
+
+Widget buildDesktopHomeInitialScanUseCase(BuildContext context) =>
+    _buildDesktopHomeStartupUseCase(initialScan: true);
+
+Widget buildDesktopHomeActivityErrorUseCase(BuildContext context) =>
+    _buildDesktopHomeStartupUseCase(cached: true, historyError: true);
+
+Widget buildDesktopHomeEmptyActivityUseCase(BuildContext context) =>
+    _buildDesktopHomeStartupUseCase(cached: true, historyLoaded: true);
+
+Widget _buildDesktopHomeStartupUseCase({
+  bool cached = false,
+  bool initialScan = false,
+  bool historyError = false,
+  bool historyLoaded = false,
+}) {
+  final balance = cached ? BigInt.from(250000000) : BigInt.zero;
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: SyncState(
+      accountUuid: _accountsDesignState.activeAccountUuid,
+      hasCachedBalance: cached,
+      hasBalanceData: false,
+      hasRecentTransactionsData: historyLoaded,
+      hasRecentTransactionsError: historyError,
+      isSyncing: true,
+      percentage: cached || initialScan ? .32 : 0,
+      remainingScanBlocks: cached || initialScan ? 100 : null,
+      displaySpendableBalance: balance,
+      displayOrchardBalance: balance,
+      displayShieldedBalance: balance,
+      displayTotalBalance: balance,
+    ),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    zecUsdPrice: 70,
+  );
+}
+
 Widget buildDesktopZcashEducationIntroUseCase(BuildContext context) =>
     _buildDesktopSetupHomeUseCase(initialLocation: '/setup/education/intro');
 
@@ -1122,6 +1267,7 @@ Widget _buildDesktopSetupHomeUseCase({
     syncState: SyncState(
       accountUuid: accounts.activeAccountUuid,
       hasAccountScopedData: !importing,
+      remainingScanBlocks: importing ? 70 : null,
       percentage: importing ? .3 : 1,
       totalBalance: BigInt.zero,
     ),
@@ -1415,10 +1561,19 @@ Widget buildSettingsViewingKeyGateUseCase(BuildContext context) {
   );
 }
 
-Widget buildSettingsViewingKeyRevealUseCase(BuildContext context) {
+Widget buildSettingsViewingKeyRevealUseCase(
+  BuildContext context, {
+  ViewingKeyType? type = ViewingKeyType.full,
+  ViewingKeyFormat format = ViewingKeyFormat.qr,
+}) {
   return _buildSettingsSubScreenUseCase(
     '/settings/viewing-key',
-    const SettingsViewingKeyRevealPreview(ufvk: _previewUfvk),
+    SettingsViewingKeyRevealPreview(
+      viewingKeys: AccountViewingKeys(ufvk: _previewUfvk, uivk: _previewUivk),
+      account: _accountsDesignState.activeAccount!,
+      initialType: type,
+      initialFormat: format,
+    ),
   );
 }
 
@@ -1649,6 +1804,76 @@ Widget buildMobileAccountsManyUseCase(BuildContext context) {
   return _buildMobileAccountsUseCase(_accountsManyState);
 }
 
+/// Full adaptive shell with deterministic production Home data for captures.
+Widget buildMobileAdaptiveHomeUseCase(
+  BuildContext context, {
+  bool closed = false,
+  bool openAccountsSheet = false,
+  bool locked = false,
+  bool synced = false,
+}) {
+  final size = MediaQuery.sizeOf(context);
+  final geometry = closed
+      ? MobileNavigationGeometry(
+          edge: MobileNavigationEdge.right,
+          viewSize: size,
+          safeRect: Rect.fromLTWH(0, 0, size.width - 84, size.height),
+          occlusions: [Rect.fromLTWH(size.width - 84, 0, 84, 180)],
+        )
+      : null;
+  final insets = closed
+      ? const EdgeInsets.only(right: 84)
+      : const EdgeInsets.only(top: 24, bottom: 24);
+  return MediaQuery(
+    data: MediaQuery.of(context).copyWith(padding: insets, viewPadding: insets),
+    child: _buildMobileHomeUseCase(
+      adaptive: true,
+      sidebarLocked: locked,
+      openAccountsSheet: openAccountsSheet,
+      geometryService: _PreviewMobileGeometry(geometry),
+      constrainToPreviewFrame: false,
+      votingVisible: false,
+      accountState: _accountsDesignState,
+      syncState: _homeSyncedState().copyWith(
+        isSyncing: !synced,
+        isSyncComplete: synced,
+        percentage: synced ? 1 : 0.04,
+      ),
+    ),
+  );
+}
+
+Widget buildMobileAdaptiveHomeLockedUseCase(BuildContext context) =>
+    buildMobileAdaptiveHomeUseCase(context, locked: true);
+
+Widget buildMobileAdaptiveHomeLockedSyncedUseCase(BuildContext context) =>
+    buildMobileAdaptiveHomeUseCase(context, locked: true, synced: true);
+
+/// Capture-only guard; no signing, storage, or wallet operation is started.
+class _PreviewLockedNavigationGuard extends ExternalActionGuardNotifier {
+  @override
+  ExternalActionGuardState build() => const ExternalActionGuardState(
+    blockedActions: {ExternalAction.navigation},
+  );
+}
+
+Widget buildMobileAdaptiveAccountsModalUseCase(BuildContext context) =>
+    buildMobileAdaptiveHomeUseCase(context, openAccountsSheet: true);
+
+Widget buildMobileAdaptiveHomeClosedUseCase(BuildContext context) =>
+    buildMobileAdaptiveHomeUseCase(context, closed: true);
+
+class _PreviewMobileGeometry extends NativeMobileNavigationGeometry {
+  const _PreviewMobileGeometry(this.geometry);
+  final MobileNavigationGeometry? geometry;
+  @override
+  bool get supportedHost => true;
+  @override
+  Future<MobileNavigationGeometry?> read() async => geometry;
+  @override
+  Stream<MobileNavigationGeometry?> get changes => const Stream.empty();
+}
+
 Widget buildMobileHomeDefaultUseCase(
   BuildContext context, {
   bool votingVisible = true,
@@ -1662,6 +1887,84 @@ Widget buildMobileHomeDefaultUseCase(
     ),
   );
 }
+
+/// Interactive visual fixture: production home, routing, snapshot and software
+/// shield owner. Only balances and the transaction result are supplied samples.
+Widget buildMobileShieldHomeFlowUseCase(BuildContext context) =>
+    _buildMobileHomeUseCase(
+      accountState: _accountsDesignState,
+      votingVisible: false,
+      shieldFlow: true,
+      syncState:
+          _homeSyncedState(
+            orchardBalance: BigInt.from(1492000000),
+            transparentBalance: BigInt.from(1412000000),
+            canShieldTransparentBalance: true,
+            recentTransactions: [_homeTx(1), _homeTx(2)],
+          ).copyWith(
+            shieldTransparentAmount: BigInt.from(1411990000),
+            shieldTransparentFee: BigInt.from(10000),
+          ),
+    );
+
+/// Interactive Keystone capture using production Home and shielding visuals.
+Widget buildMobileKeystoneShieldHomeFlowUseCase(BuildContext context) =>
+    _buildMobileHomeUseCase(
+      accountState: _accountsDesignState.copyWith(
+        accounts: [
+          AccountInfo(
+            uuid: _accountsDesignState.activeAccountUuid!,
+            name: 'Keystone',
+            order: 0,
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.keystone,
+            profilePictureId: kDefaultProfilePictureId,
+          ),
+        ],
+      ),
+      votingVisible: false,
+      shieldFlow: true,
+      keystoneShieldPreview: true,
+      syncState:
+          _homeSyncedState(
+            orchardBalance: BigInt.from(1492000000),
+            transparentBalance: BigInt.from(1412000000),
+            canShieldTransparentBalance: true,
+            recentTransactions: [_homeTx(1), _homeTx(2)],
+          ).copyWith(
+            shieldTransparentAmount: BigInt.from(1411990000),
+            shieldTransparentFee: BigInt.from(10000),
+          ),
+    );
+
+Widget buildMobileLedgerShieldHomeFlowUseCase(BuildContext context) =>
+    _buildMobileHomeUseCase(
+      accountState: _accountsDesignState.copyWith(
+        accounts: [
+          AccountInfo(
+            uuid: _accountsDesignState.activeAccountUuid!,
+            name: 'Ledger',
+            order: 0,
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+            profilePictureId: kDefaultProfilePictureId,
+          ),
+        ],
+      ),
+      votingVisible: false,
+      shieldFlow: true,
+      ledgerShieldPreview: true,
+      syncState:
+          _homeSyncedState(
+            orchardBalance: BigInt.from(1492000000),
+            transparentBalance: BigInt.from(1412000000),
+            canShieldTransparentBalance: true,
+            recentTransactions: [_homeTx(1), _homeTx(2)],
+          ).copyWith(
+            shieldTransparentAmount: BigInt.from(1411990000),
+            shieldTransparentFee: BigInt.from(10000),
+          ),
+    );
 
 Widget buildMobileHomeGiftCardsUseCase(BuildContext context) {
   final transactions = _previewGiftCardActivityTransactions();
@@ -1951,7 +2254,7 @@ Widget buildMobileTransparentReceiptUseCase({
           initialTransaction: tx,
           initialDetail: detail,
         ),
-        historyLoader: (_) async => [tx],
+        historyLoader: (_, _) async => [tx],
         detailLoader: (_, _) async => detail,
       ),
     ),
@@ -2049,7 +2352,7 @@ Widget buildMobileIronwoodLabelAuditSentUseCase(BuildContext context) {
         initialTransaction: tx,
         initialDetail: detail,
       ),
-      historyLoader: (_) async => _ironwoodLabelAuditTransactions(),
+      historyLoader: (_, _) async => _ironwoodLabelAuditTransactions(),
       detailLoader: (_, _) async => detail,
     ),
   );
@@ -2065,7 +2368,7 @@ Widget _mobileZeroValueReceipt(String kind) {
       initialTransaction: tx,
       initialDetail: detail,
     ),
-    historyLoader: (_) async => _zeroValueActivity(),
+    historyLoader: (_, _) async => _zeroValueActivity(),
     detailLoader: (_, _) async => detail,
   );
 }
@@ -2175,7 +2478,23 @@ Widget buildMobileHomeIronwoodAnnouncementUseCase(BuildContext context) {
     ),
     marketData: const ZecMarketData(usdPrice: 8.397, change24hPct: 13.12),
     swapEnabled: false,
-    showStaticIronwoodAnnouncement: true,
+    staticAnnouncement: MobileIronwoodMigrationAnnouncementSheet(
+      onStartMigration: () {},
+      onOpenReleaseNotes: () {},
+    ),
+  );
+}
+
+Widget buildMobileHomeNu7AnnouncementUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _ironwoodMobileHomeAccountState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14_292_000_000),
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
+    ),
+    marketData: const ZecMarketData(usdPrice: 8.397, change24hPct: 13.12),
+    swapEnabled: false,
+    staticAnnouncement: Nu7AnnouncementContent(onClose: () {}),
   );
 }
 
@@ -2226,6 +2545,7 @@ Widget buildMobileHomeImportingUseCase(BuildContext context) {
       accountUuid: _accountsDesignState.activeAccountUuid,
       isSyncing: true,
       percentage: 0.34,
+      remainingScanBlocks: 66,
     ),
   );
 }
@@ -2237,6 +2557,7 @@ Widget buildMobileHomeImportingResponsiveUseCase(BuildContext context) {
       accountUuid: _accountsDesignState.activeAccountUuid,
       isSyncing: true,
       percentage: 0.34,
+      remainingScanBlocks: 66,
     ),
     constrainToPreviewFrame: false,
   );
@@ -2353,13 +2674,14 @@ Widget _buildActivityEtaUseCase({required bool home}) {
     recentTransactions: _etaTransactions(),
   );
   final previewChild = home ? null : _ActivityEtaPreviewRouter(mobile: mobile);
+  // `preview-connection` has no estimate; the fallback override below shows
+  // it as waiting for a connection.
   const etaLabels = {
-    'preview-eta': 'Est. 1–3 min',
-    'preview-long': 'Taking longer',
-    'preview-connection': 'Waiting for connection',
-    'funding:preview-tex': 'Est. 2–6 min',
-    'preview-gift-created': 'Est. 1–3 min',
-    'gift-card:preview-card': 'Est. 1–3 min',
+    'preview-eta': ActivityEta.standard,
+    'preview-long': ActivityEta.takingLonger,
+    'funding:preview-tex': ActivityEta.funding,
+    'preview-gift-created': ActivityEta.standard,
+    'gift-card:preview-card': ActivityEta.standard,
   };
   return mobile
       ? _buildMobileHomeUseCase(
@@ -2476,6 +2798,28 @@ Widget buildDesktopHomeIronwoodMigrationInProgressUseCase(
   );
 }
 
+Widget buildDesktopHomeIronwoodMigrationUpgradeStoppedUseCase(
+  BuildContext context,
+) {
+  final status = _previewMigrationStatus(
+    kIronwoodMigrationStoppedByUpgradePhase,
+  );
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(340_000_000),
+      ironwoodBalance: BigInt.from(210_000_000),
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3)],
+    ),
+    migrationCta: IronwoodHomeMigrationCtaState.stopped(
+      network: 'main',
+      accountUuid: _accountsDesignState.activeAccountUuid!,
+      status: status,
+    ),
+    zecUsdPrice: 1200.12 / 40.11,
+  );
+}
+
 Widget buildDesktopHomeSidebarCompactBalancesUseCase(BuildContext context) {
   final status = _previewMigrationStatus(
     kIronwoodMigrationBroadcastScheduledPhase,
@@ -2504,7 +2848,6 @@ Widget buildDesktopHomeSidebarSyncNetworkErrorUseCase(BuildContext context) {
       failure: const SyncFailure(
         kind: SyncFailureKind.network,
         rawMessage: 'network failed',
-        userMessage: 'Network connection lost.',
       ),
     ),
     migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
@@ -2634,6 +2977,18 @@ Widget buildDesktopHomeIronwoodMigrationAnnouncementUseCase(
   );
 }
 
+Widget buildDesktopHomeNu7AnnouncementUseCase(BuildContext context) {
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14_223_000_000),
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
+    ),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+  );
+}
+
 Widget buildIronwoodMigrationIntroUseCase(BuildContext context) {
   return _buildIronwoodMigrationUseCase(
     initialLocation: '/migration/intro',
@@ -2671,6 +3026,18 @@ Widget buildIronwoodMigrationPrivateReviewUseCase(BuildContext context) {
     initialLocation: '/migration/private/review',
     step: IronwoodMigrationFlowStep.review,
     data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+  );
+}
+
+Widget buildIronwoodMigrationUpgradeStoppedUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPostPrepareStatus(
+      phase: kIronwoodMigrationStoppedByUpgradePhase,
+      parts: _previewPostPrepareParts(completedNoteCount: 1),
+    ),
   );
 }
 
@@ -3117,6 +3484,28 @@ Widget buildMobileIronwoodMigrationHomeAttentionModalUseCase(
   );
 }
 
+Widget buildMobileIronwoodMigrationUpgradeStoppedUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.migrationUpgradeStopped,
+  );
+}
+
+Widget buildMobileIronwoodMigrationHomeUpgradeStoppedUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.homeAttentionUpgradeStopped,
+  );
+}
+
+Widget buildMobileIronwoodMigrationHomeUpgradeStoppedModalUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.homeAttentionUpgradeStoppedModal,
+  );
+}
+
 Widget buildMobileIronwoodMigrationKeystoneHelpUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
     MobileIronwoodMigrationPreviewSurface.keystoneScanHelp,
@@ -3242,16 +3631,19 @@ Widget _buildMobileIronwoodMigrationUseCase({
   };
   return ProviderScope(
     child: _MobilePreviewFrame(
-      child: MobileIronwoodMigrationFlowScreen(
-        step: step,
-        previewData: _ironwoodMigrationFlowData(
-          zatoshi: zatoshi,
-          accountName: accountName,
+      // The back scope asks the router whether it can pop.
+      child: _PreviewRouterHarness(
+        child: MobileIronwoodMigrationFlowScreen(
+          step: step,
+          previewData: _ironwoodMigrationFlowData(
+            zatoshi: zatoshi,
+            accountName: accountName,
+          ),
+          previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
+          previewImmediatePlan: previewImmediatePlan,
+          previewSurface: previewSurface,
+          privateMigrationSupported: privateMigrationSupported,
         ),
-        previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
-        previewImmediatePlan: previewImmediatePlan,
-        previewSurface: previewSurface,
-        privateMigrationSupported: privateMigrationSupported,
       ),
     ),
   );
@@ -3308,11 +3700,17 @@ Widget buildMobileHomeVotingHiddenUseCase(BuildContext context) =>
     buildMobileHomeDefaultUseCase(context, votingVisible: false);
 
 Widget _buildMobileHomeUseCase({
+  bool adaptive = false,
+  bool sidebarLocked = false,
+  NativeMobileNavigationGeometry? geometryService,
   String initialLocation = '/home',
   Widget? previewChild,
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   bool setupPreview = false,
   bool inheritWalletState = false,
+  bool shieldFlow = false,
+  bool keystoneShieldPreview = false,
+  bool ledgerShieldPreview = false,
   bool votingVisible = true,
   required AccountState accountState,
   required SyncState syncState,
@@ -3326,20 +3724,36 @@ Widget _buildMobileHomeUseCase({
     change24hPct: 13.12,
   ),
   bool swapEnabled = true,
-  bool showStaticIronwoodAnnouncement = false,
+  Widget? staticAnnouncement,
   bool constrainToPreviewFrame = true,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
 }) {
   final harness = _MobileHomeHarness(
+    adaptive: adaptive,
     initialLocation: initialLocation,
     openAccountsSheet: openAccountsSheet,
-    showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
+    staticAnnouncement: staticAnnouncement,
+    shieldFlow: shieldFlow,
+    keystoneShieldPreview: keystoneShieldPreview,
+    ledgerShieldPreview: ledgerShieldPreview,
   );
   return ProviderScope(
     overrides: [
+      if (sidebarLocked)
+        externalActionGuardProvider.overrideWith(
+          _PreviewLockedNavigationGuard.new,
+        ),
+      if (adaptive) syncDisplayWholePercentageProvider.overrideWithValue(4),
+      if (geometryService != null || shieldFlow)
+        mobileNavigationGeometryServiceProvider.overrideWithValue(
+          geometryService ?? _PreviewMobileGeometry(null),
+        ),
       if (etaLabels != null) ...[
         activityEtaLabelsProvider.overrideWithValue(etaLabels),
+        activityPendingFallbackLabelProvider.overrideWithValue(
+          ActivityPendingFallback.waitingForConnection,
+        ),
         swapActivityRecordsProvider.overrideWith((ref, account) async => []),
       ],
       votingHomeEntryVisibleProvider.overrideWithValue(votingVisible),
@@ -3371,11 +3785,41 @@ Widget _buildMobileHomeUseCase({
       ),
       if (!inheritWalletState)
         syncProvider.overrideWith(
-          () => _PreviewSyncNotifier(
-            accountState.activeAccountUuid,
-            initialState: syncState,
-          ),
+          () => shieldFlow
+              ? _PreviewShieldSyncNotifier(
+                  accountState.activeAccountUuid,
+                  initialState: syncState,
+                )
+              : _PreviewSyncNotifier(
+                  accountState.activeAccountUuid,
+                  initialState: syncState,
+                ),
         ),
+      if (shieldFlow)
+        softwareTransparentShieldRunnerProvider.overrideWith((providerRef) {
+          Timer? timer;
+          providerRef.onDispose(() => timer?.cancel());
+          return ({
+            required ref,
+            required accountUuid,
+            logContext = 'preview',
+          }) async {
+            final ready = Completer<void>();
+            timer = Timer(const Duration(milliseconds: 4400), ready.complete);
+            await ready.future;
+            final amount = BigInt.from(1411990000);
+            (ref.read(syncProvider.notifier) as _PreviewShieldSyncNotifier)
+                .finishShielding(amount);
+            return rust_sync.ShieldTransparentResult(
+              txids: 'visual-preview',
+              status: 'broadcasted',
+              broadcastedCount: 1,
+              totalCount: 1,
+              feeZatoshi: BigInt.from(10000),
+              shieldedZatoshi: amount,
+            );
+          };
+        }),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
         _PreviewZecMarketDataSource(marketData),
@@ -3398,21 +3842,36 @@ Widget _buildMobileHomeUseCase({
         return announcement;
       }),
     ],
-    child: _MobilePreviewFrame(
-      constrainToDesignSize: constrainToPreviewFrame,
-      child: previewChild ?? harness,
-    ),
+    child: shieldFlow
+        ? _ShieldMotionPreview(child: harness)
+        : _MobilePreviewFrame(
+            constrainToDesignSize: constrainToPreviewFrame,
+            preserveWindowPadding: adaptive,
+            child: previewChild ?? harness,
+          ),
+  );
+}
+
+class _ShieldMotionPreview extends StatelessWidget {
+  const _ShieldMotionPreview({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => MediaQuery(
+    data: MediaQuery.of(context).copyWith(disableAnimations: false),
+    child: child,
   );
 }
 
 Widget _buildDesktopHomeUseCase({
   Widget? previewChild,
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   required AccountState accountState,
   required SyncState syncState,
   required IronwoodHomeMigrationCtaState migrationCta,
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
+  Nu7AnnouncementState nu7Announcement = const Nu7AnnouncementState.hidden(),
   double zecUsdPrice = 1.20012,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
@@ -3429,6 +3888,9 @@ Widget _buildDesktopHomeUseCase({
         ),
       if (etaLabels != null) ...[
         activityEtaLabelsProvider.overrideWithValue(etaLabels),
+        activityPendingFallbackLabelProvider.overrideWithValue(
+          ActivityPendingFallback.waitingForConnection,
+        ),
         swapActivityRecordsProvider.overrideWith((ref, account) async => []),
       ],
       if (receiptArgs != null) ...[
@@ -3488,6 +3950,7 @@ Widget _buildDesktopHomeUseCase({
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return announcement;
       }),
+      nu7AnnouncementProvider.overrideWith((ref) async => nu7Announcement),
     ],
     child:
         previewChild ??
@@ -3525,6 +3988,7 @@ Widget _buildIronwoodMigrationUseCase({
             hasAccountScopedData: true,
             isSyncing: true,
             percentage: 0.34,
+            remainingScanBlocks: 66,
             displayTargetPercentage: 0.34,
             scannedHeight: 3_000_000,
             chainTipHeight: 3_000_000,
@@ -3571,6 +4035,7 @@ Widget _buildMobileAccountsUseCase(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_accountsBootstrap(accountState)),
+      appSecurityProvider.overrideWith(_PreviewBackupSecurityNotifier.new),
       accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
       biometricUnlockProvider.overrideWith(
         () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
@@ -4034,6 +4499,12 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
           ),
         ),
         GoRoute(
+          path: '/accounts/confirm-removal',
+          builder: (_, state) => MobileAccountRemovalPasscodeScreen(
+            isLastAccount: state.extra == true,
+          ),
+        ),
+        GoRoute(
           path: '/add-account',
           builder: (_, _) =>
               const _PreviewRoutePlaceholder(label: '/add-account'),
@@ -4076,14 +4547,22 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
 
 class _MobileHomeHarness extends StatefulWidget {
   const _MobileHomeHarness({
+    this.adaptive = false,
     this.initialLocation = '/home',
     required this.openAccountsSheet,
-    required this.showStaticIronwoodAnnouncement,
+    this.staticAnnouncement,
+    this.shieldFlow = false,
+    this.keystoneShieldPreview = false,
+    this.ledgerShieldPreview = false,
   });
 
   final String initialLocation;
   final bool openAccountsSheet;
-  final bool showStaticIronwoodAnnouncement;
+  final bool adaptive;
+  final Widget? staticAnnouncement;
+  final bool shieldFlow;
+  final bool keystoneShieldPreview;
+  final bool ledgerShieldPreview;
 
   @override
   State<_MobileHomeHarness> createState() => _MobileHomeHarnessState();
@@ -4093,83 +4572,162 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
   late final GoRouter _router;
   final _privacyController = SensitivePrivacyOverlayController();
 
+  Widget _shieldPreview(BuildContext context, GoRouterState state) {
+    void submitted() =>
+        (ProviderScope.containerOf(
+                  context,
+                  listen: false,
+                ).read(syncProvider.notifier)
+                as _PreviewShieldSyncNotifier)
+            .finishShielding(BigInt.from(1411990000));
+    void close() => context.pop();
+    final backdrop = state.extra as MobileShieldBackdrop?;
+    return widget.ledgerShieldPreview
+        ? LedgerShieldMotionPreview(
+            backdrop: backdrop,
+            onSubmitted: submitted,
+            onClose: close,
+          )
+        : KeystoneShieldMotionPreview(
+            backdrop: backdrop,
+            onSubmitted: submitted,
+            onClose: close,
+          );
+  }
+
+  RouteBase _shieldPreviewRoute(RouteBase route) {
+    if (route is ShellRoute) {
+      return ShellRoute(
+        navigatorKey: route.navigatorKey,
+        parentNavigatorKey: route.parentNavigatorKey,
+        observers: route.observers,
+        builder: route.builder,
+        pageBuilder: route.pageBuilder,
+        restorationScopeId: route.restorationScopeId,
+        routes: route.routes.map(_shieldPreviewRoute).toList(),
+      );
+    }
+    if (route is GoRoute &&
+        ((widget.keystoneShieldPreview &&
+                route.path == '/home/keystone-shield') ||
+            (widget.ledgerShieldPreview &&
+                route.path == '/home/ledger-shield'))) {
+      return GoRoute(
+        path: route.path,
+        pageBuilder: (context, state) => MobileShieldPage(
+          key: state.pageKey,
+          child: _shieldPreview(context, state),
+        ),
+      );
+    }
+    return route;
+  }
+
   @override
   void initState() {
     super.initState();
+    if (widget.shieldFlow) {
+      _router = GoRouter(
+        initialLocation: widget.initialLocation,
+        routes: buildMobileRoutes(
+          entryRoutes: const [],
+        ).map(_shieldPreviewRoute).toList(),
+      );
+      return;
+    }
+    final routes = [
+      for (final entry in {
+        '/setup/education/intro': GiftEducationPage.intro,
+        '/setup/education/address-types': GiftEducationPage.addressTypes,
+        '/setup/education/things-to-know': GiftEducationPage.thingsToKnow,
+      }.entries)
+        GoRoute(
+          path: entry.key,
+          builder: (_, state) => MobileGiftEducationScreen(
+            page: entry.value,
+            accountUuid: state.extra as String?,
+          ),
+        ),
+      GoRoute(
+        path: '/setup/backup',
+        builder: (_, state) => MobileSeedPhraseScreen(
+          accountUuid: state.extra as String?,
+          showBackupIntro: true,
+          screenshotStream: const Stream.empty(),
+          privacyOverlayController: _privacyController,
+          birthdayHeightLoader: (_) async => 3000000,
+          birthdayBlockTimeLoader: (_) async =>
+              DateTime(2026, 9, 1).millisecondsSinceEpoch ~/ 1000,
+        ),
+      ),
+      GoRoute(
+        path: '/home',
+        builder: (context, _) => AppMobileShell(
+          body: _MobileHomeBody(openAccountsSheet: widget.openAccountsSheet),
+          tabBar: AppMobileTabBar(
+            axis:
+                MobileNavigationScope.maybeOf(context)?.mode ==
+                    MobileNavigationMode.systemSideTabs
+                ? Axis.vertical
+                : Axis.horizontal,
+            items: _mobileHomeTabItems,
+            currentIndex: 0,
+            onSelect: (_) {},
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/send',
+        builder: (_, _) => const _PreviewRoutePlaceholder(label: '/send'),
+      ),
+      GoRoute(
+        path: '/receive',
+        builder: (_, _) => const _PreviewRoutePlaceholder(label: '/receive'),
+      ),
+      GoRoute(
+        path: '/swap',
+        builder: (_, _) => const _PreviewRoutePlaceholder(label: '/swap'),
+      ),
+      GoRoute(
+        path: '/activity',
+        builder: (_, _) => const _PreviewRoutePlaceholder(label: '/activity'),
+      ),
+      GoRoute(
+        path: '/activity/tx/:txid',
+        builder: (_, state) => _PreviewRoutePlaceholder(
+          label: '/activity/tx/${state.pathParameters['txid']}',
+        ),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (_, _) => const _PreviewRoutePlaceholder(label: '/settings'),
+      ),
+      GoRoute(
+        path: '/accounts',
+        builder: (_, _) => const _PreviewRoutePlaceholder(label: '/accounts'),
+      ),
+      GoRoute(
+        path: '/add-account',
+        builder: (_, _) =>
+            const _PreviewRoutePlaceholder(label: '/add-account'),
+      ),
+    ];
     _router = GoRouter(
       initialLocation: widget.initialLocation,
-      routes: [
-        for (final entry in {
-          '/setup/education/intro': GiftEducationPage.intro,
-          '/setup/education/address-types': GiftEducationPage.addressTypes,
-          '/setup/education/things-to-know': GiftEducationPage.thingsToKnow,
-        }.entries)
-          GoRoute(
-            path: entry.key,
-            builder: (_, state) => MobileGiftEducationScreen(
-              page: entry.value,
-              accountUuid: state.extra as String?,
-            ),
-          ),
-        GoRoute(
-          path: '/setup/backup',
-          builder: (_, state) => MobileSeedPhraseScreen(
-            accountUuid: state.extra as String?,
-            showBackupIntro: true,
-            screenshotStream: const Stream.empty(),
-            privacyOverlayController: _privacyController,
-            birthdayHeightLoader: (_) async => 3000000,
-            birthdayBlockTimeLoader: (_) async =>
-                DateTime(2026, 9, 1).millisecondsSinceEpoch ~/ 1000,
-          ),
-        ),
-        GoRoute(
-          path: '/home',
-          builder: (_, _) => AppMobileShell(
-            body: _MobileHomeBody(openAccountsSheet: widget.openAccountsSheet),
-            tabBar: AppMobileTabBar(
-              items: _mobileHomeTabItems,
-              currentIndex: 0,
-              onSelect: (_) {},
-            ),
-          ),
-        ),
-        GoRoute(
-          path: '/send',
-          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/send'),
-        ),
-        GoRoute(
-          path: '/receive',
-          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/receive'),
-        ),
-        GoRoute(
-          path: '/swap',
-          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/swap'),
-        ),
-        GoRoute(
-          path: '/activity',
-          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/activity'),
-        ),
-        GoRoute(
-          path: '/activity/tx/:txid',
-          builder: (_, state) => _PreviewRoutePlaceholder(
-            label: '/activity/tx/${state.pathParameters['txid']}',
-          ),
-        ),
-        GoRoute(
-          path: '/settings',
-          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/settings'),
-        ),
-        GoRoute(
-          path: '/accounts',
-          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/accounts'),
-        ),
-        GoRoute(
-          path: '/add-account',
-          builder: (_, _) =>
-              const _PreviewRoutePlaceholder(label: '/add-account'),
-        ),
-      ],
+      routes: widget.adaptive
+          ? [
+              ShellRoute(
+                pageBuilder: (context, state, child) => NoTransitionPage(
+                  key: state.pageKey,
+                  child: MobileAdaptiveFrame(
+                    router: GoRouter.of(context),
+                    child: child,
+                  ),
+                ),
+                routes: routes,
+              ),
+            ]
+          : routes,
     );
   }
 
@@ -4183,7 +4741,8 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
   @override
   Widget build(BuildContext context) {
     final router = Router.withConfig(config: _router);
-    if (!widget.showStaticIronwoodAnnouncement) {
+    final staticAnnouncement = widget.staticAnnouncement;
+    if (staticAnnouncement == null) {
       return router;
     }
 
@@ -4195,12 +4754,7 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
           color: context.colors.background.neutralScrim,
           child: Align(
             alignment: Alignment.bottomCenter,
-            child: MobileModalCard(
-              child: MobileIronwoodMigrationAnnouncementSheet(
-                onStartMigration: () {},
-                onOpenReleaseNotes: () {},
-              ),
-            ),
+            child: MobileModalCard(child: staticAnnouncement),
           ),
         ),
       ],
@@ -4277,7 +4831,9 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
                 )
               : ActivityTransactionStatusScreen(
                   args: receiptArgs,
-                  historyLoader: (_) async => [?receiptArgs.initialTransaction],
+                  historyLoader: (_, _) async => [
+                    ?receiptArgs.initialTransaction,
+                  ],
                   detailLoader: (_, _) async => receiptArgs.initialDetail,
                 ),
         ),
@@ -4804,7 +5360,10 @@ class _UnlockHarnessState extends State<_UnlockHarness> {
   }
 }
 
-Widget _buildMobileUnlockUseCase(BiometricUnlockState biometricState) {
+Widget _buildMobileUnlockUseCase(
+  BiometricUnlockState biometricState, {
+  bool constrainToDesignSize = true,
+}) {
   return ProviderScope(
     overrides: [
       biometricUnlockProvider.overrideWith(
@@ -4812,6 +5371,7 @@ Widget _buildMobileUnlockUseCase(BiometricUnlockState biometricState) {
       ),
     ],
     child: _MobilePreviewFrame(
+      constrainToDesignSize: constrainToDesignSize,
       child: IgnorePointer(
         child: MobileUnlockScreen(autoPromptBiometric: false),
       ),
@@ -4945,10 +5505,12 @@ class _MobilePreviewFrame extends StatelessWidget {
   const _MobilePreviewFrame({
     required this.child,
     this.constrainToDesignSize = true,
+    this.preserveWindowPadding = false,
   });
 
   final Widget child;
   final bool constrainToDesignSize;
+  final bool preserveWindowPadding;
 
   static const size = Size(393, 852);
   static const safeAreaPadding = EdgeInsets.only(top: 55, bottom: 24);
@@ -4961,8 +5523,10 @@ class _MobilePreviewFrame extends StatelessWidget {
       child: MediaQuery(
         data: mediaQuery.copyWith(
           size: frameSize,
-          padding: safeAreaPadding,
-          viewPadding: safeAreaPadding,
+          padding: preserveWindowPadding ? mediaQuery.padding : safeAreaPadding,
+          viewPadding: preserveWindowPadding
+              ? mediaQuery.viewPadding
+              : safeAreaPadding,
         ),
         child: MobileOnboardingProgressScope(
           setupMode: OnboardingSetupMode.createPasscode,
@@ -5047,6 +5611,35 @@ class _MobileMigrationScheduleHarnessState
       ],
     );
   }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Router.withConfig(config: _router);
+}
+
+/// Hosts [child] as the only route, so screens that read the router build;
+/// any navigation lands on a placeholder naming the destination.
+class _PreviewRouterHarness extends StatefulWidget {
+  const _PreviewRouterHarness({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_PreviewRouterHarness> createState() => _PreviewRouterHarnessState();
+}
+
+class _PreviewRouterHarnessState extends State<_PreviewRouterHarness> {
+  late final GoRouter _router = GoRouter(
+    initialLocation: '/preview',
+    routes: [GoRoute(path: '/preview', builder: (_, _) => widget.child)],
+    errorBuilder: (_, state) =>
+        _PreviewRoutePlaceholder(label: state.uri.toString()),
+  );
 
   @override
   void dispose() {
@@ -5376,31 +5969,37 @@ rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
         partIndex: 1,
         valueZatoshi: BigInt.from(4_000_000_000),
         blockOffset: 144,
+        blocksPerReferenceBlock: 1,
       ),
       rust_sync.MigrationScheduledTransfer(
         partIndex: 3,
         valueZatoshi: BigInt.from(500_000_000),
         blockOffset: 288,
+        blocksPerReferenceBlock: 1,
       ),
       rust_sync.MigrationScheduledTransfer(
         partIndex: 0,
         valueZatoshi: BigInt.from(8_000_000_000),
         blockOffset: 432,
+        blocksPerReferenceBlock: 1,
       ),
       rust_sync.MigrationScheduledTransfer(
         partIndex: 5,
         valueZatoshi: BigInt.from(220_000_000),
         blockOffset: 576,
+        blocksPerReferenceBlock: 1,
       ),
       rust_sync.MigrationScheduledTransfer(
         partIndex: 4,
         valueZatoshi: BigInt.from(500_000_000),
         blockOffset: 720,
+        blocksPerReferenceBlock: 1,
       ),
       rust_sync.MigrationScheduledTransfer(
         partIndex: 2,
         valueZatoshi: BigInt.from(1_000_000_000),
         blockOffset: 864,
+        blocksPerReferenceBlock: 1,
       ),
     ],
   );
@@ -5443,31 +6042,37 @@ rust_sync.OrchardMigrationPrivatePlan _previewMobilePrivateMigrationPlan() {
         partIndex: 0,
         valueZatoshi: BigInt.from(4_000_000_000),
         blockOffset: 12,
+        blocksPerReferenceBlock: 1,
       ),
       rust_sync.MigrationScheduledTransfer(
         partIndex: 1,
         valueZatoshi: BigInt.from(500_000_000),
         blockOffset: 960,
+        blocksPerReferenceBlock: 1,
       ),
       rust_sync.MigrationScheduledTransfer(
         partIndex: 2,
         valueZatoshi: BigInt.from(8_000_000_000),
         blockOffset: 960,
+        blocksPerReferenceBlock: 1,
       ),
       rust_sync.MigrationScheduledTransfer(
         partIndex: 3,
         valueZatoshi: BigInt.from(100_000_000),
         blockOffset: 960,
+        blocksPerReferenceBlock: 1,
       ),
       rust_sync.MigrationScheduledTransfer(
         partIndex: 4,
         valueZatoshi: BigInt.from(500_000_000),
         blockOffset: 960,
+        blocksPerReferenceBlock: 1,
       ),
       rust_sync.MigrationScheduledTransfer(
         partIndex: 5,
         valueZatoshi: BigInt.from(1_000_000_000),
         blockOffset: 960,
+        blocksPerReferenceBlock: 1,
       ),
     ],
   );
@@ -6235,6 +6840,7 @@ class _PreviewSyncNotifier extends SyncNotifier {
         hasAccountScopedData: activeAccountUuid != null,
         isSyncing: true,
         percentage: 0.34,
+        remainingScanBlocks: 66,
         totalBalance: BigInt.from(14223000000),
       );
 
@@ -6263,6 +6869,23 @@ class _PreviewSyncNotifier extends SyncNotifier {
 
   @override
   Future<void> clearSensitiveStateForLock() async {}
+}
+
+class _PreviewShieldSyncNotifier extends _PreviewSyncNotifier {
+  _PreviewShieldSyncNotifier(super.activeAccountUuid, {super.initialState});
+
+  void finishShielding(BigInt amount) {
+    final current = state.value!;
+    state = AsyncData(
+      current.copyWith(
+        orchardBalance: current.orchardBalance + amount,
+        transparentBalance: BigInt.zero,
+        canShieldTransparentBalance: false,
+        shieldTransparentAmount: BigInt.zero,
+        shieldTransparentFee: BigInt.zero,
+      ),
+    );
+  }
 }
 
 class _PreviewPrivacyModeNotifier extends PrivacyModeNotifier {
@@ -6522,7 +7145,7 @@ class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
                     initialTransaction: initialTransaction,
                     giftCard: _metadata,
                   ),
-              historyLoader: (_) async => _history,
+              historyLoader: (_, _) async => _history,
               detailLoader: (_, _) async => null,
             );
           },
@@ -6567,6 +7190,10 @@ class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
       child: MaterialApp.router(
         routerConfig: _router,
         debugShowCheckedModeBanner: false,
+        // Keep the Widgetbook locale selection inside this nested app.
+        locale: Localizations.maybeLocaleOf(context),
+        supportedLocales: appSupportedLocales(preview: true),
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, child) => _MobilePreviewFrame(
           child: Material(
             color: context.colors.background.window,
@@ -6663,7 +7290,7 @@ class _PreviewPrivateQueries extends EnhancePirNotifier {
 
 class _PreviewEnhancePirChanging extends EnhancePirTransitionNotifier {
   @override
-  String? build() => 'Changing setting…';
+  EnhancePirTransition? build() => EnhancePirTransition.changing;
 }
 
 Widget buildWelcomePrivateQueriesEnabledUseCase(BuildContext context) =>
@@ -6713,3 +7340,54 @@ Widget buildMobileGiftHomeReviewUseCase(
     swapEnabled: false,
   );
 }
+
+Widget buildMobileSettingsViewingKeyQrUseCase(BuildContext context) =>
+    buildMobileSettingsViewingKeyRevealUseCase(
+      context,
+      format: ViewingKeyFormat.qr,
+    );
+Widget buildMobileSettingsIncomingViewingKeyUseCase(BuildContext context) =>
+    buildMobileSettingsViewingKeyRevealUseCase(
+      context,
+      type: ViewingKeyType.incoming,
+      format: ViewingKeyFormat.text,
+    );
+Widget buildMobileSettingsIncomingViewingKeyQrUseCase(BuildContext context) =>
+    buildMobileSettingsViewingKeyRevealUseCase(
+      context,
+      type: ViewingKeyType.incoming,
+      format: ViewingKeyFormat.qr,
+    );
+
+Widget buildSettingsViewingKeyQrUseCase(BuildContext context) =>
+    buildSettingsViewingKeyRevealUseCase(context, format: ViewingKeyFormat.qr);
+Widget buildSettingsIncomingViewingKeyUseCase(BuildContext context) =>
+    buildSettingsViewingKeyRevealUseCase(
+      context,
+      type: ViewingKeyType.incoming,
+      format: ViewingKeyFormat.text,
+    );
+Widget buildSettingsIncomingViewingKeyQrUseCase(BuildContext context) =>
+    buildSettingsViewingKeyRevealUseCase(
+      context,
+      type: ViewingKeyType.incoming,
+      format: ViewingKeyFormat.qr,
+    );
+
+Widget buildSettingsViewingKeyTextUseCase(BuildContext context) =>
+    buildSettingsViewingKeyRevealUseCase(
+      context,
+      format: ViewingKeyFormat.text,
+    );
+
+Widget buildMobileSettingsViewingKeyTextUseCase(BuildContext context) =>
+    buildMobileSettingsViewingKeyRevealUseCase(
+      context,
+      format: ViewingKeyFormat.text,
+    );
+
+Widget buildSettingsViewingKeyChoiceUseCase(BuildContext context) =>
+    buildSettingsViewingKeyRevealUseCase(context, type: null);
+
+Widget buildMobileSettingsViewingKeyChoiceUseCase(BuildContext context) =>
+    buildMobileSettingsViewingKeyRevealUseCase(context, type: null);

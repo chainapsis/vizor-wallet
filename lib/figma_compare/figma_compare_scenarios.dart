@@ -1,4 +1,12 @@
+import 'endpoint_selection_capture.dart';
+import 'near_intents_service_notice_capture.dart';
+import 'activity_pagination_capture.dart';
+import 'mobile_shield_capture.dart';
+import 'mobile_passcode_capture.dart';
+import 'mobile_receive_capture.dart';
+import '../src/features/ledger/services/ledger_failure_guidance.dart';
 import 'desktop_welcome_capture.dart';
+import 'language_settings_capture.dart';
 import '../widgetbook/desktop_gift_onboarding_use_cases.dart';
 import '../widgetbook/desktop_gift_import_use_cases.dart';
 import 'desktop_onboarding_intro_capture.dart';
@@ -28,6 +36,7 @@ import '../widgetbook/keystone_use_cases.dart';
 import '../widgetbook/payment_link_claim_outcome_use_cases.dart';
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
+import '../widgetbook/mobile_donation_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/mobile_gift_onboarding_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
@@ -48,11 +57,15 @@ import '../widgetbook/address_book_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
+import 'gift_card_artwork_capture.dart';
 import 'mobile_method_selection_capture.dart';
 import 'mobile_hardware_selection_capture.dart';
 import 'mobile_onboarding_intro_capture.dart';
 import 'ledger_recovery_capture.dart';
+import 'ledger_onboarding_guidance_capture.dart';
+import 'review_info_capture.dart';
 import 'swap_asset_icons_capture.dart';
+import 'swap_activity_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -68,6 +81,7 @@ class FigmaCompareScenario {
     this.allowFocus = false,
     this.allowPointer = false,
     this.renderShadows = false,
+    this.outsideScaffold = false,
     this.platform,
   });
 
@@ -80,6 +94,10 @@ class FigmaCompareScenario {
   final bool allowFocus;
   final bool allowPointer;
   final bool renderShadows;
+
+  /// App-level surfaces must receive the same fallback text style as the
+  /// production MaterialApp.builder, without a capture-only Material ancestor.
+  final bool outsideScaffold;
   final TargetPlatform? platform;
 }
 
@@ -89,6 +107,369 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'copy-desktop-reset-countdown',
+    description: 'Localized reset button before the safety delay expires',
+    builder: buildLostPasswordCountdownUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-desktop-seed-auth',
+    description: 'Localized password instruction before showing recovery words',
+    builder: buildSettingsSecretPassphraseGateUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-desktop-viewing-key-auth',
+    description: 'Localized password instruction before showing viewing keys',
+    builder: buildSettingsViewingKeyGateUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-desktop-wallet-link-auth',
+    description: 'Localized password instruction before linking a phone',
+    builder: buildSettingsWalletLinkConfirmAccessUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-mobile-reset-final',
+    description: 'Localized final reset confirmation and safety countdown',
+    builder: buildMobileForgotPasscodeLastWarningUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'copy-mobile-seed-screenshot-warning',
+    description: 'Localized recovery word screenshot warning in context',
+    builder: buildMobileSecretPassphraseScreenshotWarningUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-language-welcome',
+    description: 'Desktop Welcome language entry and interactive picker',
+    builder: buildDesktopWelcomeCapture,
+    allowPointer: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-language-settings',
+    description: 'Desktop settings language entry and interactive picker',
+    builder: buildSettingsMainUseCase,
+    allowPointer: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-language-welcome',
+    description: 'Mobile Welcome language entry and interactive sheet',
+    builder: buildMobileLanguageWelcomeCapture,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    renderShadows: true,
+    outsideScaffold: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-language-settings',
+    description: 'Mobile settings language entry and interactive sheet',
+    builder: buildMobileLanguageSettingsCapture,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    outsideScaffold: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-account-removal-passcode',
+    description: 'Passcode confirmation before account removal',
+    builder: buildMobilePasscodeAccountRemovalCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-account-removal-passcode-face-id',
+    description: 'Account removal passcode with the Face ID retry action',
+    builder: buildMobilePasscodeAccountRemovalFaceIdCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-endpoint-selection',
+    description: 'Desktop endpoint list with Automatic selected',
+    builder: buildDesktopEndpointSelectionCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-endpoint-selection',
+    description: 'Mobile endpoint list with Automatic selected',
+    builder: buildMobileEndpointSelectionCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'near-intents-service-current',
+    description: 'Current NEAR Intents maintenance modal with affected chains',
+    builder: buildCurrentServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'near-intents-service-all-chains',
+    description: 'Current NEAR Intents maintenance modal for all chains',
+    builder: buildAllChainsServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'near-intents-service-pay',
+    description: 'Current NEAR Intents service modal on Pay',
+    builder: buildPayServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-swap-processing',
+    description: 'Production Activity swap detail while processing',
+    builder: buildSwapActivityProcessingCapture,
+    mobile: true,
+    allowPointer: true,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-pay-processing',
+    description: 'Production Activity Pay detail while processing',
+    builder: buildPayActivityProcessingCapture,
+    mobile: true,
+    allowPointer: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-ledger-connection-help',
+    description: 'Ledger pairing recovery inside the mobile shielding scene',
+    builder: buildLedgerInlineConnectionHelpUseCase,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    platform: TargetPlatform.iOS,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-mobile-connection-help-ios',
+    description: 'Mobile Ledger discovery and manual pairing recovery on iOS',
+    builder: buildLedgerMobileConnectionHelpUseCase,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    platform: TargetPlatform.iOS,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-mobile-connection-help-android',
+    description:
+        'Mobile Ledger discovery and manual pairing recovery on Android',
+    builder: buildLedgerMobileConnectionHelpUseCase,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-onboarding-access-preparing',
+    description: 'Ledger onboarding: Bluetooth access check before discovery',
+    builder: buildLedgerOnboardingAccessPreparation,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-onboarding-access-restricted',
+    description: 'Ledger onboarding: restricted access with close and settings',
+    builder: buildLedgerOnboardingAccessRestricted,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-onboarding-viewing-key-approval',
+    description: 'Ledger onboarding: viewing-key approval names the account',
+    builder: buildLedgerOnboardingViewingKeyApproval,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-onboarding-usb-error',
+    description: 'Ledger onboarding: USB account export recovery',
+    builder: buildLedgerOnboardingUsbError,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-restricted-android',
+    description: 'Ledger recovery: Android nearby devices restricted',
+    builder: buildLedgerPermissionRestrictedCapture,
+    desktop: false,
+    mobile: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-recovery-restricted-location',
+    description: 'Ledger recovery: legacy Android location restricted',
+    builder: buildLedgerLocationRestrictedCapture,
+    desktop: false,
+    mobile: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-passcode-change',
+    description: 'Responsive mobile passcode change',
+    builder: buildMobilePasscodeChangeCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-passcode-create',
+    description: 'Responsive mobile passcode create',
+    builder: buildMobilePasscodeCreateCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-passcode-unlock',
+    description: 'Responsive mobile passcode unlock',
+    builder: buildMobilePasscodeUnlockCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-passcode-viewing-key',
+    description: 'Responsive mobile passcode viewing-key',
+    builder: buildMobilePasscodeViewingKeyCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-passcode-seed-phrase',
+    description: 'Responsive mobile passcode seed-phrase',
+    builder: buildMobilePasscodeSeedPhraseCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-adaptive-home-wide',
+    description:
+        'Wide mobile window with persistent mobile sidebar and sync footer',
+    builder: buildMobileAdaptiveHomeUseCase,
+    desktop: false,
+    mobile: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.iOS,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-adaptive-home-locked',
+    description: 'Fully locked mobile sidebar with unobscured live sync footer',
+    builder: buildMobileAdaptiveHomeLockedUseCase,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    allowFocus: true,
+    renderShadows: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.iOS,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-adaptive-home-locked-synced',
+    description: 'Locked mobile sidebar with a bright completed sync indicator',
+    builder: buildMobileAdaptiveHomeLockedSyncedUseCase,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    allowFocus: true,
+    renderShadows: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.iOS,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-adaptive-accounts-modal',
+    description: 'Full-window accounts modal over the adaptive mobile shell',
+    builder: buildMobileAdaptiveAccountsModalUseCase,
+    desktop: false,
+    mobile: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.iOS,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-adaptive-home-closed',
+    description:
+        'Closed system-side layout preserving the existing mobile Home',
+    builder: buildMobileAdaptiveHomeClosedUseCase,
+    desktop: false,
+    mobile: true,
+    outsideScaffold: true,
+    platform: TargetPlatform.iOS,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ledger-shield-home-flow',
+    description: 'Ledger shielding stages and continuous particle resolution',
+    allowPointer: true,
+    builder: buildMobileLedgerShieldHomeFlowUseCase,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-keystone-shield-home-flow',
+    description: 'Keystone shielding: QR and camera particle transitions',
+    allowPointer: true,
+    builder: buildMobileKeystoneShieldHomeFlowUseCase,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-home-flow',
+    description: 'Mobile home to shielding with a frozen blurred backdrop',
+    builder: buildMobileShieldHomeFlowUseCase,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-reference-review',
+    description: 'Original video: Transparent Balance',
+    builder: buildMobileShieldReferenceReview,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-reference-result',
+    description: 'Original video: Shielded successfully',
+    builder: buildMobileShieldReferenceResult,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-review',
+    description: 'Mobile shielding: Review',
+    builder: buildMobileShieldReview,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-cloud',
+    description: 'Mobile shielding: Processing cloud',
+    builder: buildMobileShieldCloud,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-result',
+    description: 'Mobile shielding: Submitted result',
+    builder: buildMobileShieldResult,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-keystone',
+    description: 'Mobile shielding: Keystone approval',
+    builder: buildMobileShieldKeystone,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-ledger',
+    description: 'Mobile shielding: Ledger approval',
+    builder: buildMobileShieldLedger,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
   FigmaCompareScenario(
     id: 'ironwood-label-audit-desktop-activity',
     description:
@@ -121,6 +502,62 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'desktop-home-setup',
     description: 'Desktop Home backup and education reminders',
     builder: buildDesktopHomeSetupUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-cached-balance',
+    description: 'Home and sidebar show cached balance before history loads',
+    builder: buildDesktopHomeCachedBalanceUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-activity-skeleton',
+    description: 'Home Activity skeleton with five rows',
+    builder: buildDesktopHomeActivitySkeletonUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-five-activities',
+    description: 'Same Home layout with five loaded Activity rows',
+    builder: buildDesktopHomeFiveActivitiesUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-activity-skeleton',
+    description: 'Mobile Home Activity skeleton with five rows',
+    builder: buildMobileHomeActivitySkeletonUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-five-activities',
+    description: 'Same mobile Home layout with five loaded Activity rows',
+    builder: buildMobileHomeFiveActivitiesUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-unknown-balance',
+    description: 'Home and sidebar do not turn an unknown balance into zero',
+    builder: buildDesktopHomeUnknownBalanceUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-initial-scan',
+    description: 'Home and sidebar keep the actual initial scan presentation',
+    builder: buildDesktopHomeInitialScanUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-activity-error',
+    description: 'Activity error message centered below the desktop balance',
+    builder: buildDesktopHomeActivityErrorUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-empty-activity',
+    description: 'Existing illustrated empty activity state on desktop Home',
+    builder: buildDesktopHomeEmptyActivityUseCase,
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
@@ -402,6 +839,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'gift-card-rogue-cat-amount',
+    description: 'Rogue cat gift card amount and artwork selector',
+    builder: buildRogueCatGiftCardAmountCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-rogue-cat-qr',
+    description: 'Rogue cat gift card QR share artwork',
+    builder: buildRogueCatGiftCardQrCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'gift-card-amount-usd',
     description: 'Gift card amount in USD with its canonical ZEC value',
     builder: buildGiftCardUsdAmountUseCase,
@@ -572,6 +1021,31 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-welcome-network-off',
     description: 'Mobile welcome network settings: off',
     builder: buildMobileWelcomeNetworkOff,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-welcome-private-queries-enabled',
+    description: 'Mobile welcome network settings with private queries on',
+    builder: buildMobileWelcomePrivateQueriesEnabled,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-welcome-private-queries-changing',
+    description: 'Mobile welcome network settings while saving private queries',
+    builder: buildMobileWelcomePrivateQueriesChanging,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-welcome-private-queries-failed',
+    description:
+        'Mobile welcome network settings after private queries save fails',
+    builder: buildMobileWelcomePrivateQueriesFailed,
     renderShadows: true,
     desktop: false,
     mobile: true,
@@ -761,6 +1235,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ledger-searching-devices',
     description: 'Ledger discovery with selectable devices',
     builder: buildLedgerSearchingDevicesCapture,
+    allowPointer: true,
     desktop: true,
     mobile: true,
   ),
@@ -768,6 +1243,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ledger-device-selection',
     description: 'Ledger select before Bluetooth interaction',
     builder: buildLedgerDeviceSelectionCapture,
+    allowPointer: true,
     desktop: true,
     mobile: true,
   ),
@@ -783,6 +1259,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ledger-known-device-connecting',
     description: 'Saved Ledger connection without viewing-key approval',
     builder: buildLedgerKnownDeviceConnectingCapture,
+    allowPointer: true,
     desktop: true,
     mobile: true,
   ),
@@ -797,6 +1274,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ledger-request-declined',
     description: 'Request declined after selecting the saved Ledger',
     builder: buildLedgerRequestDeclinedCapture,
+    allowPointer: true,
     desktop: true,
     mobile: true,
   ),
@@ -919,9 +1397,40 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'ledger-signing-proofs-pending',
+    description: 'Ledger signing: approved while Vizor finishes preparation',
+    builder: _buildLedgerSigningProofsPending,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-declined',
+    description: 'Desktop Ledger rejection retains completed preparation',
+    builder: _buildLedgerSigningDeclined,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-tex-declined',
+    description: 'Desktop Ledger rejection retains TEX approval one',
+    builder: _buildLedgerSigningTexDeclined,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-save-failed',
+    description: 'Desktop Ledger checkpoint retry without approval',
+    builder: _buildLedgerSigningSaveFailed,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-cancelling',
+    description: 'Desktop Ledger cancellation drains pending device work',
+    builder: _buildLedgerSigningCancelling,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-signing-memo-hash-update',
     description: 'Ledger signing: memo needs a newer Zcash app',
     builder: _buildLedgerSigningMemoHashUpdate,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-app-update',
+    description: 'Ledger signing: transaction needs Zcash app 3.10.0',
+    builder: _buildLedgerSigningAppUpdate,
   ),
   FigmaCompareScenario(
     id: 'ledger-signing-voting-processing',
@@ -987,6 +1496,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-gift-card-usage-ready',
     description: 'Gift Card sender usage preview',
     builder: buildGiftCardUsageReadyCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-send-recipient-recents',
+    description: 'Mobile recipient step with recents and contacts',
+    builder: buildMobileSendRecipientRecentsUseCase,
     desktop: false,
     mobile: true,
   ),
@@ -1079,6 +1595,27 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'gift-card-claim-checking',
     description: 'Gift Card uncertain claim outcome',
     builder: buildClaimCheckingUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-unlock-opt-in-face-id',
+    description: 'Mobile unlock offering Face ID for the next unlock',
+    builder: buildMobileUnlockFaceIdOptInUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-unlock-opt-in-touch-id',
+    description: 'Mobile unlock offering Touch ID for the next unlock',
+    builder: buildMobileUnlockTouchIdOptInUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-unlock-opt-in-fingerprint',
+    description: 'Mobile unlock offering fingerprint for the next unlock',
+    builder: buildMobileUnlockFingerprintOptInUseCase,
+    desktop: false,
     mobile: true,
   ),
   FigmaCompareScenario(
@@ -1182,6 +1719,83 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'donation-zec-empty',
     description: 'Desktop donation composer with an empty ZEC amount',
     builder: buildDonationZecEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-empty',
+    description: 'Mobile donation empty amount',
+    builder: buildMobileDonationEmptyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-amount',
+    description: 'Mobile donation ZEC preset',
+    builder: buildMobileDonationAmountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-usd',
+    description: 'Mobile donation USD preset',
+    builder: buildMobileDonationUsdUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-insufficient',
+    description: 'Mobile donation insufficient funds',
+    builder: buildMobileDonationInsufficientUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-review',
+    description: 'Mobile donation review',
+    builder: buildMobileDonationReviewUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-sending',
+    description: 'Mobile donation broadcast in progress',
+    builder: buildMobileDonationSendingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-success',
+    description: 'Mobile donation thank you',
+    builder: buildMobileDonationSuccessUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-pending',
+    description: 'Mobile donation queued broadcast',
+    builder: buildMobileDonationPendingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-failure',
+    description: 'Mobile donation failed broadcast',
+    builder: buildMobileDonationFailureUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-review-large-text',
+    description: 'Mobile donation review with 200 percent text',
+    builder: buildMobileDonationReviewLargeTextUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-success-large-text',
+    description: 'Mobile donation thank you with 200 percent text',
+    builder: buildMobileDonationSuccessLargeTextUseCase,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'donation-zec-selected',
@@ -1320,6 +1934,66 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSettingsSecretPassphraseRevealWithoutBip39UseCase,
   ),
   FigmaCompareScenario(
+    id: 'settings-viewing-key-choice',
+    description: 'Choose incoming-only or full viewing access',
+    builder: buildSettingsViewingKeyChoiceUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-viewing-key-choice',
+    description: 'Choose incoming-only or full viewing access',
+    builder: buildMobileSettingsViewingKeyChoiceUseCase,
+    mobile: true,
+    desktop: false,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-viewing-key-text',
+    description: 'Desktop full viewing key text',
+    builder: buildSettingsViewingKeyTextUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-viewing-key-text',
+    description: 'Mobile full viewing key text',
+    builder: buildMobileSettingsViewingKeyTextUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-viewing-key-qr',
+    description: 'viewing key qr display',
+    builder: buildSettingsViewingKeyQrUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-viewing-key-incoming',
+    description: 'viewing key incoming display',
+    builder: buildSettingsIncomingViewingKeyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-viewing-key-incoming-qr',
+    description: 'viewing key incoming-qr display',
+    builder: buildSettingsIncomingViewingKeyQrUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-viewing-key-qr',
+    description: 'mobile-viewing key qr display',
+    builder: buildMobileSettingsViewingKeyQrUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-viewing-key-incoming',
+    description: 'mobile-viewing key incoming display',
+    builder: buildMobileSettingsIncomingViewingKeyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-settings-viewing-key-incoming-qr',
+    description: 'mobile-viewing key incoming-qr display',
+    builder: buildMobileSettingsIncomingViewingKeyQrUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'settings-viewing-key-reveal',
     description: 'Desktop viewing key reveal with privacy guidance',
     builder: buildSettingsViewingKeyRevealUseCase,
@@ -1414,6 +2088,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPayRecipientNewAddressUseCase,
   ),
   FigmaCompareScenario(
+    id: 'mobile-pay-amount',
+    description: 'Mobile Pay amount entry with a filled amount',
+    builder: buildMobilePayAmountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-pay-recipient',
     description: 'Mobile Pay recipient selection with recent contacts',
     builder: buildMobilePayRecipientUseCase,
@@ -1429,6 +2110,72 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'pay-completed',
     description: 'Pay activity completed state',
     builder: buildPayCompletedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-review-default',
+    description: 'Desktop swap review summary',
+    builder: buildSwapReviewDefaultUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-status-completed',
+    description: 'Desktop swap completed status',
+    builder: buildSwapStatusCompletedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-pay-review',
+    description: 'Mobile Pay review cards',
+    builder: buildMobilePayReviewUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-review-info-headers',
+    description: 'Mobile swap and Pay status review headers',
+    builder: buildMobileReviewInfoHeadersCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-list-skeleton',
+    description: 'Activity list skeleton, desktop',
+    builder: activitySkeletonCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-list-loaded',
+    description: 'Activity list loaded, desktop',
+    builder: activityLoadedCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-list-append',
+    description: 'Activity list append, desktop',
+    builder: activityAppendCapture,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-list-skeleton',
+    description: 'Activity list skeleton, mobile',
+    builder: activitySkeletonCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-list-loaded',
+    description: 'Activity list loaded, mobile',
+    builder: activityLoadedCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-list-append',
+    description: 'Activity list append, mobile',
+    builder: activityAppendCapture,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'activity-gift-cards',
@@ -2447,6 +3194,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-home-nu7-announcement',
+    description: 'Mobile NU7 announcement sheet',
+    builder: buildMobileHomeNu7AnnouncementUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-nu7-announcement',
+    description: 'Desktop NU7 announcement modal',
+    builder: buildDesktopHomeNu7AnnouncementUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-announcement-modal',
     description: 'Ironwood migration announcement modal',
     builder: buildIronwoodMigrationAnnouncementModalUseCase,
@@ -2467,6 +3226,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     description:
         'Desktop home showing spendable Ironwood balance during migration',
     builder: buildDesktopHomeIronwoodMigrationInProgressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-ironwood-upgrade-stopped',
+    description: 'Desktop home CTA for an upgrade-stopped migration',
+    builder: buildDesktopHomeIronwoodMigrationUpgradeStoppedUseCase,
   ),
   FigmaCompareScenario(
     id: 'desktop-home-sidebar-compact-balances',
@@ -2608,6 +3372,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ironwood-migration-stop-confirmation',
     description: 'Ironwood migration cancellation final confirmation',
     builder: buildIronwoodMigrationStopConfirmationUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-upgrade-stopped',
+    description: 'Desktop migration stopped by the network upgrade',
+    builder: buildIronwoodMigrationUpgradeStoppedUseCase,
   ),
   FigmaCompareScenario(
     id: 'ironwood-migration-complete',
@@ -2793,6 +3562,27 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-upgrade-stopped',
+    description: 'Mobile migration stopped by the network upgrade',
+    builder: buildMobileIronwoodMigrationUpgradeStoppedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-ironwood-upgrade-stopped',
+    description: 'Mobile home banner for an upgrade-stopped migration',
+    builder: buildMobileIronwoodMigrationHomeUpgradeStoppedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-ironwood-upgrade-stopped-modal',
+    description: 'Mobile home sheet for an upgrade-stopped migration',
+    builder: buildMobileIronwoodMigrationHomeUpgradeStoppedModalUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-home-ironwood-migration-attention-modal',
     description: 'Mobile home migration signature attention modal',
     builder: buildMobileIronwoodMigrationHomeAttentionModalUseCase,
@@ -2885,6 +3675,30 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'payment-request-scanned-matches-link',
+    description: 'Desktop original QR that matches the link',
+    builder: buildPaymentRequestScannedMatchesLinkUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-scanned-link-differs',
+    description: 'Desktop original QR whose link had a different address',
+    builder: buildPaymentRequestScannedDiffersFromLinkUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-scanned-matches-link',
+    description: 'Mobile original QR that matches the link',
+    builder: buildMobilePaymentRequestScannedMatchesLinkUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-scanned-link-differs',
+    description: 'Mobile original QR whose link had a different address',
+    builder: buildMobilePaymentRequestScannedDiffersFromLinkUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'payment-request-link-details',
     description:
         'Parsed external payment request before the final payment review',
@@ -2916,6 +3730,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'payment-request-full',
     description: 'Desktop external-request introduction with a compact summary',
     builder: buildPaymentRequestFullUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-pasted',
+    description: 'Desktop introduction for a link pasted into Send',
+    builder: buildPaymentRequestPastedUseCase,
   ),
   FigmaCompareScenario(
     id: 'payment-request-minimal',
@@ -3015,6 +3834,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-payment-request-full',
     description: 'Mobile external-request introduction with a compact summary',
     builder: buildMobilePaymentRequestFullUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-pasted',
+    description: 'Mobile introduction for a link pasted into Send',
+    builder: buildMobilePaymentRequestPastedUseCase,
     desktop: false,
     mobile: true,
   ),
@@ -3147,6 +3973,22 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-receive-transparent',
+    description: 'Mobile receive screen on the transparent pool',
+    builder: buildReceiveMobileTransparentUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-receive-wide',
+    description:
+        'Adaptive receive with safe pane geometry and a deterministic wallet',
+    builder: buildMobileReceiveWideCapture,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+  ),
+  FigmaCompareScenario(
     id: 'receive-request-compose-no-price',
     description: 'Desktop request modal step one with no live price',
     builder: buildRequestModalStepOnePriceUnavailableUseCase,
@@ -3168,6 +4010,22 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-receive-request-compose-expanded-message',
+    description: 'Mobile request sheet with a two-line memo editor',
+    builder: buildRequestMobileComposeExpandedMessageUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-receive-request-compose-expanded-message-keyboard',
+    description:
+        'Mobile two-line memo editor with Gboard-sized keyboard insets',
+    builder: buildRequestMobileComposeExpandedMessageKeyboardUseCase,
+    desktop: false,
+    mobile: true,
+    platform: TargetPlatform.android,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-receive-request-compose-error',
     description: 'Mobile request sheet step one with an invalid amount',
     builder: buildRequestMobileComposeAmountErrorUseCase,
@@ -3175,9 +4033,27 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'receive-desktop-live-shielded',
+    description: 'Production desktop receive pane with a shielded address',
+    builder: buildReceiveDesktopLiveShieldedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-desktop-live-transparent',
+    description: 'Production desktop receive pane with a transparent address',
+    builder: buildReceiveDesktopLiveTransparentUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'receive-desktop-shielded',
-    description: 'Desktop receive pane with the request entry beside copy',
+    description: 'Desktop receive pane with copy/share and a labelled request',
     builder: buildReceiveDesktopRequestEntryUseCase,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-desktop-transparent',
+    description:
+        'Desktop transparent receive with copy/share and a text request',
+    builder: buildReceiveDesktopTransparentRequestEntryUseCase,
     desktop: true,
     mobile: false,
   ),
@@ -3311,10 +4187,23 @@ Widget _buildLedgerSigningFinishing(BuildContext context) =>
       mobile: kAppFormFactor == AppFormFactor.mobile,
     );
 
+Widget _buildLedgerSigningProofsPending(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.finishing,
+      signingStage: LedgerSigningStage.finishing,
+      mobile: kAppFormFactor == AppFormFactor.mobile,
+    );
+
 Widget _buildLedgerSigningMemoHashUpdate(BuildContext context) =>
     buildLedgerSigningPreview(
       phase: LedgerSigningModalPhase.failed,
       failureMode: LedgerSigningPlaygroundFailure.memoHashUpdate,
+    );
+
+Widget _buildLedgerSigningAppUpdate(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.failed,
+      failureMode: LedgerSigningPlaygroundFailure.appUpdate,
     );
 
 Widget _buildLedgerVotingProcessing(BuildContext context) =>
@@ -3369,4 +4258,53 @@ Widget _mobileTransparentSentPrivateRecorded(BuildContext context) =>
       kind: 'sent',
       private: true,
       recordedSend: true,
+    );
+
+Widget _buildLedgerSigningDeclined(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.failed,
+      failureOverride: const LedgerSigningFailurePresentation(
+        title: 'Ledger signing failed',
+        statusLabel: 'Action needed',
+        actionNeeded: true,
+        message: 'Signing was declined on Ledger. Try again when you’re ready.',
+        showDeviceAppPrompt: false,
+        actionLabel: 'Try again',
+        requestFailure: LedgerRequestFailure.declined,
+      ),
+    );
+Widget _buildLedgerSigningTexDeclined(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.failed,
+      roundNumber: 2,
+      roundCount: 2,
+      failureOverride: const LedgerSigningFailurePresentation(
+        title: 'Ledger signing failed',
+        statusLabel: 'Action needed',
+        actionNeeded: true,
+        message: 'Signing was declined on Ledger. Try again when you’re ready.',
+        showDeviceAppPrompt: false,
+        actionLabel: 'Try again',
+        requestFailure: LedgerRequestFailure.declined,
+      ),
+    );
+Widget _buildLedgerSigningSaveFailed(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.failed,
+      canLeaveOverride: false,
+      failureOverride: const LedgerSigningFailurePresentation(
+        title: 'Could not save signed transaction',
+        statusLabel: 'Signature preserved',
+        actionNeeded: false,
+        message:
+            'Keep Vizor open and try again. No new Ledger approval needed.',
+        showDeviceAppPrompt: false,
+        actionLabel: 'Try again',
+      ),
+    );
+Widget _buildLedgerSigningCancelling(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.awaitingDevice,
+      cancelling: true,
+      canLeaveOverride: false,
     );

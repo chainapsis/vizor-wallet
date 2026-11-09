@@ -299,7 +299,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Update failed'), findsOneWidget);
-    expect(find.text('Signed feed verification failed.'), findsOneWidget);
+    // The native text is only logged; the prompt shows the app's copy.
+    expect(
+      find.text("Couldn't complete the update. Try again."),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Signed feed verification failed.'),
+      findsNothing,
+    );
     expect(find.widgetWithText(AppButton, 'Dismiss'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(AppButton, 'Try again'));

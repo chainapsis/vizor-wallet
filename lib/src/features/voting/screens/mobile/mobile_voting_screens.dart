@@ -1,3 +1,5 @@
+import '../../../../core/l10n/l10n.dart';
+import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import '../../../ledger/widgets/mobile_ledger_signing_surface.dart';
 import 'dart:async';
 
@@ -32,7 +34,7 @@ class MobileVotingPollsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MobileVotingScaffold(
-      title: 'Coinholder voting',
+      title: context.l10n.commonCoinholderVoting,
       fallbackPath: '/home',
       trailing: _MobileVotingSettingsButton(
         onTap: () => showMobileVotingConfigSettingsSheet(context),
@@ -72,25 +74,31 @@ class _MobileVotingProposalDetailScreenState
         sessionState != null &&
             hasCompletedVoteForDisplay(sessionState.roundPlan) &&
             !hasBlockingRoundRecoveryWork(sessionState.roundPlan)
-        ? 'Voted'
-        : 'Coinholder voting';
-    return PopScope<void>(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) unawaited(_clearDraftForExit());
+        ? context.l10n.votingStatusVoted
+        : context.l10n.commonCoinholderVoting;
+    return MobileSidebarExitScope(
+      onExit: () async {
+        await _clearDraftForExit(propagateError: true);
+        return true;
       },
-      child: MobileVotingScaffold(
-        title: title,
-        showHeader: false,
-        onBack: () => unawaited(_handleBack()),
-        child: VotingProposalDetailView(
-          roundId: widget.roundId,
-          showDesktopToolbar: false,
-          mobileHeaderBuilder: (compact, navigation) => VotingScrollHeader(
-            title: title,
-            compact: compact,
-            navigation: navigation,
-            onBack: () => unawaited(_handleBack()),
+      child: PopScope<void>(
+        canPop: true,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) unawaited(_clearDraftForExit());
+        },
+        child: MobileVotingScaffold(
+          title: title,
+          showHeader: false,
+          onBack: () => unawaited(_handleBack()),
+          child: VotingProposalDetailView(
+            roundId: widget.roundId,
+            showDesktopToolbar: false,
+            mobileHeaderBuilder: (compact, navigation) => VotingScrollHeader(
+              title: title,
+              compact: compact,
+              navigation: navigation,
+              onBack: () => unawaited(_handleBack()),
+            ),
           ),
         ),
       ),
@@ -107,7 +115,7 @@ class _MobileVotingProposalDetailScreenState
     }
   }
 
-  Future<void> _clearDraftForExit() async {
+  Future<void> _clearDraftForExit({bool propagateError = false}) async {
     if (_draftExitCleanupStarted) return;
     final activeAccountUuid = ref
         .read(accountProvider)
@@ -128,6 +136,8 @@ class _MobileVotingProposalDetailScreenState
     try {
       await notifier.clearAll();
     } catch (error) {
+      _draftExitCleanupStarted = false;
+      if (propagateError) rethrow;
       debugPrint(
         '[zcash] Voting: draft cleanup failed on poll exit '
         'round=${draftKey.roundId} account=${draftKey.accountUuid} '
@@ -137,16 +147,31 @@ class _MobileVotingProposalDetailScreenState
   }
 }
 
-class MobileVotingReviewScreen extends StatelessWidget {
+class MobileVotingReviewScreen extends ConsumerWidget {
   const MobileVotingReviewScreen({super.key, required this.roundId});
 
   final String roundId;
 
   @override
-  Widget build(BuildContext context) {
-    return MobileVotingScaffold(
-      title: 'Review your answers',
-      child: VotingReviewView(roundId: roundId, showDesktopToolbar: false),
+  Widget build(BuildContext context, WidgetRef ref) {
+    return MobileSidebarExitScope(
+      onExit: () async {
+        final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+        if (accountUuid != null && accountUuid.isNotEmpty) {
+          await ref
+              .read(
+                votingDraftProvider(
+                  VotingSessionKey(roundId: roundId, accountUuid: accountUuid),
+                ).notifier,
+              )
+              .clearAll();
+        }
+        return true;
+      },
+      child: MobileVotingScaffold(
+        title: context.l10n.votingReviewTitle,
+        child: VotingReviewView(roundId: roundId, showDesktopToolbar: false),
+      ),
     );
   }
 }
@@ -175,8 +200,10 @@ class MobileVotingStatusScreen extends StatelessWidget {
             activeStepDetail: presentation.activeStepDetail,
             warning: presentation.warning,
           ),
-      contentWrapper: (_, content) =>
-          MobileVotingScaffold(title: 'Submit vote', child: content),
+      contentWrapper: (_, content) => MobileVotingScaffold(
+        title: context.l10n.votingMobileSubmitTitle,
+        child: content,
+      ),
       ledgerStatusBuilder: (_, presentation, panel) => Stack(
         fit: StackFit.expand,
         children: [
@@ -215,8 +242,10 @@ class MobileVotingSubmissionConfirmationScreen extends StatelessWidget {
       roundId: roundId,
       accountUuid: accountUuid,
       showDesktopToolbar: false,
-      contentWrapper: (_, content) =>
-          MobileVotingScaffold(title: 'Vote submitted', child: content),
+      contentWrapper: (_, content) => MobileVotingScaffold(
+        title: context.l10n.votingMobileSubmittedTitle,
+        child: content,
+      ),
       confirmedContentBuilder: (_, onDone) =>
           MobileVotingSubmittedScreen(onDone: onDone),
     );
@@ -231,7 +260,7 @@ class MobileVotingResultsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MobileVotingScaffold(
-      title: 'Voting results',
+      title: context.l10n.votingResultsFallbackTitle,
       child: VotingResultsView(roundId: roundId, showDesktopToolbar: false),
     );
   }
@@ -249,18 +278,18 @@ class MobileVotingAccountGuard extends ConsumerWidget {
     return ref
         .watch(accountProvider)
         .when(
-          loading: () => const MobileVotingScaffold(
-            title: 'Coinholder voting',
+          loading: () => MobileVotingScaffold(
+            title: context.l10n.commonCoinholderVoting,
             fallbackPath: '/home',
             child: VotingPaneLoading(),
           ),
           error: (error, _) => MobileVotingScaffold(
-            title: 'Coinholder voting',
+            title: context.l10n.commonCoinholderVoting,
             fallbackPath: '/home',
             horizontalPadding: AppSpacing.sm,
             child: Center(
               child: Text(
-                "Couldn't load account.\n$error",
+                context.l10n.votingMobileAccountLoadFailed('$error'),
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.secondary,
@@ -341,7 +370,7 @@ class _MobileVotingSettingsButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Voting config settings',
+      label: context.l10n.votingConfigSettings,
       button: true,
       child: GestureDetector(
         key: const ValueKey('mobile_voting_settings_button'),

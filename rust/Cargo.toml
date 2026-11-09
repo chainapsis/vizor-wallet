@@ -7,26 +7,37 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-zakura-pir-status = { version = "=0.0.1-rc0" }
-zakura-transaction-status = { version = "=0.0.1-rc0" }
-zcash_note_encryption = "0.4"
-flutter_rust_bridge = "=2.11.1"
+zakura-pir-protocol = { version = "=0.0.1-rc5", default-features = false, features = ["http-endpoint"] }
+zakura-pir-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "0074b990a635a3e53258c298ad976043a8d42c3e" }
+zakura-service-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "0074b990a635a3e53258c298ad976043a8d42c3e" }
+zakura-pir-client = { version = "=0.0.1-rc5", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
+zcash_note_encryption = { package = "zakura-note-encryption", version = "=4.0.0" }
+# The app installs its own redacting logger and panic hook.
+# Supported targets provide the atomic widths used by FRB.
+flutter_rust_bridge = { version = "=2.11.1", default-features = false, features = [
+    "anyhow",
+    "dart-opaque",
+    "log",
+    "rust-async",
+    "thread-pool",
+    "wasm-start",
+] }
 
-zcash_script = "0.4.3"
-voting-crypto-deps = { version = "=0.2.4" }
-sapling-crypto = { package = "zakura-sapling-crypto", version = "=2.0.0", default-features = false, features = ["circuit"] }
+zcash_script = "0.6"
+voting-crypto-deps = "=0.4.0"
+sapling-crypto = { package = "zakura-sapling-crypto", version = "=4.0.0", default-features = false, features = ["circuit"] }
 uuid = "1.1"
 zip32 = "0.2"
-pasta_curves = { package = "zakura-pasta-curves", version = "=2.0.0" }
+pasta_curves = { package = "zakura-pasta-curves", version = "=4.0.0" }
 ff = "0.14"
 # Required by no-op Sapling prover trait impls
-jubjub = { package = "zakura-jubjub", version = "=2.0.0" }
-bls12_381 = { package = "zakura-bls12-381", version = "=2.0.0" }
+jubjub = { package = "zakura-jubjub", version = "=4.0.0" }
+bls12_381 = { package = "zakura-bls12-381", version = "=4.0.0" }
 rand_core = "0.6"
-secp256k1 = "0.29"
+secp256k1 = "0.33"
 
 # Key generation
-bip0039 = "0.12"
+bip0039 = { version = "0.12", default-features = false, features = ["rand"] }
 
 # Serialization
 nonempty = "0.11"
@@ -47,6 +58,8 @@ sha2 = "0.10"
 
 # Random number generation
 rand = "0.8"
+# Preserve the existing entropy and browser backends after trimming Flume.
+getrandom = { version = "0.2", default-features = false, features = ["js", "rdrand"] }
 
 # Async runtime & gRPC
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
@@ -65,7 +78,7 @@ time = "0.3"
 # so we can explicitly install the ring CryptoProvider in `init_app`.
 # Without an explicit provider install, rustls 0.23+ panics the first
 # TLS handshake with "no process-level CryptoProvider installed".
-rustls = "0.23"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 
 # SQLite (re-exported by zcash_client_sqlite but needed for Connection type)
 rusqlite = "0.37"
@@ -73,8 +86,10 @@ redb = "4.1.0"
 # Bind explicit public detail loads to the existing physical wallet file.
 same-file = "1.0.6"
 
-# Logging (FRB forwards to Dart console via setup_default_user_utils)
-log = "0.4"
+# Logging. `log_redaction` installs the process logger, which masks
+# identifiers and forwards to the backend FRB's default utils would install.
+log = { version = "0.4", features = ["std"] }
+regex = "1"
 
 # Hex encoding
 hex = "0.4"
@@ -83,7 +98,9 @@ hex = "0.4"
 ur = { git = "https://github.com/KeystoneHQ/ur-rs", tag = "0.3.3" }
 serde_json = "1"
 url = "2.5.8"
-ics23 = "0.12"
+# Vote-store proofs use SHA-256 through our existing sha2 dependency.
+# ICS23 defaults add unrelated hashes and protobuf JSON support.
+ics23 = { version = "0.12", default-features = false }
 prost13 = { package = "prost", version = "0.13" }
 tendermint = "0.40.4"
 tendermint-light-client-verifier = "0.40.4"
@@ -92,60 +109,61 @@ tendermint-light-client-verifier = "0.40.4"
 # `use orchard` / `use zcash_client_backend` keep working.
 [dependencies.zcash_primitives]
 package = "zakura-primitives"
-version = "=2.0.0"
+version = "=4.0.0"
+features = ["non-standard-fees"]
 
 [dependencies.zcash_address]
 package = "zakura-address"
-version = "=2.0.0"
+version = "=4.0.0"
 
 [dependencies.zcash_keys]
 package = "zakura-keys"
-version = "=2.0.0"
+version = "=4.0.0"
 features = ["orchard"]
 
 [dependencies.zcash_protocol]
 package = "zakura-protocol"
-version = "=2.0.0"
+version = "=4.0.0"
 
 [dependencies.transparent]
 package = "zakura-transparent"
-version = "=2.0.0"
+version = "=4.0.0"
 
 [dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "=0.1.0-rc7"
+version = "=0.1.0-rc9.6"
 features = [
     "orchard",
     "transparent-inputs",
     "lightwalletd-tonic",
     "lightwalletd-tonic-tls-webpki-roots",
-    "tor",
+    "tor-client",
     "sync",
     "pczt",
 ]
 
 [dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "=0.1.0-rc7"
+version = "=0.1.0-rc9.6"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-version = "=5.1.1-rc.3"
+version = "=5.2.0"
 
 [dependencies.orchard]
 package = "zakura-orchard"
-version = "=2.0.0"
+version = "=4.0.0"
 # Cargo unifies this feature with wallet-library Orchard and Ironwood tree hashing.
 features = ["weighted-merkle"]
 
 [dependencies.zcash_proofs]
 package = "zakura-proofs"
-version = "=2.0.0"
+version = "=4.0.0"
 features = ["local-prover"]
 
 [dependencies.pczt]
 package = "zakura-pczt"
-version = "=0.1.0-rc4"
+version = "=0.1.0-rc9"
 features = [
     "orchard",
     "io-finalizer",
@@ -163,26 +181,18 @@ package = "ur-registry"
 default-features = false
 features = ["std"]
 
-[dependencies.zakura-pir-enhance]
-version = "=0.0.1-rc1"
-default-features = false
-features = ["wallet"]
+# The platform log backends FRB 2.11.1 uses, at the versions it already pulls in.
+[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+oslog = { version = "0.2.0", default-features = false }
 
-# Transparent PIR recovery adapter. A git dependency rather than a patched
-# crates.io package; see the `[patch.crates-io]` comment below.
-[dependencies.zakura-pir-transparent]
-git = "https://github.com/zakura-core/wallet-libraries"
-rev = "ad963341be56f5e72ad98d3d042067ab03c08153"
-default-features = false
-# `sqlite` applies a batch to the wallet and acknowledges it in one call.
-features = ["sqlite"]
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
-ledger-transport = "0.11.0"
-ledger-transport-hid = "0.11.0"
+hidapi = { version = "2.6.1", default-features = false, features = ["linux-static-hidraw"] }
 
 [dev-dependencies]
 hyper = { version = "1", features = ["server", "http2"] }
@@ -206,38 +216,36 @@ regex = "1"
 # Builds wallets through real private recovery for the history mapping tests.
 [dev-dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "=0.1.0-rc7"
+version = "=0.1.0-rc9.6"
 features = ["test-dependencies"]
 
 [dev-dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "=0.1.0-rc7"
+version = "=0.1.0-rc9.6"
 features = ["test-dependencies"]
 
 [dev-dependencies.zcash_voting]
-version = "=5.1.1-rc.3"
+version = "=5.2.0"
 features = ["test-fixtures"]
 
 # Real adapter batches for the coordinator's fixture source, the fake txid
 # display publication the loop-4 tests serve, and a real shard service in
-# process, with the wallet-pir crates it publishes with. Same rev as the
-# dependency above.
-[dev-dependencies.zakura-pir-transparent]
-git = "https://github.com/zakura-core/wallet-libraries"
-rev = "ad963341be56f5e72ad98d3d042067ab03c08153"
+# process. Keep the version aligned with the runtime dependency above.
+[dev-dependencies.zakura-pir-client]
+version = "=0.0.1-rc5"
 default-features = false
-features = ["sqlite", "testing"]
+features = ["testing"]
 
 [dev-dependencies.ipir-sp]
-version = "=0.1.0-rc.6"
+version = "=0.1.0-rc.7"
 
 [dev-dependencies.vote-commitment-tree]
-version = "=0.6.3"
+version = "=0.8.1"
 default-features = false
 features = ["zakura"]
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
 
 [lints.clippy]
 # These shapes are intentional at FFI/API boundaries or in transaction
@@ -252,50 +260,8 @@ should_implement_trait = "allow"
 items_after_test_module = "allow"
 assertions_on_constants = "allow"
 
-# The transparent PIR ledger is in wallet-libraries but not released. Patch the
-# crates.io packages rather than depending on git directly: other dependencies
-# (including zakura-pir-enhance) reach these crates through
-# crates.io, and a direct git dependency would duplicate them. `zakura-pczt`
-# and `zakura-pir-enhance-types` are patched because the git
-# `zakura-client-backend` depends on them by path. Drop this once a release
-# includes the revision.
-#
-# `zakura-pir-transparent` is the exception, a direct git dependency: it
-# depends on the wallet-pir transparent crates, which exist only in git (their
-# `pir-native` has `publish = false`), so it cannot be published. Keep its rev
-# equal to these so its path dependencies on the backend and SQLite crates
-# resolve to the patched sources.
-#
-# Pinned to wallet-libraries main at PR #153 (discovery that continues past its
-# budget, and the in-process shard service under `testing`), after PR #152
-# (rewound receives stay pending, deferrals carry the policy generation), PR #151
-# (unused transparent-recovery API removed), PR #147 (account activity, unattributed fees and the receipt
-# read), PR #150 (forget refuses a policy changed
-# since it began), PR #149 (interrupted settlements skip, policy changes stop,
-# timed-out lookups back off), PR #148 (a rewound private receive stays pending),
-# PR #146 (the recovery pass driver), PR #144 (typed transparent authority refusals and the ordered private-recovery
-# forget), PR #145 (the txid detail run driver and preferred receipts), the
-# transparent-ledger renames (activation, recovery suspension, address watch
-# sets), PR #137 (Enhance queries over only the rows a domain can hold), PR #140
-# (the same for a growing Transparent tail's pages), PR #139 (import-time account
-# discovery), PR #138 (the gated settlement this wallet uses to lock one commit
-# at a time), PR #134 (forget transparent ledger facts under `Public`), PR #133
-# (dithered 44-bit native queries for Transparent, Enhance and Status) and
-# PR #135 (the raw HTTP exchange, companion directory, settlement actions, txid
-# display service and `testing` feature this wallet builds on).
-# `zakura-pir-enhance` is patched too so its client uploads the dithered query.
-# The status response hook also needs its status/native path dependencies here
-# so their public types stay unified. Keep every wallet-libraries dependency at
-# this exact revision.
-[patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ad963341be56f5e72ad98d3d042067ab03c08153" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ad963341be56f5e72ad98d3d042067ab03c08153" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ad963341be56f5e72ad98d3d042067ab03c08153" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ad963341be56f5e72ad98d3d042067ab03c08153" }
-zakura-transaction-status = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ad963341be56f5e72ad98d3d042067ab03c08153" }
-zakura-pir-status = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ad963341be56f5e72ad98d3d042067ab03c08153" }
-zakura-pir-native = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ad963341be56f5e72ad98d3d042067ab03c08153" }
-zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ad963341be56f5e72ad98d3d042067ab03c08153" }
+# Wallet and voting dependencies use their coordinated published releases.
+# Voting 5.2 is an explicit opt-in; keep the exact prerelease pin during validation.
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
@@ -307,3 +273,17 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Shared PIR configuration and product routes are not released yet.
+[patch.crates-io]
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "0074b990a635a3e53258c298ad976043a8d42c3e" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "0074b990a635a3e53258c298ad976043a8d42c3e" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "0074b990a635a3e53258c298ad976043a8d42c3e" }
+zakura-filters = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "0074b990a635a3e53258c298ad976043a8d42c3e" }
+zakura-pir-client = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "0074b990a635a3e53258c298ad976043a8d42c3e" }
+zakura-pir-protocol = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "0074b990a635a3e53258c298ad976043a8d42c3e" }
+zakura-pir-publisher = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "0074b990a635a3e53258c298ad976043a8d42c3e" }
+zakura-pir-query-server = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "0074b990a635a3e53258c298ad976043a8d42c3e" }
+zakura-pir-server-core = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "0074b990a635a3e53258c298ad976043a8d42c3e" }
+# The library above takes `ipir-sp` from git. Keep the app's test evaluator on that source.
+ipir-sp = { git = "https://github.com/valargroup/ipir-sp", rev = "5ea080a3281a01c5459f585e0a1bbbde50ec2bd2" }

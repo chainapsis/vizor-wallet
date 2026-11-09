@@ -4,9 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import '../../../../main.dart' show log;
 import '../../../core/clipboard/sensitive_clipboard.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
@@ -116,10 +118,12 @@ enum _SeedPhraseCopyTarget {
   birthdayHeight,
 }
 
-class _SeedPhraseUnavailableException implements Exception {
-  const _SeedPhraseUnavailableException(this.message);
+enum _SeedPhraseUnavailable { account, hardware, secret }
 
-  final String message;
+class _SeedPhraseUnavailableException implements Exception {
+  const _SeedPhraseUnavailableException(this.reason);
+
+  final _SeedPhraseUnavailable reason;
 }
 
 class _SettingsSeedPhraseScreenState
@@ -143,7 +147,7 @@ class _SettingsSeedPhraseScreenState
   Timer? _copyResetTimer;
 
   String? get _passwordPolicyMessage =>
-      validateWalletPassword(_passwordController.text);
+      validateWalletPassword(context.l10n, _passwordController.text);
 
   bool get _canSubmit =>
       !_isSubmitting && isWalletPasswordValid(_passwordController.text);
@@ -189,7 +193,7 @@ class _SettingsSeedPhraseScreenState
 
     setState(() {
       _clearSensitiveState(
-        passwordError: 'Selected account changed. Enter your password again.',
+        passwordError: context.l10n.settingsAccountChangedPassword,
       );
     });
   }
@@ -243,7 +247,7 @@ class _SettingsSeedPhraseScreenState
       final targetAccount = _targetAccount(accountState);
       if (targetAccount == null) {
         throw const _SeedPhraseUnavailableException(
-          'The selected account is no longer available.',
+          _SeedPhraseUnavailable.account,
         );
       }
       final targetAccountUuid = targetAccount.uuid;
@@ -264,7 +268,7 @@ class _SettingsSeedPhraseScreenState
       if (!isValid) {
         if (!mounted) return;
         setState(() {
-          _passwordError = 'Incorrect password. Please try again.';
+          _passwordError = context.l10n.passwordIncorrect;
           _isSubmitting = false;
         });
         return;
@@ -274,8 +278,7 @@ class _SettingsSeedPhraseScreenState
         if (!mounted) return;
         setState(() {
           _clearSensitiveState(
-            passwordError:
-                'Selected account changed. Enter your password again.',
+            passwordError: context.l10n.settingsAccountChangedPassword,
           );
         });
         return;
@@ -283,7 +286,7 @@ class _SettingsSeedPhraseScreenState
 
       if (targetAccount.isHardware) {
         throw const _SeedPhraseUnavailableException(
-          'Secret passphrase is not available for hardware accounts.',
+          _SeedPhraseUnavailable.hardware,
         );
       }
 
@@ -294,7 +297,7 @@ class _SettingsSeedPhraseScreenState
       final mnemonic = secret?.mnemonic;
       if (mnemonic == null || mnemonic.isEmpty) {
         throw const _SeedPhraseUnavailableException(
-          'Secret passphrase is not available for this account.',
+          _SeedPhraseUnavailable.secret,
         );
       }
 
@@ -302,8 +305,7 @@ class _SettingsSeedPhraseScreenState
       if (_targetAccountChanged(targetAccountUuid)) {
         setState(() {
           _clearSensitiveState(
-            passwordError:
-                'Selected account changed. Enter your password again.',
+            passwordError: context.l10n.settingsAccountChangedPassword,
           );
         });
         return;
@@ -331,14 +333,19 @@ class _SettingsSeedPhraseScreenState
       if (!mounted || requestGeneration != _secretRequestGeneration) return;
       setState(() {
         _clearSensitiveState(
-          passwordError:
-              'The wallet session changed. Enter your password again.',
+          passwordError: context.l10n.settingsWalletSessionChanged,
         );
       });
     } on _SeedPhraseUnavailableException catch (e) {
       if (!mounted) return;
+      final l10n = context.l10n;
       setState(() {
-        _revealError = e.message;
+        _revealError = switch (e.reason) {
+          _SeedPhraseUnavailable.account => l10n.settingsAccountUnavailable,
+          _SeedPhraseUnavailable.hardware =>
+            l10n.settingsSeedUnavailableHardware,
+          _SeedPhraseUnavailable.secret => l10n.settingsSeedUnavailableAccount,
+        };
         _stage = _SettingsSeedPhraseStage.reveal;
         _isSubmitting = false;
       });
@@ -346,8 +353,7 @@ class _SettingsSeedPhraseScreenState
       log('SettingsSeedPhraseScreen._submitPassword: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _revealError =
-            "Couldn't load your secret passphrase. Please try again.";
+        _revealError = context.l10n.settingsSeedLoadFailed;
         _stage = _SettingsSeedPhraseStage.reveal;
         _isSubmitting = false;
       });
@@ -443,7 +449,8 @@ class _SettingsSeedPhraseScreenState
     final blockTime = await ref
         .read(rpcEndpointFailoverProvider.notifier)
         .runWithEndpointFallback(
-          operation: 'birthday block time',
+          operation:
+              'birthday block time', // l10n-ignore: endpoint failover operation name
           action: (endpoint) => rust_sync.getBlockTime(
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             height: BigInt.from(height),
@@ -469,8 +476,9 @@ class _SettingsSeedPhraseScreenState
   Future<void> _copyBirthdayDate() async {
     final blockTime = _birthdayBlockTime;
     if (blockTime == null || blockTime <= 0) return;
+    final localeName = context.l10n.localeName;
     await Clipboard.setData(
-      ClipboardData(text: _formatBirthdayDate(blockTime)),
+      ClipboardData(text: _formatBirthdayDate(blockTime, localeName)),
     );
     _markCopied(_SeedPhraseCopyTarget.birthdayDate);
   }
@@ -526,7 +534,7 @@ class _SettingsSeedPhraseScreenState
       if (mounted) {
         setState(() {
           _savingBackup = false;
-          _backupError = 'Couldn’t save that. Try again.';
+          _backupError = context.l10n.settingsSeedBackupSaveFailed;
         });
       }
     } finally {
@@ -588,7 +596,7 @@ class _SettingsSeedPhraseScreenState
                 : () => setState(
                     () => _stage = _SettingsSeedPhraseStage.password,
                   ),
-            child: const Text('Continue'),
+            child: Text(context.l10n.commonContinue),
           ),
           if (isPending) ...[
             const SizedBox(height: AppSpacing.xs),
@@ -601,7 +609,7 @@ class _SettingsSeedPhraseScreenState
                       !ref.watch(externalActionGuardProvider).canProtect
                   ? null
                   : () => _saveBackup(account.uuid, snooze: true),
-              child: const Text('Remind me later'),
+              child: Text(context.l10n.settingsSeedRemindLater),
             ),
           ],
         ] else
@@ -613,7 +621,7 @@ class _SettingsSeedPhraseScreenState
                     !ref.watch(externalActionGuardProvider).canProtect
                 ? null
                 : () => _saveBackup(account!.uuid, snooze: false),
-            child: const Text('I’ve written it down'),
+            child: Text(context.l10n.settingsSeedWrittenDown),
           ),
       ],
     );
@@ -653,7 +661,7 @@ class _SettingsSeedPhraseScreenState
               _SettingsSeedPhraseStage.intro => _buildBackupIntro(),
               _SettingsSeedPhraseStage.password => Center(
                 child: ConfirmAccessCard(
-                  subtitle: 'To view the secret passphrase.',
+                  subtitle: context.l10n.settingsSeedPasswordSubtitle,
                   controller: _passwordController,
                   errorText: _passwordError ?? _passwordPolicyMessage,
                   isSubmitting: _isSubmitting,
@@ -829,9 +837,7 @@ class _SeedPhraseRevealView extends StatelessWidget {
             ),
           ] else
             _SeedPhraseErrorCard(
-              message:
-                  errorText ??
-                  'Secret passphrase is not available for this account.',
+              message: errorText ?? context.l10n.settingsSeedUnavailableAccount,
             ),
         ],
       ),
@@ -849,7 +855,7 @@ class _SeedPhraseHeading extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          'Secret Passphrase',
+          context.l10n.secretPassphraseTitle,
           textAlign: TextAlign.center,
           style: AppTypography.headlineLarge.copyWith(
             color: colors.text.accent,
@@ -857,8 +863,7 @@ class _SeedPhraseHeading extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.s),
         Text(
-          'This is the master key to your wallet.\n'
-          'Don’t share it with anyone.',
+          context.l10n.settingsSeedHeadingSubtitle,
           textAlign: TextAlign.center,
           style: AppTypography.labelLarge.copyWith(
             color: colors.text.accent,
@@ -939,7 +944,7 @@ class _SeedWordsCard extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xxs),
                 Expanded(
                   child: Text(
-                    'Secret Passphrase',
+                    context.l10n.secretPassphraseTitle,
                     style: AppTypography.bodyLarge.copyWith(
                       color: cardTextColor,
                       fontWeight: FontWeight.w600,
@@ -958,7 +963,11 @@ class _SeedWordsCard extends StatelessWidget {
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.xxs,
                   ),
-                  child: Text(phraseCopied ? 'Copied' : 'Copy'),
+                  child: Text(
+                    phraseCopied
+                        ? context.l10n.commonCopied
+                        : context.l10n.commonCopy,
+                  ),
                 ),
               ],
             ),
@@ -1137,7 +1146,7 @@ class _Bip39PassphraseFooter extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                'BIP39 Passphrase: $passphrase',
+                context.l10n.bip39PassphraseValue(passphrase),
                 key: const ValueKey('settings_bip39_passphrase_value'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -1150,8 +1159,8 @@ class _Bip39PassphraseFooter extends StatelessWidget {
             Semantics(
               button: true,
               label: copied
-                  ? 'BIP39 passphrase copied'
-                  : 'Copy BIP39 passphrase',
+                  ? context.l10n.settingsBip39PassphraseCopied
+                  : context.l10n.settingsBip39PassphraseCopy,
               excludeSemantics: true,
               child: AppButton(
                 key: const ValueKey('settings_bip39_passphrase_copy_button'),
@@ -1164,7 +1173,9 @@ class _Bip39PassphraseFooter extends StatelessWidget {
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.xxs,
                 ),
-                child: Text(copied ? 'Copied' : 'Copy'),
+                child: Text(
+                  copied ? context.l10n.commonCopied : context.l10n.commonCopy,
+                ),
               ),
             ),
           ],
@@ -1201,7 +1212,7 @@ class _SeedBirthdayCard extends StatelessWidget {
     final blockTime = birthdayBlockTime;
     final birthdayDate = blockTime == null || blockTime <= 0
         ? '-'
-        : _formatBirthdayDate(blockTime);
+        : _formatBirthdayDate(blockTime, context.l10n.localeName);
     final birthdayHeightText = birthdayHeight == null || birthdayHeight! <= 0
         ? '-'
         : birthdayHeight.toString();
@@ -1219,7 +1230,7 @@ class _SeedBirthdayCard extends StatelessWidget {
         children: [
           _SeedBirthdayRow(
             icon: AppIcons.calendar,
-            label: 'Birthday date',
+            label: context.l10n.settingsBirthdayDate,
             value: birthdayDate,
             loading: birthdayDateLoading,
             copied: birthdayDateCopied,
@@ -1233,7 +1244,7 @@ class _SeedBirthdayCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.s),
           _SeedBirthdayRow(
             icon: AppIcons.block,
-            label: 'Birthday block height',
+            label: context.l10n.settingsBirthdayBlockHeight,
             value: birthdayHeightText,
             loading: birthdayHeightLoading,
             copied: birthdayHeightCopied,
@@ -1306,7 +1317,9 @@ class _SeedBirthdayRow extends StatelessWidget {
               const SizedBox(width: AppSpacing.xxs),
               Semantics(
                 button: true,
-                label: copied ? '$label copied' : 'Copy $label',
+                label: copied
+                    ? context.l10n.settingsCopyLabelCopied(label)
+                    : context.l10n.settingsCopyLabel(label),
                 excludeSemantics: true,
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
@@ -1331,28 +1344,13 @@ class _SeedBirthdayRow extends StatelessWidget {
   }
 }
 
-String _formatBirthdayDate(int blockTime) {
+String _formatBirthdayDate(int blockTime, String localeName) {
   if (blockTime <= 0) return '-';
   final value = DateTime.fromMillisecondsSinceEpoch(
     blockTime * 1000,
     isUtc: true,
   ).toLocal();
-  const months = <String>[
-    '',
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  return '${months[value.month]} ${value.day}, ${value.year}';
+  return DateFormat.yMMMMd(localeName).format(value);
 }
 
 class _SeedPhraseErrorCard extends StatelessWidget {

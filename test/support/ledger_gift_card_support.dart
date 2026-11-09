@@ -124,6 +124,7 @@ class LedgerGiftHardware implements PaymentLinkHardwareSigningService {
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
     int? birthdayHeight,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     await store.saveDraft(
       link: ledgerGiftLink,
@@ -188,6 +189,7 @@ class LedgerGiftOperations implements LedgerSignedOperationService {
   int acks = 0;
   Completer<void>? broadcastGate;
   String status = 'broadcasted';
+  String? message;
   bool terminalRejection = false;
   @override
   Future<void> checkpoint({
@@ -240,6 +242,7 @@ class LedgerGiftOperations implements LedgerSignedOperationService {
       operationId: operationId,
       txid: 'gift-txid',
       status: status,
+      message: message,
       requiresAck: true,
     );
   }

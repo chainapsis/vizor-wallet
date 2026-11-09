@@ -41,6 +41,7 @@ use zip32::Scope;
 
 use super::*;
 use crate::wallet::network::configure_regtest_nu6_3_activation_height;
+use zcash_client_backend::data_api::Account as _;
 
 pub(super) type State = TestState<BlockCache, TestDb, LocalNetwork>;
 
@@ -183,30 +184,22 @@ fn privately_recovered_shielding(inputs: [u64; 2], shielded: u64) -> Recovered {
     privately_recovered(inputs, shielded, Some(FEE), false)
 }
 
-/// Like [`privately_recovered_shielding`], with the Enhance PIR record's fee
-/// and transparent-output flag chosen by the caller.
-fn privately_recovered(
-    inputs: [u64; 2],
-    shielded: u64,
-    record_fee: Option<u64>,
-    transparent_outputs: bool,
-) -> Recovered {
-    privately_recovered_with_metadata_fee(
-        inputs,
-        shielded,
-        record_fee,
-        transparent_outputs,
-        WholeTransactionFee::Exact(zat(FEE)),
-    )
+/// A wallet that recovered a shielding of `inputs` into `shielded` by private
+/// queries, before its Enhance PIR record arrived: its only Enhance work is
+/// the private memo query `request` for the shielded output.
+struct PendingQuery {
+    st: State,
+    account: AccountUuid,
+    fvk: <OrchardPoolTester as ShieldedPoolTester>::Fvk,
+    txid: [u8; 32],
+    request: EnhancePirRequest,
 }
 
-fn privately_recovered_with_metadata_fee(
+fn pending_memo_query(
     inputs: [u64; 2],
     shielded: u64,
-    record_fee: Option<u64>,
-    transparent_outputs: bool,
     metadata_fee: WholeTransactionFee,
-) -> Recovered {
+) -> PendingQuery {
     configure_regtest_nu6_3_activation_height(NU6_3).unwrap();
     let mut st = TestBuilder::new()
         .with_network(regtest())
@@ -315,6 +308,65 @@ fn privately_recovered_with_metadata_fee(
         .collect();
     assert_eq!(requests.len(), 1);
     let request = requests[0];
+    PendingQuery {
+        st,
+        account,
+        fvk,
+        txid,
+        request,
+    }
+}
+
+/// A copy of a wallet whose only Enhance work is one private memo query, for
+/// tests of Vizor's own handles on it.
+pub(crate) fn wallet_with_a_private_memo_query() -> (tempfile::TempDir, String, EnhancePirRequest) {
+    let pending = pending_memo_query(
+        [60_000, 40_000],
+        80_000,
+        WholeTransactionFee::Exact(zat(FEE)),
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+    pending
+        .st
+        .wallet()
+        .conn()
+        .execute("VACUUM INTO ?1", [&path])
+        .unwrap();
+    (dir, path, pending.request)
+}
+
+/// Like [`privately_recovered_shielding`], with the Enhance PIR record's fee
+/// and transparent-output flag chosen by the caller.
+fn privately_recovered(
+    inputs: [u64; 2],
+    shielded: u64,
+    record_fee: Option<u64>,
+    transparent_outputs: bool,
+) -> Recovered {
+    privately_recovered_with_metadata_fee(
+        inputs,
+        shielded,
+        record_fee,
+        transparent_outputs,
+        WholeTransactionFee::Exact(zat(FEE)),
+    )
+}
+
+fn privately_recovered_with_metadata_fee(
+    inputs: [u64; 2],
+    shielded: u64,
+    record_fee: Option<u64>,
+    transparent_outputs: bool,
+    metadata_fee: WholeTransactionFee,
+) -> Recovered {
+    let PendingQuery {
+        mut st,
+        account,
+        fvk,
+        txid,
+        request,
+    } = pending_memo_query(inputs, shielded, metadata_fee);
 
     // The service's record: the authentic ciphertext of the scanned note, its
     // transparent shape flags, and its transaction metadata.

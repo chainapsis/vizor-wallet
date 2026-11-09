@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _recipientAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
 
@@ -46,6 +47,7 @@ const _quote = SwapQuote(
 
 Widget _harness(Widget child, {AppThemeData theme = AppThemeData.light}) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
       data: theme,
       child: MediaQuery(

@@ -11,12 +11,13 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../payment_link_action.dart';
 import '../payment_link_card_motion.dart';
+import '../payment_link_list_diff.dart';
 import '../payment_link_cards_layout.dart';
-import '../payment_link_copy.dart';
 import '../payment_link_claim_checking_content.dart';
 import '../payment_link_dashed_border_painter.dart';
 import '../payment_link_skeleton.dart';
 import '../payment_link_wizard_chrome.dart';
+import '../../../../core/l10n/l10n.dart';
 
 export '../payment_link_cards_layout.dart'
     show PaymentLinkCardsSection, PaymentLinkCardsTab;
@@ -59,17 +60,20 @@ enum PaymentLinkReadyMobileState { checking, waiting, soon, ready }
 class PaymentLinkHowItWorksMobileSheet extends StatelessWidget {
   const PaymentLinkHowItWorksMobileSheet({
     required this.onClose,
-    this.title = kPaymentLinkHowItWorksTitle,
-    this.subtitle = kPaymentLinkHowItWorksSubtitle,
+    this.title,
+    this.subtitle,
     super.key,
   });
 
   final VoidCallback onClose;
-  final String title;
-  final String subtitle;
+  final String? title;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
+    final title = this.title ?? context.l10n.paymentLinkHowItWorksTitle;
+    final subtitle =
+        this.subtitle ?? context.l10n.paymentLinkHowItWorksSubtitle;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
@@ -96,24 +100,19 @@ class PaymentLinkHowItWorksMobileSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          const _MobileHelpStep(
+          _MobileHelpStep(
             icon: AppIcons.giftCard,
-            text:
-                'Enter an amount, pick a design, and add an optional message.',
+            text: context.l10n.paymentLinkHowStepCreate,
           ),
           const SizedBox(height: AppSpacing.xs),
-          const _MobileHelpStep(
+          _MobileHelpStep(
             icon: AppIcons.link,
-            text:
-                'Once funding reaches the network, copy the unique link and '
-                'send it only to the intended recipient.',
+            text: context.l10n.paymentLinkHowStepShare,
           ),
           const SizedBox(height: AppSpacing.xs),
-          const _MobileHelpStep(
+          _MobileHelpStep(
             icon: AppIcons.arrowDownCircle,
-            text:
-                'The recipient opens the link in Vizor and claims the full '
-                'card amount. The sender covers both fees.',
+            text: context.l10n.paymentLinkHowStepRedeem,
           ),
           const SizedBox(height: AppSpacing.md),
           AppButton(
@@ -122,7 +121,7 @@ class PaymentLinkHowItWorksMobileSheet extends StatelessWidget {
             variant: AppButtonVariant.secondary,
             size: AppButtonSize.large,
             expand: true,
-            child: const Text('Close'),
+            child: Text(context.l10n.commonClose),
           ),
         ],
       ),
@@ -174,11 +173,11 @@ class PaymentLinksHomeMobileView extends StatelessWidget {
     required this.onShowHelp,
     required this.onCreate,
     required this.onRedeem,
-    this.screenTitle = 'Gift Cards',
-    this.title = kPaymentLinkEmptyTitle,
-    this.helpLabel = 'How the gift card works',
-    this.createLabel = kPaymentLinkCreateCardLabel,
-    this.redeemLabel = kPaymentLinkRedeemCardLabel,
+    this.screenTitle,
+    this.title,
+    this.helpLabel,
+    this.createLabel,
+    this.redeemLabel,
     super.key,
   });
 
@@ -187,14 +186,22 @@ class PaymentLinksHomeMobileView extends StatelessWidget {
   final VoidCallback onShowHelp;
   final VoidCallback onCreate;
   final VoidCallback onRedeem;
-  final String screenTitle;
-  final String title;
-  final String helpLabel;
-  final String createLabel;
-  final String redeemLabel;
+  final String? screenTitle;
+  final String? title;
+  final String? helpLabel;
+  final String? createLabel;
+  final String? redeemLabel;
 
   @override
   Widget build(BuildContext context) {
+    final screenTitle =
+        this.screenTitle ?? context.l10n.paymentLinkGiftCardsTitle;
+    final helpLabel = this.helpLabel ?? context.l10n.paymentLinkHowTheCardWorks;
+    final title = this.title ?? context.l10n.paymentLinkEmptyTitle;
+    final createLabel =
+        this.createLabel ?? context.l10n.paymentLinkCreateCardLabel;
+    final redeemLabel =
+        this.redeemLabel ?? context.l10n.paymentLinkRedeemCardLabel;
     return _MobilePaymentLinkFrame(
       title: screenTitle,
       onBack: onBack,
@@ -265,7 +272,8 @@ class PaymentLinksHomeMobileView extends StatelessWidget {
                                   'payment_links_mobile_help_action',
                                 ),
                                 onPressed: onShowHelp,
-                                semanticLabel: 'Show how gift cards work',
+                                semanticLabel:
+                                    context.l10n.paymentLinkShowHowCardsWork,
                                 builder: (context, _, focused) => Center(
                                   child: DecoratedBox(
                                     decoration: BoxDecoration(
@@ -352,10 +360,10 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
     this.activeTab = PaymentLinkCardsTab.created,
     this.onTabSelected,
     this.emptyLabel,
-    this.screenTitle = 'Gift Cards',
+    this.screenTitle,
     this.headerAction,
-    this.createLabel = kPaymentLinkCreateCardLabel,
-    this.redeemLabel = kPaymentLinkRedeemCardLabel,
+    this.createLabel,
+    this.redeemLabel,
     super.key,
   });
 
@@ -368,13 +376,19 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
 
   /// Shown centered when the selected tab has no rows.
   final String? emptyLabel;
-  final String screenTitle;
+  final String? screenTitle;
   final Widget? headerAction;
-  final String createLabel;
-  final String redeemLabel;
+  final String? createLabel;
+  final String? redeemLabel;
 
   @override
   Widget build(BuildContext context) {
+    final screenTitle =
+        this.screenTitle ?? context.l10n.paymentLinkGiftCardsTitle;
+    final createLabel =
+        this.createLabel ?? context.l10n.paymentLinkCreateCardLabel;
+    final redeemLabel =
+        this.redeemLabel ?? context.l10n.paymentLinkRedeemCardLabel;
     final hasCards = sections.any(
       (section) => section.cards.isNotEmpty || section.header != null,
     );
@@ -401,7 +415,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
                     iconSize: 20,
                     key: const ValueKey('payment_links_mobile_created_tab'),
                     icon: AppIcons.plane,
-                    label: kPaymentLinkCreatedTabLabel,
+                    label: context.l10n.commonCreated,
                     selected: activeTab == PaymentLinkCardsTab.created,
                     onTap: onTabSelected == null
                         ? null
@@ -412,7 +426,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
                     iconSize: 20,
                     key: const ValueKey('payment_links_mobile_received_tab'),
                     icon: AppIcons.importWallet,
-                    label: kPaymentLinkReceivedTabLabel,
+                    label: context.l10n.commonReceived,
                     selected: activeTab == PaymentLinkCardsTab.received,
                     onTap: onTabSelected == null
                         ? null
@@ -438,7 +452,8 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
                             ),
                             child: Center(
                               child: Text(
-                                emptyLabel ?? kPaymentLinkNoReceivedCardsText,
+                                emptyLabel ??
+                                    context.l10n.paymentLinkNoReceivedCardsText,
                                 key: const ValueKey(
                                   'payment_links_mobile_cards_empty_label',
                                 ),
@@ -553,7 +568,7 @@ class _AnimatedPaymentLinkCardsList extends StatefulWidget {
 class _AnimatedPaymentLinkCardsListState
     extends State<_AnimatedPaymentLinkCardsList> {
   static const _duration = Duration(milliseconds: 280);
-  final _listKey = GlobalKey<AnimatedListState>();
+  var _listKey = GlobalKey<SliverAnimatedListState>();
   late List<_MobileCardsListEntry> _entries;
 
   @override
@@ -614,6 +629,14 @@ class _AnimatedPaymentLinkCardsListState
   }
 
   void _synchronize(List<_MobileCardsListEntry> desired) {
+    // Status observations usually replace content without moving any row.
+    if (_entries.length == desired.length &&
+        Iterable<int>.generate(
+          desired.length,
+        ).every((index) => _entries[index].id == desired[index].id)) {
+      _entries = desired;
+      return;
+    }
     final list = _listKey.currentState;
     if (list == null) {
       _entries = desired;
@@ -628,7 +651,17 @@ class _AnimatedPaymentLinkCardsListState
     final newIndexes = {
       for (final (index, entry) in desired.indexed) entry.id: index,
     };
-    final retained = _longestCommonEntryIds(_entries, desired);
+    final retained = retainedPaymentLinkEntryIds(
+      _entries.map((entry) => entry.id).toList(),
+      desired.map((entry) => entry.id).toList(),
+    );
+    // Bound both animation work and List.insert/remove shifts for a bulk
+    // reclassification. Ordinary single-card movements retain their animation.
+    if (_entries.length + desired.length - 2 * retained.length > 64) {
+      _entries = desired;
+      _listKey = GlobalKey<SliverAnimatedListState>();
+      return;
+    }
 
     for (var index = _entries.length - 1; index >= 0; index--) {
       final entry = _entries[index];
@@ -664,43 +697,6 @@ class _AnimatedPaymentLinkCardsListState
     }
   }
 
-  Set<_MobileCardsListEntryId> _longestCommonEntryIds(
-    List<_MobileCardsListEntry> before,
-    List<_MobileCardsListEntry> after,
-  ) {
-    final lengths = List.generate(
-      before.length + 1,
-      (_) => List<int>.filled(after.length + 1, 0),
-    );
-    for (var beforeIndex = before.length - 1; beforeIndex >= 0; beforeIndex--) {
-      for (var afterIndex = after.length - 1; afterIndex >= 0; afterIndex--) {
-        lengths[beforeIndex][afterIndex] =
-            before[beforeIndex].id == after[afterIndex].id
-            ? lengths[beforeIndex + 1][afterIndex + 1] + 1
-            : math.max(
-                lengths[beforeIndex + 1][afterIndex],
-                lengths[beforeIndex][afterIndex + 1],
-              );
-      }
-    }
-    final retained = <_MobileCardsListEntryId>{};
-    var beforeIndex = 0;
-    var afterIndex = 0;
-    while (beforeIndex < before.length && afterIndex < after.length) {
-      if (before[beforeIndex].id == after[afterIndex].id) {
-        retained.add(before[beforeIndex].id);
-        beforeIndex++;
-        afterIndex++;
-      } else if (lengths[beforeIndex + 1][afterIndex] >=
-          lengths[beforeIndex][afterIndex + 1]) {
-        beforeIndex++;
-      } else {
-        afterIndex++;
-      }
-    }
-    return retained;
-  }
-
   Widget _entryTransition(
     _MobileCardsListEntry entry,
     Animation<double> animation,
@@ -729,12 +725,20 @@ class _AnimatedPaymentLinkCardsListState
   @override
   Widget build(BuildContext context) => KeyedSubtree(
     key: const ValueKey('payment_links_mobile_cards_list'),
-    child: AnimatedList(
-      key: _listKey,
-      padding: const EdgeInsets.only(bottom: _cardsFloatingActionsClearance),
-      initialItemCount: _entries.length,
-      itemBuilder: (context, index, animation) =>
-          _entryTransition(_entries[index], animation),
+    child: CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.only(
+            bottom: _cardsFloatingActionsClearance,
+          ),
+          sliver: SliverAnimatedList(
+            key: _listKey,
+            initialItemCount: _entries.length,
+            itemBuilder: (context, index, animation) =>
+                _entryTransition(_entries[index], animation),
+          ),
+        ),
+      ],
     ),
   );
 }
@@ -875,13 +879,13 @@ class PaymentLinkCardListMobileRow extends StatelessWidget {
             if (showLinkActions) ...[
               _MobileCardLinkAction(
                 key: const ValueKey('payment_link_mobile_card_copy_action'),
-                semanticLabel: kPaymentLinkCopyLinkSemanticLabel,
+                semanticLabel: context.l10n.paymentLinkCopyLinkSemanticLabel,
                 icon: AppIcons.copy,
                 onPressed: onCopyLink,
               ),
               _MobileCardLinkAction(
                 key: const ValueKey('payment_link_mobile_card_qr_action'),
-                semanticLabel: 'Show gift card QR code',
+                semanticLabel: context.l10n.paymentLinkShowQrSemantic,
                 icon: AppIcons.qr,
                 onPressed: onShowQr,
               ),
@@ -1007,9 +1011,9 @@ class PaymentLinkAmountMobileView extends StatelessWidget {
     this.onContinue,
     this.supportingText,
     this.supportingTextIsError = false,
-    this.title = kPaymentLinkCreateGiftCardTitle,
-    this.subtitle = 'Enter amount & pick a design.',
-    this.continueLabel = 'Continue',
+    this.title,
+    this.subtitle,
+    this.continueLabel,
     super.key,
   });
 
@@ -1019,12 +1023,16 @@ class PaymentLinkAmountMobileView extends StatelessWidget {
   final VoidCallback? onContinue;
   final String? supportingText;
   final bool supportingTextIsError;
-  final String title;
-  final String subtitle;
-  final String continueLabel;
+  final String? title;
+  final String? subtitle;
+  final String? continueLabel;
 
   @override
   Widget build(BuildContext context) {
+    final subtitle =
+        this.subtitle ?? context.l10n.paymentLinkAmountStepSubtitleMobile;
+    final continueLabel = this.continueLabel ?? context.l10n.commonContinue;
+    final title = this.title ?? context.l10n.paymentLinkCreateGiftCardTitle;
     return _MobilePaymentLinkWizardFrame(
       title: title,
       subtitle: subtitle,
@@ -1053,9 +1061,9 @@ class PaymentLinkMessageMobileView extends StatelessWidget {
     this.onContinue,
     this.onSkip,
     this.errorText,
-    this.title = 'Enter a message',
-    this.subtitle = 'Attach a short encrypted memo (optional).',
-    this.continueLabel = 'Continue',
+    this.title,
+    this.subtitle,
+    this.continueLabel,
     super.key,
   });
 
@@ -1067,12 +1075,16 @@ class PaymentLinkMessageMobileView extends StatelessWidget {
   /// as a separate skip action. It never adds a second visible action.
   final VoidCallback? onSkip;
   final String? errorText;
-  final String title;
-  final String subtitle;
-  final String continueLabel;
+  final String? title;
+  final String? subtitle;
+  final String? continueLabel;
 
   @override
   Widget build(BuildContext context) {
+    final title = this.title ?? context.l10n.paymentLinkMessageStepTitle;
+    final subtitle =
+        this.subtitle ?? context.l10n.paymentLinkMemoOptionalSubtitle;
+    final continueLabel = this.continueLabel ?? context.l10n.commonContinue;
     return _MobilePaymentLinkWizardFrame(
       title: title,
       subtitle: subtitle,
@@ -1102,9 +1114,9 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
     required this.totalAmountText,
     this.onContinue,
     this.onFeeHelp,
-    this.title = 'Review a Card',
-    this.subtitle = 'Attach a short encrypted memo (optional).',
-    this.continueLabel = 'Approve & create',
+    this.title,
+    this.subtitle,
+    this.continueLabel,
     super.key,
   });
 
@@ -1115,12 +1127,17 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
   final String totalAmountText;
   final VoidCallback? onContinue;
   final VoidCallback? onFeeHelp;
-  final String title;
-  final String subtitle;
-  final String continueLabel;
+  final String? title;
+  final String? subtitle;
+  final String? continueLabel;
 
   @override
   Widget build(BuildContext context) {
+    final title = this.title ?? context.l10n.paymentLinkReviewCardTitle;
+    final subtitle =
+        this.subtitle ?? context.l10n.paymentLinkMemoOptionalSubtitle;
+    final continueLabel =
+        this.continueLabel ?? context.l10n.paymentLinkApproveAndCreate;
     return CustomScrollView(
       key: const ValueKey('payment_link_mobile_review_scroll'),
       slivers: [
@@ -1163,11 +1180,11 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _MobileReviewRow(
-                        label: 'Card amount',
+                        label: context.l10n.paymentLinkCardAmountLabel,
                         value: cardAmountText,
                       ),
                       _MobileReviewRow(
-                        label: kPaymentLinkCardFeeLabel,
+                        label: context.l10n.paymentLinkCardFeeLabel,
                         value: cardFeeText,
                         onHelp: onFeeHelp,
                       ),
@@ -1182,7 +1199,7 @@ class PaymentLinkReviewMobileView extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.sm),
                       _MobileReviewRow(
-                        label: kPaymentLinkTotalDeductedLabel,
+                        label: context.l10n.paymentLinkTotalDeductedLabel,
                         value: totalAmountText,
                       ),
                     ],
@@ -1237,14 +1254,13 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
     this.onCopy,
     this.onCardTap,
     this.decoration,
-    this.waitingStatusLabel = kPaymentLinkWaitingStatusLabel,
-    this.waitingHeading = kPaymentLinkAlmostReadyHeading,
-    this.waitingDescription =
-        '$kPaymentLinkShareWaitingDescription\n$kPaymentLinkWaitingDescription',
+    this.waitingStatusLabel,
+    this.waitingHeading,
+    this.waitingDescription,
     this.waitingIcon,
     this.cardTop = 190,
-    this.copyLabel = 'Copy link',
-    this.homeLabel = 'Go home',
+    this.copyLabel,
+    this.homeLabel,
     super.key,
   });
 
@@ -1254,16 +1270,25 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
   final VoidCallback? onCopy;
   final VoidCallback? onCardTap;
   final Widget? decoration;
-  final String waitingStatusLabel;
-  final String waitingHeading;
-  final String waitingDescription;
+  final String? waitingStatusLabel;
+  final String? waitingHeading;
+  final String? waitingDescription;
   final String? waitingIcon;
   final double cardTop;
-  final String copyLabel;
-  final String homeLabel;
+  final String? copyLabel;
+  final String? homeLabel;
 
   @override
   Widget build(BuildContext context) {
+    final copyLabel = this.copyLabel ?? context.l10n.commonCopyLink;
+    final homeLabel = this.homeLabel ?? context.l10n.commonGoHome;
+    final waitingStatusLabel =
+        this.waitingStatusLabel ?? context.l10n.paymentLinkWaitingStatusLabel;
+    final waitingHeading =
+        this.waitingHeading ?? context.l10n.paymentLinkAlmostReadyHeading;
+    final waitingDescription =
+        this.waitingDescription ??
+        '${context.l10n.paymentLinkShareWaitingDescription}\n${context.l10n.paymentLinkWaitingDescription}';
     final ready = state == PaymentLinkReadyMobileState.ready;
     final checking = state == PaymentLinkReadyMobileState.checking;
     final canFlip = ready && onCardTap != null;
@@ -1276,7 +1301,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
     final cardContent = canFlip
         ? PaymentLinkAction(
             onPressed: onCardTap,
-            semanticLabel: kPaymentLinkFlipCardSemanticLabel,
+            semanticLabel: context.l10n.paymentLinkFlipCardSemanticLabel,
             builder: (context, _, focused) => DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(AppRadii.large),
@@ -1340,7 +1365,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
               left: 40,
               right: 40,
               child: Text(
-                ready ? kPaymentLinkReadyHeading : waitingHeading,
+                ready ? context.l10n.paymentLinkReadyHeading : waitingHeading,
                 textAlign: TextAlign.center,
                 style: AppTypography.displayLarge.copyWith(
                   color: context.colors.text.accent,
@@ -1365,8 +1390,7 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
                     children: [
                       Text(
                         ready
-                            ? 'Share this link with the intended recipient so '
-                                  'they can claim the Card using their Vizor app.'
+                            ? context.l10n.paymentLinkShareLinkInstruction
                             : waitingDescription,
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMedium.copyWith(
@@ -1430,12 +1454,13 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
     this.onClearClipboard,
     this.statusContent,
     this.secondaryAction,
-    this.title = kPaymentLinkRedeemTheCardTitle,
-    this.subtitle = 'Paste a card link or scan its QR code.',
-    this.pasteLabel = kPaymentLinkPasteLabel,
-    this.invalidTitle = kPaymentLinkInvalidTitle,
-    this.invalidSubtitle = kPaymentLinkInvalidSubtitle,
-    this.clearLabel = kPaymentLinkClearClipboardLabel,
+    this.title,
+    this.subtitle,
+    this.pasteLabel,
+    this.pasteIsRetry = false,
+    this.invalidTitle,
+    this.invalidSubtitle,
+    this.clearLabel,
     super.key,
   });
 
@@ -1447,28 +1472,42 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
   final VoidCallback? onClearClipboard;
   final Widget? statusContent;
   final Widget? secondaryAction;
-  final String title;
-  final String subtitle;
-  final String pasteLabel;
-  final String invalidTitle;
-  final String invalidSubtitle;
-  final String clearLabel;
+  final String? title;
+  final String? subtitle;
+  final String? pasteLabel;
+
+  /// Whether the paste button retries a failed check instead of pasting.
+  final bool pasteIsRetry;
+  final String? invalidTitle;
+  final String? invalidSubtitle;
+  final String? clearLabel;
 
   @override
   Widget build(BuildContext context) {
+    final subtitle = this.subtitle ?? context.l10n.paymentLinkRedeemPasteOrScan;
+    final title = this.title ?? context.l10n.paymentLinkRedeemTheCardTitle;
+    final pasteLabel = this.pasteLabel ?? context.l10n.paymentLinkPasteLabel;
+    final invalidTitle =
+        this.invalidTitle ?? context.l10n.paymentLinkInvalidTitle;
+    final invalidSubtitle =
+        this.invalidSubtitle ?? context.l10n.paymentLinkInvalidSubtitle;
+    final clearLabel =
+        this.clearLabel ?? context.l10n.paymentLinkClearClipboardLabel;
     final loading = state == PaymentLinkRedeemMobileState.loading;
     final invalid = state == PaymentLinkRedeemMobileState.invalid;
 
     final cardContent = switch (state) {
       PaymentLinkRedeemMobileState.paste => _MobileRedeemDropZone(
-        child: statusContent ?? _actions(),
+        child: statusContent ?? _actions(context, pasteLabel),
       ),
       PaymentLinkRedeemMobileState.invalid => _MobileRedeemDropZone(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              fromQrCode ? 'This card could not be read.' : invalidTitle,
+              fromQrCode
+                  ? context.l10n.paymentLinkCardUnreadable
+                  : invalidTitle,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: context.colors.text.destructive,
@@ -1477,7 +1516,7 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
             const SizedBox(height: AppSpacing.xxs),
             Text(
               fromQrCode
-                  ? 'Scan again or paste another card link.'
+                  ? context.l10n.paymentLinkScanAgainOrPaste
                   : invalidSubtitle,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
@@ -1485,7 +1524,7 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AppSpacing.base),
-            _actions(scanAgain: fromQrCode),
+            _actions(context, pasteLabel, scanAgain: fromQrCode),
           ],
         ),
       ),
@@ -1525,7 +1564,7 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
               left: 0,
               right: 0,
               child: Text(
-                kPaymentLinkCheckingLabel,
+                context.l10n.commonCheckingEllipsis,
                 key: const ValueKey('payment_link_mobile_redeem_checking'),
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMediumStrong.copyWith(
@@ -1558,7 +1597,11 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
     );
   }
 
-  Widget _actions({bool scanAgain = false}) {
+  Widget _actions(
+    BuildContext context,
+    String pasteLabel, {
+    bool scanAgain = false,
+  }) {
     return SizedBox(
       width: 240,
       child: Column(
@@ -1571,7 +1614,7 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
             size: AppButtonSize.mediumLarge,
             expand: true,
             leading: AppIcon(
-              pasteLabel == 'Try again' ? AppIcons.renew : AppIcons.paste,
+              pasteIsRetry ? AppIcons.renew : AppIcons.paste,
               size: 20,
             ),
             child: Text(pasteLabel),
@@ -1584,7 +1627,11 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
             size: AppButtonSize.mediumLarge,
             expand: true,
             leading: const AppIcon(AppIcons.qr, size: 20),
-            child: Text(scanAgain ? 'Scan again' : 'Scan QR code'),
+            child: Text(
+              scanAgain
+                  ? context.l10n.commonScanAgain
+                  : context.l10n.commonScanQrCodeSentenceCase,
+            ),
           ),
         ],
       ),
@@ -1602,10 +1649,10 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
     this.onClaim,
     this.onRevealMessage,
     this.decoration,
-    this.title = 'You’ve received a gift!',
-    this.messageTitle = kPaymentLinkMessageAttachedTitle,
-    this.messageHint = 'Tap on the card to reveal\nthe message.',
-    this.claimLabel = 'Claim the gift',
+    this.title,
+    this.messageTitle,
+    this.messageHint,
+    this.claimLabel,
     super.key,
   });
 
@@ -1615,13 +1662,19 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
   final VoidCallback? onClaim;
   final VoidCallback? onRevealMessage;
   final Widget? decoration;
-  final String title;
-  final String messageTitle;
-  final String messageHint;
-  final String claimLabel;
+  final String? title;
+  final String? messageTitle;
+  final String? messageHint;
+  final String? claimLabel;
 
   @override
   Widget build(BuildContext context) {
+    final messageHint =
+        this.messageHint ?? context.l10n.paymentLinkTapToRevealMessageTwoLines;
+    final claimLabel = this.claimLabel ?? context.l10n.paymentLinkClaimTheGift;
+    final title = this.title ?? context.l10n.paymentLinkReceivedGiftHeading;
+    final messageTitle =
+        this.messageTitle ?? context.l10n.paymentLinkMessageAttachedTitle;
     final motionCard = PaymentLinkCardMotion(
       celebrate: true,
       child: hasMessage && onRevealMessage != null
@@ -1661,7 +1714,7 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
                     'payment_link_envelope.svg',
                     width: 27,
                     height: 22,
-                    semanticsLabel: kPaymentLinkGiftMessageLabel,
+                    semanticsLabel: context.l10n.paymentLinkGiftMessageLabel,
                   ),
                   const SizedBox(height: AppSpacing.s),
                   Text(
@@ -1682,7 +1735,8 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
               card: hasMessage && onRevealMessage != null
                   ? PaymentLinkAction(
                       onPressed: onRevealMessage,
-                      semanticLabel: kPaymentLinkRevealMessageSemanticLabel,
+                      semanticLabel:
+                          context.l10n.paymentLinkRevealMessageSemanticLabel,
                       builder: (context, _, focused) => DecoratedBox(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(AppRadii.large),
@@ -2107,13 +2161,11 @@ class _MobileReviewRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final help = AppTooltip(
-      message:
-          'Includes the fee to fund the gift card and the fee reserved for '
-          'the recipient to claim it.',
+      message: context.l10n.paymentLinkFeeHelpTextLong,
       preferBelow: true,
       tapToShow: true,
       child: Semantics(
-        label: 'About the gift card fee',
+        label: context.l10n.paymentLinkFeeHelpSemantic,
         button: onHelp != null,
         onTap: onHelp,
         child: AppIcon(

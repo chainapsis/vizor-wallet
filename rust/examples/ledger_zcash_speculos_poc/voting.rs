@@ -4,11 +4,11 @@
 
 use orchard::{
     keys::Scope,
-    note::{NoteVersion, Rho},
+    note::{NoteVersion, RandomSeed, Rho},
     value::NoteValue,
     Note,
 };
-use voting_crypto_deps::rand::rngs::OsRng;
+use rand::{rngs::OsRng, RngCore};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_voting::{
     delegate::{
@@ -36,14 +36,7 @@ fn build_requests(
     let fvk = ufvk.orchard().ok_or("Speculos UFVK has no Orchard FVK")?;
     let mut notes = Vec::new();
     for position in 0..2 * BUNDLE_NOTE_SLOTS {
-        let (_, _, parent) = Note::dummy(&mut OsRng, None, NoteVersion::V3);
-        let note = Note::new(
-            fvk.address_at(0u32, Scope::External),
-            NoteValue::from_raw(13_000_000),
-            Rho::from_nf_old(parent.nullifier(fvk)),
-            NoteVersion::V3,
-            &mut OsRng,
-        );
+        let note = synthetic_note(fvk, position as u64)?;
         notes.push(NoteInfo::from_orchard_note(
             &note,
             position as u64,
@@ -54,7 +47,8 @@ fn build_requests(
     }
     let params = VotingRoundParams {
         vote_round_id: "01".repeat(32),
-        snapshot_height: 4_000_000,
+        // The SDK votes only on NU6.3 snapshots, so this sits before NU7.
+        snapshot_height: 3_500_000,
         ea_pk: vec![0xEA; 32],
         nc_root: vec![0xAA; 32],
         nullifier_imt_root: vec![0xBB; 32],
@@ -127,4 +121,32 @@ fn build_requests(
             Ok(request)
         })
         .collect()
+}
+
+/// A distinct note to the account's first external address. Only public
+/// constructors are used: a small integer is a canonical rho, and a random
+/// seed is redrawn until it is valid for that rho.
+fn synthetic_note(
+    fvk: &orchard::keys::FullViewingKey,
+    position: u64,
+) -> Result<Note, Box<dyn std::error::Error>> {
+    let mut rho_bytes = [0u8; 32];
+    rho_bytes[..8].copy_from_slice(&(position + 1).to_le_bytes());
+    let rho = Option::<Rho>::from(Rho::from_bytes(&rho_bytes)).ok_or("invalid synthetic rho")?;
+    loop {
+        let mut seed = [0u8; 32];
+        OsRng.fill_bytes(&mut seed);
+        let Some(rseed) = Option::<RandomSeed>::from(RandomSeed::from_bytes(seed, &rho)) else {
+            continue;
+        };
+        if let Some(note) = Option::<Note>::from(Note::from_parts(
+            fvk.address_at(0u32, Scope::External),
+            NoteValue::from_raw(13_000_000),
+            rho,
+            rseed,
+            NoteVersion::V3,
+        )) {
+            return Ok(note);
+        }
+    }
 }

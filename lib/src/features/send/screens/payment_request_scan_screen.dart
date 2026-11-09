@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
@@ -41,16 +42,16 @@ class _PaymentRequestScanScreenState extends State<PaymentRequestScanScreen> {
       }
       _finished = true;
       context.pop(prefill);
-    } on FormatException catch (error) {
+    } on PaymentRequestQrException catch (error) {
       if (!mounted || _finished) return;
       setState(() {
-        _error = error.message;
+        _error = error.issue.text(context.l10n);
         _resetToken++;
       });
     } catch (_) {
       if (!mounted || _finished) return;
       setState(() {
-        _error = "Couldn't check this QR code. Try again.";
+        _error = context.l10n.sendRequestScanCheckFailed;
         _resetToken++;
       });
     } finally {
@@ -72,7 +73,7 @@ class _PaymentRequestScanScreenState extends State<PaymentRequestScanScreen> {
     sidebar: const AppMainSidebar(),
     pane: OnboardingPaneChrome(
       backTarget: OnboardingBackTarget.callback(
-        label: 'Payment request',
+        label: context.l10n.commonPaymentRequest,
         onTap: _back,
       ),
       child: LayoutBuilder(
@@ -91,7 +92,7 @@ class _PaymentRequestScanScreenState extends State<PaymentRequestScanScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Scan original QR',
+                        context.l10n.commonScanOriginalQr,
                         style: AppTypography.displayLarge.copyWith(
                           color: context.colors.text.accent,
                         ),
@@ -99,7 +100,7 @@ class _PaymentRequestScanScreenState extends State<PaymentRequestScanScreen> {
                       ),
                       const SizedBox(height: AppSpacing.sm),
                       Text(
-                        'Show the requester’s original QR code to your camera',
+                        context.l10n.sendRequestScanSubtitle,
                         style: AppTypography.bodyMedium.copyWith(
                           color: context.colors.text.primary,
                         ),
@@ -111,15 +112,14 @@ class _PaymentRequestScanScreenState extends State<PaymentRequestScanScreen> {
                         scanSessionResetToken: _resetToken,
                         error: _error,
                         unavailableMessage:
-                            'Connect a camera, or go back and review the link details.',
+                            context.l10n.sendRequestScanUnavailable,
                         permissionDescription:
-                            'A camera is required to scan the payment request QR code.\n'
-                            'You can change camera access in settings at any time.',
-                        troubleScanningTips: const [
-                          'Open the requester’s original QR code full screen on another device.',
-                          'Move the QR code a few inches further from the camera so it can focus.',
-                          "Make sure the room is well-lit and the QR code isn't reflecting glare.",
-                          'On a Mac, you can use Continuity Camera to scan with your iPhone instead.',
+                            context.l10n.sendRequestScanPermission,
+                        troubleScanningTips: [
+                          context.l10n.sendRequestScanTipOriginal,
+                          context.l10n.commonMoveTheQRCodeAFew,
+                          context.l10n.commonMakeSureTheRoomIsWell,
+                          context.l10n.commonOnAMacYouCanUse,
                         ],
                       ),
                     ],

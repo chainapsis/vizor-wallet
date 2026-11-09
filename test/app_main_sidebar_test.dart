@@ -1,3 +1,5 @@
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
+import 'package:zcash_wallet/src/providers/account_initialization_provider.dart';
 import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
@@ -12,7 +14,6 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
-import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
@@ -28,6 +29,8 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   setUpAll(() async {
@@ -93,7 +96,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(kSyncStatusConnectingToTorLabel), findsOneWidget);
+    expect(find.text(testL10n.syncConnectingToTor), findsOneWidget);
     expect(find.text('Vizor is synced'), findsNothing);
   });
 
@@ -182,6 +185,169 @@ void main() {
       contains('12'),
     );
   });
+
+  for (final (name, state, balance, importing) in [
+    (
+      'cached balance',
+      SyncState(
+        accountUuid: 'account-1',
+        hasCachedBalance: true,
+        remainingScanBlocks: 100,
+        displayTotalBalance: BigInt.from(250000000),
+      ),
+      '2.5 ZEC',
+      false,
+    ),
+    (
+      'live balance without history',
+      SyncState(
+        accountUuid: 'account-1',
+        hasBalanceData: true,
+        displayTotalBalance: BigInt.from(250000000),
+      ),
+      '2.5 ZEC',
+      false,
+    ),
+    (
+      'history error',
+      SyncState(
+        accountUuid: 'account-1',
+        hasBalanceData: true,
+        hasRecentTransactionsError: true,
+        displayTotalBalance: BigInt.from(250000000),
+      ),
+      '2.5 ZEC',
+      false,
+    ),
+    ('unknown balance', SyncState(accountUuid: 'account-1'), '— ZEC', false),
+    (
+      'initial scan',
+      SyncState(
+        accountUuid: 'account-1',
+        remainingScanBlocks: 100,
+        isSyncing: true,
+      ),
+      '— ZEC',
+      true,
+    ),
+    (
+      'known zero balance',
+      SyncState(accountUuid: 'account-1', hasBalanceData: true),
+      '0 ZEC',
+      false,
+    ),
+    (
+      'cached zero balance',
+      SyncState(accountUuid: 'account-1', hasCachedBalance: true),
+      '0 ZEC',
+      false,
+    ),
+    (
+      'another account cache',
+      SyncState(
+        accountUuid: 'account-2',
+        hasCachedBalance: true,
+        displayTotalBalance: BigInt.from(9900000000),
+      ),
+      '— ZEC',
+      false,
+    ),
+    (
+      'failed initial scan',
+      SyncState(
+        accountUuid: 'account-1',
+        remainingScanBlocks: 100,
+        failure: const SyncFailure(
+          kind: SyncFailureKind.endpoint,
+          rawMessage: 'offline',
+        ),
+      ),
+      '— ZEC',
+      false,
+    ),
+  ]) {
+    testWidgets('sidebar startup state: $name', (tester) async {
+      await tester.pumpWidget(_sidebarHarness(state));
+      await tester.pump();
+      expect(find.text(balance), findsOneWidget);
+      final home = tester.widget<AppSidebarItem>(
+        find.byKey(const ValueKey('sidebar_home_button')),
+      );
+      expect(home.label, importing ? 'Importing...' : 'Home');
+      for (final key in ['home', 'swap', 'pay', 'voting', 'activity']) {
+        final item = tester.widget<AppSidebarItem>(
+          find.byKey(ValueKey('sidebar_${key}_button')),
+        );
+        expect(
+          item.onTap,
+          importing && key != 'home' ? isNull : isNotNull,
+          reason: '$name: $key',
+        );
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final available in [false, true]) {
+    for (final hidden in [false, true]) {
+      testWidgets(
+        'migration balances respect availability=$available privacy=$hidden',
+        (tester) async {
+          await tester.pumpWidget(
+            _sidebarHarness(
+              SyncState(
+                accountUuid: 'account-1',
+                hasCachedBalance: available,
+                displayTotalBalance: BigInt.from(250000000),
+                displayOrchardBalance: BigInt.from(200000000),
+                displayIronwoodBalance: BigInt.from(50000000),
+              ),
+              privacyModeEnabled: hidden,
+              migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+                statuses: {'account-1': _readyMigrationStatus},
+              ),
+            ),
+          );
+          await tester.pump();
+          expect(
+            tester
+                .widget<Text>(
+                  find.byKey(const ValueKey('sidebar_orchard_balance')),
+                )
+                .data,
+            hidden
+                ? '****** ZEC'
+                : available
+                ? '2 ZEC'
+                : '— ZEC',
+          );
+          expect(
+            tester
+                .widget<Text>(
+                  find.byKey(const ValueKey('sidebar_ironwood_balance')),
+                )
+                .data,
+            hidden
+                ? '****** ZEC'
+                : available
+                ? '0.5 ZEC'
+                : '— ZEC',
+          );
+          expect(
+            find.text(
+              hidden
+                  ? '****** ZEC'
+                  : available
+                  ? '2.5 ZEC'
+                  : '— ZEC',
+            ),
+            hidden || !available ? findsNWidgets(3) : findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   testWidgets('sidebar limits visible balance fractions to four places', (
     tester,
@@ -399,6 +565,104 @@ void main() {
     expect(find.text('Needs input'), findsOneWidget);
     expect(find.text('Migrating...'), findsNothing);
   });
+
+  for (final (route, waitingForReads) in [
+    ('/settings', false),
+    ('/settings/endpoint', false),
+    ('/settings/endpoint', true),
+  ]) {
+    testWidgets(
+      'importing Home remains reachable from $route: waitingForReads=$waitingForReads',
+      (tester) async {
+        final sync = SyncState(
+          accountUuid: 'account-1',
+          isSyncing: !waitingForReads,
+          remainingScanBlocks: waitingForReads ? 0 : 100,
+        );
+        await tester.pumpWidget(_sidebarHarness(sync, initialLocation: route));
+        await tester.pump();
+        final c = ProviderScope.containerOf(
+          tester.element(find.byType(AppMainSidebar)),
+        );
+        if (waitingForReads) {
+          final initialization = c.read(accountInitializationProvider.notifier);
+          initialization.register(
+            'account-1',
+            AccountInitializationKind.restored,
+          );
+          initialization.observeScan(
+            initialization.pendingTokens(),
+            completed: true,
+          );
+          await tester.pump();
+        }
+        final home = find.byKey(const ValueKey('sidebar_home_button'));
+        expect(tester.widget<AppSidebarItem>(home).label, 'Importing...');
+        expect(tester.widget<AppSidebarItem>(home).onTap, isNotNull);
+        for (final key in ['swap', 'pay', 'voting', 'activity']) {
+          expect(
+            tester
+                .widget<AppSidebarItem>(
+                  find.byKey(ValueKey('sidebar_${key}_button')),
+                )
+                .onTap,
+            isNull,
+          );
+        }
+        await tester.tap(home);
+        await tester.pumpAndSettle();
+        expect(find.text('home route'), findsOneWidget);
+        expect(
+          GoRouter.of(
+            tester.element(home),
+          ).routeInformationProvider.value.uri.path,
+          '/home',
+        );
+        expect(c.read(syncProvider).requireValue, same(sync));
+        // Tapping the active importing item stays on Home without restarting sync.
+        await tester.tap(home);
+        await tester.pumpAndSettle();
+        expect(find.text('home route'), findsOneWidget);
+        expect(c.read(syncProvider).requireValue, same(sync));
+      },
+    );
+  }
+
+  for (final explicitRouteBlock in [false, true]) {
+    testWidgets(
+      'importing Home respects explicit navigation block: route=$explicitRouteBlock',
+      (tester) async {
+        await tester.pumpWidget(
+          _sidebarHarness(
+            SyncState(
+              accountUuid: 'account-1',
+              isSyncing: true,
+              remainingScanBlocks: 100,
+            ),
+            initialLocation: '/settings',
+            disabledRoutePaths: explicitRouteBlock ? const {'/home'} : const {},
+          ),
+        );
+        await tester.pump();
+        final home = find.byKey(const ValueKey('sidebar_home_button'));
+        final c = ProviderScope.containerOf(tester.element(home));
+        final lease = explicitRouteBlock
+            ? null
+            : c
+                  .read(externalActionGuardProvider.notifier)
+                  .acquire(blocks: const {ExternalAction.navigation});
+        addTearDown(() => lease?.release());
+        expect(tester.widget<AppSidebarItem>(home).onTap, isNotNull);
+        await tester.tap(home);
+        await tester.pumpAndSettle();
+        expect(find.text('settings'), findsOneWidget);
+        expect(find.text('home route'), findsNothing);
+        lease?.release();
+        await tester.pumpAndSettle();
+        expect(find.text('settings'), findsOneWidget);
+      },
+    );
+  }
 
   testWidgets('sidebar keeps Home active and clickable on send routes', (
     tester,
@@ -806,6 +1070,7 @@ void main() {
           hasAccountScopedData: false,
           isSyncing: true,
           percentage: 0.32,
+          remainingScanBlocks: 1500,
         ),
       ),
     );
@@ -1068,7 +1333,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
       ),
@@ -1181,7 +1445,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
         themeData: AppThemeData.dark,
@@ -1197,11 +1460,7 @@ void main() {
       await tester.pumpWidget(
         _sidebarHarness(
           SyncState(
-            failure: SyncFailure(
-              kind: entry.key,
-              rawMessage: 'failure',
-              userMessage: 'Sync failed.',
-            ),
+            failure: SyncFailure(kind: entry.key, rawMessage: 'failure'),
           ),
         ),
       );
@@ -1275,6 +1534,7 @@ Widget _sidebarHarness(
   SyncState syncState, {
   AppThemeData themeData = AppThemeData.light,
   bool swapEnabled = true,
+  bool privacyModeEnabled = false,
   AccountState? accountState,
   String initialLocation = '/home',
   bool disableAnimations = true,
@@ -1288,8 +1548,12 @@ Widget _sidebarHarness(
   NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
   bool suppressActiveSelection = false,
   LinuxKeyringCoordinator? keyringCoordinator,
+  Set<String> disabledRoutePaths = const {},
 }) {
-  final bootstrap = _bootstrapFor(accountState ?? _singleAccountState);
+  final bootstrap = _bootstrapFor(
+    accountState ?? _singleAccountState,
+    privacyModeEnabled: privacyModeEnabled,
+  );
   final router = GoRouter(
     initialLocation: initialLocation,
     routes: [
@@ -1366,9 +1630,9 @@ Widget _sidebarHarness(
       ),
       GoRoute(
         path: '/settings',
-        builder: (_, _) => const AppDesktopShell(
-          sidebar: AppMainSidebar(),
-          pane: AppDesktopPane(child: Text('settings')),
+        builder: (_, _) => AppDesktopShell(
+          sidebar: AppMainSidebar(disabledRoutePaths: disabledRoutePaths),
+          pane: const AppDesktopPane(child: Text('settings')),
         ),
       ),
       GoRoute(
@@ -1413,6 +1677,7 @@ Widget _sidebarHarness(
         linuxKeyringCoordinatorProvider.overrideWithValue(keyringCoordinator),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         // The syncing sidebar's shimmer and glow animate forever. Tests default
@@ -1447,7 +1712,6 @@ SyncState _networkFailureSyncState() {
     failure: const SyncFailure(
       kind: SyncFailureKind.network,
       rawMessage: 'network failed',
-      userMessage: 'Network connection lost.',
     ),
   );
 }
@@ -1661,14 +1925,17 @@ const _manyAccountState = AccountState(
   activeAddress: 'u1accountsaddress',
 );
 
-AppBootstrapState _bootstrapFor(AccountState accountState) => AppBootstrapState(
+AppBootstrapState _bootstrapFor(
+  AccountState accountState, {
+  bool privacyModeEnabled = false,
+}) => AppBootstrapState(
   initialLocation: '/home',
   initialAccountState: accountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
   themeMode: ThemeMode.system,
-  privacyModeEnabled: false,
+  privacyModeEnabled: privacyModeEnabled,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,

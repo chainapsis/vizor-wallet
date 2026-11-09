@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_modal.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_progress_status.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'ledger_pairing_recovery_test.dart' as fixture;
 
 class _ScanningBle extends fixture.FakeBle {
@@ -29,6 +30,7 @@ void main() {
           UncontrolledProviderScope(
             container: container,
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.light,
                 child: Center(
@@ -46,22 +48,27 @@ void main() {
         await tester.tap(find.text('Try again'));
         await tester.pump();
         await tester.pump();
-        expect(find.text('Searching nearby…'), findsOneWidget);
+        expect(find.text('Searching for nearby Ledgers…'), findsOneWidget);
         expect(find.widgetWithText(AppButton, 'Searching'), findsNothing);
         expect(find.text('Search again'), findsNothing);
         expect(tester.hasRunningAnimations, isTrue);
         ble.updates.add(const LedgerDevicesDiscovered([fixture.device]));
         await tester.pump();
-        expect(find.text('Still searching nearby…'), findsOneWidget);
+        expect(find.text('Searching for nearby Ledgers…'), findsOneWidget);
         if (select) {
           await tester.tap(find.text('Ledger Flex'));
           await tester.pumpAndSettle();
-          expect(find.text('Ledger saved'), findsOneWidget);
+          expect(
+            find.text(
+              'This Ledger matches your account. Find it again to continue.',
+            ),
+            findsOneWidget,
+          );
           expect(accounts.writes, 1);
         } else {
           ble.updates.add(const LedgerDiscoveryEnded());
           await tester.pumpAndSettle();
-          expect(find.text('Still searching nearby…'), findsNothing);
+          expect(find.text('Searching for nearby Ledgers…'), findsNothing);
           expect(
             find.widgetWithText(AppButton, 'Search again'),
             findsOneWidget,
@@ -78,6 +85,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: MediaQuery(
           data: const MediaQueryData(disableAnimations: true),
           child: AppTheme(

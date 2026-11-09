@@ -1,8 +1,10 @@
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:zcash_wallet/src/features/migration/models/ironwood_migration_presentation.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import '../../support/test_l10n.dart';
 
 void main() {
   test('formats a private plan as an estimated duration, not block count', () {
@@ -26,20 +28,41 @@ void main() {
           partIndex: 0,
           valueZatoshi: BigInt.from(1_000_000),
           blockOffset: 0,
+          blocksPerReferenceBlock: 1,
         ),
         rust_sync.MigrationScheduledTransfer(
           partIndex: 1,
           valueZatoshi: BigInt.from(2_000_000),
           blockOffset: 144,
+          blocksPerReferenceBlock: 1,
         ),
       ],
     );
 
     expect(migrationPlanPreparationDelayBlocks(plan), 150);
-    expect(migrationPlanCompletionDurationLabel(plan), '~7 hrs');
-    expect(migrationBlockOffsetDurationLabel(148), '~4 hrs');
     expect(
-      migrationPlanCompletionTimingLabel(plan, now: DateTime(2026, 7, 17, 12)),
+      migrationPlanCompletionDurationLabel(
+        testL10n,
+        plan,
+        blockTimes: BlockTimeEstimate.preNu7,
+      ),
+      '~7 hrs',
+    );
+    expect(
+      migrationBlockOffsetDurationLabel(
+        testL10n,
+        148,
+        blockTimes: BlockTimeEstimate.preNu7,
+      ),
+      '~4 hrs',
+    );
+    expect(
+      migrationPlanCompletionTimingLabel(
+        testL10n,
+        plan,
+        blockTimes: BlockTimeEstimate.preNu7,
+        now: DateTime(2026, 7, 17, 12),
+      ),
       'Jul 17, 18:11',
     );
   });
@@ -65,13 +88,26 @@ void main() {
           partIndex: 0,
           valueZatoshi: BigInt.from(1_000_000),
           blockOffset: 0,
+          blocksPerReferenceBlock: 1,
         ),
       ],
     );
 
-    expect(migrationPlanCompletionDurationLabel(plan), '~4 mins');
     expect(
-      migrationPlanCompletionTimingLabel(plan, now: DateTime(2026, 7, 17, 12)),
+      migrationPlanCompletionDurationLabel(
+        testL10n,
+        plan,
+        blockTimes: BlockTimeEstimate.preNu7,
+      ),
+      '~4 mins',
+    );
+    expect(
+      migrationPlanCompletionTimingLabel(
+        testL10n,
+        plan,
+        blockTimes: BlockTimeEstimate.preNu7,
+        now: DateTime(2026, 7, 17, 12),
+      ),
       'Jul 17, 12:03',
     );
   });
@@ -97,12 +133,20 @@ void main() {
           partIndex: 0,
           valueZatoshi: BigInt.from(1_000_000),
           blockOffset: 0,
+          blocksPerReferenceBlock: 1,
         ),
       ],
     );
 
     expect(migrationPlanPreparationDelayBlocks(plan), 144);
-    expect(migrationPlanCompletionDurationLabel(plan), '~4 hrs');
+    expect(
+      migrationPlanCompletionDurationLabel(
+        testL10n,
+        plan,
+        blockTimes: BlockTimeEstimate.preNu7,
+      ),
+      '~4 hrs',
+    );
   });
 
   test('adds later schedule offsets after migration preparation', () {
@@ -136,6 +180,7 @@ void main() {
 
       expect(
         migrationScheduledBroadcastLabel(
+          testL10n,
           _broadcast('confirmed', now.subtract(const Duration(hours: 1))),
           now: now,
         ),
@@ -143,6 +188,7 @@ void main() {
       );
       expect(
         migrationScheduledBroadcastLabel(
+          testL10n,
           _broadcast('broadcasted', now.subtract(const Duration(minutes: 1))),
           now: now,
         ),
@@ -158,6 +204,7 @@ void main() {
 
       expect(
         migrationScheduledBroadcastLabel(
+          testL10n,
           _broadcast('scheduled', now.add(const Duration(minutes: 3))),
           now: now,
         ),
@@ -165,6 +212,7 @@ void main() {
       );
       expect(
         migrationScheduledBroadcastLabel(
+          testL10n,
           _broadcast('scheduled', now.add(const Duration(hours: 2))),
           now: now,
           approximate: true,
@@ -173,6 +221,7 @@ void main() {
       );
       expect(
         migrationScheduledBroadcastLabel(
+          testL10n,
           _broadcast('scheduled', now.subtract(const Duration(seconds: 1))),
           now: now,
         ),
@@ -194,13 +243,31 @@ void main() {
       ],
     );
 
-    expect(migrationDispatchTimingLabel(confirming, now: now), 'Confirming');
-    expect(migrationDispatchTimingLabel(scheduled, now: now), 'Jul 17, 12:03');
     expect(
-      migrationCompletionTimingLabel(scheduled, abbreviateMonth: false),
+      migrationDispatchTimingLabel(testL10n, confirming, now: now),
+      'Confirming',
+    );
+    expect(
+      migrationDispatchTimingLabel(testL10n, scheduled, now: now),
+      'Jul 17, 12:03',
+    );
+    expect(
+      migrationCompletionTimingLabel(
+        testL10n,
+        scheduled,
+        blockTimes: BlockTimeEstimate.preNu7,
+        abbreviateMonth: false,
+      ),
       'July 17, 12:03',
     );
-    expect(migrationCompletionTimingLabel(confirming), 'Jul 17, 12:00');
+    expect(
+      migrationCompletionTimingLabel(
+        testL10n,
+        confirming,
+        blockTimes: BlockTimeEstimate.preNu7,
+      ),
+      'Jul 17, 12:00',
+    );
   });
 
   test('estimates a local completion time before schedules are persisted', () {
@@ -211,7 +278,15 @@ void main() {
       totalCount: 2,
     );
 
-    expect(migrationCompletionTimingLabel(status, now: now), 'Jul 17, 18:00');
+    expect(
+      migrationCompletionTimingLabel(
+        testL10n,
+        status,
+        blockTimes: BlockTimeEstimate.preNu7,
+        now: now,
+      ),
+      'Jul 17, 18:00',
+    );
   });
 
   test('estimates live completion from scheduled height, not stored time', () {
@@ -233,7 +308,13 @@ void main() {
     );
 
     expect(
-      migrationCompletionTimingLabel(status, now: now, currentHeight: 1_000),
+      migrationCompletionTimingLabel(
+        testL10n,
+        status,
+        blockTimes: BlockTimeEstimate.preNu7,
+        now: now,
+        currentHeight: 1_000,
+      ),
       'Jul 17, 12:25',
     );
   });
@@ -247,7 +328,13 @@ void main() {
     );
 
     expect(
-      migrationCompletionTimingLabel(status, now: now, currentHeight: 1_000),
+      migrationCompletionTimingLabel(
+        testL10n,
+        status,
+        blockTimes: BlockTimeEstimate.preNu7,
+        now: now,
+        currentHeight: 1_000,
+      ),
       'Jul 17, 12:37',
     );
   });
@@ -264,7 +351,13 @@ void main() {
       );
 
       expect(
-        migrationCompletionTimingLabel(status, now: now, currentHeight: 1_000),
+        migrationCompletionTimingLabel(
+          testL10n,
+          status,
+          blockTimes: BlockTimeEstimate.preNu7,
+          now: now,
+          currentHeight: 1_000,
+        ),
         'Jul 17, 12:03',
       );
     },
@@ -279,7 +372,13 @@ void main() {
     );
 
     expect(
-      migrationNextActionTimingLabel(status, currentHeight: 1_000, now: now),
+      migrationNextActionTimingLabel(
+        testL10n,
+        status,
+        blockTimes: BlockTimeEstimate.preNu7,
+        currentHeight: 1_000,
+        now: now,
+      ),
       '~12:25',
     );
   });
@@ -293,7 +392,13 @@ void main() {
     );
 
     expect(
-      migrationCompletionTimingLabel(status, now: now, currentHeight: 1_000),
+      migrationCompletionTimingLabel(
+        testL10n,
+        status,
+        blockTimes: BlockTimeEstimate.preNu7,
+        now: now,
+        currentHeight: 1_000,
+      ),
       'Schedule pending',
     );
   });
@@ -313,7 +418,9 @@ void main() {
 
       expect(
         migrationApproximateCompletionTimingLabel(
+          testL10n,
           status,
+          blockTimes: BlockTimeEstimate.preNu7,
           now: now,
           currentHeight: 1_000,
         ),
@@ -326,19 +433,61 @@ void main() {
     final now = DateTime(2026, 7, 17, 23, 50);
 
     expect(
-      migrationHeightTimingLabel(1_020, currentHeight: 1_000, now: now),
+      migrationHeightTimingLabel(
+        testL10n,
+        1_020,
+        blockTimes: BlockTimeEstimate.preNu7,
+        currentHeight: 1_000,
+        now: now,
+      ),
       '~Jul 18',
     );
   });
 
   test('formats remaining migration delay as a duration', () {
     expect(
-      migrationHeightRemainingDurationLabel(1_020, currentHeight: 1_000),
+      migrationHeightRemainingDurationLabel(
+        testL10n,
+        1_020,
+        blockTimes: BlockTimeEstimate.preNu7,
+        currentHeight: 1_000,
+      ),
       '~in 25 minutes',
     );
     expect(
-      migrationHeightRemainingDurationLabel(1_000, currentHeight: 1_000),
+      migrationHeightRemainingDurationLabel(
+        testL10n,
+        1_000,
+        blockTimes: BlockTimeEstimate.preNu7,
+        currentHeight: 1_000,
+      ),
       'ready now',
+    );
+  });
+
+  test('shortens migration durations across NU7 activation', () {
+    const spacing = BlockSpacing(
+      nu7ActivationHeight: 1_010,
+      preNu7BlockSeconds: 75,
+      nu7BlockSeconds: 25,
+    );
+    // 9 blocks at 75 seconds, then 11 at 25 seconds.
+    expect(
+      migrationHeightRemainingDurationLabel(
+        testL10n,
+        1_020,
+        blockTimes: spacing.fromTip(1_000),
+        currentHeight: 1_000,
+      ),
+      '~in 16 minutes',
+    );
+    expect(
+      migrationBlockOffsetDurationLabel(
+        testL10n,
+        100,
+        blockTimes: spacing.fromTip(2_000),
+      ),
+      '~42 mins',
     );
   });
 
@@ -392,6 +541,7 @@ void main() {
     );
 
     final presentation = migrationNextActionPresentation(
+      testL10n,
       status: status,
       currentHeight: 3_400_000,
     );
@@ -418,6 +568,7 @@ void main() {
     );
 
     final presentation = migrationNextActionPresentation(
+      testL10n,
       status: status,
       currentHeight: 3_435_400,
     );
@@ -460,6 +611,7 @@ void main() {
     );
 
     final presentation = migrationNextActionPresentation(
+      testL10n,
       status: status,
       currentHeight: 1_071,
     );
@@ -493,6 +645,7 @@ void main() {
     );
 
     final presentation = migrationNextActionPresentation(
+      testL10n,
       status: status,
       currentHeight: 3_400_000,
       requiresInput: true,

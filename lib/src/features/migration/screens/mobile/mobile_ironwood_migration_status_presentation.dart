@@ -27,11 +27,12 @@ List<rust_sync.MigrationPartStatus> _orderedMobileMigrationParts(
   Iterable<rust_sync.MigrationPartStatus> parts,
 ) => orderedMigrationParts(parts);
 
-List<MobileIronwoodMigrationPartPresentation>
-_mobileMigrationPartPresentations({
+List<MobileIronwoodMigrationPartPresentation> _mobileMigrationPartPresentations(
+  AppLocalizations l10n, {
   required rust_sync.MigrationStatus? status,
   required rust_sync.OrchardMigrationPrivatePlan? previewPlan,
   required List<MobileIronwoodMigrationPartPresentation>? explicitParts,
+  required BlockTimeEstimate blockTimes,
   int? currentHeight,
 }) {
   if (explicitParts != null) return explicitParts;
@@ -41,6 +42,7 @@ _mobileMigrationPartPresentations({
     final lateScheduledTxids = _mobileLateScheduledTxids(
       status!,
       currentHeight: currentHeight,
+      blockSpacing: blockTimes.spacing,
     );
     final plannedTransferByPart = {
       for (final transfer in previewPlan?.scheduledTransfers ?? const [])
@@ -53,17 +55,20 @@ _mobileMigrationPartPresentations({
           part.txidHex != null &&
           lateScheduledTxids.contains(part.txidHex!.toLowerCase());
       return MobileIronwoodMigrationPartPresentation(
-        label: 'Part ${displayIndex + 1}',
+        label: l10n.migrationMobilePartLabel(displayIndex + 1),
         status: _mobileMigrationPartStatus(
           part,
           needsAttention: needsAttention,
         ),
-        detail: '${_compactZec(part.valueZatoshi)} ZEC',
+        detail:
+            '${_compactZec(part.valueZatoshi)} ZEC', // l10n-ignore: amount format
         eta: needsAttention
             ? null
             : _mobileMigrationPartDetail(
+                l10n,
                 part,
                 status: status,
+                blockTimes: blockTimes,
                 currentHeight: currentHeight,
                 plannedTransfer: plannedTransferByPart[part.partIndex],
               ),
@@ -78,7 +83,7 @@ _mobileMigrationPartPresentations({
     return [
       for (var index = 0; index < broadcasts.length; index++)
         MobileIronwoodMigrationPartPresentation(
-          label: 'Part ${index + 1}',
+          label: l10n.migrationMobilePartLabel(index + 1),
           status: switch (broadcasts[index].status.toLowerCase()) {
             'confirmed' => MobileIronwoodMigrationPartStatus.complete,
             'needs_input' => MobileIronwoodMigrationPartStatus.needsInput,
@@ -87,7 +92,8 @@ _mobileMigrationPartPresentations({
             'mined' => MobileIronwoodMigrationPartStatus.active,
             _ => MobileIronwoodMigrationPartStatus.pending,
           },
-          detail: '${_compactZec(broadcasts[index].valueZatoshi)} ZEC',
+          detail:
+              '${_compactZec(broadcasts[index].valueZatoshi)} ZEC', // l10n-ignore: amount format
           valueZatoshi: broadcasts[index].valueZatoshi,
           eta: switch (broadcasts[index].status.toLowerCase()) {
             'confirmed' ||
@@ -97,9 +103,11 @@ _mobileMigrationPartPresentations({
             'needs_input' => null,
             _ =>
               currentHeight == null || currentHeight <= 0
-                  ? 'Queued'
+                  ? l10n.migrationMobilePartQueued
                   : migrationHeightRemainingDurationLabel(
+                      l10n,
                       broadcasts[index].scheduledHeight,
+                      blockTimes: blockTimes,
                       currentHeight: currentHeight,
                     ),
           },
@@ -120,17 +128,28 @@ _mobileMigrationPartPresentations({
     return [
       for (var index = 0; index < targetValues.length; index++)
         MobileIronwoodMigrationPartPresentation(
-          label: 'Part ${index + 1}',
+          label: l10n.migrationMobilePartLabel(index + 1),
           status: index < confirmedCount
               ? MobileIronwoodMigrationPartStatus.complete
               : index < activeCount
               ? MobileIronwoodMigrationPartStatus.active
               : MobileIronwoodMigrationPartStatus.pending,
-          detail: '${_compactZec(targetValues[index])} ZEC',
+          detail:
+              '${_compactZec(targetValues[index])} ZEC', // l10n-ignore: amount format
           valueZatoshi: targetValues[index],
           eta: index == status.nextActionPartIndex
-              ? _mobileWaitingLabel(status, currentHeight: currentHeight)
-              : _mobilePlannedPartDurationLabel(previewPlan, partIndex: index),
+              ? _mobileWaitingLabel(
+                  l10n,
+                  status,
+                  blockTimes: blockTimes,
+                  currentHeight: currentHeight,
+                )
+              : _mobilePlannedPartDurationLabel(
+                  l10n,
+                  previewPlan,
+                  blockTimes: blockTimes,
+                  partIndex: index,
+                ),
         ),
     ];
   }
@@ -139,11 +158,16 @@ _mobileMigrationPartPresentations({
   return [
     for (var index = 0; index < transfers.length; index++)
       MobileIronwoodMigrationPartPresentation(
-        label: 'Part ${index + 1}',
+        label: l10n.migrationMobilePartLabel(index + 1),
         status: MobileIronwoodMigrationPartStatus.pending,
-        detail: '${_compactZec(transfers[index].valueZatoshi)} ZEC',
+        detail:
+            '${_compactZec(transfers[index].valueZatoshi)} ZEC', // l10n-ignore: amount format
         valueZatoshi: transfers[index].valueZatoshi,
-        eta: migrationBlockOffsetDurationLabel(transfers[index].blockOffset),
+        eta: migrationBlockOffsetDurationLabel(
+          l10n,
+          transfers[index].blockOffset,
+          blockTimes: blockTimes,
+        ),
       ),
   ];
 }
@@ -172,6 +196,7 @@ MobileIronwoodMigrationPartStatus _mobileMigrationPartStatus(
 Set<String> _mobileLateScheduledTxids(
   rust_sync.MigrationStatus status, {
   required int? currentHeight,
+  required BlockSpacing blockSpacing,
 }) {
   if (currentHeight == null || currentHeight <= 0) return const {};
   return {
@@ -179,97 +204,125 @@ Set<String> _mobileLateScheduledTxids(
       if (broadcast.status.toLowerCase() == 'scheduled' &&
           broadcast.scheduledHeight > 0 &&
           currentHeight >=
-              broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks)
+              ironwoodMigrationLateHeight(
+                broadcast.scheduledHeight,
+                blockSpacing,
+              ))
         broadcast.txidHex.toLowerCase(),
   };
 }
 
 String? _mobileMigrationPartDetail(
+  AppLocalizations l10n,
   rust_sync.MigrationPartStatus part, {
   required rust_sync.MigrationStatus? status,
+  required BlockTimeEstimate blockTimes,
   required int? currentHeight,
   rust_sync.MigrationScheduledTransfer? plannedTransfer,
 }) {
   if (part.state == rust_sync.MigrationPartState.completed) return null;
   if (part.state == rust_sync.MigrationPartState.confirming &&
       part.confirmationTarget > 0) {
-    return 'Confirming · '
-        '${part.confirmationCount.clamp(0, part.confirmationTarget)}/'
-        '${part.confirmationTarget}';
+    return l10n.migrationMobilePartConfirming(
+      part.confirmationCount.clamp(0, part.confirmationTarget),
+      part.confirmationTarget,
+    );
   }
   if (part.state == rust_sync.MigrationPartState.preparing) {
     final scheduledHeight = part.scheduledHeight;
     if (scheduledHeight != null && currentHeight != null && currentHeight > 0) {
       return migrationHeightRemainingDurationLabel(
+        l10n,
         scheduledHeight,
+        blockTimes: blockTimes,
         currentHeight: currentHeight,
       );
     }
     if (status?.nextActionPartIndex == part.partIndex) {
-      return _mobileWaitingLabel(status!, currentHeight: currentHeight);
+      return _mobileWaitingLabel(
+        l10n,
+        status!,
+        blockTimes: blockTimes,
+        currentHeight: currentHeight,
+      );
     }
     return plannedTransfer == null
-        ? 'Queued'
-        : migrationBlockOffsetDurationLabel(plannedTransfer.blockOffset);
+        ? l10n.migrationMobilePartQueued
+        : migrationBlockOffsetDurationLabel(
+            l10n,
+            plannedTransfer.blockOffset,
+            blockTimes: blockTimes,
+          );
   }
   return switch (part.state) {
     rust_sync.MigrationPartState.scheduled => _mobileScheduledPartLabel(
+      l10n,
       part,
       status: status,
+      blockTimes: blockTimes,
       currentHeight: currentHeight,
     ),
-    rust_sync.MigrationPartState.migrating => 'Migrating...',
+    rust_sync.MigrationPartState.migrating => l10n.commonMigrating,
     rust_sync.MigrationPartState.needsInput => null,
     _ => null,
   };
 }
 
 String _mobileScheduledPartLabel(
+  AppLocalizations l10n,
   rust_sync.MigrationPartStatus part, {
   required rust_sync.MigrationStatus? status,
+  required BlockTimeEstimate blockTimes,
   required int? currentHeight,
 }) {
   final scheduledHeight = part.scheduledHeight;
   if (scheduledHeight == null || currentHeight == null || currentHeight <= 0) {
-    return 'Queued';
+    return l10n.migrationMobilePartQueued;
   }
   return migrationHeightRemainingDurationLabel(
+    l10n,
     scheduledHeight,
+    blockTimes: blockTimes,
     currentHeight: currentHeight,
   );
 }
 
 String _mobileWaitingLabel(
+  AppLocalizations l10n,
   rust_sync.MigrationStatus status, {
+  required BlockTimeEstimate blockTimes,
   required int? currentHeight,
 }) {
   final nextHeight = status.nextActionHeight;
-  final timing =
-      nextHeight == null || currentHeight == null || currentHeight <= 0
-      ? null
-      : migrationHeightRemainingDurationLabel(
-          nextHeight,
-          currentHeight: currentHeight,
-        );
-  if (timing != null &&
-      status.signedChildPcztCount > 0 &&
-      status.pendingTxCount == 0) {
-    return timing.replaceFirst('~in ', '~');
+  if (nextHeight == null || currentHeight == null || currentHeight <= 0) {
+    return l10n.migrationMobilePartQueued;
   }
-  return timing ?? 'Queued';
+  return migrationHeightRemainingDurationLabel(
+    l10n,
+    nextHeight,
+    blockTimes: blockTimes,
+    currentHeight: currentHeight,
+    relative: !(status.signedChildPcztCount > 0 && status.pendingTxCount == 0),
+  );
 }
 
 String _mobilePlannedPartDurationLabel(
+  AppLocalizations l10n,
   rust_sync.OrchardMigrationPrivatePlan? plan, {
+  required BlockTimeEstimate blockTimes,
   required int partIndex,
 }) {
-  if (plan == null) return 'Queued';
+  if (plan == null) return l10n.migrationMobilePartQueued;
   for (final transfer in plan.scheduledTransfers) {
     if (transfer.partIndex == partIndex) {
-      return migrationBlockOffsetDurationLabel(transfer.blockOffset);
+      return migrationBlockOffsetDurationLabel(
+        l10n,
+        transfer.blockOffset,
+        blockTimes: blockTimes,
+      );
     }
   }
-  return 'Queued';
+  return l10n.migrationMobilePartQueued;
 }
 
 double? _mobileMigrationPartProgress(rust_sync.MigrationPartStatus part) {

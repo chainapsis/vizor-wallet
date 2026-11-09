@@ -3,26 +3,31 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_latency_provider.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/rust/api/wallet.dart'
+    show LightwalletdEndpointProbe;
+import '../support/test_l10n.dart';
 
 void main() {
   group('measureRpcEndpointLatency', () {
-    test('returns an available sample with elapsed milliseconds', () async {
-      final timestamps = [
-        DateTime(2026),
-        DateTime(2026).add(const Duration(milliseconds: 123)),
-      ];
-      var index = 0;
+    test('uses Rust timing instead of time awaiting the bridge', () async {
+      final response = Completer<LightwalletdEndpointProbe>();
 
-      final sample = await measureRpcEndpointLatency(
+      final pending = measureRpcEndpointLatency(
         lightwalletdUrl: 'https://zec.rocks:443',
         expectedNetworkName: 'main',
-        getChainName: (_) async => 'main',
-        now: () => timestamps[index++],
+        getProbe: (_) => response.future,
       );
+      // Time spent waiting for a bridge worker/result must not affect the label.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      response.complete(
+        const LightwalletdEndpointProbe(chainName: 'main', latencyMs: 123),
+      );
+      final sample = await pending;
 
       expect(sample.status, RpcEndpointLatencyStatus.available);
       expect(sample.latency, const Duration(milliseconds: 123));
-      expect(sample.label, '123ms');
+      expect(sample.label(testL10n), '123ms');
     });
 
     test(
@@ -31,11 +36,14 @@ void main() {
         final sample = await measureRpcEndpointLatency(
           lightwalletdUrl: 'https://testnet.zec.rocks:443',
           expectedNetworkName: 'main',
-          getChainName: (_) async => 'test',
+          getProbe: (_) async => const LightwalletdEndpointProbe(
+            chainName: 'test',
+            latencyMs: 123,
+          ),
         );
 
         expect(sample.status, RpcEndpointLatencyStatus.wrongNetwork);
-        expect(sample.label, 'Wrong network');
+        expect(sample.label(testL10n), 'Wrong network');
       },
     );
 
@@ -43,20 +51,51 @@ void main() {
       final sample = await measureRpcEndpointLatency(
         lightwalletdUrl: 'https://does-not-exist.example:443',
         expectedNetworkName: 'main',
-        getChainName: (_) async => throw Exception('connect failed'),
+        getProbe: (_) async => throw Exception('connect failed'),
       );
 
       expect(sample.status, RpcEndpointLatencyStatus.unavailable);
-      expect(sample.label, 'Unavailable');
+      expect(sample.label(testL10n), 'Unavailable');
     });
   });
 
   group('RpcEndpointLatencyNotifier', () {
+    test(
+      'automatic policy does not duplicate its compatibility host probe',
+      () async {
+        final urls = <String>[];
+        final container = ProviderContainer(
+          overrides: [
+            rpcEndpointProbeGetterProvider.overrideWithValue((url) async {
+              urls.add(url);
+              return const LightwalletdEndpointProbe(
+                chainName: 'main',
+                latencyMs: 123,
+              );
+            }),
+          ],
+        );
+        addTearDown(container.dispose);
+        await container
+            .read(rpcEndpointLatencyProvider.notifier)
+            .refresh('main');
+        expect(
+          urls.where(
+            (url) =>
+                url ==
+                defaultRpcEndpointConfig('main').normalizedLightwalletdUrl,
+          ),
+          hasLength(1),
+        );
+        expect(urls.toSet().length, urls.length);
+      },
+    );
+
     test('marks presets checking before resolving measured latency', () async {
-      final completer = Completer<String>();
+      final completer = Completer<LightwalletdEndpointProbe>();
       final container = ProviderContainer(
         overrides: [
-          rpcEndpointChainNameGetterProvider.overrideWithValue(
+          rpcEndpointProbeGetterProvider.overrideWithValue(
             (_) => completer.future,
           ),
         ],
@@ -77,7 +116,9 @@ void main() {
         isTrue,
       );
 
-      completer.complete('main');
+      completer.complete(
+        const LightwalletdEndpointProbe(chainName: 'main', latencyMs: 123),
+      );
       await refresh;
 
       final finalState = container.read(rpcEndpointLatencyProvider);
@@ -90,11 +131,11 @@ void main() {
     });
 
     test('discard stale samples when a newer refresh starts', () async {
-      final completers = <Completer<String>>[];
+      final completers = <Completer<LightwalletdEndpointProbe>>[];
       final container = ProviderContainer(
         overrides: [
-          rpcEndpointChainNameGetterProvider.overrideWithValue((_) {
-            final completer = Completer<String>();
+          rpcEndpointProbeGetterProvider.overrideWithValue((_) {
+            final completer = Completer<LightwalletdEndpointProbe>();
             completers.add(completer);
             return completer.future;
           }),
@@ -106,7 +147,9 @@ void main() {
           .read(rpcEndpointLatencyProvider.notifier)
           .refresh('main');
       await Future<void>.delayed(Duration.zero);
-      final firstCompleters = List<Completer<String>>.of(completers);
+      final firstCompleters = List<Completer<LightwalletdEndpointProbe>>.of(
+        completers,
+      );
 
       final secondRefresh = container
           .read(rpcEndpointLatencyProvider.notifier)
@@ -117,7 +160,9 @@ void main() {
           .toList();
 
       for (final completer in firstCompleters) {
-        completer.complete('test');
+        completer.complete(
+          const LightwalletdEndpointProbe(chainName: 'test', latencyMs: 456),
+        );
       }
       await firstRefresh;
       final afterStale = container.read(rpcEndpointLatencyProvider);
@@ -129,7 +174,9 @@ void main() {
       );
 
       for (final completer in secondCompleters) {
-        completer.complete('main');
+        completer.complete(
+          const LightwalletdEndpointProbe(chainName: 'main', latencyMs: 123),
+        );
       }
       await secondRefresh;
       final finalState = container.read(rpcEndpointLatencyProvider);

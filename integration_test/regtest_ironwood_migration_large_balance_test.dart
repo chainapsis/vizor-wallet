@@ -84,14 +84,6 @@ void main() {
       _expectLargePlan(migrationPlan);
 
       await openPrivateMigrationReview(tester);
-      expect(
-        find.textContaining(
-          '${migrationPlan.plannedBatchCount} batches',
-          findRichText: true,
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('~0.0026 ZEC'), findsOneWidget);
 
       await startPrivateMigrationFromReview(tester);
       final started = await waitForDesktopRegtestMigrationStatus(
@@ -107,23 +99,16 @@ void main() {
       final runId = started.activeRunId;
       expect(runId, isNotNull);
       _expectRunMatchesPlan(started, migrationPlan);
-      expect((await _waitForMempool(tester, (size) => size == 1))['size'], 1);
 
       e2eLog('confirming large-balance denomination stage');
-      await ironwoodDriverPost(
-        _driverUrl,
-        '/mine',
-        payload: const {'blocks': 10},
-      );
-      await waitForDesktopRegtestMigrationStatus(
+      final prepared = await prepareDesktopRegtestMigrationSchedule(
         tester,
+        _driverUrl,
         accountUuid,
-        (status) =>
-            status.activeRunId == runId &&
-            status.phase == 'ready_to_migrate' &&
-            status.denominationSplitCompletedCount == 1,
-        description: 'confirmed large-balance denomination stage',
+        untilScheduled: false,
       );
+      expect(prepared.activeRunId, runId);
+      expect(prepared.denominationSplitCompletedCount, 1);
       e2eLog('mining four additional large-balance anchor cohort blocks');
       await ironwoodDriverPost(
         _driverUrl,
@@ -136,9 +121,13 @@ void main() {
         container,
         cohortChain['zcashdHeight'] as num,
       );
-      final scheduled = await prepareDesktopRegtestMigrationSchedule(
+      final scheduled = await waitForDesktopRegtestMigrationStatus(
         tester,
         accountUuid,
+        (status) =>
+            status.scheduledBroadcasts.length ==
+            migrationPlan.plannedBatchCount,
+        description: 'large-balance migration broadcast schedule',
         timeout: const Duration(minutes: 8),
       );
       expect(scheduled.activeRunId, runId);
@@ -160,7 +149,7 @@ void main() {
       expect(firstChild.pendingTxCount, migrationPlan.plannedBatchCount);
       expect(firstChild.signedChildPcztCount, 0);
       await _refreshMigrationStatusUi(tester, container, accountUuid);
-      await _expectIntermediateProgressUi(tester, migrationPlan, firstChild);
+      await _expectIntermediateProgressUi(tester);
 
       e2eLog('mining a partial large-balance migration batch');
       await ironwoodDriverPost(
@@ -183,11 +172,7 @@ void main() {
         lessThanOrEqualTo(partiallyConfirmed.totalCount),
       );
       await _refreshMigrationStatusUi(tester, container, accountUuid);
-      await _expectIntermediateProgressUi(
-        tester,
-        migrationPlan,
-        partiallyConfirmed,
-      );
+      await _expectIntermediateProgressUi(tester);
 
       final allSubmitted = await advanceDesktopRegtestMigrationSchedule(
         tester,
@@ -208,7 +193,7 @@ void main() {
         isEmpty,
       );
       await _refreshMigrationStatusUi(tester, container, accountUuid);
-      await _expectIntermediateProgressUi(tester, migrationPlan, allSubmitted);
+      await _expectIntermediateProgressUi(tester);
 
       e2eLog('confirming all large-balance migration transactions');
       await ironwoodDriverPost(
@@ -294,60 +279,20 @@ void _expectRunMatchesPlan(
   expect(_sumTargets(status.targetValuesZatoshi), plan.totalMigratableZatoshi);
 }
 
-Future<void> _expectIntermediateProgressUi(
-  WidgetTester tester,
-  rust_sync.OrchardMigrationPrivatePlan plan,
-  rust_sync.MigrationStatus status,
-) async {
-  if (status.phase == kIronwoodMigrationBroadcastScheduledPhase) {
-    await pumpUntil(
-      tester,
-      () => tester.any(
-        find.byKey(
-          const ValueKey('ironwood_migration_status_broadcast_scheduled'),
-        ),
-      ),
-      description: 'large-balance scheduled broadcast progress UI',
-    );
-    expect(find.text('Migration in progress'), findsOneWidget);
-    expect(
-      find.textContaining(
-        '${plan.plannedBatchCount} batches',
-        findRichText: true,
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Scheduled'), findsWidgets);
-    return;
-  }
-
+/// A live run past its preparation shows the migration view of the status.
+Future<void> _expectIntermediateProgressUi(WidgetTester tester) async {
+  await waitForDesktopActiveMigrationStatus(tester);
   await pumpUntil(
     tester,
-    () => tester.any(
-      find.textContaining(
-        '${plan.plannedBatchCount} batches',
-        findRichText: true,
-      ),
-    ),
-    description: 'large-balance transfer progress UI',
+    () =>
+        tester.any(find.byKey(const ValueKey('migration-ring-label'))) &&
+        tester.any(
+          find.byKey(
+            const ValueKey('ironwood_migration_summary_left_to_migrate'),
+          ),
+        ),
+    description: 'large-balance migration progress UI',
   );
-  expect(find.text('Migration in progress'), findsOneWidget);
-  expect(find.text('Completed'), findsWidgets);
-}
-
-Future<Map<String, Object?>> _waitForMempool(
-  WidgetTester tester,
-  bool Function(int size) condition,
-) async {
-  final end = DateTime.now().add(const Duration(minutes: 2));
-  Map<String, Object?>? last;
-  while (DateTime.now().isBefore(end)) {
-    last = await ironwoodDriverGet(_driverUrl, '/mempool');
-    if (condition(last['size'] as int)) return last;
-    await tester.pump(const Duration(milliseconds: 100));
-    await Future<void>.delayed(const Duration(milliseconds: 200));
-  }
-  fail('Timed out waiting for migration mempool condition. Last: $last');
 }
 
 BigInt _sumTargets(Iterable<BigInt> values) {

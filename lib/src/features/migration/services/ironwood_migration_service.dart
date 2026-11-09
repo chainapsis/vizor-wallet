@@ -20,7 +20,7 @@ import 'ironwood_migration_background_credential_store.dart';
 import 'ironwood_migration_operation_registry.dart';
 
 const _credentialRecoveryRequiredError =
-    'Ironwood migration credential is missing for the active run.';
+    'Ironwood migration credential is missing for the active run.'; // l10n-ignore: matched or logged error text
 
 bool ironwoodMigrationNeedsCredentialRecovery(String? error) {
   return error?.contains(_credentialRecoveryRequiredError) ?? false;
@@ -73,7 +73,7 @@ class IronwoodMigrationOutboxProtocolException extends FormatException {
 class IronwoodMigrationCredentialContextMismatchException extends StateError {
   IronwoodMigrationCredentialContextMismatchException()
     : super(
-        'Ironwood migration credential manifest does not match the active '
+        'Ironwood migration credential manifest does not match the active ' // l10n-ignore: matched or logged error text
         'wallet context.',
       );
 }
@@ -94,7 +94,9 @@ bool _isUnusableMigrationCredentialError(Object error) {
       error is IronwoodMigrationCredentialContextMismatchException) {
     return true;
   }
-  return error.toString().contains('Failed to decrypt secure-storage payload');
+  const undecryptable =
+      'Failed to decrypt secure-storage payload'; // l10n-ignore: storage error text
+  return error.toString().contains(undecryptable);
 }
 
 typedef IronwoodMigrationStatusGetter =
@@ -370,6 +372,7 @@ class IronwoodMigrationOutboxRunResult {
     this.observedHeight,
     this.accountUuid,
     this.retryDelay,
+    this.heldForUpgradeTxids = const {},
   });
 
   factory IronwoodMigrationOutboxRunResult.fromMap(
@@ -392,6 +395,11 @@ class IronwoodMigrationOutboxRunResult {
       nextHeight: (values['nextHeight'] as num?)?.toInt(),
       observedHeight: (values['observedHeight'] as num?)?.toInt(),
       accountUuid: values['accountUuid'] as String?,
+      heldForUpgradeTxids: {
+        for (final txid
+            in (values['heldForUpgradeTxids'] as List<Object?>?) ?? const [])
+          if (txid is String) txid.toLowerCase(),
+      },
       retryDelay: switch (values['delaySeconds']) {
         final num seconds when seconds > 0 => Duration(
           milliseconds: (seconds * Duration.millisecondsPerSecond).ceil(),
@@ -406,6 +414,9 @@ class IronwoodMigrationOutboxRunResult {
   final int? observedHeight;
   final String? accountUuid;
   final Duration? retryDelay;
+
+  /// Due parts that wait for the network upgrade rather than a retry.
+  final Set<String> heldForUpgradeTxids;
 }
 
 typedef IronwoodMigrationKeystoneDenominationPreparer =
@@ -431,6 +442,7 @@ typedef IronwoodMigrationKeystoneImmediatePreparer =
       required BigInt approvedFeeZatoshi,
       required BigInt approvedMigratedZatoshi,
       required int approvedInputNoteCount,
+      required bool keystoneBatch,
     });
 typedef IronwoodMigrationKeystoneImmediateCompleter =
     Future<rust_sync.IronwoodMigrationResult> Function({
@@ -630,6 +642,7 @@ class IronwoodMigrationService {
     bool Function()? isRequestCurrent,
     IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
     IronwoodMigrationEndpointGetter? getEndpoint,
+    this.resolveEndpoint,
     IronwoodMigrationPasswordGetter? getSessionPassword,
     IronwoodMigrationMnemonicBytesGetter? getMnemonicBytesForAccount,
     IronwoodMigrationPlatformCheck? isMacOS,
@@ -845,6 +858,7 @@ class IronwoodMigrationService {
   final bool Function() isRequestCurrent;
   final IronwoodMigrationBackgroundCredentialStore backgroundCredentialStore;
   final IronwoodMigrationEndpointGetter getEndpoint;
+  final Future<RpcEndpointConfig> Function()? resolveEndpoint;
   final IronwoodMigrationPasswordGetter getSessionPassword;
   final IronwoodMigrationMnemonicBytesGetter getMnemonicBytesForAccount;
   final IronwoodMigrationPlatformCheck isMacOS;
@@ -925,6 +939,9 @@ class IronwoodMigrationService {
   bool get _usesNativePreparation => isIOS() && !isAndroid();
   bool get _usesNativeMigrationLifecycle =>
       _usesNativeMigrationOutbox || _usesNativePreparation;
+
+  Future<RpcEndpointConfig> _readyEndpoint() async =>
+      resolveEndpoint == null ? getEndpoint() : await resolveEndpoint!();
 
   /// Reads durable migration state without credential or outbox reconciliation.
   ///
@@ -1512,7 +1529,7 @@ class IronwoodMigrationService {
   }) async {
     final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -1579,7 +1596,7 @@ class IronwoodMigrationService {
   }) async {
     final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -1630,7 +1647,7 @@ class IronwoodMigrationService {
   }) async {
     final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -1811,7 +1828,7 @@ class IronwoodMigrationService {
     }
 
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2055,19 +2072,33 @@ class IronwoodMigrationService {
   prepareKeystoneImmediateMigrationRequest({
     required String accountUuid,
     required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
-  }) => prepareHardwareImmediateMigrationRequest(
+  }) => _prepareHardwareImmediateMigrationRequest(
     accountUuid: accountUuid,
     approvedPlan: approvedPlan,
+    keystoneBatch: true,
+  );
+
+  /// Ledger signs the standard signer view: Keystone's batch view drops the
+  /// `alpha` of preauthorized padding spends, which Ledger needs.
+  Future<rust_sync.KeystoneMigrationSigningRequest>
+  prepareLedgerImmediateMigrationRequest({
+    required String accountUuid,
+    required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+  }) => _prepareHardwareImmediateMigrationRequest(
+    accountUuid: accountUuid,
+    approvedPlan: approvedPlan,
+    keystoneBatch: false,
   );
 
   /// Prepares the single Immediate-migration PCZT for an external signer.
   ///
-  /// The Rust bridge still uses the historical `Keystone*` wire structs, but
-  /// the payload is signer-neutral and is also consumed by Ledger accounts.
+  /// The Rust bridge still uses the historical `Keystone*` wire structs for
+  /// both hardware signers.
   Future<rust_sync.KeystoneMigrationSigningRequest>
-  prepareHardwareImmediateMigrationRequest({
+  _prepareHardwareImmediateMigrationRequest({
     required String accountUuid,
     required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+    required bool keystoneBatch,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
@@ -2082,6 +2113,7 @@ class IronwoodMigrationService {
         approvedFeeZatoshi: approvedPlan.feeZatoshi,
         approvedMigratedZatoshi: approvedPlan.migratedZatoshi,
         approvedInputNoteCount: approvedPlan.inputNoteCount,
+        keystoneBatch: keystoneBatch,
       ),
     );
   }
@@ -2104,7 +2136,7 @@ class IronwoodMigrationService {
     required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     return operationRegistry.run(
       network: endpoint.networkName,
       accountUuid: accountUuid,
@@ -2124,7 +2156,7 @@ class IronwoodMigrationService {
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2151,7 +2183,7 @@ class IronwoodMigrationService {
     required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2184,7 +2216,7 @@ class IronwoodMigrationService {
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2232,7 +2264,7 @@ class IronwoodMigrationService {
     required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2820,6 +2852,7 @@ class IronwoodMigrationService {
               'scheduledHeight': item.scheduledHeight,
               'scheduleStartHeight': item.scheduleStartHeight,
               'expiryHeight': item.expiryHeight,
+              'targetHeight': item.targetHeight,
             },
           )
           .toList(growable: false),
@@ -2858,9 +2891,14 @@ class IronwoodMigrationService {
     required Set<String> reconciledTxids,
   }) {
     final observedHeight = run.observedHeight;
+    // Parts the network upgrade holds wait like the desktop's do.
     final hadDueItem =
         observedHeight != null &&
-        batch.items.any((item) => item.scheduledHeight <= observedHeight);
+        batch.items.any(
+          (item) =>
+              item.scheduledHeight <= observedHeight &&
+              !run.heldForUpgradeTxids.contains(item.txidHex.toLowerCase()),
+        );
 
     switch (run.outcome) {
       case IronwoodMigrationOutboxRunOutcome.accepted:
@@ -3074,6 +3112,8 @@ final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
     keyringCoordinator: ref.read(linuxKeyringCoordinatorProvider),
     isRequestCurrent: () => ref.mounted,
     getEndpoint: () => ref.read(rpcEndpointFailoverProvider).current,
+    resolveEndpoint: () =>
+        ref.read(rpcEndpointFailoverProvider.notifier).ensureReady(),
     getSessionPassword: () => ref
         .read(appSecurityProvider.notifier)
         .requireSessionPasswordForNativeSecretUse(),
@@ -3337,7 +3377,9 @@ Future<bool> _defaultRecordVerifiedProofReadiness({
 }
 
 bool _isTerminalCredentialCleanupPhase(String phase) =>
-    phase == 'complete' || phase == 'abandoned';
+    phase == 'complete' ||
+    phase == 'abandoned' ||
+    phase == kIronwoodMigrationStoppedByUpgradePhase;
 
 class _MigrationCredentialContext {
   const _MigrationCredentialContext({

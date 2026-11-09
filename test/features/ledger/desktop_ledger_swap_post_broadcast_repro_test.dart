@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import '../../support/test_l10n.dart';
 import 'dart:io';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -12,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_recovery.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
@@ -24,6 +26,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/swap_ledger_signing_overl
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
@@ -60,7 +63,7 @@ void main() {
         ),
       );
       final accessRecovery =
-          ledgerFailureGuidance(error)?.bluetoothRecovery == true;
+          ledgerFailureGuidance(testL10n, error)?.bluetoothRecovery == true;
       final operations = _StatefulOperationService();
       await _pumpOverlay(
         tester,
@@ -75,10 +78,10 @@ void main() {
         tester,
         () => find
             .text(
-              ledgerFailureGuidance(error)?.pairingInvalid == true
-                  ? 'Find my Ledger'
+              ledgerFailureGuidance(testL10n, error)?.pairingInvalid == true
+                  ? 'Find Ledger'
                   : accessRecovery
-                  ? 'Reconnect'
+                  ? 'Find Ledger'
                   : 'Try again',
             )
             .evaluate()
@@ -86,13 +89,13 @@ void main() {
       );
       expect(
         find.text(
-          ledgerFailureGuidance(error)?.pairingInvalid == true
+          ledgerFailureGuidance(testL10n, error)?.pairingInvalid == true
               ? 'Pair your Ledger again'
-              : ledgerFailureGuidance(error)?.pairingRecovery == true
+              : ledgerFailureGuidance(testL10n, error)?.pairingRecovery == true
               ? 'Request failed'
               : accessRecovery
               ? 'Ready to reconnect'
-              : ledgerFailureGuidance(error)?.message ??
+              : ledgerFailureGuidance(testL10n, error)?.message ??
                     'Ledger signing could not be completed.',
         ),
         findsOneWidget,
@@ -401,8 +404,10 @@ void main() {
       );
       await _pumpUntil(
         tester,
-        () =>
-            find.text(kLedgerHostRequestRejectedMessage).evaluate().isNotEmpty,
+        () => find
+            .text(testL10n.ledgerFailureMsgRejectedNewRequest)
+            .evaluate()
+            .isNotEmpty,
       );
 
       expect(find.text('Ledger signing failed'), findsOneWidget);
@@ -490,6 +495,41 @@ void main() {
     expect(persistenceCalls, 0);
     expect(completionCalls, 0);
     expect(find.text('Retry saving'), findsNothing);
+  });
+
+  testWidgets('desktop Ledger explains a deposit the upgrade expired', (
+    tester,
+  ) async {
+    final operations = _StatefulOperationService(
+      status: 'expired',
+      message:
+          "Transactions can't be sent this close to the network upgrade. "
+          'Try again after it activates.',
+    );
+    var cancelCalls = 0;
+
+    await _pumpOverlay(
+      tester,
+      intent: _intent(),
+      operations: operations,
+      signing: _HardwareSigningService(),
+      sign: (_, _) async => const [3],
+      persist: (_, _) async {},
+      onCompleted: (_) async {},
+      onCancelled: () => cancelCalls++,
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text(networkUpgradeHoldText(testL10n)).evaluate().isNotEmpty,
+    );
+
+    expect(operations.acknowledgeCalls, 1);
+    expect(cancelCalls, 0);
+    expect(find.text('Paused for network upgrade'), findsOneWidget);
+
+    await tester.tap(find.text('Back to activity'));
+    await _pumpUntil(tester, () => cancelCalls == 1);
+    expect(cancelCalls, 1);
   });
 
   testWidgets(
@@ -743,6 +783,7 @@ Future<ProviderContainer> _pumpOverlay(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: Scaffold(
           body: RepaintBoundary(
             key: _captureBoundaryKey,
@@ -898,9 +939,11 @@ class _StatefulOperationService implements LedgerSignedOperationService {
     this.status = SwapDepositBroadcastStatus.broadcasted,
     this.acknowledgeFailures = 0,
     this.failBroadcastResponseAfterAccept = false,
+    this.message,
   });
 
   final String status;
+  final String? message;
   int acknowledgeFailures;
   final bool failBroadcastResponseAfterAccept;
   var checkpointCalls = 0;
@@ -963,6 +1006,7 @@ class _StatefulOperationService implements LedgerSignedOperationService {
       operationId: operationId,
       txid: 'txid-1',
       status: status,
+      message: message,
       requiresAck: true,
     );
   }

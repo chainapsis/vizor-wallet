@@ -69,7 +69,7 @@ use zcash_client_backend::{
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
-        DustOutputPolicy, SplitPolicy, StandardFeeRule, TransactionBalance,
+        DustOutputPolicy, SplitPolicy, TransactionBalance,
     },
     proposal::{Proposal, ProposalError, ShieldedInputs},
     wallet::{LockOwner, Note, OutputRef, OvkPolicy, ReceivedNote, WalletTransparentOutput},
@@ -82,10 +82,13 @@ use zcash_keys::{address::Address, keys::UnifiedSpendingKey};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::TxVersion;
 use zcash_primitives::transaction::{
-    builder::{BuildConfig, Builder, BundlePadding},
+    builder::{default_tx_expiry_delta, BuildConfig, Builder, BundlePadding},
     fees::{
         transparent::InputSize as TransparentInputSize,
-        zip317::{P2PKH_STANDARD_INPUT_SIZE, P2PKH_STANDARD_OUTPUT_SIZE},
+        zip317::{
+            FeeRule as PrimitiveZip317FeeRule, GRACE_ACTIONS, P2PKH_STANDARD_INPUT_SIZE,
+            P2PKH_STANDARD_OUTPUT_SIZE,
+        },
         FeeRule,
     },
     TxId,
@@ -105,11 +108,13 @@ use crate::wallet::db::{
 use crate::wallet::failure::{FailureCode, WalletFailure};
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::network_upgrade;
 use crate::wallet::sync_engine;
 use crate::wallet::sync_engine::enhancement::private_queries_active;
 use crate::wallet::{confirmations_policy, payment_link_claim_confirmations_policy};
 
 mod gift_card_input;
+use super::broadcast_notice::BroadcastNotice;
 use super::migration::MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI;
 use super::migration_wallet_ops::{
     migration_locked_input_policy, select_spendable_orchard_v2_notes,
@@ -117,7 +122,7 @@ use super::migration_wallet_ops::{
 use super::{
     consume_stored_proposal, finish_stored_proposal, open_readonly_conn, open_wallet_db,
     open_wallet_db_for_read, stored_proposal_lock, wallet_target_height, StoredOvkPolicy,
-    StoredProposal, StoredProposalLock, WalletDatabase, PROPOSAL_STORE,
+    StoredProposal, WalletDatabase, PROPOSAL_STORE,
 };
 
 /// Selects the confirmation and outgoing viewing key policies for a send.
@@ -145,17 +150,57 @@ impl SendPurpose {
 }
 
 const UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS: u32 = 10;
-const SEND_PROPOSAL_LOCK_BLOCKS: u32 = 40;
 
-fn send_proposal_lock_expiry(min_target_height: BlockHeight) -> BlockHeight {
-    min_target_height + SEND_PROPOSAL_LOCK_BLOCKS
+/// Default expiry and input-lock window for a transaction targeting
+/// `target_height`, capped at the end of its consensus branch.
+fn send_expiry_height_for_target<P: Parameters>(
+    network: &P,
+    target_height: BlockHeight,
+) -> BlockHeight {
+    let delta = default_tx_expiry_delta(network, target_height);
+    let expiry = BlockHeight::from_u32(u32::from(target_height).saturating_add(delta));
+    network_upgrade::cap_expiry_at_branch_end(network, target_height, expiry)
 }
 
-fn send_proposal_is_expired(
+/// Refuses a transaction whose expiry the next upgrade cuts so short that
+/// nodes would reject it as expiring soon.
+fn ensure_send_outside_upgrade_edge<P: Parameters>(
+    network: &P,
+    target_height: BlockHeight,
+) -> Result<(), String> {
+    if send_expiry_height_for_target(network, target_height)
+        < target_height + network_upgrade::TX_EXPIRING_SOON_BLOCKS
+    {
+        return Err(network_upgrade::SEND_HOLD_MESSAGE.to_string());
+    }
+    Ok(())
+}
+
+/// `error` for a proposal that expired by `current_target`, or the upgrade
+/// hold when a new proposal would be refused there too.
+fn expired_send_proposal_error<P: Parameters>(
+    network: &P,
+    current_target: BlockHeight,
+    error: &str,
+) -> String {
+    ensure_send_outside_upgrade_edge(network, current_target)
+        .err()
+        .unwrap_or_else(|| error.to_string())
+}
+
+fn send_proposal_lock_expiry<P: Parameters>(
+    network: &P,
+    min_target_height: BlockHeight,
+) -> BlockHeight {
+    send_expiry_height_for_target(network, min_target_height)
+}
+
+fn send_proposal_is_expired<P: Parameters>(
+    network: &P,
     min_target_height: BlockHeight,
     current_target_height: BlockHeight,
 ) -> bool {
-    current_target_height >= send_proposal_lock_expiry(min_target_height)
+    current_target_height >= send_proposal_lock_expiry(network, min_target_height)
 }
 
 pub(super) async fn live_send_expiry_height(
@@ -167,32 +212,62 @@ pub(super) async fn live_send_expiry_height(
         .await
         .map_err(|e| format!("Read live chain tip before transaction construction: {e}"))?;
     let tip = u32::try_from(tip.height).map_err(|_| "Live chain tip exceeds u32")?;
-    send_expiry_height_for_live_tip(min_target_height, tip)
+    send_expiry_height_for_live_tip(&network, min_target_height, tip)
 }
 
-fn send_expiry_height_for_live_tip(
+fn send_expiry_height_for_live_tip<P: Parameters>(
+    network: &P,
     min_target_height: BlockHeight,
     live_tip: u32,
 ) -> Result<BlockHeight, String> {
     let live_target = live_tip
         .checked_add(1)
         .ok_or("Live transaction target height overflow")?;
-    let original_expiry = u32::from(send_proposal_lock_expiry(min_target_height));
+    let original_expiry = u32::from(send_proposal_lock_expiry(network, min_target_height));
     if live_target >= original_expiry {
-        return Err(
-            "Send proposal expired against the live chain tip; review the payment and create a new proposal"
-                .to_string(),
-        );
+        return Err(expired_send_proposal_error(
+            network,
+            BlockHeight::from_u32(live_target),
+            "Send proposal expired against the live chain tip; review the payment and create a new proposal",
+        ));
     }
-    live_target
-        .max(u32::from(min_target_height))
-        .checked_add(SEND_PROPOSAL_LOCK_BLOCKS)
-        .map(BlockHeight::from_u32)
-        .ok_or_else(|| "Live transaction expiry height overflow".to_string())
+    let target_height = BlockHeight::from_u32(live_target).max(min_target_height);
+    ensure_send_outside_upgrade_edge(network, target_height)?;
+    Ok(send_expiry_height_for_target(network, target_height))
 }
 
-fn immediate_migration_lock_expiry(target_height: BlockHeight) -> Result<BlockHeight, String> {
-    super::migration::zip318_canonical_migration_expiry_height(u32::from(target_height))
+/// Expiry for a shielding proposal targeting `min_target_height`, built
+/// against the live tip, which the wallet's target can trail. Refused when the
+/// live tip has passed the proposal's branch or nodes would reject it as
+/// expiring soon.
+fn shielding_expiry_for_proposal<P: Parameters>(
+    network: &P,
+    min_target_height: BlockHeight,
+    live_tip: u32,
+) -> Result<BlockHeight, String> {
+    let live_target = BlockHeight::from_u32(
+        live_tip
+            .checked_add(1)
+            .ok_or("Shielding target height overflow")?,
+    )
+    .max(min_target_height);
+    if network_upgrade::crosses(
+        network,
+        u32::from(min_target_height),
+        u32::from(live_target),
+    ) {
+        return Err(network_upgrade::SEND_HOLD_MESSAGE.to_string());
+    }
+    ensure_send_outside_upgrade_edge(network, live_target)?;
+    Ok(send_expiry_height_for_target(network, live_target)
+        .max(send_proposal_lock_expiry(network, min_target_height)))
+}
+
+fn immediate_migration_lock_expiry(
+    network: WalletNetwork,
+    target_height: BlockHeight,
+) -> Result<BlockHeight, String> {
+    super::migration::zip318_canonical_migration_expiry_height(&network, u32::from(target_height))
         .map(BlockHeight::from_u32)
 }
 
@@ -282,6 +357,7 @@ impl Drop for ImmediateMigrationInputLock {
 
 struct BuiltImmediateMigration {
     base_pczt: Vec<u8>,
+    target_height: u32,
     orchard_spend_action_indices: Vec<usize>,
     fee_zatoshi: u64,
     migrated_zatoshi: u64,
@@ -380,6 +456,9 @@ pub struct ExecuteProposalResult {
     pub broadcasted_count: u32,
     pub total_count: u32,
     pub message: Option<String>,
+    /// `message` as notices when it is [`broadcast_notice::english`] of them;
+    /// empty otherwise.
+    pub notices: Vec<BroadcastNotice>,
     /// Server rejection is distinct from a missing response, but is not finality.
     pub broadcast_failure_kind: Option<String>,
 }
@@ -544,6 +623,7 @@ pub(crate) struct ShieldTransparentStatus {
 }
 
 pub(crate) struct ShieldTransparentPcztResult {
+    pub proposal_id: u64,
     pub pczt_bytes: Vec<u8>,
     pub fee_zatoshi: u64,
     pub shielded_zatoshi: u64,
@@ -570,7 +650,12 @@ pub(crate) struct OrchardMigrationPrivatePlan {
     /// Estimated absolute height at which the projected final prepared note
     /// can first use a valid migration anchor.
     pub estimated_proof_ready_height: Option<u32>,
+    /// The latest that height can be, with every preparation delay drawn at
+    /// its maximum; the upgrade gate uses it.
+    pub latest_proof_ready_height: Option<u32>,
     pub scheduled_transfers: Vec<super::migration::MigrationScheduleEntry>,
+    /// The wallet's next height when the plan was estimated.
+    pub target_height: u32,
 }
 
 pub(crate) struct KeystoneMigrationMessage {
@@ -648,16 +733,42 @@ impl<NoteRef> NoteRetention<NoteRef> for RetainAllNotes {
     }
 }
 
-/// Wallet-local ZIP-317 rule that preserves standard fee parameters but
-/// prevents exact transparent-input serialization from shrinking below
-/// ZIP-317's P2PKH size bound between proposal and transaction build.
+/// The fee is fixed when the proposal is created. Input selection, change and
+/// transaction building must all use that same policy snapshot.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(in crate::wallet) struct ConservativeZip317FeeRule;
+pub(in crate::wallet) struct ConservativeZip317FeeRule {
+    marginal_fee: u64,
+}
+
+impl ConservativeZip317FeeRule {
+    pub(in crate::wallet) fn for_target<P: Parameters>(network: &P, target: BlockHeight) -> Self {
+        Self {
+            marginal_fee: crate::wallet::fees::marginal_fee(network, target),
+        }
+    }
+
+    fn primitive(self) -> PrimitiveZip317FeeRule {
+        PrimitiveZip317FeeRule::non_standard(
+            Zatoshis::const_from_u64(self.marginal_fee),
+            GRACE_ACTIONS,
+            P2PKH_STANDARD_INPUT_SIZE,
+            P2PKH_STANDARD_OUTPUT_SIZE,
+        )
+        .expect("ZIP-317 standard input and output sizes are nonzero")
+    }
+}
+
+pub(crate) fn fee_policy_target(db_path: &str, network: WalletNetwork) -> Result<u32, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    wallet_target_height(&db)?
+        .map(|height| u32::from(BlockHeight::from(height)))
+        .ok_or_else(|| "Wallet must sync before estimating fees".to_string())
+}
 
 pub(in crate::wallet) type WalletFeeRule = ConservativeZip317FeeRule;
 
 impl FeeRule for ConservativeZip317FeeRule {
-    type Error = <StandardFeeRule as FeeRule>::Error;
+    type Error = <PrimitiveZip317FeeRule as FeeRule>::Error;
 
     #[allow(clippy::too_many_arguments)]
     fn fee_required<P: consensus::Parameters>(
@@ -678,7 +789,7 @@ impl FeeRule for ConservativeZip317FeeRule {
             TransparentInputSize::Unknown(outpoint) => TransparentInputSize::Unknown(outpoint),
         });
 
-        StandardFeeRule::Zip317.fee_required(
+        self.primitive().fee_required(
             params,
             target_height,
             transparent_input_sizes,
@@ -693,19 +804,19 @@ impl FeeRule for ConservativeZip317FeeRule {
 
 impl Zip317FeeRule for ConservativeZip317FeeRule {
     fn marginal_fee(&self) -> Zatoshis {
-        StandardFeeRule::Zip317.marginal_fee()
+        self.primitive().marginal_fee()
     }
 
     fn grace_actions(&self) -> usize {
-        StandardFeeRule::Zip317.grace_actions()
+        self.primitive().grace_actions()
     }
 }
 
-fn canonical_migration_fee_zatoshi(
+pub(super) fn canonical_migration_fee_zatoshi(
     network: WalletNetwork,
     target_height: u32,
 ) -> Result<u64, String> {
-    ConservativeZip317FeeRule
+    ConservativeZip317FeeRule::for_target(&network, BlockHeight::from_u32(target_height))
         .fee_required(
             &network,
             BlockHeight::from_u32(target_height),
@@ -720,20 +831,48 @@ fn canonical_migration_fee_zatoshi(
         .map_err(|e| format!("Calculate canonical migration fee: {e}"))
 }
 
+/// Prior releases signed the same three-action migration shape at 5,000
+/// zatoshis/action even on NU7. Preserve those signatures; only new construction
+/// must use the current canonical fee. Other fee amounts remain invalid.
+pub(super) fn stored_migration_fee_is_supported(
+    network: WalletNetwork,
+    target_height: u32,
+    fee_zatoshi: u64,
+) -> Result<bool, String> {
+    let canonical = canonical_migration_fee_zatoshi(network, target_height)?;
+    let legacy = (MIGRATION_ORCHARD_ACTION_COUNT + MIGRATION_IRONWOOD_ACTION_COUNT) as u64
+        * crate::wallet::fees::LEGACY_MARGINAL_FEE;
+    Ok(fee_zatoshi == canonical || fee_zatoshi == legacy)
+}
+
 fn pending_migration_policy_rebuild_message(
     db_path: &str,
     network: WalletNetwork,
     run_id: &str,
     chain_tip_height: u32,
 ) -> Result<Option<String>, String> {
-    let canonical_fee = canonical_migration_fee_zatoshi(
-        network,
-        chain_tip_height
-            .checked_add(1)
-            .ok_or("Migration target height overflow")?,
-    )?;
+    // Signed parts keep the policy of their own target, even after the tip moves.
     let stale_fee_count =
-        super::migration::noncanonical_unconfirmed_fee_count(db_path, run_id, canonical_fee)?;
+        super::migration::noncanonical_unconfirmed_fee_count(db_path, run_id, network)?;
+    // Old-branch parts held for an upgrade wait for the stop, even when they
+    // already need signatures. Repricing them first would retire the run as a
+    // generic fee failure before the scan can report stopped_by_upgrade.
+    let stale_fee_count = if stale_fee_count == 0
+        && !super::migration::network_upgrade_holds_broadcasts(
+            db_path,
+            network,
+            run_id,
+            chain_tip_height,
+        )? {
+        super::migration::resigning_parts_with_changed_fee_count(
+            db_path,
+            run_id,
+            network,
+            chain_tip_height,
+        )?
+    } else {
+        stale_fee_count
+    };
     if stale_fee_count > 0 {
         return Ok(Some(format!(
             "{stale_fee_count} migration transaction(s) use an outdated canonical fee. Review and approve a fresh schedule for the remaining Orchard balance."
@@ -831,6 +970,7 @@ pub(crate) fn propose_send_for_purpose(
         },
         purpose,
     )
+    .map_err(String::from)
 }
 
 pub(crate) fn propose_payment_link_batch(
@@ -839,7 +979,7 @@ pub(crate) fn propose_payment_link_batch(
     account_uuid: &str,
     send_flow_id: &str,
     payments: &[(String, u64)],
-) -> Result<ProposalResult, String> {
+) -> Result<ProposalResult, WalletFailure> {
     propose_send_with_request(
         db_path,
         network,
@@ -857,11 +997,11 @@ fn propose_send_with_request(
     send_flow_id: &str,
     request: SendRequest<'_>,
     purpose: SendPurpose,
-) -> Result<ProposalResult, String> {
+) -> Result<ProposalResult, WalletFailure> {
     use zcash_protocol::{PoolType, ShieldedPool as SP};
 
     if send_flow_id.is_empty() {
-        return Err("Send flow id is required".to_string());
+        return Err("Send flow id is required".to_string().into());
     }
 
     with_wallet_db_write_lock("send.propose_send", || {
@@ -890,61 +1030,24 @@ fn propose_send_with_request(
             .map(|step| u64::from(step.balance().fee_required()))
             .sum();
 
-        // Lock the selected inputs before exposing the proposal ID. This closes
-        // the review-screen race where a migration could otherwise reserve the
-        // same notes after proposal creation but before execution.
-        let lock_owner = LockOwner::random(&mut voting_crypto_deps::rand::rngs::OsRng);
-        let lock_expiry_height =
-            send_proposal_lock_expiry(BlockHeight::from(proposal.min_target_height()));
+        ensure_send_outside_upgrade_edge(
+            &network,
+            BlockHeight::from(proposal.min_target_height()),
+        )?;
         let input_refs = proposal_input_refs(&proposal);
-        // Persist the owner and generic output references before taking the DB
-        // locks. If the process dies at any later point, the next process can
-        // release exactly these ephemeral send locks without disturbing
-        // durable migration owners.
-        super::proposal_locks::persist(db_path, lock_owner, &input_refs, lock_expiry_height)?;
-        if let Err(error) = db.lock_outputs(&input_refs, lock_owner, lock_expiry_height) {
-            let cleanup = super::proposal_locks::remove(db_path, lock_owner);
-            return Err(match cleanup {
-                Ok(()) => format!("Lock send proposal inputs: {error:?}"),
-                Err(cleanup_error) => format!(
-                    "Lock send proposal inputs: {error:?}; \
-                     also failed to remove recovery rows: {cleanup_error}"
-                ),
-            });
-        }
-
-        let mut store = match PROPOSAL_STORE.lock() {
-            Ok(store) => store,
-            Err(e) => {
-                let unlock_result = wallet::unlock_proposal_inputs(&mut db, &proposal, lock_owner);
-                let recovery_cleanup = super::proposal_locks::remove(db_path, lock_owner);
-                return Err(match (unlock_result, recovery_cleanup) {
-                    (Ok(()), Ok(())) => format!("Lock proposal store: {e}"),
-                    (Err(unlock_error), Ok(())) => format!(
-                        "Lock proposal store: {e}; also failed to release proposal inputs: {unlock_error}"
-                    ),
-                    (Ok(()), Err(cleanup_error)) => format!(
-                        "Lock proposal store: {e}; also failed to remove recovery rows: {cleanup_error}"
-                    ),
-                    (Err(unlock_error), Err(cleanup_error)) => format!(
-                        "Lock proposal store: {e}; also failed to release proposal inputs: \
-                         {unlock_error}; also failed to remove recovery rows: {cleanup_error}"
-                    ),
-                });
-            }
-        };
-        let id = store.next_id;
-        store.next_id += 1;
-        store.locks.insert(
-            id,
-            StoredProposalLock {
-                proposal: proposal.clone(),
-                network,
-                db_path: db_path.to_string(),
-                owner: lock_owner,
-                send_flow_id: send_flow_id.to_string(),
-            },
-        );
+        let lock_expiry_height =
+            send_proposal_lock_expiry(&network, BlockHeight::from(proposal.min_target_height()));
+        let (id, _) = super::reserve_proposal_inputs(
+            &mut db,
+            db_path,
+            network,
+            input_refs,
+            lock_expiry_height,
+            send_flow_id,
+        )?;
+        let mut store = PROPOSAL_STORE
+            .lock()
+            .map_err(|e| format!("Lock proposal store: {e}"))?;
         store.proposals.insert(
             id,
             StoredProposal {
@@ -987,6 +1090,7 @@ pub fn estimate_fee(
             memo_str,
         },
     )
+    .map_err(String::from)
 }
 
 pub fn estimate_payment_link_batch_fee(
@@ -994,7 +1098,7 @@ pub fn estimate_payment_link_batch_fee(
     network: WalletNetwork,
     account_uuid: &str,
     payments: &[(String, u64)],
-) -> Result<u64, String> {
+) -> Result<u64, WalletFailure> {
     estimate_fee_with_request(
         db_path,
         network,
@@ -1008,7 +1112,7 @@ fn estimate_fee_with_request(
     network: WalletNetwork,
     account_uuid: &str,
     request: SendRequest<'_>,
-) -> Result<u64, String> {
+) -> Result<u64, WalletFailure> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let (proposal, _) = propose_request(
@@ -1064,7 +1168,7 @@ fn propose_request(
     request: SendRequest<'_>,
     purpose: SendPurpose,
     context: &str,
-) -> Result<(Proposal<WalletFeeRule, ReceivedNoteId>, Option<TxVersion>), String> {
+) -> Result<(Proposal<WalletFeeRule, ReceivedNoteId>, Option<TxVersion>), WalletFailure> {
     if purpose == SendPurpose::PaymentLinkClaim {
         if let Some(source) = gift_card_input::CardInput::load(db, db_path, account_id)? {
             let proposal = source.propose(network, request.build()?)?;
@@ -1278,34 +1382,36 @@ pub(crate) async fn create_shield_transparent_pczt(
     lightwalletd_url: &str,
     network: WalletNetwork,
     account_uuid: &str,
+    send_flow_id: &str,
 ) -> Result<ShieldTransparentPcztResult, WalletFailure> {
-    let live_expiry_height = {
+    let live_tip = {
         let tip = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
             .await
             .map_err(|e| format!("Read live chain tip before shielding PCZT: {e}"))?;
-        let tip = u32::try_from(tip.height).map_err(|_| "Shielding PCZT chain tip exceeds u32")?;
-        tip.checked_add(1 + SEND_PROPOSAL_LOCK_BLOCKS)
-            .map(BlockHeight::from_u32)
-            .ok_or("Shielding PCZT expiry height overflow")?
+        u32::try_from(tip.height).map_err(|_| "Shielding PCZT chain tip exceeds u32")?
     };
-    create_shield_transparent_pczt_with_expiry(
+    create_shield_transparent_pczt_for_live_tip(
         db_path,
         network,
         account_uuid,
-        Some(live_expiry_height),
+        send_flow_id,
+        Some(live_tip),
     )
 }
 
-fn create_shield_transparent_pczt_with_expiry(
+fn create_shield_transparent_pczt_for_live_tip(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
-    expiry_height: Option<BlockHeight>,
+    send_flow_id: &str,
+    live_tip: Option<u32>,
 ) -> Result<ShieldTransparentPcztResult, WalletFailure> {
     use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
 
     let shielding_threshold = shielding_threshold()?;
-    with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
+    let mut reservation = None;
+    let result = with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
+        super::proposal_locks::require_active_session()?;
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
         if !sync_engine::ledger_discovery::is_ready(db_path, network, account_id)? {
@@ -1330,11 +1436,39 @@ fn create_shield_transparent_pczt_with_expiry(
         // The transaction version rides on the proposal. Expiry is raised to
         // at least the live-tip policy computed before entering the DB lock.
         let proposal = proposal.with_proposed_version(proposed_tx_version);
-        let expiry_height = expiry_height.map(|height| {
-            height.max(send_proposal_lock_expiry(BlockHeight::from(
-                proposal.min_target_height(),
-            )))
+        let expiry_height = live_tip
+            .map(|tip| {
+                shielding_expiry_for_proposal(
+                    &network,
+                    BlockHeight::from(proposal.min_target_height()),
+                    tip,
+                )
+            })
+            .transpose()?;
+        let lock_expiry = expiry_height.unwrap_or_else(|| {
+            send_proposal_lock_expiry(&network, BlockHeight::from(proposal.min_target_height()))
         });
+        let inputs = proposal
+            .steps()
+            .iter()
+            .flat_map(|step| step.transparent_inputs().iter())
+            .map(|utxo| {
+                OutputRef::new(
+                    TxId::from_bytes(*utxo.outpoint().hash()),
+                    PoolType::TRANSPARENT,
+                    utxo.outpoint().n(),
+                )
+            })
+            .collect();
+        let (proposal_id, owner) = super::reserve_proposal_inputs(
+            &mut db,
+            db_path,
+            network,
+            inputs,
+            lock_expiry,
+            send_flow_id,
+        )?;
+        reservation = Some(proposal_id);
         let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
             &mut db,
             &network,
@@ -1345,7 +1479,7 @@ fn create_shield_transparent_pczt_with_expiry(
             BundlePadding::DEFAULT,
         )
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
-        let pczt_bytes = pczt
+        let pczt_bytes = super::proposal_locks::bind_pczt(pczt, owner)
             .serialize()
             .map_err(|e| format!("Serialize shielding PCZT: {e:?}"))?;
         ensure_transparent_shielding_pczt_targets_expected_pool(
@@ -1354,12 +1488,20 @@ fn create_shield_transparent_pczt_with_expiry(
         )?;
 
         Ok(ShieldTransparentPcztResult {
+            proposal_id,
             pczt_bytes,
             fee_zatoshi,
             shielded_zatoshi,
             needs_sapling_params: false,
         })
-    })
+    });
+    if result.is_err() {
+        if let Some(id) = reservation {
+            super::finish_stored_proposal(id, send_flow_id, true)
+                .map_err(|e| format!("Shield PCZT failed; input cleanup failed: {e}"))?;
+        }
+    }
+    result
 }
 
 /// Shield spendable transparent funds for a software account to its
@@ -1374,14 +1516,11 @@ pub(crate) async fn shield_transparent_balance(
     seed: SecretVec<u8>,
 ) -> Result<ShieldTransparentResult, WalletFailure> {
     let shielding_threshold = shielding_threshold()?;
-    let live_expiry_height = {
+    let live_tip = {
         let tip = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
             .await
             .map_err(|e| format!("Read live chain tip before shielding: {e}"))?;
-        let tip = u32::try_from(tip.height).map_err(|_| "Shielding chain tip exceeds u32")?;
-        tip.checked_add(1 + SEND_PROPOSAL_LOCK_BLOCKS)
-            .map(BlockHeight::from_u32)
-            .ok_or("Shielding expiry height overflow")?
+        u32::try_from(tip.height).map_err(|_| "Shielding chain tip exceeds u32")?
     };
 
     let (txids, fee_zatoshi, shielded_zatoshi) = with_wallet_db_write_lock(
@@ -1415,9 +1554,11 @@ pub(crate) async fn shield_transparent_balance(
 
             let spend_prover = NoOpSpendProver;
             let output_prover = NoOpOutputProver;
-            let expiry_height = live_expiry_height.max(send_proposal_lock_expiry(
+            let expiry_height = shielding_expiry_for_proposal(
+                &network,
                 BlockHeight::from(proposal.min_target_height()),
-            ));
+                live_tip,
+            )?;
             let txids = create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
                 &mut db,
                 &network,
@@ -1580,11 +1721,12 @@ async fn execute_stored_proposal(
                 .map_err(|e| format!("Read wallet target height before send: {e}"))?
                 .ok_or("Wallet must sync before executing a send proposal")?;
             let current_target_height = BlockHeight::from(target_height);
-            if send_proposal_is_expired(min_target_height, current_target_height) {
-                return Err(
-                    "Send proposal expired; review the payment and create a new proposal"
-                        .to_string(),
-                );
+            if send_proposal_is_expired(&network, min_target_height, current_target_height) {
+                return Err(expired_send_proposal_error(
+                    &network,
+                    current_target_height,
+                    "Send proposal expired; review the payment and create a new proposal",
+                ));
             }
             // Reassert ownership while holding the process-wide write lock.
             // If another flow acquired these inputs after this proposal's lock
@@ -1817,6 +1959,15 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     } else {
         None
     };
+    super::migration::ensure_migration_can_start_at_wallet_tip(db_path, network)?;
+    if let Some(run) = &draft_run {
+        super::migration::refresh_draft_schedule_for_upgrade(
+            db_path,
+            &run.run_id,
+            network,
+            &approved_schedule,
+        )?;
+    }
 
     let signing_schedule = match &draft_run {
         Some(run) => super::migration::approved_schedule_for_run(db_path, &run.run_id)?,
@@ -1832,6 +1983,13 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             super::migration::configured_timing_policy(network),
         ),
     };
+    ensure_first_part_precedes_upgrade_hold(
+        db_path,
+        network,
+        account_uuid,
+        preparation_policy_for_build,
+        &signing_schedule,
+    )?;
     let target_values_zatoshi =
         migration_target_values_for_request(draft_run.as_ref(), Some(&signing_schedule))?;
     let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
@@ -1961,6 +2119,7 @@ fn build_orchard_migration_immediate_pczt(
 ) -> Result<BuiltImmediateMigration, String> {
     let (
         base_pczt,
+        target_height,
         orchard_spend_action_indices,
         fee_zatoshi,
         migrated_zatoshi,
@@ -1987,6 +2146,10 @@ fn build_orchard_migration_immediate_pczt(
             .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
             .map_err(|e| format!("Failed to read anchor height: {e}"))?
             .ok_or("Wallet must sync before migrating")?;
+        let signed_target_height = u32::from(BlockHeight::from(target_height));
+        // Held like scheduled parts: sent this close to an upgrade, it could
+        // miss the last old-branch block and keep its inputs spent for weeks.
+        network_upgrade::ensure_migration_can_start(&network, signed_target_height)?;
         let orchard_notes = select_spendable_orchard_v2_notes(&db, account_id, anchor_height)?
             .into_iter()
             .map(|note| {
@@ -2046,7 +2209,8 @@ fn build_orchard_migration_immediate_pczt(
             .collect::<Vec<_>>();
         let (orchard_anchor, orchard_inputs) =
             migration_orchard_witnesses(&mut db, network, anchor_height, &orchard_notes)?;
-        let fee_rule = ConservativeZip317FeeRule;
+        let fee_rule =
+            ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height));
         let make_builder = |amount: Zatoshis| {
             let mut builder = migration_child_builder(
                 network,
@@ -2093,7 +2257,8 @@ fn build_orchard_migration_immediate_pczt(
             0,
         )?;
         let input_lock_owner = LockOwner::random(&mut voting_crypto_deps::rand::rngs::OsRng);
-        let lock_expiry_height = immediate_migration_lock_expiry(BlockHeight::from(target_height))?;
+        let lock_expiry_height =
+            immediate_migration_lock_expiry(network, BlockHeight::from(target_height))?;
         // Persist the owner and output references before taking the DB locks,
         // exactly like ephemeral send-proposal locks. A Keystone Immediate
         // migration holds this lock across a QR signing session; if the
@@ -2118,6 +2283,7 @@ fn build_orchard_migration_immediate_pczt(
         }
         Ok::<_, String>((
             built.bytes,
+            signed_target_height,
             built.orchard_spend_action_indices,
             plan.fee_zatoshi,
             plan.migrated_zatoshi,
@@ -2127,6 +2293,7 @@ fn build_orchard_migration_immediate_pczt(
     })?;
     Ok(BuiltImmediateMigration {
         base_pczt,
+        target_height,
         orchard_spend_action_indices,
         fee_zatoshi,
         migrated_zatoshi,
@@ -2156,6 +2323,7 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     }
     let BuiltImmediateMigration {
         base_pczt,
+        target_height,
         orchard_spend_action_indices,
         fee_zatoshi,
         migrated_zatoshi,
@@ -2168,6 +2336,13 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     super::pczt::preflight_orchard_spend_auth_signatures(&base_pczt, &sigs)?;
     let proofed = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
     let extracted = super::pczt::apply_sigs_and_extract(&proofed, &sigs, None, None)?;
+    // The build judged the hold at the wallet's tip, which can trail the
+    // server's. Dropping the input lock on refusal releases the inputs.
+    if upgrade_holds_transaction_at_live_tip(db_path, lightwalletd_url, network, target_height)
+        .await?
+    {
+        return Err(network_upgrade::START_HOLD_MESSAGE.to_string());
+    }
     let mut client = crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| format!("Connect to lightwalletd for Immediate migration failed: {e}"))?;
@@ -2297,13 +2472,20 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
         network,
         expected_run_id,
     )?;
+    let tip_scope = sync_engine::TipRequestScope::capture();
     let transport = sync_engine::open_lwd_transport(lightwalletd_url)
         .await
         .map_err(|e| format!("Open migration recovery endpoint: {e}"))?;
     let mut client = zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient::new(transport.clone());
-    let chain_tip = sync_engine::get_latest_block_recorded(&mut client, lightwalletd_url, network)
-        .await
-        .map_err(|e| format!("Read migration recovery chain tip: {e}"))?;
+    let chain_tip = sync_engine::get_latest_block_recorded(
+        &mut client,
+        lightwalletd_url,
+        network,
+        tip_scope,
+        || false,
+    )
+    .await
+    .map_err(|e| format!("Read migration recovery chain tip: {e}"))?;
     let chain_tip_height =
         u32::try_from(chain_tip.height).map_err(|_| "Migration recovery chain tip exceeds u32")?;
     validate_unbroadcast_migration_recovery_candidates(&candidates, chain_tip_height)?;
@@ -2364,10 +2546,10 @@ async fn verify_unbroadcast_migration_txids_absent<P, R>(
     chain_tip_height: u32,
 ) -> Result<(), String>
 where
-    P: zakura_transaction_status::StatusSource,
-    R: zakura_transaction_status::StatusSource,
+    P: zakura_pir_client::status::policy::StatusSource,
+    R: zakura_pir_client::status::policy::StatusSource,
 {
-    use zakura_transaction_status::StatusObservation;
+    use zakura_pir_client::status::policy::StatusObservation;
     use zcash_client_backend::data_api::status::{TransactionStatusRead, TransactionStatusWork};
     const WITHHELD: &str = "Migration recovery is unavailable under the private transparent policy; the run is unchanged";
     for (candidate, txid) in candidates.iter().zip(txids) {
@@ -2389,10 +2571,10 @@ where
                 ));
             }
             // Recovery never exits early, so only the gate cancels.
-            Err(zakura_transaction_status::StatusError::Cancelled) => {
+            Err(zakura_pir_client::status::policy::StatusError::Cancelled) => {
                 return Err(WITHHELD.into());
             }
-            Err(zakura_transaction_status::StatusError::CoverageIncomplete) => {
+            Err(zakura_pir_client::status::policy::StatusError::CoverageIncomplete) => {
                 return Err("Migration recovery is pending sufficient private status coverage; the run is unchanged".into());
             }
             Err(status) => {
@@ -2570,46 +2752,57 @@ trait MigrationStopChain {
 struct LightwalletdStopChain<'a> {
     url: &'a str,
     network: WalletNetwork,
-    client: Option<
+    // A retained channel must never be relabelled with a later route's scope.
+    client: Option<(
         zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<
             tonic::transport::Channel,
         >,
-    >,
+        sync_engine::TipRequestScope,
+    )>,
 }
 
 impl LightwalletdStopChain<'_> {
     async fn client(
         &mut self,
     ) -> Result<
-        &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<
-            tonic::transport::Channel,
-        >,
+        (
+            &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<
+                tonic::transport::Channel,
+            >,
+            sync_engine::TipRequestScope,
+        ),
         String,
     >{
-        let client = match self.client.take() {
-            Some(client) => client,
-            None => sync_engine::open_lwd_channel(self.url)
+        if self.client.is_none() {
+            let scope = sync_engine::TipRequestScope::capture();
+            let client = sync_engine::open_lwd_channel(self.url)
                 .await
-                .map_err(|e| format!("Open migration stop reconciliation endpoint: {e}"))?,
-        };
-        Ok(self.client.insert(client))
+                .map_err(|e| format!("Open migration stop reconciliation endpoint: {e}"))?;
+            self.client = Some((client, scope));
+        }
+        let (client, scope) = self.client.as_mut().expect("client initialized above");
+        Ok((client, *scope))
     }
 }
 
 impl MigrationStopChain for LightwalletdStopChain<'_> {
     async fn tip_height(&mut self) -> Result<u32, String> {
         let (url, network) = (self.url, self.network);
-        let chain_tip = sync_engine::get_latest_block_recorded(self.client().await?, url, network)
-            .await
-            .map_err(|e| format!("Read migration stop reconciliation chain tip: {e}"))?;
+        let (client, scope) = self.client().await?;
+        let chain_tip =
+            sync_engine::get_latest_block_recorded(client, url, network, scope, || false)
+                .await
+                .map_err(|e| format!("Read migration stop reconciliation chain tip: {e}"))?;
         u32::try_from(chain_tip.height)
             .map_err(|_| "Migration stop reconciliation chain tip exceeds u32".to_string())
     }
 
     async fn block_hash(&mut self, height: u32) -> Result<BlockHash, String> {
-        sync_engine::get_compact_block_hash(self.client().await?, u64::from(height))
-            .await
-            .map_err(|e| format!("Read the current chain at scanned height {height}: {e}"))
+        let (client, scope) = self.client().await?;
+        scope.ensure_current(|| false).map_err(|e| e.to_string())?;
+        let result = sync_engine::get_compact_block_hash(client, u64::from(height)).await;
+        scope.ensure_current(|| false).map_err(|e| e.to_string())?;
+        result.map_err(|e| format!("Read the current chain at scanned height {height}: {e}"))
     }
 }
 
@@ -3459,26 +3652,24 @@ fn checkpoint_representatives_for_scan(
     activation_height: u32,
     frontier_height: u32,
     batch_end: u32,
-    boundary_modulus: u32,
+    grid: zcash_protocol::zip318::AnchorGrid,
 ) -> BTreeSet<u32> {
-    if boundary_modulus == 0 || frontier_height >= batch_end {
+    if frontier_height >= batch_end {
         return BTreeSet::new();
     }
 
     let first_eligible_height = frontier_height.max(activation_height.saturating_add(1));
-    let remainder = first_eligible_height % boundary_modulus;
-    let Some(first_boundary) = (if remainder == 0 {
-        Some(first_eligible_height)
-    } else {
-        first_eligible_height.checked_add(boundary_modulus - remainder)
-    }) else {
-        return BTreeSet::new();
-    };
-
-    (first_boundary..batch_end)
-        .step_by(boundary_modulus as usize)
-        .filter_map(|boundary| representative_orchard_checkpoint(checkpoint_heights, boundary, 0))
-        .collect()
+    let mut representatives = BTreeSet::new();
+    let mut boundary = grid.boundary_at_or_above(BlockHeight::from_u32(first_eligible_height));
+    while u32::from(boundary) < batch_end {
+        representatives.extend(representative_orchard_checkpoint(
+            checkpoint_heights,
+            u32::from(boundary),
+            0,
+        ));
+        boundary = grid.boundary_after(boundary);
+    }
+    representatives
 }
 
 pub(crate) fn retain_migration_anchor_checkpoints_before_scan(
@@ -3517,13 +3708,12 @@ pub(crate) fn retain_migration_anchor_checkpoints_before_scan(
         super::migration::migration_anchor_retention_references(db_path, network)?;
 
     for (run_id, timing_policy) in run_policies {
-        let boundary_modulus = super::migration::anchor_bucket_modulus(network, timing_policy);
         for checkpoint_height in checkpoint_representatives_for_scan(
             &checkpoint_heights,
             activation_height,
             frontier_height,
             batch_end,
-            boundary_modulus,
+            super::migration::anchor_grid(network, timing_policy),
         ) {
             desired_references.insert((run_id.clone(), checkpoint_height));
         }
@@ -3903,7 +4093,11 @@ fn build_shielding_proposal(
         )?);
     }
 
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None, false);
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(
+        ConservativeZip317FeeRule::for_target(&network, chain_height + 1),
+        None,
+        false,
+    );
     let proposal = propose_shielding::<_, _, _, _, Infallible>(
         db,
         &network,
@@ -3985,8 +4179,11 @@ fn build_ledger_shielding_round(
         migration_locks: &BTreeSet::new(),
         transparent_allowlist: Some(&allowed),
     };
-    let (change_strategy, selector) =
-        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, true);
+    let (change_strategy, selector) = zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(
+        ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target)),
+        None,
+        true,
+    );
     let proposal = selector
         .propose_shielding(
             &network,
@@ -4036,8 +4233,16 @@ const PAYMENT_LINK_BATCH_REJECTION_PREFIX: &str = "This group ";
 /// the signer limits and the older funds a signer cannot spend.
 const PAYMENT_LINK_BATCH_ADVICE: &str = "Try fewer cards or a smaller amount per card.";
 
-fn payment_link_batch_rejection(reason: impl std::fmt::Display) -> String {
-    format!("{PAYMENT_LINK_BATCH_REJECTION_PREFIX}{reason}")
+/// A user-facing batch rejection: `code` picks the app's translated copy and
+/// the English message stays for logs and older builds.
+fn payment_link_batch_rejection(
+    code: FailureCode,
+    reason: impl std::fmt::Display,
+) -> WalletFailure {
+    WalletFailure::coded(
+        code,
+        format!("{PAYMENT_LINK_BATCH_REJECTION_PREFIX}{reason} {PAYMENT_LINK_BATCH_ADVICE}"),
+    )
 }
 
 fn build_payment_link_batch_request(
@@ -4079,31 +4284,34 @@ fn validate_payment_link_batch_proposal<NoteRef>(
     proposal: &Proposal<WalletFeeRule, NoteRef>,
     network: WalletNetwork,
     signer: Option<crate::wallet::keys::HardwareSignerKind>,
-) -> Result<(), String> {
+) -> Result<(), WalletFailure> {
     use crate::wallet::keys::HardwareSignerKind;
     use orchard::ValuePool;
 
     if proposal.steps().len() != 1 {
-        return Err(payment_link_batch_rejection(format_args!(
-            "can’t be funded in one transaction. {PAYMENT_LINK_BATCH_ADVICE}"
-        )));
+        return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchNotOneTransaction,
+                    format_args!("can’t be funded in one transaction."),
+                ));
     }
     let Some(signer) = signer else { return Ok(()) };
     let step = proposal.steps().first();
     match signer {
         HardwareSignerKind::Keystone => {
             if step.input_count_in_pool(PoolType::SAPLING) > 0 {
-                return Err(payment_link_batch_rejection(format_args!(
-                    "would spend older Sapling funds, which your Keystone can’t sign. {PAYMENT_LINK_BATCH_ADVICE}"
-                )));
+                return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchKeystoneSapling,
+                    format_args!("would spend older Sapling funds, which your Keystone can’t sign."),
+                ));
             }
             let signatures = step.input_count_in_pool(PoolType::ORCHARD)
                 + step.input_count_in_pool(PoolType::IRONWOOD);
             let max = crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES;
             if signatures > max {
-                return Err(payment_link_batch_rejection(format_args!(
-                    "needs more inputs than your Keystone can sign at once. {PAYMENT_LINK_BATCH_ADVICE}"
-                )));
+                return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchKeystoneSignatureLimit,
+                    format_args!("needs more inputs than your Keystone can sign at once."),
+                ));
             }
         }
         HardwareSignerKind::Ledger => {
@@ -4116,14 +4324,16 @@ fn validate_payment_link_batch_proposal<NoteRef>(
             .is_err()
             {
                 let max = crate::wallet::ledger::limits::MAX_EXTERNAL_SHIELDED_OUTPUTS;
-                return Err(payment_link_batch_rejection(format_args!(
-                    "has more shielded recipients than your Ledger can display (maximum {max}). {PAYMENT_LINK_BATCH_ADVICE}"
-                )));
+                return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchLedgerRecipientLimit,
+                    format_args!("has more shielded recipients than your Ledger can display (maximum {max})."),
+                ));
             }
             if step.input_count_in_pool(PoolType::SAPLING) > 0 {
-                return Err(payment_link_batch_rejection(format_args!(
-                    "would spend older Sapling funds, which your Ledger can’t sign. {PAYMENT_LINK_BATCH_ADVICE}"
-                )));
+                return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchLedgerSapling,
+                    format_args!("would spend older Sapling funds, which your Ledger can’t sign."),
+                ));
             }
             let branch = consensus::BranchId::for_height(
                 &network,
@@ -4142,9 +4352,10 @@ fn validate_payment_link_batch_proposal<NoteRef>(
                     payment_link_ledger_action_count(branch, value_pool, spends, outputs)?;
                 let max = crate::wallet::ledger::limits::MAX_SHIELDED_ACTIONS_PER_POOL;
                 if actions > max {
-                    return Err(payment_link_batch_rejection(format_args!(
-                        "is too large for your Ledger to sign. {PAYMENT_LINK_BATCH_ADVICE}"
-                    )));
+                    return Err(payment_link_batch_rejection(
+                    FailureCode::PaymentLinkBatchLedgerTooLarge,
+                    format_args!("is too large for your Ledger to sign."),
+                ));
                 }
             }
         }
@@ -4194,8 +4405,11 @@ fn propose_send_with_reserved_notes(
         .ok_or("Account not found")?;
     let is_ledger = crate::wallet::keys::hardware_signer_kind(account.source())
         == Some(crate::wallet::keys::HardwareSignerKind::Ledger);
-    let (change_strategy, input_selector) =
-        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, is_ledger);
+    let (change_strategy, input_selector) = zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(
+        ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height)),
+        None,
+        is_ledger,
+    );
 
     input_selector
         .propose_transaction(
@@ -4614,7 +4828,10 @@ fn build_send_max_proposal(
         }
         None => None,
     };
-    let fee_rule = ConservativeZip317FeeRule;
+    let target_height =
+        wallet_target_height(db)?.ok_or("Wallet must sync before estimating send-max")?;
+    let fee_rule =
+        ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height));
 
     if matches!(recipient_address, Address::Transparent(_)) {
         return build_transparent_recipient_send_max_proposal(
@@ -5366,6 +5583,18 @@ fn finalize_presigned_migration_children(
     if super::migration::signed_child_pczt_count(db_path, run_id)? == 0 {
         return Ok(0);
     }
+    let next_height = u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+        .map_err(|_| "Migration chain tip exceeds u32".to_string())?
+        .saturating_add(1);
+    let legacy_count =
+        super::migration::legacy_expiry_signed_child_count(db_path, network, run_id, next_height)?;
+    if legacy_count > 0 {
+        let message = format!(
+            "{legacy_count} migration transaction(s) were signed by an earlier version of Vizor with an outdated expiry. Review and approve a fresh schedule for the remaining Orchard balance."
+        );
+        super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
+        return Err(message);
+    }
     // Keystone persists one bounded QR batch at a time while the run remains
     // ready_to_migrate. Do not promote the first batch and move the run to
     // broadcast_scheduled before every remaining batch has been signed.
@@ -5702,6 +5931,7 @@ fn retire_expired_denomination_run(
         broadcasted_count: 0,
         total_count: expired_count,
         message: Some(message),
+        notices: Vec::new(),
     }))
 }
 
@@ -5743,6 +5973,7 @@ fn denomination_expiry_scan_wait_result(txids: &str, total_count: u32) -> Create
             "Migration preparation reached its expiry height. Waiting for wallet sync to determine whether the preparation schedule must be rebuilt."
                 .to_string(),
         ),
+        notices: Vec::new(),
     }
 }
 
@@ -5814,10 +6045,11 @@ async fn broadcast_pending_denomination_stages(
             message: Some(
                 "Background migration stopped before denomination broadcast.".to_string(),
             ),
+            notices: Vec::new(),
         }));
     }
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
+    let live_chain_tip_height = match live_chain_tip_height(lightwalletd_url).await {
+        Ok(height) => height,
         Err(e) => {
             return Ok(Some(CreatedBroadcastResult {
                 broadcast_failure_kind: None,
@@ -5825,27 +6057,11 @@ async fn broadcast_pending_denomination_stages(
                 status: CreatedBroadcastResult::PENDING_BROADCAST,
                 broadcasted_count: 0,
                 total_count,
-                message: Some(format!("Denomination split broadcast could not start: {e}")),
+                message: Some(e),
+                notices: Vec::new(),
             }));
         }
     };
-    let live_chain_tip_height =
-        match crate::wallet::sync_engine::get_latest_block(&mut client).await {
-            Ok(tip) => u32::try_from(tip.height)
-                .map_err(|_| "Live migration chain tip exceeds u32".to_string())?,
-            Err(e) => {
-                return Ok(Some(CreatedBroadcastResult {
-                    broadcast_failure_kind: None,
-                    txids,
-                    status: CreatedBroadcastResult::PENDING_BROADCAST,
-                    broadcasted_count: 0,
-                    total_count,
-                    message: Some(format!(
-                        "Denomination split broadcast could not refresh the chain tip: {e}"
-                    )),
-                }));
-            }
-        };
     let chain_tip_height = known_chain_tip_height.max(live_chain_tip_height);
     let expired_at_live_tip = {
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
@@ -5856,6 +6072,22 @@ async fn broadcast_pending_denomination_stages(
             &txids,
             stage_count,
         )));
+    }
+    if super::migration::network_upgrade_holds_broadcasts(
+        db_path,
+        network,
+        run_id,
+        chain_tip_height,
+    )? {
+        return Ok(Some(CreatedBroadcastResult {
+            broadcast_failure_kind: None,
+            txids,
+            status: CreatedBroadcastResult::PENDING_BROADCAST,
+            broadcasted_count: 0,
+            total_count,
+            message: Some(network_upgrade::MIGRATION_HOLD_MESSAGE.to_string()),
+            notices: Vec::new(),
+        }));
     }
     let due = pending
         .iter()
@@ -5907,6 +6139,7 @@ async fn broadcast_pending_denomination_stages(
                     "Denomination split broadcast failed for {}: {e}",
                     stage.expected_txid_hex
                 )),
+                notices: Vec::new(),
             }));
         }
 
@@ -5925,6 +6158,7 @@ async fn broadcast_pending_denomination_stages(
                 broadcasted_count,
                 total_count,
                 message: Some(message),
+                notices: Vec::new(),
             }));
         }
 
@@ -5986,6 +6220,7 @@ async fn broadcast_pending_denomination_stages(
                 "{total_count} independent denomination split stages were created. Migration will continue after confirmation."
             )
         }),
+        notices: Vec::new(),
     }))
 }
 
@@ -6041,6 +6276,42 @@ async fn broadcast_due_scheduled_migration_txs(
         ));
     }
 
+    // Before expiry and broadcast-height recovery: parts the upgrade holds
+    // wait for its stop rather than new signatures. After sleep the wallet's
+    // tip can trail the server's by more than the hold window, so hold on
+    // whichever is later, and send nothing while the server's is unknown.
+    let hold_tip_height = match live_chain_tip_height(lightwalletd_url).await {
+        Ok(live) => chain_tip_height.max(live),
+        Err(e) => {
+            let status = super::migration::run_phase(db_path, run_id)?;
+            return Ok(MigrationBroadcastAdvance::without_acceptance(
+                migration_result_from_pending_totals(
+                    totals_before,
+                    &status,
+                    Some(e),
+                    fallback_total_count,
+                    fallback_migrated_zatoshi,
+                ),
+            ));
+        }
+    };
+    if super::migration::network_upgrade_holds_broadcasts(
+        db_path,
+        network,
+        run_id,
+        hold_tip_height,
+    )? {
+        let status = super::migration::run_phase(db_path, run_id)?;
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            migration_result_from_pending_totals(
+                totals_before,
+                &status,
+                Some(network_upgrade::MIGRATION_HOLD_MESSAGE.to_string()),
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            ),
+        ));
+    }
     let expired_count =
         super::migration::expired_unconfirmed_pending_count(db_path, run_id, chain_tip_height)?;
     if expired_count > 0 {
@@ -6141,6 +6412,25 @@ async fn broadcast_due_scheduled_migration_txs(
                 pending.txid_hex
             );
             if migration_broadcast_failure_requires_rebuild(&e) {
+                if network_upgrade_stopped_run_after_rejection(
+                    db_path,
+                    lightwalletd_url,
+                    network,
+                    run_id,
+                )
+                .await?
+                {
+                    let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
+                    return Ok(MigrationBroadcastAdvance::without_acceptance(
+                        migration_result_from_pending_totals(
+                            totals,
+                            super::migration::PHASE_STOPPED_BY_UPGRADE,
+                            Some(network_upgrade::MIGRATION_STOP_MESSAGE.to_string()),
+                            fallback_total_count,
+                            fallback_migrated_zatoshi,
+                        ),
+                    ));
+                }
                 let rebuild_message = format!(
                     "Migration transaction {} was rejected by the network. Review and approve a fresh schedule for the remaining Orchard balance. Error: {e}",
                     pending.txid_hex
@@ -6297,6 +6587,52 @@ fn migration_broadcast_failure_requires_rebuild(error: &str) -> bool {
     error.starts_with("Broadcast rejected:")
 }
 
+/// Whether the upgrade holds a transaction for `signed_target_height`, judged
+/// just before sending at the later of the wallet's and the server's tip.
+/// Fails closed while the server's tip cannot be read.
+async fn upgrade_holds_transaction_at_live_tip(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    signed_target_height: u32,
+) -> Result<bool, String> {
+    let server_tip_height = live_chain_tip_height(lightwalletd_url).await?;
+    super::migration::network_upgrade_holds_transaction_at(
+        db_path,
+        network,
+        signed_target_height,
+        server_tip_height,
+    )
+}
+
+/// The server's tip, read fresh for an upgrade hold: a cached tip can predate
+/// a sleep, which is when a desktop most often wakes near an upgrade.
+async fn live_chain_tip_height(lightwalletd_url: &str) -> Result<u32, String> {
+    let refresh_failed = |e: &dyn std::fmt::Display| {
+        format!("Migration broadcast could not refresh the chain tip: {e}")
+    };
+    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+        .await
+        .map_err(|e| refresh_failed(&e))?;
+    let tip = crate::wallet::sync_engine::get_latest_block(&mut client)
+        .await
+        .map_err(|e| refresh_failed(&e))?;
+    u32::try_from(tip.height).map_err(|_| "Live migration chain tip exceeds u32".to_string())
+}
+
+/// Whether a rejected part shows the upgrade ended its run, judged at the
+/// later of the wallet's and the server's tip. While neither can be read the
+/// run stays as it is, rather than failing for a rejection the upgrade caused.
+async fn network_upgrade_stopped_run_after_rejection(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    run_id: &str,
+) -> Result<bool, String> {
+    let live_tip = live_chain_tip_height(lightwalletd_url).await?;
+    super::migration::stop_run_if_network_upgrade_invalidated(db_path, network, run_id, live_tip)
+}
+
 fn decrypt_and_store_migration_tx(
     db_path: &str,
     network: WalletNetwork,
@@ -6326,6 +6662,12 @@ fn reconcile_orchard_migration_outbox_receipt(
         run_id,
         txid_hex,
     )?;
+    // The upgrade already ended this run. Stored accepted bytes that were
+    // never mined would keep their input spent until expiry; a mined part
+    // reaches the wallet through the scan instead.
+    if state.run_phase == super::migration::PHASE_STOPPED_BY_UPGRADE {
+        return Ok(());
+    }
     match outcome {
         "accepted" | "acceptedEquivalent" => {
             if state.run_phase == super::migration::PHASE_FAILED_TERMINAL
@@ -6379,6 +6721,14 @@ fn reconcile_orchard_migration_outbox_receipt(
             if state.run_phase == super::migration::PHASE_FAILED_TERMINAL {
                 return Ok(());
             }
+            if super::migration::stop_run_if_network_upgrade_invalidated(
+                db_path,
+                network,
+                run_id,
+                remote_height,
+            )? {
+                return Ok(());
+            }
             let message = response_message
                 .filter(|message| !message.is_empty())
                 .map(|message| {
@@ -6425,8 +6775,10 @@ fn reconcile_orchard_migration_outbox_receipt(
             if !schedule_updates.is_empty() {
                 return Err("Migration outbox re-sign receipt cannot update schedules".to_string());
             }
-            let canonical_expiry =
-                super::migration::zip318_canonical_migration_expiry_height(remote_height)?;
+            let canonical_expiry = super::migration::zip318_canonical_migration_expiry_height(
+                &network,
+                remote_height,
+            )?;
             if state.expiry_height == canonical_expiry {
                 return Err(
                     "Migration outbox re-sign receipt still has canonical expiry at the broadcast height"
@@ -6604,6 +6956,7 @@ struct CreatedBroadcastResult {
     broadcasted_count: u32,
     total_count: u32,
     message: Option<String>,
+    notices: Vec<BroadcastNotice>,
 }
 
 impl CreatedBroadcastResult {
@@ -6620,6 +6973,7 @@ impl CreatedBroadcastResult {
             broadcasted_count: self.broadcasted_count,
             total_count: self.total_count,
             message: self.message,
+            notices: self.notices,
             broadcast_failure_kind: failure_kind.map(str::to_owned),
         }
     }
@@ -6654,8 +7008,8 @@ async fn broadcast_created_transactions(
     let read_conn = match open_readonly_conn(db_path) {
         Ok(conn) => conn,
         Err(e) => {
-            let message =
-                format!("Failed to open DB for broadcast after local transaction creation: {e}");
+            let notice = BroadcastNotice::database_unavailable(e.to_string());
+            let message = notice.sentence();
             log::warn!("{log_label}: {message}");
             return CreatedBroadcastResult {
                 broadcast_failure_kind: None,
@@ -6664,6 +7018,7 @@ async fn broadcast_created_transactions(
                 broadcasted_count: 0,
                 total_count,
                 message: Some(message),
+                notices: vec![notice],
             };
         }
     };
@@ -6677,9 +7032,11 @@ async fn broadcast_created_transactions(
         ) {
             Ok(raw_tx) => raw_tx,
             Err(e) => {
-                let message = format!(
-                    "Failed to get raw tx for {txid} after local transaction creation: {e}"
+                let notice = BroadcastNotice::raw_transaction_unavailable(
+                    txid.to_string(),
+                    e.to_string(),
                 );
+                let message = notice.sentence();
                 log::warn!("{log_label}: {message}");
                 return CreatedBroadcastResult {
                     broadcast_failure_kind: None,
@@ -6692,6 +7049,7 @@ async fn broadcast_created_transactions(
                     broadcasted_count: broadcast_ok.len() as u32,
                     total_count,
                     message: Some(message),
+                    notices: vec![notice],
                 };
             }
         };
@@ -6702,12 +7060,13 @@ async fn broadcast_created_transactions(
                 log::info!("{log_label}: broadcast {txid} ({} bytes)", raw_tx.len());
             }
             Err(e) => {
-                let message = format!(
-                    "Broadcast failed after {}/{} txs sent ({}). Error: {e}",
-                    broadcast_ok.len(),
-                    txids.len(),
-                    broadcast_ok.join(",")
+                let notice = BroadcastNotice::broadcast_failed(
+                    broadcast_ok.len() as u32,
+                    total_count,
+                    broadcast_ok.join(","),
+                    e.clone(),
                 );
+                let message = notice.sentence();
                 log::warn!("{log_label}: {message}");
                 return CreatedBroadcastResult {
                     broadcast_failure_kind: Some(if e.starts_with("Broadcast rejected:") {
@@ -6724,6 +7083,7 @@ async fn broadcast_created_transactions(
                     broadcasted_count: broadcast_ok.len() as u32,
                     total_count,
                     message: Some(message),
+                    notices: vec![notice],
                 };
             }
         }
@@ -6736,6 +7096,7 @@ async fn broadcast_created_transactions(
         broadcasted_count: total_count,
         total_count,
         message: None,
+        notices: Vec::new(),
     }
 }
 
@@ -7131,6 +7492,7 @@ fn order_resubmittable_transactions(
 /// (single change output for Ledger, minimum 0.1 ZEC output split otherwise) in one
 /// place so the two entry points can't drift.
 fn zip317_helper<DbT: InputSource>(
+    fee_rule: WalletFeeRule,
     change_memo: Option<MemoBytes>,
     is_ledger: bool,
 ) -> (
@@ -7138,7 +7500,7 @@ fn zip317_helper<DbT: InputSource>(
     GreedyInputSelector<DbT>,
 ) {
     let change_strategy = MultiOutputChangeStrategy::new(
-        ConservativeZip317FeeRule,
+        fee_rule,
         change_memo,
         ShieldedPool::Orchard,
         DustOutputPolicy::default(),
@@ -7248,3 +7610,34 @@ impl OutputProver for NoOpOutputProver {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tip_request_scope_tests {
+    use super::*;
+    use crate::network_privacy;
+
+    #[tokio::test]
+    async fn migration_stop_retained_client_keeps_its_original_route_scope() {
+        let _route = network_privacy::test_route_policy::lock_route_policy();
+        let server =
+            sync_engine::test_lwd::CapturingLwd::start_with(Vec::new(), 3_000_000, |_| {}).await;
+        let mut chain = LightwalletdStopChain {
+            url: &server.url,
+            network: WalletNetwork::Main,
+            client: None,
+        };
+        assert_eq!(chain.tip_height().await.unwrap(), 3_000_000);
+        assert_eq!(server.count("/GetLatestBlock"), 1);
+
+        // Returning to the same direct URL does not make its old channel part
+        // of the new route generation.
+        network_privacy::begin_tor_enable();
+        network_privacy::disable_tor();
+        let error = chain.tip_height().await.unwrap_err();
+        assert!(error.contains("tip request route changed"), "{error}");
+        let error = chain.block_hash(3_000_000).await.unwrap_err();
+        assert!(error.contains("tip request route changed"), "{error}");
+        assert_eq!(server.count("/GetLatestBlock"), 1);
+        assert_eq!(server.requests().len(), 1);
+    }
+}

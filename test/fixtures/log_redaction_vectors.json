@@ -1,0 +1,525 @@
+{
+  "comment": "Shared by test/core/logging/log_redaction_test.dart and rust/src/log_redaction.rs. Each input must redact to expected, and expected must redact to itself. HRPs and Base58 prefixes are from zakura-protocol 3.0.0 constants; values are synthetic.",
+  "cases": [
+    {
+      "name": "mainnet unified address",
+      "input": "recipient=u130mx99x6lqp05ct82z36gwmmvensp6pcqsx6a8uk5y83uangzud5asxe43pvctfyyu00nmaxpcwmgr9uapqzkka7hqpae95wt4rcwxe8rfxuuas4m0m3nyphj9j6gxxwlp3xene55upjs4yw4whyff96c6wejp7vz2e58p3ah6098ujp2z6j6zuxgh45q9vyt7uprxak3c6yse0yzau ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "mainnet orchard-only unified address",
+      "input": "recipient=u14varwrks7cqc6aeh9cnzrwyr6nm7d3mcsfvzer606t0klhkk89af3qjl72e88lswya3nl3z8fgn96u4zk5t5va0q5efjh0pe2vw7udmx ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "mainnet sapling address",
+      "input": "recipient=zs1psm9a2lkk6n5rpx2q89wrrw8cx3jts4dkksmvdqlgc9cyyds8nffy8q6cjcvg6vhmlxwjfmns2g ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "mainnet TEX address",
+      "input": "recipient=tex17xdgu5vnv92ggsjjad2u58x4p9qayz5dcawqz9 ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "mainnet transparent P2PKH address",
+      "input": "recipient=t1SeEB4RYCwwC58cssSqcaEHpJ2fZQhZJu3 ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "mainnet transparent P2SH address",
+      "input": "recipient=t3Jj6ycJ3d89XAYg1kotbN3atkQn9zEoMZs ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "mainnet unified full viewing key",
+      "input": "recipient=uview18szzhg7qw3hrsfn30vaelyw42cw6wf50dmn9x9drup6refnrtdhf5y3xhjmyvm2k3tcdzw9x4t0eu8ztrmpj0tqtvw85xjyd6tefx9eh3m0cwwddewrgpeuju7x7up77egw6ymfrgsrv7ehctu0eva8gkmuuu35426p6a9su89hnlwz2e3z38znlxaf89k92e070rlvm47kmlgj9s8sx06f0g72x5yc5m0y5vxff4dge0sgw3fdzj5t97ecqgc65gf7t4yp9gtxqtff7ylfe4nunqz96tufwr7xvt6qkptmlg58jja6ce22vaas4jl83r5dzz465k5hxa9l77d70pfmc9lpn0u6cuaqkwf9tk2vfkeheg7yafk4lw62t7d3x77r9kyarcndl77s5asg28ls3h9hj5pavvr0ze3tzraup3h0s9vfumggmcaxyqqksuz3w37rp8g9watlppa7zgujpupqqzzvu854csle0f0nr5uuwtcgarcll ok",
+      "expected": "recipient=<key> ok"
+    },
+    {
+      "name": "mainnet unified incoming viewing key",
+      "input": "recipient=uivk1wjuter42m798rzjygplfmj5pz58uz5fc6ntjg9j5sm069k5x8h3c7z3p4xjz48syu7tg7znz78t0m0ax04h2z38wskp54vs6su4ypcn2kcjnwana7utjusypf7vqkdfnskg7ghqgnfhykenayytag8qez4a3wyth2syfypqgafr0eejjf4m0a0hcce7wx3m8aq6nrl85asshqhc8shpf0cdndqsapq2n4ykchtlemcq0xklghac7v7cstghtnx5jqazz0pn7xn448jtskndd32lyw77xeederg2l2yl0l9gh8m3wtg4arc0jrkuunptcu45rdqldm4rf6g3y80gl5csrqvrq2s ok",
+      "expected": "recipient=<key> ok"
+    },
+    {
+      "name": "mainnet sapling extended full viewing key",
+      "input": "recipient=zxviews1suaxjq4klaswq24dc49at9amqhafscmcc6yflln4asrsdy8nh2gzrl9pfgl886spevwe20mqjdze5dskjaxxz9luls2rcrytzjkvm8mngmceqsun76pmul9mu7kzmqfzm4plx9vgd3f9mtqmhv0ayhpmgkf7hkwrync3snpvt8hxh0q84wrknucd6z5tn4v964yv7c4q6nckptcny86fzs4hp3kegyscgszj202x6fn5udc4zy8d2rfsytxsqs73gtyjpmwngypgefsx95zyz ok",
+      "expected": "recipient=<key> ok"
+    },
+    {
+      "name": "mainnet sapling extended spending key",
+      "input": "recipient=secret-extended-key-main1059xkwquxhxjwxwxaelgf24nslgq22gf86mh9669n7lwphamg4wkrxar29e7vn4cu02hnfva3d24rr5eswd0emvd42hntutta5h3ray39wgwexaj94fdnw3fqe2953hmsjrfhkqz60sg9p2rqlm3gd26xk6l97y5nxmjw5lc83rdkdqp5zh0hgg075s5u3a27y8jlsfmfwsshvul4d53cmzpdwwl0p9u7wlpdaatl2djvx3x8mj7nre4ua8pn0h22d5hmx6dr8prnlqskjnlk ok",
+      "expected": "recipient=<key> ok"
+    },
+    {
+      "name": "testnet unified address",
+      "input": "recipient=utest1npugzg6rmngvdf87lwm6f8n07pd5ykx9fkpc5nshkv8l35p4kchvtn89v5x9t25qunvlglk7yw7h4277yest00e00cmmfyksw6nsmr8fk9jlzqf4k8zw2eunzs5zrg0nauqjg8ha8gz5khd5kxlpda2agel034mcfmsrl09xw9yufpw9ng2guj6v7zujz5f6gkgv254fqh3eza49tpe ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "testnet orchard-only unified address",
+      "input": "recipient=utest1wkesetcgmfjzfcwfzppxtq9jn4j4jcqtt3p8m2ldav6ymvhw2yccflpe5jw07kn8jk9ncsanxzk7y570c3fkwvl79r56wk0wegemzyu5 ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "testnet sapling address",
+      "input": "recipient=ztestsapling1fw4fqsee03n7djtmd3vmjv3cj0mh2pk2at4k8cu2e75f9wkaul4chuyzm5khc6uutlf27je5n6z ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "testnet TEX address",
+      "input": "recipient=textest1lvvlj2932mqne0fr7fmk9q965re52ch4sw3aj8 ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "testnet transparent P2PKH address",
+      "input": "recipient=tmYMhxiWxKcVEH1VxXcafGCfaBiH7wijrnw ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "testnet transparent P2SH address",
+      "input": "recipient=t2FdPh3fmHs5Yv7wwArKo9Bk8b3KvZGtVgd ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "testnet unified full viewing key",
+      "input": "recipient=uviewtest16qtf4r47z6yh7eumh44gwalqhfk4dttaq6refpnfucep3kders2up6wa9m2h9nnv0spe2rad0vc4l6es54967k9al8mxr59gkmx5gvscutykfm7ptzhw6tlwc4wkc7n7zvaphkcmm5a6ca6s9frqdqqlmx6s62m8gft3fpt367llq2kvg0q4hxlwh96qdz0ve9khjvk72vnntpqevpjjrppph2rnx7247k06a3hul5ctzmju90ncpqcr6y2fnq3e92f7cwwx8l3wpkcpa7uunf9agr7m5ehdpmyvpey0rjgmshkwka33vw36uevq4u0cnhctnp8ht63fq8ms86u8caq6weaxwf4e9vh0p62mh3yz9n8ezzwh4e3u74e74pe3c3ust7n855w347mgl5egu0uy9mypy3gtpdnmnq4ndfu54gnjpdy2jqpfzk2nwyc74ce74xvc3jh6l0fau6afa7vsz68u5sq2z2pwtcg8l0c37v2uvcvggtjz ok",
+      "expected": "recipient=<key> ok"
+    },
+    {
+      "name": "testnet unified incoming viewing key",
+      "input": "recipient=uivktest1dvr55h42sqm5xcckhrwzze2l49qr8g59pt9gh5hex55qvc43uaeyfuxlnhdtkypk7sxlcevweepx38dxnx467kr6d2r8rp8xmtqx3hqq7m0ywxnjdd2svf468u55dvhd73epf9s7ljwzgng9vetkj40ev9cdn649wg84ng0l5crced7tva5ms5x3nushknct9zkwa3ekhue27xj2a68a2mdvmlhqj0ugkd6plk8l3elcvmagme3eqmtjsljwal5fdaj5rtctpc4j6fxvt9cflpa4a32zu963rnh977euc747a9xfa9lrxw50rlua2telam0gkak7yfkr247r4cqapq7397f79s ok",
+      "expected": "recipient=<key> ok"
+    },
+    {
+      "name": "testnet sapling extended full viewing key",
+      "input": "recipient=zxviewtestsapling1gt4sddk609lyjgavz7twed4pnydw9pnq259fn8nnevawt0l4ch6xgsk75xxvy4ygcl5fsmlc7tzw3xaw33d2kll3x7cl4uecdc4rhl5czrr3nzz6ufkkf9e6q27qx5s8v20x8vz23t5gppcqwzpeczxvr8wt4er7hu4ru90wrpvwwglf0m3kyketvw2c4060kmuuqc6u0eqmgctg590px54zrncyl6xwpdycvse2tk74fdy8wy0fk4w7kpjlznu7r9dkh6wgh452vsqghvzfv ok",
+      "expected": "recipient=<key> ok"
+    },
+    {
+      "name": "testnet sapling extended spending key",
+      "input": "recipient=secret-extended-key-test1uknn7098v7v7twskz7n23nmchtz3krthd0ejhzrntmpy8p9gm8qx0uw60kxllejx8qjhtk39f9cc9m4tkqjdkk3d9v5ac4n25am2cfrujlchwpusdydgq2y5zcy8pn8ht5zhn8yucfvem73vnk02cq9xp294l8mutujxzv0rvl7a5fkddafeumfhz0dcy4l3tfzaug64659mqkq7dqe00kuala7h60rnp538xnvn5yz4xaex89mttq7k7ftk6gcl4ymw4n68str3tssjx8hk0 ok",
+      "expected": "recipient=<key> ok"
+    },
+    {
+      "name": "regtest unified address",
+      "input": "recipient=uregtest1vxw9lp8zyjlvh22qau3an826mzasc66xl9rey0cmawjuuna6gvz40glqpu94sfhx2wxj0xz0wlf8h7lmmh4fauxpnhqa8ahtdxq6n3w5hkn68e8gdp7wf8ha72axcrufauqsxzawxeyq44wkn9520vywew9wkvjvpzssfpzrqrehqg2c62ylqjp3s0ny84kc406n3w2gphrqjwa4wht ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "regtest orchard-only unified address",
+      "input": "recipient=uregtest1nl5r4mgdqyha8asefa98yyma3altsggd7wlkkdj7zuuqrs0kj96sknykv8d2pwlzacn8hjnldyaja49cajtdmhmzdyr69gswkqn0myrd ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "regtest sapling address",
+      "input": "recipient=zregtestsapling1rf4wu6n378mv6lcf90ruaurhrq0dduk20xvpaeefdtd5wpypnp20cwzeyp27gn0dssh8vq497sy ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "regtest TEX address",
+      "input": "recipient=texregtest13j287t9w3vw6f6vk7r2nftluqg7u788pdnkpur ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "regtest transparent P2PKH address",
+      "input": "recipient=tmQoAnrEEXqKE6tVLpEZpfQ3EBrZXa9hsV9 ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "regtest transparent P2SH address",
+      "input": "recipient=t29teQzcMHQ7wLW7SvM9SwQkbjHHAUHFDDF ok",
+      "expected": "recipient=<address> ok"
+    },
+    {
+      "name": "regtest unified full viewing key",
+      "input": "recipient=uviewregtest1xmuys75ltkj86fm7rs3nu2lvv9gflp44z4v9axlht6k9guakemhqg9k33zysrwaxsusr3ewq0ffhp94xwwhd9pcnjpyzmypregmc4rdrex2v3lxks35pndrkl6q364snc2cyzf422h0ykrezwekucnhy6vxsxlpj06hnquzhul3lq87erymdpzdptscrlsumgvjk77wd0qh5lszxpy57dtz9220scwuqr87qgwaznua9kr88659jkl0k94cv627pm4ypf8h3pd3sx4el97vmngawk97k7dpz9n2nta94gas8p7a8knrletfa60p65648wcs737g2rpec8z4vakv99agj2l4u4dj2jvjx24nz32aczd8ngsj06kvf94a28vu0ulyux2nd99448rl676j749zxyu4zmj868kqzlqjevav58asdxe6lwhy8a8kkmc9cz4mp3xe06h88ck4xrjd4fayf5ceqhpvfk4wqg8rxrkea3funqgttmtf3 ok",
+      "expected": "recipient=<key> ok"
+    },
+    {
+      "name": "regtest unified incoming viewing key",
+      "input": "recipient=uivkregtest1rx85g3n72wkseef2whq2vt88ywmtsv2r02pjp4k3ntd0evl2ekqc3fv5sd9flhwkptmxn39txhlz0fmtcvkq70zxdtsw0ma3h0pc5ac6pfjdzm3znuc6e5x4auxvp027m4532dk96n3yscxpfklytujk2k66dqgk2qek0trwpkd4h5z9z3zau0s23vduzy0jf0cuyfyuqatajdelqrmvpnrs5pfvgyujq6zetu0maswqy8lgwgc07k7uetmwnrpq8l8wcjrzgewudtxarr9wedyspjcz2uu2d9jayzcxd9zjq9u2zphdqtren07upfepmnjh8uf5p7426nl8jfg03xjunm222l ok",
+      "expected": "recipient=<key> ok"
+    },
+    {
+      "name": "regtest sapling extended full viewing key",
+      "input": "recipient=zxviewregtestsapling1mwht8gasyzrrfa5cva93veslg96hksnk0lws3xzmmyrn9cp550ap54munfxwakjt5uqjjg63cjdeqcn94jfzm4dkckvysrpr7sxpwvnaeg52ghq0lpafjeez0my543x3mdgkmmp5k0znkjlpnxegwncvm9xqnjkc3j86940feel0muddhwh7p4fmj4q0zfflz083rkrjaa989temzgudf2jwvyt569mee5d56a7ep0yc6re4hz277ltflr45j4xw0a3635k0dq4cthsrj5m0y ok",
+      "expected": "recipient=<key> ok"
+    },
+    {
+      "name": "regtest sapling extended spending key",
+      "input": "recipient=secret-extended-key-regtest19hr0q00plxmac3eu9ntvk3nl0lzwp3kc76lpms9zw9wqvdz4yuvt2q8hu70spuxu5a3rzrrceta8e62zqg09r9vt59665rwxl8lzr6ykmpphqmz35sp6059de6tjj6r85r0y6ukrfaf8dsvyz5my62mmdkzrqvj749zvrku0gt50wls8tsu3ggnpaat279qavqdtf0uvftgl3k54k9djpvvdfmyl9vcj9p20j2xvyulkv6lpjef6gd57xpnsxgpku683l3ef2s2cnrca3gwpm ok",
+      "expected": "recipient=<key> ok"
+    },
+    {
+      "name": "uppercase unified address from a QR code",
+      "input": "scanned U130MX99X6LQP05CT82Z36GWMMVENSP6PCQSX6A8UK5Y83UANGZUD5ASXE43PVCTFYYU00NMAXPCWMGR9UAPQZKKA7HQPAE95WT4RCWXE8RFXUUAS4M0M3NYPHJ9J6GXXWLP3XENE55UPJS4YW4WHYFF96C6WEJP7VZ2E58P3AH6098UJP2Z6J6ZUXGH45Q9VYT7UPRXAK3C6YSE0YZAU",
+      "expected": "scanned <address>"
+    },
+    {
+      "name": "uppercase unified viewing key",
+      "input": "UVIEW18SZZHG7QW3HRSFN30VAELYW42CW6WF50DMN9X9DRUP6REFNRTDHF5Y3XHJMYVM2K3TCDZW9X4T0EU8ZTRMPJ0TQTVW85XJYD6TEFX9EH3M0CWWDDEWRGPEUJU7X7UP77EGW6YMFRGSRV7EHCTU0EVA8GKMUUU35426P6A9SU89HNLWZ2E3Z38ZNLXAF89K92E070RLVM47KMLGJ9S8SX06F0G72X5YC5M0Y5VXFF4DGE0SGW3FDZJ5T97ECQGC65GF7T4YP9GTXQTFF7YLFE4NUNQZ96TUFWR7XVT6QKPTMLG58JJA6CE22VAAS4JL83R5DZZ465K5HXA9L77D70PFMC9LPN0U6CUAQKWF9TK2VFKEHEG7YAFK4LW62T7D3X77R9KYARCNDL77S5ASG28LS3H9HJ5PAVVR0ZE3TZRAUP3H0S9VFUMGGMCAXYQQKSUZ3W37RP8G9WATLPPA7ZGUJPUPQQZZVU854CSLE0F0NR5UUWTCGARCLL",
+      "expected": "<key>"
+    },
+    {
+      "name": "address in quotes and parentheses",
+      "input": "address \"zs1psm9a2lkk6n5rpx2q89wrrw8cx3jts4dkksmvdqlgc9cyyds8nffy8q6cjcvg6vhmlxwjfmns2g\" (tex17xdgu5vnv92ggsjjad2u58x4p9qayz5dcawqz9)",
+      "expected": "address \"<address>\" (<address>)"
+    },
+    {
+      "name": "address next to non-ASCII text",
+      "input": "주소:u130mx99x6lqp05ct82z36gwmmvensp6pcqsx6a8uk5y83uangzud5asxe43pvctfyyu00nmaxpcwmgr9uapqzkka7hqpae95wt4rcwxe8rfxuuas4m0m3nyphj9j6gxxwlp3xene55upjs4yw4whyff96c6wejp7vz2e58p3ah6098ujp2z6j6zuxgh45q9vyt7uprxak3c6yse0yzau입니다",
+      "expected": "주소:<address>입니다"
+    },
+    {
+      "name": "txid",
+      "input": "broadcast txid=79122bf22d91c213db99b250dcfad025b937d8b807d4f8da8c0217b27841b7cc",
+      "expected": "broadcast txid=<txid>"
+    },
+    {
+      "name": "uppercase txid",
+      "input": "tx 79122BF22D91C213DB99B250DCFAD025B937D8B807D4F8DA8C0217B27841B7CC mined",
+      "expected": "tx <txid> mined"
+    },
+    {
+      "name": "0x-prefixed 32-byte hash",
+      "input": "root=0xa51e2e891c0d187b737c12a1db02c2a56aaa796d3439da96e111ce9594593a62",
+      "expected": "root=<txid>"
+    },
+    {
+      "name": "block hash in a sentence",
+      "input": "reorg at 3201456: expected c99c7360f3602b9c6334534c3e19790aa3b74fe8db0c5c980f29d2a508d7788d, got 1580bc9fb1af2cfefc398802444311f168813fc6171b2a74948840410dba6956",
+      "expected": "reorg at 3201456: expected <txid>, got <txid>"
+    },
+    {
+      "name": "long hex blob",
+      "input": "raw=b0e06da4041751053c90b5eb66a6fce9ee948025afde9820ed8b2759a2b9b44d30315ae7237266d09707379bc4a802c3372bc5beb50c57f2482e047584cf3008fc6829a3ea12572990772b7845081583a3ad682e00251b7f156c47a812cdd134",
+      "expected": "raw=<hex>"
+    },
+    {
+      "name": "20-byte hex",
+      "input": "pubkey_hash=27eaaeb4b0611a3c99efbab26092eacfb992a1f2",
+      "expected": "pubkey_hash=<hex>"
+    },
+    {
+      "name": "16-byte hex",
+      "input": "id=b378d21efc4abf492a2389694dc05e8d",
+      "expected": "id=<hex>"
+    },
+    {
+      "name": "uuid",
+      "input": "account=3f2b8c1e-9d4a-4b7f-8e21-0c5d6a7b8e9f switched",
+      "expected": "account=<uuid> switched"
+    },
+    {
+      "name": "uppercase uuid",
+      "input": "uuid=3F2B8C1E-9D4A-4B7F-8E21-0C5D6A7B8E9F",
+      "expected": "uuid=<uuid>"
+    },
+    {
+      "name": "uuid in a storage key",
+      "input": "failed to copy account mnemonic \"vizor_mnemonic_3f2b8c1e-9d4a-4b7f-8e21-0c5d6a7b8e9f\": denied",
+      "expected": "failed to copy account mnemonic \"vizor_mnemonic_<uuid>\": denied"
+    },
+    {
+      "name": "iOS app container path",
+      "input": "open /var/mobile/Containers/Data/Application/0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D/Library/Application Support/zcash_wallet_main.db failed",
+      "expected": "open <path> failed"
+    },
+    {
+      "name": "iOS private var path",
+      "input": "db=/private/var/mobile/Containers/Shared/AppGroup/0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D/wallet.sqlite",
+      "expected": "db=<path>"
+    },
+    {
+      "name": "macOS sandbox container path",
+      "input": "wallet DB migration gate: ensuring schema for /Users/alice/Library/Containers/com.keplr.vizor/Data/Library/Application Support/com.keplr.vizor/zcash_wallet_main.db",
+      "expected": "wallet DB migration gate: ensuring schema for <path>"
+    },
+    {
+      "name": "macOS temporary path",
+      "input": "tmp=/var/folders/x7/k2m9q0z14v3_8n1h0000gn/T/vizor-pczt-1.bin",
+      "expected": "tmp=<path>"
+    },
+    {
+      "name": "macOS volume path",
+      "input": "export to /Volumes/Backup/vizor/export.json",
+      "expected": "export to <path>"
+    },
+    {
+      "name": "Android app data path",
+      "input": "PaymentLinkService: failed to delete temporary payment-link DB /data/user/0/com.keplr.vizor/app_flutter/payment_links/claim_7.db: busy",
+      "expected": "PaymentLinkService: failed to delete temporary payment-link DB <path>: busy"
+    },
+    {
+      "name": "Android legacy data path",
+      "input": "path=/data/data/com.keplr.vizor/files/sapling-output.params",
+      "expected": "path=<path>"
+    },
+    {
+      "name": "Android shared storage path",
+      "input": "saved '/storage/emulated/0/Download/vizor-backup.json'",
+      "expected": "saved '<path>'"
+    },
+    {
+      "name": "Android sdcard path",
+      "input": "read /sdcard/Download/x.json",
+      "expected": "read <path>"
+    },
+    {
+      "name": "Linux home path",
+      "input": "downloaded and verified /home/alice/.local/share/com.keplr.vizor/sapling-spend.params",
+      "expected": "downloaded and verified <path>"
+    },
+    {
+      "name": "Linux temporary path",
+      "input": "lock /tmp/vizor-1000/instance.lock",
+      "expected": "lock <path>"
+    },
+    {
+      "name": "Windows path",
+      "input": "db=C:\\Users\\alice\\AppData\\Roaming\\com.keplr\\vizor\\zcash_wallet_main.db",
+      "expected": "db=<path>"
+    },
+    {
+      "name": "Windows path with forward slashes",
+      "input": "db=C:/Users/alice/AppData/Local/vizor/wallet.db",
+      "expected": "db=<path>"
+    },
+    {
+      "name": "panic location in a dependency keeps line and column",
+      "input": "panicked at /Users/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.47.1/src/runtime/park.rs:12:5:",
+      "expected": "panicked at <path>:12:5:"
+    },
+    {
+      "name": "path in Debug quotes",
+      "input": "Os { code: 2, path: \"/Users/alice/Library/Application Support/vizor/a.db\" }",
+      "expected": "Os { code: 2, path: \"<path>\" }"
+    },
+    {
+      "name": "URL keeps scheme and host",
+      "input": "GetBlockRange via https://zec.rocks:443/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetBlockRange failed",
+      "expected": "GetBlockRange via https://zec.rocks:443/<path> failed"
+    },
+    {
+      "name": "URL query is dropped",
+      "input": "GET https://api.example.com/v1/tx?txid=79122bf22d91c213db99b250dcfad025b937d8b807d4f8da8c0217b27841b7cc&addr=t1SeEB4RYCwwC58cssSqcaEHpJ2fZQhZJu3 404",
+      "expected": "GET https://api.example.com/<path> 404"
+    },
+    {
+      "name": "URL fragment is dropped",
+      "input": "claim https://vizor.app/claim#k=AAECAwQFBgcICQ",
+      "expected": "claim https://vizor.app/<path>"
+    },
+    {
+      "name": "URL user info is dropped",
+      "input": "proxy socks5h://user:secret@127.0.0.1:9050/x",
+      "expected": "proxy socks5h://127.0.0.1:9050/<path>"
+    },
+    {
+      "name": "URL without a path is unchanged",
+      "input": "endpoint https://zec.rocks:443 ready",
+      "expected": "endpoint https://zec.rocks:443 ready"
+    },
+    {
+      "name": "onion URL keeps host",
+      "input": "http://3g2upl4pq6kufc4m.onion/status",
+      "expected": "http://3g2upl4pq6kufc4m.onion/<path>"
+    },
+    {
+      "name": "payment URI",
+      "input": "incoming zcash:u130mx99x6lqp05ct82z36gwmmvensp6pcqsx6a8uk5y83uangzud5asxe43pvctfyyu00nmaxpcwmgr9uapqzkka7hqpae95wt4rcwxe8rfxuuas4m0m3nyphj9j6gxxwlp3xene55upjs4yw4whyff96c6wejp7vz2e58p3ah6098ujp2z6j6zuxgh45q9vyt7uprxak3c6yse0yzau?amount=1.2345&memo=SGVsbG8gZnJpZW5k&label=Rent",
+      "expected": "incoming <payment-uri>"
+    },
+    {
+      "name": "payment URI with address parameter",
+      "input": "zcash:?address=zs1psm9a2lkk6n5rpx2q89wrrw8cx3jts4dkksmvdqlgc9cyyds8nffy8q6cjcvg6vhmlxwjfmns2g&amount=0.5",
+      "expected": "<payment-uri>"
+    },
+    {
+      "name": "Keystone UR",
+      "input": "decoded ur:zcash-accounts/oeadcyemrewytyaolttaadeehdcxhsjpbtlbptdpfttadfrswnhybagldmdnfsckbdtahgaxbebngdpk ok",
+      "expected": "decoded <ur> ok"
+    },
+    {
+      "name": "uppercase multipart Keystone UR",
+      "input": "UR:ZCASH-PCZT/12-40/LPBTDLAHCFADBYCYCMRWLDIOHDDKOEADCYEMREWYTYAOLTTAAD",
+      "expected": "<ur>"
+    },
+    {
+      "name": "payment URI containing UUID",
+      "input": "incoming zcash:t1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ?message=3f2b8c1e-9d4a-4b7f-8e21-0c5d6a7b8e9f-private-note&amount=1.2345&label=Rent&memo=c2VjcmV0 done",
+      "expected": "incoming <payment-uri> done"
+    },
+    {
+      "name": "Keystone UR containing UUID",
+      "input": "decoded ur:zcash-pczt/3f2b8c1e-9d4a-4b7f-8e21-0c5d6a7b8e9f-private-note done",
+      "expected": "decoded <ur> done"
+    },
+    {
+      "name": "payment URI containing long hex",
+      "input": "incoming zcash:t1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ?message=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-private-note&amount=1.2345&label=Rent&memo=c2VjcmV0 done",
+      "expected": "incoming <payment-uri> done"
+    },
+    {
+      "name": "Keystone UR containing long hex",
+      "input": "decoded ur:zcash-pczt/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-private-note done",
+      "expected": "decoded <ur> done"
+    },
+    {
+      "name": "payment URI containing txid",
+      "input": "incoming zcash:t1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ?message=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-private-note&amount=1.2345&label=Rent&memo=c2VjcmV0 done",
+      "expected": "incoming <payment-uri> done"
+    },
+    {
+      "name": "Keystone UR containing txid",
+      "input": "decoded ur:zcash-pczt/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-private-note done",
+      "expected": "decoded <ur> done"
+    },
+    {
+      "name": "payment URI containing URL",
+      "input": "incoming zcash:t1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ?message=https://example.com/note-private-note&amount=1.2345&label=Rent&memo=c2VjcmV0 done",
+      "expected": "incoming <payment-uri> done"
+    },
+    {
+      "name": "Keystone UR containing URL",
+      "input": "decoded ur:zcash-pczt/https://example.com/note-private-note done",
+      "expected": "decoded <ur> done"
+    },
+    {
+      "name": "payment URI containing Unix path",
+      "input": "incoming zcash:t1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ?message=/Users/alice/note-private-note&amount=1.2345&label=Rent&memo=c2VjcmV0 done",
+      "expected": "incoming <payment-uri> done"
+    },
+    {
+      "name": "Keystone UR containing Unix path",
+      "input": "decoded ur:zcash-pczt//Users/alice/note-private-note done",
+      "expected": "decoded <ur> done"
+    },
+    {
+      "name": "payment URI containing Windows path",
+      "input": "incoming zcash:t1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ?message=C:/Users/alice/note-private-note&amount=1.2345&label=Rent&memo=c2VjcmV0 done",
+      "expected": "incoming <payment-uri> done"
+    },
+    {
+      "name": "Keystone UR containing Windows path",
+      "input": "decoded ur:zcash-pczt/C:/Users/alice/note-private-note done",
+      "expected": "decoded <ur> done"
+    },
+    {
+      "name": "payment URI containing a nested UR",
+      "input": "zcash:t1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ?label=ur:zcash-pczt/abcd-private-note&amount=1.2345",
+      "expected": "<payment-uri>"
+    },
+    {
+      "name": "UR containing a nested payment URI",
+      "input": "ur:zcash-pczt/zcash:t1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ?message=3f2b8c1e-9d4a-4b7f-8e21-0c5d6a7b8e9f-private-note&amount=1.2345",
+      "expected": "<ur>"
+    },
+    {
+      "name": "mixed-case payment URI containing a UUID label",
+      "input": "ZcAsH:t1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ?label=3f2b8c1e-9d4a-4b7f-8e21-0c5d6a7b8e9f-private-note&amount=1.2345",
+      "expected": "<payment-uri>"
+    },
+    {
+      "name": "uppercase multipart UR containing hex",
+      "input": "UR:ZCASH-PCZT/12-40/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-PRIVATE-NOTE",
+      "expected": "<ur>"
+    },
+    {
+      "name": "quoted opaque URIs preserve surrounding log text",
+      "input": "incoming \"zcash:t1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ?label=3f2b8c1e-9d4a-4b7f-8e21-0c5d6a7b8e9f-private-note\" decoded 'ur:zcash-pczt/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-private-note' done",
+      "expected": "incoming \"<payment-uri>\" decoded '<ur>' done"
+    },
+    {
+      "name": "payment URI authority is masked before generic URLs",
+      "input": "zcash://t1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ?label=private-note&amount=1.2345",
+      "expected": "<payment-uri>"
+    },
+    {
+      "name": "several identifiers in one line",
+      "input": "send: to=u130mx99x6lqp05ct82z36gwmmvensp6pcqsx6a8uk5y83uangzud5asxe43pvctfyyu00nmaxpcwmgr9uapqzkka7hqpae95wt4rcwxe8rfxuuas4m0m3nyphj9j6gxxwlp3xene55upjs4yw4whyff96c6wejp7vz2e58p3ah6098ujp2z6j6zuxgh45q9vyt7uprxak3c6yse0yzau txid=79122bf22d91c213db99b250dcfad025b937d8b807d4f8da8c0217b27841b7cc account=3f2b8c1e-9d4a-4b7f-8e21-0c5d6a7b8e9f via https://lwd.example.com:9067/cash.z.wallet.sdk.rpc.CompactTxStreamer/SendTransaction db=/Users/alice/Library/Application Support/com.keplr.vizor/zcash_wallet_main.db height=3201456 fee=0.0001 ZEC",
+      "expected": "send: to=<address> txid=<txid> account=<uuid> via https://lwd.example.com:9067/<path> db=<path> height=3201456 fee=0.0001 ZEC"
+    },
+    {
+      "name": "heights and counts",
+      "input": "[12.3s] sync: scanned 3201456..3201500 (44 blocks, 3 txs, 0 notes)",
+      "expected": "[12.3s] sync: scanned 3201456..3201500 (44 blocks, 3 txs, 0 notes)"
+    },
+    {
+      "name": "amounts",
+      "input": "sent 1.2345 ZEC (123450000 zats), fee 0.0001 ZEC, balance 21000000.00000000",
+      "expected": "sent 1.2345 ZEC (123450000 zats), fee 0.0001 ZEC, balance 21000000.00000000"
+    },
+    {
+      "name": "versions and short hex",
+      "input": "Vizor 1.24.0+512 (build 9f8e7d6, rustc 1.88.0) commit 0123456789abcdef",
+      "expected": "Vizor 1.24.0+512 (build 9f8e7d6, rustc 1.88.0) commit 0123456789abcdef"
+    },
+    {
+      "name": "hex just under the threshold",
+      "input": "nonce=0123456789abcdef0123456789abcde",
+      "expected": "nonce=0123456789abcdef0123456789abcde"
+    },
+    {
+      "name": "durations and percentages",
+      "input": "elapsed=1234ms 87.5% done in 2.5s, retry in 30s",
+      "expected": "elapsed=1234ms 87.5% done in 2.5s, retry in 30s"
+    },
+    {
+      "name": "timestamps",
+      "input": "ts=2026-10-21T08:15:30.123Z epoch=1761034530123",
+      "expected": "ts=2026-10-21T08:15:30.123Z epoch=1761034530123"
+    },
+    {
+      "name": "enum names",
+      "input": "status=TransactionStatus.mined pool=Orchard kind=zecDeposit",
+      "expected": "status=TransactionStatus.mined pool=Orchard kind=zecDeposit"
+    },
+    {
+      "name": "color and small hex",
+      "input": "0xdeadbeef color=#ff00aa code=0x6985",
+      "expected": "0xdeadbeef color=#ff00aa code=0x6985"
+    },
+    {
+      "name": "short address-like words",
+      "input": "u1short is not an address; t1 label; tex1 too",
+      "expected": "u1short is not an address; t1 label; tex1 too"
+    },
+    {
+      "name": "relative source path",
+      "input": "lib/src/providers/sync_provider.dart:1714 rust/src/wallet/data/mod.rs:12",
+      "expected": "lib/src/providers/sync_provider.dart:1714 rust/src/wallet/data/mod.rs:12"
+    },
+    {
+      "name": "API route",
+      "input": "GET /v1/blocks/latest 200 /datasets/x",
+      "expected": "GET /v1/blocks/latest 200 /datasets/x"
+    },
+    {
+      "name": "bare host and port",
+      "input": "endpoint zec.rocks:443 via Tor, fallback na.zec.rocks:443",
+      "expected": "endpoint zec.rocks:443 via Tor, fallback na.zec.rocks:443"
+    },
+    {
+      "name": "log prefix",
+      "input": "[zcash] Sync: starting foreground sync",
+      "expected": "[zcash] Sync: starting foreground sync"
+    },
+    {
+      "name": "plain words",
+      "input": "software account discovery: account 0 already exists for this mnemonic",
+      "expected": "software account discovery: account 0 already exists for this mnemonic"
+    },
+    {
+      "name": "tokens are left alone",
+      "input": "<address> <key> <txid> <hex> <uuid> <path> <payment-uri> <ur> https://h.example/<path>",
+      "expected": "<address> <key> <txid> <hex> <uuid> <path> <payment-uri> <ur> https://h.example/<path>"
+    },
+    {
+      "name": "empty string",
+      "input": "",
+      "expected": ""
+    }
+  ]
+}

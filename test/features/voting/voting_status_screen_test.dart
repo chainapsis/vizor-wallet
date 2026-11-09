@@ -19,8 +19,11 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/route_owned_redirect.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/voting/voting_message.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
@@ -36,6 +39,7 @@ import 'package:zcash_wallet/src/features/voting/voting_routes.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_pane_scroll_area.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
@@ -67,14 +71,162 @@ import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fake_voting_round_session.dart';
 import 'round_plan_test_utils.dart';
 import 'voting_retry_recovery_test_utils.dart';
+import '../../support/test_l10n.dart';
 import '../../services/voting/fake_voting_http.dart';
 import 'fake_round_recovery_state.dart';
 
 void main() {
+  for (final review in [false, true]) {
+    for (final error in [false, true]) {
+      for (final interruptAccount in [false, true]) {
+        testWidgets(
+          'retained async data cannot validate redirect (review=$review, error=$error, account=$interruptAccount)',
+          (tester) async {
+            final snapshot = VotingSessionState(
+              roundId: _roundId,
+              accountUuid: 'account-1',
+              round: VotingRoundDetails(
+                roundId: _roundId,
+                title: 'Closed round',
+                status: 'pending',
+                snapshotHeight: 0,
+                eaPk: Uint8List(32),
+                ncRoot: Uint8List(32),
+                nullifierImtRoot: Uint8List(32),
+                rawJson: _roundStatusJson(),
+              ),
+            );
+            final notifier = _RetainedRedirectSessionNotifier(snapshot);
+            final account = _RetainedRedirectAccountNotifier();
+            final container = _statusContainer(
+              http: FakeVotingHttpClient(responses: _votingHttpResponses()),
+              accountOverride: () => account,
+              overrides: [
+                votingSessionProvider(_roundId).overrideWith(() => notifier),
+              ],
+            );
+            addTearDown(container.dispose);
+            var interrupted = false;
+            final app = _proposalHarness(
+              initialLocation: review ? '/voting/poll/$_roundId/review' : null,
+            );
+            await tester.pumpWidget(
+              UncontrolledProviderScope(
+                container: container,
+                child: Consumer(
+                  builder: (_, ref, _) {
+                    final value = ref.watch(votingSessionProvider(_roundId));
+                    if (value.hasValue && !value.isLoading && !interrupted) {
+                      interrupted = true;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (interruptAccount) {
+                          account.interrupt(error: error);
+                        } else {
+                          notifier.interrupt(error: error);
+                        }
+                      });
+                    }
+                    return app;
+                  },
+                ),
+              ),
+            );
+            for (var i = 0; i < 5; i++) {
+              await tester.pump(const Duration(milliseconds: 100));
+            }
+            expect(
+              container.read(votingSessionProvider(_roundId)).value,
+              same(snapshot),
+            );
+            expect(find.text('results route'), findsNothing);
+            if (interruptAccount) {
+              account.resume();
+            } else {
+              notifier.resume();
+            }
+            await tester.pumpAndSettle();
+            expect(find.text('results route'), findsOneWidget);
+          },
+        );
+      }
+    }
+  }
+
+  for (final review in [false, true]) {
+    testWidgets(
+      'result redirect resumes after a covering dialog (review=$review)',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(1152, 768);
+        addTearDown(tester.view.reset);
+        final reply = Completer<VotingHttpResponse>();
+        final http = FakeVotingHttpClient(
+          responses: _votingHttpResponses()
+            ..['/shielded-vote/v1/round/$_roundId'] = reply.future,
+        );
+        final container = _statusContainer(
+          http: http,
+          accountOverride: _MnemonicAccountNotifier.new,
+          recoveryApi: _MutableVotingRecoveryApi(),
+        );
+        addTearDown(container.dispose);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: _proposalHarness(
+              initialLocation: review ? '/voting/poll/$_roundId/review' : null,
+            ),
+          ),
+        );
+        for (var i = 0; i < 5; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        final view = review
+            ? find.byType(VotingReviewView)
+            : find.byType(VotingProposalDetailView);
+        final context = tester.element(view);
+        final router = GoRouter.of(context);
+        unawaited(
+          showDialog<void>(
+            context: context,
+            builder: (_) => const AlertDialog(content: Text('Covering dialog')),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        final round = _roundStatusJson()..['status'] = 'pending';
+        reply.complete(jsonResponse({'round': round}));
+        for (var i = 0; i < 15; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(
+          container.read(votingSessionProvider(_roundId)).value!.round!.status,
+          'pending',
+        );
+        expect(find.text('Covering dialog'), findsOneWidget);
+        expect(find.text('results route'), findsNothing);
+        router.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(
+          find.text('results route'),
+          findsNothing,
+          reason: 'The outgoing dialog barrier must finish before navigation',
+        );
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(find.text('results route'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
   testWidgets(
     'Ledger voting stages ignore another account and defer approval guidance',
     (tester) async {
@@ -87,6 +239,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: const Scaffold(
@@ -1103,7 +1256,11 @@ void main() {
     await _pumpUntilFound(tester, find.text('Retry'));
 
     expect(find.text('Submission not complete'), findsOneWidget);
-    expect(find.textContaining('temporary setup unavailable'), findsOneWidget);
+    // The setup error is only logged; the screen shows the session summary.
+    expect(
+      find.textContaining(testL10n.votingErrorSessionFailed),
+      findsOneWidget,
+    );
     expect(notifier.refreshCalls, 1);
 
     await tester.tap(find.text('Retry'));
@@ -1796,8 +1953,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // The specific error stays behind "Show details" under the summary.
+    expect(find.text(testL10n.votingErrorSessionFailed), findsOne);
+    expect(find.textContaining('active account lookup failed'), findsNothing);
+    await tester.tap(find.text(testL10n.commonShowDetails));
+    await tester.pumpAndSettle();
     expect(find.text('active account lookup failed'), findsOne);
-    expect(find.text('Voting session action failed.'), findsNothing);
     expect(find.text('Retry'), findsOne);
   });
 
@@ -1932,6 +2093,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.light, child: child!),
@@ -2026,6 +2188,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.light, child: child!),
@@ -2788,8 +2951,9 @@ void main() {
   /// Pumps the proposal detail screen with a fixed privacy-trim result.
   Future<void> pumpPollWithPrivacyTrim(
     WidgetTester tester,
-    BigInt droppedZatoshi,
-  ) async {
+    BigInt droppedZatoshi, {
+    bool privacyModeEnabled = false,
+  }) async {
     await tester.binding.setSurfaceSize(const Size(1152, 768));
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
@@ -2802,6 +2966,11 @@ void main() {
       accountOverride: _MnemonicAccountNotifier.new,
       recoveryApi: recoveryApi,
       rust: rust,
+      overrides: [
+        privacyModeProvider.overrideWith(
+          () => _TestPrivacyModeNotifier(privacyModeEnabled),
+        ),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -2837,6 +3006,124 @@ void main() {
     // must not drag the failure affordances in with it.
     expect(find.text('Retry eligibility'), findsNothing);
     expect(find.text('Voting power unavailable'), findsNothing);
+  });
+
+  testWidgets('privacy mode masks voting power and the withheld amount', (
+    tester,
+  ) async {
+    await pumpPollWithPrivacyTrim(tester, BigInt.zero);
+    expect(find.text('Voting power 0.000001 ZEC'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await pumpPollWithPrivacyTrim(
+      tester,
+      BigInt.from(19000000),
+      privacyModeEnabled: true,
+    );
+
+    expect(
+      find.text(
+        '****** ZEC is left out of this vote to keep your submission less '
+        'identifiable.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Voting power ****** ZEC'), findsOneWidget);
+    expect(find.textContaining('0.19'), findsNothing);
+    expect(find.textContaining('0.000001'), findsNothing);
+    _expectNoDoubledDenomination();
+  });
+
+  testWidgets('desktop voted header masks voting power in privacy mode', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    Widget voted({required bool privacyModeEnabled}) => MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
+      home: AppTheme(
+        data: AppThemeData.light,
+        child: Scaffold(
+          body: VotingVotedPollContent(
+            showDesktopToolbar: false,
+            roundTitle: 'Private round',
+            snapshotHeight: 1,
+            description: '',
+            forumUri: null,
+            votingPowerZatoshi: BigInt.from(37_500_000),
+            votingPowerPreparing: false,
+            privacyModeEnabled: privacyModeEnabled,
+            votedAt: null,
+            proposals: const [],
+            choicesByProposalId: const {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(voted(privacyModeEnabled: false));
+    expect(find.text('Voting power 0.375 ZEC'), findsOneWidget);
+
+    await tester.pumpWidget(voted(privacyModeEnabled: true));
+    expect(find.text('Voting power ****** ZEC'), findsOneWidget);
+    expect(find.textContaining('0.375'), findsNothing);
+    _expectNoDoubledDenomination();
+  });
+
+  testWidgets('submission receipt masks voting power in privacy mode', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        privacyModeProvider.overrideWith(() => _TestPrivacyModeNotifier(true)),
+        votingSessionProvider(_roundId).overrideWith(
+          () => _StaticVotingSessionNotifier(
+            VotingSessionState(
+              roundId: _roundId,
+              accountUuid: 'account-1',
+              phase: VotingSessionPhase.done,
+              roundPlan: apiRoundPlan(
+                roundId: _roundId,
+                pendingRecovery: false,
+                nextSteps: const [],
+                openProposals: Uint32List(0),
+                allDecided: true,
+                completedVoteArtifact: true,
+                completedForDisplay: true,
+              ),
+              eligibleWeightZatoshi: BigInt.from(100),
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _submissionHarness(),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('Submission confirmed!'));
+
+    expect(find.text('Voting power'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(VotingSubmissionConfirmationView),
+        matching: find.text('****** ZEC'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('0.000001'), findsNothing);
+    _expectNoDoubledDenomination();
   });
 
   testWidgets('poll retries voting power from error state', (tester) async {
@@ -3344,7 +3631,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining("Couldn't load results"), findsOneWidget);
+    // The SDK's reason is behind "Show details"; the copy says what to do.
+    expect(
+      find.text(
+        testL10n.votingResultsLoadFailed(testL10n.votingLoadFailedRetry),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text(testL10n.commonShowDetails));
+    await tester.pumpAndSettle();
     expect(
       find.textContaining('not authenticated by voting config'),
       findsOneWidget,
@@ -3813,7 +4108,7 @@ void main() {
               key: staleKey,
               status: VotingSubmissionJobStatus.error,
               generation: 1,
-              errorMessage: 'stale key selected',
+              errorMessage: VotingLiteralMessage('stale key selected'),
             ),
           ),
         ),
@@ -3865,6 +4160,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -4797,6 +5093,10 @@ ProviderContainer _statusContainer({
       votingAccountIsHardwareProvider.overrideWithValue(
         (uuid) async => effectiveHardwareAccountUuids.contains(uuid),
       ),
+      votingReadyRpcEndpointProvider.overrideWith(
+        (ref) =>
+            () async => ref.read(votingRpcEndpointConfigProvider),
+      ),
       votingRpcEndpointConfigProvider.overrideWithValue(
         const RpcEndpointConfig(
           networkName: 'main',
@@ -4847,6 +5147,7 @@ GoRouter _mobileProposalRouter() {
 
 Widget _mobileProposalApp(GoRouter router) {
   return MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );
@@ -4901,6 +5202,7 @@ Widget _statusHarness({
   );
 
   return MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );
@@ -4908,18 +5210,26 @@ Widget _statusHarness({
 
 Widget _proposalHarness({String? initialLocation}) {
   final router = GoRouter(
+    observers: [RouteOwnedNavigationObserver()],
     initialLocation: initialLocation ?? '/voting/poll/$_roundId',
     routes: [
       GoRoute(
         path: '/voting/poll/:roundId',
-        builder: (_, state) => VotingProposalDetailScreen(
-          roundId: state.pathParameters['roundId']!,
-        ),
+        builder: (_, state) => kAppFormFactor == AppFormFactor.mobile
+            ? MobileVotingProposalDetailScreen(
+                roundId: state.pathParameters['roundId']!,
+              )
+            : VotingProposalDetailScreen(
+                roundId: state.pathParameters['roundId']!,
+              ),
       ),
       GoRoute(
         path: '/voting/poll/:roundId/review',
-        builder: (_, state) =>
-            VotingReviewScreen(roundId: state.pathParameters['roundId']!),
+        builder: (_, state) => kAppFormFactor == AppFormFactor.mobile
+            ? MobileVotingReviewScreen(
+                roundId: state.pathParameters['roundId']!,
+              )
+            : VotingReviewScreen(roundId: state.pathParameters['roundId']!),
       ),
       GoRoute(
         path: '/voting/poll/:roundId/status',
@@ -4946,6 +5256,7 @@ Widget _proposalHarness({String? initialLocation}) {
   );
 
   return MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );
@@ -4977,6 +5288,7 @@ Widget _submissionHarness({Widget votingRoute = const Text('voting route')}) {
   );
 
   return MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );
@@ -5006,6 +5318,7 @@ Widget _resultsHarness({String? initialLocation}) {
   );
 
   return MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   );
@@ -7129,4 +7442,67 @@ rust_api.ApiSignedVoteCommitments _commitments({
     ],
     batchDigest: null,
   );
+}
+
+// Riverpod exposes retained refresh/error values through provider updates.
+// Construct that exact metadata here to exercise the post-frame race.
+AsyncValue<T> _retainPrevious<T>(AsyncValue<T> next, AsyncValue<T> previous) {
+  // ignore: invalid_use_of_internal_member
+  return next.copyWithPrevious(previous);
+}
+
+class _RetainedRedirectSessionNotifier extends VotingSessionNotifier {
+  _RetainedRedirectSessionNotifier(this.snapshot) : super(snapshot.roundId);
+  final VotingSessionState snapshot;
+  @override
+  Future<VotingSessionState> build() async => snapshot;
+  @override
+  Future<BigInt?> refreshEligibleWeight() async => null;
+  void interrupt({required bool error}) {
+    state = _retainPrevious(
+      error
+          ? AsyncError<VotingSessionState>(
+              StateError('Refresh failed'),
+              StackTrace.current,
+            )
+          : const AsyncLoading<VotingSessionState>(),
+      state,
+    );
+  }
+
+  void resume() => state = AsyncData(snapshot);
+}
+
+class _RetainedRedirectAccountNotifier extends _MnemonicAccountNotifier {
+  void interrupt({required bool error}) {
+    state = _retainPrevious(
+      error
+          ? AsyncError<AccountState>(
+              StateError('Account refresh failed'),
+              StackTrace.current,
+            )
+          : const AsyncLoading<AccountState>(),
+      state,
+    );
+  }
+
+  void resume() => state = AsyncData(_bootstrap.initialAccountState);
+}
+
+class _TestPrivacyModeNotifier extends PrivacyModeNotifier {
+  _TestPrivacyModeNotifier(this.initial);
+
+  final bool initial;
+
+  @override
+  bool build() => initial;
+
+  @override
+  Future<void> set(bool enabled) async => state = enabled;
+}
+
+/// Masking a bare amount with a denominated helper doubles the unit.
+void _expectNoDoubledDenomination() {
+  expect(find.textContaining('ZEC ZEC', findRichText: true), findsNothing);
+  expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
 }

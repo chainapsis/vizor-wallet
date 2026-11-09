@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../input/caps_lock_warning.dart';
+import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
 import 'app_tooltip.dart';
+import '../l10n/locale_typography.dart';
 
 enum AppTextFieldTone { neutral, destructive, success, brandCrimson }
 
@@ -47,7 +49,7 @@ class AppTextField extends StatefulWidget {
     this.surface = AppTextFieldSurface.primary,
     this.showClearButton = false,
     this.clearButtonRequiresText = true,
-    this.clearButtonSemanticLabel = 'Clear text',
+    this.clearButtonSemanticLabel,
     this.onClear,
     this.onChanged,
     this.onSubmitted,
@@ -60,6 +62,7 @@ class AppTextField extends StatefulWidget {
     this.hintStyle,
     this.minLines = 1,
     this.maxLines = 1,
+    this.multilineVisibleLines,
     this.enabled = true,
     this.readOnly = false,
     this.autofocus = false,
@@ -73,6 +76,10 @@ class AppTextField extends StatefulWidget {
        assert(
          rightLabel == null || rightSlot == null,
          'Provide either rightLabel or rightSlot, not both.',
+       ),
+       assert(
+         multilineVisibleLines == null || multilineVisibleLines >= 2,
+         'A multiline field must show at least two lines.',
        );
 
   final String label;
@@ -110,7 +117,7 @@ class AppTextField extends StatefulWidget {
   final AppTextFieldSurface surface;
   final bool showClearButton;
   final bool clearButtonRequiresText;
-  final String clearButtonSemanticLabel;
+  final String? clearButtonSemanticLabel;
   final VoidCallback? onClear;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
@@ -123,6 +130,11 @@ class AppTextField extends StatefulWidget {
   final TextStyle? hintStyle;
   final int minLines;
   final int maxLines;
+
+  /// Opts into a multiline viewport sized to this many scaled text lines.
+  /// Omit to retain the existing 148px multiline shell. This controls visible
+  /// space only; longer text can still be entered and scrolled internally.
+  final int? multilineVisibleLines;
   final bool enabled;
   final bool readOnly;
   final bool autofocus;
@@ -156,7 +168,10 @@ class _AppTextFieldState extends State<AppTextField> {
   TextEditingController get _controller =>
       widget.controller ?? _internalController;
   FocusNode get _focusNode => widget.focusNode ?? _internalFocusNode;
-  bool get _multiline => widget.maxLines > 1 || widget.minLines > 1;
+  bool get _multiline =>
+      widget.multilineVisibleLines != null ||
+      widget.maxLines > 1 ||
+      widget.minLines > 1;
   bool get _hasText => _controller.text.isNotEmpty;
   bool get _isFocused => _focusNode.hasFocus;
   bool get _showMessage =>
@@ -245,7 +260,10 @@ class _AppTextFieldState extends State<AppTextField> {
     );
 
     final textPainter = TextPainter(
-      text: TextSpan(text: _controller.text, style: valueStyle),
+      text: TextSpan(
+        text: _controller.text,
+        style: withLocaleFontFallback(context, valueStyle),
+      ),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
       strutStyle: textStrutStyle,
@@ -313,7 +331,23 @@ class _AppTextFieldState extends State<AppTextField> {
       AppTextFieldTone.brandCrimson => colors.icon.brandCrimson,
     };
     final gap = _multiline ? AppSpacing.xs : AppSpacing.xxs;
-    final shellHeight = _multiline ? 148.0 : AppInputSizing.height;
+    final textStrutStyle = StrutStyle.fromTextStyle(
+      valueStyle,
+      forceStrutHeight: true,
+    );
+    final textDirection = Directionality.of(context);
+    var shellHeight = _multiline ? 148.0 : AppInputSizing.height;
+    final visibleLines = widget.multilineVisibleLines;
+    if (visibleLines != null) {
+      final linePainter = TextPainter(
+        text: TextSpan(text: ' ', style: valueStyle),
+        strutStyle: textStrutStyle,
+        textDirection: textDirection,
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout();
+      shellHeight = linePainter.height * visibleLines + AppSpacing.s * 2;
+      linePainter.dispose();
+    }
     const shellRadius = AppInputSizing.radius;
     final useFixedSlotLayout =
         !_multiline &&
@@ -324,15 +358,13 @@ class _AppTextFieldState extends State<AppTextField> {
     final titleHeight = widget.showLabel ? 16.0 : 0.0;
     final titleGap = widget.showLabel ? gap : 0.0;
     final messageTop = titleHeight + titleGap + shellHeight + gap;
-    final textStrutStyle = StrutStyle.fromTextStyle(
-      valueStyle,
-      forceStrutHeight: true,
-    );
-    final textDirection = Directionality.of(context);
     double measureInlineText(String text, TextStyle style) {
       if (text.isEmpty) return 0;
       final painter = TextPainter(
-        text: TextSpan(text: text, style: style),
+        text: TextSpan(
+          text: text,
+          style: withLocaleFontFallback(context, style),
+        ),
         textDirection: textDirection,
         textScaler: MediaQuery.textScalerOf(context),
         strutStyle: textStrutStyle,
@@ -412,7 +444,8 @@ class _AppTextFieldState extends State<AppTextField> {
         ? _AppTextFieldClearButton(
             onTap: _clear,
             iconColor: neutralIconColor,
-            semanticLabel: widget.clearButtonSemanticLabel,
+            semanticLabel:
+                widget.clearButtonSemanticLabel ?? context.l10n.commonClearText,
           )
         : null;
     final inlinePrefixText = _multiline ? null : widget.inlinePrefixText;
@@ -906,7 +939,10 @@ class _AppTextFieldMessage extends StatelessWidget {
         }
 
         final textPainter = TextPainter(
-          text: TextSpan(text: text, style: style),
+          text: TextSpan(
+            text: text,
+            style: withLocaleFontFallback(context, style),
+          ),
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
           ellipsis: '...',

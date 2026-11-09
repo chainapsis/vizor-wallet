@@ -7,11 +7,11 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/app_version_config.dart';
-import 'package:zcash_wallet/src/core/config/private_transparent_recovery_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
@@ -19,7 +19,6 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
-import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
@@ -27,6 +26,7 @@ import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_welcome_a
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_language_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
@@ -34,9 +34,15 @@ import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../fakes/fake_app_language_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
+import '../../support/test_l10n.dart';
+
+final _en = lookupAppLocalizations(const Locale('en'));
 
 const _accountState = AccountState(
   accounts: [
@@ -165,6 +171,7 @@ Widget _app({
   bool enhancePirEnabled = false,
   EnhancePirNotifier Function()? enhancePir,
   bool walletTransparentPrivate = false,
+  List<Override> extraOverrides = const [],
 }) {
   Widget themedBuilder(BuildContext context, Widget? child) => AppTheme(
     data: themeData ?? AppThemeData.dark,
@@ -177,6 +184,7 @@ Widget _app({
   );
   final app = router == null
       ? MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           builder: themedBuilder,
           home: withTabBar
               ? AppMobileShell(
@@ -195,7 +203,11 @@ Widget _app({
                 )
               : const MobileSettingsScreen(),
         )
-      : MaterialApp.router(routerConfig: router, builder: themedBuilder);
+      : MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
+          routerConfig: router,
+          builder: themedBuilder,
+        );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -226,6 +238,7 @@ Widget _app({
         biometricUnlockProvider.overrideWith(
           () => _FakeBiometricNotifier(biometric),
         ),
+      ...extraOverrides,
     ],
     child: app,
   );
@@ -290,6 +303,7 @@ Widget _routedApp({PaymentLinkCardsLoader? cardsLoader}) {
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) =>
           AppTheme(data: AppThemeData.dark, child: child!),
@@ -315,6 +329,25 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
 }
 
 void main() {
+  for (final network in ['main', 'test', 'regtest']) {
+    testWidgets('Support Vizor is exposed only on mainnet: $network', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          network: network,
+          networkPrivacyState: const NetworkPrivacyState.off(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView).first, const Offset(0, -2000));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Support Vizor'),
+        network == 'main' ? findsOneWidget : findsNothing,
+      );
+    });
+  }
   testWidgets('mobile private recovery is labelled experimental', (
     tester,
   ) async {
@@ -325,16 +358,16 @@ void main() {
     expect(note, findsOneWidget);
     expect(find.textContaining('suspended'), findsNothing);
     expect(find.textContaining('transparent funds'), findsOneWidget);
-    expect(find.text(kPrivateQueriesSettingsCopy), findsOneWidget);
+    expect(find.text(testL10n.settingsPrivateQueriesCopy), findsOneWidget);
   });
 
   for (final (platform, copy) in [
     (
       TargetPlatform.iOS,
-      '$kPrivateQueriesSettingsCopy While on, migration confirmations are '
-          'checked only when Vizor is open.',
+      '${testL10n.settingsPrivateQueriesCopy} '
+          '${testL10n.settingsPrivateQueriesIosNote}',
     ),
-    (TargetPlatform.android, kPrivateQueriesSettingsCopy),
+    (TargetPlatform.android, testL10n.settingsPrivateQueriesCopy),
   ]) {
     testWidgets(
       'private queries uses the shared settings copy on ${platform.name}, '
@@ -440,10 +473,9 @@ void main() {
               tester.getTopLeft(footer).dy -
                   tester
                       .getBottomLeft(
-                        // The privacy card is the last card above the
-                        // footer.
+                        // Mainnet's support group is the last card.
                         find.ancestor(
-                          of: find.text('Privacy'),
+                          of: find.text('Misc'),
                           matching: find.byType(MobileSurfaceCard),
                         ),
                       )
@@ -709,9 +741,12 @@ void main() {
         walletPrivate: true,
       );
       expect(_turnOffSheet, findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffTitle), findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffBody), findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffDisclosure), findsOneWidget);
+      expect(find.text(_en.settingsPrivateQueriesTurnOffTitle), findsOneWidget);
+      expect(find.text(_en.settingsPrivateQueriesTurnOffBody), findsOneWidget);
+      expect(
+        find.text(_en.settingsPrivateQueriesTurnOffDisclosure),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
@@ -1117,11 +1152,8 @@ void main() {
     );
     // The About entry stays hidden until the legal documents are ready.
     expect(find.text('About Vizor'), findsNothing);
-    // Endpoint shows the live RPC host:port.
-    expect(
-      find.text(defaultRpcEndpointConfig('main').hostPort),
-      findsOneWidget,
-    );
+    // The default preference is automatic, rather than a fixed physical host.
+    expect(find.text('Automatic'), findsOneWidget);
     expect(find.text('Explorer'), findsOneWidget);
     expect(find.text('ZecBlock'), findsOneWidget);
   });
@@ -1509,6 +1541,12 @@ void main() {
 
     expect(find.text('Turn off Face ID unlock?'), findsOneWidget);
     expect(find.textContaining('You will use your passcode'), findsOneWidget);
+    for (final label in ['Turn off', 'Cancel']) {
+      expect(
+        tester.widget<Text>(find.text(label)).style?.fontSize,
+        AppTypography.labelLarge.fontSize,
+      );
+    }
     expect(biometricNotifier.disableCount, 0);
 
     await tester.tap(
@@ -1678,6 +1716,79 @@ void main() {
       find.descendant(of: row, matching: find.text('Off')),
       findsOneWidget,
     );
+  });
+
+  group('language', () {
+    testWidgets(
+      'the Language row is hidden while English is the only language',
+      (tester) async {
+        await tester.pumpWidget(
+          _app(
+            extraOverrides: [
+              availableAppLanguagesProvider.overrideWithValue(const [
+                AppLanguage.en,
+              ]),
+            ],
+          ),
+        );
+        await tester.pump();
+
+        expect(
+          find.byKey(const ValueKey('mobile_settings_language_row')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('the sheet saves the chosen language', (tester) async {
+      final saved = <AppLanguage>[];
+      await tester.pumpWidget(
+        _app(extraOverrides: languagePreviewOverrides(saved)),
+      );
+      await tester.pump();
+
+      final row = find.byKey(const ValueKey('mobile_settings_language_row'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('mobile_language_option_en')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_language_option_system')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('mobile_language_option_zh')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('mobile_language_update')));
+      await tester.pumpAndSettle();
+
+      expect(saved, [AppLanguage.zh]);
+      expect(find.byType(MobileModalScaffold), findsNothing);
+    });
+
+    testWidgets('closing the sheet keeps the language', (tester) async {
+      final saved = <AppLanguage>[];
+      await tester.pumpWidget(
+        _app(extraOverrides: languagePreviewOverrides(saved)),
+      );
+      await tester.pump();
+
+      final row = find.byKey(const ValueKey('mobile_settings_language_row'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_language_option_ko')));
+      await tester.pump();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(saved, isEmpty);
+    });
   });
 }
 

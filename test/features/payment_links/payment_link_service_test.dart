@@ -11,6 +11,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -663,6 +664,71 @@ void main() {
     }
 
     test(
+      'new card reserves follow Rust and an old quote is rejected',
+      () async {
+        api.feePolicyRate = 5000;
+        expect(await service.claimFeeReserve(), BigInt.from(10000));
+        api.feePolicyRate = 1000;
+        expect(await service.claimFeeReserve(), BigInt.from(2000));
+        await expectLater(
+          service.validateFundingReserve(BigInt.from(10000)),
+          throwsA(isA<PaymentLinkBatchQuoteChanged>()),
+        );
+        await service.validateFundingReserve(BigInt.from(2000));
+        api.feePolicyRate = 5000;
+      },
+    );
+
+    test('an upgrade hold while proposing a group drops its drafts', () async {
+      accounts.select('account-1', 'u1account-1address');
+      api.proposeBatchError = StateError(_sendHoldRefusal);
+      final store = container.read(paymentLinkRecoveryStoreProvider);
+      final links = [
+        for (final address in ['u1batchcardone', 'u1batchcardtwo'])
+          VizorPaymentLink(
+            network: 'main',
+            address: address,
+            amountZatoshi: BigInt.from(100000),
+            mnemonic: _link().mnemonic,
+            birthdayHeight: 3_456_789,
+            label: 'Payment link',
+            createdAt: DateTime.utc(2026, 8, 5, 12),
+          ),
+      ];
+      await store.saveBatchDrafts(
+        batchId: 'batch-1',
+        links: links,
+        sourceAccountUuid: 'account-1',
+        claimFeeReserveZatoshi: BigInt.from(10000),
+      );
+
+      await expectLater(
+        container
+            .read(paymentLinkBatchOperationsProvider)
+            .fundBatch(
+              PaymentLinkBatchDraft(
+                id: 'batch-1',
+                links: links,
+                quote: PaymentLinkBatchQuote(
+                  sourceAccountUuid: 'account-1',
+                  count: 2,
+                  recipientAmountZatoshi: BigInt.from(100000),
+                  fundingFeeZatoshi: BigInt.from(15000),
+                ),
+              ),
+            ),
+        throwsA(
+          isA<PaymentLinkBatchPreSubmissionFailure>().having(
+            (failure) => failure.hold,
+            'hold',
+            NetworkUpgradeHold.hold,
+          ),
+        ),
+      );
+      expect(await store.load(), isEmpty);
+    });
+
+    test(
       'recovery removes a ready setup card and its wallet after recipient deletion',
       () async {
         api.poolFixture = true; // The wallet DB still contains another account.
@@ -799,31 +865,30 @@ void main() {
           uuid: 'claim-wallet',
           birthdayHeight: 0,
           name: 'Gift Card claim',
-          unifiedAddress: 'u1orchardatlegacyindex',
           isSeedAnchor: true,
           isHardware: false,
         );
-        api.validGiftAddresses.addAll({
-          _link().address,
-          migratedProjection.unifiedAddress,
-        });
+        api.validGiftAddresses.addAll({_link().address, 'u1legacy-projection'});
 
+        api.claimWalletAddress = 'u1legacy-projection';
         expect(
           await wallet.matchesLink(
+            dbPath: 'claim-wallet.db',
             link: _link(),
             accounts: [migratedProjection],
           ),
           isTrue,
         );
+        api.claimWalletAddress = 'u1wrong-wallet';
         expect(
           await wallet.matchesLink(
+            dbPath: 'claim-wallet.db',
             link: _link(),
             accounts: [
               rust_wallet.AccountInfo(
                 uuid: 'claim-wallet',
                 birthdayHeight: 0,
                 name: 'Gift Card claim',
-                unifiedAddress: 'u1same-receiver-but-noncanonical',
                 isSeedAnchor: true,
                 isHardware: false,
               ),
@@ -833,6 +898,7 @@ void main() {
         );
         expect(
           await wallet.matchesLink(
+            dbPath: 'claim-wallet.db',
             link: _link().withResolvedMetadata(address: 'u1wrong-advertised'),
             accounts: [migratedProjection],
           ),
@@ -841,6 +907,7 @@ void main() {
         expect(
           await wallet.matchesLink(
             link: _link(),
+            dbPath: 'claim-wallet.db',
             accounts: [migratedProjection, migratedProjection],
           ),
           isFalse,
@@ -1973,6 +2040,29 @@ void main() {
     },
   );
 
+  test(
+    'an upgrade hold after the submission marker was not submitted',
+    () async {
+      final failure = StateError(_sendHoldRefusal);
+
+      await expectLater(
+        runPaymentLinkFundingSubmission<String>((markSubmissionStarted) {
+          markSubmissionStarted();
+          throw failure;
+        }),
+        throwsA(
+          isA<PaymentLinkFundingNotSubmittedException>()
+              .having((error) => error.error, 'error', same(failure))
+              .having(
+                (error) => error.afterSubmissionMarker,
+                'afterSubmissionMarker',
+                isTrue,
+              ),
+        ),
+      );
+    },
+  );
+
   test('a funding whose broadcast result is lost stays recoverable', () async {
     final storage = _FakePaymentLinkRecoveryStorage();
     final store = PaymentLinkRecoveryStore(storage);
@@ -2030,6 +2120,36 @@ void main() {
     },
   );
 
+  test(
+    'a funding Rust refused for the upgrade after its marker leaves nothing',
+    () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final failure = StateError(_sendHoldRefusal);
+
+      // The composition `createFundedLink` uses, with the refusal Rust raises
+      // before building the transaction.
+      await expectLater(
+        PaymentLinkFundingRecovery(store).fund<String>(
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          link: _link(),
+          sourceAccountUuid: 'source-account',
+          currentChainHeight: () async => 3456800,
+          createTransaction: (markSubmissionStarted) =>
+              runPaymentLinkFundingSubmission((markLocalSubmission) async {
+                await markSubmissionStarted();
+                markLocalSubmission();
+                throw failure;
+              }),
+          fundingTxids: (txid) => txid,
+        ),
+        throwsA(same(failure)),
+      );
+
+      expect(await PaymentLinkRecoveryStore(storage).load(), isEmpty);
+    },
+  );
+
   test('funding covers the exact recipient amount and claim fee', () {
     final recipientAmount = BigInt.from(100000000);
 
@@ -2058,6 +2178,33 @@ void main() {
       expect(quote.totalDeductedZatoshi, BigInt.from(100025000));
     },
   );
+
+  test('NU7 funding quotes reserve 2000 per card and keep the snapshot', () {
+    final reserve = BigInt.from(2000);
+    expect(
+      paymentLinkFundingAmountZatoshi(
+        BigInt.from(100000000),
+        claimFeeReserveZatoshi: reserve,
+      ),
+      BigInt.from(100002000),
+    );
+    final quote = paymentLinkMaxFundingQuote(
+      sourceAccountUuid: 'a',
+      maxSpendAmountZatoshi: BigInt.from(100000000),
+      fundingFeeZatoshi: reserve,
+      claimFeeReserveZatoshi: reserve,
+    );
+    expect(quote.recipientAmountZatoshi, BigInt.from(99998000));
+    final batch = PaymentLinkBatchQuote(
+      sourceAccountUuid: 'a',
+      count: 2,
+      recipientAmountZatoshi: BigInt.from(100000),
+      fundingFeeZatoshi: BigInt.from(3000),
+      perCardClaimFeeReserveZatoshi: reserve,
+    );
+    expect(batch.claimFeeReserveZatoshi, BigInt.from(4000));
+    expect(batch.totalDeductedZatoshi, BigInt.from(207000));
+  });
 
   test('max funding quote reserves deposit and redeem fees', () {
     final quote = paymentLinkMaxFundingQuote(
@@ -2143,6 +2290,25 @@ void main() {
       0,
     );
   });
+
+  for (final reserve in [2000, 10000]) {
+    test('external card with $reserve reserve remains recognizable', () {
+      final tx = _transaction(
+        txid: 'funding',
+        txKind: 'received',
+        minedHeight: 100,
+        accountBalanceDelta: 100000 + reserve,
+      );
+      expect(
+        paymentLinkFundingConfirmationCountForClaim(
+          recipientAmountZatoshi: BigInt.from(100000),
+          transactions: [tx],
+          chainTipHeight: BigInt.from(101),
+        ),
+        2,
+      );
+    });
+  }
 
   test('claim confirmation count follows the matching funding receive', () {
     final expectedFunding = paymentLinkFundingAmountZatoshi(
@@ -3139,6 +3305,10 @@ const _legacyClaimDirectory =
     'payment_link_claim_main_'
     'df3533c3dc54740770e230053a1f1962724f8653ec41b84e4d53164d46733494';
 
+const _sendHoldRefusal =
+    "Transactions can't be sent this close to the network upgrade. "
+    'Try again after it activates.';
+
 VizorPaymentLink _link() {
   return VizorPaymentLink(
     network: 'main',
@@ -3205,8 +3375,19 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
   }
 
   int heightLookups = 0;
+  int feePolicyRate = 5000;
+  @override
+  Future<rust_sync.WalletFeePolicy> crateApiSyncGetWalletFeePolicy({
+    required String dbPath,
+    required String network,
+  }) async => rust_sync.WalletFeePolicy(
+    targetHeight: 3500001,
+    marginalFeeZatoshi: BigInt.from(feePolicyRate),
+    minimumFeeZatoshi: BigInt.from(2 * feePolicyRate),
+  );
 
   final requestedAccounts = <String>[];
+  Object? proposeBatchError;
   final validatedAddresses = <String>[];
   var lookupStarted = Completer<void>();
   Completer<String>? lookupGate;
@@ -3233,6 +3414,16 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
   final claimSyncDbPaths = <String>[];
   final validGiftAddresses = <String>{};
   int giftVariantLookups = 0;
+
+  @override
+  Future<rust_sync.ProposalResult> crateApiSyncProposePaymentLinkBatch({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String sendFlowId,
+    required List<String> addresses,
+    required BigInt amountZatoshi,
+  }) async => throw proposeBatchError ?? UnimplementedError();
 
   @override
   Future<rust_sync.SendMaxEstimateResult>
@@ -3292,7 +3483,6 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
         uuid: isClaimWallet ? 'claim-wallet' : 'receiver',
         birthdayHeight: 0,
         name: 'Test',
-        unifiedAddress: isClaimWallet ? _link().address : 'u1receiveraddress',
         isSeedAnchor: true,
         isHardware: false,
       ),
@@ -3370,6 +3560,19 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
   }
 
   @override
+  Future<List<rust_sync.TransactionInfo>>
+  crateApiSyncGetTransactionRowsForTxids({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required List<String> txidHexes,
+  }) async => (await crateApiSyncGetTransactionHistory(
+    dbPath: dbPath,
+    network: network,
+    accountUuid: accountUuid,
+  )).where((row) => txidHexes.contains(row.txidHex)).toList();
+
+  @override
   Future<List<rust_sync.TransactionInfo>> crateApiSyncGetTransactionHistory({
     required String dbPath,
     required String network,
@@ -3431,7 +3634,9 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
 
   void reset() {
     heightLookups = 0;
+    claimWalletAddress = _link().address;
     requestedAccounts.clear();
+    proposeBatchError = null;
     cancelledClaimSyncs.clear();
     validatedAddresses.clear();
     lookupStarted = Completer<void>();
@@ -3487,12 +3692,15 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
     }
   }
 
+  String claimWalletAddress = _link().address;
+
   @override
   Future<String> crateApiWalletGetUnifiedAddress({
     required String dbPath,
     required String network,
     String? accountUuid,
   }) async {
+    if (accountUuid == 'claim-wallet') return claimWalletAddress;
     requestedAccounts.add(accountUuid!);
     if (!lookupStarted.isCompleted) lookupStarted.complete();
     if (failures > 0) {

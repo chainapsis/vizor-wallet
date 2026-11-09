@@ -22,9 +22,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use zakura_pir_transparent::{FilterSource, TransparentPirHttp};
+use zakura_pir_client::transparent::{FilterSource, TransparentPirHttp};
 
-use super::super::pir::{test_transport, TransparentPirSource, DEFAULT_MAINNET_ORIGIN};
+use super::super::pir::{test_transport, TransparentPirSource, TEST_ORIGIN};
 use super::super::policy::POLICY_DRAIN;
 use super::pir::assert_private;
 use super::*;
@@ -51,7 +51,7 @@ async fn published() -> Vec<Shard> {
     let handle = tokio::runtime::Handle::current();
     let map: serde_json::Value = tokio::task::spawn_blocking(move || {
         let exit = || false;
-        let exchange = RoutedExchange::transparent(DEFAULT_MAINNET_ORIGIN, &exit, handle)
+        let exchange = RoutedExchange::transparent(TEST_ORIGIN, &exit, handle)
             .expect("the default origin is HTTPS");
         let mut http = TransparentPirHttp::new(exchange, MAP_LIMIT);
         let (mut filters, _) = http.split();
@@ -147,7 +147,7 @@ fn watched_hashes(db: &WalletDatabase, account: AccountUuid) -> BTreeSet<Vec<u8>
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires network: https://transparent-pir.valargroup.dev"]
+#[ignore = "requires network: https://wallet-pir.valargroup.dev"]
 async fn a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service() {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let _route = crate::network_privacy::test_route_policy::lock_route_policy();
@@ -241,7 +241,7 @@ async fn a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service(
     // the target, at most one each. The map may move during the run, so
     // either publication bounds it.
     let after = published().await;
-    let filter = regex::Regex::new(r"^/v1/filters/shards/([0-9]+)/filter$").unwrap();
+    let filter = regex::Regex::new(r"^/transparent/v1/filters/shards/([0-9]+)/filter$").unwrap();
     let filtered: Vec<u64> = requests
         .iter()
         .filter_map(|request| filter.captures(&request.path))
@@ -277,7 +277,7 @@ async fn a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service(
 /// VIZOR_DISCOVERY_LIVE_FLOOR=419200 cargo test --manifest-path rust/Cargo.toml -- --ignored --nocapture a_fresh_phrase_discovers
 /// ```
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires network: https://transparent-pir.valargroup.dev"]
+#[ignore = "requires network: https://wallet-pir.valargroup.dev"]
 async fn a_fresh_phrase_discovers_no_accounts_against_the_live_service() {
     use super::super::import_discovery::PrivateAccountDiscovery;
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -334,7 +334,7 @@ async fn a_fresh_phrase_discovers_no_accounts_against_the_live_service() {
     // Filters only for shards overlapping the floor through the end, at most
     // one each; the map may move during the run.
     let after = published().await;
-    let filter = regex::Regex::new(r"^/v1/filters/shards/([0-9]+)/filter$").unwrap();
+    let filter = regex::Regex::new(r"^/transparent/v1/filters/shards/([0-9]+)/filter$").unwrap();
     let filtered: Vec<u64> = requests
         .iter()
         .filter_map(|request| filter.captures(&request.path))

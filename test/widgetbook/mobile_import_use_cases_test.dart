@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screen
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets(
@@ -120,6 +121,7 @@ void main() {
 
     await tester.pumpWidget(
       const MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.dark,
           child: MobileOnboardingProgressScope(
@@ -138,6 +140,7 @@ void main() {
 
     await tester.pumpWidget(
       const MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.dark,
           child: Center(
@@ -247,7 +250,7 @@ void main() {
     expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
     expect(find.text('01'), findsOneWidget);
     expect(find.text('Next word'), findsOneWidget);
-    expect(find.text('Finish & review'), findsNothing);
+    expect(find.text('Review & finish'), findsNothing);
   });
 
   testWidgets('mobile import manual typing use case renders suggestions', (
@@ -293,7 +296,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
     expect(find.text('Accept 12, 15, 18, 21 or 24 words'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
     expect(find.text('Next word'), findsOneWidget);
     expect(find.text('12'), findsOneWidget);
     expect(find.text('Age'), findsOneWidget);
@@ -424,6 +427,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       const MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.dark,
           child: Center(
@@ -484,6 +488,7 @@ void main() {
 
       await tester.pumpWidget(
         const MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.dark,
             child: Center(
@@ -551,6 +556,7 @@ Future<void> _pumpUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.dark,
         child: Builder(builder: builder),

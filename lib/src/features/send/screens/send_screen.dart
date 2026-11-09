@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -24,8 +25,10 @@ import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/payment_request_flow_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -37,6 +40,7 @@ import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../models/send_prefill_args.dart';
+import '../models/send_scan_result.dart';
 import '../services/send_amount_conversion.dart';
 import '../services/send_flow.dart';
 import '../services/send_proving_key_warmup.dart';
@@ -445,6 +449,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
   }
 
+  /// A `zcash:` link in the field opens at once, however it got there:
+  /// nobody types one by hand, so it arrived by paste.
+  void _handleAddressEdited(String text) {
+    if (_takePaymentLink(text)) return;
+    _handleAddressChanged();
+  }
+
   void _handleAddressChanged() {
     _addressSeq++;
     _maxDebounceTimer?.cancel();
@@ -464,6 +475,53 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (!_isMaxMode) {
       _validateAmount();
     }
+  }
+
+  /// Answers a pasted `zcash:` link the way the in-app scanner answers a QR:
+  /// a request with terms opens the payment request card, and a link that
+  /// names only an address leaves that address in the field. Returns false
+  /// when [raw] is not a link this can answer, so the field keeps it.
+  bool _takePaymentLink(String raw) {
+    switch (resolvePastedPaymentLink(raw)) {
+      case SendScanPaymentRequest(:final prefill):
+        _openPaymentRequest(prefill);
+      case SendScanAddress(:final address, :final downgrade):
+        final recipient = address.trim();
+        if (recipient.isEmpty) return false;
+        _addressController.value = TextEditingValue(
+          text: recipient,
+          selection: TextSelection.collapsed(offset: recipient.length),
+        );
+        _handleAddressChanged();
+        final message = sendScanDowngradeMessage(
+          context.l10n,
+          downgrade,
+          pasted: true,
+        );
+        if (message != null) {
+          showAppToast(
+            context,
+            message,
+            iconName: AppIcons.warning,
+            tone: AppToastTone.destructive,
+          );
+        }
+      case null:
+        return false;
+    }
+    return true;
+  }
+
+  /// Hands a pasted link's request to the payment request card, which treats
+  /// it as untrusted like any link — the clipboard is another app's word for
+  /// it — but without an original QR at hand to scan.
+  void _openPaymentRequest(SendPrefillArgs prefill) {
+    _addressController.clear();
+    _handleAddressChanged();
+    _addressFocusNode.unfocus();
+    ref
+        .read(paymentRequestFlowProvider.notifier)
+        .present(prefill, source: PaymentRequestSource.pastedLink);
   }
 
   void _handleAmountChanged() {
@@ -627,14 +685,21 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   BigInt get _availableBalanceForCurrentAddress =>
       widget.displaySpendableBalance;
-  String get _insufficientBalanceText =>
-      _isTexAddress ? 'Insufficient balance' : 'Insufficient shielded balance';
-  String get _insufficientBalanceToCoverFeeText =>
-      '$_insufficientBalanceText to cover fee';
-  String get _insufficientBalanceIncludingFeeText =>
-      '$_insufficientBalanceText including fee';
-  String _insufficientBalanceWithFeeText(String feeText) =>
-      '$_insufficientBalanceText (fee: $feeText)';
+  String get _insufficientBalanceText => _isTexAddress
+      ? context.l10n.sendInsufficientBalanceTex
+      : context.l10n.sendInsufficientBalanceShielded;
+  String get _insufficientBalanceToCoverFeeText => _isTexAddress
+      ? context.l10n.sendInsufficientBalanceToCoverFeeTex
+      : context.l10n.sendInsufficientBalanceToCoverFeeShielded;
+  String get _insufficientBalanceIncludingFeeText => _isTexAddress
+      ? context.l10n.sendInsufficientBalanceIncludingFeeTex
+      : context.l10n.sendInsufficientBalanceIncludingFeeShielded;
+  String _insufficientBalanceWithFeeText(String feeText) => _isTexAddress
+      ? context.l10n.sendInsufficientBalanceWithFeeTex(feeText)
+      : context.l10n.sendInsufficientBalanceWithFeeShielded(feeText);
+  String get _insufficientBalanceSentenceText => _isTexAddress
+      ? context.l10n.sendInsufficientBalanceSentenceTex
+      : context.l10n.sendInsufficientBalanceSentenceShielded;
   bool get _showAmountError =>
       _amountError != null && _amountError!.trim().isNotEmpty;
   String? get _ctaWarningText => null;
@@ -652,9 +717,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   String? get _memoError {
     final memo = _effectiveMemo;
-    if (utf8.encode(memo).length > 512) return 'Message is too long';
+    if (utf8.encode(memo).length > 512) {
+      return context.l10n.commonMessageIsTooLong;
+    }
     if (memo.isNotEmpty && !_isShieldedAddress) {
-      return 'Message is only available for shielded addresses';
+      return context.l10n.sendMemoShieldedOnly;
     }
     return null;
   }
@@ -668,7 +735,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _memoError == null &&
       (_isShieldedAddress || _effectiveMemo.isEmpty);
 
-  String get _reviewButtonLabel => 'Review';
+  String get _reviewButtonLabel => context.l10n.sendReviewAction;
 
   String? _amountConversionText({
     required BigInt? amountZatoshi,
@@ -699,8 +766,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   String? _maxEstimatePreconditionError() {
-    if (widget.activeAccountUuid == null) return 'No active account';
-    if (!_hasValidAddress) return 'Enter a valid address to use Max';
+    if (widget.activeAccountUuid == null) {
+      return context.l10n.commonNoActiveAccount;
+    }
+    if (!_hasValidAddress) return context.l10n.sendMaxNeedsAddress;
     return _memoError;
   }
 
@@ -813,7 +882,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         if (msg.contains('insufficient')) {
           _amountError = _insufficientBalanceToCoverFeeText;
         } else {
-          _amountError = 'Max amount unavailable';
+          _amountError = context.l10n.sendMaxUnavailable;
         }
       });
     } finally {
@@ -834,7 +903,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     final zatoshi = parseZecAmount(text);
     if (zatoshi == null) {
-      setState(() => _amountError = 'Invalid amount');
+      setState(() => _amountError = context.l10n.sendInvalidAmount);
       return;
     }
     if (zatoshi <= BigInt.zero) {
@@ -951,7 +1020,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
       if (_isResolvingMax) {
         setState(() {
-          _error = 'Calculating max amount';
+          _error = context.l10n.sendCalculatingMax;
           _isSending = false;
         });
         return;
@@ -959,7 +1028,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
       if (!_hasValidAddress) {
         setState(() {
-          _error = 'Enter a valid address';
+          _error = context.l10n.sendEnterValidAddress;
           _isSending = false;
         });
         return;
@@ -967,7 +1036,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
       if (amountZatoshi == null || amountZatoshi <= BigInt.zero) {
         setState(() {
-          _error = 'Invalid amount';
+          _error = context.l10n.sendInvalidAmount;
           _isSending = false;
         });
         return;
@@ -981,11 +1050,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         return;
       }
 
-      // Check balance before proposing
+      // A current native Max quote can exceed the carried display balance.
+      // Proposal creation still checks that its inputs remain spendable.
       final available = _availableBalanceForCurrentAddress;
-      if (amountZatoshi > available) {
+      if (amountZatoshi > available && !_hasCurrentMaxQuote) {
         setState(() {
-          _error = '$_insufficientBalanceText.';
+          _error = _insufficientBalanceSentenceText;
           _isSending = false;
         });
         return;
@@ -998,7 +1068,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final accountUuid = widget.activeAccountUuid;
       if (accountUuid == null) {
         setState(() {
-          _error = 'No active account';
+          _error = context.l10n.commonNoActiveAccount;
           _isSending = false;
         });
         return;
@@ -1036,7 +1106,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       log('Send: review preparation error: $e');
       if (!mounted) return;
       setState(() {
-        _error = friendlyProposeSendError(e.toString());
+        _error = friendlyProposeSendError(context.l10n, e.toString());
         _isSending = false;
       });
     } finally {
@@ -1142,8 +1212,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       // A wrong-network address is well-formed, so "Invalid address" would
       // send the user hunting for a typo that is not there.
       'invalid' =>
-        _addressWrongNetwork ? kWrongNetworkAddressMessage : 'Invalid address',
-      'error' => 'Address validation failed',
+        _addressWrongNetwork
+            ? context.l10n.sendRecipientWrongNetwork
+            : isZcashPaymentLink(_addressController.text)
+            ? context.l10n.sendRecipientUnreadableRequestLink
+            : context.l10n.sendInvalidAddress,
+      'error' => context.l10n.sendAddressValidationFailed,
       _ => matchedRecipientName,
     };
     final addressMessageIcon = switch (_addressType) {
@@ -1202,8 +1276,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                         const Center(child: CircularProgressIndicator()),
                     error: (err, _) => Center(
                       child: Text(
-                        'Something went wrong. Try again in a moment.\n\n'
-                        'Details: $err',
+                        context.l10n.sendLoadError('$err'),
                         style: AppTypography.bodyMedium.copyWith(
                           color: context.colors.text.destructive,
                         ),
@@ -1290,10 +1363,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                   },
                                   child: AppTextField(
                                     key: const ValueKey('send_address_field'),
-                                    label: 'Send to',
+                                    label: context.l10n.sendRecipientLabel,
                                     labelStyle: sendFieldLabelStyle,
                                     rightSlot: _SendContactsLabelButton(
-                                      label: 'Contacts',
+                                      label: context.l10n.commonContacts,
                                       onTap: _openContactPicker,
                                     ),
                                     tone: addressTone,
@@ -1304,7 +1377,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                         : null,
                                     focusNode: focusNode,
                                     controller: controller,
-                                    hintText: 'Zcash address',
+                                    hintText: context.l10n.sendRecipientHint,
                                     leading: AppIcon(
                                       addressLeadingIcon,
                                       size: 20,
@@ -1312,7 +1385,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                     ),
                                     messageText: addressMessage,
                                     messageIcon: addressMessageIcon,
-                                    onChanged: (_) => _handleAddressChanged(),
+                                    onChanged: _handleAddressEdited,
                                     onSubmitted: (_) => onFieldSubmitted(),
                                     keyboardType: TextInputType.text,
                                     showClearButton: true,
@@ -1344,7 +1417,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                           const SizedBox(height: _singleLineFieldGap),
                           AppTextField(
                             key: const ValueKey('send_amount_field'),
-                            label: 'Amount',
+                            label: context.l10n.commonAmount,
                             labelStyle: sendFieldLabelStyle,
                             tone: _showAmountError
                                 ? AppTextFieldTone.destructive
@@ -1428,7 +1501,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             ] else ...[
                               AppTextField(
                                 key: const ValueKey('send_memo_field'),
-                                label: 'Message',
+                                label: context.l10n.commonMessage,
                                 labelStyle: sendFieldLabelStyle,
                                 tone: _memoError != null
                                     ? AppTextFieldTone.destructive
@@ -1438,7 +1511,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                     : null,
                                 focusNode: _memoFocusNode,
                                 controller: _memoController,
-                                hintText: 'Add a message',
+                                hintText: context.l10n.commonAddAMessage,
                                 leading: AppIcon(
                                   AppIcons.scroll,
                                   size: 20,
@@ -1471,7 +1544,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                 }),
                                 showClearButton: true,
                                 clearButtonRequiresText: false,
-                                clearButtonSemanticLabel: 'Close message',
+                                clearButtonSemanticLabel:
+                                    context.l10n.commonCloseMessage,
                                 onClear: () {
                                   setState(() {
                                     _messageExpanded = false;
@@ -1513,9 +1587,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                 child: Material(
                   type: MaterialType.transparency,
                   child: AddressBookContactPickerModal(
-                    title: 'Contacts Zcash',
+                    title: context.l10n.sendContactPickerTitle,
                     networks: const [AddressBookNetwork.zcash],
-                    emptyTitle: 'No Zcash contacts',
+                    emptyTitle: context.l10n.sendContactPickerEmpty,
                     onSelected: _selectContact,
                     onCancel: _closeContactPicker,
                   ),
@@ -1601,7 +1675,7 @@ class _SendTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      'Send $kZcashDefaultCurrencyTicker',
+      context.l10n.sendTitle(kZcashDefaultCurrencyTicker),
       style: AppTypography.headlineLarge.copyWith(
         color: context.colors.text.accent,
       ),
@@ -1906,7 +1980,7 @@ String _sendContactAddressPreview(String address) {
   if (trimmed.length <= leadingLength + trailingLength + separator.length) {
     return trimmed;
   }
-  return '${trimmed.substring(0, leadingLength)}$separator'
+  return '${trimmed.substring(0, leadingLength)}$separator' // l10n-ignore: address truncation format
       '${trimmed.substring(trimmed.length - trailingLength)}';
 }
 
@@ -1930,7 +2004,7 @@ class _SendContactsLabelButtonState extends State<_SendContactsLabelButton> {
     final color = _hovered ? colors.text.accent : colors.text.secondary;
     return Semantics(
       button: true,
-      label: 'Open contacts',
+      label: context.l10n.sendOpenContacts,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => _setHovered(true),
@@ -1970,21 +2044,16 @@ class _SendMaxBalanceControl extends StatelessWidget {
     required this.onMaxPressed,
   });
 
-  static const _tooltipTitle =
-      'Your spendable balance may be lower than your total balance.';
-  static const _tooltipBody =
-      'Funds need confirmations before they can be spent: 3 for change from '
-      'your own wallet, 6 for funds received from others. Shielded notes also '
-      "need to be fully scanned. They'll become available shortly.";
-
   final String spendableText;
   final VoidCallback? onMaxPressed;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final tooltipTitle = context.l10n.sendSpendableTooltipTitle;
+    final tooltipBody = context.l10n.sendSpendableTooltipBody;
     final maxLabel = Text(
-      'Use Max',
+      context.l10n.sendUseMax,
       style: AppTypography.labelLarge.copyWith(color: colors.text.secondary),
     );
 
@@ -1993,7 +2062,7 @@ class _SendMaxBalanceControl extends StatelessWidget {
       children: [
         Semantics(
           button: true,
-          label: 'Use maximum spendable balance, $spendableText available',
+          label: context.l10n.sendUseMaxSemantics(spendableText),
           child: MouseRegion(
             cursor: onMaxPressed == null
                 ? SystemMouseCursors.basic
@@ -2010,10 +2079,10 @@ class _SendMaxBalanceControl extends StatelessWidget {
           richMessage: TextSpan(
             children: [
               TextSpan(
-                text: _tooltipTitle,
+                text: tooltipTitle,
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              const TextSpan(text: '\n\n$_tooltipBody'),
+              TextSpan(text: '\n\n$tooltipBody'),
             ],
           ),
           child: SizedBox(
@@ -2024,7 +2093,7 @@ class _SendMaxBalanceControl extends StatelessWidget {
                 AppIcons.help,
                 size: 16,
                 color: colors.icon.muted,
-                semanticLabel: 'Spendable balance info',
+                semanticLabel: context.l10n.sendSpendableInfoLabel,
               ),
             ),
           ),
@@ -2178,9 +2247,11 @@ class _SendAmountConversionRow extends StatelessWidget {
       child: Semantics(
         button: true,
         enabled: enabled,
-        label: enterUsdMode
-            ? 'Enter amount in USD'
-            : 'Enter amount in $kZcashDefaultCurrencyTicker',
+        label: context.l10n.commonEnterAmountIn(
+          enterUsdMode
+              ? 'USD' // l10n-ignore: currency code
+              : kZcashDefaultCurrencyTicker,
+        ),
         child: MouseRegion(
           cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
           child: GestureDetector(
@@ -2222,7 +2293,7 @@ class _SendAddMessageCard extends StatelessWidget {
               AppIcon(AppIcons.scroll, size: 16, color: colors.icon.accent),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                'Add a memo',
+                context.l10n.sendAddMemo,
                 style: AppTypography.labelLarge.copyWith(
                   fontWeight: FontWeight.w400,
                   color: colors.text.accent,
@@ -2232,7 +2303,7 @@ class _SendAddMessageCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Encrypted, for shielded addresses only.',
+            context.l10n.sendMemoEncryptedHint,
             style: AppTypography.labelLarge.copyWith(
               fontWeight: FontWeight.w400,
               color: colors.text.muted,

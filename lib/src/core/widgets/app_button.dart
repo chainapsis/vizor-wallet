@@ -227,6 +227,7 @@ class AppButton extends StatefulWidget {
     this.focusRingColor,
     this.disabledBackgroundColor,
     this.enabledBackgroundColor,
+    this.hoverBackgroundColor,
     this.pressedBackgroundColor,
     this.enabledLabelColor,
     this.pressedLabelColor,
@@ -236,6 +237,7 @@ class AppButton extends StatefulWidget {
     this.expand = false,
     this.constrainContent = false,
     this.decorationBuilder,
+    this.stateTransitionDuration,
   });
 
   /// Tap handler. `null` disables the button.
@@ -292,6 +294,10 @@ class AppButton extends StatefulWidget {
   /// need the shared button's interaction, focus, disabled, and semantics
   /// behavior.
   final Color? enabledBackgroundColor;
+
+  /// Optional hover-only fill. When absent, retain the historical fallback
+  /// through [pressedBackgroundColor] before the variant's hover palette.
+  final Color? hoverBackgroundColor;
   final Color? pressedBackgroundColor;
   final Color? enabledLabelColor;
   final Color? pressedLabelColor;
@@ -317,6 +323,10 @@ class AppButton extends StatefulWidget {
   /// Optional surface effects, such as a gradient and an animated inner glow.
   /// Keep the child's layout and hit target unchanged across states.
   final AppButtonDecorationBuilder? decorationBuilder;
+
+  /// Optional timing for a composed surface's color and border transitions.
+  /// Ordinary buttons retain their existing interaction timing.
+  final Duration? stateTransitionDuration;
 
   @override
   State<AppButton> createState() => _AppButtonState();
@@ -363,7 +373,9 @@ class _AppButtonState extends State<AppButton> {
         : _pressed
         ? widget.pressedBackgroundColor ?? palette.bgPressed
         : _hovered
-        ? widget.pressedBackgroundColor ?? palette.bgHover
+        ? widget.hoverBackgroundColor ??
+              widget.pressedBackgroundColor ??
+              palette.bgHover
         : widget.enabledBackgroundColor ?? palette.bg;
 
     final Color labelColor = !_enabled
@@ -440,7 +452,9 @@ class _AppButtonState extends State<AppButton> {
         minHeight: widget.growWithContent ? height : 0,
       ),
       child: AnimatedContainer(
-        duration: isGhost ? Duration.zero : const Duration(milliseconds: 120),
+        duration:
+            widget.stateTransitionDuration ??
+            (isGhost ? Duration.zero : const Duration(milliseconds: 120)),
         curve: Curves.easeOut,
         height: widget.growWithContent ? null : height,
         decoration: ShapeDecoration(

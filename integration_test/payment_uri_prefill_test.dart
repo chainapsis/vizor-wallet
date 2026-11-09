@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _accountUuid = '550e8400-e29b-41d4-a716-446655440000';
 const _address =
@@ -56,6 +57,13 @@ void main() {
     container
         .read(paymentRequestFlowProvider.notifier)
         .present(_prefill, source: PaymentRequestSource.link);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    // A link opens on a warning; the requested terms are behind its details.
+    await tester.tap(
+      find.byKey(const ValueKey('payment_request_link_details')),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
@@ -164,6 +172,7 @@ Widget _harness(GoRouter router) {
       paymentRequestPrecheckProvider.overrideWithValue(_readyPrecheck()),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(
         data: AppThemeData.light,

@@ -30,9 +30,12 @@ use crate::wallet::{
     sync, transparent_receive_cache, tree_states,
 };
 
+// Test modules reach it through `use super::*`.
+#[cfg(test)]
+use ::transparent::address::TransparentAddress;
 use {
     ::transparent::{
-        address::{Script, TransparentAddress},
+        address::Script,
         bundle::{OutPoint, TxOut},
         keys::TransparentKeyScope,
     },
@@ -57,6 +60,8 @@ pub(crate) mod gift_card_claim;
 pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
+#[cfg(test)]
+mod private_recovery_reorg_tests;
 mod retry_progress;
 #[cfg(test)]
 pub(crate) mod test_lwd;
@@ -78,9 +83,11 @@ pub(crate) use lwd::{
     transparent_lookup::TransparentLookupGate,
 };
 use lwd::{download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block};
+#[cfg(test)]
+pub(crate) use tip_cache::record_latest_block;
 pub(crate) use tip_cache::{
     get_latest_block_recorded, latest_block_for_transaction,
-    latest_block_for_transaction_with_client,
+    latest_block_for_transaction_with_client, TipRequestScope,
 };
 
 /// What a [`SyncProgressEvent`] reports.
@@ -1441,29 +1448,6 @@ async fn repair_anchor_root_mismatch_if_needed(
     )))
 }
 
-fn transparent_utxo_query_network(network: WalletNetwork) -> WalletNetwork {
-    #[cfg(ironwood_masquerade)]
-    if network == WalletNetwork::Main {
-        return WalletNetwork::Test;
-    }
-
-    network
-}
-
-fn transparent_address_for_query(
-    address: &str,
-    source_network: WalletNetwork,
-    query_network: WalletNetwork,
-) -> Result<String, String> {
-    if source_network == query_network {
-        return Ok(address.to_string());
-    }
-
-    TransparentAddress::decode(&source_network, address)
-        .map(|address| address.encode(&query_network))
-        .map_err(|e| format!("decode transparent address {address}: {e}"))
-}
-
 struct TransparentRefresh {
     addresses: Vec<String>,
     start_height: BlockHeight,
@@ -1609,18 +1593,12 @@ async fn refresh_utxos(
             TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT
         };
 
-        let query_network = transparent_utxo_query_network(network);
-        let mut external_addresses = keys::get_external_transparent_receive_addresses_from_db(
+        let external_addresses = keys::get_external_transparent_receive_addresses_from_db(
             db_data_path,
             network,
             Some(&account_uuid),
         )
         .map_err(|e| SyncError::db(format!("external transparent receive addresses: {e}")))?;
-        for address in &mut external_addresses {
-            address.address =
-                transparent_address_for_query(&address.address, network, query_network)
-                    .map_err(SyncError::parse)?;
-        }
         let external_batches = match transparent_receive_cache::plan_external_utxo_refresh(
             db_data_path,
             network,
@@ -1696,7 +1674,7 @@ async fn refresh_utxos(
                 .filter(|(_, meta)| meta.scope() == Some(TransparentKeyScope::INTERNAL))
                 .map(|(addr, meta)| {
                     meta.address_index()
-                        .map(|index| (index.index(), addr.encode(&query_network)))
+                        .map(|index| (index.index(), addr.encode(&network)))
                         .ok_or_else(|| SyncError::db("Ledger internal address has no child index"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -1737,7 +1715,7 @@ async fn refresh_utxos(
             .into_iter()
             .filter(|(_, metadata)| metadata.scope() != Some(TransparentKeyScope::EXTERNAL))
             .map(|(addr, metadata)| {
-                let query_address = addr.encode(&query_network);
+                let query_address = addr.encode(&network);
                 if metadata.scope() == Some(TransparentKeyScope::INTERNAL) {
                     internal_addresses.insert(query_address.clone());
                 }
@@ -2327,6 +2305,14 @@ fn invalidate_transparent_checks_before_rewind(db_data_path: &str) -> Result<(),
         .map_err(|error| SyncError::db(format!("invalidate UTXO checks before rewind: {error}")))
 }
 
+/// A successful reorg rewind permits one new private recovery allowance at
+/// the replacement tip. Endpoint lag and failed rewinds must not call this.
+/// Holds, service-requested waits and content-failure counters are unchanged.
+fn reset_private_recovery_after_reorg(db_data_path: &str, tip: u64) {
+    enhancement::content_failures::after_reorg(db_data_path, tip);
+    transparent_ledger::clear_recovery_tip(db_data_path);
+}
+
 fn truncate_wallet_to_height(
     db_data_path: &str,
     db: &mut WalletDatabase,
@@ -2336,18 +2322,19 @@ fn truncate_wallet_to_height(
 ) -> Result<BlockHeight, SyncError> {
     invalidate_transparent_checks_before_rewind(db_data_path)?;
     with_wallet_db_write_lock(operation, || {
-        truncate_wallet_with(requested_height, fresh_tip_height, |height| {
+        truncate_wallet_with(db_data_path, requested_height, fresh_tip_height, |height| {
             ledger_discovery::truncate(db_data_path, db, height)
         })
     })
 }
 
 fn truncate_wallet_with(
+    db_data_path: &str,
     requested_height: BlockHeight,
     fresh_tip_height: BlockHeight,
     mut truncate: impl FnMut(BlockHeight) -> Result<BlockHeight, SqliteClientError>,
 ) -> Result<BlockHeight, SyncError> {
-    match truncate(requested_height) {
+    let actual_height = match truncate(requested_height) {
         Ok(height) => validate_reorg_rewind_height(height, fresh_tip_height),
         Err(SqliteClientError::RequestedRewindInvalid {
             safe_rewind_height: Some(safe_height),
@@ -2385,7 +2372,9 @@ fn truncate_wallet_with(
         Err(e) => Err(SyncError::db(format!(
             "truncate_to_height({requested_height}): {e}"
         ))),
-    }
+    }?;
+    reset_private_recovery_after_reorg(db_data_path, u64::from(u32::from(fresh_tip_height)));
+    Ok(actual_height)
 }
 
 fn validate_reorg_rewind_height(
@@ -2757,6 +2746,13 @@ pub async fn run_sync_inner(
         {
             Ok(()) => return Ok(()),
             Err(sync_err) => {
+                // A sustained slow body already consumed its transfer budget.
+                // Repeating it here would pin the caller to the same endpoint
+                // for four such budgets before Dart can choose another server.
+                // Custom endpoints still surface the error without switching.
+                if lwd::is_slow_endpoint_error(&sync_err) {
+                    return Err(sync_err.to_string());
+                }
                 // Inspect the typed error's recovery strategy before
                 // flattening to a `String` at the public boundary. Fatal
                 // variants (`Db`, `Parse`) bail out immediately with no
@@ -2963,7 +2959,7 @@ async fn run_payment_link_claim_sync_once(
                         block_height_from_u64(fresh_tip.height, "payment-link reorg tip")?;
                     let requested = confirmed_reorg_rewind_target(fresh_height)?;
                     invalidate_transparent_checks_before_rewind(db_data_path)?;
-                    truncate_wallet_with(requested, fresh_height, |height| {
+                    truncate_wallet_with(db_data_path, requested, fresh_height, |height| {
                         ledger_discovery::truncate(db_data_path, &mut db, height)
                     })?;
                     db.update_chain_tip(fresh_height).map_err(|error| {
@@ -3068,7 +3064,7 @@ async fn run_payment_link_claim_sync_once(
                 let fresh_tip =
                     block_height_from_u64(current_tip_height, "payment-link scan rewind tip")?;
                 invalidate_transparent_checks_before_rewind(db_data_path)?;
-                truncate_wallet_with(requested, fresh_tip, |height| {
+                truncate_wallet_with(db_data_path, requested, fresh_tip, |height| {
                     ledger_discovery::truncate(db_data_path, &mut db, height)
                 })?;
             }
@@ -3076,7 +3072,10 @@ async fn run_payment_link_claim_sync_once(
     }
 }
 
-/// Inner sync implementation. Called by run_sync_inner (with retry wrapper).
+/// Inner sync implementation, called by [`run_sync_inner`] with retries.
+///
+/// Erase only the progress callback so each caller shares this implementation
+/// and its downstream futures instead of monomorphizing the whole sync loop.
 async fn run_sync_impl(
     db_data_path: &str,
     lightwalletd_url: &str,
@@ -3086,7 +3085,7 @@ async fn run_sync_impl(
     desired_mode: &AtomicU8,
     active_account_target: Option<&ActiveSyncAccountTarget>,
     allow_resubmit: bool,
-    progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
+    progress_fn: &(dyn Fn(SyncProgressEvent) + Send + Sync),
     mut checking_cycle: u32,
     main_scan_complete: bool,
 ) -> Result<(), SyncError> {
@@ -3129,6 +3128,7 @@ async fn run_sync_impl(
     // 1. Connect gRPC (plain TLS via tonic + webpki roots). The lanes' public
     // transparent lookups go over the same transport with a dispatch signal,
     // so a policy transition waits only for them to be sent.
+    let tip_scope = TipRequestScope::capture();
     let transport = open_lwd_transport_with_cancel(lightwalletd_url, should_exit).await?;
     let mut client = CompactTxStreamerClient::new(transport.clone());
     let _lookup_transport =
@@ -3146,7 +3146,14 @@ async fn run_sync_impl(
     // authoritative: `WalletDb::update_chain_tip` deliberately ignores a
     // height below the maximum scanned block, so assigning the server height
     // first could later report completion above a lagging endpoint.
-    let tip_result = get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
+    let tip_result = get_latest_block_recorded(
+        &mut client,
+        lightwalletd_url,
+        network,
+        tip_scope,
+        should_exit,
+    )
+    .await;
     let Some(tip_result) = tip_rpc_result_unless_exiting(tip_result, should_exit()) else {
         log::info!("[{}] sync: exiting after initial tip fetch", elapsed());
         return Ok(());
@@ -3224,6 +3231,8 @@ async fn run_sync_impl(
 
     let mut current_tip_height: u64 = tip.height;
     log::info!("[{}] sync: chain tip = {}", elapsed(), current_tip_height);
+    // A new block lets work that failed on content count, and be asked, again.
+    enhancement::content_failures::at_tip(db_data_path, current_tip_height);
 
     // Retained send-lock expiry requires a usable target height.
     crate::wallet::sync::recover_orphaned_send_locks(db_data_path, network)
@@ -3542,8 +3551,14 @@ async fn run_sync_impl(
         // empty range from a lagging replica.
         if last_periodic_tip_refresh_attempt.elapsed() >= TIP_REFRESH_INTERVAL {
             last_periodic_tip_refresh_attempt = std::time::Instant::now();
-            let fresh_tip_result =
-                get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
+            let fresh_tip_result = get_latest_block_recorded(
+                &mut client,
+                lightwalletd_url,
+                network,
+                tip_scope,
+                should_exit,
+            )
+            .await;
             let Some(fresh_tip_result) =
                 tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
             else {
@@ -3601,6 +3616,10 @@ async fn run_sync_impl(
                                     fresh_tip.height,
                                 );
                                 current_tip_height = fresh_tip.height;
+                                enhancement::content_failures::at_tip(
+                                    db_data_path,
+                                    current_tip_height,
+                                );
                                 completion_tip_validation_required = true;
                             }
                         }
@@ -3634,6 +3653,7 @@ async fn run_sync_impl(
                                 fresh_tip.height,
                             );
                             current_tip_height = fresh_tip.height;
+                            enhancement::content_failures::at_tip(db_data_path, current_tip_height);
                             initial_total = pending_blocks;
                             prev_remaining = pending_blocks;
                             if checking_cycle > 0 && pending_blocks > 0 {
@@ -3679,8 +3699,14 @@ async fn run_sync_impl(
                     completion_tip_validation_required,
                     last_completion_tip_validation.elapsed(),
                 ) {
-                    let fresh_tip_result =
-                        get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
+                    let fresh_tip_result = get_latest_block_recorded(
+                        &mut client,
+                        lightwalletd_url,
+                        network,
+                        tip_scope,
+                        should_exit,
+                    )
+                    .await;
                     let Some(fresh_tip_result) =
                         tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
                     else {
@@ -3728,6 +3754,7 @@ async fn run_sync_impl(
                                 ))
                             })?;
                             current_tip_height = fresh_tip.height;
+                            enhancement::content_failures::at_tip(db_data_path, current_tip_height);
                             let promoted_ranges = db.suggest_scan_ranges().map_err(|e| {
                                 SyncError::db(format!(
                                     "suggest_scan_ranges after final tip advance: {e}"
@@ -3781,6 +3808,7 @@ async fn run_sync_impl(
                                 fresh_tip.height,
                             );
                             current_tip_height = fresh_tip.height;
+                            enhancement::content_failures::at_tip(db_data_path, current_tip_height);
                             initial_total = repair_pending_blocks;
                             prev_remaining = repair_pending_blocks;
                             progress_fn(begin_checking(
@@ -3884,6 +3912,7 @@ async fn run_sync_impl(
                     .await?;
                     if let ReleasedResubmission::TipAdvanced(fresh_height) = outcome {
                         current_tip_height = fresh_height;
+                        enhancement::content_failures::at_tip(db_data_path, current_tip_height);
                         let promoted_ranges = db.suggest_scan_ranges().map_err(|e| {
                             SyncError::db(format!("suggest_scan_ranges after tip promotion: {e}"))
                         })?;
@@ -4290,6 +4319,7 @@ async fn run_sync_impl(
                         current_tip_height,
                         "current lightwalletd chain tip",
                     )?;
+                    reset_private_recovery_after_reorg(db_data_path, current_tip_height);
                     let post_rewind_ranges = with_wallet_db_write_lock(
                         "sync_engine.update_chain_tip.after_rewind",
                         || -> Result<Vec<ScanRange>, SyncError> {
@@ -4457,8 +4487,14 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
-        let fresh_tip_result =
-            get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
+        let fresh_tip_result = get_latest_block_recorded(
+            &mut client,
+            lightwalletd_url,
+            network,
+            tip_scope,
+            should_exit,
+        )
+        .await;
         let Some(fresh_tip_result) = tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
         else {
             log::info!("[{}] sync: exiting after post-batch tip fetch", elapsed());
@@ -4504,6 +4540,10 @@ async fn run_sync_impl(
                         ) {
                             Ok(_) => {
                                 current_tip_height = fresh_tip.height;
+                                enhancement::content_failures::at_tip(
+                                    db_data_path,
+                                    current_tip_height,
+                                );
                                 completion_tip_validation_required = true;
                                 last_periodic_tip_refresh_attempt = std::time::Instant::now();
                             }
@@ -4548,6 +4588,7 @@ async fn run_sync_impl(
                             fresh_tip.height,
                         );
                         current_tip_height = fresh_tip.height;
+                        enhancement::content_failures::at_tip(db_data_path, current_tip_height);
                         initial_total = pending_blocks;
                         prev_remaining = pending_blocks;
                         if checking_cycle > 0 && pending_blocks > 0 {
@@ -4797,7 +4838,7 @@ async fn run_sync_impl(
             &transparent_ledger::TransparentPirSource::new(db_data_path, network),
             first,
             &should_exit,
-            progress_fn,
+            &progress_fn,
             (final_scanned_height, final_tip_height),
         )
         .await;
@@ -4814,7 +4855,7 @@ async fn run_sync_impl(
             enhancement.policy(),
             &client,
             &should_exit,
-            progress_fn,
+            &progress_fn,
             (final_scanned_height, final_tip_height),
         )
         .await;
@@ -5011,6 +5052,9 @@ async fn transparent_followup<S: transparent_ledger::RecoverySource>(
     if !runs_transparent_followup(running_mode) {
         return;
     }
+    let Some(schedule) = transparent_ledger::recovery_schedule(db_data_path, completed.1) else {
+        return;
+    };
     let private = policy.transparent_mode()
         != zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode::Public;
     if private {
@@ -5029,6 +5073,7 @@ async fn transparent_followup<S: transparent_ledger::RecoverySource>(
         policy,
         source,
         first,
+        schedule,
         std::time::Instant::now,
         should_exit,
     )
@@ -5042,6 +5087,8 @@ async fn transparent_followup<S: transparent_ledger::RecoverySource>(
             }
             return;
         }
+        // A cancelled run does not use up the block: the cancellation is the
+        // app's own, and the next sync at this tip runs again.
         Ok(transparent_ledger::RunOutcome::Exited) => {
             log::info!(
                 "[{}] sync: exiting during private transparent recovery",
@@ -5049,17 +5096,23 @@ async fn transparent_followup<S: transparent_ledger::RecoverySource>(
             );
             return;
         }
-        Ok(outcome) => log::info!(
-            "[{}] sync: private transparent recovery: {:?}",
-            elapsed(),
-            outcome
-        ),
+        Ok(outcome) => {
+            transparent_ledger::recovery_ran(db_data_path, completed.1);
+            log::info!(
+                "[{}] sync: private transparent recovery: {:?}",
+                elapsed(),
+                outcome
+            )
+        }
         // Commits applied before the failure stay durable.
-        Err(error) => log::warn!(
-            "[{}] sync: private transparent recovery failed: {}",
-            elapsed(),
-            error
-        ),
+        Err(error) => {
+            transparent_ledger::recovery_ran(db_data_path, completed.1);
+            log::warn!(
+                "[{}] sync: private transparent recovery failed: {}",
+                elapsed(),
+                error
+            )
+        }
     }
     refresh_transparent_receive_cache(db_data_path, network, completed.0);
     progress_fn(followup_updated_event(completed));
@@ -6137,7 +6190,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn first_batch_of_a_rounded_mainnet_birthday_needs_no_tree_state_request() {
         use zcash_client_backend::proto::compact_formats::{ChainMetadata, CompactBlock};
@@ -6535,10 +6587,15 @@ mod tests {
 
         let requested = confirmed_reorg_rewind_target(BlockHeight::from_u32(100)).unwrap();
         let mut rewind_calls = Vec::new();
-        let actual = truncate_wallet_with(requested, BlockHeight::from_u32(100), |height| {
-            rewind_calls.push(height);
-            Ok(height)
-        })
+        let actual = truncate_wallet_with(
+            "same-height-fork-rewind",
+            requested,
+            BlockHeight::from_u32(100),
+            |height| {
+                rewind_calls.push(height);
+                Ok(height)
+            },
+        )
         .unwrap();
         assert_eq!(actual, BlockHeight::from_u32(99));
         assert_eq!(rewind_calls, vec![BlockHeight::from_u32(99)]);
@@ -6638,7 +6695,7 @@ mod tests {
         let unsafe_checkpoint = BlockHeight::from_u32(100);
         let mut calls = Vec::new();
 
-        let result = truncate_wallet_with(requested, fresh_tip, |height| {
+        let result = truncate_wallet_with("unsafe-reorg-rewind", requested, fresh_tip, |height| {
             calls.push(height);
             Err(SqliteClientError::RequestedRewindInvalid {
                 safe_rewind_height: Some(unsafe_checkpoint),
@@ -6673,7 +6730,7 @@ mod tests {
         let safe_checkpoint = BlockHeight::from_u32(99);
         let mut calls = Vec::new();
 
-        let result = truncate_wallet_with(requested, fresh_tip, |height| {
+        let result = truncate_wallet_with("safe-reorg-rewind", requested, fresh_tip, |height| {
             calls.push(height);
             if calls.len() == 1 {
                 Err(SqliteClientError::RequestedRewindInvalid {
@@ -6884,15 +6941,24 @@ pub(crate) fn enhance_recovery_status(
 ) -> Result<crate::api::sync::EnhanceRecoveryStatus, String> {
     let mut db = open_wallet_db_readonly_with_timeout(path, network, READ_DB_BUSY_TIMEOUT)?;
     EnhancementPolicy::current(network).configure_db(&mut db);
-    recovery_status_for(&db, enhancement::phase(path))
+    recovery_status_for(&db, path, enhancement::phase(path))
 }
 
 /// Counts recovery work in a database already configured with the current
 /// enhancement policy.
+///
+/// Work that failed on content, got a reply, or was created by a reply at the
+/// current chain tip is left out: it waits for the next block (see
+/// [`enhancement::content_failures`]), so whether a recovery-only restart
+/// happens never depends on what a reply said. Expired transparent-service
+/// waits are reported separately: their public schedule permits only the
+/// accounts whose waits expired to retry at the same tip.
 fn recovery_status_for(
     db: &WalletDatabase,
+    db_path: &str,
     service_state: String,
 ) -> Result<crate::api::sync::EnhanceRecoveryStatus, String> {
+    use enhancement::content_failures;
     use zcash_client_backend::data_api::enhance_pir::EnhancePirRead;
     use zcash_client_backend::data_api::enhance_pir::TransactionEnhancementWork;
     use zcash_client_backend::data_api::status::{TransactionStatusRead, TransactionStatusWork};
@@ -6904,14 +6970,21 @@ fn recovery_status_for(
         .map_err(|e| e.to_string())?
         .into_iter()
         .filter(|work| matches!(work, TransactionStatusWork::Private(_)))
+        .filter(|work| content_failures::may_ask_status(db_path, &work.txid()))
         .count();
-    let work = zakura_pir_enhance::wallet::PreparedWork::new(
+    let work = zakura_pir_client::enhance::wallet::PreparedWork::new(
         db.transaction_enhancement_work()
             .map_err(|e| e.to_string())?
             .into_iter()
             .filter_map(|work| match work {
-                TransactionEnhancementWork::Private(work) => Some(work),
-                TransactionEnhancementWork::Public(_) => None,
+                TransactionEnhancementWork::Private(work)
+                    if content_failures::may_ask(db_path, &work) =>
+                {
+                    Some(work)
+                }
+                TransactionEnhancementWork::Private(_) | TransactionEnhancementWork::Public(_) => {
+                    None
+                }
             }),
     );
     Ok(crate::api::sync::EnhanceRecoveryStatus {
@@ -6919,6 +6992,7 @@ fn recovery_status_for(
         rediscovery: work.rediscover.len() as u32,
         suspended: work.suspended as u32,
         status: status as u32,
+        transparent_retry_due: transparent_ledger::service_retry_due(db_path),
         service_state,
     })
 }

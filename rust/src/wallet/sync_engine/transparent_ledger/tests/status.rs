@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use zakura_pir_transparent::WithdrawnCause;
+use zakura_pir_client::transparent::WithdrawnCause;
 
 use super::*;
 use crate::wallet::db::open_wallet_db_for_read_with_timeout;
@@ -135,7 +135,7 @@ async fn held_accounts_report_their_stop_reason() {
             HoldCause::LegacyDiscrepancy,
             TransparentStopReason::LegacyDiscrepancy,
         ),
-        (HoldCause::Stalled, TransparentStopReason::Stalled),
+        (HoldCause::FailedEntries, TransparentStopReason::Stalled),
     ] {
         set_hold(&wallet.path, wallet.account, cause, Instant::now());
         assert_eq!(stop(&wallet.uuid), Some(reason), "{cause:?}");
@@ -147,11 +147,21 @@ async fn held_accounts_report_their_stop_reason() {
     let ended = Instant::now()
         .checked_sub(HOLD + Duration::from_secs(1))
         .unwrap();
-    set_hold(&wallet.path, wallet.account, HoldCause::Stalled, ended);
+    set_hold(
+        &wallet.path,
+        wallet.account,
+        HoldCause::FailedEntries,
+        ended,
+    );
     assert_eq!(stop(&wallet.uuid), None);
 
     // Quarantine outranks a hold: nothing lifts it.
-    set_hold(&wallet.path, other, HoldCause::Stalled, Instant::now());
+    set_hold(
+        &wallet.path,
+        other,
+        HoldCause::FailedEntries,
+        Instant::now(),
+    );
     quarantine(&wallet.path, other);
     assert_eq!(stop(&other_uuid), Some(TransparentStopReason::Quarantined));
 
@@ -161,7 +171,7 @@ async fn held_accounts_report_their_stop_reason() {
     set_hold(
         &wallet.path,
         wallet.account,
-        HoldCause::Stalled,
+        HoldCause::FailedEntries,
         Instant::now(),
     );
     let current = balance(&wallet, &wallet.uuid);

@@ -1,3 +1,4 @@
+import '../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -12,15 +13,19 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/mobile_top_nav.dart'
     show kMobileTopNavHeight;
+import '../../../core/l10n/inline_spans.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/zcash/wallet_error_code.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart';
 import '../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanCameraErrorOverlay, MobileScanViewfinderCorners;
 import 'keystone_pczt_qr_stage.dart';
+import 'keystone_prompt_lines.dart';
 
 class MobileKeystonePcztSigningAborted implements Exception {
   const MobileKeystonePcztSigningAborted();
@@ -83,13 +88,9 @@ const _mobileKeystoneQrActionIconSize = 26.0;
 const _mobileKeystoneProgressTrackWidth = 196.0;
 const _mobileKeystoneStepOneProgress = 0.5;
 const _mobileKeystoneStepTwoProgress = 1.0;
-const _mobileKeystoneScanCaption =
-    'Scan the QR code on your Keystone to confirm';
 const _mobileKeystoneTitleTopGap = AppSpacing.s;
 const _mobileKeystoneQrPromptGap = AppSpacing.base;
 const _mobileKeystonePromptBlockHeight = 56.0;
-const _mobileKeystonePromptLineGap = 2.0;
-const _mobileKeystonePromptInlineGap = 6.0;
 const _mobileKeystoneScanProgressHold = Duration(milliseconds: 360);
 const _mobileKeystoneLightText = Color(0xFFFFFFFF);
 const _mobileKeystoneOrange = Color(0xFFF98F0E);
@@ -108,9 +109,9 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
     required this.friendlyError,
     this.failedTitle,
     this.keyPrefix = 'mobile_keystone_sign',
-    this.readingSignatureLabel = 'Reading signature...',
+    this.readingSignatureLabel,
     this.finalizingSignatureLabel,
-    this.scanCaption = _mobileKeystoneScanCaption,
+    this.scanCaption,
     this.stepOneProgress = _mobileKeystoneStepOneProgress,
     this.stepTwoProgress = _mobileKeystoneStepTwoProgress,
     this.logTag = 'MobileKeystonePcztSigningFlow',
@@ -136,9 +137,9 @@ class MobileKeystonePcztSigningFlow extends ConsumerStatefulWidget {
   final String? failedTitle;
   final String description;
   final String keyPrefix;
-  final String readingSignatureLabel;
+  final String? readingSignatureLabel;
   final String? finalizingSignatureLabel;
-  final String scanCaption;
+  final String? scanCaption;
   final double stepOneProgress;
   final double stepTwoProgress;
   final String logTag;
@@ -295,7 +296,8 @@ class _MobileKeystonePcztSigningFlowState
     if (!mounted || _stage != _SignStage.scanning) return;
     setState(() {
       _scanProgressStarted = false;
-      _scanHint = widget.readingSignatureLabel;
+      _scanHint =
+          widget.readingSignatureLabel ?? context.l10n.commonReadingSignature;
     });
 
     late final Uint8List signedPczt;
@@ -310,8 +312,7 @@ class _MobileKeystonePcztSigningFlowState
         _scanSessionResetToken++;
         _scanProgressStarted = false;
         _scanProgress = 0;
-        _scanHint =
-            'This QR code could not be decoded as a Keystone signature.';
+        _scanHint = context.l10n.commonThisQRCodeCouldNotBe;
       });
       return;
     }
@@ -327,7 +328,7 @@ class _MobileKeystonePcztSigningFlowState
       setState(() {
         _decoding = false;
         _stage = _SignStage.failed;
-        _error ??= 'Keystone signing could not be prepared.';
+        _error ??= context.l10n.commonKeystoneSigningCouldNotBePrepared;
       });
       return;
     }
@@ -363,10 +364,10 @@ class _MobileKeystonePcztSigningFlowState
 
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
-    final message = error.toString().contains('Unexpected UR type')
+    final message = isUnexpectedUrTypeError(error)
         ? widget.unexpectedUrMessage ??
-              'Open the signed transaction QR on Keystone, then scan again.'
-        : 'Keep the QR code steady and fully visible.';
+              context.l10n.commonOpenTheSignedTransactionQROn
+        : context.l10n.commonKeepQrSteady;
     if (_scanHint == message && !_scanProgressStarted) return;
     setState(() {
       _scanHint = message;
@@ -470,14 +471,17 @@ class _MobileKeystonePcztSigningFlowState
     final child = _stage == _SignStage.scanning
         ? _buildScannerPage()
         : _buildQrPage();
-    return PopScope<void>(
-      canPop: !_decoding,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _cancel();
-      },
-      child: DefaultTextStyle.merge(
-        style: const TextStyle(decoration: TextDecoration.none),
-        child: SizedBox.expand(key: _key('screen'), child: child),
+    return MobileSidebarExitScope(
+      canNavigate: !_decoding,
+      child: PopScope<void>(
+        canPop: !_decoding,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _cancel();
+        },
+        child: DefaultTextStyle.merge(
+          style: const TextStyle(decoration: TextDecoration.none),
+          child: SizedBox.expand(key: _key('screen'), child: child),
+        ),
       ),
     );
   }
@@ -487,12 +491,14 @@ class _MobileKeystonePcztSigningFlowState
     final actionEnabled = _stage == _SignStage.showQr;
     final isPreparing = _stage == _SignStage.preparing;
     final isFailed = _stage == _SignStage.failed;
-    final title = isFailed ? widget.failedTitle ?? widget.title : 'Step 1/2';
+    final title = isFailed
+        ? widget.failedTitle ?? widget.title
+        : context.l10n.commonStepOneOfTwo;
     final subtitle = isFailed
-        ? 'Try again with Keystone'
-        : 'Scan with Keystone';
+        ? context.l10n.keystoneTryAgainWithKeystone
+        : context.l10n.commonScanWithKeystone;
     final message = isPreparing
-        ? 'Loading QR code ...'
+        ? context.l10n.commonLoadingQRCode
         : isFailed
         ? _error ?? widget.friendlyError(StateError('Keystone signing failed.'))
         : null;
@@ -626,7 +632,7 @@ class _MobileKeystonePcztSigningFlowState
                     growWithContent: widget.allowQrContentScrolling,
                     onPressed: actionEnabled ? _startScanning : null,
                     trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-                    child: const Text('Next step'),
+                    child: Text(context.l10n.commonNextStep),
                   ),
                   if (widget.requestAuxiliaryActionLabel != null &&
                       widget.onRequestAuxiliaryAction != null) ...[
@@ -648,7 +654,7 @@ class _MobileKeystonePcztSigningFlowState
                       expand: true,
                       variant: AppButtonVariant.ghost,
                       onPressed: _cancel,
-                      child: const Text('Cancel'),
+                      child: Text(context.l10n.commonCancel),
                     ),
                   ],
                 ],
@@ -881,9 +887,8 @@ class _MobileKeystonePcztSigningFlowState
                 MobileScanCameraErrorOverlay(
                   controller: scanController,
                   maxWidth: viewfinderSize,
-                  permissionDeniedMessage:
-                      'Camera access is off. Allow it in Settings to scan Keystone signatures.',
-                  unavailableMessage: 'The camera is unavailable right now.',
+                  permissionDeniedMessage: context.l10n.keystoneCameraOffAllow,
+                  unavailableMessage: context.l10n.commonCameraUnavailableNow,
                   onOpenSettings: _openCameraSettings,
                 ),
               SafeArea(
@@ -901,9 +906,9 @@ class _MobileKeystonePcztSigningFlowState
                       onBack: _cancel,
                     ),
                     const SizedBox(height: _mobileKeystoneTitleTopGap),
-                    const _KeystoneSigningTitle(
-                      title: 'Step 2/2',
-                      subtitle: 'Confirm with Keystone',
+                    _KeystoneSigningTitle(
+                      title: context.l10n.commonStepTwoOfTwo,
+                      subtitle: context.l10n.commonConfirmWithKeystone,
                       titleColor: _mobileKeystoneLightText,
                       subtitleColor: _mobileKeystoneLightText,
                     ),
@@ -961,7 +966,7 @@ class _MobileKeystonePcztSigningFlowState
                 ),
                 child: _KeystoneScannerIconButton(
                   controlKey: _key('flashlight_action'),
-                  semanticLabel: 'Toggle flashlight',
+                  semanticLabel: context.l10n.commonToggleFlashlight,
                   onTap: () => unawaited(_toggleTorchIfRunning()),
                   child: const Icon(
                     Icons.flashlight_on_outlined,
@@ -983,7 +988,7 @@ class _MobileKeystonePcztSigningFlowState
                 ),
                 child: _KeystoneScannerIconButton(
                   controlKey: _key('qr_action'),
-                  semanticLabel: 'Show transaction QR',
+                  semanticLabel: context.l10n.commonShowTransactionQR,
                   onTap: _decoding ? null : _backToQr,
                   child: AppIcon(
                     AppIcons.qr,
@@ -1015,9 +1020,14 @@ class _MobileKeystonePcztSigningFlowState
   }
 
   String get _scannerCaption {
-    if (_decoding) return _scanHint ?? widget.readingSignatureLabel;
+    final l10n = context.l10n;
+    if (_decoding) {
+      return _scanHint ??
+          widget.readingSignatureLabel ??
+          l10n.commonReadingSignature;
+    }
     if (_scanHint != null) return _scanHint!;
-    return widget.scanCaption;
+    return widget.scanCaption ?? l10n.keystoneScanCaptionConfirm;
   }
 
   bool get _showScannerProgressCaption =>
@@ -1153,7 +1163,7 @@ class _KeystoneSigningTopNav extends StatelessWidget {
           Positioned(
             left: AppSpacing.s,
             child: Semantics(
-              label: 'Back',
+              label: context.l10n.commonBack,
               button: true,
               excludeSemantics: true,
               child: GestureDetector(
@@ -1279,7 +1289,7 @@ class _KeystoneScannerProgressCaption extends StatelessWidget {
       builder: (context, animatedProgress, child) {
         final percent = animatedProgress.round().clamp(0, 100);
         return _KeystoneSigningPromptText(
-          text: 'Scanning... $percent%',
+          text: context.l10n.keystoneScanProgress(percent),
           color: color,
           maxLines: maxLines,
         );
@@ -1311,6 +1321,9 @@ class _KeystoneSigningPromptText extends StatelessWidget {
   }
 }
 
+const _mobileKeystonePromptLineGap = 2.0;
+const _mobileKeystonePromptInlineGap = 6.0;
+
 class _KeystoneScanPrompt extends StatelessWidget {
   const _KeystoneScanPrompt({required this.color});
 
@@ -1319,27 +1332,12 @@ class _KeystoneScanPrompt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textStyle = AppTypography.bodyMediumStrong.copyWith(color: color);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Wrap(
-          alignment: WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: _mobileKeystonePromptInlineGap,
-          runSpacing: _mobileKeystonePromptLineGap,
-          children: [
-            Text('Tap', style: textStyle),
-            const _KeystoneScanPromptIcon(),
-            Text('on your Keystone,', style: textStyle),
-          ],
-        ),
-        const SizedBox(height: _mobileKeystonePromptLineGap),
-        Text(
-          'then scan this QR code',
-          textAlign: TextAlign.center,
-          style: textStyle,
-        ),
-      ],
+    return KeystonePromptLines(
+      text: context.l10n.commonKeystoneScanPrompt(kInlineSlot),
+      icon: const _KeystoneScanPromptIcon(),
+      style: textStyle,
+      inlineGap: _mobileKeystonePromptInlineGap,
+      lineGap: _mobileKeystonePromptLineGap,
     );
   }
 }

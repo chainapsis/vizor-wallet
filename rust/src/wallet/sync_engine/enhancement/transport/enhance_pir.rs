@@ -1,7 +1,7 @@
 //! Enhance-PIR protocol adapter.
 
 use http::Method;
-use zakura_pir_enhance::{
+use zakura_pir_client::enhance::{
     transport::{self, Transport},
     ClientError,
 };

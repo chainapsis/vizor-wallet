@@ -144,6 +144,9 @@ String? _previewPhraseValidation(List<String> words) =>
     ? null
     : 'Enter a complete secret passphrase.';
 
+MnemonicIssue? _previewPhraseIssue(List<String> words) =>
+    kMnemonicWordCounts.contains(words.length) ? null : MnemonicIssue.wordCount;
+
 class _GiftPreview extends StatefulWidget {
   const _GiftPreview({
     this.initialLocation = '/welcome',
@@ -224,7 +227,7 @@ class _GiftPreviewState extends State<_GiftPreview> {
         builder: (_, _) => _importFrame(
           MobileImportManualScreen(
             wordListOverride: _importPhrase.split(' ').toSet().toList(),
-            mnemonicValidator: _previewPhraseValidation,
+            mnemonicValidator: _previewPhraseIssue,
             screenshotStream: const Stream.empty(),
           ),
         ),
@@ -809,6 +812,13 @@ class _GiftPreviewOperations implements PaymentLinkOperations {
   final PaymentLinkReceivedStore store;
   static const claimTxid =
       '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  @override
+  Future<List<PaymentLinkRecoveryRecord>> recoverCreatedLinks() =>
+      loadCreatedLinkRecoveries();
+
+  @override
+  Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinks() async => const [];
+
   @override
   Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() async =>
       const [];

@@ -13,6 +13,7 @@ import '../src/core/widgets/app_back_link.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_pane_modal_overlay.dart';
+import '../src/features/swap/domain/near_intents_explorer.dart';
 import '../src/features/swap/models/swap_fiat_amount.dart';
 import '../src/features/swap/models/swap_activity_status_mapper.dart';
 import '../src/features/swap/models/swap_intent_presentation_mapper.dart';
@@ -27,6 +28,7 @@ import '../src/features/swap/widgets/swap_near_intents_attribution.dart';
 import '../src/features/swap/widgets/swap_review_page_content.dart';
 import '../src/features/swap/widgets/swap_slippage_modal.dart';
 import '../src/features/swap/widgets/swap_status_page_content.dart';
+import '../src/core/l10n/l10n.dart';
 
 Widget buildSwapPageFigmaNode1UseCase(BuildContext context) {
   return _SwapPageFrame(
@@ -471,6 +473,8 @@ Widget buildSwapStatusCapturedFiatUseCase(BuildContext context) {
       receiveFiatText: r'$123.45',
       payAmountText: '2.0000 ZEC',
       receiveAmountText: '123.45 USDC',
+      payLabel: 'You paid',
+      receiveLabel: 'You received',
     ),
   );
 }
@@ -498,6 +502,8 @@ Widget buildSwapStatusCompletedUseCase(BuildContext context) {
       showTabs: false,
       steps: const [],
       details: _designCompletedDetails,
+      payLabel: 'You paid',
+      receiveLabel: 'You received',
     ),
   );
 }
@@ -541,6 +547,7 @@ class _SwapFailureBranchesPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final intent = _swapFailureIntent(scenario);
     final presentation = swapActivityStatusPresentationForIntent(
+      context.l10n,
       const SwapState(
         direction: SwapDirection.externalToZec,
         amountText: '',
@@ -886,9 +893,10 @@ final _torBlockedState = SwapState(
   reviewVisible: false,
   intents: [],
   slippageBps: 50,
-  supportedAssetsError:
-      'Swap is unavailable over Tor because the service blocked this connection.\n'
-      'Turn off Tor in Settings to use swap.',
+  supportedAssetsError: SwapFailureMessage(
+    SwapFailureOperation.tokenList,
+    SwapFailureCategory.torBlocked,
+  ),
 );
 
 const _designProgressSteps = <SwapStatusStepData>[
@@ -913,6 +921,7 @@ const _designProgressSteps = <SwapStatusStepData>[
   SwapStatusStepData(
     title: 'Swap',
     state: SwapStatusStepState.pending,
+    kind: SwapStatusStepKind.swap,
     activeTitle: 'Swap...',
     lastCheckedLabel: 'Last check: 1m ago',
     description: 'The provider is executing the swap route.',
@@ -920,6 +929,7 @@ const _designProgressSteps = <SwapStatusStepData>[
   SwapStatusStepData(
     title: 'Send ZEC',
     state: SwapStatusStepState.pending,
+    kind: SwapStatusStepKind.walletDelivery,
     activeTitle: 'Send ZEC...',
     lastCheckedLabel: 'Last check: 1m ago',
     description: 'Delivering ZEC to the recipient address.',
@@ -931,29 +941,35 @@ const _designAccountProfilePictureId = 'pfp-01';
 const _designTransactionDetails = <SwapStatusDetailRowData>[
   SwapStatusDetailRowData(
     label: 'Account',
+    kind: SwapStatusDetailKind.account,
     value: 'John',
     accountProfilePictureId: _designAccountProfilePictureId,
   ),
   SwapStatusDetailRowData(
     label: 'USDC refund address',
+    kind: SwapStatusDetailKind.refundAddress,
     value: '0x123kjhc ... 4x98g20',
   ),
   SwapStatusDetailRowData(
     label: 'Deposit USDC to',
+    kind: SwapStatusDetailKind.depositAddress,
     value: '0x123kjhc ... 4x98g20',
     copyable: true,
   ),
   SwapStatusDetailRowData(
     label: 'Swap fee',
+    kind: SwapStatusDetailKind.swapFee,
     value: 'Included in shown rate',
     help: true,
   ),
   SwapStatusDetailRowData(
     label: 'Slippage tolerance',
+    kind: SwapStatusDetailKind.slippageTolerance,
     value: '0.25 USDC (0.5%)',
   ),
   SwapStatusDetailRowData(
     label: 'Guaranteed minimum',
+    kind: SwapStatusDetailKind.guaranteedMinimum,
     value: '0.249 ZEC',
     help: true,
   ),
@@ -962,48 +978,80 @@ const _designTransactionDetails = <SwapStatusDetailRowData>[
 const _designCompletedDetails = <SwapStatusDetailRowData>[
   SwapStatusDetailRowData(
     label: 'Account',
+    kind: SwapStatusDetailKind.account,
     value: 'John',
     accountProfilePictureId: _designAccountProfilePictureId,
   ),
   SwapStatusDetailRowData(
     label: 'USDC deposit to',
+    kind: SwapStatusDetailKind.depositAddress,
     value: '0x123kjhc ... 4x98g20',
     copyable: true,
   ),
-  SwapStatusDetailRowData(label: 'Total fees', value: '~0.25 USDC', help: true),
+  SwapStatusDetailRowData(
+    label: 'Total fees',
+    kind: SwapStatusDetailKind.totalFees,
+    value: '~0.25 USDC',
+    help: true,
+  ),
   SwapStatusDetailRowData(
     label: 'Realized slippage',
     value: '0.25 USDC (0.27%)',
   ),
-  SwapStatusDetailRowData(label: 'Timestamp', value: 'May 20, 2026 13:20'),
+  SwapStatusDetailRowData(
+    label: 'Timestamp',
+    kind: SwapStatusDetailKind.timestamp,
+    value: 'May 20, 2026 13:20',
+  ),
 ];
 
 const _designIncompleteDepositDetails = <SwapStatusDetailRowData>[
   SwapStatusDetailRowData(
     label: 'Account',
+    kind: SwapStatusDetailKind.account,
     value: 'John',
     accountProfilePictureId: _designAccountProfilePictureId,
   ),
-  SwapStatusDetailRowData(label: 'Missing deposit', value: '40 USDC'),
+  SwapStatusDetailRowData(
+    label: 'Missing deposit',
+    kind: SwapStatusDetailKind.missingDeposit,
+    value: '40 USDC',
+  ),
   SwapStatusDetailRowData(
     label: 'Memo',
+    kind: SwapStatusDetailKind.memo,
     value: 'memo-underpaid',
     copyable: true,
   ),
   SwapStatusDetailRowData(
     label: 'Deposit USDC to',
+    kind: SwapStatusDetailKind.depositAddress,
     value: '0x123kjhc ... 4x98g20',
     copyable: true,
   ),
-  SwapStatusDetailRowData(label: 'Required deposit', value: '100 USDC'),
-  SwapStatusDetailRowData(label: 'Detected deposit', value: '60 USDC'),
+  SwapStatusDetailRowData(
+    label: 'Required deposit',
+    kind: SwapStatusDetailKind.requiredDeposit,
+    value: '100 USDC',
+  ),
+  SwapStatusDetailRowData(
+    label: 'Detected deposit',
+    kind: SwapStatusDetailKind.detectedDeposit,
+    value: '60 USDC',
+  ),
   SwapStatusDetailRowData(
     label: 'Deposit deadline',
+    kind: SwapStatusDetailKind.depositDeadline,
     value: 'May 20, 2026 13:20',
   ),
-  SwapStatusDetailRowData(label: 'Refund fee', value: '0.25 USDC'),
+  SwapStatusDetailRowData(
+    label: 'Refund fee',
+    kind: SwapStatusDetailKind.refundFee,
+    value: '0.25 USDC',
+  ),
   SwapStatusDetailRowData(
     label: 'USDC refund address',
+    kind: SwapStatusDetailKind.refundAddress,
     value: '0x123kjhc ... 4x98g20',
     copyable: true,
   ),
@@ -1208,6 +1256,8 @@ class _SwapStatusPreview extends StatefulWidget {
     this.receiveFiatText = '\$110.24',
     this.payAmountText = '999,999.99 USDC',
     this.receiveAmountText = '0.251 ZEC',
+    this.payLabel = "You're paying",
+    this.receiveLabel = "You're receiving",
   });
 
   final String title;
@@ -1224,6 +1274,8 @@ class _SwapStatusPreview extends StatefulWidget {
   final String receiveFiatText;
   final String payAmountText;
   final String receiveAmountText;
+  final String payLabel;
+  final String receiveLabel;
 
   @override
   State<_SwapStatusPreview> createState() => _SwapStatusPreviewState();
@@ -1248,6 +1300,8 @@ class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
       receiveAsset: widget.receiveAsset,
       payAmountText: widget.payAmountText,
       receiveAmountText: widget.receiveAmountText,
+      payLabel: widget.payLabel,
+      receiveLabel: widget.receiveLabel,
       payDetailText: widget.payFiatText,
       receiveDetailText: widget.receiveFiatText,
       statusLabel: widget.statusLabel,
@@ -1257,6 +1311,9 @@ class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
       steps: widget.steps,
       details: widget.details,
       showTabs: widget.showTabs,
+      explorerUri: nearIntentsExplorerTransactionUri(
+        '0x123kjhc4e984ac1832f10aa4x98g20',
+      ),
       onTabChanged: widget.showTabs
           ? (tab) {
               setState(() {

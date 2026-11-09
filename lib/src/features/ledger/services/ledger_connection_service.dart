@@ -14,10 +14,19 @@ import 'ledger_device_request.dart';
 import 'ledger_mobile_ble_service.dart';
 import 'ledger_signing_status_gate.dart';
 
-class LedgerConnectionRequiredException implements Exception {
-  const LedgerConnectionRequiredException(this.message, {this.cause});
+/// Which connection the user has to restore; screens turn it into guidance.
+enum LedgerConnectionRequiredReason { bluetooth, usb }
 
+class LedgerConnectionRequiredException implements Exception {
+  const LedgerConnectionRequiredException(
+    this.message, {
+    required this.reason,
+    this.cause,
+  });
+
+  /// English text for logs only.
   final String message;
+  final LedgerConnectionRequiredReason reason;
 
   /// The last connection error, kept so callers can classify it.
   final Object? cause;
@@ -176,11 +185,16 @@ class LedgerConnectionService {
       checkContext();
       // No automatic transport fallback, and never replay an operation.
       if (operationStarted || !_isConnectionFailure(error)) rethrow;
+      final bluetooth =
+          scope.transport == LedgerConnectionTransport.bluetooth ||
+          isLedgerMobilePlatform(platform);
       throw LedgerConnectionRequiredException(
-        scope.transport == LedgerConnectionTransport.bluetooth ||
-                isLedgerMobilePlatform(platform)
-            ? 'Turn on and unlock your Ledger, then reconnect with Bluetooth.'
-            : 'Connect and unlock your Ledger with USB, then try again.',
+        bluetooth
+            ? 'Turn on and unlock your Ledger, then reconnect with Bluetooth.' // l10n-ignore: exception text
+            : 'Connect and unlock your Ledger with USB, then try again.', // l10n-ignore: exception text
+        reason: bluetooth
+            ? LedgerConnectionRequiredReason.bluetooth
+            : LedgerConnectionRequiredReason.usb,
         cause: error,
       );
     }

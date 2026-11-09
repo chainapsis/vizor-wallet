@@ -376,6 +376,38 @@ void main() {
     expect(redeemedMetadata.amountZatoshi, BigInt.from(100000000));
   });
 
+  test(
+    'large pending index preserves claim identity and deduplicates byte orientations',
+    () {
+      final received = [
+        for (var i = 1; i <= 300; i++)
+          PaymentLinkReceivedRecord.fromLink(_link('pending-$i')).copyWith(
+            status: PaymentLinkReceivedStatus.receiving,
+            destinationAccountUuid: 'account-1',
+            claimTxids: i.toRadixString(16).padLeft(64, '0'),
+            claimSubmittedAt: DateTime.utc(2026, 10, 7),
+            claimDestinationPool: 'orchard',
+          ),
+      ];
+      final index = GiftCardActivityIndex.forAccount(
+        accountUuid: 'account-1',
+        createdRecords: [],
+        receivedRecords: received,
+      );
+      final placeholders = index.withPendingClaims([]);
+      expect(placeholders.length, received.length);
+      final firstReversed = _transaction(
+        txidHex: _reverseHexBytes(received.first.claimTxids!),
+        txKind: 'received',
+      );
+      final rows = index.withPendingClaims([firstReversed]);
+      expect(rows.length, received.length);
+      expect(rows.first, firstReversed);
+      expect(index.metadataFor(rows.first)!.stableId, 'gift-card:pending-1');
+      expect(index.withPendingClaims(rows).length, received.length);
+    },
+  );
+
   test('refreshes its completed future after lifecycle writes', () async {
     final recoveryStore = PaymentLinkRecoveryStore(_MemoryRecoveryStorage());
     final receivedStore = PaymentLinkReceivedStore(_MemoryReceivedStorage());

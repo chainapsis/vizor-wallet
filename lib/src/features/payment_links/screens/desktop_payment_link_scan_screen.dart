@@ -10,6 +10,7 @@ import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 import '../../onboarding/shared/onboarding_chrome.dart';
 import '../models/payment_link_scan_payload.dart';
 import '../widgets/desktop_gift_setup_shell.dart';
+import '../../../core/l10n/l10n.dart';
 
 class DesktopPaymentLinkScanScreen extends ConsumerStatefulWidget {
   const DesktopPaymentLinkScanScreen({
@@ -33,7 +34,7 @@ class _DesktopPaymentLinkScanScreenState
     with ExternalActionGuardHoldMixin {
   bool _finished = false;
   int _resetToken = 0;
-  String? _error;
+  PaymentLinkQrIssue? _issue;
 
   void _scan(String raw) {
     if (!mounted || _finished || ModalRoute.of(context)?.isCurrent == false) {
@@ -43,9 +44,9 @@ class _DesktopPaymentLinkScanScreenState
       final link = decodePaymentLinkQr(raw, networkName: widget.networkName);
       _finished = true;
       context.pop(link);
-    } on FormatException catch (error) {
+    } on PaymentLinkQrException catch (error) {
       setState(() {
-        _error = error.message;
+        _issue = error.issue;
         _resetToken++;
       });
     }
@@ -72,9 +73,11 @@ class _DesktopPaymentLinkScanScreenState
     scanner: KeystoneQrScannerCard.plain(
       onPlainComplete: _scan,
       scanSessionResetToken: _resetToken,
-      error: _error,
-      unavailableMessage:
-          'Connect a camera to scan the gift card QR code, or go back to paste the card link.',
+      error: switch (_issue) {
+        final issue? => paymentLinkQrIssueText(context.l10n, issue),
+        null => null,
+      },
+      unavailableMessage: context.l10n.paymentLinkScanCameraHint,
     ),
   );
 }
@@ -97,7 +100,7 @@ class DesktopPaymentLinkScanView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final backTarget = OnboardingBackTarget.callback(
-      label: 'Redeem the card',
+      label: context.l10n.paymentLinkRedeemCardStepTitle,
       onTap: onBack,
     );
     final body = LayoutBuilder(
@@ -116,7 +119,7 @@ class DesktopPaymentLinkScanView extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Scan QR Code',
+                      context.l10n.commonScanQrCode,
                       style: AppTypography.displayLarge.copyWith(
                         color: context.colors.text.accent,
                       ),
@@ -124,7 +127,7 @@ class DesktopPaymentLinkScanView extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      'Show the gift card QR code to your camera',
+                      context.l10n.paymentLinkScanShowQrToCamera,
                       style: AppTypography.bodyMedium.copyWith(
                         color: context.colors.text.primary,
                       ),

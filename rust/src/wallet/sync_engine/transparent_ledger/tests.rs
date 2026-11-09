@@ -16,7 +16,7 @@ use zcash_keys::encoding::AddressCodec as _;
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
 
-use zakura_pir_transparent::Outcome;
+use zakura_pir_client::transparent::Outcome;
 
 use super::fixture::{FixtureSource, Observed, FIXTURE_SOURCE};
 use super::*;
@@ -29,6 +29,7 @@ use crate::wallet::{
     keys::{self, HardwareSignerKind},
     network::WalletNetwork,
 };
+use zcash_client_backend::data_api::Account as _;
 
 const NETWORK: WalletNetwork = WalletNetwork::Regtest;
 /// The highest scanned block in every fixture wallet.
@@ -39,6 +40,33 @@ const VALUE: u64 = 2_000_000;
 /// pauses time advances it.
 fn now() -> Instant {
     tokio::time::Instant::now().into_std()
+}
+
+/// Direct harness runs represent a new block. Same-block service retries
+/// are exercised through the production followup gate below.
+#[allow(clippy::too_many_arguments)]
+async fn run<S: RecoverySource>(
+    db: &mut WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    policy: EnhancementPolicy,
+    source: &S,
+    first: Option<AccountUuid>,
+    clock: fn() -> Instant,
+    should_exit: &(dyn Fn() -> bool + Sync),
+) -> Result<RunOutcome, SyncError> {
+    super::run(
+        db,
+        db_path,
+        network,
+        policy,
+        source,
+        first,
+        RecoverySchedule::Block,
+        clock,
+        should_exit,
+    )
+    .await
 }
 
 fn chain_hash(height: u32, fork: u8) -> BlockHash {
@@ -171,8 +199,14 @@ fn unavailable() -> FixtureSource {
 }
 
 /// Runs recovery under `PrivateRequired` with `source` untrusted: its commits
-/// are observed, and qualify nothing, even from a trusted source.
+/// are observed, and qualify nothing, even from a trusted source. Runs as many
+/// syncs as recovery needs; see [`until_settled`].
 async fn recover(wallet: &mut Wallet, source: &FixtureSource) -> RunOutcome {
+    until_settled(wallet, source, true).await
+}
+
+/// One sync's recovery run under `PrivateRequired`, with `source` untrusted.
+async fn recover_once(wallet: &mut Wallet, source: &FixtureSource) -> RunOutcome {
     run(
         &mut wallet.db,
         &wallet.path,
@@ -185,6 +219,62 @@ async fn recover(wallet: &mut Wallet, source: &FixtureSource) -> RunOutcome {
     )
     .await
     .unwrap()
+}
+
+/// Syncs a recovery needs at most in these fixtures.
+const SETTLE_RUNS: usize = 8;
+
+/// Every account's recovery state: its watch set and its candidate recovery.
+fn recovery_state(wallet: &Wallet) -> String {
+    let accounts = wallet.db.get_account_ids().unwrap();
+    let state: Vec<_> = accounts
+        .into_iter()
+        .map(|account| {
+            (
+                wallet.db.transparent_watch_set(account).ok(),
+                wallet.db.transparent_candidate_recovery(account).ok(),
+            )
+        })
+        .collect();
+    format!("{state:?}")
+}
+
+/// Repeats one sync's run, as successive syncs do, until a run leaves every
+/// account's recovery state unchanged or [`SETTLE_RUNS`] ran: each run makes
+/// one counted pass per account, so a window that grows, or a page that
+/// continues, waits for the next run. Event counts (commits, qualified, stale
+/// retries, promotions) are summed over the runs; visit counts (accounts,
+/// skips) are the first run's. Any outcome other than `Finished` ends the
+/// repetition and is returned. `observed` runs with `source` untrusted, as
+/// [`recover`] does.
+async fn until_settled(wallet: &mut Wallet, source: &FixtureSource, observed: bool) -> RunOutcome {
+    let mut total: Option<RunStats> = None;
+    for _ in 0..SETTLE_RUNS {
+        let before = recovery_state(wallet);
+        let outcome = if observed {
+            recover_once(wallet, source).await
+        } else {
+            run_required_once(wallet, source).await
+        };
+        let stats = match outcome {
+            RunOutcome::Finished(stats) => stats,
+            other => return other,
+        };
+        total = Some(match total {
+            None => stats,
+            Some(mut sum) => {
+                sum.commits += stats.commits;
+                sum.qualified += stats.qualified;
+                sum.stale_retries += stats.stale_retries;
+                sum.promoted += stats.promoted;
+                sum
+            }
+        });
+        if recovery_state(wallet) == before {
+            break;
+        }
+    }
+    RunOutcome::Finished(total.expect("at least one run"))
 }
 
 fn required() -> EnhancementPolicy {
@@ -210,7 +300,14 @@ async fn activate(wallet: &mut Wallet) -> test_mode::ModeOverride {
     guard
 }
 
+/// Runs recovery under `PrivateRequired` from `source` as many syncs as it
+/// needs; see [`until_settled`].
 async fn run_required(wallet: &mut Wallet, source: &FixtureSource) -> RunOutcome {
+    until_settled(wallet, source, false).await
+}
+
+/// One sync's recovery run under `PrivateRequired` from `source`.
+async fn run_required_once(wallet: &mut Wallet, source: &FixtureSource) -> RunOutcome {
     run(
         &mut wallet.db,
         &wallet.path,
@@ -271,6 +368,24 @@ fn last_derived_external(wallet: &Wallet) -> u32 {
         .iter()
         .filter_map(|watched| match watched.origin {
             WatchOrigin::Derived { scope, index } if scope == TransparentKeyScope::EXTERNAL => {
+                Some(index.index())
+            }
+            _ => None,
+        })
+        .max()
+        .unwrap()
+}
+
+/// The highest external index the account watches. While it is restoring,
+/// that is the end of its fixed restore window, past its derived addresses.
+fn last_watched_external(wallet: &Wallet) -> u32 {
+    watched(wallet)
+        .iter()
+        .filter_map(|watched| match watched.origin {
+            WatchOrigin::Derived { scope, index }
+            | WatchOrigin::CandidateWindow { scope, index }
+                if scope == TransparentKeyScope::EXTERNAL =>
+            {
                 Some(index.index())
             }
             _ => None,
@@ -572,6 +687,12 @@ async fn cancellation_keeps_committed_passes() {
         .on_call(|| {})
         .on_call(move || flag.store(true, Ordering::SeqCst));
     let should_exit = || exit.load(Ordering::SeqCst);
+    // The first sync's pass leaves its first page open; the next sync is
+    // cancelled during its pass.
+    assert!(matches!(
+        recover_once(&mut wallet, &source).await,
+        RunOutcome::Finished(_)
+    ));
     let outcome = run(
         &mut wallet.db,
         &wallet.path,
@@ -744,8 +865,18 @@ async fn contradicting_the_stored_evidence_quarantines_and_skips_the_account() {
     );
 }
 
+/// Runs [`SETTLE_RUNS`] syncs' recovery from an untrusted `source` whose
+/// service asks the wallet to wait each pass, letting each wait pass before
+/// the next sync. Time must be paused.
+async fn recover_through_waits(wallet: &mut Wallet, source: &FixtureSource) {
+    for _ in 0..SETTLE_RUNS {
+        recover_once(wallet, source).await;
+        tokio::time::advance(Duration::from_secs(31)).await;
+    }
+}
+
 /// The lagging source asks to be retried after a wait each pass; paused time
-/// lets the run spend its waits at once.
+/// lets each wait pass before the next sync.
 #[tokio::test(start_paused = true)]
 async fn a_lagging_source_anchors_below_the_target() {
     let mut wallet = private_wallet();
@@ -755,7 +886,7 @@ async fn a_lagging_source_anchors_below_the_target() {
         .receive(receive(1, address, 10_000, 120))
         .receive(receive(2, address, 20_000, TIP - 2))
         .published_through(Some(TIP - 10));
-    recover(&mut wallet, &source).await;
+    recover_through_waits(&mut wallet, &source).await;
     let recovery = wallet
         .db
         .transparent_candidate_recovery(wallet.account)
@@ -769,7 +900,7 @@ async fn a_lagging_source_anchors_below_the_target() {
 
     // Catching up supersedes the lagging provisional revision.
     source.published_through(None);
-    recover(&mut wallet, &source).await;
+    recover_through_waits(&mut wallet, &source).await;
     assert_complete(&wallet, &source);
 }
 
@@ -1279,35 +1410,41 @@ async fn a_withdrawn_batch_holds_only_that_account() {
     );
 
     // The next run skips the held account without asking the source.
-    let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
+    let other_calls = source.calls_for(other);
+    let RunOutcome::Finished(stats) = run_required_once(&mut wallet, &source).await else {
         panic!("recovery finishes");
     };
     assert_eq!((stats.accounts, stats.held), (1, 1));
     assert_eq!(source.calls_for(wallet.account), 1);
-    assert_eq!(source.calls_for(other), 2);
+    assert_eq!(source.calls_for(other), other_calls + 1);
 
-    // Once the hold ends, the account is retried.
+    // Once the hold ends, the account is retried, and later syncs promote it.
     fn after_the_hold() -> Instant {
         now() + HOLD + Duration::from_secs(1)
     }
     source.withdraw(wallet.account, None);
     let asked = source.calls_for(wallet.account);
-    let outcome = run(
-        &mut wallet.db,
-        &wallet.path,
-        NETWORK,
-        required(),
-        &Observed(&source),
-        None,
-        after_the_hold,
-        &|| false,
-    )
-    .await
-    .unwrap();
-    let RunOutcome::Finished(stats) = outcome else {
-        panic!("recovery finishes");
-    };
-    assert_eq!((stats.held, stats.promoted), (0, 1));
+    let (mut held, mut promoted) = (0, 0);
+    for _ in 0..SETTLE_RUNS {
+        let outcome = run(
+            &mut wallet.db,
+            &wallet.path,
+            NETWORK,
+            required(),
+            &Observed(&source),
+            None,
+            after_the_hold,
+            &|| false,
+        )
+        .await
+        .unwrap();
+        let RunOutcome::Finished(stats) = outcome else {
+            panic!("recovery finishes");
+        };
+        held += stats.held;
+        promoted += stats.promoted;
+    }
+    assert_eq!((held, promoted), (0, 1));
     assert!(source.calls_for(wallet.account) > asked);
 }
 
@@ -1330,7 +1467,7 @@ async fn a_batch_is_acknowledged_only_after_every_commit_applies() {
         }
     });
 
-    let RunOutcome::Finished(stats) = recover(&mut wallet, &source).await else {
+    let RunOutcome::Finished(stats) = recover_once(&mut wallet, &source).await else {
         panic!("recovery finishes");
     };
     assert_eq!(stats.commits, 2);
@@ -1344,7 +1481,7 @@ async fn a_batch_is_acknowledged_only_after_every_commit_applies() {
     // A batch whose last commit is refused is not acknowledged; the commits
     // before it stay applied.
     source.replace_events(vec![], vec![]).then_invalid(true);
-    let RunOutcome::Finished(stats) = recover(&mut wallet, &source).await else {
+    let RunOutcome::Finished(stats) = recover_once(&mut wallet, &source).await else {
         panic!("recovery finishes");
     };
     assert_eq!(stats.commits, 2);
@@ -1480,26 +1617,48 @@ async fn unreconciled_retirements_acknowledge_nothing_and_hold_the_account() {
     );
 }
 
+/// A lagging publication ends the run with the service's delay: the account
+/// is skipped without a source call until the delay passes, and the next run
+/// after it asks again; once the service caught up, later runs restore
+/// authority. Nothing waits inside a run.
 #[tokio::test]
-async fn a_lagging_source_that_catches_up_within_the_cap_restores_authority() {
+async fn a_lagging_source_is_asked_again_only_after_its_delay() {
     let mut wallet = wallet();
     let _mode = activate(&mut wallet).await;
-    // Paused time lets the run spend its wait at once. Activation's drain
-    // must not see it.
+    // Paused time lets the test move the clock. Activation's drain must not
+    // see it.
     tokio::time::pause();
-    let source = Arc::new(funded_source(&wallet));
+    let source = funded_source(&wallet);
     source.published_through(Some(TIP - 10));
-    let catching_up = source.clone();
-    source.on_call(|| {}).on_call(move || {
-        catching_up.published_through(None);
-    });
 
-    let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
+    let RunOutcome::Finished(stats) = run_required_once(&mut wallet, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert_eq!(
+        source.calls(),
+        1,
+        "one pass, and no second one after waiting"
+    );
+    assert_eq!((stats.waiting, stats.promoted), (0, 0));
+
+    // The service catches up, but its delay has not passed: no request.
+    source.published_through(None);
+    tokio::time::advance(Duration::from_secs(5)).await;
+    let RunOutcome::Finished(stats) = run_required_once(&mut wallet, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert_eq!(source.calls(), 1);
+    assert_eq!((stats.accounts, stats.waiting), (0, 1));
+
+    // After the delay the account is asked again, and later syncs finish
+    // recovery.
+    tokio::time::advance(Duration::from_secs(10)).await;
+    let RunOutcome::Finished(stats) = run_required_once(&mut wallet, &source).await else {
         panic!("recovery finishes");
     };
     assert_eq!(source.calls(), 2);
-    assert_eq!(stats.publication_wait, Duration::from_secs(10));
-    assert_eq!((stats.qualified, stats.promoted), (2, 1));
+    assert_eq!(stats.waiting, 0);
+    run_required(&mut wallet, &source).await;
     let current = balance(&wallet, &wallet.uuid);
     assert_eq!(
         current.transparent_authority,
@@ -1508,12 +1667,252 @@ async fn a_lagging_source_that_catches_up_within_the_cap_restores_authority() {
     assert_eq!(current.transparent, VALUE);
 }
 
+/// A failed selected entry cannot remove a public service wait, even when
+/// another block or a reorg makes recovery eligible before it expires.
+#[tokio::test]
+async fn content_failure_preserves_service_wait_across_new_blocks_and_reorgs() {
+    for outcome in [Outcome::Behind, Outcome::Overloaded] {
+        for failed in [0, 1] {
+            let mut wallet = wallet();
+            let _mode = activate(&mut wallet).await;
+            let source = funded_source(&wallet);
+            source.next(Some(outcome));
+            source.failed_entries(zakura_pir_client::transparent::FailedEntries {
+                entries: failed,
+                held: 0,
+            });
+            followup(&mut wallet, &source, &|_| {}, (200, 200)).await;
+            assert_eq!(source.calls(), 1);
+            followup(&mut wallet, &source, &|_| {}, (200, 201)).await;
+            assert_eq!(source.calls(), 1, "the next block preserves the wait");
+            clear_recovery_tip(&wallet.path);
+            followup(&mut wallet, &source, &|_| {}, (200, 200)).await;
+            assert_eq!(source.calls(), 1, "a rewind preserves the wait");
+        }
+    }
+}
+
+/// Exercise the outer followup gate, rather than calling the account runner
+/// directly: an expired public wait must permit recovery at the same tip.
+#[tokio::test]
+async fn expired_service_wait_runs_followup_at_the_same_tip() {
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    source.published_through(Some(TIP - 1));
+    followup(&mut wallet, &source, &|_| {}, (200, 200)).await;
+    assert_eq!(source.calls(), 1);
+    source.published_through(None);
+    assert!(!service_retry_due(&wallet.path));
+    // Expire the service deadline without a wall-clock sleep.
+    set_not_before(&wallet.path, wallet.account, Instant::now(), Duration::ZERO);
+    let status =
+        crate::wallet::sync_engine::recovery_status_for(&wallet.db, &wallet.path, String::new())
+            .unwrap();
+    assert!(
+        status.transparent_retry_due,
+        "the app poll sees the expired wait"
+    );
+    followup(&mut wallet, &source, &|_| {}, (200, 200)).await;
+    assert_eq!(source.calls(), 2, "catch up before another block arrives");
+    assert!(
+        !service_retry_due(&wallet.path),
+        "the deadline was consumed"
+    );
+    followup(&mut wallet, &source, &|_| {}, (200, 200)).await;
+    assert_eq!(source.calls(), 2, "the expired deadline is consumed once");
+}
+
+#[tokio::test]
+async fn a_stale_commit_does_not_bypass_the_service_wait() {
+    let mut wallet = private_wallet();
+    let source = FixtureSource::new(main_hash);
+    source.next(Some(Outcome::Behind));
+    let path = wallet.path.clone();
+    let birthday = wallet.birthday;
+    source.on_call(move || {
+        let mut db = open_wallet_db_with_timeout(&path, NETWORK, SYNC_DB_BUSY_TIMEOUT).unwrap();
+        with_wallet_db_write_lock("test.transparent_ledger.reorg", || {
+            db.truncate_to_height(BlockHeight::from_u32(TIP - 5))
+        })
+        .unwrap();
+        scan(&path, birthday, TIP - 4, TIP, 1);
+    });
+    let outcome = run(
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        required(),
+        &source,
+        Some(wallet.account),
+        now,
+        &|| false,
+    )
+    .await
+    .unwrap();
+    let RunOutcome::Finished(stats) = outcome else {
+        panic!("recovery finishes")
+    };
+    assert_eq!(stats.stale_retries, 1);
+    assert_eq!(
+        source.calls(),
+        1,
+        "the stale commit waits instead of asking again"
+    );
+    assert!(waiting_at(&wallet.path, wallet.account, now()));
+}
+
+/// Cancellation during settlement must preserve a new service delay, while
+/// an interrupted retry with no new delay stays eligible for the next sync.
 #[tokio::test(start_paused = true)]
-async fn publication_waits_stop_at_the_cap() {
+async fn cancelling_a_service_retry_preserves_its_new_wait() {
+    struct InterruptSettlement<'a> {
+        source: &'a FixtureSource,
+        exit: &'a AtomicBool,
+        outcome: Outcome,
+    }
+    impl RecoverySource for InterruptSettlement<'_> {
+        fn trusted(&self) -> bool {
+            self.source.trusted()
+        }
+        fn recover(
+            &self,
+            request: SourceRequest<'_>,
+        ) -> impl Future<Output = Result<PassReport, SourceError>> + Send {
+            self.source.recover(request)
+        }
+        fn apply(
+            &self,
+            _account: AccountUuid,
+            _db: &mut WalletDatabase,
+            _trust: Trust,
+            _should_exit: &(dyn Fn() -> bool + Sync),
+        ) -> impl Future<Output = Result<Option<Applied>, ApplyFailure>> + Send {
+            self.exit.store(true, Ordering::SeqCst);
+            std::future::ready(Err(ApplyFailure {
+                error: zakura_pir_client::transparent::ApplyError::Interrupted,
+                stats: zakura_pir_client::transparent::ApplyStats::default(),
+                progress: zakura_pir_client::transparent::Progress {
+                    covered_through: 0,
+                    outcome: self.outcome,
+                },
+            }))
+        }
+    }
+    for (outcome, delay) in [
+        (Outcome::Behind, Some(Retry::BEHIND)),
+        (Outcome::Overloaded, Some(Retry::OVERLOADED)),
+        (Outcome::Complete, None),
+    ] {
+        let mut wallet = private_wallet();
+        let source = FixtureSource::new(main_hash);
+        source.next(Some(outcome));
+        let exit = AtomicBool::new(false);
+        let interrupted = InterruptSettlement {
+            source: &source,
+            exit: &exit,
+            outcome,
+        };
+        recovery_ran(&wallet.path, u64::from(TIP));
+        set_not_before(&wallet.path, wallet.account, now(), Duration::ZERO);
+        let result = super::run(
+            &mut wallet.db,
+            &wallet.path,
+            NETWORK,
+            required(),
+            &interrupted,
+            Some(wallet.account),
+            RecoverySchedule::ServiceWait,
+            now,
+            &|| exit.load(Ordering::SeqCst),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, RunOutcome::Exited);
+        assert_eq!(source.calls(), 1);
+        assert_eq!(
+            waiting_at(&wallet.path, wallet.account, now()),
+            delay.is_some(),
+            "cancellation cannot erase a fresh service delay"
+        );
+        if let Some(delay) = delay {
+            tokio::time::advance(delay - Duration::from_secs(1)).await;
+            assert!(waiting_at(&wallet.path, wallet.account, now()));
+            recover_once(&mut wallet, &source).await;
+            assert_eq!(source.calls(), 1, "resume respects the remaining wait");
+            tokio::time::advance(Duration::from_secs(1)).await;
+            assert!(!waiting_at(&wallet.path, wallet.account, now()));
+        }
+        // At expiry (or with no new delay), the next sync may ask again.
+        source.next(Some(Outcome::Complete));
+        recover_once(&mut wallet, &source).await;
+        assert_eq!(source.calls(), 2);
+    }
+}
+
+/// A public wait for one account cannot unlock another account's pass at
+/// the same block, even if that account still has unfinished recovery.
+#[tokio::test]
+async fn expired_service_wait_retries_only_its_account() {
     let mut wallet = private_wallet();
     let (_, other) = add_account(&wallet);
     let source = FixtureSource::new(main_hash);
-    // A capacity refusal waits thirty seconds.
+    followup(&mut wallet, &source, &|_| {}, (200, 200)).await;
+    assert_eq!(source.calls_for(wallet.account), 1);
+    assert_eq!(source.calls_for(other), 1);
+    set_not_before(&wallet.path, wallet.account, Instant::now(), Duration::ZERO);
+    followup(&mut wallet, &source, &|_| {}, (200, 200)).await;
+    assert_eq!(source.calls_for(wallet.account), 2);
+    assert_eq!(
+        source.calls_for(other),
+        1,
+        "unrelated work waits for a block"
+    );
+}
+
+/// An active account can catch up to each new block after the publication
+/// briefly trails it, recovering spend authority before the next block.
+#[tokio::test]
+async fn service_wait_catch_up_restores_current_authority() {
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    assert_eq!(
+        balance(&wallet, &wallet.uuid).transparent_authority,
+        TransparentBalanceAuthority::Current
+    );
+    for tip in TIP + 1..=TIP + 3 {
+        scan(&wallet.path, wallet.birthday, tip, tip, 0);
+        wallet
+            .db
+            .update_chain_tip(BlockHeight::from_u32(tip))
+            .unwrap();
+        source.published_through(Some(tip - 1));
+        followup(&mut wallet, &source, &|_| {}, (tip.into(), tip.into())).await;
+        assert_ne!(
+            balance(&wallet, &wallet.uuid).transparent_authority,
+            TransparentBalanceAuthority::Current
+        );
+        source.published_through(None);
+        set_not_before(&wallet.path, wallet.account, Instant::now(), Duration::ZERO);
+        followup(&mut wallet, &source, &|_| {}, (tip.into(), tip.into())).await;
+        assert_eq!(
+            balance(&wallet, &wallet.uuid).transparent_authority,
+            TransparentBalanceAuthority::Current
+        );
+    }
+}
+
+/// A capacity refusal ends each account's pass with the service's delay; the
+/// other accounts still get theirs, and no account is asked again before the
+/// delay passes.
+#[tokio::test(start_paused = true)]
+async fn a_capacity_refusal_defers_each_account_to_a_run_after_its_delay() {
+    let mut wallet = private_wallet();
+    let (_, other) = add_account(&wallet);
+    let source = FixtureSource::new(main_hash);
+    // A capacity refusal asks for thirty seconds.
     source.next(Some(Outcome::Overloaded));
 
     let outcome = run(
@@ -1531,18 +1930,22 @@ async fn publication_waits_stop_at_the_cap() {
     let RunOutcome::Finished(stats) = outcome else {
         panic!("recovery finishes");
     };
-    // Three waits reach the cap; the first account's fourth pass and the
-    // other account's only pass have none left.
-    assert_eq!(stats.publication_wait, PUBLICATION_WAIT_CAP);
-    assert_eq!(source.calls_for(wallet.account), 4);
+    assert_eq!(source.calls_for(wallet.account), 1);
     assert_eq!(source.calls_for(other), 1);
-    assert_eq!(stats.accounts, 2);
+    assert_eq!((stats.accounts, stats.waiting), (2, 0));
 
-    // The cap is per run.
     let RunOutcome::Finished(stats) = recover(&mut wallet, &source).await else {
         panic!("recovery finishes");
     };
-    assert_eq!(stats.publication_wait, PUBLICATION_WAIT_CAP);
+    assert_eq!((stats.accounts, stats.waiting), (0, 2));
+    assert_eq!(source.calls(), 2);
+
+    tokio::time::advance(Duration::from_secs(31)).await;
+    let RunOutcome::Finished(stats) = recover(&mut wallet, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert_eq!((stats.accounts, stats.waiting), (2, 0));
+    assert_eq!(source.calls(), 4);
 }
 
 #[tokio::test]
@@ -1600,70 +2003,33 @@ async fn a_quarantined_or_held_account_is_skipped_without_a_source_call() {
     let (_, open) = add_account(&wallet);
     let _mode = activate(&mut wallet).await;
     quarantine(&wallet.path, wallet.account);
-    set_hold(&wallet.path, held, HoldCause::Stalled, now());
+    set_hold(&wallet.path, held, HoldCause::FailedEntries, now());
     let source = FixtureSource::new(main_hash);
     source.trust();
 
-    let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
+    let RunOutcome::Finished(stats) = run_required_once(&mut wallet, &source).await else {
         panic!("recovery finishes");
     };
     assert_eq!((stats.quarantined, stats.held, stats.accounts), (1, 1, 1));
     assert_eq!(source.order(), [open]);
 }
 
-#[tokio::test(start_paused = true)]
-async fn three_stalled_runs_hold_the_account() {
+/// A run that stalls, however often, never holds the account: it is asked
+/// again at the next sync, so a reply that failed never changes when the
+/// account is asked next.
+#[tokio::test]
+async fn stalled_runs_never_hold_the_account() {
     let mut wallet = private_wallet();
     let source = FixtureSource::new(main_hash);
     source.next(Some(Outcome::Stalled));
-    for _ in 0..STALL_RUNS_BEFORE_HOLD {
+    for run in 1..=5 {
+        let RunOutcome::Finished(stats) = recover_once(&mut wallet, &source).await else {
+            panic!("recovery finishes");
+        };
+        assert_eq!(stats.held, 0);
         assert_eq!(recovery_hold(&wallet.path, wallet.account), None);
-        recover(&mut wallet, &source).await;
+        assert_eq!(source.calls(), run);
     }
-    assert_eq!(
-        recovery_hold(&wallet.path, wallet.account),
-        Some(HoldCause::Stalled)
-    );
-    assert_eq!(source.calls(), STALL_RUNS_BEFORE_HOLD);
-    let RunOutcome::Finished(stats) = recover(&mut wallet, &source).await else {
-        panic!("recovery finishes");
-    };
-    assert_eq!(stats.held, 1);
-    assert_eq!(source.calls(), STALL_RUNS_BEFORE_HOLD);
-
-    // A completed run restarts the count.
-    let mut other = private_wallet();
-    let source = FixtureSource::new(main_hash);
-    for next in [
-        Outcome::Stalled,
-        Outcome::Stalled,
-        Outcome::Complete,
-        Outcome::Stalled,
-        Outcome::Stalled,
-    ] {
-        source.next(Some(next));
-        recover(&mut other, &source).await;
-    }
-    assert_eq!(recovery_hold(&other.path, other.account), None);
-
-    // A run that ends waiting for the service, its waits spent, does not:
-    // the stall it interrupts is still held.
-    let mut lagging = private_wallet();
-    let source = FixtureSource::new(main_hash);
-    for next in [
-        Outcome::Stalled,
-        Outcome::Overloaded,
-        Outcome::Stalled,
-        Outcome::Overloaded,
-        Outcome::Stalled,
-    ] {
-        source.next(Some(next));
-        recover(&mut lagging, &source).await;
-    }
-    assert_eq!(
-        recovery_hold(&lagging.path, lagging.account),
-        Some(HoldCause::Stalled)
-    );
 }
 
 #[tokio::test]
@@ -1705,6 +2071,43 @@ async fn a_legacy_discrepancy_holds_the_account() {
     assert_eq!(
         lifecycle(&wallet, wallet.account),
         AccountLifecycle::Candidate
+    );
+
+    let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert_eq!(stats.held, 1);
+    assert_eq!(source.calls(), 1, "the held account costs no traffic");
+}
+
+/// A pass whose directory entry reached three content failures holds the
+/// account once everything else it read has settled. The balance read
+/// reports the stop reason a stalled recovery already shows, and the held
+/// account costs no traffic.
+#[tokio::test]
+async fn a_directory_entry_failed_three_times_holds_the_account() {
+    use crate::wallet::sync::TransparentStopReason;
+    use zakura_pir_client::transparent::FailedEntries;
+
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    source.failed_entries(FailedEntries {
+        entries: 1,
+        held: 1,
+    });
+
+    let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert_eq!(stats.commits, 1, "the rest of the pass settled");
+    assert_eq!(
+        recovery_hold(&wallet.path, wallet.account),
+        Some(HoldCause::FailedEntries)
+    );
+    assert_eq!(
+        balance(&wallet, &wallet.uuid).transparent_stop,
+        Some(TransparentStopReason::Stalled)
     );
 
     let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
@@ -1953,6 +2356,123 @@ async fn ledger_public_records_before_the_birthday_still_block_private_activatio
     );
 }
 
+/// Runs the foreground recovery followup of [`SETTLE_RUNS`] syncs, one after
+/// each of the blocks that follow `completed`'s chain tip, under
+/// `PrivateRequired` from `source`.
+async fn followups(
+    wallet: &mut Wallet,
+    source: &impl RecoverySource,
+    progress: &(impl Fn(SyncProgressEvent) + Send + Sync),
+    completed: (u64, u64),
+) {
+    for block in 1..=SETTLE_RUNS as u64 {
+        followup(wallet, source, progress, (completed.0, completed.1 + block)).await;
+    }
+}
+
+/// Runs the foreground recovery followup of one sync that completed at
+/// `completed`, under `PrivateRequired` from `source`.
+async fn followup(
+    wallet: &mut Wallet,
+    source: &impl RecoverySource,
+    progress: &(impl Fn(SyncProgressEvent) + Send + Sync),
+    completed: (u64, u64),
+) {
+    crate::wallet::sync_engine::transparent_followup(
+        1,
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        required(),
+        source,
+        Some(wallet.account),
+        &|| false,
+        progress,
+        completed,
+    )
+    .await;
+}
+
+/// Recovery runs on block cadence: once after the first sync that follows a
+/// new block. A service that forges a receive at the last watched address,
+/// which grows the wallet's window, sees the wallet ask exactly when an
+/// honest one does: one pass per block, and none for a second sync at the
+/// same block (a resume, or a retry of other private work).
+///
+/// A restoring account watches a fixed window of addresses whatever the
+/// replies show, so a receive inside it grows nothing. The forged receive
+/// sits at the window's last address, the only place a reply can grow it.
+#[tokio::test]
+async fn a_forged_receive_does_not_change_when_recovery_runs() {
+    async fn calls_per_sync(forge: bool) -> (Vec<usize>, usize) {
+        let mut wallet = private_wallet();
+        let window = watched(&wallet).len();
+        let source = FixtureSource::new(main_hash);
+        if forge {
+            let last = last_watched_external(&wallet);
+            source.receive(receive(1, external(&wallet, last), 10_000, 150));
+        }
+        let progress = |_: SyncProgressEvent| {};
+        let mut calls = vec![];
+        for tip in TIP + 1..=TIP + 4 {
+            for _ in 0..2 {
+                let completed = (u64::from(TIP), u64::from(tip));
+                followup(&mut wallet, &Observed(&source), &progress, completed).await;
+                calls.push(source.calls());
+            }
+        }
+        (calls, watched(&wallet).len() - window)
+    }
+    let (honest, honest_growth) = calls_per_sync(false).await;
+    let (forged, forged_growth) = calls_per_sync(true).await;
+    assert_eq!(honest, [1, 1, 2, 2, 3, 3, 4, 4]);
+    assert_eq!(forged, honest, "the same requests at the same blocks");
+    assert_eq!(honest_growth, 0);
+    assert!(forged_growth > 0, "the forged receive grew the window");
+}
+
+/// A restore whose funds lie beyond the first window completes over the
+/// blocks that follow, with no user action.
+#[tokio::test]
+async fn a_restore_beyond_the_first_window_completes_over_blocks() {
+    let mut wallet = private_wallet();
+    let last = last_derived_external(&wallet);
+    let source = FixtureSource::new(main_hash);
+    source
+        .receive(receive(1, external(&wallet, last), 10_000, 150))
+        .receive(receive(2, external(&wallet, last + 1), 20_000, 160));
+    let progress = |_: SyncProgressEvent| {};
+    followups(
+        &mut wallet,
+        &Observed(&source),
+        &progress,
+        (u64::from(TIP), u64::from(TIP)),
+    )
+    .await;
+    assert_complete(&wallet, &source);
+}
+
+/// An app restart forgets the block the wallet last recovered at, so the
+/// first sync after it recovers at the current block, from what the library
+/// stored.
+#[tokio::test]
+async fn a_restart_recovers_once_at_the_current_block() {
+    let mut wallet = private_wallet();
+    let source = FixtureSource::new(main_hash);
+    let progress = |_: SyncProgressEvent| {};
+    let completed = (u64::from(TIP), u64::from(TIP) + 1);
+    followup(&mut wallet, &Observed(&source), &progress, completed).await;
+    followup(&mut wallet, &Observed(&source), &progress, completed).await;
+    assert_eq!(source.calls(), 1);
+
+    // The restart: the schedule lived in memory, and the wallet is reopened.
+    clear_recovery_tip(&wallet.path);
+    wallet.db = open_wallet_db_with_timeout(&wallet.path, NETWORK, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    followup(&mut wallet, &Observed(&source), &progress, completed).await;
+    followup(&mut wallet, &Observed(&source), &progress, completed).await;
+    assert_eq!(source.calls(), 2);
+}
+
 #[tokio::test]
 async fn the_followup_reports_an_update_after_recovery() {
     use crate::wallet::sync_engine::transparent_followup;
@@ -1985,13 +2505,19 @@ async fn the_followup_reports_an_update_after_recovery() {
         assert!(!event.is_syncing);
         assert_eq!((event.scanned_height, event.chain_tip_height), completed);
     }
-    // The balance the UI re-reads shows the restored authority.
+    // Each later sync's followup reports again; the balance the UI re-reads
+    // shows the restored authority.
+    followups(&mut wallet, &source, &progress, completed).await;
+    assert_eq!(events.lock().unwrap().len(), 1 + SETTLE_RUNS);
     assert_eq!(
         balance(&wallet, &wallet.uuid).transparent_authority,
         TransparentBalanceAuthority::Current
     );
 
-    // Nothing is re-reported when recovery is not enabled, or exited.
+    // Nothing is re-reported when recovery is not enabled, or exited, even
+    // at a new block.
+    let completed = (completed.0, completed.1 + 100);
+    let reported = events.lock().unwrap().len();
     let calls = source.calls();
     for (policy, exit) in [
         (policy(TransparentLedgerMode::Public), false),
@@ -2011,7 +2537,7 @@ async fn the_followup_reports_an_update_after_recovery() {
         )
         .await;
     }
-    assert_eq!(events.lock().unwrap().len(), 1);
+    assert_eq!(events.lock().unwrap().len(), reported);
     assert_eq!(source.calls(), calls);
 }
 
@@ -2086,19 +2612,7 @@ async fn the_followup_retires_a_cached_receive_address_recovery_funded() {
 
     // Recovery that finds funds there retires it.
     let funded_source = funded_source(&wallet);
-    transparent_followup(
-        1,
-        &mut wallet.db,
-        &wallet.path,
-        NETWORK,
-        required(),
-        &funded_source,
-        Some(wallet.account),
-        &|| false,
-        &progress,
-        completed,
-    )
-    .await;
+    followups(&mut wallet, &funded_source, &progress, completed).await;
     assert_eq!(
         balance(&wallet, &wallet.uuid).transparent_authority,
         TransparentBalanceAuthority::Current
@@ -2143,21 +2657,9 @@ async fn a_background_sync_skips_the_recovery_followup() {
     assert_eq!(balance(&wallet, &wallet.uuid).transparent_authority, before);
 
     // The same wallet recovers in the foreground.
-    transparent_followup(
-        1,
-        &mut wallet.db,
-        &wallet.path,
-        NETWORK,
-        required(),
-        &source,
-        Some(wallet.account),
-        &|| false,
-        &progress,
-        completed,
-    )
-    .await;
+    followups(&mut wallet, &source, &progress, completed).await;
     assert!(source.calls() > 0);
-    assert_eq!(events.lock().unwrap().len(), 1);
+    assert_eq!(events.lock().unwrap().len(), SETTLE_RUNS);
     assert_eq!(
         balance(&wallet, &wallet.uuid).transparent_authority,
         TransparentBalanceAuthority::Current

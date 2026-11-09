@@ -245,7 +245,6 @@ async fn an_explicit_off_lowers_to_public_in_every_build() {
     }
 }
 
-#[cfg(not(ironwood_masquerade))]
 #[tokio::test]
 async fn explicit_reenable_after_lowering_advances_policy_generation() {
     let (_dir, path, _db) = main_wallet();
@@ -616,10 +615,10 @@ async fn lowering_forgets_private_ledger_facts_and_their_companions() {
     assert_eq!(balance(&wallet, &wallet.uuid).transparent, VALUE);
 }
 
-/// Turning private queries off drops the wallet's holds and stall counts:
-/// each names facts or a companion the forget removed, so turning the setting
-/// back on retries the account at once, as the hint for a stopped account
-/// promises. Another wallet keeps its holds.
+/// Turning private queries off drops the wallet's holds: each names facts or
+/// a companion the forget removed, so turning the setting back on retries the
+/// account at once, as the hint for a stopped account promises. Another
+/// wallet keeps its holds.
 #[tokio::test]
 async fn lowering_clears_the_wallets_holds() {
     let (wallet, _, _) = recovered_wallet().await;
@@ -627,9 +626,6 @@ async fn lowering_clears_the_wallets_holds() {
     let held = HoldCause::Withdrawn(WithdrawnCause::Equivocation);
     set_hold(&wallet.path, wallet.account, held, Instant::now());
     set_hold(&other_path, wallet.account, held, Instant::now());
-    for _ in 1..STALL_RUNS_BEFORE_HOLD {
-        assert!(!record_stall(&wallet.path, wallet.account, Instant::now()));
-    }
 
     let lowered = set_transparent_policy(&wallet.path, NETWORK, false)
         .await
@@ -638,9 +634,6 @@ async fn lowering_clears_the_wallets_holds() {
 
     assert_eq!(recovery_hold(&wallet.path, wallet.account), None);
     assert_eq!(recovery_hold(&other_path, wallet.account), Some(held));
-    // The stall count restarted too: one more stalled run does not hold.
-    assert!(!record_stall(&wallet.path, wallet.account, Instant::now()));
-    assert_eq!(recovery_hold(&wallet.path, wallet.account), None);
     clear_holds(&other_path);
 }
 

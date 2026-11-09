@@ -184,47 +184,44 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets(
-    'macOS hides through the guarded native exit channel',
-    (tester) async {
-      const exitChannel = MethodChannel('com.zcash.wallet/desktop_exit');
-      const windowChannel = MethodChannel('window_manager');
-      final calls = <String>[];
-      final gate = Completer<void>();
-      for (final channel in [exitChannel, windowChannel]) {
-        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+  testWidgets('macOS hides through the guarded native exit channel', (
+    tester,
+  ) async {
+    const exitChannel = MethodChannel('com.zcash.wallet/desktop_exit');
+    const windowChannel = MethodChannel('window_manager');
+    final calls = <String>[];
+    final gate = Completer<void>();
+    for (final channel in [exitChannel, windowChannel]) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        calls.add('${channel.name}:${call.method}');
+        return null;
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
           channel,
-          (call) async {
-            calls.add('${channel.name}:${call.method}');
-            return null;
-          },
-        );
-        addTearDown(
-          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-            channel,
-            null,
-          ),
-        );
-      }
-      await tester.pumpWidget(
-        SigningShutdownHost(
-          desktop: true,
-          coordinator: SigningShutdownCoordinator(
-            releaseReservations: () => gate.future,
-          ),
-          child: const SizedBox(),
+          null,
         ),
       );
-      final exit = tester.binding.handleRequestAppExit();
-      await tester.pump();
-      expect(calls, contains('com.zcash.wallet/desktop_exit:hideForExit'));
-      expect(calls, isNot(contains('window_manager:hide')));
-      gate.complete();
-      expect(await exit, AppExitResponse.exit);
-      await tester.pumpWidget(const SizedBox());
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
-  );
+    }
+    await tester.pumpWidget(
+      SigningShutdownHost(
+        desktop: true,
+        coordinator: SigningShutdownCoordinator(
+          releaseReservations: () => gate.future,
+        ),
+        child: const SizedBox(),
+      ),
+    );
+    final exit = tester.binding.handleRequestAppExit();
+    await tester.pump();
+    expect(calls, contains('com.zcash.wallet/desktop_exit:hideForExit'));
+    expect(calls, isNot(contains('window_manager:hide')));
+    gate.complete();
+    expect(await exit, AppExitResponse.exit);
+    await tester.pumpWidget(const SizedBox());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
   testWidgets('backgrounding preserves signing; an exit request releases it', (
     tester,
@@ -251,4 +248,66 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   });
+
+  for (final timesOut in [false, true]) {
+    testWidgets(
+      'Linux exits once without GTK teardown (cleanup timeout: $timesOut)',
+      (tester) async {
+        const channel = MethodChannel('window_manager');
+        final methods = <String>[];
+        final exits = <int>[];
+        final errors = <Object>[];
+        final cleanup = Completer<void>();
+        var cleanups = 0;
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          (call) async {
+            methods.add(call.method);
+            return null;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            channel,
+            null,
+          ),
+        );
+        await tester.pumpWidget(
+          SigningShutdownHost(
+            desktop: true,
+            exitProcess: exits.add,
+            coordinator: SigningShutdownCoordinator(
+              releaseReservations: () {
+                cleanups++;
+                return cleanup.future;
+              },
+              onError: (error, _) => errors.add(error),
+            ),
+            child: const SizedBox(),
+          ),
+        );
+        windowManager.listeners.single.onWindowClose();
+        windowManager.listeners.single.onWindowClose();
+        final nativeExit = tester.binding.handleRequestAppExit();
+        await tester.pump(const Duration(milliseconds: 299));
+        expect(exits, isEmpty);
+        expect(cleanups, 1);
+        expect(methods, ['setPreventClose']);
+        if (timesOut) {
+          await tester.pump(const Duration(milliseconds: 1));
+          expect(errors.single, isA<TimeoutException>());
+        } else {
+          cleanup.complete();
+          await tester.pump();
+          expect(errors, isEmpty);
+        }
+        expect(await nativeExit, AppExitResponse.exit);
+        expect(exits, [0]);
+        expect(methods, ['setPreventClose']);
+        if (timesOut) cleanup.complete();
+        await tester.pumpWidget(const SizedBox());
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.linux),
+    );
+  }
 }

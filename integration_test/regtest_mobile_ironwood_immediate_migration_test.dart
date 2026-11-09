@@ -21,14 +21,7 @@ void main() {
     'broadcasts Immediate migration in the foreground and returns home',
     (tester) async {
       tolerateRenderOverflows();
-      addTearDown(() async {
-        try {
-          await postDriver('/lightwalletd/start', const {});
-        } catch (_) {
-          // The runner will reset the regtest stack after an unsuccessful run.
-        }
-        await cleanupE2eWalletState();
-      });
+      addTearDown(cleanupE2eWalletState);
       await cleanupE2eWalletState();
 
       final initialChain = await getDriver('/status');
@@ -75,17 +68,14 @@ void main() {
         description: 'Immediate migration review',
       );
 
-      logE2e('stopping lightwalletd to hold the Immediate broadcast');
-      await postDriver('/lightwalletd/stop', const {});
-      await tapWidget(
-        tester,
-        const ValueKey('mobile_ironwood_fast_acknowledgement'),
-      );
       await tapAppButton(
         tester,
         const ValueKey('mobile_ironwood_immediate_broadcast_button'),
         timeout: const Duration(minutes: 2),
       );
+      // Signing and proving keep the review loading for seconds. Stopping
+      // lightwalletd here would not hold the broadcast: the send would fail
+      // ambiguously and wait for a later sync.
       await pumpUntil(tester, () {
         final button = find.byKey(
           const ValueKey('mobile_ironwood_immediate_broadcast_button'),
@@ -99,7 +89,26 @@ void main() {
             tester.widget<AppButton>(appButton).onPressed == null;
       }, description: 'Immediate broadcast loading state');
 
-      await postDriver('/lightwalletd/start', const {});
+      // The review ends on a submitted surface whose Done returns home. A
+      // notice there means lightwalletd did not confirm the broadcast.
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_ironwood_immediate_submitted')),
+        ),
+        description: 'submitted Immediate migration',
+        timeout: const Duration(minutes: 2),
+      );
+      expect(
+        find.byKey(
+          const ValueKey('mobile_ironwood_immediate_submitted_notice'),
+        ),
+        findsNothing,
+      );
+      await tapAppButton(
+        tester,
+        const ValueKey('mobile_ironwood_immediate_done_button'),
+      );
       await waitForHome(tester);
 
       final accountUuid = await accountUuidAtOrder(0);

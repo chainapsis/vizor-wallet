@@ -12,6 +12,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../rust/api/sync.dart' show BroadcastNotice;
 import 'swap_activity_tracker.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
@@ -20,6 +21,7 @@ import 'pay_selected_asset_store.dart';
 import 'swap_composer_preferences_store.dart';
 import 'swap_provider_config.dart';
 import 'swap_zec_staging_address_service.dart';
+import '../../../providers/network_upgrade_window_provider.dart';
 
 export 'swap_provider_config.dart';
 
@@ -111,7 +113,13 @@ class SwapNotifier extends Notifier<SwapState> {
       (previous, next) {
         if (previous == next) return;
         if (previous != null) {
-          unawaited(_persistCurrentIntents(accountUuid: previous));
+          unawaited(
+            _persistCurrentIntents(accountUuid: previous).catchError((
+              Object e,
+            ) {
+              log('Swap: saving activity on account switch failed error=$e');
+            }),
+          );
           // In Pay mode the composer state carries Pay's direction/payout
           // asset, which must not overwrite the previous account's saved
           // swap composer selection.
@@ -523,7 +531,9 @@ class SwapNotifier extends Notifier<SwapState> {
 
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) {
-      state = state.copyWith(maxAmountError: 'No active account');
+      state = state.copyWith(
+        maxAmountError: const SwapNotice(SwapNoticeKind.noActiveAccount),
+      );
       return;
     }
 
@@ -553,7 +563,9 @@ class SwapNotifier extends Notifier<SwapState> {
       if (maxZatoshi <= BigInt.zero) {
         state = state.copyWith(
           maxAmountLoading: false,
-          maxAmountError: 'Insufficient shielded balance to cover fee',
+          maxAmountError: const SwapNotice(
+            SwapNoticeKind.insufficientShieldedBalanceForFee,
+          ),
         );
         return;
       }
@@ -586,9 +598,11 @@ class SwapNotifier extends Notifier<SwapState> {
       final msg = e.toString().toLowerCase();
       state = state.copyWith(
         maxAmountLoading: false,
-        maxAmountError: msg.contains('insufficient')
-            ? 'Insufficient shielded balance to cover fee'
-            : 'Max amount unavailable',
+        maxAmountError: SwapNotice(
+          msg.contains('insufficient')
+              ? SwapNoticeKind.insufficientShieldedBalanceForFee
+              : SwapNoticeKind.maxAmountUnavailable,
+        ),
       );
       log('SwapMaxAmount: estimate failed error=$e');
     }
@@ -846,8 +860,7 @@ class SwapNotifier extends Notifier<SwapState> {
       _clearReviewState();
       state = state.copyWith(
         startSubmitting: false,
-        statusError:
-            'Active account changed. Review the quote again before starting.',
+        statusError: const SwapNotice(SwapNoticeKind.activeAccountChanged),
       );
       return null;
     }
@@ -865,10 +878,18 @@ class SwapNotifier extends Notifier<SwapState> {
       log('Swap: start blocked; no active account');
       state = state.copyWith(
         startSubmitting: false,
-        statusError: 'No active account',
+        statusError: const SwapNotice(SwapNoticeKind.noActiveAccount),
       );
       return null;
     }
+    // Advances on every account switch, including a switch back.
+    final scope = _accountScopeGeneration;
+    // Whether the screen moved to other swaps since the start began: another
+    // account, or this one again while its swaps reload. The screen's list
+    // then no longer saves for this account, so the start is dropped before
+    // anything is listed, saved or sent for it.
+    bool screenMoved() =>
+        scope != _accountScopeGeneration || !_isAccountActive(accountUuid);
     final activeAccountIsHardware = ref
         .read(accountProvider.notifier)
         .isActiveAccountHardware;
@@ -876,9 +897,18 @@ class SwapNotifier extends Notifier<SwapState> {
         .read(accountProvider.notifier)
         .hardwareSignerKindForAccount(accountUuid);
     final hardwareSignerLabel = hardwareSignerKind == HardwareSignerKind.ledger
-        ? 'Ledger'
-        : 'Keystone';
+        ? 'Ledger' // l10n-ignore: device name
+        : 'Keystone'; // l10n-ignore: device name
     if (quote.direction.sendsZec) {
+      // The provider would open a swap for a deposit Rust then refuses.
+      if (ref.read(networkUpgradeWindowProvider).holdsTransactions) {
+        log('Swap: start held for the network upgrade');
+        state = state.copyWith(
+          startSubmitting: false,
+          statusError: const SwapNotice(SwapNoticeKind.networkUpgradeHold),
+        );
+        return null;
+      }
       try {
         await ref
             .read(swapDepositSenderProvider)
@@ -895,6 +925,10 @@ class SwapNotifier extends Notifier<SwapState> {
             e,
           ),
         );
+        return null;
+      }
+      if (screenMoved()) {
+        log('Swap: start dropped after an account switch');
         return null;
       }
     }
@@ -914,6 +948,12 @@ class SwapNotifier extends Notifier<SwapState> {
       );
       return null;
     }
+    // The provider swap exists but nothing was sent to it yet, and no screen
+    // shows its instructions, so leaving it unfunded is safe.
+    if (screenMoved()) {
+      log('Swap: start dropped after an account switch');
+      return null;
+    }
     var intent = swapIntentFromSnapshot(
       snapshot: snapshot,
       quote: quote,
@@ -924,9 +964,10 @@ class SwapNotifier extends Notifier<SwapState> {
       now: DateTime.now().toUtc(),
     );
     if (activeAccountIsHardware && quote.direction.sendsZec) {
-      final nextAction =
-          'Sign and send the ZEC deposit with $hardwareSignerLabel.';
-      intent = intent.copyWith(nextAction: nextAction);
+      final nextAction = hardwareSignerKind == HardwareSignerKind.ledger
+          ? SwapNextAction.signLedgerDeposit
+          : SwapNextAction.signKeystoneDeposit;
+      intent = intent.copyWith(nextAction: nextAction.name);
     }
     _quoteGeneration++;
     if (activeAccountIsHardware && quote.direction.sendsZec) {
@@ -1215,6 +1256,7 @@ class SwapNotifier extends Notifier<SwapState> {
     required String txHash,
     String? broadcastStatus,
     String? broadcastMessage,
+    List<BroadcastNotice> broadcastNotices = const [],
   }) async {
     final selected = state.intents.swapIntentById(intentId);
     final normalizedTxHash = txHash.trim();
@@ -1222,6 +1264,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final broadcastNotice = _depositBroadcastNotice(
       status: broadcastStatus,
       message: broadcastMessage,
+      notices: broadcastNotices,
     );
     final submitProviderStatus = _shouldSubmitProviderDepositStatus(
       broadcastStatus,
@@ -1236,6 +1279,7 @@ class SwapNotifier extends Notifier<SwapState> {
         txHash: normalizedTxHash,
         broadcastStatus: broadcastStatus,
         broadcastMessage: broadcastMessage,
+        broadcastNotices: broadcastNotices,
         submitProviderStatus: submitProviderStatus,
       );
       return;
@@ -1245,6 +1289,7 @@ class SwapNotifier extends Notifier<SwapState> {
       normalizedTxHash,
       broadcastStatus: broadcastStatus,
       broadcastMessage: broadcastMessage,
+      broadcastNotices: broadcastNotices,
       submitProviderStatus: submitProviderStatus,
     );
     if (broadcastNotice == null) return;
@@ -1281,6 +1326,7 @@ class SwapNotifier extends Notifier<SwapState> {
         txHash: normalizedTxHash,
         broadcastStatus: broadcast.status,
         broadcastMessage: broadcast.message,
+        broadcastNotices: broadcast.notices,
       );
       return;
     }
@@ -1288,6 +1334,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final broadcastNotice = _depositBroadcastNotice(
       status: broadcast.status,
       message: broadcast.message,
+      notices: broadcast.notices,
     );
     final submitProviderStatus = _shouldSubmitProviderDepositStatus(
       broadcast.status,
@@ -1417,6 +1464,7 @@ class SwapNotifier extends Notifier<SwapState> {
     String txHash, {
     String? broadcastStatus,
     String? broadcastMessage,
+    List<BroadcastNotice> broadcastNotices = const [],
     bool submitProviderStatus = true,
   }) async {
     if (!_isAccountActive(selected.accountUuid)) {
@@ -1426,6 +1474,7 @@ class SwapNotifier extends Notifier<SwapState> {
         txHash: txHash,
         broadcastStatus: broadcastStatus,
         broadcastMessage: broadcastMessage,
+        broadcastNotices: broadcastNotices,
         submitProviderStatus: submitProviderStatus,
       );
       return;
@@ -1442,6 +1491,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final broadcastNotice = _depositBroadcastNotice(
       status: broadcastStatus,
       message: broadcastMessage,
+      notices: broadcastNotices,
     );
     final checkpointed = swapIntentWithDepositCheckpoint(
       selected,
@@ -1485,6 +1535,7 @@ class SwapNotifier extends Notifier<SwapState> {
           snapshot: snapshot,
           broadcastStatus: broadcastStatus,
           broadcastMessage: broadcastMessage,
+          broadcastNotices: broadcastNotices,
         );
         return;
       }
@@ -1518,6 +1569,7 @@ class SwapNotifier extends Notifier<SwapState> {
           txHash: txHash,
           broadcastStatus: broadcastStatus,
           broadcastMessage: broadcastMessage,
+          broadcastNotices: broadcastNotices,
           submitProviderStatus: false,
           statusError: message,
         );
@@ -1533,8 +1585,9 @@ class SwapNotifier extends Notifier<SwapState> {
     required String txHash,
     String? broadcastStatus,
     String? broadcastMessage,
+    List<BroadcastNotice> broadcastNotices = const [],
     bool submitProviderStatus = true,
-    String? statusError,
+    SwapMessage? statusError,
   }) async {
     final storedIntents = await ref
         .read(swapActivityTrackerProvider)
@@ -1545,6 +1598,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final broadcastNotice = _depositBroadcastNotice(
       status: broadcastStatus,
       message: broadcastMessage,
+      notices: broadcastNotices,
     );
     final checkpointed = swapIntentWithDepositCheckpoint(
       intent,
@@ -1595,6 +1649,7 @@ class SwapNotifier extends Notifier<SwapState> {
     required SwapIntentSnapshot snapshot,
     String? broadcastStatus,
     String? broadcastMessage,
+    List<BroadcastNotice> broadcastNotices = const [],
   }) async {
     final storedIntents = await ref
         .read(swapActivityTrackerProvider)
@@ -1605,6 +1660,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final broadcastNotice = _depositBroadcastNotice(
       status: broadcastStatus,
       message: broadcastMessage,
+      notices: broadcastNotices,
     );
     final updated = swapIntentWithDepositSnapshot(
       intent,
@@ -1661,6 +1717,7 @@ class SwapNotifier extends Notifier<SwapState> {
         txHash: broadcast.txHash,
         broadcastStatus: broadcast.status,
         broadcastMessage: broadcast.message,
+        broadcastNotices: broadcast.notices,
         submitProviderStatus: broadcast.isCertain,
       );
       return;
@@ -1668,6 +1725,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final broadcastNotice = _depositBroadcastNotice(
       status: broadcast.status,
       message: broadcast.message,
+      notices: broadcast.notices,
     );
     final intent = state.intents.swapIntentById(intentId);
     if (intent == null) {
@@ -1675,7 +1733,7 @@ class SwapNotifier extends Notifier<SwapState> {
         depositTxHashText: broadcast.txHash,
         depositSubmitting: false,
         statusError: broadcast.isCertain
-            ? 'ZEC deposit was broadcast, but the saved swap intent was not found. Copy the transaction hash before leaving this screen.'
+            ? const SwapNotice(SwapNoticeKind.depositIntentMissing)
             : broadcastNotice,
       );
       return;
@@ -2170,9 +2228,9 @@ class SwapNotifier extends Notifier<SwapState> {
     return intent.depositAddress ?? intent.id;
   }
 
-  String _friendlyQuoteError(Object error) {
+  SwapMessage _friendlyQuoteError(Object error) {
     if (error is SwapZecStagingAddressUnavailableException) {
-      return error.toString();
+      return const SwapNotice(SwapNoticeKind.receiveAddressUnavailable);
     }
     return _providerFailureMessage(
       SwapFailureOperation.quote,
@@ -2181,7 +2239,7 @@ class SwapNotifier extends Notifier<SwapState> {
     );
   }
 
-  String _providerFailureMessage(
+  SwapMessage _providerFailureMessage(
     SwapFailureOperation operation,
     Object error, {
     SwapFailureSurface surface = SwapFailureSurface.swap,
@@ -2228,37 +2286,46 @@ class SwapNotifier extends Notifier<SwapState> {
     if (trimmed == null || trimmed.isEmpty) return;
     final switched = await ref
         .read(rpcEndpointFailoverProvider.notifier)
-        .switchToFallbackFor(trimmed, operation: 'swap deposit broadcast');
+        .switchToFallbackFor(
+          trimmed,
+          operation: 'swap deposit broadcast', // l10n-ignore: log label
+        );
     if (switched) {
       unawaited(ref.read(syncProvider.notifier).restartSync());
     }
   }
 
-  String? _depositBroadcastNotice({String? status, String? message}) {
+  /// The notice for a deposit broadcast that did not cleanly succeed. Rust's
+  /// own detail wins: as its sentences when it has [notices], otherwise as
+  /// the text it wrote.
+  SwapMessage? _depositBroadcastNotice({
+    String? status,
+    String? message,
+    List<BroadcastNotice> notices = const [],
+  }) {
     final normalizedStatus = status?.trim();
     if (normalizedStatus == null ||
         normalizedStatus.isEmpty ||
         normalizedStatus == SwapDepositBroadcastStatus.broadcasted) {
       return null;
     }
+    final described = SwapBroadcastMessage.tryFrom(notices);
+    if (described != null) return described;
     final trimmedMessage = message?.trim();
     if (trimmedMessage != null && trimmedMessage.isNotEmpty) {
-      return trimmedMessage;
+      return SwapLiteralMessage(trimmedMessage);
     }
-    if (normalizedStatus == SwapDepositBroadcastStatus.partialBroadcast) {
-      return 'Some deposit transactions may have reached the network. Check activity before trying again.';
-    }
-    if (normalizedStatus == SwapDepositBroadcastStatus.pendingBroadcast) {
-      return 'The deposit was created locally but could not be broadcast. Check activity before trying again.';
-    }
-    if (normalizedStatus == SwapDepositBroadcastStatus.broadcastUnknown) {
-      return 'The transaction may have reached the network, but confirmation timed out. Check activity before trying again.';
-    }
-    if (normalizedStatus ==
-        SwapDepositBroadcastStatus.broadcastedStorageFailed) {
-      return 'The transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.';
-    }
-    return 'The deposit status is uncertain. Check activity before trying again.';
+    return SwapNotice(switch (normalizedStatus) {
+      SwapDepositBroadcastStatus.partialBroadcast =>
+        SwapNoticeKind.broadcastPartial,
+      SwapDepositBroadcastStatus.pendingBroadcast =>
+        SwapNoticeKind.broadcastPending,
+      SwapDepositBroadcastStatus.broadcastUnknown =>
+        SwapNoticeKind.broadcastUnknown,
+      SwapDepositBroadcastStatus.broadcastedStorageFailed =>
+        SwapNoticeKind.broadcastStorageFailed,
+      _ => SwapNoticeKind.broadcastUncertain,
+    });
   }
 
   bool _shouldSubmitProviderDepositStatus(String? status) {

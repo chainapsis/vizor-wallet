@@ -1,3 +1,5 @@
+import '../../../core/l10n/l10n.dart';
+
 /// Sender observation is independent of funding/sharing and receiver claims.
 enum GiftCardUsageStatus { unknown, unused, spendDetected, used }
 
@@ -32,31 +34,48 @@ class GiftCardUsage {
   final bool cleanupPending;
   final bool cleaned;
 
-  String get label => switch (status) {
+  /// Keep the saved observation while a provider loads or has no verified
+  /// history. A missing observation is not evidence that usage changed.
+  GiftCardUsage withLatestObservation(GiftCardUsage? observation) {
+    if (observation == null ||
+        (observation.status == GiftCardUsageStatus.unknown &&
+            observation.reason == null &&
+            observation.checkedAt == null) ||
+        (status != GiftCardUsageStatus.unknown &&
+            observation.status == GiftCardUsageStatus.unknown) ||
+        (checkedAt != null &&
+            observation.checkedAt != null &&
+            observation.checkedAt!.isBefore(checkedAt!))) {
+      return this;
+    }
+    return observation;
+  }
+
+  String label(AppLocalizations l10n) => switch (status) {
     GiftCardUsageStatus.unknown =>
       reason == GiftCardUsageReason.awaitingConfirmation
-          ? 'Confirming'
-          : 'Unverified',
-    GiftCardUsageStatus.unused => 'Unused',
-    GiftCardUsageStatus.spendDetected => 'Use detected',
-    GiftCardUsageStatus.used => 'Used',
+          ? l10n.commonConfirming
+          : l10n.paymentLinkUsageUnverified,
+    GiftCardUsageStatus.unused => l10n.paymentLinkUnusedSectionLabel,
+    GiftCardUsageStatus.spendDetected => l10n.paymentLinkUsageUseDetected,
+    GiftCardUsageStatus.used => l10n.paymentLinkUsedSectionLabel,
   };
 
-  String? get explanation => status != GiftCardUsageStatus.unknown
+  String? explanation(AppLocalizations l10n) =>
+      status != GiftCardUsageStatus.unknown
       ? null
       : switch (reason) {
           GiftCardUsageReason.awaitingConfirmation =>
-            'Your link is ready to share. Usage tracking will begin once the funding transaction is confirmed.',
+            l10n.paymentLinkUsageAwaitingConfirmation,
           GiftCardUsageReason.missingFundingInfo =>
-            'The saved funding information is incomplete, so usage could not be verified.',
+            l10n.paymentLinkUsageMissingFundingInfo,
           GiftCardUsageReason.fundingNotObserved =>
-            'The funding transaction could not yet be verified in the tracking history.',
+            l10n.paymentLinkUsageFundingNotObserved,
           GiftCardUsageReason.scanIncomplete =>
-            'The tracking history has not yet reached the funding transaction.',
+            l10n.paymentLinkUsageScanIncomplete,
           GiftCardUsageReason.amountMismatch =>
-            'The observed funding amount does not match the expected card funding.',
-          null =>
-            'There is not enough information yet to verify whether this card has been used.',
+            l10n.paymentLinkUsageAmountMismatch,
+          null => l10n.paymentLinkUsageNotEnoughInfo,
         };
 
   GiftCardUsage withAccount(String uuid) => GiftCardUsage(

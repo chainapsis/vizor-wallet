@@ -35,12 +35,17 @@
 //! transaction.
 //!
 //! A run is bounded. The active account goes first and the rest follow from a
-//! rotating cursor. Each account gets at most [`LIMITS`] passes and
-//! [`ACCOUNT_BUDGET`], the run at most [`RUN_BUDGET`], and waits
-//! for a lagging publication or an overloaded service take at most
-//! [`PUBLICATION_WAIT_CAP`] in all. An account that cannot progress is held
-//! in memory for [`HOLD`] and skipped without traffic, as is a quarantined
-//! account. Software and hardware accounts recover from their stored birthday.
+//! rotating cursor. Each account gets one counted pass per run (stale commits
+//! retry from a fresh watch set at most [`LIMITS`] times) within
+//! [`ACCOUNT_BUDGET`], and the run at most [`RUN_BUDGET`]. Whatever a pass
+//! found, more work waits for the next run, which the app starts after a sync
+//! that follows a new block. A lagging publication or an overloaded service
+//! names a delay; the account is skipped without traffic until it passes,
+//! then may retry at the same block. Such a retry visits only accounts whose
+//! service waits expired, so private content cannot unlock another pass.
+//! An account that cannot progress is held in memory
+//! for [`HOLD`] and skipped without traffic, as is a quarantined account.
+//! Software and hardware accounts recover from their stored birthday.
 //!
 //! Private queries off captures `Public`, so [`run`] returns before any read
 //! or request. On supported mainnet, private queries on captures
@@ -53,21 +58,23 @@ use std::future::Future;
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-pub(crate) use zakura_pir_transparent::{
+pub(crate) use zakura_pir_client::transparent::{
     Applied, ApplyAction, ApplyFailure, BatchState, PassReport, Retry, Trust, WithdrawnCause,
 };
-use zakura_pir_transparent::{HoldCause as PlanHold, PassLimits, PassPlan, Step, StopCause};
+use zakura_pir_client::transparent::{
+    HoldCause as PlanHold, PassLimits, PassPlan, Step, StopCause,
+};
 use zcash_client_backend::data_api::{
     transparent_ledger::{
         AccountLifecycle, RecoveryBlocker, TransparentAddressWatchSet, TransparentLedgerMode,
         TransparentLedgerRead, TransparentLedgerWrite,
     },
-    Account as _, WalletRead,
+    WalletRead,
 };
 use zcash_client_sqlite::{error::SqliteClientError, AccountUuid};
 
 use super::enhancement::{may_raise, EnhancementPolicy};
-use super::{watch_for_exit, SyncError};
+use super::SyncError;
 use crate::wallet::db::{with_wallet_db_write_lock, WalletDatabase};
 use crate::wallet::network::WalletNetwork;
 
@@ -85,17 +92,10 @@ pub(crate) use policy::{
     current_transparent_policy, forget_private_ledger, set_transparent_policy,
 };
 
-/// Answered passes per account in one run, and fresh watch sets tried after
-/// stale commits. Each pass after the first needs new work: a grown window, a
-/// changed watch set, or a continuation that asks for one.
-const LIMITS: PassLimits = PassLimits {
-    passes: 8,
-    stale_refreshes: 3,
-};
-/// Time one run may wait, in all, before asking a source again about a
-/// publication that ends below the target or a service that refused for
-/// capacity.
-const PUBLICATION_WAIT_CAP: Duration = Duration::from_secs(90);
+/// Fresh watch sets tried after stale commits in one run. Each account gets
+/// one counted pass per run: a grown window, a changed watch set, or a
+/// continuation that asks for more waits for the next run.
+const LIMITS: PassLimits = PassLimits { stale_refreshes: 3 };
 /// Time one account may take in a run, waits included.
 const ACCOUNT_BUDGET: Duration = Duration::from_secs(120);
 /// Time one run may take. Accounts it does not reach wait for a later run.
@@ -105,8 +105,6 @@ const RUN_BUDGET: Duration = Duration::from_secs(180);
 const PASS_BACKSTOP: Duration = Duration::from_secs(pir::PASS_DEADLINE.as_secs() + 30);
 /// How long an account that cannot progress is skipped.
 const HOLD: Duration = Duration::from_secs(60 * 60);
-/// Stalled runs, since the account's last complete one, that hold it.
-const STALL_RUNS_BEFORE_HOLD: usize = 3;
 
 /// What a source is asked about one account.
 #[derive(Clone, Copy)]
@@ -183,8 +181,9 @@ pub(crate) struct RunStats {
     pub(crate) stale_retries: usize,
     /// Candidate accounts promoted to private authority.
     pub(crate) promoted: usize,
-    /// Time spent waiting for a lagging publication or an overloaded service.
-    pub(crate) publication_wait: Duration,
+    /// Accounts skipped without a source call because the service asked the
+    /// wallet to wait (a lagging publication or a capacity refusal).
+    pub(crate) waiting: usize,
     /// Quarantined accounts skipped.
     pub(crate) quarantined: usize,
     /// Held accounts skipped.
@@ -206,7 +205,10 @@ pub(crate) enum RunOutcome {
 
 /// Why an account is held out of recovery for [`HOLD`].
 ///
-/// Holds live in memory only, so a restart retries a held account once.
+/// Holds live in memory only, so a restart retries a held account once. Only
+/// the library's own decisions and promotion hold an account: a run that
+/// stalls, however often, is asked again at the next block, so a reply that
+/// failed never changes when the account is asked next.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HoldCause {
     /// The source withdrew a publication it had answered from.
@@ -217,9 +219,9 @@ pub(crate) enum HoldCause {
     /// Promotion found legacy public evidence the complete ledger cannot
     /// explain, which retrying does not change.
     LegacyDiscrepancy,
-    /// [`STALL_RUNS_BEFORE_HOLD`] runs ended stalled since the account's last
-    /// complete one.
-    Stalled,
+    /// A directory entry of the account failed on content three times, so the
+    /// library no longer asks for it and the account cannot be covered.
+    FailedEntries,
 }
 
 /// The cause of `account`'s hold in the wallet at `db_path`, while it lasts.
@@ -228,12 +230,15 @@ pub(crate) fn recovery_hold(db_path: &str, account: AccountUuid) -> Option<HoldC
     hold_at(db_path, account, Instant::now())
 }
 
-/// One account's hold and its count of stalled runs since its last complete
-/// one.
+/// One account's hold, and the time before which the service asked the
+/// wallet not to pass it again.
+///
+/// The wait lives in memory only, so a restart may pass the account sooner:
+/// an app start is something the service sees anyway.
 #[derive(Clone, Copy, Debug, Default)]
 struct Hold {
     held: Option<(HoldCause, Instant)>,
-    stalled_runs: usize,
+    not_before: Option<Instant>,
 }
 
 /// Holds by wallet path and account.
@@ -263,33 +268,98 @@ fn set_hold(db_path: &str, account: AccountUuid, cause: HoldCause, now: Instant)
         .held = Some((cause, now + HOLD));
 }
 
-/// Counts a run whose passes ended stalled. Only a complete run clears the
-/// count, so a stall that persists while other runs end waiting for a lagging
-/// publication is still held. The [`STALL_RUNS_BEFORE_HOLD`]th holds the
-/// account and restarts the count. Returns whether it held the account.
-fn record_stall(db_path: &str, account: AccountUuid, now: Instant) -> bool {
-    let mut holds = holds();
-    let hold = holds.entry((db_path.to_owned(), account)).or_default();
-    hold.stalled_runs += 1;
-    if hold.stalled_runs < STALL_RUNS_BEFORE_HOLD {
-        return false;
-    }
-    hold.stalled_runs = 0;
-    hold.held = Some((HoldCause::Stalled, now + HOLD));
-    true
+/// Skips `account` until `now + delay`, the delay the service named.
+fn set_not_before(db_path: &str, account: AccountUuid, now: Instant, delay: Duration) {
+    holds()
+        .entry((db_path.to_owned(), account))
+        .or_default()
+        .not_before = Some(now + delay);
 }
 
-fn clear_stalls(db_path: &str, account: AccountUuid) {
-    if let Some(hold) = holds().get_mut(&(db_path.to_owned(), account)) {
-        hold.stalled_runs = 0;
-    }
+/// Whether the service asked the wallet not to pass `account` before a time
+/// still to come.
+fn waiting_at(db_path: &str, account: AccountUuid, now: Instant) -> bool {
+    holds()
+        .get(&(db_path.to_owned(), account))
+        .and_then(|hold| hold.not_before)
+        .is_some_and(|until| now < until)
 }
 
-/// Drops every hold and stall count of the wallet at `db_path`: forgetting its
+/// Drops every hold and wait of the wallet at `db_path`: forgetting its
 /// private ledger removes the evidence and companions they were held over, so
-/// the next private run starts each account afresh.
+/// the next private run starts each account afresh. It also lets the next
+/// sync run recovery at the current block.
 pub(crate) fn clear_holds(db_path: &str) {
     holds().retain(|(path, _), _| path != db_path);
+    clear_recovery_tip(db_path);
+}
+
+/// The chain tip of each wallet's last recovery run in this process.
+static RECOVERY_TIPS: LazyLock<Mutex<HashMap<String, u64>>> = LazyLock::new(Default::default);
+
+fn recovery_tips() -> MutexGuard<'static, HashMap<String, u64>> {
+    RECOVERY_TIPS.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// A new block permits every account to run. At the same block, only an
+/// expired service wait permits another pass; private content never creates
+/// that deadline.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RecoverySchedule {
+    Block,
+    ServiceWait,
+}
+
+pub(crate) fn recovery_schedule(db_path: &str, tip: u64) -> Option<RecoverySchedule> {
+    if recovery_tips().get(db_path).is_none_or(|&last| tip > last) {
+        Some(RecoverySchedule::Block)
+    } else if service_retry_due(db_path) {
+        Some(RecoverySchedule::ServiceWait)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn recovery_due(db_path: &str, tip: u64) -> bool {
+    recovery_schedule(db_path, tip).is_some()
+}
+
+/// Whether a service deadline has expired for an account that is not held.
+/// Read by the app's tip poll so catch-up does not need another block.
+pub(crate) fn service_retry_due(db_path: &str) -> bool {
+    let now = Instant::now();
+    holds().iter().any(|((path, _), hold)| {
+        path == db_path
+            && hold.not_before.is_some_and(|until| now >= until)
+            && hold.held.is_none_or(|(_, until)| now >= until)
+    })
+}
+
+/// Takes an account's expired service deadline exactly once. Accounts with
+/// no deadline must not gain a pass from another account's service retry.
+fn take_service_retry(db_path: &str, account: AccountUuid, now: Instant) -> bool {
+    let mut holds = holds();
+    let Some(hold) = holds.get_mut(&(db_path.to_owned(), account)) else {
+        return false;
+    };
+    if hold.not_before.is_some_and(|until| now >= until) {
+        hold.not_before = None;
+        true
+    } else {
+        false
+    }
+}
+
+/// Records that the wallet at `db_path` ran recovery at chain tip `tip`.
+pub(crate) fn recovery_ran(db_path: &str, tip: u64) {
+    recovery_tips().insert(db_path.to_owned(), tip);
+}
+
+/// Lets the next sync of the wallet at `db_path` run recovery at the current
+/// tip: a settings change is something the service sees anyway.
+pub(crate) fn clear_recovery_tip(db_path: &str) {
+    recovery_tips().remove(db_path);
 }
 
 /// The order a run visits `accounts` in: `first`, when it is one of them,
@@ -317,10 +387,9 @@ fn visiting_order(
 }
 
 enum AccountOutcome {
-    /// The account's passes ended. Carries the final pass's retry, absent
-    /// when no pass answered: the chain is unknown, the account is gone, or
-    /// its budget ran out.
-    Done(Option<Retry>),
+    /// The account's pass ended. Public service waits are recorded as soon
+    /// as the source answers, independently of the content-aware plan.
+    Done,
     /// A failure, a rejection, or a withdrawal ended the account's passes for
     /// this run; it is not offered for promotion.
     Skipped,
@@ -346,6 +415,7 @@ pub(crate) async fn run<S: RecoverySource>(
     policy: EnhancementPolicy,
     source: &S,
     first: Option<AccountUuid>,
+    schedule: RecoverySchedule,
     clock: fn() -> Instant,
     should_exit: &(dyn Fn() -> bool + Sync),
 ) -> Result<RunOutcome, SyncError> {
@@ -363,7 +433,10 @@ pub(crate) async fn run<S: RecoverySource>(
         return Ok(RunOutcome::NotEnabled);
     }
     let deadline = clock() + RUN_BUDGET;
-    let accounts = visiting_order(db_path, db.get_account_ids().map_err(db_error)?, first);
+    let accounts = db.get_account_ids().map_err(db_error)?;
+    // Deleted accounts must not leave a deadline that restarts every poll.
+    holds().retain(|(path, account), _| path != db_path || accounts.contains(account));
+    let accounts = visiting_order(db_path, accounts, first);
     let mut run = Run {
         db,
         db_path,
@@ -383,39 +456,37 @@ pub(crate) async fn run<S: RecoverySource>(
             log::info!("transparent ledger: run budget spent; other accounts wait for a later run");
             break;
         }
+        let service_retry = take_service_retry(db_path, account, now);
         if run.skip(account, now)? {
+            continue;
+        }
+        if schedule == RecoverySchedule::ServiceWait && !service_retry {
             continue;
         }
         match run
             .recover_account(account, (now + ACCOUNT_BUDGET).min(deadline))
             .await?
         {
-            AccountOutcome::Done(last) => {
+            AccountOutcome::Done => {
                 run.stats.accounts += 1;
-                match last {
-                    Some(Retry::Stalled) => {
-                        if record_stall(db_path, account, clock()) {
-                            log::warn!(
-                                "transparent ledger: recovery keeps stalling; holding the account"
-                            );
-                        }
-                    }
-                    Some(Retry::Complete) => clear_stalls(db_path, account),
-                    _ => {}
-                }
                 if run.promote(account)? {
                     run.stats.promoted += 1;
                 }
             }
             AccountOutcome::Skipped => run.stats.accounts += 1,
-            AccountOutcome::Stop(outcome) => return Ok(outcome),
+            AccountOutcome::Stop(outcome) => {
+                // Restore a consumed retry when cancellation interrupted it,
+                // but keep any newer delay the source reported before settlement.
+                if service_retry && matches!(outcome, RunOutcome::Exited) {
+                    holds()
+                        .entry((db_path.to_owned(), account))
+                        .or_default()
+                        .not_before
+                        .get_or_insert_with(clock);
+                }
+                return Ok(outcome);
+            }
         }
-    }
-    if run.stats.publication_wait > Duration::ZERO {
-        log::info!(
-            "transparent ledger: waited {}s for the publication",
-            run.stats.publication_wait.as_secs()
-        );
     }
     Ok(RunOutcome::Finished(run.stats))
 }
@@ -441,6 +512,10 @@ impl<S: RecoverySource> Run<'_, S> {
             self.stats.held += 1;
             return Ok(true);
         }
+        if waiting_at(self.db_path, account, now) {
+            self.stats.waiting += 1;
+            return Ok(true);
+        }
         // A quarantined account accepts no commit, so a pass would only cost
         // traffic. Only a private snapshot reports quarantine.
         if quarantined(self.db, account)? {
@@ -450,30 +525,37 @@ impl<S: RecoverySource> Run<'_, S> {
         Ok(false)
     }
 
-    /// Recovers `account` in passes until its source and watch set settle, or
-    /// until `deadline`. The adapter's [`PassPlan`] names each next step; the
-    /// coordinator bounds its waits, holds the account, and stops the run.
+    /// Recovers `account` in one counted pass, retried from a fresh watch set
+    /// only when its commits went stale, until `deadline`. The adapter's
+    /// [`PassPlan`] names each next step; the coordinator holds the account
+    /// and stops the run.
     async fn recover_account(
         &mut self,
         account: AccountUuid,
         deadline: Instant,
     ) -> Result<AccountOutcome, SyncError> {
         let Some(watch) = watch_set(self.db, account)? else {
-            return Ok(AccountOutcome::Done(None));
+            return Ok(AccountOutcome::Done);
         };
         let (clock, should_exit) = (self.clock, self.should_exit);
         let pass_exit = move || should_exit() || clock() >= deadline;
         let mut plan = PassPlan::new(watch, LIMITS);
-        if let Step::Done(retry) = plan.first() {
-            return Ok(AccountOutcome::Done(retry));
+        if let Step::Done(_) = plan.first() {
+            return Ok(AccountOutcome::Done);
         }
         loop {
             if should_exit() {
                 return Ok(AccountOutcome::Stop(RunOutcome::Exited));
             }
+            // The plan keys its watch set by the PIR protocol's block hash;
+            // sources take the wallet's, which has the same bytes.
+            let watch = plan
+                .watch()
+                .clone()
+                .map_block_hash(|hash| zcash_primitives::block::BlockHash(hash.0));
             let request = SourceRequest {
                 account,
-                watch: plan.watch(),
+                watch: &watch,
                 should_exit: &pass_exit,
             };
             let answer = tokio::time::timeout(PASS_BACKSTOP, self.source.recover(request)).await;
@@ -492,13 +574,19 @@ impl<S: RecoverySource> Run<'_, S> {
                 }
                 Ok(Err(SourceError::Cancelled)) => {
                     log::info!("transparent ledger: account budget spent");
-                    return Ok(AccountOutcome::Done(None));
+                    return Ok(AccountOutcome::Done);
                 }
                 Err(_) => {
                     log::warn!("transparent ledger: source call passed its backstop");
                     return Ok(AccountOutcome::Skipped);
                 }
             };
+            // Content-aware `report.retry()` deliberately stalls failed
+            // entries. It must not remove the publication/capacity wait the
+            // service requested, including when settlement holds the account.
+            if let Retry::After(delay) = report.progress.retry() {
+                set_not_before(self.db_path, account, clock(), delay);
+            }
             if report.state == BatchState::Pending {
                 log::info!(
                     "transparent ledger: source batch pending ({:?})",
@@ -525,17 +613,16 @@ impl<S: RecoverySource> Run<'_, S> {
                 _ => {}
             }
             let Some(fresh) = watch_set(self.db, account)? else {
-                return Ok(AccountOutcome::Done(None));
+                return Ok(AccountOutcome::Done);
             };
             match plan.next(&report, &settled, fresh) {
-                Step::Pass => {}
-                // Stale commits: the next pass runs from the fresh watch set.
-                Step::Refresh => {}
-                Step::Wait(wait) => match self.wait(wait, deadline).await {
-                    None => return Ok(AccountOutcome::Stop(RunOutcome::Exited)),
-                    Some(false) => return Ok(AccountOutcome::Done(Some(Retry::After(wait)))),
-                    Some(true) => {}
-                },
+                // Even a stale commit cannot bypass a public service wait.
+                // A later run starts from the fresh watch set.
+                Step::Pass | Step::Refresh => {
+                    if matches!(report.progress.retry(), Retry::After(_)) {
+                        return Ok(AccountOutcome::Done);
+                    }
+                }
                 Step::Hold(cause) => {
                     let cause = match cause {
                         PlanHold::Withdrawn(cause) => {
@@ -554,6 +641,15 @@ impl<S: RecoverySource> Run<'_, S> {
                                  reconciliation; holding the account"
                             );
                             HoldCause::Unreconciled
+                        }
+                        // Everything else the pass read settled; the entry is
+                        // no longer asked for.
+                        PlanHold::FailedEntries => {
+                            log::warn!(
+                                "transparent ledger: a directory entry failed three times; \
+                                 holding the account"
+                            );
+                            HoldCause::FailedEntries
                         }
                     };
                     set_hold(self.db_path, account, cause, clock());
@@ -600,7 +696,7 @@ impl<S: RecoverySource> Run<'_, S> {
                         Ok(_) => "transparent ledger: settlement failed".to_owned(),
                     }))
                 }
-                Step::Done(retry) => return Ok(AccountOutcome::Done(retry)),
+                Step::Done(_) => return Ok(AccountOutcome::Done),
             }
         }
     }
@@ -631,25 +727,6 @@ impl<S: RecoverySource> Run<'_, S> {
         self.stats.commits += stats.applied;
         self.stats.qualified += stats.qualified;
         settled
-    }
-
-    /// Waits `wait` before the account's next pass, if the run's wait cap and
-    /// the account's `deadline` allow it. Returns whether it waited, or `None`
-    /// when cancellation interrupted the wait.
-    async fn wait(&mut self, wait: Duration, deadline: Instant) -> Option<bool> {
-        if self.stats.publication_wait + wait > PUBLICATION_WAIT_CAP
-            || (self.clock)() + wait >= deadline
-        {
-            return Some(false);
-        }
-        let should_exit = self.should_exit;
-        tokio::select! {
-            biased;
-            _ = watch_for_exit(&should_exit) => return None,
-            _ = tokio::time::sleep(wait) => {}
-        }
-        self.stats.publication_wait += wait;
-        Some(true)
     }
 
     /// Offers a recovered candidate account for promotion. Returns whether it

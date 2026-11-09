@@ -61,6 +61,7 @@ class _Api extends RustLibApi {
             rediscovery: 0,
             suspended: 0,
             status: 0,
+            transparentRetryDue: false,
             serviceState: '',
           ),
         );
@@ -394,10 +395,7 @@ void main() {
           expect(native.isCompleted, isFalse);
           expect(store.value, isNull);
           expect(api.values, isEmpty);
-          expect(
-            container.read(enhancePirTransitionProvider),
-            contains('Try again'),
-          );
+          expect(container.read(enhancePirTransitionProvider), isNotNull);
           await notifier.toggle();
           expect(leases.length, 4);
           expect(leases[0], isNot(leases[2]));
@@ -501,10 +499,7 @@ void main() {
       expect(api.values, isEmpty);
       expect(reconciler.calls, isEmpty);
       expect(container.read(enhancePirProvider), isFalse);
-      expect(
-        container.read(enhancePirTransitionProvider),
-        contains('Try again'),
-      );
+      expect(container.read(enhancePirTransitionProvider), isNotNull);
     },
   );
   // Previously a failed raise rolled the shielded setting back off. The
@@ -533,7 +528,7 @@ void main() {
     expect(container.read(enhancePirProvider), isFalse);
     expect(
       container.read(enhancePirTransitionProvider),
-      kEnhancePirUnchangedMessage,
+      EnhancePirTransition.unchanged,
     );
   });
 
@@ -625,7 +620,7 @@ void main() {
       expect(container.read(enhancePirProvider), isTrue);
       expect(
         container.read(enhancePirTransitionProvider),
-        kTransparentRaisePendingMessage,
+        EnhancePirTransition.raisePending,
       );
       // Nothing was applied, so nothing is adopted.
       expect(sync.appliedTransparentPolicy, isNull);
@@ -672,7 +667,7 @@ void main() {
       expect(container.read(privateQueriesControlEnabledProvider), isTrue);
       expect(
         container.read(enhancePirTransitionProvider),
-        kTransparentOptOutPendingMessage,
+        EnhancePirTransition.optOutPending,
       );
       expect(sync.appliedTransparentPolicy, isNull);
     },
@@ -843,7 +838,7 @@ void main() {
     expect(container.read(enhancePirProvider), isTrue);
     expect(
       container.read(enhancePirTransitionProvider),
-      kEnhancePirUnchangedMessage,
+      EnhancePirTransition.unchanged,
     );
   });
   test(
@@ -915,7 +910,7 @@ void main() {
     expect(container.read(enhancePirProvider), isTrue);
     expect(
       container.read(enhancePirTransitionProvider),
-      'Setting unchanged. Try again.',
+      EnhancePirTransition.unchanged,
     );
   });
   // Keep the runtime private without relying on a second preference write.
@@ -947,7 +942,7 @@ void main() {
       expect(container.read(enhancePirProvider), isTrue);
       expect(
         container.read(enhancePirTransitionProvider),
-        kTransparentOptOutPendingMessage,
+        EnhancePirTransition.optOutPending,
       );
     },
   );
@@ -979,7 +974,7 @@ void main() {
       expect(container.read(enhancePirProvider), isTrue);
       expect(
         container.read(enhancePirTransitionProvider),
-        'Setting unchanged. Try again.',
+        EnhancePirTransition.unchanged,
       );
     },
   );
@@ -1072,10 +1067,7 @@ void main() {
         expect(container.read(enhancePirProvider), isFalse);
         expect(store.value, isNull);
         expect(api.values, isEmpty);
-        expect(
-          container.read(enhancePirTransitionProvider),
-          contains('Try again'),
-        );
+        expect(container.read(enhancePirTransitionProvider), isNotNull);
       },
     );
   }
@@ -1123,7 +1115,7 @@ void main() {
           expect(container.read(enhancePirProvider), isFalse);
           expect(
             container.read(enhancePirTransitionProvider),
-            kEnhancePirUnchangedMessage,
+            EnhancePirTransition.unchanged,
           );
 
           release.complete();
@@ -1401,12 +1393,39 @@ void main() {
     });
   });
 
+  test('an expired transparent wait bypasses unrelated recovery backoff', () {
+    final gate = RecoveryRestartGate(now: () => DateTime(2026));
+    expect(gate.shouldRestart(1), isTrue);
+    expect(gate.shouldRestart(1), isFalse);
+    const expiredWait = EnhanceRecoveryStatus(
+      queries: 0,
+      rediscovery: 0,
+      suspended: 4,
+      status: 0,
+      transparentRetryDue: true,
+      serviceState: '',
+    );
+    expect(shouldRestartRecovery(expiredWait, gate), isTrue);
+    // The service retry does not reset or advance the unrelated gate.
+    expect(gate.shouldRestart(1), isFalse);
+    const noWait = EnhanceRecoveryStatus(
+      queries: 0,
+      rediscovery: 0,
+      suspended: 4,
+      status: 0,
+      transparentRetryDue: false,
+      serviceState: '',
+    );
+    expect(shouldRestartRecovery(noWait, gate), isFalse);
+  });
+
   test('deferred private status work counts toward a recovery restart', () {
     const statusOnly = EnhanceRecoveryStatus(
       queries: 0,
       rediscovery: 0,
       suspended: 0,
       status: 1,
+      transparentRetryDue: false,
       serviceState: '',
     );
     expect(recoveryRestartUnits(statusOnly), 1);
@@ -1419,6 +1438,7 @@ void main() {
       rediscovery: 0,
       suspended: 2,
       status: 0,
+      transparentRetryDue: false,
       serviceState: '',
     );
     expect(recoveryRestartUnits(suspendedOnly), 0);
@@ -1430,6 +1450,7 @@ void main() {
       rediscovery: 0,
       suspended: 0,
       status: 1,
+      transparentRetryDue: false,
       serviceState: '',
     );
     expect(recoveryRestartUnits(statusOnly), 1);
@@ -1443,6 +1464,7 @@ void main() {
       rediscovery: 0,
       suspended: 2,
       status: 0,
+      transparentRetryDue: false,
       serviceState: '',
     );
     expect(recoveryRestartUnits(suspendedOnly), 0);
@@ -1493,80 +1515,70 @@ void main() {
       expect(g.shouldRestart(3), isTrue);
     });
 
-    test('progress restores the base interval', () {
-      final g = gate();
-      expect(g.shouldRestart(3), isTrue);
-      clock = clock.add(kRecoveryRestartInitialBackoff);
-      expect(g.shouldRestart(3), isTrue); // stalled: now waiting 60s
-      clock = clock.add(const Duration(seconds: 60));
-      expect(g.shouldRestart(2), isTrue); // progressed
-      clock = clock.add(kRecoveryRestartInitialBackoff);
-      expect(g.shouldRestart(2), isTrue); // base interval again
-    });
-
-    test('newly discovered work also restores the base interval', () {
-      final g = gate();
-      expect(g.shouldRestart(3), isTrue);
-      clock = clock.add(kRecoveryRestartInitialBackoff);
-      expect(g.shouldRestart(3), isTrue); // stalled: now waiting 60s
-      clock = clock.add(const Duration(seconds: 60));
-      expect(g.shouldRestart(5), isTrue);
-      clock = clock.add(kRecoveryRestartInitialBackoff);
-      expect(g.shouldRestart(5), isTrue);
-    });
-
     test(
-      'a count change inside a long backoff returns to the base interval',
+      'the restart schedule is identical whether the counts move or not',
       () {
-        final g = gate();
-        // Stall until the backoff is capped at ten minutes.
-        for (var i = 0; i < 20; i++) {
-          clock = clock.add(kRecoveryRestartMaxBackoff);
-          expect(g.shouldRestart(3), isTrue);
+        // Replies that complete work, replies that fail, and newly found work
+        // all move the count; none of it may move the schedule.
+        // One 10-second poll per count.
+        List<bool> schedule(List<int> counts) {
+          clock = DateTime.utc(2026);
+          final g = gate();
+          final restarts = <bool>[];
+          for (final count in counts) {
+            restarts.add(g.shouldRestart(count));
+            clock = clock.add(const Duration(seconds: 10));
+          }
+          return restarts;
         }
-        // A tip-driven sync completes one obligation shortly after.
-        clock = clock.add(const Duration(seconds: 5));
-        expect(g.shouldRestart(2), isFalse, reason: 'that sync ran recovery');
-        clock = clock.add(
-          kRecoveryRestartInitialBackoff - const Duration(seconds: 1),
-        );
-        expect(g.shouldRestart(2), isFalse);
-        clock = clock.add(const Duration(seconds: 1));
-        expect(
-          g.shouldRestart(2),
-          isTrue,
-          reason: 'not the ten minutes left on the stale deadline',
-        );
+
+        final unchanged = schedule(List.filled(80, 3));
+        final moving = schedule([for (var i = 0; i < 80; i++) 1 + i * 7 % 5]);
+        expect(moving, unchanged);
+        expect(unchanged.where((restart) => restart), isNotEmpty);
       },
     );
 
-    test('an unchanged count inside the window keeps the backoff', () {
+    test('a count change inside the window keeps the deadline', () {
       final g = gate();
-      expect(g.shouldRestart(3), isTrue);
-      clock = clock.add(kRecoveryRestartInitialBackoff);
-      expect(g.shouldRestart(3), isTrue); // stalled: now waiting 60s
-      clock = clock.add(const Duration(seconds: 45));
-      expect(g.shouldRestart(3), isFalse);
-      clock = clock.add(const Duration(seconds: 15));
-      expect(g.shouldRestart(3), isTrue);
-    });
-
-    test('a rebase never pushes an earlier deadline later', () {
-      final g = gate();
-      expect(g.shouldRestart(3), isTrue); // deadline in 30s
-      clock = clock.add(const Duration(seconds: 20));
-      expect(g.shouldRestart(4), isFalse);
+      expect(g.shouldRestart(3), isTrue); // next deadline in 30s
+      clock = clock.add(const Duration(seconds: 30));
+      expect(g.shouldRestart(3), isTrue); // 60s
+      clock = clock.add(const Duration(seconds: 60));
+      expect(g.shouldRestart(3), isTrue); // 120s
+      // The count drops inside the window, as when a reply was good: the
+      // deadline stays where it was.
       clock = clock.add(const Duration(seconds: 10));
-      expect(g.shouldRestart(4), isTrue, reason: 'the original 30s deadline');
+      expect(g.shouldRestart(1), isFalse);
+      clock = clock.add(kRecoveryRestartInitialBackoff);
+      expect(g.shouldRestart(1), isFalse);
+      clock = clock.add(const Duration(seconds: 80));
+      expect(g.shouldRestart(1), isTrue);
     });
 
-    test('draining the queue clears the backoff for the next obligation', () {
+    test('draining the queue keeps the backoff for the next obligation', () {
       final g = gate();
       expect(g.shouldRestart(3), isTrue);
       clock = clock.add(kRecoveryRestartInitialBackoff);
-      expect(g.shouldRestart(3), isTrue);
+      expect(g.shouldRestart(3), isTrue); // now waiting 60s
       expect(g.shouldRestart(0), isFalse);
+      expect(g.shouldRestart(1), isFalse, reason: 'the 60s deadline holds');
+      clock = clock.add(const Duration(seconds: 60));
       expect(g.shouldRestart(1), isTrue);
+    });
+
+    test('a reset on a public event starts the schedule over', () {
+      final g = gate();
+      for (var i = 0; i < 20; i++) {
+        clock = clock.add(kRecoveryRestartMaxBackoff);
+        expect(g.shouldRestart(3), isTrue);
+      }
+      clock = clock.add(const Duration(seconds: 5));
+      expect(g.shouldRestart(3), isFalse);
+      g.reset(); // a new tip, a resume, a settings change or a lock
+      expect(g.shouldRestart(3), isTrue);
+      clock = clock.add(kRecoveryRestartInitialBackoff);
+      expect(g.shouldRestart(3), isTrue);
     });
   });
   test('a failed preference write can be retried', () async {
@@ -1612,17 +1624,6 @@ void main() {
     expect(source.isCompleted, isFalse);
     expect(reported, isTrue);
   });
-  test('masquerade builds cannot enable the production PIR service', () {
-    expect(
-      isEnhancePirAvailableForNetwork('main', isMasquerade: true),
-      isFalse,
-    );
-    expect(
-      isEnhancePirAvailableForNetwork('main', isMasquerade: false),
-      isTrue,
-    );
-  });
-
   test(
     'wallet mutation drains admitted status reads and blocks new ones',
     () async {
@@ -1657,6 +1658,7 @@ void main() {
           rediscovery: 0,
           suspended: 0,
           status: 0,
+          transparentRetryDue: false,
           serviceState: 'recovering',
         ),
       );

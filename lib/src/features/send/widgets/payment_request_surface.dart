@@ -32,7 +32,8 @@ class PaymentRequestSurface extends StatelessWidget {
     this.cardKey,
     this.background,
     super.key,
-  }) : _paintsBackground = true;
+  }) : animation = null,
+       _paintsBackground = true;
 
   /// Just the scrim and the card, over whatever is already on screen.
   ///
@@ -53,6 +54,7 @@ class PaymentRequestSurface extends StatelessWidget {
     this.initialMessageExpanded = false,
     this.initialLinkDetails = false,
     this.cardKey,
+    this.animation,
     super.key,
   }) : background = null,
        _paintsBackground = false;
@@ -80,6 +82,9 @@ class PaymentRequestSurface extends StatelessWidget {
 
   /// Identity of the request whose disclosure state the card owns.
   final Key? cardKey;
+
+  /// The live host owns entry/exit lifetime; previews remain fully visible.
+  final Animation<double>? animation;
 
   /// What the modal sits on top of. Defaults to the flat window color so a
   /// preview does not have to supply a whole screen. Always null on
@@ -140,6 +145,19 @@ class PaymentRequestSurface extends StatelessWidget {
 
   Widget _mobileModal(BuildContext context, Widget card) {
     final colors = context.colors;
+    final motion = MediaQuery.disableAnimationsOf(context) ? null : animation;
+    final sheet = _DraggablePaymentRequestSheet(
+      key: cardKey,
+      onDismiss: onCancel,
+      child: MobileModalCard(
+        child: Material(type: MaterialType.transparency, child: card),
+      ),
+    );
+    final scrim = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onCancel,
+      child: ColoredBox(color: colors.background.neutralScrim),
+    );
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -148,11 +166,10 @@ class PaymentRequestSurface extends StatelessWidget {
         // back gesture belongs to the route host — `showAppMobileSheet`
         // already provides it, and a `PopScope` here would also swallow
         // back for whatever route embeds this inline.
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onCancel,
-          child: ColoredBox(color: colors.background.neutralScrim),
-        ),
+        if (motion == null)
+          scrim
+        else
+          FadeTransition(opacity: motion, child: scrim),
         // `showAppMobileSheet` gets this from `useSafeArea`; the inline
         // presentation has to keep the same clearance itself so a tall
         // request never runs into the status bar.
@@ -161,13 +178,15 @@ class PaymentRequestSurface extends StatelessWidget {
           minimum: const EdgeInsets.only(top: AppSpacing.base),
           child: Align(
             alignment: Alignment.bottomCenter,
-            child: _DraggablePaymentRequestSheet(
-              key: cardKey,
-              onDismiss: onCancel,
-              child: MobileModalCard(
-                child: Material(type: MaterialType.transparency, child: card),
-              ),
-            ),
+            child: motion == null
+                ? sheet
+                : SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 1),
+                      end: Offset.zero,
+                    ).animate(motion),
+                    child: sheet,
+                  ),
           ),
         ),
       ],

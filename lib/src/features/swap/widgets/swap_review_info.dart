@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_info_row.dart';
@@ -35,8 +36,8 @@ class SwapReviewInfoSideData {
 /// Figma 'Review Info': the paying/receiving summary block shared by the
 /// swap review, in-progress, and completed surfaces.
 ///
-/// Built on two core [ReviewInfoRow] instances separated by the centered
-/// downward arrow — the same primitive the send review/status surfaces use.
+/// Built on the core [ReviewInfoFlow] — the same primitive the send
+/// review/status surfaces use.
 class SwapReviewInfo extends StatelessWidget {
   const SwapReviewInfo({
     required this.pay,
@@ -51,29 +52,19 @@ class SwapReviewInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return Padding(
       key: const ValueKey('swap_review_info'),
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+      child: ReviewInfoFlow(
+        rows: [
           _side(
+            context: context,
             data: pay,
             key: const ValueKey('swap_review_info_pay'),
             copyButtonKey: const ValueKey('swap_review_info_pay_copy'),
           ),
-          SizedBox(
-            height: 24,
-            child: Center(
-              child: AppIcon(
-                AppIcons.arrowDownward,
-                size: 24,
-                color: colors.icon.accent,
-              ),
-            ),
-          ),
           _side(
+            context: context,
             data: receive,
             key: const ValueKey('swap_review_info_receive'),
             copyButtonKey: const ValueKey('swap_review_info_receive_copy'),
@@ -84,6 +75,7 @@ class SwapReviewInfo extends StatelessWidget {
   }
 
   Widget _side({
+    required BuildContext context,
     required SwapReviewInfoSideData data,
     required Key key,
     required Key copyButtonKey,
@@ -102,7 +94,7 @@ class SwapReviewInfo extends StatelessWidget {
         showChainBadge: data.asset != SwapAsset.zec,
       ),
       bottomLeftText: data.detailText,
-      trailingActionLabel: showCopy ? 'Copy' : null,
+      trailingActionLabel: showCopy ? context.l10n.commonCopy : null,
       trailingActionIconName: AppIcons.copy,
       trailingActionKey: showCopy ? copyButtonKey : null,
       onTrailingAction: showCopy ? () => onCopy!(copyText) : null,

@@ -37,34 +37,27 @@ void main() {
       expect(persisted.pendingSplitStageCount, greaterThan(0));
 
       await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
+      // Let the startup route settle before typing into the unlock field.
+      await pumpUntil(
+        tester,
+        () => tester.any(find.byKey(const ValueKey('unlock_password_field'))),
+        description: 'unlock screen after restart',
+      );
+      await tester.pump(const Duration(seconds: 1));
       await unlockDesktopRegtestWallet(tester);
       await tapAppButton(
         tester,
         const ValueKey('home_desktop_ironwood_migration_cta_button'),
       );
-      await pumpUntil(
-        tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
-        ),
-        description: 'persisted migration status in the new process',
-      );
+      await waitForDesktopActiveMigrationStatus(tester, preparing: true);
       final resumed = await desktopRegtestMigrationStatus(accountUuid);
       expect(resumed.activeRunId, persisted.activeRunId);
 
-      await _waitForDenominationMempoolTransaction();
-
-      await ironwoodDriverPost(
-        _driverUrl,
-        '/mine',
-        payload: const {'blocks': 10},
-      );
+      // The run started while lightwalletd was down. The new process sends
+      // its split once the tip reaches the split's scheduled height.
       final scheduled = await prepareDesktopRegtestMigrationSchedule(
         tester,
+        _driverUrl,
         accountUuid,
       );
       expect(scheduled.activeRunId, persisted.activeRunId);
@@ -106,17 +99,5 @@ void main() {
       );
     },
     timeout: const Timeout(Duration(minutes: 15)),
-  );
-}
-
-Future<void> _waitForDenominationMempoolTransaction() async {
-  final deadline = DateTime.now().add(const Duration(minutes: 2));
-  while (DateTime.now().isBefore(deadline)) {
-    final mempool = await ironwoodDriverGet(_driverUrl, '/mempool');
-    if ((mempool['size'] as num) > 0) return;
-    await Future<void>.delayed(const Duration(seconds: 2));
-  }
-  throw StateError(
-    'Denomination transaction was not rebroadcast after restart.',
   );
 }

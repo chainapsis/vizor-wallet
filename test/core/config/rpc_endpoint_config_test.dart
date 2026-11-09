@@ -1,7 +1,38 @@
+import 'dart:ui' show Locale;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/l10n/l10n.dart';
+
+import '../../support/test_l10n.dart';
 
 void main() {
+  test(
+    'birthday operator identity groups the fixed pool without suffix guesses',
+    () {
+      final candidates = automaticRpcEndpointCandidatesFor(
+        defaultRpcEndpointConfig('main'),
+      );
+      expect(
+        candidates
+            .map((c) => automaticRpcEndpointOperatorForUrl(c.lightwalletdUrl))
+            .toSet(),
+        {'stardust', 'zec-rocks'},
+      );
+      expect(
+        automaticRpcEndpointOperatorForUrl('https://eu.zec.stardust.rest:443'),
+        automaticRpcEndpointOperatorForUrl('https://kr.zec.stardust.rest:443'),
+      );
+      for (final url in [
+        'https://zec.rocks.example:443',
+        'https://unknown.zec.rocks:443',
+        'https://custom.example:443',
+      ]) {
+        expect(automaticRpcEndpointOperatorForUrl(url), isNull);
+      }
+    },
+  );
+
   group('normalizeRpcEndpointUrl', () {
     test('normalizes host and explicit port with an https scheme', () {
       expect(normalizeRpcEndpointUrl('zec.rocks:443'), 'https://zec.rocks:443');
@@ -73,17 +104,18 @@ void main() {
       expect(urls, {
         'https://us.zec.stardust.rest:443',
         'https://eu.zec.stardust.rest:443',
-        'https://eu2.zec.stardust.rest:443',
-        'https://jp.zec.stardust.rest:443',
         'https://zec.rocks:443',
         'https://na.zec.rocks:443',
         'https://sa.zec.rocks:443',
         'https://eu.zec.rocks:443',
+        'https://kr.zec.stardust.rest:443',
         'https://ap.zec.rocks:443',
         'https://z3.deepikaw.xyz:443',
         'https://zprivacy.online:443',
         'https://lwd.zcashexplorer.app:9067',
       });
+      expect(urls, isNot(contains('https://eu2.zec.stardust.rest:443')));
+      expect(urls, isNot(contains('https://jp.zec.stardust.rest:443')));
     });
 
     test('mainnet presets expose expected regions for endpoint selection', () {
@@ -92,21 +124,42 @@ void main() {
           'us.zec.stardust.rest:443',
           networkName: 'main',
         )?.region,
-        'Default',
+        RpcEndpointRegion.americas,
       );
       expect(
         findRpcEndpointPresetByUrl(
           'eu.zec.stardust.rest:443',
           networkName: 'main',
         )?.region,
-        'Europe',
+        RpcEndpointRegion.europe,
+      );
+      expect(
+        findRpcEndpointPresetByUrl(
+          'kr.zec.stardust.rest:443',
+          networkName: 'main',
+        )?.region,
+        RpcEndpointRegion.asiaPacific,
+      );
+      expect(
+        findRpcEndpointPresetByUrl(
+          'ap.zec.rocks:443',
+          networkName: 'main',
+        )?.region,
+        RpcEndpointRegion.asiaPacific,
+      );
+      expect(
+        findRpcEndpointPresetByUrl(
+          'eu2.zec.stardust.rest:443',
+          networkName: 'main',
+        ),
+        isNull,
       );
       expect(
         findRpcEndpointPresetByUrl(
           'jp.zec.stardust.rest:443',
           networkName: 'main',
-        )?.region,
-        'Asia Pacific',
+        ),
+        isNull,
       );
     });
 
@@ -135,7 +188,7 @@ void main() {
         networkName: 'main',
       );
 
-      expect(preset?.id, kDefaultRpcEndpointPresetId);
+      expect(preset?.id, kManualUsRpcEndpointPresetId);
     });
 
     test('keeps the previous zec.rocks default as a selectable fallback', () {
@@ -171,7 +224,7 @@ void main() {
       );
     });
 
-    test('uses Stardust US as the mainnet default endpoint', () {
+    test('keeps a compatibility URL for the automatic mainnet default', () {
       final defaultEndpoint = defaultRpcEndpointConfig('main');
 
       expect(defaultEndpoint.networkName, 'main');
@@ -228,6 +281,89 @@ void main() {
       );
       expect(config.presetId, kCustomRpcEndpointPresetId);
     });
+
+    test(
+      'resolves a removed built-in preset to the active network default',
+      () {
+        final mainnet = resolveStoredRpcEndpointConfig(
+          networkName: 'main',
+          storedUrl: 'https://eu2.zec.stardust.rest:443',
+          storedPresetId: 'eu2-zec-stardust',
+        );
+        expect(mainnet.networkName, 'main');
+        expect(mainnet.lightwalletdUrl, 'https://us.zec.stardust.rest:443');
+        expect(mainnet.presetId, kDefaultRpcEndpointPresetId);
+        expect(fallbackRpcEndpointCandidatesFor(mainnet), isNotEmpty);
+
+        final japan = resolveStoredRpcEndpointConfig(
+          networkName: 'main',
+          storedUrl: 'jp.zec.stardust.rest:443',
+          storedPresetId: 'jp-zec-stardust',
+        );
+        expect(japan.lightwalletdUrl, 'https://us.zec.stardust.rest:443');
+        expect(japan.presetId, kDefaultRpcEndpointPresetId);
+
+        final testnet = resolveStoredRpcEndpointConfig(
+          networkName: 'test',
+          storedUrl: 'https://jp.zec.stardust.rest:443',
+          storedPresetId: 'jp-zec-stardust',
+        );
+        expect(testnet.networkName, 'test');
+        expect(testnet.presetId, 'default-testnet');
+        expect(testnet.lightwalletdUrl, 'https://testnet.zec.rocks:443');
+
+        final presetIdWinsOverUrl = resolveStoredRpcEndpointConfig(
+          networkName: 'main',
+          storedUrl: 'https://example.com:443',
+          storedPresetId: 'eu2-zec-stardust',
+        );
+        expect(presetIdWinsOverUrl.presetId, kDefaultRpcEndpointPresetId);
+        expect(
+          presetIdWinsOverUrl.lightwalletdUrl,
+          'https://us.zec.stardust.rest:443',
+        );
+      },
+    );
+
+    test('keeps an unrecognized preset id with a live URL as custom', () {
+      final config = resolveStoredRpcEndpointConfig(
+        networkName: 'main',
+        storedUrl: 'https://example.com:443',
+        storedPresetId: 'not-a-built-in-preset',
+      );
+
+      expect(config.presetId, kCustomRpcEndpointPresetId);
+      expect(config.lightwalletdUrl, 'https://example.com:443');
+    });
+
+    test(
+      'resolves a removed host saved as a custom endpoint to the default',
+      () {
+        final config = resolveStoredRpcEndpointConfig(
+          networkName: 'main',
+          storedUrl: 'https://EU2.zec.stardust.rest:443',
+          storedPresetId: kCustomRpcEndpointPresetId,
+        );
+
+        expect(config.lightwalletdUrl, 'https://us.zec.stardust.rest:443');
+        expect(config.presetId, kDefaultRpcEndpointPresetId);
+        expect(config.effectivePresetId, kDefaultRpcEndpointPresetId);
+      },
+    );
+
+    test(
+      'resolves a removed host stored without a preset id to the default',
+      () {
+        final config = resolveStoredRpcEndpointConfig(
+          networkName: 'main',
+          storedUrl: 'https://jp.zec.stardust.rest',
+          storedPresetId: null,
+        );
+
+        expect(config.presetId, kDefaultRpcEndpointPresetId);
+        expect(config.lightwalletdUrl, 'https://us.zec.stardust.rest:443');
+      },
+    );
   });
 
   group('RpcEndpointConfig', () {
@@ -253,18 +389,133 @@ void main() {
     });
   });
 
-  group('fallbackRpcEndpointCandidatesFor', () {
-    test('uses preset order when the mainnet default is primary', () {
-      final candidates = fallbackRpcEndpointCandidatesFor(
+  group('automatic selection intent', () {
+    test('default ID enables automatic mainnet selection', () {
+      final endpoint = defaultRpcEndpointConfig('main');
+      expect(isAutomaticRpcEndpointConfig(endpoint), isTrue);
+      expect(explicitRpcEndpointPresetFor(endpoint)?.label, 'Automatic');
+      for (final network in ['test', 'regtest']) {
+        expect(
+          isAutomaticRpcEndpointConfig(defaultRpcEndpointConfig(network)),
+          isFalse,
+        );
+      }
+    });
+
+    test('custom and manual US retain intent even at the default URL', () {
+      final endpoint = defaultRpcEndpointConfig('main');
+      for (final id in [
+        kCustomRpcEndpointPresetId,
+        kManualUsRpcEndpointPresetId,
+      ]) {
+        expect(
+          isAutomaticRpcEndpointConfig(endpoint.copyWith(presetId: id)),
+          isFalse,
+        );
+        expect(
+          automaticRpcEndpointCandidatesFor(endpoint.copyWith(presetId: id)),
+          isEmpty,
+        );
+      }
+    });
+
+    test('automatic pool contains distinct concrete reviewed servers', () {
+      final candidates = automaticRpcEndpointCandidatesFor(
         defaultRpcEndpointConfig('main'),
       );
-
-      expect(candidates.first.presetId, 'eu-zec-stardust');
       expect(
-        candidates.first.lightwalletdUrl,
-        'https://eu.zec.stardust.rest:443',
+        candidates.map((entry) => entry.presetId),
+        contains(kManualUsRpcEndpointPresetId),
+      );
+      expect(candidates.any(isAutomaticRpcEndpointConfig), isFalse);
+      expect(
+        candidates
+            .map((entry) => entry.normalizedLightwalletdUrl)
+            .toSet()
+            .length,
+        candidates.length,
+      );
+      expect(
+        candidates.every(
+          (entry) =>
+              explicitRpcEndpointPresetFor(entry)?.region !=
+              RpcEndpointRegion.community,
+        ),
+        isTrue,
+      );
+      expect(
+        candidates
+            .map((entry) => explicitRpcEndpointPresetFor(entry)?.region)
+            .toSet(),
+        containsAll([
+          RpcEndpointRegion.americas,
+          RpcEndpointRegion.europe,
+          RpcEndpointRegion.asiaPacific,
+        ]),
       );
     });
+
+    test('restores saved default intent without using its stored URL', () {
+      final config = resolveStoredRpcEndpointConfig(
+        networkName: 'main',
+        storedUrl: 'https://obsolete.example:443',
+        storedPresetId: kDefaultRpcEndpointPresetId,
+      );
+      expect(isAutomaticRpcEndpointConfig(config), isTrue);
+    });
+  });
+
+  group('fallbackRpcEndpointCandidatesFor', () {
+    test(
+      'Automatic fallbacks contain exactly its public pool including the compatibility host',
+      () {
+        final primary = defaultRpcEndpointConfig('main');
+        final candidates = fallbackRpcEndpointCandidatesFor(primary);
+        expect(
+          candidates.map((c) => c.presetId),
+          automaticRpcEndpointCandidatesFor(primary).map((c) => c.presetId),
+        );
+        expect(candidates, hasLength(8));
+        expect(candidates.any(isAutomaticRpcEndpointConfig), isFalse);
+        expect(
+          candidates.map((c) => c.normalizedLightwalletdUrl).toSet(),
+          hasLength(8),
+        );
+        expect(
+          candidates.any(
+            (c) =>
+                findRpcEndpointPresetById('main', c.presetId!)!.region ==
+                RpcEndpointRegion.community,
+          ),
+          isFalse,
+        );
+        expect(
+          candidates.map((c) => c.presetId),
+          contains(kManualUsRpcEndpointPresetId),
+        );
+      },
+    );
+
+    test(
+      'orders Stardust Korea after Zec Rocks global, Americas, and Europe',
+      () {
+        final presetIds = fallbackRpcEndpointCandidatesFor(
+          defaultRpcEndpointConfig(
+            'main',
+          ).copyWith(presetId: kManualUsRpcEndpointPresetId),
+        ).map((candidate) => candidate.presetId).toList();
+
+        expect(presetIds.sublist(0, 7), [
+          'eu-zec-stardust',
+          'zec-rocks',
+          'na-zec-rocks',
+          'sa-zec-rocks',
+          'eu-zec-rocks',
+          'kr-zec-stardust',
+          'ap-zec-rocks',
+        ]);
+      },
+    );
 
     test('does not fallback from a custom mainnet endpoint', () {
       final candidates = fallbackRpcEndpointCandidatesFor(
@@ -336,11 +587,19 @@ void main() {
       );
 
       expect(candidates.take(4).map((candidate) => candidate.presetId), [
-        kDefaultRpcEndpointPresetId,
+        kManualUsRpcEndpointPresetId,
         'eu-zec-stardust',
-        'eu2-zec-stardust',
-        'jp-zec-stardust',
+        'zec-rocks',
+        'na-zec-rocks',
       ]);
+      expect(
+        candidates.map((candidate) => candidate.lightwalletdUrl),
+        isNot(contains('https://eu2.zec.stardust.rest:443')),
+      );
+      expect(
+        candidates.map((candidate) => candidate.lightwalletdUrl),
+        isNot(contains('https://jp.zec.stardust.rest:443')),
+      );
       expect(
         candidates.map((candidate) => candidate.presetId),
         isNot(contains('eu-zec-rocks')),
@@ -390,6 +649,32 @@ void main() {
 
     test('keeps https endpoints compact for custom endpoint editing', () {
       expect(rpcEndpointInputText('https://zec.rocks:443'), 'zec.rocks:443');
+    });
+  });
+
+  group('error text', () {
+    test('English matches the text the exceptions carry', () {
+      for (final issue in RpcEndpointIssue.values) {
+        final error = RpcEndpointFormatException(issue);
+        expect(rpcEndpointErrorText(testL10n, error), error.message);
+      }
+      final mismatch = RpcEndpointNetworkMismatch(
+        endpointNetwork: 'test',
+        walletNetwork: 'main',
+      );
+      expect(rpcEndpointErrorText(testL10n, mismatch), mismatch.message);
+    });
+
+    test('Korean screens get Korean text, not the English message', () {
+      final ko = lookupAppLocalizations(const Locale('ko'));
+      try {
+        normalizeRpcEndpointUrl('http://zec.rocks:443', allowLocalHttp: false);
+        fail('expected a refused endpoint');
+      } on FormatException catch (error) {
+        expect(error.message, 'Use an https:// endpoint.');
+        expect(rpcEndpointErrorText(ko, error), ko.endpointErrorHttps);
+        expect(rpcEndpointErrorText(ko, error), isNot(error.message));
+      }
     });
   });
 }

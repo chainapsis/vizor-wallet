@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show Scaffold;
@@ -6,13 +7,19 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
+import '../../../core/widgets/app_toast.dart';
+import '../../../providers/app_language_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
+import '../../settings/widgets/language_picker.dart';
+import '../shared/welcome_language_button.dart';
 import '../providers/welcome_network_settings_provider.dart';
 import 'mobile_network_settings_sheet.dart';
 
 import 'mobile_onboarding_progress_scope.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/layout/mobile/mobile_window_policy.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../shared/onboarding_welcome_art.dart' show VizorWordmark;
@@ -68,6 +75,31 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
     });
   }
 
+  // Holds incoming Gift links like the network sheet does.
+  Future<void> _openLanguageSheet() async {
+    if (ref.read(welcomeNetworkSettingsPresentedProvider)) return;
+    final presentation = ref.read(
+      welcomeNetworkSettingsPresentedProvider.notifier,
+    );
+    final current = ref.read(appLanguageProvider);
+    presentation.setPresented(true);
+    try {
+      final choice = await showMobileLanguageSheet(
+        context,
+        current: current,
+        available: ref.read(availableAppLanguagesProvider),
+      );
+      if (choice == null || choice == current) return;
+      await ref.read(appLanguageProvider.notifier).set(choice);
+    } catch (_) {
+      if (mounted) {
+        showAppToast(context, context.l10n.settingsLanguageUpdateFailed);
+      }
+    } finally {
+      presentation.setPresented(false);
+    }
+  }
+
   void _enter(VoidCallback navigate) {
     if (!widget.showBackButton &&
         !welcomeNetworkReady(ref.read(networkPrivacyProvider))) {
@@ -84,6 +116,10 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
         _scheduleSettings();
       }
     });
+    final windowPolicy = MobileWindowPolicyScope.of(context);
+    final showLanguage =
+        !widget.showBackButton &&
+        ref.watch(availableAppLanguagesProvider).length > 1;
     final bottom = math.max(50.0, MediaQuery.paddingOf(context).bottom + 16);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -91,6 +127,19 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
         backgroundColor: const Color(0xff0f0f0f),
         body: LayoutBuilder(
           builder: (context, constraints) {
+            final insets = MediaQuery.paddingOf(context);
+            final safeWidth = constraints.maxWidth - insets.horizontal;
+            final landscape = windowPolicy.usesWideLayout;
+            // Keep 240-point mobile buttons and 16-point side padding even in
+            // a short, wide window below the former 740-point breakpoint.
+            final paneWidth = (safeWidth * 0.4).clamp(272.0, 420.0);
+            final artWidth = math.max(
+              constraints.maxHeight * 16 / 9,
+              safeWidth - paneWidth,
+            );
+            final paneRight = insets.left + paneWidth;
+            final artCenter =
+                (paneRight + constraints.maxWidth - insets.right) / 2;
             final videoHeight = (constraints.maxWidth + 1) * 700 / 394;
             final fadeEnd = math.min(1.0, videoHeight / constraints.maxHeight);
             return Stack(
@@ -99,193 +148,147 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                 // 394×700 video slot at x=-1 in the 393×852 reference.
                 Positioned(
                   top: 0,
-                  left: -1,
-                  width: constraints.maxWidth + 1,
-                  height: videoHeight,
+                  left: landscape ? artCenter - artWidth / 2 : -1,
+                  width: landscape ? artWidth : constraints.maxWidth + 1,
+                  height: landscape ? constraints.maxHeight : videoHeight,
                   child: MobileWelcomeBackdrop(
                     animate: widget.animateBackground,
+                    landscape: landscape,
                   ),
                 ),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: const [
-                            Color(0x00000000),
-                            Color(0x99000000),
-                            Color(0xff000000),
-                          ],
-                          // Keep the artwork visible behind the copy, then
-                          // blend its bottom edge into the page background.
-                          stops: [fadeEnd * 0.40857, fadeEnd * 0.88, fadeEnd],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                SafeArea(
-                  bottom: false,
-                  child: LayoutBuilder(
-                    builder: (context, available) => SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(16, 24, 16, bottom),
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minHeight: math.max(
-                            0,
-                            available.maxHeight - bottom - 24,
+                if (landscape)
+                  Positioned(
+                    top: 0,
+                    bottom: 0,
+                    left: 0,
+                    width: paneRight + 180,
+                    child: const IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                            colors: [
+                              Color(0xff0f0f0f),
+                              Color(0xff0f0f0f),
+                              Color(0x990f0f0f),
+                              Color(0x000f0f0f),
+                            ],
+                            stops: [0, 0.35, 0.7, 1],
                           ),
                         ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 313),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const VizorWordmark(
-                                    width: 106,
-                                    height: 40,
-                                    color: Color(0xffffffff),
-                                  ),
-                                  const SizedBox(height: AppSpacing.md),
-                                  Text(
-                                    'Shielded\nby default',
-                                    textAlign: TextAlign.center,
-                                    style: AppTypography.displayLarge.copyWith(
-                                      color: const Color(0xffffffff),
-                                      fontSize: 56,
-                                      height: 1.02,
-                                      letterSpacing: -1.68,
-                                    ),
-                                  ),
-                                  const SizedBox(height: AppSpacing.md),
-                                  SizedBox(
-                                    width: 240,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        WelcomeAccentButton(
-                                          semanticKey: const ValueKey(
-                                            'mobile_welcome_get_started',
-                                          ),
-                                          onPressed: () => _enter(
-                                            () => context.startOnboarding(
-                                              '/onboarding/intro',
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(height: AppSpacing.sm),
-                                        Semantics(
-                                          key: const ValueKey(
-                                            'mobile_welcome_import',
-                                          ),
-                                          button: true,
-                                          child: AppButton(
-                                            expand: true,
-                                            focusRingColor:
-                                                WelcomeButtonTokens.focusRing,
-                                            enabledBackgroundColor:
-                                                WelcomeButtonTokens
-                                                    .secondaryBackground,
-                                            pressedBackgroundColor:
-                                                WelcomeButtonTokens
-                                                    .secondaryHighlightedBackground,
-                                            enabledBorderColor:
-                                                WelcomeButtonTokens.border,
-                                            enabledLabelColor:
-                                                WelcomeButtonTokens
-                                                    .secondaryLabel,
-                                            pressedLabelColor:
-                                                WelcomeButtonTokens
-                                                    .secondaryLabel,
-                                            onPressed: () => _enter(
-                                              () => context.startOnboarding(
-                                                '/onboarding/method',
-                                              ),
-                                            ),
-                                            leading: const AppIcon(
-                                              AppIcons.importWallet,
-                                            ),
-                                            growWithContent: true,
-                                            constrainContent: true,
-                                            child: const Text(
-                                              'Import wallet',
-                                              textAlign: TextAlign.center,
-                                            ),
-                                          ),
-                                        ),
-                                        ...[
-                                          const SizedBox(height: AppSpacing.sm),
-                                          Semantics(
-                                            key: const ValueKey(
-                                              'mobile_welcome_redeem_card',
-                                            ),
-                                            button: true,
-                                            enabled: true,
-                                            child: WelcomeGiftCardButton(
-                                              onPressed: () => _enter(
-                                                () => context.push(
-                                                  widget.showBackButton
-                                                      ? '/gift?addAccount=true'
-                                                      : '/gift',
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                      ),
+                    ),
+                  )
+                else
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: const [
+                              Color(0x00000000),
+                              Color(0x99000000),
+                              Color(0xff000000),
+                            ],
+                            // Keep the artwork visible behind the copy, then
+                            // blend its bottom edge into the page background.
+                            stops: [fadeEnd * 0.40857, fadeEnd * 0.88, fadeEnd],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                if (landscape)
+                  Positioned(
+                    left: insets.left,
+                    top: insets.top,
+                    bottom: insets.bottom,
+                    width: paneWidth,
+                    child: Center(
+                      child: SingleChildScrollView(
+                        // Leave room for Back even in short windows.
+                        padding: const EdgeInsets.fromLTRB(16, 64, 16, 24),
+                        child: _buildContent(context),
+                      ),
+                    ),
+                  )
+                else
+                  SafeArea(
+                    bottom: false,
+                    child: LayoutBuilder(
+                      builder: (context, available) => SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(16, 24, 16, bottom),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: math.max(
+                              0,
+                              available.maxHeight - bottom - 24,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [_buildContent(context)],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 if (!widget.showBackButton)
                   Positioned(
                     top: MediaQuery.paddingOf(context).top + AppSpacing.xs,
-                    right: AppSpacing.sm,
-                    child: Semantics(
-                      label: 'Network settings',
-                      button: true,
-                      child: GestureDetector(
-                        key: const ValueKey('mobile_welcome_network_settings'),
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () =>
-                            showMobileWelcomeNetworkSettings(context, ref),
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: const BoxDecoration(
-                            color: Color(0x66000000),
-                            shape: BoxShape.circle,
+                    right: (landscape ? insets.right : 0) + AppSpacing.sm,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (showLanguage) ...[
+                          WelcomeLanguageButton(
+                            key: const ValueKey('mobile_welcome_language'),
+                            height: 44,
+                            background: const Color(0x66000000),
+                            hoverBackground: const Color(0x66000000),
+                            onTap: () => unawaited(_openLanguageSheet()),
                           ),
-                          child: const Center(
-                            child: AppIcon(
-                              AppIcons.cog,
-                              size: 24,
-                              color: Color(0xffffffff),
+                          const SizedBox(width: AppSpacing.xs),
+                        ],
+                        Semantics(
+                          label: context.l10n.networkSettingsTitle,
+                          button: true,
+                          child: GestureDetector(
+                            key: const ValueKey(
+                              'mobile_welcome_network_settings',
+                            ),
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () =>
+                                showMobileWelcomeNetworkSettings(context, ref),
+                            child: Container(
+                              width: 44,
+                              height: 44,
+                              decoration: const BoxDecoration(
+                                color: Color(0x66000000),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Center(
+                                child: AppIcon(
+                                  AppIcons.cog,
+                                  size: 24,
+                                  color: Color(0xffffffff),
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 if (widget.showBackButton)
                   Positioned(
                     top: MediaQuery.paddingOf(context).top + AppSpacing.xs,
-                    left: AppSpacing.s,
+                    left: (landscape ? insets.left : 0) + AppSpacing.s,
                     child: Semantics(
-                      label: 'Back',
+                      label: context.l10n.commonBack,
                       button: true,
                       child: AppButton(
                         variant: AppButtonVariant.ghost,
@@ -306,4 +309,82 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
       ),
     );
   }
+
+  Widget _buildContent(BuildContext context) => ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 313),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const VizorWordmark(width: 106, height: 40, color: Color(0xffffffff)),
+        const SizedBox(height: AppSpacing.md),
+        Text(
+          'Shielded\nby default', // l10n-ignore: brand tagline
+          textAlign: TextAlign.center,
+          style: AppTypography.displayLarge.copyWith(
+            color: const Color(0xffffffff),
+            fontSize: 56,
+            height: 1.02,
+            letterSpacing: -1.68,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        SizedBox(
+          width: 240,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              WelcomeAccentButton(
+                semanticKey: const ValueKey('mobile_welcome_get_started'),
+                onPressed: () =>
+                    _enter(() => context.startOnboarding('/onboarding/intro')),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Semantics(
+                key: const ValueKey('mobile_welcome_import'),
+                button: true,
+                child: AppButton(
+                  expand: true,
+                  focusRingColor: WelcomeButtonTokens.focusRing,
+                  enabledBackgroundColor:
+                      WelcomeButtonTokens.secondaryBackground,
+                  pressedBackgroundColor:
+                      WelcomeButtonTokens.secondaryHighlightedBackground,
+                  enabledBorderColor: WelcomeButtonTokens.border,
+                  enabledLabelColor: WelcomeButtonTokens.secondaryLabel,
+                  pressedLabelColor: WelcomeButtonTokens.secondaryLabel,
+                  onPressed: () => _enter(
+                    () => context.startOnboarding('/onboarding/method'),
+                  ),
+                  leading: const AppIcon(AppIcons.importWallet),
+                  growWithContent: true,
+                  constrainContent: true,
+                  child: Text(
+                    context.l10n.onboardingWelcomeImportWallet,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+              ...[
+                const SizedBox(height: AppSpacing.sm),
+                Semantics(
+                  key: const ValueKey('mobile_welcome_redeem_card'),
+                  button: true,
+                  enabled: true,
+                  child: WelcomeGiftCardButton(
+                    onPressed: () => _enter(
+                      () => context.push(
+                        widget.showBackButton
+                            ? '/gift?addAccount=true'
+                            : '/gift',
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }

@@ -79,8 +79,10 @@ final ledgerBluetoothExistingAccountConnectorProvider =
 
 const _newAccountUpdateRequired = LedgerAppReadinessException(
   LedgerAppReadinessFailure.unsupportedVersion,
-  'Update the Ledger Zcash app to version '
+  'Update the Ledger Zcash app to version ' // l10n-ignore: exception text
   '$kMinimumLedgerZcashAppVersionForNewAccounts or newer.',
+  reason: LedgerAppReadinessReason.updateRequired,
+  requiredVersion: kMinimumLedgerZcashAppVersionForNewAccounts,
 );
 
 Future<LedgerDeviceAccount> _connectLedgerAccount(

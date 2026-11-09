@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
@@ -17,10 +17,14 @@ import '../public_details_load.dart';
 import '../transaction_completeness.dart';
 import '../widgets/public_details_lookup_dialog.dart';
 
-/// Loads the transaction history; injectable so previews and widget tests can
-/// avoid the Rust FFI.
+/// Loads the Activity rows of one transaction, `txidHex` as
+/// [rust_sync.TransactionInfo.txidHex], not the account's whole history;
+/// injectable so previews and widget tests can avoid the Rust FFI.
 typedef ActivityTxHistoryLoader =
-    Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
+    Future<List<rust_sync.TransactionInfo>> Function(
+      String accountUuid,
+      String txidHex,
+    );
 
 /// Loads one transaction's detail; injectable for previews and widget tests.
 typedef ActivityTxDetailLoader =
@@ -32,11 +36,6 @@ typedef ActivityTxDetailLoader =
 /// Asks the next sync to look a transaction's transparent details up first;
 /// injectable for widget tests.
 typedef TransparentDetailsPrioritizer = Future<void> Function(String txidHex);
-
-/// Development builds only: one private lookup, described in a line;
-/// injectable for widget tests.
-typedef TransparentDetailsDebugLookup =
-    Future<String> Function(rust_sync.TransactionInfo transaction);
 
 /// Loads one transaction's full details from the server after the user
 /// confirmed; injectable for widget tests.
@@ -71,10 +70,8 @@ abstract class TransactionReceiptScreen extends ConsumerStatefulWidget {
     this.historyLoader,
     this.detailLoader,
     this.transparentDetailsPrioritizer,
-    this.transparentDetailsDebugLookup,
     this.transparentDetailsPublicLookup,
     this.publicLookupConfirmation = confirmPublicDetailsLookup,
-    this.showPrivateLookupDiagnostics = kDebugMode,
   });
 
   TransactionReceiptArgs get receiptArgs;
@@ -93,24 +90,17 @@ abstract class TransactionReceiptScreen extends ConsumerStatefulWidget {
 
   /// Test seam — production asks Rust.
   @visibleForTesting
-  final TransparentDetailsDebugLookup? transparentDetailsDebugLookup;
-
-  /// Test seam — production asks Rust.
-  @visibleForTesting
   final TransparentDetailsPublicLookup? transparentDetailsPublicLookup;
 
   /// Test seam — production shows [PublicDetailsLookupDialog].
   final PublicLookupConfirmation publicLookupConfirmation;
-
-  /// Whether this is a development build that offers the private lookup
-  /// button.
-  final bool showPrivateLookupDiagnostics;
 }
 
 /// Loads and refreshes what a receipt screen shows, for desktop and mobile
-/// alike: the transaction's Activity row, then its detail; the follow-up
+/// alike: the transaction's Activity row and its detail, read for that one
+/// transaction only; the follow-up
 /// that re-reads the detail while its transparent details are on the way;
-/// and the development and public lookups the receipt offers.
+/// and the public lookup the receipt offers.
 ///
 /// Every load bumps a generation, and a result is shown only while its
 /// generation and account are still current, so a superseded or another
@@ -131,10 +121,16 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
   Timer? _transparentDetailsPoll;
   bool _transparentDetailsPollInFlight = false;
   bool _transparentDetailsPrioritized = false;
-  String? _debugLookupText;
-  int _debugLookupGeneration = 0;
   String? _publicLookupText;
   bool _publicLookupRunning = false;
+  // The detail read a load started for the shown row before its row read
+  // returned, while it runs: a load that supersedes it shares it.
+  ({
+    String accountUuid,
+    rust_sync.TransactionInfo row,
+    Future<rust_sync.TransactionDetail?> read,
+  })?
+  _earlyDetailRead;
 
   /// The Activity row shown, or `null` until one loads.
   rust_sync.TransactionInfo? get receiptTransaction => _transaction;
@@ -155,7 +151,6 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
   /// The account the route's row and metadata came from.
   String? get receiptArgsAccountUuid => _argsAccountUuid;
 
-  String? get debugLookupText => _debugLookupText;
   String? get publicLookupText => _publicLookupText;
 
   /// Whether the shown row's detail is still loading with no cached detail to
@@ -232,16 +227,18 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
       generation == _loadGeneration &&
       accountUuid == ref.read(accountProvider).value?.activeAccountUuid;
 
-  /// Loads the shown row from the active account's history, publishes it,
-  /// then loads and publishes its detail.
+  /// Loads the shown row's Activity rows and detail, and publishes each as it
+  /// arrives. A receipt opened from a row already shows that row; while it
+  /// has no detail for it, the detail is read at once, alongside the row read
+  /// rather than after it, so the skeleton waits on that one read. A
+  /// provisional row's detail is shown only once the row read confirms its
+  /// role.
   Future<void> loadReceipt() async {
     final generation = ++_loadGeneration;
-    ++_debugLookupGeneration;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     final accountChanged = accountUuid != _activeAccountUuid;
     _activeAccountUuid = accountUuid;
     setState(() {
-      _debugLookupText = null;
       // A refresh while a public load runs keeps its state; the load
       // refreshes again when it finishes.
       if (!_publicLookupRunning || accountChanged) _publicLookupText = null;
@@ -258,11 +255,24 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
       setState(() {
         _isLoading = false;
         _detailsPending = false;
-        _error = 'No active account.';
+        _error = context.l10n.commonNoActiveAccountSentence;
       });
       return;
     }
 
+    // The row already shown, from the tapped row or the last load.
+    final shown = _transaction;
+    Future<rust_sync.TransactionDetail?>? shownDetail;
+    if (shown != null && matchingReceiptDetailFor(shown) == null) {
+      final read = _readShownDetail(accountUuid, shown);
+      shownDetail = read;
+      // A provisional row's role can still change with the row read
+      // ([_findTransaction]); its detail would then show for a moment and
+      // give way to the new role's skeleton. It waits for the row read.
+      if (!shown.provisional) {
+        unawaited(_publishShownDetail(read, shown, generation, accountUuid));
+      }
+    }
     try {
       final txs = await _loadHistory(accountUuid);
       if (!_loadIsCurrent(generation, accountUuid)) return;
@@ -270,21 +280,30 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
       if (tx == null) {
         setState(() {
           _error = _transaction == null
-              ? 'Transaction could not be loaded.'
-              : 'Latest transaction status could not be refreshed.';
+              ? context.l10n.activityReceiptLoadFailed
+              : context.l10n.activityReceiptRefreshFailed;
           _isLoading = false;
           _detailsPending = false;
         });
         return;
       }
+      // The detail already asked for answers for this row unless the
+      // transaction's role changed meanwhile.
+      final sameRow = shown != null && _isSameRow(shown, tx);
       // Publish the status without waiting for addresses, outputs, or memo.
+      // A detail that still fits the row (a receive that became mined) stays
+      // shown while its new read runs: [receiptDetailsLoading] shows the
+      // skeleton only when no shown detail fits.
       setState(() {
         _transaction = tx;
         _detail = matchingReceiptDetailFor(tx);
+        if (!sameRow) _detailsPending = true;
         _isLoading = false;
         _error = null;
       });
-      final detail = await _loadDetail(accountUuid, tx);
+      final detail = sameRow && shownDetail != null
+          ? await shownDetail
+          : await _loadDetail(accountUuid, tx);
       if (!_loadIsCurrent(generation, accountUuid)) return;
       setState(() {
         _detail = detail ?? _detail;
@@ -296,25 +315,94 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
       log('TransactionReceipt: transaction load failed: $e\n$st');
       setState(() {
         _error = _transaction == null
-            ? 'Transaction could not be loaded.'
-            : 'Latest transaction status could not be refreshed.';
+            ? context.l10n.activityReceiptLoadFailed
+            : context.l10n.activityReceiptRefreshFailed;
         _isLoading = false;
         _detailsPending = false;
       });
     }
   }
 
+  /// The detail of [shown], sharing a read an earlier load started for the
+  /// same row that is still running.
+  Future<rust_sync.TransactionDetail?> _readShownDetail(
+    String accountUuid,
+    rust_sync.TransactionInfo shown,
+  ) {
+    final running = _earlyDetailRead;
+    if (running != null &&
+        running.accountUuid == accountUuid &&
+        _isSameRow(running.row, shown)) {
+      return running.read;
+    }
+    final read = _loadDetail(accountUuid, shown);
+    _earlyDetailRead = (accountUuid: accountUuid, row: shown, read: read);
+    unawaited(
+      read.then<void>((_) {}, onError: (Object _) {}).whenComplete(() {
+        if (identical(_earlyDetailRead?.read, read)) _earlyDetailRead = null;
+      }),
+    );
+    return read;
+  }
+
+  /// Publishes the detail read for the [shown] row as soon as it arrives,
+  /// while the row read is still running: it ends the skeleton. The full load
+  /// publishes it again, and reports a failure.
+  Future<void> _publishShownDetail(
+    Future<rust_sync.TransactionDetail?> pending,
+    rust_sync.TransactionInfo shown,
+    int generation,
+    String accountUuid,
+  ) async {
+    final rust_sync.TransactionDetail? detail;
+    try {
+      detail = await pending;
+    } catch (_) {
+      return;
+    }
+    final current = _transaction;
+    if (!_loadIsCurrent(generation, accountUuid) ||
+        !_detailsPending ||
+        current == null ||
+        !_isSameRow(shown, current)) {
+      return;
+    }
+    setState(() {
+      _detail = detail ?? _detail;
+      _detailsPending = false;
+    });
+  }
+
+  /// Whether a detail read for [a] answers for [b]: the same transaction in
+  /// the same Activity role.
+  bool _isSameRow(rust_sync.TransactionInfo a, rust_sync.TransactionInfo b) =>
+      receiptTxidsMatch(a.txidHex, b.txidHex) && a.txKind == b.txKind;
+
+  /// The receipt transaction's Activity rows. A Gift Card's txid may be in
+  /// either byte order, so its rows are looked up in the other order too.
   Future<List<rust_sync.TransactionInfo>> _loadHistory(
     String accountUuid,
   ) async {
+    final txidHex = widget.receiptArgs.txidHex;
+    final rows = await _loadRows(accountUuid, txidHex);
+    if (rows.isNotEmpty || widget.receiptArgs.giftCard == null) return rows;
+    final otherOrder = paymentLinkTxidInOtherByteOrder(txidHex);
+    return otherOrder == null ? rows : _loadRows(accountUuid, otherOrder);
+  }
+
+  Future<List<rust_sync.TransactionInfo>> _loadRows(
+    String accountUuid,
+    String txidHex,
+  ) async {
     final loader = widget.historyLoader;
-    if (loader != null) return loader(accountUuid);
+    if (loader != null) return loader(accountUuid, txidHex);
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointProvider);
-    return rust_sync.getTransactionHistory(
+    return rust_sync.getTransactionRows(
       dbPath: dbPath,
       network: endpoint.networkName,
       accountUuid: accountUuid,
+      txidHex: txidHex,
     );
   }
 
@@ -409,44 +497,6 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
     }
   }
 
-  /// Whether a development build offers one private lookup of [tx]'s
-  /// transparent details.
-  bool offersDebugLookup(
-    rust_sync.TransactionInfo tx,
-    rust_sync.TransactionDetail? detail,
-  ) {
-    final state = detail?.transparentDetailsState;
-    return widget.showPrivateLookupDiagnostics &&
-        state != null &&
-        state != rust_sync.TransparentDetailsState.available &&
-        tx.minedHeight > BigInt.zero;
-  }
-
-  Future<void> runDebugLookup(rust_sync.TransactionInfo tx) async {
-    final generation = _loadGeneration;
-    final accountUuid = _activeAccountUuid;
-    final lookupGeneration = ++_debugLookupGeneration;
-    bool isCurrent() =>
-        _loadIsCurrent(generation, accountUuid) &&
-        lookupGeneration == _debugLookupGeneration;
-    setState(() => _debugLookupText = 'Looking up…');
-    try {
-      final lookup = widget.transparentDetailsDebugLookup;
-      final text = lookup != null
-          ? await lookup(tx)
-          : describeTransparentDetailsLookup(
-              await rust_sync.debugLookupTransparentDetails(
-                network: ref.read(rpcEndpointProvider).networkName,
-                txidHex: tx.txidHex,
-                minedHeight: tx.minedHeight,
-              ),
-            );
-      if (isCurrent()) setState(() => _debugLookupText = text);
-    } catch (e) {
-      if (isCurrent()) setState(() => _debugLookupText = 'Failed: $e');
-    }
-  }
-
   /// Loads [tx]'s full details from the server once the user confirms, then
   /// refreshes the receipt. Nothing here runs without that confirmation, and a
   /// refresh while it runs neither drops its result nor offers it again.
@@ -458,7 +508,7 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
     var loaded = false;
     try {
       if (!await widget.publicLookupConfirmation(context) || !mounted) return;
-      setState(() => _publicLookupText = kLoadDetailsPubliclyLoadingText);
+      setState(() => _publicLookupText = context.l10n.activityDetailsLoading);
       final lookup = widget.transparentDetailsPublicLookup;
       if (lookup != null) {
         await lookup(tx);
@@ -473,7 +523,9 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
     } catch (e) {
       log('TransactionReceipt: public details lookup failed');
       if (mounted && _activeAccountUuid == accountUuid) {
-        setState(() => _publicLookupText = kLoadDetailsPubliclyFailedText);
+        setState(
+          () => _publicLookupText = context.l10n.activityDetailsLoadFailed,
+        );
       }
     } finally {
       _publicLookupRunning = false;

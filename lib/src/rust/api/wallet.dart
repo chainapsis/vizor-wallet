@@ -24,6 +24,68 @@ Future<String> getLightwalletdChainName({required String lightwalletdUrl}) =>
       lightwalletdUrl: lightwalletdUrl,
     );
 
+/// Time connection establishment and the chain-info RPC on the selected route.
+Future<LightwalletdEndpointProbe> probeLightwalletdEndpoint({
+  required String lightwalletdUrl,
+}) => RustLib.instance.api.crateApiWalletProbeLightwalletdEndpoint(
+  lightwalletdUrl: lightwalletdUrl,
+);
+
+/// Probe a bounded set of public candidates. Initial selection may stop after
+/// a short comparison window; `wait_for_all` collects the full bounded batch.
+/// Each selection ID must first be reserved with [begin_lightwalletd_selection].
+/// The caller waits for route readiness before starting; route failures are
+/// returned separately from server health.
+Future<List<LightwalletdCandidateProbe>> probeLightwalletdCandidates({
+  required List<String> lightwalletdUrls,
+  required String expectedNetwork,
+  required String selectionId,
+  required int probeTimeoutMs,
+  required int totalTimeoutMs,
+  required int maxConcurrency,
+  required bool waitForAll,
+}) => RustLib.instance.api.crateApiWalletProbeLightwalletdCandidates(
+  lightwalletdUrls: lightwalletdUrls,
+  expectedNetwork: expectedNetwork,
+  selectionId: selectionId,
+  probeTimeoutMs: probeTimeoutMs,
+  totalTimeoutMs: totalTimeoutMs,
+  maxConcurrency: maxConcurrency,
+  waitForAll: waitForAll,
+);
+
+/// Read one live tip from a recently chain-verified endpoint on the selected
+/// route. The caller must reserve a unique selection ID before dispatch and
+/// must only use this fast path while its endpoint verification is fresh.
+/// Unlike a full candidate probe, this sends only GetLatestBlock.
+Future<LightwalletdCandidateProbe> readLightwalletdTip({
+  required String lightwalletdUrl,
+  required String expectedNetwork,
+  required String selectionId,
+  required int timeoutMs,
+}) => RustLib.instance.api.crateApiWalletReadLightwalletdTip(
+  lightwalletdUrl: lightwalletdUrl,
+  expectedNetwork: expectedNetwork,
+  selectionId: selectionId,
+  timeoutMs: timeoutMs,
+);
+
+/// Reserves one bounded selection slot before its async FRB dispatch. IDs
+/// must be unique. A cancelled queued call keeps this slot until its worker
+/// consumes it, so queue delays can never make cancelled work live again.
+void beginLightwalletdSelection({required String selectionId}) => RustLib
+    .instance
+    .api
+    .crateApiWalletBeginLightwalletdSelection(selectionId: selectionId);
+
+/// Cancels only the selection with this ID, including a call whose FRB worker
+/// has not started yet. Kept synchronous so busy workers cannot delay a lock
+/// or route change behind a slow probe.
+void cancelLightwalletdSelection({required String selectionId}) => RustLib
+    .instance
+    .api
+    .crateApiWalletCancelLightwalletdSelection(selectionId: selectionId);
+
 /// Get the connected chain upgrade state used to decide whether Ironwood is active.
 Future<ChainUpgradeStatus> getChainUpgradeStatus({
   required String lightwalletdUrl,
@@ -38,6 +100,22 @@ Future<ChainUpgradeActivationStatus> getChainUpgradeStatusAtHeight({
   required String network,
   required BigInt tipHeight,
 }) => RustLib.instance.api.crateApiWalletGetChainUpgradeStatusAtHeight(
+  network: network,
+  tipHeight: tipHeight,
+);
+
+/// Target block spacing for `network`; the NU7 height is absent until scheduled.
+BlockSpacingSchedule getBlockSpacingSchedule({required String network}) =>
+    RustLib.instance.api.crateApiWalletGetBlockSpacingSchedule(
+      network: network,
+    );
+
+/// The upgrade window after `tip_height` on `network`, or none when no
+/// upgrade is scheduled after it.
+NetworkUpgradeWindow? getNetworkUpgradeWindow({
+  required String network,
+  required BigInt tipHeight,
+}) => RustLib.instance.api.crateApiWalletGetNetworkUpgradeWindow(
   network: network,
   tipHeight: tipHeight,
 );
@@ -375,13 +453,23 @@ Future<String?> findSoftwareAccountForMnemonic({
   zip32AccountIndex: zip32AccountIndex,
 );
 
-/// Export a single account's Unified Full Viewing Key (UFVK). Works for both
-/// software and hardware (Keystone) accounts.
+/// Export a single account's Unified Full Viewing Key (UFVK).
 Future<String> getAccountUfvk({
   required String dbPath,
   required String network,
   required String accountUuid,
 }) => RustLib.instance.api.crateApiWalletGetAccountUfvk(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
+/// Export full and incoming viewing keys for a software or hardware account.
+Future<AccountViewingKeys> getAccountViewingKeys({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiWalletGetAccountViewingKeys(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
@@ -492,7 +580,6 @@ class AccountExportMetadata {
 class AccountInfo {
   final String uuid;
   final String name;
-  final String unifiedAddress;
   final int birthdayHeight;
   final int? zip32AccountIndex;
   final bool isSeedAnchor;
@@ -502,7 +589,6 @@ class AccountInfo {
   const AccountInfo({
     required this.uuid,
     required this.name,
-    required this.unifiedAddress,
     required this.birthdayHeight,
     this.zip32AccountIndex,
     required this.isSeedAnchor,
@@ -514,7 +600,6 @@ class AccountInfo {
   int get hashCode =>
       uuid.hashCode ^
       name.hashCode ^
-      unifiedAddress.hashCode ^
       birthdayHeight.hashCode ^
       zip32AccountIndex.hashCode ^
       isSeedAnchor.hashCode ^
@@ -528,12 +613,58 @@ class AccountInfo {
           runtimeType == other.runtimeType &&
           uuid == other.uuid &&
           name == other.name &&
-          unifiedAddress == other.unifiedAddress &&
           birthdayHeight == other.birthdayHeight &&
           zip32AccountIndex == other.zip32AccountIndex &&
           isSeedAnchor == other.isSeedAnchor &&
           isHardware == other.isHardware &&
           hardwareSignerKind == other.hardwareSignerKind;
+}
+
+/// The full and incoming viewing keys for the same account and network.
+class AccountViewingKeys {
+  final String ufvk;
+  final String uivk;
+
+  const AccountViewingKeys({required this.ufvk, required this.uivk});
+
+  @override
+  int get hashCode => ufvk.hashCode ^ uivk.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AccountViewingKeys &&
+          runtimeType == other.runtimeType &&
+          ufvk == other.ufvk &&
+          uivk == other.uivk;
+}
+
+/// Target block spacing before and from NU7, for time estimates in the UI.
+class BlockSpacingSchedule {
+  final BigInt? nu7ActivationHeight;
+  final int preNu7BlockSeconds;
+  final int nu7BlockSeconds;
+
+  const BlockSpacingSchedule({
+    this.nu7ActivationHeight,
+    required this.preNu7BlockSeconds,
+    required this.nu7BlockSeconds,
+  });
+
+  @override
+  int get hashCode =>
+      nu7ActivationHeight.hashCode ^
+      preNu7BlockSeconds.hashCode ^
+      nu7BlockSeconds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BlockSpacingSchedule &&
+          runtimeType == other.runtimeType &&
+          nu7ActivationHeight == other.nu7ActivationHeight &&
+          preNu7BlockSeconds == other.preNu7BlockSeconds &&
+          nu7BlockSeconds == other.nu7BlockSeconds;
 }
 
 /// Chain upgrade activation state computed from a known chain tip height.
@@ -671,6 +802,95 @@ class LegacyHardwareAccount {
           runtimeType == other.runtimeType &&
           accountUuid == other.accountUuid &&
           hardwareSignerKind == other.hardwareSignerKind;
+}
+
+/// A healthy public candidate measured on one routed connection. No wallet
+/// address, transaction identifier or birthday is sent by the measurement.
+class LightwalletdCandidateProbe {
+  final String url;
+  final BigInt height;
+  final int latencyMs;
+  final int connectMs;
+  final int rpcMs;
+
+  /// Local GetLatestBlock receipt time, in UNIX epoch milliseconds.
+  final BigInt observedAtMs;
+
+  const LightwalletdCandidateProbe({
+    required this.url,
+    required this.height,
+    required this.latencyMs,
+    required this.connectMs,
+    required this.rpcMs,
+    required this.observedAtMs,
+  });
+
+  @override
+  int get hashCode =>
+      url.hashCode ^
+      height.hashCode ^
+      latencyMs.hashCode ^
+      connectMs.hashCode ^
+      rpcMs.hashCode ^
+      observedAtMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LightwalletdCandidateProbe &&
+          runtimeType == other.runtimeType &&
+          url == other.url &&
+          height == other.height &&
+          latencyMs == other.latencyMs &&
+          connectMs == other.connectMs &&
+          rpcMs == other.rpcMs &&
+          observedAtMs == other.observedAtMs;
+}
+
+/// A chain-info response timed inside Rust, excluding bridge execution queues.
+class LightwalletdEndpointProbe {
+  final String chainName;
+  final int latencyMs;
+
+  const LightwalletdEndpointProbe({
+    required this.chainName,
+    required this.latencyMs,
+  });
+
+  @override
+  int get hashCode => chainName.hashCode ^ latencyMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LightwalletdEndpointProbe &&
+          runtimeType == other.runtimeType &&
+          chainName == other.chainName &&
+          latencyMs == other.latencyMs;
+}
+
+/// The next network upgrade after a chain tip and the tip from which the
+/// wallet refuses transactions before it. The refusal holds while the next
+/// block is still before the upgrade.
+class NetworkUpgradeWindow {
+  final BigInt nextActivationHeight;
+  final BigInt sendHoldFromTip;
+
+  const NetworkUpgradeWindow({
+    required this.nextActivationHeight,
+    required this.sendHoldFromTip,
+  });
+
+  @override
+  int get hashCode => nextActivationHeight.hashCode ^ sendHoldFromTip.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NetworkUpgradeWindow &&
+          runtimeType == other.runtimeType &&
+          nextActivationHeight == other.nextActivationHeight &&
+          sendHoldFromTip == other.sendHoldFromTip;
 }
 
 /// A higher ZIP32 software account that can be imported by user choice.

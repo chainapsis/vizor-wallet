@@ -1,7 +1,9 @@
 import 'dart:async';
+import '../../support/test_l10n.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_modal.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_modal_content.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 
 import 'package:flutter/material.dart';
@@ -12,6 +14,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_bluetooth_acces
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_bluetooth_recovery.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 class _Access implements LedgerMobileBleService, LedgerBluetoothAccess {
   LedgerBluetoothAccessStatus status = const LedgerBluetoothAccessStatus(
@@ -22,6 +25,7 @@ class _Access implements LedgerMobileBleService, LedgerBluetoothAccess {
   int reads = 0;
   int settings = 0;
   bool opensSettings = true;
+  Completer<bool>? settingsPending;
   Completer<LedgerBluetoothAccessStatus>? pending;
   @override
   Future<LedgerBluetoothAccessStatus> bluetoothAccessStatus() async {
@@ -38,7 +42,7 @@ class _Access implements LedgerMobileBleService, LedgerBluetoothAccess {
   @override
   Future<bool> openBluetoothSettings() async {
     settings++;
-    return opensSettings;
+    return settingsPending?.future ?? opensSettings;
   }
 
   // Any accidental discovery, connect or signing call fails the test.
@@ -49,6 +53,7 @@ class _Access implements LedgerMobileBleService, LedgerBluetoothAccess {
 
 Widget _harness(_Access service, {ProviderContainer? container}) {
   final child = MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
       data: AppThemeData.light,
       child: Center(
@@ -65,6 +70,116 @@ Widget _harness(_Access service, {ProviderContainer? container}) {
 }
 
 void main() {
+  for (final operation in ['status', 'permission', 'settings']) {
+    testWidgets('desktop recovery blocks connection changes during $operation', (
+      tester,
+    ) async {
+      final service = _Access();
+      if (operation == 'status') {
+        service.pending = Completer<LedgerBluetoothAccessStatus>();
+      } else if (operation == 'permission') {
+        service.permissionPending = Completer<bool>();
+      } else {
+        service.status = const LedgerBluetoothAccessStatus(
+          LedgerBluetoothPermission.settings,
+        );
+        service.settingsPending = Completer<bool>();
+      }
+      void completePending() {
+        if (service.pending case final pending? when !pending.isCompleted) {
+          pending.complete(service.status);
+        }
+        if (service.permissionPending case final pending?
+            when !pending.isCompleted) {
+          pending.complete(false);
+        }
+        if (service.settingsPending case final pending?
+            when !pending.isCompleted) {
+          pending.complete(false);
+        }
+      }
+
+      final container = ProviderContainer(
+        overrides: [
+          ledgerMobileBleServiceProvider.overrideWithValue(service),
+          ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
+          accountProvider.overrideWith(_AccountsNotifier.new),
+        ],
+      );
+      addTearDown(() async {
+        completePending();
+        await tester.pump();
+        container.dispose();
+      });
+      var changes = 0;
+      var showingRecovery = true;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
+            home: AppTheme(
+              data: AppThemeData.light,
+              child: StatefulBuilder(
+                builder: (context, setState) => Center(
+                  child: showingRecovery
+                      ? LedgerAccessRecoveryModal(
+                          account: _account,
+                          onRetry: () {},
+                          onClose: () {},
+                          onChangeConnection: () => setState(() {
+                            changes++;
+                            showingRecovery = false;
+                          }),
+                        )
+                      : const Text('Connection options'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      if (operation != 'status') await tester.pumpAndSettle();
+      final previousBack = tester
+          .widget<LedgerModalContent>(find.byType(LedgerModalContent))
+          .onBack;
+      if (operation != 'status') {
+        expect(previousBack, isNotNull);
+        await tester.tap(
+          find.text(
+            operation == 'permission' ? 'Allow access' : 'Open settings',
+          ),
+        );
+      }
+      // A callback captured before the next frame must also respect busy work.
+      previousBack?.call();
+      await tester.pump();
+      expect(changes, 0);
+      // The modal refresh is deferred until after the child's busy-state frame.
+      await tester.pump();
+      expect(service.requests, operation == 'permission' ? 1 : 0);
+      expect(service.settings, operation == 'settings' ? 1 : 0);
+      expect(find.text('Checking Bluetooth access…'), findsOneWidget);
+      expect(
+        tester
+            .widget<LedgerModalContent>(find.byType(LedgerModalContent))
+            .onBack,
+        isNull,
+      );
+      expect(find.bySemanticsLabel('Change connection'), findsNothing);
+      expect(find.byType(LedgerAccessRecoveryModal), findsOneWidget);
+
+      completePending();
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Change connection'), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Change connection'));
+      await tester.pumpAndSettle();
+      expect(changes, 1);
+      expect(find.text('Connection options'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }, tags: ['desktop']);
+  }
+
   for (final platform in [
     TargetPlatform.macOS,
     TargetPlatform.iOS,
@@ -88,6 +203,7 @@ void main() {
           UncontrolledProviderScope(
             container: container,
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.light,
                 child: Center(
@@ -110,8 +226,8 @@ void main() {
         expect(
           tester
               .widget<AppButton>(find.widgetWithText(AppButton, 'Allow access'))
-              .expand,
-          isTrue,
+              .variant,
+          AppButtonVariant.primary,
         );
         expect(find.text('USB'), findsNothing);
         expect(find.text('Connection'), findsNothing);
@@ -139,12 +255,12 @@ void main() {
       expect(status.locationPermission, isTrue);
       expect(status.bluetoothEnabled, isTrue);
       expect(status.locationEnabled, isFalse);
-      expect(status.message, contains('Turn on location services'));
+      expect(status.message(testL10n), contains('Turn on location services'));
       expect(
         LedgerBluetoothAccessStatus.fromMap({
           'permission': 'settings',
           'platform': 'macOS',
-        }).message,
+        }).message(testL10n),
         contains('System Settings'),
       );
     },
@@ -266,7 +382,8 @@ void main() {
     await tester.pumpWidget(_harness(service));
     await tester.pumpAndSettle();
     expect(find.text('Allow access'), findsNothing);
-    expect(find.textContaining('administrator'), findsOneWidget);
+    expect(find.text(service.status.message(testL10n)), findsOneWidget);
+    expect(find.text('Open settings'), findsOneWidget);
   });
 
   testWidgets('late read after cancellation cannot replace guidance', (

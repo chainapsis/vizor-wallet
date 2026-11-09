@@ -11,6 +11,8 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_profile_picture.dart';
 import '../../widgets/mobile/mobile_account_avatar.dart';
 import 'mobile_top_nav.dart';
+import 'mobile_sync_status.dart';
+import '../../l10n/l10n.dart';
 
 /// [MobileTopNav.account] bound to live state: the active account's
 /// name and profile picture from [accountProvider], and the sync status
@@ -28,40 +30,17 @@ class MobileTopNavAccount extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.colors;
     final account = ref.watch(accountProvider).value?.activeAccount;
     final sync = ref.watch(syncProvider).value ?? SyncState();
     final status = SyncStatusLabel.from(
+      context.l10n,
       sync,
       displayWholePercentage: ref.watch(syncDisplayWholePercentageProvider),
       networkPrivacy: ref.watch(networkPrivacyProvider),
     );
 
     final isSyncing = status.kind == SyncStatusKind.syncing;
-    // Synced reads fully green: label `sync.text` (GreenPrimitives.p900) +
-    // vivid green bar `sync.lightSuccess`. Syncing reads muted: the label
-    // rests at the synced green @ 65% (`sync.textSyncing`) and the shimmer
-    // peaks at the bright `sync.lightSuccess`, so the sweep stays visible on a
-    // light background. The bar stays a neutral grey (`text.muted` = p500,
-    // identical in both modes) so it never muddies to olive, and its glow is
-    // tuned down (see `_SyncStatusMotion`) so syncing reads calm, not vibrant.
-    final (labelColor, indicatorColor, highlightColor) = switch (status.kind) {
-      SyncStatusKind.synced => (
-        colors.sync.text, // green label
-        colors.sync.lightSuccess, // green bar
-        colors.sync.text,
-      ),
-      SyncStatusKind.syncing => (
-        colors.sync.textSyncing, // muted green resting (synced green @ 65%)
-        colors.text.muted, // neutral grey bar (subtle glow)
-        colors.sync.lightSuccess, // bright shimmer peak
-      ),
-      SyncStatusKind.failed => (
-        colors.sync.textError,
-        colors.sync.lightError,
-        colors.sync.textError,
-      ),
-    };
+    final syncColors = MobileSyncStatus.colorsFor(context, status.kind);
 
     return MobileTopNav.account(
       accountName: account?.name ?? '',
@@ -69,13 +48,13 @@ class MobileTopNavAccount extends ConsumerWidget {
         profilePictureId: account?.profilePictureId ?? kDefaultProfilePictureId,
         size: AppProfilePictureSize.navLarge,
         hardwareSignerKind: account?.hardwareSignerKind,
-        badgeRingColor: colors.background.window,
+        badgeRingColor: context.colors.background.window,
       ),
       syncLabel: showSyncStatus ? status.label : null,
-      syncLabelColor: labelColor,
-      syncIndicatorColor: indicatorColor,
+      syncLabelColor: syncColors.label,
+      syncIndicatorColor: syncColors.indicator,
       syncAnimated: showSyncStatus && isSyncing,
-      syncHighlightColor: highlightColor,
+      syncHighlightColor: syncColors.highlight,
       onAccountTap: onAccountTap,
     );
   }

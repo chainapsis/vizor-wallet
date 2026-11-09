@@ -11,7 +11,7 @@
 //! [`isolated_test`]: crate::wallet::db::isolated_test
 
 use transparent::address::TransparentAddress;
-use zakura_pir_transparent::testing::{transparent_filter, transparent_shard};
+use zakura_pir_client::transparent::testing::{filter, shard};
 
 use super::pir::{assert_private, BIRTHDAY, TOP};
 use super::qualification::disclosing;
@@ -89,6 +89,23 @@ fn sync(path: &str, lwd: &CapturingLwd) -> Result<(), String> {
     ))
 }
 
+/// Whole syncs a recovery needs at most in these tests: each sync makes one
+/// recovery pass per account, so a window that grows waits for the next.
+const SYNCS: usize = 4;
+
+/// Runs [`SYNCS`] whole syncs of the wallet at `path` against `lwd`, as
+/// successive blocks would, and returns the last one's result. Recovery runs
+/// once per block, and `lwd`'s tip does not move, so each sync after the
+/// first stands in for a new block.
+fn syncs(path: &str, lwd: &CapturingLwd) -> Result<(), String> {
+    let mut result = Ok(());
+    for _ in 0..SYNCS {
+        super::super::clear_recovery_tip(path);
+        result = sync(path, lwd);
+    }
+    result
+}
+
 /// The address's public key hash: what no request may carry.
 fn secret(address: &TransparentAddress) -> Vec<u8> {
     match address {
@@ -144,10 +161,7 @@ fn a_whole_private_sync_recovers_funds_through_the_real_service() {
     private_process();
     let wallet = funded_wallet();
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let lwd = runtime.block_on(CapturingLwd::start_at_tip(
-        u64::from(TOP),
-        main_hash(TOP).0,
-    ));
+    let lwd = runtime.block_on(CapturingLwd::start_at_tip(u64::from(TOP), main_hash(TOP).0));
     crate::api::sync::reconcile_transparent_policy(wallet.path.clone(), "main".into(), true)
         .expect("raise the wallet to private recovery");
 
@@ -178,7 +192,9 @@ fn a_whole_private_sync_recovers_funds_through_the_real_service() {
         behind.digest(2),
     ));
     let seam = test_transport::set(&wallet.path, caught_up.observer());
-    sync(&wallet.path, &lwd).expect("a whole sync completes");
+    // The lagging service asked the wallet to wait; that delay passes.
+    super::super::clear_holds(&wallet.path);
+    syncs(&wallet.path, &lwd).expect("whole syncs complete");
     let balance = get_wallet_balance(&wallet.path, MAIN, &wallet.uuid).unwrap();
     assert_eq!(
         balance.transparent_authority,
@@ -237,10 +253,7 @@ fn an_unconfirmed_preference_withholds_public_lookups_without_raising_the_wallet
     preference(true, false);
     let wallet = funded_wallet();
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let lwd = runtime.block_on(CapturingLwd::start_at_tip(
-        u64::from(TOP),
-        main_hash(TOP).0,
-    ));
+    let lwd = runtime.block_on(CapturingLwd::start_at_tip(u64::from(TOP), main_hash(TOP).0));
     let service = ShardService::publish(&publication(
         wallet.address,
         u64::from(TOP),
@@ -253,7 +266,11 @@ fn an_unconfirmed_preference_withholds_public_lookups_without_raising_the_wallet
 
     let _ = sync(&wallet.path, &lwd);
 
-    assert_eq!(durable_mode(&wallet.path), before, "the policy was not raised");
+    assert_eq!(
+        durable_mode(&wallet.path),
+        before,
+        "the policy was not raised"
+    );
     assert_eq!(disclosing(&lwd), Vec::<String>::new());
     assert_private(&seam.seam.observer.requests(), &[secret(&wallet.address)]);
 }
@@ -272,10 +289,7 @@ fn turning_private_queries_off_lowers_the_wallet_and_stops_private_recovery() {
     preference(true, true);
     let wallet = funded_wallet();
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let lwd = runtime.block_on(CapturingLwd::start_at_tip(
-        u64::from(TOP),
-        main_hash(TOP).0,
-    ));
+    let lwd = runtime.block_on(CapturingLwd::start_at_tip(u64::from(TOP), main_hash(TOP).0));
     crate::api::sync::reconcile_transparent_policy(wallet.path.clone(), "main".into(), true)
         .expect("raise the wallet to private recovery");
     assert_eq!(
@@ -303,7 +317,10 @@ fn turning_private_queries_off_lowers_the_wallet_and_stops_private_recovery() {
 
     let _ = sync(&wallet.path, &lwd);
 
-    assert_eq!(durable_mode(&wallet.path), Some(TransparentLedgerMode::Public));
+    assert_eq!(
+        durable_mode(&wallet.path),
+        Some(TransparentLedgerMode::Public)
+    );
     assert_eq!(
         seam.seam.observer.requests(),
         Vec::new(),
@@ -339,10 +356,7 @@ fn private_wallet() -> (Funded, CapturingLwd, tokio::runtime::Runtime) {
     private_process();
     let wallet = funded_wallet();
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let lwd = runtime.block_on(CapturingLwd::start_at_tip(
-        u64::from(TOP),
-        main_hash(TOP).0,
-    ));
+    let lwd = runtime.block_on(CapturingLwd::start_at_tip(u64::from(TOP), main_hash(TOP).0));
     crate::api::sync::reconcile_transparent_policy(wallet.path.clone(), "main".into(), true)
         .expect("raise the wallet to private recovery");
     (wallet, lwd, runtime)
@@ -352,8 +366,11 @@ fn private_wallet() -> (Funded, CapturingLwd, tokio::runtime::Runtime) {
 /// reply passed through `tamper`, and checks that it was not recovered and
 /// stopped for `stop`. `tampered` must report that a reply was rewritten.
 fn misbehaving(
-    tamper: impl Fn(&crate::wallet::sync_engine::enhancement::ObservedRequest, &mut http::response::Parts, &mut Vec<u8>)
-        + Send
+    tamper: impl Fn(
+            &crate::wallet::sync_engine::enhancement::ObservedRequest,
+            &mut http::response::Parts,
+            &mut Vec<u8>,
+        ) + Send
         + Sync
         + 'static,
     tampered: &AtomicBool,
@@ -393,10 +410,10 @@ fn a_shard_map_of_another_chain_recovers_nothing() {
     }
     misbehaving(
         |request, _, body| {
-            if request.path == "/v1/filters/shards" {
+            if request.path == "/transparent/v1/filters/shards" {
                 replace(
                     body,
-                    transparent_filter::MAINNET_GENESIS_DISPLAY.as_bytes(),
+                    filter::MAINNET_GENESIS_DISPLAY.as_bytes(),
                     "11".repeat(32).as_bytes(),
                     &TAMPERED,
                 );
@@ -418,10 +435,10 @@ fn a_service_on_another_schema_recovers_nothing() {
     }
     misbehaving(
         |request, _, body| {
-            if request.path == "/v1/shards/init" {
+            if request.path == "/transparent/v1/shards/init" {
                 replace(
                     body,
-                    transparent_shard::manifest::SCHEMA.as_bytes(),
+                    shard::manifest::SCHEMA.as_bytes(),
                     b"transparent-shard-v99",
                     &TAMPERED,
                 );
@@ -456,17 +473,17 @@ fn a_malformed_query_reply_recovers_nothing() {
 /// leaves the balance unrecovered, and nothing falls back to public lookups.
 #[test]
 fn a_rate_limited_service_recovers_nothing() {
-    if crate::wallet::db::isolated_test(module_path!(), "a_rate_limited_service_recovers_nothing")
-    {
+    if crate::wallet::db::isolated_test(module_path!(), "a_rate_limited_service_recovers_nothing") {
         return;
     }
     misbehaving(
         |request, parts, body| {
             if request.method == "POST" {
                 parts.status = http::StatusCode::TOO_MANY_REQUESTS;
-                parts
-                    .headers
-                    .insert(http::header::RETRY_AFTER, http::HeaderValue::from_static("30"));
+                parts.headers.insert(
+                    http::header::RETRY_AFTER,
+                    http::HeaderValue::from_static("30"),
+                );
                 body.clear();
                 TAMPERED.store(true, Ordering::SeqCst);
             }
@@ -515,7 +532,7 @@ fn an_undeclared_rewrite_of_a_sealed_shard_withdraws_recovery() {
         String::new(),
     ));
     let seam = test_transport::set(&wallet.path, first.observer());
-    sync(&wallet.path, &lwd).expect("a whole sync completes");
+    syncs(&wallet.path, &lwd).expect("whole syncs complete");
     assert_eq!(
         get_wallet_balance(&wallet.path, MAIN, &wallet.uuid)
             .unwrap()
@@ -538,7 +555,7 @@ fn an_undeclared_rewrite_of_a_sealed_shard_withdraws_recovery() {
     let second = ShardService::publish(&rewritten);
     assert_ne!(second.digest(1), first.digest(1));
     let seam = test_transport::set(&wallet.path, second.observer());
-    let _ = sync(&wallet.path, &later);
+    let _ = syncs(&wallet.path, &later);
     requests.extend(seam.seam.observer.requests());
     assert_eq!(disclosing(&lwd), Vec::<String>::new());
     assert_unrecovered(
@@ -570,7 +587,7 @@ fn a_declared_re_cut_of_sealed_history_keeps_the_wallet_current() {
         String::new(),
     ));
     let seam = test_transport::set(&wallet.path, first.observer());
-    sync(&wallet.path, &lwd).expect("a whole sync completes");
+    syncs(&wallet.path, &lwd).expect("whole syncs complete");
     let received = |path: &str| -> Vec<u64> {
         get_transaction_history(path, MAIN, None, &wallet.uuid)
             .unwrap()
@@ -611,7 +628,7 @@ fn a_declared_re_cut_of_sealed_history_keeps_the_wallet_current() {
     };
     let recut = ShardService::publish_recut(&[merged, tail], &first, shard0.start);
     let seam = test_transport::set(&wallet.path, recut.observer());
-    sync(&wallet.path, &later).expect("a whole sync over the re-cut map completes");
+    syncs(&wallet.path, &later).expect("whole syncs over the re-cut map complete");
     requests.extend(seam.seam.observer.requests());
 
     let balance = get_wallet_balance(&wallet.path, MAIN, &wallet.uuid).unwrap();
@@ -627,4 +644,3 @@ fn a_declared_re_cut_of_sealed_history_keeps_the_wallet_current() {
     assert_eq!(disclosing(&lwd), Vec::<String>::new());
     assert_eq!(disclosing(&later), Vec::<String>::new());
 }
-

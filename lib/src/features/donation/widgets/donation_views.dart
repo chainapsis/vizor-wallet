@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -62,7 +63,7 @@ class DonationComposeView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Support Vizor',
+                    context.l10n.commonSupportVizor,
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineLarge.copyWith(
                       color: colors.text.accent,
@@ -83,7 +84,9 @@ class DonationComposeView extends StatelessWidget {
                     children: [
                       for (final preset in presets)
                         _DonationPreset(
-                          label: isUsd ? '\$$preset' : '$preset ZEC',
+                          label: isUsd
+                              ? '\$$preset'
+                              : '$preset ZEC', // l10n-ignore: currency code/amount format
                           selected: selectedPreset == preset,
                           onTap: () => onPresetSelected(preset),
                         ),
@@ -97,7 +100,7 @@ class DonationComposeView extends StatelessWidget {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          'Sending from your',
+                          context.l10n.donationSendingFromYour,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.primary,
                           ),
@@ -110,7 +113,7 @@ class DonationComposeView extends StatelessWidget {
                         ),
                         const SizedBox(width: AppSpacing.xs),
                         Text(
-                          'Shielded balance',
+                          context.l10n.commonShieldedBalance,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.accent,
                           ),
@@ -138,7 +141,7 @@ class DonationComposeView extends StatelessWidget {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Continue'),
+                  : Text(context.l10n.commonContinue),
             ),
           ),
         ),
@@ -203,7 +206,7 @@ class _DonationAmountCard extends StatelessWidget {
                       const SizedBox(width: AppSpacing.xxs),
                       Expanded(
                         child: Text(
-                          'Enter your amount',
+                          context.l10n.donationEnterAmount,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelLarge.copyWith(
@@ -240,7 +243,7 @@ class _DonationAmountCard extends StatelessWidget {
                                 child: SizedBox(
                                   height: AppSpacing.sm,
                                   child: Text(
-                                    'ZEC',
+                                    'ZEC', // l10n-ignore: currency code/amount format
                                     style: AppTypography.labelLarge.copyWith(
                                       color: colors.text.accent,
                                     ),
@@ -252,7 +255,7 @@ class _DonationAmountCard extends StatelessWidget {
                                 child: SizedBox(
                                   height: AppSpacing.sm,
                                   child: Text(
-                                    'Zcash',
+                                    'Zcash', // l10n-ignore: protocol name
                                     style: AppTypography.labelLarge.copyWith(
                                       color: colors.text.secondary,
                                     ),
@@ -433,7 +436,10 @@ class _DonationAmountEditorState extends State<_DonationAmountEditor> {
               ),
             ),
             const SizedBox(width: AppSpacing.xs),
-            Text(widget.isUsd ? 'USD' : 'ZEC', style: unitStyle),
+            Text(
+              widget.isUsd ? 'USD' : 'ZEC', // l10n-ignore: currency code
+              style: unitStyle,
+            ),
           ],
         ),
       ),
@@ -487,7 +493,7 @@ class DonationVizorBadge extends StatelessWidget {
     return SizedBox.square(
       dimension: size,
       child: Image.asset(
-        'assets/illustrations/desktop/donation_vizor_badge.webp',
+        'assets/illustrations/donation_vizor_badge.webp',
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
       ),
@@ -503,8 +509,8 @@ class DonationRecipientInfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ReviewInfoRow(
-      label: 'Donating to',
-      value: 'Vizor Wallet',
+      label: context.l10n.donationDonatingTo,
+      value: 'Vizor Wallet', // l10n-ignore: product name
       leading: const DonationVizorBadge(),
       struckThrough: struckThrough,
       reserveBottomRow: false,
@@ -539,19 +545,18 @@ class DonationReviewContentView extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           SendReviewContentColumn(
-            title: 'Review Amount',
+            title: context.l10n.donationReviewAmountTitle,
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                child: Column(
-                  children: [
+                child: ReviewInfoFlow(
+                  rows: [
                     ReviewInfoRow(
-                      label: 'Amount',
+                      label: context.l10n.commonAmount,
                       value: amountText,
                       leading: const ReviewZecCoinImage(),
                       bottomLeftText: fiatText,
                     ),
-                    const ReviewConnectorIcon(iconName: AppIcons.arrowDown),
                     const DonationRecipientInfoRow(),
                   ],
                 ),
@@ -559,7 +564,7 @@ class DonationReviewContentView extends StatelessWidget {
               ReviewWrapCard(
                 children: [
                   ReviewListRow(
-                    label: 'Tx fee',
+                    label: context.l10n.txFeeInfoTitle,
                     value: feeText,
                     trailingIconName: AppIcons.help,
                     trailingIconColor: colors.text.secondary,
@@ -629,12 +634,12 @@ class DonationSuccessView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const _DonationHeartBadge(),
+            const DonationHeartBadge(),
             const SizedBox(height: AppSpacing.s),
             SizedBox(
               width: 302,
               child: Text(
-                'Thank you for supporting Vizor',
+                context.l10n.donationThanksTitle,
                 textAlign: TextAlign.center,
                 style: AppTypography.displayLarge.copyWith(
                   color: colors.text.accent,
@@ -645,7 +650,7 @@ class DonationSuccessView extends StatelessWidget {
             SizedBox(
               width: 216,
               child: Text(
-                'Your support keeps Vizor going.',
+                context.l10n.sendStatusMobileDonationSupport,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: colors.text.secondary,
@@ -658,7 +663,7 @@ class DonationSuccessView extends StatelessWidget {
               onPressed: onDone,
               minWidth: 96,
               size: AppButtonSize.mediumLarge,
-              child: const Text('Done'),
+              child: Text(context.l10n.commonDone),
             ),
           ],
         ),
@@ -667,15 +672,16 @@ class DonationSuccessView extends StatelessWidget {
   }
 }
 
-class _DonationHeartBadge extends StatelessWidget {
-  const _DonationHeartBadge();
+class DonationHeartBadge extends StatelessWidget {
+  const DonationHeartBadge({this.size = 60, super.key});
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox.square(
-      dimension: 60,
+      dimension: size,
       child: Image.asset(
-        'assets/illustrations/desktop/donation_vizor_heart.webp',
+        'assets/illustrations/donation_vizor_heart.webp',
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
       ),

@@ -21,9 +21,9 @@ impl TransactionObservation {
     }
 }
 
-impl From<zakura_transaction_status::StatusObservation> for TransactionObservation {
-    fn from(observation: zakura_transaction_status::StatusObservation) -> Self {
-        use zakura_transaction_status::StatusObservation;
+impl From<zakura_pir_client::status::policy::StatusObservation> for TransactionObservation {
+    fn from(observation: zakura_pir_client::status::policy::StatusObservation) -> Self {
+        use zakura_pir_client::status::policy::StatusObservation;
         match observation {
             StatusObservation::NotFound => Self::NotFound,
             StatusObservation::Mempool => Self::Mempool,
@@ -33,7 +33,7 @@ impl From<zakura_transaction_status::StatusObservation> for TransactionObservati
     }
 }
 
-pub(crate) type LookupError = zakura_transaction_status::StatusError;
+pub(crate) type LookupError = zakura_pir_client::status::policy::StatusError;
 
 #[cfg(test)]
 mod tests {

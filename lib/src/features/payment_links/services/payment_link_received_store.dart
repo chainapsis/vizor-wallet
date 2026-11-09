@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/storage/app_secure_store.dart';
 import '../models/vizor_payment_link.dart';
 import 'payment_link_lifecycle_revision.dart';
+import 'payment_link_store_codec.dart';
 
 const _storageVersion = 1;
 const _fieldNotProvided = Object();
@@ -69,7 +70,7 @@ class PaymentLinkInFlightClaimsException implements Exception {
 
   @override
   String toString() =>
-      'Wait for incoming gift cards to finish before deleting this account.';
+      'Wait for incoming gift cards to finish before deleting this account.'; // l10n-ignore: log text; screens show accountsRemoveWaitForGiftCards
 }
 
 class PaymentLinkReceivedRecord {
@@ -245,7 +246,7 @@ class PaymentLinkReceivedStoreFormatException implements Exception {
   final String message;
 
   @override
-  String toString() => 'PaymentLinkReceivedStoreFormatException: $message';
+  String toString() => 'PaymentLinkReceivedStoreFormatException: $message'; // l10n-ignore: exception text
 }
 
 abstract interface class PaymentLinkReceivedStorage {
@@ -342,7 +343,7 @@ class PaymentLinkReceivedStore {
       final raw = await _storage.read();
       // Locked: the secret payload reads as null; the plain mirror answers.
       if (raw == null) return await _countMirror?.read() ?? 0;
-      return _decodeRecords(raw).where((r) => r.isClaimInFlight).length;
+      return (await _decodeRecords(raw)).where((r) => r.isClaimInFlight).length;
     });
   }
 
@@ -751,28 +752,18 @@ class PaymentLinkReceivedStore {
     return _decodeRecords(await _storage.read());
   }
 
-  List<PaymentLinkReceivedRecord> _decodeRecords(String? raw) {
+  Future<List<PaymentLinkReceivedRecord>> _decodeRecords(String? raw) async {
     if (raw == null || raw.trim().isEmpty) return const [];
-
+    final decoded = await runPaymentLinkStoreCodec(
+      _decodeReceivedPayload,
+      raw,
+      inBackground: raw.length >= paymentLinkCodecBackgroundBytes,
+    );
     try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map<String, dynamic>) {
-        throw const PaymentLinkReceivedStoreFormatException(
-          'Received-card payload must be a JSON object.',
-        );
-      }
-      if (decoded['version'] != _storageVersion) {
-        throw const PaymentLinkReceivedStoreFormatException(
-          'Received-card payload version is not supported.',
-        );
-      }
-      final items = decoded['records'];
-      if (items is! List) {
-        throw const PaymentLinkReceivedStoreFormatException(
-          'Received-card records are missing.',
-        );
-      }
-      return [for (final item in items) _recordFromJson(item)];
+      return await finishPaymentLinkStoreDecode<PaymentLinkReceivedRecord>(
+        decoded,
+        _recordFromJson,
+      );
     } on PaymentLinkReceivedStoreFormatException {
       rethrow;
     } catch (error) {
@@ -786,12 +777,12 @@ class PaymentLinkReceivedStore {
     if (records.isEmpty) {
       await _storage.delete();
     } else {
-      await _storage.write(
-        jsonEncode({
-          'version': _storageVersion,
-          'records': [for (final record in records) _recordToJson(record)],
-        }),
+      final encoded = await runPaymentLinkStoreCodec(
+        _encodeReceivedPayload,
+        records,
+        inBackground: records.length >= paymentLinkCodecBackgroundRecords,
       );
+      await _storage.write(encoded);
     }
     await _countMirror?.write(
       records.where((record) => record.isClaimInFlight).length,
@@ -1053,3 +1044,44 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
     claimRecoveryConfirmed: recoveryConfirmed == true,
   );
 }
+
+List<Object?> _decodeReceivedPayload(String raw) {
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      throw const PaymentLinkReceivedStoreFormatException(
+        'Received-card payload must be a JSON object.',
+      );
+    }
+    if (decoded['version'] != _storageVersion) {
+      throw const PaymentLinkReceivedStoreFormatException(
+        'Received-card payload version is not supported.',
+      );
+    }
+    final items = decoded['records'];
+    if (items is! List) {
+      throw const PaymentLinkReceivedStoreFormatException(
+        'Received-card records are missing.',
+      );
+    }
+    return [
+      for (final item in items)
+        if (paymentLinkRecordNeedsNativeCodec(item, 'claimLink'))
+          item
+        else
+          _recordFromJson(item),
+    ];
+  } on PaymentLinkReceivedStoreFormatException {
+    rethrow;
+  } catch (error) {
+    throw PaymentLinkReceivedStoreFormatException(
+      'Received-card payload could not be decoded: $error',
+    );
+  }
+}
+
+String _encodeReceivedPayload(List<PaymentLinkReceivedRecord> records) =>
+    jsonEncode({
+      'version': _storageVersion,
+      'records': [for (final record in records) _recordToJson(record)],
+    });

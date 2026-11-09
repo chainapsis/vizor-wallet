@@ -164,7 +164,7 @@ class _MobileMigrationRedesignedStatusState
       if (mounted) {
         setState(() {
           _softwarePreparationResumeError =
-              _mobilePrivateMigrationStartErrorMessage(error);
+              _mobilePrivateMigrationStartErrorMessage(context.l10n, error);
         });
       }
     } finally {
@@ -610,6 +610,7 @@ class _MobileMigrationRedesignedStatusState
       );
     });
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
     final coordinatorError = accountUuid == null
         ? null
@@ -642,7 +643,10 @@ class _MobileMigrationRedesignedStatusState
       context.push('/migration/private/preparation-schedule');
     }
 
-    final leftToMigrateText = _leftToMigrateText(widget.status);
+    final leftToMigrateText = _leftToMigrateText(
+      widget.status,
+      privacyModeEnabled: privacyModeEnabled,
+    );
     final completionEstimateText = _completionEstimateText(widget.status);
     _recordVisibleAttention(accountUuid);
 
@@ -667,7 +671,7 @@ class _MobileMigrationRedesignedStatusState
             : _MigrationPreparationState.active,
         isKeystone: awaitingKeystoneSignature,
         pausedMessage: awaitingKeystoneSignature
-            ? _keystonePreparationSignatureMessage
+            ? context.l10n.migrationMobilePrepKeystoneSignature
             : _softwarePreparationResumeError,
         onBack: () => context.go('/home'),
         onViewSchedule: viewPreparationSchedule,
@@ -698,14 +702,24 @@ class _MobileMigrationRedesignedStatusState
       }
       return _MigrationProgressPreview(
         state: _MigrationProgressState.syncing,
+        privacyModeEnabled: privacyModeEnabled,
         onBack: () => context.go('/home'),
         onViewSchedule: viewMigrationSchedule,
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
         segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
-        migratedAmountText: _migratedAmountText(widget.status),
-        totalAmountText: _totalAmountText(widget.status),
-        availableAmountText: _availableAmountText(accountUuid),
+        migratedAmountText: _migratedAmountText(
+          widget.status,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
+        totalAmountText: _totalAmountText(
+          widget.status,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
+        availableAmountText: _availableAmountText(
+          accountUuid,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
         leftToMigrateText: leftToMigrateText,
         completionEstimateText: completionEstimateText,
       );
@@ -718,6 +732,7 @@ class _MobileMigrationRedesignedStatusState
         state: _MigrationPreparationState.paused,
         // A recorded failure, not backgrounding, is why this run stopped.
         pausedMessage: _mobilePrivateMigrationStartErrorMessage(
+          context.l10n,
           coordinatorError,
         ),
         onBack: () => context.go('/home'),
@@ -741,10 +756,11 @@ class _MobileMigrationRedesignedStatusState
           widget.status.parts.any(
             (part) => part.state == rust_sync.MigrationPartState.needsInput,
           )
-          ? 'Re-sign migration transactions'
-          : 'Sign migration transactions';
+          ? context.l10n.migrationMobileActionResign
+          : context.l10n.migrationMobileActionSign;
       return _MigrationProgressPreview(
         state: _MigrationProgressState.needsInput,
+        privacyModeEnabled: privacyModeEnabled,
         onBack: () => context.go('/home'),
         onViewSchedule: viewMigrationSchedule,
         completedParts: _completedParts(widget.status),
@@ -754,9 +770,18 @@ class _MobileMigrationRedesignedStatusState
         totalBatches: batchProgress.totalBatches,
         completedRingSegments: _completedRingSegments(widget.status),
         awaitingRingSegments: _awaitingRingSegments(widget.status),
-        migratedAmountText: _migratedAmountText(widget.status),
-        totalAmountText: _totalAmountText(widget.status),
-        availableAmountText: _availableAmountText(accountUuid),
+        migratedAmountText: _migratedAmountText(
+          widget.status,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
+        totalAmountText: _totalAmountText(
+          widget.status,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
+        availableAmountText: _availableAmountText(
+          accountUuid,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
         leftToMigrateText: leftToMigrateText,
         completionEstimateText: completionEstimateText,
         nextActionPresentation: _nextMigrationPresentation(
@@ -764,29 +789,26 @@ class _MobileMigrationRedesignedStatusState
           requiresInput: true,
         ),
         statusValueOverride: needsHardwareCredentialAttention
-            ? 'Keystone account required'
+            ? context.l10n.migrationMobileKeystoneRequiredStatus
             : null,
         actionMessage: needsHardwareCredentialAttention
-            ? 'Reconnect or re-import your Keystone account to continue this '
-                  'migration.'
+            ? context.l10n.migrationMobileKeystoneReconnect
             : needsKeystoneResign
-            ? 'Sign the rebuilt migration transactions with Keystone to '
-                  'continue.'
+            ? context.l10n.migrationMobileKeystoneResignMessage
             : needsSoftwareCredentialRecovery
-            ? 'Your migration credentials need to be restored before '
-                  'continuing.'
-            : "Couldn't continue this migration. Try again.",
+            ? context.l10n.migrationMobileCredentialsRestore
+            : context.l10n.migrationMobileContinueThisError,
         actionLabel: needsHardwareCredentialAttention
-            ? 'Back to home'
+            ? context.l10n.migrationMobileBackToHome
             : needsKeystoneResign
             ? keystoneResignLabel
             : needsSoftwareCredentialRecovery
             ? recoveryInProgress
-                  ? 'Recovering...'
-                  : 'Recover'
+                  ? context.l10n.migrationMobileRecovering
+                  : context.l10n.migrationMobileRecover
             : _actionRunning
-            ? 'Retrying...'
-            : 'Retry',
+            ? context.l10n.migrationRetrying
+            : context.l10n.commonRetry,
         onAction: accountUuid == null || recoveryInProgress || _actionRunning
             ? null
             : needsHardwareCredentialAttention
@@ -807,6 +829,7 @@ class _MobileMigrationRedesignedStatusState
       final paused = widget.status.phase == kIronwoodMigrationPausedPhase;
       return _MigrationProgressPreview(
         state: _MigrationProgressState.needsInput,
+        privacyModeEnabled: privacyModeEnabled,
         onBack: () => context.go('/home'),
         onViewSchedule: viewMigrationSchedule,
         completedParts: _completedParts(widget.status),
@@ -816,23 +839,35 @@ class _MobileMigrationRedesignedStatusState
         totalBatches: batchProgress.totalBatches,
         completedRingSegments: _completedRingSegments(widget.status),
         awaitingRingSegments: _awaitingRingSegments(widget.status),
-        migratedAmountText: _migratedAmountText(widget.status),
-        totalAmountText: _totalAmountText(widget.status),
-        availableAmountText: _availableAmountText(accountUuid),
+        migratedAmountText: _migratedAmountText(
+          widget.status,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
+        totalAmountText: _totalAmountText(
+          widget.status,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
+        availableAmountText: _availableAmountText(
+          accountUuid,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
         leftToMigrateText: leftToMigrateText,
         completionEstimateText: completionEstimateText,
         nextActionPresentation: _nextMigrationPresentation(
           widget.status,
           requiresInput: true,
         ),
-        actionMessage: widget.status.message,
+        actionMessage: switch (widget.status.message) {
+          final message? => context.l10n.commonDetails(message),
+          null => null,
+        },
         actionLabel: _actionRunning
             ? paused
-                  ? 'Resuming...'
-                  : 'Retrying...'
+                  ? context.l10n.migrationMobileResuming
+                  : context.l10n.migrationRetrying
             : paused
-            ? 'Resume'
-            : 'Retry',
+            ? context.l10n.commonResume
+            : context.l10n.commonRetry,
         onAction: accountUuid == null || _actionRunning
             ? null
             : () => unawaited(_retryAfterError(accountUuid)),
@@ -890,16 +925,36 @@ class _MobileMigrationRedesignedStatusState
         pausedMessage:
             notificationsDisabled &&
                 preparationState == _MigrationPreparationState.paused
-            ? _migrationPreparationNotificationsDisabledMessage
+            ? context.l10n.migrationMobilePrepNotificationsDisabled
             : null,
         deviceLimitMessage: backgroundTrackingUnsupported
-            ? _migrationPreparationBackgroundUnsupportedMessage
+            ? context.l10n.migrationMobilePrepBackgroundUnsupported
             : null,
         onBack: () => context.go('/home'),
         onViewSchedule: viewPreparationSchedule,
         onContinue: !needsManualResume || accountUuid == null
             ? null
             : () => unawaited(_continuePreparation(accountUuid)),
+      );
+    }
+
+    if (widget.status.phase == kIronwoodMigrationStoppedByUpgradePhase) {
+      return _MigrationUpgradeStoppedView(
+        stop: IronwoodMigrationUpgradeStop(
+          migratedAmountText: _migratedAmountText(
+            widget.status,
+            privacyModeEnabled: privacyModeEnabled,
+          ),
+          // What the next run moves; the options and review start from it.
+          remainingAmountText:
+              '${hideIfPrivacyMode(ZecAmount.fromZatoshi(widget.data.amountZatoshi).compactBalance.amountText, privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
+          completedParts: _completedParts(widget.status),
+          totalParts: _totalParts(widget.status),
+        ),
+        completedSegments: _completedRingSegments(widget.status),
+        segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
+        onMoveRemaining: () => context.go('/migration/options'),
+        onBack: () => context.go('/home'),
       );
     }
 
@@ -931,6 +986,7 @@ class _MobileMigrationRedesignedStatusState
         );
     return _MigrationProgressPreview(
       state: state,
+      privacyModeEnabled: privacyModeEnabled,
       isHardware: widget.isHardware,
       showPreparationCompleteModal: _showPreparationComplete,
       onPreparationCompleteDone: () => unawaited(_dismissPreparationComplete()),
@@ -945,9 +1001,18 @@ class _MobileMigrationRedesignedStatusState
       completedRingSegments: _completedRingSegments(widget.status),
       awaitingRingSegments: _awaitingRingSegments(widget.status),
       currentSigningPartIndices: _currentSigningRingSegments(widget.status),
-      migratedAmountText: _migratedAmountText(widget.status),
-      totalAmountText: _totalAmountText(widget.status),
-      availableAmountText: _availableAmountText(accountUuid),
+      migratedAmountText: _migratedAmountText(
+        widget.status,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
+      totalAmountText: _totalAmountText(
+        widget.status,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
+      availableAmountText: _availableAmountText(
+        accountUuid,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
       leftToMigrateText: leftToMigrateText,
       completionEstimateText: completionEstimateText,
       nextActionPresentation: _nextMigrationPresentation(
@@ -962,19 +1027,26 @@ class _MobileMigrationRedesignedStatusState
         actionInProgress: actionInProgress,
       ),
       actionBatchLabel: signingAllKeystoneTransactions
-          ? 'All transactions'
+          ? context.l10n.migrationMobileActionAllTransactions
           : resigningKeystoneTransactions
-          ? 'Transactions needing signature'
-          : 'Batch #$batchNumber',
+          ? context.l10n.migrationMobileActionNeedSignature
+          : context.l10n.migrationMobileActionBatch(batchNumber),
       actionBatchValue: signingAllKeystoneTransactions
-          ? _allMigrationActionValueText(widget.status)
+          ? _allMigrationActionValueText(
+              widget.status,
+              privacyModeEnabled: privacyModeEnabled,
+            )
           : resigningKeystoneTransactions
-          ? _needsInputActionValueText(widget.status)
+          ? _needsInputActionValueText(
+              widget.status,
+              privacyModeEnabled: privacyModeEnabled,
+            )
           : batchProgress.currentBatchParts.isEmpty
           ? null
           : _actionBatchValueText(
               widget.status,
               batchProgress.currentBatchParts,
+              privacyModeEnabled: privacyModeEnabled,
             ),
       actionRunning: _actionRunning,
       onAction: accountUuid == null || _actionRunning
@@ -1056,7 +1128,10 @@ class _MobileMigrationRedesignedStatusState
       if (broadcast.status.toLowerCase() != 'scheduled' ||
           broadcast.scheduledHeight <= 0 ||
           currentHeight <
-              broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks) {
+              ironwoodMigrationLateHeight(
+                broadcast.scheduledHeight,
+                ref.read(blockSpacingProvider),
+              )) {
         continue;
       }
       if (earliest == null || broadcast.scheduledHeight < earliest) {
@@ -1081,59 +1156,61 @@ class _MobileMigrationRedesignedStatusState
     // scoped to "while Vizor is closed", or it would read as though the
     // migration bypasses Tor even while the user watches it. Android has no
     // background migration lane, so there is nothing to disclose there.
+    final l10n = context.l10n;
     final torDisclosure =
         defaultTargetPlatform == TargetPlatform.iOS &&
             ref.watch(networkPrivacyProvider).torEnabled
-        ? '\nWhile Vizor is closed, migration continues over a direct '
-              'connection.'
+        ? '\n${l10n.migrationMobileNextTorDisclosure}'
         : '';
     final currentHeight = _currentHeight();
     final nextHeight = status.nextActionHeight;
-    final timing = nextHeight != null && currentHeight > 0
+    final timingKnown = nextHeight != null && currentHeight > 0;
+    // Mirrors the "ready now" case of migrationHeightRemainingDurationLabel
+    // without comparing its localized text.
+    final timingReady = timingKnown && nextHeight <= currentHeight;
+    final timing = timingKnown
         ? migrationHeightRemainingDurationLabel(
+            context.l10n,
             nextHeight,
+            blockTimes: _blockTimes(),
             currentHeight: currentHeight,
-          ).replaceFirst('~in ', '~')
-        : 'Timing is updating';
+            relative: false,
+          )
+        : l10n.migrationMobileTimingUpdating;
     if (state == _MigrationProgressState.waitingNotificationsOff) {
       if (nextHeight != null) {
-        return 'Notifications are disabled. Open Vizor after block '
-            '$nextHeight ($timing) and approve the next migration batch.';
+        return l10n.migrationMobileNextNotificationsOffBlock(
+          nextHeight,
+          timing,
+        );
       }
-      return 'Notifications are disabled. Open Vizor again when the timing '
-          'is available and approve the next migration batch.';
+      return l10n.migrationMobileNextNotificationsOffNoTiming;
     }
     if (state == _MigrationProgressState.broadcasting) {
       // The broadcasting status view renders this verbatim, so the timing and
       // notification lines are composed once, here.
-      final expectation =
-          timing == 'Timing is updating' || timing == 'ready now'
-          ? 'Next migration step is on the way.'
-          : 'Next migration step expected in\n$timing.';
+      final expectation = !timingKnown || timingReady
+          ? l10n.migrationMobileNextOnTheWay
+          : l10n.migrationMobileNextExpectedIn(timing);
       return switch (_notificationsAuthorized) {
         true =>
-          '$expectation\nNotifications are on. You can leave Vizor and check '
-              'back later.$torDisclosure',
+          '$expectation\n${l10n.migrationMobileNextNotificationsOnLeave}' // l10n-ignore: composed from localized parts
+              '$torDisclosure',
         false =>
-          '$expectation\nNotifications are disabled. Open Vizor again to '
-              'continue.',
+          '$expectation\n${l10n.migrationMobileNextNotificationsOffOpen}',
         null => expectation,
       };
     }
     if (state == _MigrationProgressState.readyToSubmit) {
-      return 'The scheduled transaction is ready for automatic submission. '
-          'Keep Vizor open.';
+      return l10n.migrationMobileNextReadyAuto;
     }
     if (state == _MigrationProgressState.confirming) {
-      return 'Confirmations are still arriving.\nYou can leave Vizor and '
-          'check again later.$torDisclosure';
+      return '${l10n.migrationMobileNextConfirmationsArriving}$torDisclosure';
     }
-    if (timing == 'ready now') {
-      return 'The next migration step is ready. Keep Vizor open to continue.';
+    if (timingReady) {
+      return l10n.migrationMobileNextStepReady;
     }
-    return '$timing until the next migration step.\n'
-        'Notifications are on; you can leave Vizor and check back later.'
-        '$torDisclosure';
+    return '${l10n.migrationMobileNextTimingUntil(timing)}$torDisclosure';
   }
 
   Future<void> _continuePreparation(String accountUuid) async {
@@ -1213,20 +1290,24 @@ class _MobileMigrationRedesignedStatusState
   }) {
     if (actionInProgress) {
       return hasLateScheduledBroadcast
-          ? 'Submitting scheduled transaction...'
-          : 'Preparing batch #$batchNumber...';
+          ? context.l10n.migrationMobileActionSubmittingScheduled
+          : context.l10n.migrationMobileActionPreparingBatch(batchNumber);
     }
-    if (hasLateScheduledBroadcast) return 'Submit scheduled transaction';
-    if (!widget.isHardware) return 'Prepare batch #$batchNumber';
+    if (hasLateScheduledBroadcast) {
+      return context.l10n.migrationMobileActionSubmitScheduled;
+    }
+    if (!widget.isHardware) {
+      return context.l10n.migrationMobileActionPrepareBatch(batchNumber);
+    }
     if (migrationRequiresKeystoneSignature(status)) {
       final isResigning = status.parts.any(
         (part) => part.state == rust_sync.MigrationPartState.needsInput,
       );
       return isResigning
-          ? 'Re-sign migration transactions'
-          : 'Sign migration transactions';
+          ? context.l10n.migrationMobileActionResign
+          : context.l10n.migrationMobileActionSign;
     }
-    return 'Prepare batch #$batchNumber';
+    return context.l10n.migrationMobileActionPrepareBatch(batchNumber);
   }
 
   bool _isInitialKeystoneSigning(rust_sync.MigrationStatus status) {
@@ -1249,11 +1330,15 @@ class _MobileMigrationRedesignedStatusState
     );
   }
 
+  BlockTimeEstimate _blockTimes() =>
+      ref.read(blockSpacingProvider).fromTip(_currentHeight());
+
   MigrationNextActionPresentation _nextMigrationPresentation(
     rust_sync.MigrationStatus status, {
     required bool requiresInput,
   }) {
     return migrationNextActionPresentation(
+      context.l10n,
       status: status,
       currentHeight: _currentHeight(),
       requiresInput: requiresInput,
@@ -1263,16 +1348,21 @@ class _MobileMigrationRedesignedStatusState
     );
   }
 
-  String _leftToMigrateText(rust_sync.MigrationStatus status) {
+  String _leftToMigrateText(
+    rust_sync.MigrationStatus status, {
+    required bool privacyModeEnabled,
+  }) {
     final total = migrationTargetTotal(status);
     final completed = migrationCompletedValue(status);
     final remaining = total > completed ? total - completed : BigInt.zero;
-    return '${_compactZec(remaining)} ZEC';
+    return '${hideIfPrivacyMode(_compactZec(remaining), privacyModeEnabled: privacyModeEnabled)} ZEC'; // l10n-ignore: amount format
   }
 
   String _completionEstimateText(rust_sync.MigrationStatus status) {
     return migrationApproximateCompletionTimingLabel(
+      context.l10n,
       status,
+      blockTimes: _blockTimes(),
       currentHeight: _currentHeight(),
     );
   }
@@ -1282,13 +1372,14 @@ class _MobileMigrationRedesignedStatusState
   /// to the navigation that brought the user here: a launch that dies before
   /// the frame is drawn should still owe the user its result.
   void _recordVisibleAttention(String? accountUuid) {
-    final runId = widget.status.activeRunId;
+    final runId = mobileIronwoodMigrationAttentionRunId(widget.status);
     if (accountUuid == null || runId == null) return;
     final attention = mobileIronwoodMigrationAttention(
       widget.status,
       currentHeight: _currentHeight(),
       broadcastHeight: _currentBroadcastHeight(),
       isKeystone: widget.isHardware,
+      blockSpacing: ref.read(blockSpacingProvider),
     );
     if (attention == null) return;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
@@ -1410,7 +1501,10 @@ class _MobileMigrationRedesignedStatusState
         if (broadcast.status.toLowerCase() != 'scheduled' ||
             broadcast.scheduledHeight <= 0 ||
             currentHeight <
-                broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks) {
+                ironwoodMigrationLateHeight(
+                  broadcast.scheduledHeight,
+                  ref.read(blockSpacingProvider),
+                )) {
           continue;
         }
         for (final part in ordered) {
@@ -1527,24 +1621,33 @@ class _MobileMigrationRedesignedStatusState
 
   String _actionBatchValueText(
     rust_sync.MigrationStatus status,
-    List<rust_sync.MigrationPartStatus> parts,
-  ) {
+    List<rust_sync.MigrationPartStatus> parts, {
+    required bool privacyModeEnabled,
+  }) {
     final batchValue = parts.fold<BigInt>(
       BigInt.zero,
       (sum, part) => sum + part.valueZatoshi,
     );
-    final amount = ZecAmount.fromZatoshi(batchValue).compactBalance.amountText;
+    final amount = hideIfPrivacyMode(
+      ZecAmount.fromZatoshi(batchValue).compactBalance.amountText,
+      privacyModeEnabled: privacyModeEnabled,
+    );
     final total = status.parts.fold<BigInt>(
       BigInt.zero,
       (sum, item) => sum + item.valueZatoshi,
     );
-    if (total <= BigInt.zero) return '$amount ZEC';
+    if (total <= BigInt.zero) {
+      return '$amount ZEC'; // l10n-ignore: amount format
+    }
     final percentage =
         ((batchValue * BigInt.from(100)) + (total ~/ BigInt.two)) ~/ total;
-    return '$amount ZEC ($percentage%)';
+    return '$amount ZEC ($percentage%)'; // l10n-ignore: amount format
   }
 
-  String _allMigrationActionValueText(rust_sync.MigrationStatus status) {
+  String _allMigrationActionValueText(
+    rust_sync.MigrationStatus status, {
+    required bool privacyModeEnabled,
+  }) {
     final total = status.parts.isNotEmpty
         ? status.parts.fold<BigInt>(
             BigInt.zero,
@@ -1554,11 +1657,17 @@ class _MobileMigrationRedesignedStatusState
             BigInt.zero,
             (sum, value) => sum + value,
           );
-    final amount = ZecAmount.fromZatoshi(total).compactBalance.amountText;
-    return '$amount ZEC (100%)';
+    final amount = hideIfPrivacyMode(
+      ZecAmount.fromZatoshi(total).compactBalance.amountText,
+      privacyModeEnabled: privacyModeEnabled,
+    );
+    return '$amount ZEC (100%)'; // l10n-ignore: amount format
   }
 
-  String _needsInputActionValueText(rust_sync.MigrationStatus status) {
+  String _needsInputActionValueText(
+    rust_sync.MigrationStatus status, {
+    required bool privacyModeEnabled,
+  }) {
     final total = status.parts.fold<BigInt>(
       BigInt.zero,
       (sum, part) => sum + part.valueZatoshi,
@@ -1566,11 +1675,14 @@ class _MobileMigrationRedesignedStatusState
     final needsInput = status.parts
         .where((part) => part.state == rust_sync.MigrationPartState.needsInput)
         .fold<BigInt>(BigInt.zero, (sum, part) => sum + part.valueZatoshi);
-    final amount = ZecAmount.fromZatoshi(needsInput).compactBalance.amountText;
+    final amount = hideIfPrivacyMode(
+      ZecAmount.fromZatoshi(needsInput).compactBalance.amountText,
+      privacyModeEnabled: privacyModeEnabled,
+    );
     final percentage = total <= BigInt.zero
         ? 0
         : ((needsInput * BigInt.from(100)) ~/ total).toInt();
-    return '$amount ZEC ($percentage%)';
+    return '$amount ZEC ($percentage%)'; // l10n-ignore: amount format
   }
 
   int _totalParts(rust_sync.MigrationStatus status) {
@@ -1630,23 +1742,36 @@ class _MobileMigrationRedesignedStatusState
     return values.length == totalParts ? values : null;
   }
 
-  String _migratedAmountText(rust_sync.MigrationStatus status) {
+  String _migratedAmountText(
+    rust_sync.MigrationStatus status, {
+    required bool privacyModeEnabled,
+  }) {
     final completed = migrationCompletedValue(status);
-    return '${ZecAmount.fromZatoshi(completed).compactBalance.amountText} ZEC';
+    return '${hideIfPrivacyMode(ZecAmount.fromZatoshi(completed).compactBalance.amountText, privacyModeEnabled: privacyModeEnabled)} ZEC'; // l10n-ignore: amount format
   }
 
-  String _totalAmountText(rust_sync.MigrationStatus status) {
-    return migrationCompletedAmountText(
-      status,
-      fallbackAmountText: widget.data.amountText,
+  String _totalAmountText(
+    rust_sync.MigrationStatus status, {
+    required bool privacyModeEnabled,
+  }) {
+    return hideAmountIfPrivacyMode(
+      migrationCompletedAmountText(
+        status,
+        fallbackAmountText: widget.data.amountText,
+      ),
+      privacyModeEnabled: privacyModeEnabled,
+      denomination: 'ZEC', // l10n-ignore: currency ticker
     );
   }
 
-  String _availableAmountText(String? accountUuid) {
+  String _availableAmountText(
+    String? accountUuid, {
+    required bool privacyModeEnabled,
+  }) {
     final sync = (ref.watch(syncProvider).value ?? SyncState()).scopedToAccount(
       accountUuid,
     );
     final amount = sync.hasBalanceData ? sync.ironwoodBalance : BigInt.zero;
-    return '${ZecAmount.fromZatoshi(amount).compactBalance.amountText} ZEC';
+    return '${hideIfPrivacyMode(ZecAmount.fromZatoshi(amount).compactBalance.amountText, privacyModeEnabled: privacyModeEnabled)} ZEC'; // l10n-ignore: amount format
   }
 }

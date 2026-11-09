@@ -6,9 +6,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
@@ -24,15 +25,15 @@ void main() {
     );
     List<PaymentLinkCardsSection> sections({required bool detected}) => [
       PaymentLinkCardsSection(
-        label: kPaymentLinkPendingSectionLabel,
+        label: testL10n.commonPending,
         cards: detected ? const [] : [row(movingKey, 'Checking use')],
       ),
       PaymentLinkCardsSection(
-        label: kPaymentLinkUnusedSectionLabel,
+        label: testL10n.paymentLinkUnusedSectionLabel,
         cards: [row(const ValueKey('unused-card'), 'Unused card')],
       ),
       PaymentLinkCardsSection(
-        label: kPaymentLinkUsedSectionLabel,
+        label: testL10n.paymentLinkUsedSectionLabel,
         cards: [
           if (detected) row(movingKey, 'Use detected'),
           row(const ValueKey('used-card'), 'Used card'),
@@ -54,12 +55,61 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(find.byKey(movingKey), findsOneWidget);
-    final usedHeading = find.text(kPaymentLinkUsedSectionLabel);
+    final usedHeading = find.text(testL10n.paymentLinkUsedSectionLabel);
     expect(
       tester.getTopLeft(find.byKey(movingKey)).dy,
       greaterThan(tester.getTopLeft(usedHeading).dy),
     );
     expect(tester.getTopLeft(find.byKey(movingKey)).dy, isNot(oldTop));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('large refresh keeps scroll position and updates row content', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 773));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    List<PaymentLinkCardsSection> sections({
+      bool reversed = false,
+      String status = 'Old',
+    }) => [
+      PaymentLinkCardsSection(
+        label: 'Cards',
+        cards: [
+          for (final index
+              in reversed
+                  ? List.generate(300, (i) => 299 - i)
+                  : List.generate(300, (i) => i))
+            SizedBox(
+              key: ValueKey('bulk-$index'),
+              height: 56,
+              child: Text('$status $index'),
+            ),
+        ],
+      ),
+    ];
+    await tester.pumpWidget(_cardsApp(sections: sections()));
+    await tester.pumpAndSettle();
+    final list = find.byKey(const ValueKey('payment_links_mobile_cards_list'));
+    await tester.drag(list, const Offset(0, -700));
+    await tester.pumpAndSettle();
+    ScrollPosition position() => tester
+        .state<ScrollableState>(
+          find.descendant(of: list, matching: find.byType(Scrollable)),
+        )
+        .position;
+    final offset = position().pixels;
+    expect(offset, greaterThan(0));
+    await tester.pumpWidget(_cardsApp(sections: sections(status: 'Updated')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Updated'), findsWidgets);
+    expect(position().pixels, offset);
+    await tester.pumpWidget(
+      _cardsApp(sections: sections(reversed: true, status: 'Moved')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Moved'), findsWidgets);
+    expect(position().pixels, offset);
     expect(tester.takeException(), isNull);
   });
 
@@ -70,10 +120,10 @@ void main() {
       tester,
       sections: const [PaymentLinkCardsSection(label: 'Received', cards: [])],
       activeTab: PaymentLinkCardsTab.received,
-      emptyLabel: kPaymentLinkNoReceivedCardsText,
+      emptyLabel: testL10n.paymentLinkNoReceivedCardsText,
     );
 
-    expect(find.text(kPaymentLinkNoReceivedCardsText), findsOneWidget);
+    expect(find.text(testL10n.paymentLinkNoReceivedCardsText), findsOneWidget);
     expect(
       find.byKey(const ValueKey('payment_links_mobile_cards_list')),
       findsNothing,
@@ -104,18 +154,17 @@ void main() {
     await _pumpCards(
       tester,
       activeTab: PaymentLinkCardsTab.received,
-      sections: [
-        PaymentLinkCardsSection(label: 'Received', cards: rows),
-      ],
+      sections: [PaymentLinkCardsSection(label: 'Received', cards: rows)],
     );
 
-    final list = find.byKey(
-      const ValueKey('payment_links_mobile_cards_list'),
-    );
+    final list = find.byKey(const ValueKey('payment_links_mobile_cards_list'));
     final redeem = find.byKey(
       const ValueKey('payment_links_mobile_redeem_button'),
     );
-    expect(tester.getRect(list).bottom, greaterThan(tester.getRect(redeem).top));
+    expect(
+      tester.getRect(list).bottom,
+      greaterThan(tester.getRect(redeem).top),
+    );
 
     await tester.drag(list, const Offset(0, -1000));
     await tester.pumpAndSettle();
@@ -135,7 +184,7 @@ void main() {
       tester,
       sections: [
         PaymentLinkCardsSection(
-          label: kPaymentLinkPendingSectionLabel,
+          label: testL10n.commonPending,
           cards: [
             PaymentLinkCardListMobileRow(
               thumbnail: const SizedBox(),
@@ -152,10 +201,13 @@ void main() {
 
     expect(find.text('4.45 ZEC'), findsOneWidget);
     expect(find.text('August 7'), findsOneWidget);
-    expect(find.text(kPaymentLinkPendingSectionLabel), findsOneWidget);
+    expect(find.text(testL10n.commonPending), findsOneWidget);
     // A funded card shows the copy action instead of a status label — this is
     // the affordance that was missing once the user left the Ready page.
-    expect(find.bySemanticsLabel(kPaymentLinkCopyLinkSemanticLabel), findsOne);
+    expect(
+      find.bySemanticsLabel(testL10n.paymentLinkCopyLinkSemanticLabel),
+      findsOne,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey('payment_link_mobile_card_copy_action')),
@@ -173,22 +225,25 @@ void main() {
   ) async {
     await _pumpCards(
       tester,
-      sections: const [
+      sections: [
         PaymentLinkCardsSection(
-          label: kPaymentLinkPendingSectionLabel,
+          label: testL10n.commonPending,
           cards: [
             PaymentLinkCardListMobileRow(
               thumbnail: SizedBox(),
               amountText: '0.25 ZEC',
               dateText: 'July 2',
-              statusText: kPaymentLinkFundingIncompleteStatus,
+              statusText: testL10n.paymentLinkFundingIncompleteStatus,
             ),
           ],
         ),
       ],
     );
 
-    expect(find.text(kPaymentLinkFundingIncompleteStatus), findsOneWidget);
+    expect(
+      find.text(testL10n.paymentLinkFundingIncompleteStatus),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('payment_link_mobile_card_copy_action')),
       findsNothing,
@@ -201,9 +256,9 @@ void main() {
     await _pumpCards(
       tester,
       activeTab: PaymentLinkCardsTab.received,
-      sections: const [
+      sections: [
         PaymentLinkCardsSection(
-          label: kPaymentLinkReceivedTabLabel,
+          label: testL10n.commonReceived,
           cards: [
             PaymentLinkCardListMobileRow(
               thumbnail: SizedBox(),
@@ -266,6 +321,7 @@ Widget _cardsApp({
   ValueChanged<PaymentLinkCardsTab>? onTabSelected,
   String? emptyLabel,
 }) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   builder: (_, navigator) =>
       AppTheme(data: AppThemeData.dark, child: navigator!),
   home: Directionality(

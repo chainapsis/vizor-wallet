@@ -24,6 +24,9 @@ static PAYMENT_LINK_CLAIM_SYNCS: std::sync::LazyLock<Mutex<HashMap<String, Arc<A
 #[frb(sync)]
 pub fn set_sync_mode(mode: u8) {
     DESIRED_SYNC_MODE.store(mode, Ordering::SeqCst);
+    if mode == 0 {
+        wallet_sync::history_pages::clear();
+    }
 }
 
 /// Get the current desired sync mode.
@@ -84,6 +87,31 @@ pub enum ApiWalletErrorCode {
     /// The wallet still requires private recovery while Private queries is
     /// off: turning it off did not finish.
     OptOutUnfinished,
+    /// A scanned QR is not a UR. Skip the frame.
+    InvalidUr,
+    /// A scanned UR has a different type from the one expected: the device
+    /// is showing another QR.
+    UnexpectedUrType,
+    /// The multi-part UR decoder rejected a fragment and was reset; restart
+    /// the scan session.
+    UrSessionReset,
+    /// More spend signatures than one Keystone batch round can return.
+    KeystoneBatchSignatureLimit,
+    /// Transparent or Sapling inputs, which Keystone batch signing cannot
+    /// sign.
+    KeystoneBatchUnsupportedInput,
+    /// A Gift Card group that needs more than one funding transaction.
+    PaymentLinkBatchNotOneTransaction,
+    /// A Gift Card group spending Sapling funds a Keystone cannot sign.
+    PaymentLinkBatchKeystoneSapling,
+    /// A Gift Card group needing more signatures than one Keystone batch.
+    PaymentLinkBatchKeystoneSignatureLimit,
+    /// A Gift Card group with more shielded recipients than a Ledger shows.
+    PaymentLinkBatchLedgerRecipientLimit,
+    /// A Gift Card group spending Sapling funds a Ledger cannot sign.
+    PaymentLinkBatchLedgerSapling,
+    /// A Gift Card group too large for a Ledger to sign.
+    PaymentLinkBatchLedgerTooLarge,
 }
 
 /// An error from a call whose failures the app acts on. Its Dart
@@ -110,6 +138,33 @@ impl From<WalletFailure> for ApiWalletError {
                 }
                 Some(FailureCode::RecoveryIncomplete) => ApiWalletErrorCode::RecoveryIncomplete,
                 Some(FailureCode::OptOutUnfinished) => ApiWalletErrorCode::OptOutUnfinished,
+                Some(FailureCode::InvalidUr) => ApiWalletErrorCode::InvalidUr,
+                Some(FailureCode::UnexpectedUrType) => ApiWalletErrorCode::UnexpectedUrType,
+                Some(FailureCode::UrSessionReset) => ApiWalletErrorCode::UrSessionReset,
+                Some(FailureCode::KeystoneBatchSignatureLimit) => {
+                    ApiWalletErrorCode::KeystoneBatchSignatureLimit
+                }
+                Some(FailureCode::KeystoneBatchUnsupportedInput) => {
+                    ApiWalletErrorCode::KeystoneBatchUnsupportedInput
+                }
+                Some(FailureCode::PaymentLinkBatchNotOneTransaction) => {
+                    ApiWalletErrorCode::PaymentLinkBatchNotOneTransaction
+                }
+                Some(FailureCode::PaymentLinkBatchKeystoneSapling) => {
+                    ApiWalletErrorCode::PaymentLinkBatchKeystoneSapling
+                }
+                Some(FailureCode::PaymentLinkBatchKeystoneSignatureLimit) => {
+                    ApiWalletErrorCode::PaymentLinkBatchKeystoneSignatureLimit
+                }
+                Some(FailureCode::PaymentLinkBatchLedgerRecipientLimit) => {
+                    ApiWalletErrorCode::PaymentLinkBatchLedgerRecipientLimit
+                }
+                Some(FailureCode::PaymentLinkBatchLedgerSapling) => {
+                    ApiWalletErrorCode::PaymentLinkBatchLedgerSapling
+                }
+                Some(FailureCode::PaymentLinkBatchLedgerTooLarge) => {
+                    ApiWalletErrorCode::PaymentLinkBatchLedgerTooLarge
+                }
             },
             message: failure.message,
         }
@@ -768,7 +823,7 @@ pub enum TransparentStopReason {
     LegacyDiscrepancy,
     /// The service withdrew a publication the account was recovered from.
     Withdrawn,
-    /// Recovery stalled repeatedly.
+    /// Recovery stalled repeatedly, or a record it needs failed three times.
     Stalled,
     /// The wallet requires private recovery while private queries are off:
     /// turning them off did not finish. Turning them off again restores public
@@ -857,16 +912,7 @@ pub struct AddressValidationResult {
 fn catch<T, E: From<String>>(f: impl FnOnce() -> Result<T, E> + panic::UnwindSafe) -> Result<T, E> {
     match panic::catch_unwind(f) {
         Ok(result) => result,
-        Err(e) => {
-            let msg = if let Some(s) = e.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = e.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic".to_string()
-            };
-            Err(format!("Rust panic: {msg}").into())
-        }
+        Err(e) => Err(super::panic_message(e.as_ref()).into()),
     }
 }
 
@@ -1163,8 +1209,46 @@ pub struct ExecuteProposalResult {
     pub broadcasted_count: u32,
     pub total_count: u32,
     pub message: Option<String>,
+    /// `message` as sentences the app can show in the display language;
+    /// empty when `message` has no fixed shape.
+    pub notices: Vec<BroadcastNotice>,
     /// Server rejection is distinct from a missing response, but is not finality.
     pub broadcast_failure_kind: Option<String>,
+}
+
+/// One sentence of a broadcast result's English `message`. The result's
+/// `message` is these sentences in English, one space apart. Dart builds them
+/// from ARB keys by `kind` and shows `message` for a kind it does not know.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BroadcastNotice {
+    pub kind: String,
+    pub index: Option<u32>,
+    pub total: Option<u32>,
+    pub txid: Option<String>,
+    /// Rust, dependency or server text, shown untranslated.
+    pub detail: Option<String>,
+    pub expiry_height: Option<u32>,
+    pub chain_height: Option<u64>,
+}
+
+impl From<crate::wallet::sync::broadcast_notice::BroadcastNotice> for BroadcastNotice {
+    fn from(notice: crate::wallet::sync::broadcast_notice::BroadcastNotice) -> Self {
+        Self {
+            kind: notice.kind,
+            index: notice.index,
+            total: notice.total,
+            txid: notice.txid,
+            detail: notice.detail,
+            expiry_height: notice.expiry_height,
+            chain_height: notice.chain_height,
+        }
+    }
+}
+
+pub(crate) fn api_broadcast_notices(
+    notices: Vec<crate::wallet::sync::broadcast_notice::BroadcastNotice>,
+) -> Vec<BroadcastNotice> {
+    notices.into_iter().map(BroadcastNotice::from).collect()
 }
 
 pub struct IronwoodMigrationResult {
@@ -1227,6 +1311,9 @@ pub struct MigrationScheduledTransfer {
     pub part_index: u32,
     pub value_zatoshi: u64,
     pub block_offset: u32,
+    /// Blocks per ZIP 318 reference block the schedule was drawn at; an
+    /// approved schedule drawn at another spacing is refused.
+    pub blocks_per_reference_block: u32,
 }
 
 pub struct MigrationOutboxItem {
@@ -1239,6 +1326,8 @@ pub struct MigrationOutboxItem {
     pub scheduled_height: u32,
     pub schedule_start_height: u32,
     pub expiry_height: u32,
+    /// Height the part was signed for; the outbox holds it like the foreground.
+    pub target_height: u32,
 }
 
 pub struct MigrationOutboxBatch {
@@ -1417,6 +1506,7 @@ fn to_wallet_migration_schedule(
             part_index: Some(entry.part_index),
             value_zatoshi: entry.value_zatoshi,
             block_offset: entry.block_offset,
+            blocks_per_reference_block: entry.blocks_per_reference_block,
         })
         .collect()
 }
@@ -1425,6 +1515,8 @@ pub struct ExtractAndBroadcastPcztResult {
     pub txid: String,
     pub status: String,
     pub message: Option<String>,
+    /// `message` as sentences; see [`BroadcastNotice`].
+    pub notices: Vec<BroadcastNotice>,
 }
 
 pub struct StoreAndBroadcastPcztsResult {
@@ -1433,6 +1525,8 @@ pub struct StoreAndBroadcastPcztsResult {
     pub broadcasted_count: u32,
     pub total_count: u32,
     pub message: Option<String>,
+    /// `message` as sentences; see [`BroadcastNotice`].
+    pub notices: Vec<BroadcastNotice>,
 }
 
 pub struct SendMaxEstimateResult {
@@ -1459,6 +1553,7 @@ pub struct ShieldTransparentStatus {
 }
 
 pub struct ShieldTransparentPcztResult {
+    pub proposal_id: u64,
     pub pczt_bytes: Vec<u8>,
     pub fee_zatoshi: u64,
     pub shielded_zatoshi: u64,
@@ -1480,7 +1575,7 @@ pub fn estimate_payment_link_batch_fee(
     account_uuid: String,
     addresses: Vec<String>,
     amount_zatoshi: u64,
-) -> Result<u64, String> {
+) -> Result<u64, ApiWalletError> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         wallet_sync::estimate_payment_link_batch_fee(
@@ -1489,6 +1584,7 @@ pub fn estimate_payment_link_batch_fee(
             &account_uuid,
             &payment_link_batch_pairs(addresses, amount_zatoshi),
         )
+        .map_err(ApiWalletError::from)
     })
 }
 
@@ -1500,7 +1596,7 @@ pub fn propose_payment_link_batch(
     send_flow_id: String,
     addresses: Vec<String>,
     amount_zatoshi: u64,
-) -> Result<ProposalResult, String> {
+) -> Result<ProposalResult, ApiWalletError> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         wallet_sync::propose_payment_link_batch(
@@ -1511,6 +1607,7 @@ pub fn propose_payment_link_batch(
             &payment_link_batch_pairs(addresses, amount_zatoshi),
         )
         .map(api_proposal_result)
+        .map_err(ApiWalletError::from)
     })
 }
 
@@ -1544,6 +1641,30 @@ pub fn propose_send(
             memo.as_deref(),
         )
         .map(api_proposal_result)
+    })
+}
+
+/// Fee policy for new transactions at this wallet's authoritative target height.
+/// Reads only local chain state; no network request is made.
+pub struct WalletFeePolicy {
+    pub target_height: u32,
+    pub marginal_fee_zatoshi: u64,
+    pub minimum_fee_zatoshi: u64,
+}
+
+pub fn get_wallet_fee_policy(db_path: String, network: String) -> Result<WalletFeePolicy, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let target_height = wallet_sync::fee_policy_target(&db_path, network)?;
+        let marginal_fee = crate::wallet::fees::marginal_fee(
+            &network,
+            zcash_protocol::consensus::BlockHeight::from_u32(target_height),
+        );
+        Ok(WalletFeePolicy {
+            target_height,
+            marginal_fee_zatoshi: marginal_fee,
+            minimum_fee_zatoshi: 2 * marginal_fee,
+        })
     })
 }
 
@@ -1678,6 +1799,7 @@ pub fn execute_proposal(
             broadcasted_count: r.broadcasted_count,
             total_count: r.total_count,
             message: r.message,
+            notices: api_broadcast_notices(r.notices),
             broadcast_failure_kind: r.broadcast_failure_kind,
         })
     })
@@ -1719,6 +1841,7 @@ pub fn execute_proposal_with_macos_stored_mnemonic(
             broadcasted_count: r.broadcasted_count,
             total_count: r.total_count,
             message: r.message,
+            notices: api_broadcast_notices(r.notices),
             broadcast_failure_kind: r.broadcast_failure_kind,
         })
     })
@@ -1820,6 +1943,7 @@ pub fn prepare_orchard_migration_immediate_pczt(
     approved_fee_zatoshi: u64,
     approved_migrated_zatoshi: u64,
     approved_input_note_count: u32,
+    keystone_batch: bool,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1833,6 +1957,7 @@ pub fn prepare_orchard_migration_immediate_pczt(
                 migrated_zatoshi: approved_migrated_zatoshi,
                 input_note_count: approved_input_note_count,
             },
+            keystone_batch,
         )?;
         Ok(KeystoneMigrationSigningRequest {
             request_id: request.request_id,
@@ -2196,6 +2321,7 @@ pub fn get_orchard_migration_private_plan(
                         part_index: entry.part_index.unwrap_or(0),
                         value_zatoshi: entry.value_zatoshi,
                         block_offset: entry.block_offset,
+                        blocks_per_reference_block: entry.blocks_per_reference_block,
                     })
                     .collect(),
             })
@@ -2273,6 +2399,7 @@ pub fn export_orchard_migration_outbox(
                         scheduled_height: item.scheduled_height,
                         schedule_start_height: item.schedule_start_height,
                         expiry_height: item.expiry_height,
+                        target_height: item.target_height,
                     })
                     .collect(),
             })
@@ -2765,6 +2892,7 @@ pub fn create_shield_transparent_pczt(
     lightwalletd_url: String,
     network: String,
     account_uuid: String,
+    send_flow_id: String,
 ) -> Result<ShieldTransparentPcztResult, ApiWalletError> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -2774,8 +2902,10 @@ pub fn create_shield_transparent_pczt(
             &lightwalletd_url,
             network,
             &account_uuid,
+            &send_flow_id,
         ))?;
         Ok(ShieldTransparentPcztResult {
+            proposal_id: r.proposal_id,
             pczt_bytes: r.pczt_bytes,
             fee_zatoshi: r.fee_zatoshi,
             shielded_zatoshi: r.shielded_zatoshi,
@@ -3017,6 +3147,10 @@ pub enum TransparentDetailsState {
     /// The last lookup failed; a later sync retries when the service is
     /// reachable.
     Unavailable,
+    /// The lookup was given up after three replies failed on content: no sync
+    /// asks again until the transaction is mined at another height. Show it as
+    /// `Unavailable`, but do not re-read or prioritise it.
+    GaveUp,
     /// Private mode cannot look the transaction up: the private publication
     /// does not cover it.
     NotCovered,
@@ -3052,6 +3186,84 @@ pub struct TransactionDetailOutput {
     pub uses_orchard_receiver: bool,
 }
 
+/// Lightweight account-wide ordering metadata. Reused while this DB snapshot
+/// remains current; it does not establish payment amounts or completeness.
+pub struct ActivityHistoryIndex {
+    pub snapshot_id: String,
+    pub summaries: Vec<ActivityHistorySummary>,
+}
+
+pub struct ActivityHistorySummary {
+    pub txid_hex: String,
+    pub mined_height: u64,
+    pub expired_unmined: bool,
+    pub block_time: u64,
+    pub created_time: u64,
+    pub source_order: u32,
+}
+
+pub struct ActivityHistoryRows {
+    pub stale: bool,
+    pub transactions: Vec<TransactionInfo>,
+}
+
+pub fn get_activity_history_index(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<ActivityHistoryIndex, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let account = crate::wallet::keys::parse_account_uuid(&account_uuid)?;
+        let index = wallet_sync::history_pages::index(&db_path, network, account)?;
+        Ok(ActivityHistoryIndex {
+            snapshot_id: index.snapshot_id,
+            summaries: index
+                .summaries
+                .into_iter()
+                .map(|s| ActivityHistorySummary {
+                    txid_hex: s.txid_hex,
+                    mined_height: s.mined_height,
+                    expired_unmined: s.expired_unmined,
+                    block_time: s.block_time,
+                    created_time: s.created_time,
+                    source_order: s.source_order,
+                })
+                .collect(),
+        })
+    })
+}
+
+/// At most 20 requested transactions, plus their classification dependencies.
+/// Each native detail/output read also contains at most 20 transactions.
+pub fn get_activity_history_rows(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    snapshot_id: String,
+    txid_hexes: Vec<String>,
+) -> Result<ActivityHistoryRows, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let account = crate::wallet::keys::parse_account_uuid(&account_uuid)?;
+        let result = wallet_sync::history_pages::rows(
+            &db_path,
+            network,
+            account,
+            &snapshot_id,
+            &txid_hexes,
+        )?;
+        Ok(ActivityHistoryRows {
+            stale: result.stale,
+            transactions: result
+                .transactions
+                .into_iter()
+                .map(api_transaction_info)
+                .collect(),
+        })
+    })
+}
+
 pub fn get_transaction_history(
     db_path: String,
     network: String,
@@ -3061,37 +3273,74 @@ pub fn get_transaction_history(
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let txs = wallet_sync::get_transaction_history(&db_path, network, limit, &account_uuid)?;
-        Ok(txs
-            .into_iter()
-            .map(|t| TransactionInfo {
-                txid_hex: t.txid_hex,
-                mined_height: t.mined_height,
-                expired_unmined: t.expired_unmined,
-                account_balance_delta: t.account_balance_delta,
-                fee: t.fee,
-                fee_state: match t.fee_state {
-                    wallet_sync::TransactionFeeState::Known => TransactionFeeState::Known,
-                    wallet_sync::TransactionFeeState::Unknown => TransactionFeeState::Unknown,
-                    wallet_sync::TransactionFeeState::NotApplicable => {
-                        TransactionFeeState::NotApplicable
-                    }
-                },
-                block_time: t.block_time,
-                is_transparent: t.is_transparent,
-                tx_kind: t.tx_kind,
-                display_amount: t.display_amount,
-                display_pool: t.display_pool,
-                activity_pool: t.activity_pool,
-                funding_parent_txid: t.funding_parent_txid,
-                funding_parent_mined_height: t.funding_parent_mined_height,
-                funding_parent_expired: t.funding_parent_expired,
-                created_time: t.created_time,
-                details_complete: t.details_complete,
-                provisional: t.provisional,
-                amount_includes_fee: t.amount_includes_fee,
-            })
-            .collect())
+        Ok(txs.into_iter().map(api_transaction_info).collect())
     })
+}
+
+/// The Activity rows of one transaction, `txid_hex` as
+/// [`TransactionInfo::txid_hex`], exactly as [`get_transaction_history`]
+/// lists them, without reading the history of the account's other
+/// transactions. Empty when the account has no row for it. A receipt reads
+/// its transaction with this instead of the whole history.
+pub fn get_transaction_rows(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    txid_hex: String,
+) -> Result<Vec<TransactionInfo>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let txs = wallet_sync::get_transaction_rows(&db_path, network, &account_uuid, &txid_hex)?;
+        Ok(txs.into_iter().map(api_transaction_info).collect())
+    })
+}
+
+/// Activity rows for a set of txids in TransactionInfo storage byte order.
+/// Shares one DB snapshot and returns no rows for unrelated transactions.
+pub fn get_transaction_rows_for_txids(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    txid_hexes: Vec<String>,
+) -> Result<Vec<TransactionInfo>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let txs = wallet_sync::get_transaction_rows_for_txids(
+            &db_path,
+            network,
+            &account_uuid,
+            &txid_hexes,
+        )?;
+        Ok(txs.into_iter().map(api_transaction_info).collect())
+    })
+}
+
+fn api_transaction_info(t: wallet_sync::TransactionInfo) -> TransactionInfo {
+    TransactionInfo {
+        txid_hex: t.txid_hex,
+        mined_height: t.mined_height,
+        expired_unmined: t.expired_unmined,
+        account_balance_delta: t.account_balance_delta,
+        fee: t.fee,
+        fee_state: match t.fee_state {
+            wallet_sync::TransactionFeeState::Known => TransactionFeeState::Known,
+            wallet_sync::TransactionFeeState::Unknown => TransactionFeeState::Unknown,
+            wallet_sync::TransactionFeeState::NotApplicable => TransactionFeeState::NotApplicable,
+        },
+        block_time: t.block_time,
+        is_transparent: t.is_transparent,
+        tx_kind: t.tx_kind,
+        display_amount: t.display_amount,
+        display_pool: t.display_pool,
+        activity_pool: t.activity_pool,
+        funding_parent_txid: t.funding_parent_txid,
+        funding_parent_mined_height: t.funding_parent_mined_height,
+        funding_parent_expired: t.funding_parent_expired,
+        created_time: t.created_time,
+        details_complete: t.details_complete,
+        provisional: t.provisional,
+        amount_includes_fee: t.amount_includes_fee,
+    }
 }
 
 pub fn get_previous_transaction_count_for_address(
@@ -3212,6 +3461,7 @@ pub fn get_transaction_detail(
                 wallet_sync::TransparentDetailsView::Unavailable => {
                     TransparentDetailsState::Unavailable
                 }
+                wallet_sync::TransparentDetailsView::GaveUp => TransparentDetailsState::GaveUp,
                 wallet_sync::TransparentDetailsView::NotCovered => {
                     TransparentDetailsState::NotCovered
                 }
@@ -3465,7 +3715,9 @@ pub fn redact_pczt_for_signer(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
 /// Prepare one PCZT for Keystone's `zcash-sign-batch` request. This rejects
 /// input types that the signatures-only response cannot represent and signing
 /// sets above the device's 96-signature per-transaction limit.
-pub fn prepare_pczt_for_keystone_batch(pczt_bytes: Vec<u8>) -> Result<KeystoneBatchPczt, String> {
+pub fn prepare_pczt_for_keystone_batch(
+    pczt_bytes: Vec<u8>,
+) -> Result<KeystoneBatchPczt, ApiWalletError> {
     let prepared = wallet_sync::prepare_pczt_for_keystone_batch(&pczt_bytes)?;
     Ok(KeystoneBatchPczt {
         redacted_pczt: prepared.redacted_pczt,
@@ -3517,6 +3769,7 @@ pub async fn store_and_broadcast_signed_pczts_for_proposal(
         broadcasted_count: result.broadcasted_count,
         total_count: result.total_count,
         message: result.message,
+        notices: api_broadcast_notices(result.notices),
     })
 }
 
@@ -3588,6 +3841,7 @@ pub async fn store_and_broadcast_pczts_with_keystone_signatures_for_proposal(
         broadcasted_count: result.broadcasted_count,
         total_count: result.total_count,
         message: result.message,
+        notices: api_broadcast_notices(result.notices),
     })
 }
 
@@ -3639,6 +3893,7 @@ pub async fn extract_and_broadcast_pczt(
         txid: result.txid,
         status: result.status,
         message: result.message,
+        notices: api_broadcast_notices(result.notices),
     })
 }
 
@@ -3723,6 +3978,9 @@ pub struct EnhanceRecoveryStatus {
     /// deferred private status failure leaves these durable without payload
     /// work, so they count toward a recovery-only sync restart.
     pub status: u32,
+    /// A public transparent-service wait expired. Retry only its accounts,
+    /// independently of the payload/status backoff and without a new block.
+    pub transparent_retry_due: bool,
     pub service_state: String,
 }
 pub fn get_enhance_recovery_status(

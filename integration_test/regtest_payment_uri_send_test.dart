@@ -147,6 +147,13 @@ Future<void> _sendViaPaymentUri(
 
   // The URI is parsed and drained onto the payment-request card, over
   // whatever the wallet was showing — it is not a jump into the composer.
+  // A link from outside the wallet opens on a warning; the requested terms
+  // are behind its details.
+  await _tapAppButton(
+    tester,
+    const ValueKey('payment_request_link_details'),
+    timeout: const Duration(minutes: 1),
+  );
   await _pumpUntil(
     tester,
     () =>
@@ -169,7 +176,7 @@ Future<void> _sendViaPaymentUri(
   );
   await _pumpUntil(
     tester,
-    () => tester.any(find.text('Review payment request')),
+    () => tester.any(find.text('Review Payment')),
     description: 'the payment-request review screen',
     timeout: const Duration(minutes: 1),
   );

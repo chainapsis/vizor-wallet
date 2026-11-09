@@ -1,9 +1,11 @@
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../ledger/widgets/mobile/mobile_ledger_sheet_content.dart';
 import '../../../providers/account_provider.dart';
 import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/widgets/ledger_access_recovery_modal.dart';
 import 'dart:async';
+import '../../../core/navigation/mobile_sidebar_exit.dart';
 
 import '../../ledger/services/ledger_signing_progress.dart';
 
@@ -18,14 +20,17 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_shape.dart';
+import '../../../core/widgets/untranslated_details.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../keystone/widgets/keystone_scan_help_overlay.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
+import '../voting_message.dart';
 import '../voting_progress_presentation.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
@@ -183,7 +188,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   /// Held for the same reason as the ratchet: the session provider refreshes
   /// through its loading state, and a warning that blinks out and back is the
   /// flicker this screen exists to avoid.
-  String? _heldTerminalNotice;
+  VotingMessage? _heldTerminalNotice;
 
   @override
   void initState() {
@@ -280,7 +285,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     if (!mounted || _selectedJobKey() != key) return;
     final session = ref.read(votingSubmissionJobSessionProvider(key)).value;
     final scanError = session?.keystoneScanError;
-    if (scanError != null) throw StateError(scanError);
+    if (scanError != null) throw VotingMessageException(scanError);
   }
 
   Future<void> _skipRemainingKeystoneBundles() async {
@@ -305,7 +310,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   /// reads the projection it owns.
   VotingSubmissionProgressPresentation _submissionPresentation(
     VotingProgressView progress, {
-    String? warning,
+    VotingMessage? warning,
   }) {
     // Null until the delegation step has bundles to count.
     final authority = progress.authorityOrNull;
@@ -317,11 +322,15 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         VotingSubmissionProgressStep.finalizing => null,
       },
       activeStepDetail: switch (progress.step) {
-        VotingSubmissionProgressStep.provingAuthority => authority?.detail,
-        VotingSubmissionProgressStep.castingVotes => progress.ballot.detail,
+        VotingSubmissionProgressStep.provingAuthority => authority?.detail(
+          context.l10n,
+        ),
+        VotingSubmissionProgressStep.castingVotes => progress.ballot.detail(
+          context.l10n,
+        ),
         VotingSubmissionProgressStep.finalizing => null,
       },
-      warning: warning,
+      warning: warning?.text(context.l10n),
     );
   }
 
@@ -352,7 +361,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
   }
 
   String _messageFromError(Object error) {
-    return friendlyVotingErrorMessage(error);
+    return friendlyVotingErrorMessage(context.l10n, error);
   }
 
   @override
@@ -394,7 +403,8 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           return VotingStatusContent(
             phase: VotingSessionPhase.error,
             horizontalPadding: widget.contentHorizontalPadding,
-            errorMessage: startError,
+            errorMessage: startError.text(context.l10n),
+            errorDetails: votingMessageDetails(startError),
             onRetry: _retry,
           );
         }
@@ -403,7 +413,8 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           return VotingStatusContent(
             phase: VotingSessionPhase.error,
             horizontalPadding: widget.contentHorizontalPadding,
-            errorMessage: job?.errorMessage,
+            errorMessage: job?.errorMessage?.text(context.l10n),
+            errorDetails: votingMessageDetails(job?.errorMessage),
             onRetry: _jobRetry(job),
             onClear: _clearError,
           );
@@ -430,14 +441,18 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
       error: (error, _) => VotingStatusContent(
         phase: VotingSessionPhase.error,
         horizontalPadding: widget.contentHorizontalPadding,
-        errorMessage: job?.errorMessage ?? _messageFromError(error),
+        errorMessage:
+            job?.errorMessage?.text(context.l10n) ?? _messageFromError(error),
+        errorDetails: job?.errorMessage != null
+            ? votingMessageDetails(job?.errorMessage)
+            : friendlyVotingErrorDetails(error),
         onRetry: _jobRetry(job),
         onClear: job?.status == VotingSubmissionJobStatus.error
             ? _clearError
             : null,
       ),
       data: (state) {
-        final localError = job?.errorMessage;
+        final localError = job?.errorMessage?.text(context.l10n);
         final submissionJobComplete =
             job?.status == VotingSubmissionJobStatus.complete;
         final submissionJobInFlight = job?.isInFlight ?? false;
@@ -472,7 +487,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
               batchMemos: job?.keystoneBatchMemos ?? const [],
               batchMessageCount: job?.keystoneBatchMessageCount ?? 0,
               batchTotalCount: job?.keystoneBatchTotalCount ?? 0,
-              scanError: state.keystoneScanError,
+              scanError: state.keystoneScanError?.text(context.l10n),
               canSkipRemainingBundles: state.canSkipRemainingKeystoneBundles,
               onSigned: _handleInlineKeystoneSignature,
               onSkipRemainingBundles: _skipRemainingKeystoneBundles,
@@ -508,7 +523,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
             ? progress.authorityOrNull
             : null;
         final delegationProgress = authority?.fraction;
-        final delegationDetail = authority?.detail;
+        final delegationDetail = authority?.detail(context.l10n);
         final ledgerBuilder = widget.ledgerStatusBuilder;
         if (ledgerBuilder != null &&
             state.isLedgerAccount &&
@@ -550,7 +565,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           phase: _phaseForStep(phase, progress.step),
           horizontalPadding: widget.contentHorizontalPadding,
           voteSubmissionDetail:
-              ballot.detail ??
+              ballot.detail(context.l10n) ??
               (ballot.stage == VotingBallotStage.complete
                   ? null
                   : _shareSubmissionDetail(state)),
@@ -572,7 +587,7 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           keystoneBatchMessageCount: job?.keystoneBatchMessageCount ?? 0,
           keystoneBatchTotalCount: job?.keystoneBatchTotalCount ?? 0,
           keystoneQrError: job?.keystoneQrError,
-          keystoneScanError: state.keystoneScanError,
+          keystoneScanError: state.keystoneScanError?.text(context.l10n),
           ledgerAccountUuid: job?.key?.accountUuid,
           ledgerDisplayMemo: job?.ledgerDisplayMemo,
           ledgerSigningBundleIndex: job?.ledgerBundleIndex,
@@ -581,7 +596,12 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
           walletSnapshotHeight: state.walletSnapshotHeight,
           walletChainTipHeight: state.walletChainTipHeight,
           errorMessage: _sessionErrorMessage(state, localError),
-          terminalDelegationNotice: state.terminalDelegationNotice,
+          errorDetails: localError != null
+              ? votingMessageDetails(job?.errorMessage)
+              : votingMessageDetails(state.error?.message),
+          terminalDelegationNotice: state.terminalDelegationNotice?.text(
+            context.l10n,
+          ),
           onRetry: _jobRetry(job),
           onClear: job?.status == VotingSubmissionJobStatus.error
               ? _clearError
@@ -592,8 +612,15 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         );
       },
     );
-    if (usesPlatformScreen) return content;
-    return widget.contentWrapper?.call(context, content) ?? content;
+    final result = usesPlatformScreen
+        ? content
+        : widget.contentWrapper?.call(context, content) ?? content;
+    if (!widget.requireCurrentRouteForConfirmation) return result;
+    return MobileSidebarExitScope(
+      canNavigate: startError != null || (job != null && !job.isInFlight),
+      canSwitchAccount: job != null && !job.isInFlight,
+      child: result,
+    );
   }
 
   VotingSessionPhase _displayPhase(
@@ -643,10 +670,13 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     bool fallbackForErrorPhase = true,
   }) {
     final error = state.error;
-    if (error != null) return friendlyVotingErrorText(error.message);
+    if (error != null) {
+      return normalizedVotingMessage(error.message).text(context.l10n);
+    }
     final round = state.round;
     if (round != null && state.pirDiagnostics.isNotEmpty) {
       return pirSnapshotMismatchMessage(
+        context.l10n,
         expectedSnapshotHeight: round.snapshotHeight,
         diagnostics: state.pirDiagnostics,
       );
@@ -654,12 +684,8 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
     if (!fallbackForErrorPhase || state.phase != VotingSessionPhase.error) {
       return null;
     }
-    return _genericVotingStatusErrorMessage;
+    return context.l10n.votingStatusGenericError;
   }
-
-  static const _genericVotingStatusErrorMessage =
-      'Voting could not continue for this account. Retry, or switch to an '
-      'eligible account if this account cannot vote in this voting round.';
 
   String? _shareSubmissionDetail(VotingSessionState state) {
     final key = state.currentVoteKey;
@@ -782,7 +808,7 @@ class _SkipSignedBundlesDialog extends StatelessWidget {
                   const SizedBox(width: AppSpacing.xs),
                   Expanded(
                     child: Text(
-                      'Use signed bundles only?',
+                      context.l10n.votingSignedOnlyTitle,
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.accent,
                       ),
@@ -792,14 +818,14 @@ class _SkipSignedBundlesDialog extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'Vizor can submit now using only signatures already scanned from Keystone.',
+                context.l10n.votingSignedOnlyBody,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'Unsigned bundles are skipped, which lowers voting power for this voting round.',
+                context.l10n.votingSignedOnlyWarning,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.warning,
                 ),
@@ -813,12 +839,12 @@ class _SkipSignedBundlesDialog extends StatelessWidget {
                   AppButton(
                     onPressed: () => Navigator.of(context).pop(false),
                     variant: AppButtonVariant.secondary,
-                    child: const Text('Keep signing'),
+                    child: Text(context.l10n.votingKeepSigning),
                   ),
                   AppButton(
                     onPressed: () => Navigator.of(context).pop(true),
                     variant: AppButtonVariant.primary,
-                    child: const Text('Skip bundles'),
+                    child: Text(context.l10n.votingSkipBundles),
                   ),
                 ],
               ),
@@ -861,6 +887,7 @@ class VotingStatusContent extends StatelessWidget {
     this.walletSnapshotHeight,
     this.walletChainTipHeight,
     this.errorMessage,
+    this.errorDetails,
     this.terminalDelegationNotice,
     this.onRetry,
     this.onClear,
@@ -905,6 +932,9 @@ class VotingStatusContent extends StatelessWidget {
   final int? walletSnapshotHeight;
   final int? walletChainTipHeight;
   final String? errorMessage;
+
+  /// Untranslated text behind [errorMessage], behind a "Show details" button.
+  final String? errorDetails;
 
   /// A delegation the SDK ended, shown alongside whatever the round is still
   /// doing. Not an error: the remaining bundles still delegate and vote.
@@ -953,8 +983,8 @@ class VotingStatusContent extends StatelessWidget {
             children: [
               Text(
                 awaitingLedgerApproval
-                    ? 'Voting with Ledger'
-                    : 'Submitting votes',
+                    ? context.l10n.votingStatusTitleLedger
+                    : context.l10n.votingStatusTitleSubmitting,
                 textAlign: TextAlign.center,
                 style: AppTypography.displaySmall.copyWith(
                   color: context.colors.text.accent,
@@ -963,8 +993,8 @@ class VotingStatusContent extends StatelessWidget {
               const SizedBox(height: AppSpacing.sm),
               Text(
                 awaitingLedgerApproval
-                    ? 'Keep Vizor open. Follow the instructions below for each voting bundle.'
-                    : "Don't close the window. Generating zero-knowledge proofs can take a while; closing now may lose in-flight proof work.",
+                    ? context.l10n.votingStatusBodyLedger
+                    : context.l10n.votingStatusBodyKeepOpen,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.secondary,
@@ -1019,8 +1049,8 @@ class VotingStatusContent extends StatelessWidget {
               if (isHardwareAccount)
                 _StepRow(
                   label: isLedgerAccount
-                      ? 'Signing with Ledger'
-                      : 'Signing with Keystone',
+                      ? context.l10n.votingStepSigningLedger
+                      : context.l10n.votingStepSigningKeystone,
                   active:
                       phase ==
                       (isLedgerAccount
@@ -1033,14 +1063,14 @@ class VotingStatusContent extends StatelessWidget {
                   ),
                 ),
               _StepRow(
-                label: 'Proving voting authority',
+                label: context.l10n.votingStepProving,
                 active: phase == VotingSessionPhase.delegating,
                 complete: _after(VotingSessionPhase.delegating),
                 detail: delegationDetail,
                 progressValue: delegationProgress,
               ),
               _StepRow(
-                label: 'Casting votes and submitting shares',
+                label: context.l10n.votingStepCasting,
                 active:
                     !voteStepComplete &&
                     (phase == VotingSessionPhase.syncingVoteTree ||
@@ -1051,7 +1081,7 @@ class VotingStatusContent extends StatelessWidget {
                 progressValue: voteStepComplete ? null : voteSubmissionProgress,
               ),
               _StepRow(
-                label: 'Finalizing submission',
+                label: context.l10n.votingStepFinalizing,
                 active: finalizingSubmission,
                 complete: submissionJobComplete,
               ),
@@ -1069,12 +1099,13 @@ class VotingStatusContent extends StatelessWidget {
               if (phase == VotingSessionPhase.error) ...[
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  errorMessage ?? 'Voting failed.',
+                  errorMessage ?? context.l10n.votingStatusFailed,
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.destructive,
                   ),
                 ),
+                ...untranslatedDetailsButton(errorDetails),
                 const SizedBox(height: AppSpacing.sm),
                 Wrap(
                   alignment: WrapAlignment.center,
@@ -1088,13 +1119,13 @@ class VotingStatusContent extends StatelessWidget {
                         ),
                         onPressed: onClear,
                         variant: AppButtonVariant.secondary,
-                        child: const Text('Clear'),
+                        child: Text(context.l10n.commonClear),
                       ),
                     if (onRetry != null)
                       AppButton(
                         onPressed: onRetry,
                         variant: AppButtonVariant.primary,
-                        child: const Text('Retry'),
+                        child: Text(context.l10n.commonRetry),
                       ),
                   ],
                 ),
@@ -1136,9 +1167,9 @@ class _WalletSyncProgressText extends StatelessWidget {
         ? rawRemaining
         : 0;
     final detail = [
-      if (scanned != null) 'Synced to block $scanned',
-      if (snapshot != null) 'snapshot block $snapshot',
-      if (chainTip != null) 'chain tip $chainTip',
+      if (scanned != null) context.l10n.votingSyncSynced(scanned),
+      if (snapshot != null) context.l10n.votingSnapshotBlock('$snapshot'),
+      if (chainTip != null) context.l10n.votingSyncChainTip(chainTip),
     ].join(' / ');
     final colors = context.colors;
     return DecoratedBox(
@@ -1152,7 +1183,7 @@ class _WalletSyncProgressText extends StatelessWidget {
         child: Column(
           children: [
             Text(
-              'Waiting for wallet sync',
+              context.l10n.commonWaitingForWalletSync,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
@@ -1160,7 +1191,7 @@ class _WalletSyncProgressText extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xxs),
             Text(
-              'Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.',
+              context.l10n.votingSyncWaitingBody,
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,
@@ -1179,7 +1210,7 @@ class _WalletSyncProgressText extends StatelessWidget {
             if (remaining != null && remaining > 0) ...[
               const SizedBox(height: AppSpacing.xxs),
               Text(
-                '$remaining blocks remaining',
+                context.l10n.votingSyncBlocksRemaining(remaining),
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.secondary,
@@ -1244,32 +1275,36 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
       LedgerAppReadinessPhase.checkingDevice
           when stage == LedgerSigningStage.preparing =>
         (
-          'Checking your Ledger',
-          'Vizor is checking whether the Zcash app is ready.',
+          context.l10n.commonCheckingYourLedger,
+          context.l10n.commonVizorIsCheckingWhetherTheZcash,
         ),
       LedgerAppReadinessPhase.confirmOpening
           when stage == LedgerSigningStage.preparing =>
         (
-          'Confirm opening Zcash',
-          'Approve the request to open the Zcash app on your Ledger.',
+          context.l10n.commonConfirmOpeningZcash,
+          context.l10n.votingLedgerConfirmOpenBody,
         ),
       LedgerAppReadinessPhase.failed => (
-        'Ledger needs attention',
-        readiness.message ?? 'Reconnect your Ledger and try again.',
+        context.l10n.commonLedgerNeedsAttention,
+        switch (readiness.error) {
+              final error? => ledgerFailureGuidance(
+                context.l10n,
+                error,
+                requestKind: LedgerRequestKind.voting,
+              )?.message,
+              null => null,
+            } ??
+            context.l10n.votingLedgerReconnect,
       ),
       _ => (
         switch (stage) {
-          LedgerSigningStage.preparing => 'Preparing voting delegation',
-          LedgerSigningStage.finishing => 'Finishing voting delegation',
-          _ => stage.title,
+          LedgerSigningStage.preparing => context.l10n.votingLedgerPreparing,
+          LedgerSigningStage.finishing => context.l10n.votingLedgerFinishing,
+          _ => stage.title(context.l10n),
         },
         stage == LedgerSigningStage.preparing
-            ? 'Please wait while Vizor prepares your request.'
-            : stage.messageForDevice(
-                progress?.accountUuid == accountUuid
-                    ? progress?.deviceModel
-                    : null,
-              ),
+            ? context.l10n.votingLedgerPleaseWait
+            : stage.message(context.l10n),
       ),
     };
     if (kAppFormFactor == AppFormFactor.mobile) {
@@ -1280,14 +1315,12 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
           MobileLedgerMessage(statusMessage),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'Bundle ${bundleIndex + 1} of $safeBundleCount',
+            context.l10n.votingBundleOf(bundleIndex + 1, safeBundleCount),
             key: const ValueKey('ledger_voting_bundle_progress'),
             style: AppTypography.bodySmall,
           ),
           const SizedBox(height: AppSpacing.sm),
-          const MobileLedgerMessage(
-            'Approving on Ledger authorizes this voting delegation. Review the memo below in Vizor before continuing; the device may not display this memo verbatim.',
-          ),
+          MobileLedgerMessage(context.l10n.votingLedgerApprovalNotice),
           if (displayMemo.trim().isNotEmpty) ...[
             const SizedBox(height: AppSpacing.sm),
             SelectableText(
@@ -1300,7 +1333,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
           ],
           if (!failed)
             MobileLedgerStatus(
-              stage.status,
+              stage.status(context.l10n),
               active:
                   stage != LedgerSigningStage.reviewing &&
                   readiness.phase != LedgerAppReadinessPhase.confirmOpening,
@@ -1322,11 +1355,11 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
               AppIcons.ledgerBrand,
               size: 40,
               color: colors.icon.regular,
-              semanticLabel: 'Ledger',
+              semanticLabel: 'Ledger', // l10n-ignore: product name
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Voting delegation',
+              context.l10n.votingLedgerPanelTitle,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
@@ -1334,7 +1367,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
             ),
             const SizedBox(height: AppSpacing.xxs),
             Text(
-              'Bundle ${bundleIndex + 1} of $safeBundleCount',
+              context.l10n.votingBundleOf(bundleIndex + 1, safeBundleCount),
               key: const ValueKey('ledger_voting_bundle_progress'),
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,
@@ -1342,7 +1375,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Approving on Ledger authorizes this voting delegation. Review the memo below in Vizor before continuing; the device may not display this memo verbatim.',
+              context.l10n.votingLedgerApprovalNotice,
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,
@@ -1431,7 +1464,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
               key: const ValueKey('ledger_voting_cancel'),
               onPressed: onCancel,
               variant: AppButtonVariant.secondary,
-              child: const Text('Cancel'),
+              child: Text(context.l10n.commonCancel),
             ),
           ],
         ),
@@ -1528,11 +1561,9 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
         ? KeystonePcztQrStagePhase.preparing
         : KeystonePcztQrStagePhase.ready;
     final batchMessageCount = widget.batchMessageCount;
-    final signingLabel = batchMessageCount <= 0
-        ? 'Preparing voting signatures'
-        : batchMessageCount == 1
-        ? 'Sign 1 voting bundle'
-        : 'Sign $batchMessageCount voting bundles';
+    final signingLabel = context.l10n.votingKeystoneSignLabel(
+      batchMessageCount < 0 ? 0 : batchMessageCount,
+    );
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -1590,8 +1621,11 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
                             const SizedBox(height: AppSpacing.xxs),
                             Text(
                               widget.batchTotalCount > batchMessageCount
-                                  ? 'This QR signs $batchMessageCount of ${widget.batchTotalCount} remaining bundles'
-                                  : 'One Keystone approval',
+                                  ? context.l10n.votingKeystoneQrPartial(
+                                      batchMessageCount,
+                                      widget.batchTotalCount,
+                                    )
+                                  : context.l10n.votingKeystoneOneApproval,
                               textAlign: TextAlign.center,
                               style: AppTypography.bodySmall.copyWith(
                                 color: colors.text.secondary,
@@ -1612,7 +1646,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
                             onPressed: onSkipRemainingBundles,
                             variant: AppButtonVariant.primary,
                             size: AppButtonSize.small,
-                            child: const Text('Skip'),
+                            child: Text(context.l10n.votingSkip),
                           )
                         : const SizedBox.shrink(),
                   ),
@@ -1621,7 +1655,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Scan QR on this screen with Keystone. Then, scan the signed voting QR displayed on Keystone with this device\'s camera',
+              context.l10n.votingKeystoneScanInstruction,
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,
@@ -1630,7 +1664,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
             if (_showTransitionCue) ...[
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'The next signing batch is ready',
+                context.l10n.votingKeystoneNextBatch,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.accent,
@@ -1641,8 +1675,10 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
               const SizedBox(height: AppSpacing.sm),
               _KeystoneSigningMemo(
                 key: ValueKey<int>(selectedMemo.bundleIndex),
-                label:
-                    'Bundle ${selectedMemo.bundleIndex + 1} of ${selectedMemo.bundleCount} memo',
+                label: context.l10n.votingKeystoneMemoLabel(
+                  selectedMemo.bundleIndex + 1,
+                  selectedMemo.bundleCount,
+                ),
                 displayMemo: selectedMemo.displayMemo,
                 showNavigation: batchMemos.length > 1,
                 onPrevious: memoIndex > 0
@@ -1683,7 +1719,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
               onPressed: urParts.isEmpty ? null : onScan,
               variant: AppButtonVariant.primary,
               minWidth: 220,
-              child: const Text('Scan signature'),
+              child: Text(context.l10n.votingKeystoneScanSignature),
             ),
           ],
         ),
@@ -1737,14 +1773,14 @@ class _KeystoneSigningMemo extends StatelessWidget {
                   if (showNavigation) ...[
                     _KeystoneMemoNavigationButton(
                       key: const ValueKey('keystone_memo_previous'),
-                      tooltip: 'Previous bundle memo',
+                      tooltip: context.l10n.votingKeystonePreviousMemo,
                       iconName: AppIcons.chevronBackward,
                       onPressed: onPrevious,
                     ),
                     const SizedBox(width: AppSpacing.xxs),
                     _KeystoneMemoNavigationButton(
                       key: const ValueKey('keystone_memo_next'),
-                      tooltip: 'Next bundle memo',
+                      tooltip: context.l10n.votingKeystoneNextMemo,
                       iconName: AppIcons.chevronForward,
                       onPressed: onNext,
                     ),
@@ -1808,7 +1844,7 @@ class _SoftwareAccountRequiredContent extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Software account required',
+              context.l10n.votingSoftwareRequiredTitle,
               textAlign: TextAlign.center,
               style: AppTypography.displaySmall.copyWith(
                 color: context.colors.text.accent,
@@ -1816,7 +1852,7 @@ class _SoftwareAccountRequiredContent extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              'Token holder voting requires a software account. Switch to a software account to vote in this round.',
+              context.l10n.votingSoftwareRequiredBody,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.secondary,

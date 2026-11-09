@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_
 import 'package:zcash_wallet/src/features/receive/widgets/mobile/receive_address_info_sheet.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
 import 'package:zcash_wallet/widgetbook/receive_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../figma_compare/figma_compare_font_loader.dart';
 
@@ -25,19 +26,39 @@ void main() {
     expect(find.byType(MobileReceiveScreen), findsOneWidget);
     expect(find.text('Receive ZEC'), findsOneWidget);
     expect(find.text('Account Name'), findsOneWidget);
-    expect(find.text('Share shielded address'), findsOneWidget);
-    expect(find.text('Copy shielded address'), findsOneWidget);
-    // Share shares its row with the square request button: 300 - 8 - 50.
+    expect(find.text('Request ZEC'), findsOneWidget);
+    expect(find.text('Copy address'), findsOneWidget);
+    final copyLabel = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.text('Copy address'),
+        matching: find.byType(RichText),
+      ),
+    );
+    expect(copyLabel.size.height, moreOrLessEquals(17, epsilon: 0.1));
+    expect(copyLabel.text.style?.fontSize, AppTypography.labelLarge.fontSize);
+    final requestLabel = tester.renderObject<RenderParagraph>(
+      find.text('Request ZEC'),
+    );
     expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
+      requestLabel.text.style?.fontSize,
+      AppTypography.labelLarge.fontSize,
+    );
+
+    final scrollable = tester.state<ScrollableState>(
+      find.byType(Scrollable).first,
+    );
+    expect(scrollable.position.maxScrollExtent, 0);
+    // Copy shares its row with the square share button: 300 - 8 - 50.
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
       const Size(242, 50),
     );
     expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_receive_request'))),
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
       const Size(50, 50),
     );
     expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_request'))),
       const Size(300, 50),
     );
     expect(
@@ -79,8 +100,23 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Share transparent address'), findsOneWidget);
-    expect(find.text('Copy transparent address'), findsOneWidget);
+    expect(find.text('Request ZEC'), findsOneWidget);
+    expect(find.text('Copy address'), findsOneWidget);
+    final copyLabel = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.text('Copy address'),
+        matching: find.byType(RichText),
+      ),
+    );
+    expect(copyLabel.size.height, moreOrLessEquals(17, epsilon: 0.1));
+    expect(copyLabel.text.style?.fontSize, AppTypography.labelLarge.fontSize);
+    final requestLabel = tester.renderObject<RenderParagraph>(
+      find.text('Request ZEC'),
+    );
+    expect(
+      requestLabel.text.style?.fontSize,
+      AppTypography.labelLarge.fontSize,
+    );
   });
 
   testWidgets('receive mobile shielded sheet use case opens info sheet', (
@@ -177,6 +213,7 @@ Future<void> _pumpReceiveMobileUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.dark,
         child: Builder(builder: builder),

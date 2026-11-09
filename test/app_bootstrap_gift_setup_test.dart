@@ -6,6 +6,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/storage/wallet_balance_cache.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
@@ -79,6 +81,46 @@ void main() {
     expect(await storage.readPlain(kThemeModeKey), 'dark');
   }
 
+  for (final unlocked in [false, true]) {
+    test(
+      'bootstrap uses selected address and cache only when unlocked=$unlocked',
+      () async {
+        await database.writeAsString('wallet fixture');
+        await storage.delete(kPendingAccountMnemonicStorageKey);
+        await storage.delete(kGiftWalletSetupStartedStorageKey);
+        await storage.writeString('zcash_active_account', 'second');
+        rust.accounts = [
+          for (final uuid in ['first', 'second'])
+            rust_wallet.AccountInfo(
+              uuid: uuid,
+              name: uuid,
+              birthdayHeight: 3000000,
+              zip32AccountIndex: 0,
+              isHardware: false,
+              isSeedAnchor: uuid == 'first',
+            ),
+        ];
+        if (unlocked) storage.setSessionPassword('passcode');
+        final result = await bootstrap();
+        expect(result.hasBlockingFailure, isFalse);
+        expect(result.initialLocation, unlocked ? '/home' : '/unlock');
+        expect(result.initialAccountState.accounts.length, 2);
+        expect(rust.addressAccounts, unlocked ? ['second'] : isEmpty);
+        expect(rust.cacheAccounts, unlocked ? ['second'] : isEmpty);
+        expect(result.initialSyncSnapshot.hasAccountScopedData, isFalse);
+        if (unlocked) {
+          expect(result.initialAccountState.activeAddress, 'u1second');
+          expect(
+            result.initialSyncSnapshot.cachedBalance!.balance.ironwood,
+            BigInt.from(100),
+          );
+        } else {
+          expect(result.initialSyncSnapshot.cachedBalance, isNull);
+        }
+      },
+    );
+  }
+
   test('restart before DB creation clears only the incomplete setup', () async {
     await expectCleared(await bootstrap());
     expect(rust.listCalls, 0);
@@ -99,7 +141,6 @@ void main() {
       rust_wallet.AccountInfo(
         uuid: 'created-account',
         name: 'Gift account',
-        unifiedAddress: 'u1created-account',
         birthdayHeight: 3000000,
         zip32AccountIndex: 0,
         isHardware: false,
@@ -203,7 +244,6 @@ void main() {
       rust_wallet.AccountInfo(
         uuid: 'imported-account',
         name: 'Imported',
-        unifiedAddress: 'u1imported-account',
         birthdayHeight: 3000000,
         zip32AccountIndex: 0,
         isHardware: false,
@@ -393,12 +433,16 @@ class _BootstrapRustApi implements RustLibApi {
   Object? listError;
   bool reportMissingDb = false;
   int listCalls = 0;
+  final addressAccounts = <String>[];
+  final cacheAccounts = <String>[];
 
   void reset() {
     accounts = [];
     listError = null;
     reportMissingDb = false;
     listCalls = 0;
+    addressAccounts.clear();
+    cacheAccounts.clear();
   }
 
   @override
@@ -419,6 +463,51 @@ class _BootstrapRustApi implements RustLibApi {
     listCalls++;
     if (listError case final error?) throw error;
     return accounts;
+  }
+
+  @override
+  Future<String> crateApiWalletGetUnifiedAddress({
+    required String dbPath,
+    required String network,
+    String? accountUuid,
+  }) async {
+    addressAccounts.add(accountUuid!);
+    return 'u1$accountUuid';
+  }
+
+  @override
+  Future<String?> crateApiBalanceCacheLoadBalanceCache({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async {
+    cacheAccounts.add(accountUuid);
+    return CachedWalletBalance(
+      rust_sync.WalletBalance(
+        availability: rust_sync.WalletBalanceAvailability.available,
+        transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
+        transparentPrivate: false,
+        transparent: BigInt.zero,
+        sapling: BigInt.zero,
+        orchard: BigInt.zero,
+        transparentLocked: BigInt.zero,
+        saplingLocked: BigInt.zero,
+        orchardLocked: BigInt.zero,
+        ironwoodLocked: BigInt.zero,
+        transparentPending: BigInt.zero,
+        saplingPending: BigInt.zero,
+        orchardPending: BigInt.zero,
+        ironwoodPending: BigInt.zero,
+        changePendingConfirmation: BigInt.zero,
+        valuePendingSpendability: BigInt.zero,
+        uneconomicValue: BigInt.zero,
+        locked: BigInt.zero,
+        ironwood: BigInt.from(100),
+        spendable: BigInt.from(100),
+        total: BigInt.from(100),
+      ),
+      DateTime.utc(2026),
+    ).encode();
   }
 
   @override

@@ -94,7 +94,7 @@ void main() {
     await enterText(tester, const ValueKey('mobile_send_amount_input'), '0.25');
     await pumpUntil(
       tester,
-      () => tester.any(find.text('Finish & review')),
+      () => tester.any(find.text('Review & finish')),
       description: 'amount ready',
       timeout: const Duration(minutes: 1),
     );

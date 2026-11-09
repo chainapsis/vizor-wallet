@@ -1,9 +1,12 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/config/private_transparent_recovery_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'network_privacy_control.dart';
+import 'wallet_pir_server_popup.dart';
+import '../../../providers/enhance_pir_provider.dart';
 
 class EnhancePirPrivacyControl extends StatelessWidget {
   const EnhancePirPrivacyControl({
@@ -20,7 +23,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
   /// deliberately not surfaced here: they are dominated by obligations that
   /// can never complete (dummy actions, outputs the wallet cannot open), so
   /// they read as failures the user is expected to act on.
-  final String? transition;
+  final EnhancePirTransition? transition;
 
   /// Whether this build's private queries also recover transparent funds.
 
@@ -54,17 +57,29 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        'Private queries',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
-                        ),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              context.l10n.settingsPrivateQueriesLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.labelLarge.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
+                          WalletPirServerSettingsButton(
+                            enabled: enabled && onToggle != null,
+                          ),
+                        ],
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        enabled ? 'On' : 'Off',
+                        enabled
+                            ? context.l10n.settingsStatusOn
+                            : context.l10n.settingsStatusOff,
                         key: const ValueKey('settings_enhance_pir_status'),
                         style: AppTypography.labelLarge.copyWith(
                           color: enabled
@@ -81,7 +96,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                   key: const ValueKey('settings_enhance_pir_toggle'),
                   trackKey: const ValueKey('settings_enhance_pir_toggle_track'),
                   enabled: enabled,
-                  semanticsLabel: 'Private queries',
+                  semanticsLabel: context.l10n.settingsPrivateQueriesLabel,
                   onToggle: onToggle,
                 ),
               ],
@@ -91,7 +106,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
         if (transition != null) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(
-            transition!,
+            transition!.message(context.l10n),
             key: const ValueKey('settings_enhance_pir_transition'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -102,7 +117,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            kPrivateQueriesSettingsCopy,
+            privateQueriesSettingsCopy(context.l10n),
             key: const ValueKey('settings_enhance_pir_description'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,

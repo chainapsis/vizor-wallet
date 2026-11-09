@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -17,6 +18,7 @@ import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_sh
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
 import 'ledger_pairing_recovery_test.dart' as fixture;
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_modal.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Future<void> frames(WidgetTester tester) async {
   for (var i = 0; i < 8; i++) {
@@ -25,6 +27,7 @@ Future<void> frames(WidgetTester tester) async {
 }
 
 Widget harness(Widget child, {double scale = 1}) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   home: AppTheme(
     data: AppThemeData.light,
     child: Builder(
@@ -81,10 +84,7 @@ void main() {
       await frames(tester);
       expect(find.text('Pair your Ledger again'), findsOneWidget);
       expect(find.text('Did you reset pairing?'), findsNothing);
-      expect(
-        find.textContaining('Open Bluetooth settings and remove'),
-        findsOneWidget,
-      );
+      expect(find.text('Reset Bluetooth pairing'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       ble.pairingInvalidEvidence.value = false;
       ble.pairingInvalidEvidence.value = true;
@@ -192,7 +192,7 @@ void main() {
       );
       expect(find.text('Did you reset pairing?'), findsNothing);
       expect(
-        find.textContaining('Open Settings > Bluetooth.'),
+        find.text('Reset Bluetooth pairing'),
         invalid ? findsOneWidget : findsNothing,
       );
       expect(find.text('Open settings'), findsNothing);
@@ -201,7 +201,7 @@ void main() {
           find.text(
             LedgerRequestFailure.fromError(
               LedgerMobileException(failure, 'diagnostic'),
-            ).title,
+            ).title(testL10n),
           ),
           findsOneWidget,
         );

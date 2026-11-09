@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import '../support/test_l10n.dart';
 
 void main() {
   test('native method is preserved independently from readiness', () {
@@ -17,12 +18,12 @@ void main() {
         });
         expect(availability.kind, kind);
         expect(availability.usable, enrolled);
-        expect(availability.kind.signInLabel, 'Sign in with $label');
+        expect(availability.kind.signInLabel(testL10n), 'Sign in with $label');
       }
     }
     expect(BiometricAvailability.fromPlatform({}).usable, isFalse);
     expect(
-      BiometricKind.touchId.changedMessage,
+      BiometricKind.touchId.changedMessage(testL10n),
       'Touch ID changed. Enter your passcode.',
     );
   });

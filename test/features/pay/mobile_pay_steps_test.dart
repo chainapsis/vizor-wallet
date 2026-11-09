@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart'
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_amount_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_recipient_step.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/leading_decimal_input.dart';
 
@@ -440,9 +441,9 @@ void main() {
         44,
       );
       expect(find.text('Scan a QR code'), findsOneWidget);
-      expect(find.text('Recently sent'), findsOneWidget);
+      expect(find.text('Recents'), findsOneWidget);
       expect(find.text('-1.25 USDC'), findsOneWidget);
-      expect(find.text('2 contacts'), findsOneWidget);
+      expect(find.text('Contacts'), findsOneWidget);
       expect(find.text('Mike'), findsOneWidget);
       expect(find.text('Alice'), findsOneWidget);
       expect(
@@ -493,6 +494,47 @@ void main() {
       expect(find.text('-1.25 USDC'), findsOneWidget);
     });
 
+    testWidgets('a NEAR contact name search keeps the list', (tester) async {
+      // A short NEAR name is itself a valid account, so the search must not
+      // give way to the new-address notice.
+      final controller = TextEditingController(text: 'ali');
+      addTearDown(controller.dispose);
+
+      await _pumpStep(
+        tester,
+        MobilePayRecipientStep(
+          controller: controller,
+          typedAddress: 'ali',
+          addressError: null,
+          contacts: const [
+            AddressBookContact(
+              id: 'near-alice',
+              label: 'Alice',
+              network: AddressBookNetwork.near,
+              address: 'alice.near',
+              profilePictureId: 'pfp-01',
+              createdAtMs: 0,
+              updatedAtMs: 0,
+            ),
+          ],
+          recents: const [],
+          busy: false,
+          externalAsset: SwapAsset.near,
+          onAddressChanged: (_) {},
+          onOpenScanner: () {},
+          onChooseRecipient: (_) {},
+          onSelectRecipient: () {},
+          onAddToContacts: () {},
+        ),
+      );
+
+      expect(find.text('Alice'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('mobile_pay_new_address_notice')),
+        findsNothing,
+      );
+    });
+
     testWidgets('new address shows the notice and two pinned actions', (
       tester,
     ) async {
@@ -528,8 +570,8 @@ void main() {
         find.text("You haven't interacted with this address before."),
         findsOneWidget,
       );
-      expect(find.text('Recently sent'), findsNothing);
-      expect(find.text('2 contacts'), findsNothing);
+      expect(find.text('Recents'), findsNothing);
+      expect(find.text('Contacts'), findsNothing);
       expect(
         tester
             .getRect(find.byKey(const ValueKey('mobile_pay_recipient_actions')))
@@ -547,7 +589,7 @@ void main() {
       expect(continued, isTrue);
     });
 
-    testWidgets('known recent address keeps one row and only Continue', (
+    testWidgets('known recent address keeps one row and offers saving it', (
       tester,
     ) async {
       final controller = TextEditingController(text: _recentRecipient);
@@ -571,11 +613,11 @@ void main() {
         ),
       );
 
-      expect(find.text('Recently sent'), findsOneWidget);
+      expect(find.text('Recents'), findsOneWidget);
       expect(find.text('-1.25 USDC'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('mobile_pay_add_to_contacts_button')),
-        findsNothing,
+        findsOneWidget,
       );
       expect(
         find.byKey(const ValueKey('mobile_pay_recipient_continue_button')),
@@ -851,10 +893,10 @@ void main() {
         ),
       );
 
-      expect(find.text('2 contacts'), findsOneWidget);
+      expect(find.text('Contacts'), findsOneWidget);
       expect(find.text('Mike'), findsOneWidget);
       expect(find.text('Second Mike'), findsOneWidget);
-      expect(find.text('Recently sent'), findsNothing);
+      expect(find.text('Recents'), findsNothing);
       expect(
         find.byKey(
           const ValueKey('mobile_pay_contact_selection_slot_contact-1'),
@@ -905,6 +947,114 @@ void main() {
         findsNothing,
       );
       expect(find.bySemanticsLabel('Selected contact'), findsNothing);
+    });
+
+    testWidgets('a long recipient list fades out at the bottom edge', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      await _pumpStep(
+        tester,
+        MobilePayRecipientStep(
+          controller: controller,
+          typedAddress: '',
+          addressError: null,
+          contacts: [
+            for (var index = 0; index < 12; index++)
+              AddressBookContact(
+                id: 'contact-$index',
+                label: 'Contact $index',
+                network: AddressBookNetwork.ethereum,
+                address: '0x${index.toString().padLeft(40, '0')}',
+                profilePictureId: 'pfp-01',
+                createdAtMs: 0,
+                updatedAtMs: 0,
+              ),
+          ],
+          recents: _recents,
+          busy: false,
+          externalAsset: SwapAsset.usdc,
+          onAddressChanged: (_) {},
+          onOpenScanner: () {},
+          onChooseRecipient: (_) {},
+          onSelectRecipient: () {},
+          onAddToContacts: () {},
+        ),
+      );
+      await tester.pump();
+
+      final fade = tester.widget<DecoratedBox>(
+        find.byKey(const ValueKey('mobile_bottom_scroll_fade_layer')),
+      );
+      final gradient = (fade.decoration as BoxDecoration).gradient!;
+      expect(gradient.colors.last.a, 1);
+    });
+
+    testWidgets('a contact name search keeps matches and hides the error', (
+      tester,
+    ) async {
+      final controller = TextEditingController(text: 'ali');
+      addTearDown(controller.dispose);
+
+      await _pumpStep(
+        tester,
+        MobilePayRecipientStep(
+          controller: controller,
+          typedAddress: 'ali',
+          addressError: 'Invalid Ethereum address',
+          contacts: _contacts,
+          recents: _recents,
+          busy: false,
+          externalAsset: SwapAsset.usdc,
+          onAddressChanged: (_) {},
+          onOpenScanner: () {},
+          onChooseRecipient: (_) {},
+          onSelectRecipient: () {},
+          onAddToContacts: () {},
+        ),
+      );
+
+      expect(find.text('Alice'), findsOneWidget);
+      expect(find.text('Mike'), findsNothing);
+      expect(find.text('Recents'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('mobile_pay_recipient_error')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('an address prefix shows the error without suggestions', (
+      tester,
+    ) async {
+      final controller = TextEditingController(text: '0x11');
+      addTearDown(controller.dispose);
+
+      await _pumpStep(
+        tester,
+        MobilePayRecipientStep(
+          controller: controller,
+          typedAddress: '0x11',
+          addressError: 'Invalid Ethereum address',
+          contacts: _contacts,
+          recents: _recents,
+          busy: false,
+          externalAsset: SwapAsset.usdc,
+          onAddressChanged: (_) {},
+          onOpenScanner: () {},
+          onChooseRecipient: (_) {},
+          onSelectRecipient: () {},
+          onAddToContacts: () {},
+        ),
+      );
+
+      expect(find.text('Mike'), findsNothing);
+      expect(find.text('Contacts'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('mobile_pay_recipient_error')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('Solana recipient matching remains case-sensitive', (
@@ -963,6 +1113,7 @@ Future<void> _pumpStep(WidgetTester tester, Widget child) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Scaffold(body: SizedBox(width: 393, height: 699, child: child)),

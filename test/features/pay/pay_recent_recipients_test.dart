@@ -1,3 +1,4 @@
+import '../../support/test_l10n.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart';
@@ -139,7 +140,34 @@ void main() {
       expect(recents, hasLength(1));
       expect(recents.single.address, _evmA);
       expect(recents.single.amountText, '-18.5 USDC');
-      expect(recents.single.lastUsedAt, DateTime(2026, 7, 5));
+      expect(recents.single.lastUsedAt, DateTime(2026, 7, 4));
+    });
+
+    test('dates an in-flight payout by creation, not by its last poll', () {
+      final recents = payRecentRecipients(
+        intents: [
+          _intent(
+            id: 'older-but-polled',
+            recipient: _evmA,
+            status: SwapIntentStatus.processing,
+            depositTxHash: 'zec-deposit-tx',
+            destinationChainTxHash: 'usdc-payout-tx',
+            createdAt: DateTime(2026, 7, 1),
+            updatedAt: DateTime(2026, 7, 9),
+          ),
+          _intent(
+            id: 'newer-complete',
+            recipient: _evmB,
+            createdAt: DateTime(2026, 7, 2),
+            completedAt: DateTime(2026, 7, 3),
+          ),
+        ],
+        network: AddressBookNetwork.ethereum,
+        contacts: const [],
+      );
+
+      expect(recents.map((recent) => recent.address), [_evmB, _evmA]);
+      expect(recents.last.lastUsedAt, DateTime(2026, 7, 1));
     });
 
     test('keeps a broadcasted Pay deposit before external delivery', () {
@@ -562,31 +590,54 @@ void main() {
 
     test('uses relative labels within a week', () {
       expect(
-        payRecentTimeLabel(now.subtract(const Duration(seconds: 30)), now: now),
+        payRecentTimeLabel(
+          testL10n,
+          now.subtract(const Duration(seconds: 30)),
+          now: now,
+        ),
         'just now',
       );
       expect(
-        payRecentTimeLabel(now.subtract(const Duration(minutes: 5)), now: now),
+        payRecentTimeLabel(
+          testL10n,
+          now.subtract(const Duration(minutes: 5)),
+          now: now,
+        ),
         '5m ago',
       );
       expect(
-        payRecentTimeLabel(now.subtract(const Duration(hours: 3)), now: now),
+        payRecentTimeLabel(
+          testL10n,
+          now.subtract(const Duration(hours: 3)),
+          now: now,
+        ),
         '3h ago',
       );
       expect(
-        payRecentTimeLabel(now.subtract(const Duration(days: 2)), now: now),
+        payRecentTimeLabel(
+          testL10n,
+          now.subtract(const Duration(days: 2)),
+          now: now,
+        ),
         '2d ago',
       );
     });
 
     test('falls back to month + day beyond a week', () {
-      expect(payRecentTimeLabel(DateTime(2026, 4, 27), now: now), 'April 27');
+      expect(
+        payRecentTimeLabel(testL10n, DateTime(2026, 4, 27), now: now),
+        'April 27',
+      );
     });
 
     test('returns null for missing or future timestamps', () {
-      expect(payRecentTimeLabel(null, now: now), isNull);
+      expect(payRecentTimeLabel(testL10n, null, now: now), isNull);
       expect(
-        payRecentTimeLabel(now.add(const Duration(minutes: 1)), now: now),
+        payRecentTimeLabel(
+          testL10n,
+          now.add(const Duration(minutes: 1)),
+          now: now,
+        ),
         isNull,
       );
     });

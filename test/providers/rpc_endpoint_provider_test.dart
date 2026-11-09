@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 
 void main() {
@@ -80,6 +81,63 @@ void main() {
     await failed;
     await Future<void>.delayed(Duration.zero);
     expect(state.read(rpcEndpointProvider), previous);
+    expect(
+      await const FlutterSecureStorage().read(key: kRpcEndpointUrlKey),
+      isNull,
+    );
+  });
+
+  test(
+    'automatic mode persists without contacting the compatibility host',
+    () async {
+      var reads = 0;
+      final state = container((_) async {
+        reads++;
+        throw StateError('host is unavailable');
+      });
+      await state.read(rpcEndpointProvider.notifier).setAutomatic();
+      expect(reads, 0);
+      expect(
+        isAutomaticRpcEndpointConfig(state.read(rpcEndpointProvider)),
+        isTrue,
+      );
+      expect(
+        await const FlutterSecureStorage().read(key: kRpcEndpointPresetKey),
+        kDefaultRpcEndpointPresetId,
+      );
+      expect(
+        await const FlutterSecureStorage().read(key: kRpcEndpointUrlKey),
+        isNull,
+      );
+      await state
+          .read(rpcEndpointProvider.notifier)
+          .setPreset(kMainnetRpcEndpointPresets.first);
+      expect(reads, 0);
+    },
+  );
+
+  test('manual US selection verifies and persists concrete intent', () async {
+    var reads = 0;
+    final state = container((_) async {
+      reads++;
+      return 'main';
+    });
+    await state
+        .read(rpcEndpointProvider.notifier)
+        .setPreset(
+          findRpcEndpointPresetById('main', kManualUsRpcEndpointPresetId)!,
+        );
+    expect(reads, 1);
+    expect(
+      isAutomaticRpcEndpointConfig(state.read(rpcEndpointProvider)),
+      isFalse,
+    );
+    expect(
+      await const FlutterSecureStorage().read(key: kRpcEndpointPresetKey),
+      kManualUsRpcEndpointPresetId,
+    );
+    await state.read(rpcEndpointProvider.notifier).setAutomatic();
+    expect(reads, 1);
     expect(
       await const FlutterSecureStorage().read(key: kRpcEndpointUrlKey),
       isNull,

@@ -12,6 +12,7 @@ import 'payment_link_cards_layout.dart';
 import 'payment_link_confirm_modal.dart';
 import 'payment_link_gift_card.dart';
 import 'payment_link_wizard_chrome.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Why a batch is not shareable yet.
 enum PaymentLinkBatchPendingKind {
@@ -88,7 +89,7 @@ class PaymentLinkBatchDetailDesktopView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => PaymentLinkPane(
-    backLabel: 'Gift Cards',
+    backLabel: context.l10n.paymentLinkGiftCardsTitle,
     onBack: onBack,
     // Above the Align, which would loosen the pane's visible-height minimum.
     child: LayoutBuilder(
@@ -176,14 +177,14 @@ class PaymentLinkBatchDetailDesktopView extends StatelessWidget {
             // The same title before and after the cards are ready: a longer
             // one wraps at this width and pushes the action down.
             Text(
-              '$count gift cards',
+              context.l10n.paymentLinkBatchGiftCardsCount(count),
               style: AppTypography.headlineLarge.copyWith(
                 color: colors.text.accent,
               ),
             ),
             const SizedBox(height: AppSpacing.xxs),
             Text(
-              'Created $dateText',
+              context.l10n.paymentLinkBatchCreated(dateText),
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
               ),
@@ -202,7 +203,7 @@ class PaymentLinkBatchDetailDesktopView extends StatelessWidget {
             leading: const Center(
               child: AppIcon(AppIcons.arrowDownward, size: AppIconSize.medium),
             ),
-            child: const Text('Save all links as CSV'),
+            child: Text(context.l10n.paymentLinkBatchSaveAllCsv),
           )
         else
           AppButton(
@@ -213,7 +214,7 @@ class PaymentLinkBatchDetailDesktopView extends StatelessWidget {
                 : AppButtonVariant.primary,
             size: AppButtonSize.mediumLarge,
             expand: true,
-            child: const Text('Check status'),
+            child: Text(context.l10n.paymentLinkCheckStatus),
           ),
       ],
     );
@@ -231,30 +232,20 @@ class PaymentLinkBatchDetailDesktopView extends StatelessWidget {
       runSpacing: AppSpacing.xs,
       children: [
         Text(
-          'Cards in this group',
+          context.l10n.paymentLinkBatchCardsInGroup,
           style: AppTypography.headlineSmall.copyWith(
             color: colors.text.accent,
           ),
         ),
-        if (ready) _UsageActivityLine(activity: usageActivity),
+        _UsageActivityLine(activity: usageActivity),
       ],
     );
-    // Cards cannot be shared until the payment is settled.
-    if (!ready) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(padding: inset, child: heading),
-          const SizedBox(height: AppSpacing.sm),
-          Padding(
-            padding: inset,
-            child: _PendingLine(kind: pendingKind),
-          ),
-        ],
-      );
-    }
     final rows = <Widget>[
+      if (!ready)
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          child: _PendingLine(kind: pendingKind),
+        ),
       for (final (index, section)
           in sections.where((section) => section.cards.isNotEmpty).indexed) ...[
         Semantics(
@@ -395,10 +386,11 @@ class _UsageActivityLine extends StatelessWidget {
             liveRegion: true,
             child: Text(
               activity.checking
-                  ? 'Checking card use…'
+                  ? context.l10n.paymentLinkBatchCheckingUse
                   : activity.failed
-                  ? 'Couldn’t check every card'
-                  : activity.checkedText ?? 'Card use not checked yet',
+                  ? context.l10n.paymentLinkBatchCheckFailed
+                  : activity.checkedText ??
+                        context.l10n.paymentLinkBatchUseNotChecked,
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,
               ),
@@ -420,11 +412,11 @@ class _PendingLine extends StatelessWidget {
     final colors = context.colors;
     final message = switch (kind) {
       PaymentLinkBatchPendingKind.confirming =>
-        'Links become shareable once the payment confirms.',
+        context.l10n.paymentLinkBatchLinksShareableLater,
       PaymentLinkBatchPendingKind.unconfirmedBroadcast =>
-        'Vizor hasn’t confirmed that the payment was sent. Keep these cards and check again before sharing any links.',
+        context.l10n.paymentLinkBatchPaymentUnconfirmed,
       PaymentLinkBatchPendingKind.incomplete =>
-        'Not every card in this group is ready. Don’t share any links until they all are.',
+        context.l10n.paymentLinkBatchNotAllReady,
     };
     return Semantics(
       liveRegion: true,
@@ -488,11 +480,17 @@ class PaymentLinkBatchMemberRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final number = index.toString().padLeft(2, '0');
-    final details = [?note, if (updateFailed) 'Couldn’t update'].join(' · ');
+    final details = [
+      ?note,
+      if (updateFailed) context.l10n.paymentLinkBatchRowUpdateFailed,
+    ].join(' · ');
     return Semantics(
       container: true,
-      label:
-          'Card $number, $statusLabel${updateFailed ? ', update failed' : ''}',
+      label: context.l10n.paymentLinkBatchRowSemantic(
+        number,
+        statusLabel,
+        updateFailed ? 'true' : 'false', // l10n-ignore: boolean select argument
+      ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 56),
         child: Row(
@@ -517,7 +515,7 @@ class PaymentLinkBatchMemberRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Card $number',
+                      context.l10n.paymentLinkBatchRowTitle(number),
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: used
                             ? colors.text.secondary
@@ -539,13 +537,17 @@ class PaymentLinkBatchMemberRow extends StatelessWidget {
             const SizedBox(width: AppSpacing.xs),
             PaymentLinkIconAction(
               icon: AppIcons.copy,
-              semanticLabel: 'Copy link for card $number',
+              semanticLabel: context.l10n.paymentLinkBatchCopyLinkSemantic(
+                number,
+              ),
               onPressed: onCopyLink,
             ),
             const SizedBox(width: AppSpacing.xxs),
             PaymentLinkIconAction(
               icon: AppIcons.qr,
-              semanticLabel: 'Show QR code for card $number',
+              semanticLabel: context.l10n.paymentLinkBatchShowQrSemantic(
+                number,
+              ),
               onPressed: onShowQr,
             ),
           ],
@@ -570,12 +572,10 @@ class PaymentLinkBatchExportModal extends StatelessWidget {
   Widget build(BuildContext context) {
     return PaymentLinkConfirmModal(
       iconName: AppIcons.lock,
-      title: 'Save gift card links',
-      body:
-          'Anyone with this file can claim these cards. Save it somewhere '
-          'private.',
-      confirmLabel: 'Choose location',
-      cancelLabel: 'Cancel',
+      title: context.l10n.paymentLinkBatchSaveLinksTitle,
+      body: context.l10n.paymentLinkBatchSaveLinksWarning,
+      confirmLabel: context.l10n.paymentLinkBatchChooseLocation,
+      cancelLabel: context.l10n.commonCancel,
       onConfirm: onConfirm,
       onCancel: onCancel,
       confirmKey: const ValueKey('payment_link_batch_export_confirm'),

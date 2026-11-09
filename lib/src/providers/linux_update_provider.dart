@@ -90,7 +90,7 @@ Future<LinuxUpdateInfo?> fetchLinuxUpdate({
   final client = clientFactory();
   try {
     final response = await client.request(
-      'GET',
+      'GET', // l10n-ignore: HTTP method
       feedUri,
       headers: const {HttpHeaders.acceptHeader: 'application/json'},
       timeout: timeout,

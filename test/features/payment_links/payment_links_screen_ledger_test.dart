@@ -178,7 +178,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
       }
       expect(find.byType(PaymentLinkLedgerSigningOverlay), findsOneWidget);
-      expect(find.text('Check your Ledger'), findsOneWidget);
+      expect(find.text('Review on Ledger'), findsOneWidget);
       signature.complete([3]);
       await tester.pumpAndSettle();
       expect(h.operations.checkpoints, 1);
@@ -248,7 +248,7 @@ void main() {
       if (outcome == 'expired') h.operations.status = 'expired';
       final signature = Completer<List<int>>();
       await _openLedgerSigning(tester, h, signature);
-      expect(find.text('Check your Ledger'), findsOneWidget);
+      expect(find.text('Review on Ledger'), findsOneWidget);
       expect(find.text('Sign gift card on Keystone'), findsNothing);
       if (cancel) {
         await tester.tap(find.text('Back to gift card'));
@@ -280,7 +280,11 @@ void main() {
   }
 
   for (final (status, message, canRetry) in const [
-    ('6985', 'The gift card funding was rejected on your Ledger.', true),
+    (
+      '6985',
+      'Signing was declined on Ledger. Try again when you’re ready.',
+      true,
+    ),
     (
       '6a80',
       'Your Ledger couldn’t accept this request. Create a new gift card. Nothing was sent.',
@@ -407,6 +411,9 @@ class _StoreBackedOperations extends FakePaymentLinkOperations {
   _StoreBackedOperations(this.store);
 
   final PaymentLinkRecoveryStore store;
+
+  @override
+  Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinks() => store.load();
 
   @override
   Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() =>

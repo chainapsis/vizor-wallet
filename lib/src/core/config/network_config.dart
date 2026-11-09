@@ -58,9 +58,9 @@ enum ZcashNetwork {
   };
 
   String get currencyTicker => switch (this) {
-    mainnet => 'ZEC',
-    testnet => 'TAZ',
-    regtest => 'TAZ',
+    mainnet => 'ZEC', // l10n-ignore: currency ticker
+    testnet => 'TAZ', // l10n-ignore: currency ticker
+    regtest => 'TAZ', // l10n-ignore: currency ticker
   };
 
   String get lightwalletdUrl => switch (this) {
@@ -88,23 +88,22 @@ const kZcashRegtestIronwoodActivationHeight = int.fromEnvironment(
   defaultValue: 0xFFFFFFFF,
 );
 
+const kZcashRegtestNu7ActivationHeightEnvKey =
+    'ZCASH_REGTEST_NU7_ACTIVATION_HEIGHT';
+const kZcashRegtestNu7ActivationHeight = int.fromEnvironment(
+  kZcashRegtestNu7ActivationHeightEnvKey,
+  defaultValue: 0xFFFFFFFF,
+);
+
 const kZcashFastTestnetMigrationEnvKey = 'ZCASH_FAST_TESTNET_MIGRATION';
 const kZcashFastTestnetMigration = bool.fromEnvironment(
   kZcashFastTestnetMigrationEnvKey,
   defaultValue: false,
 );
 
-/// Opt-in test build for Adam's private Ironwood chain that presents itself as
-/// mainnet so normal-mode Keystone devices can use mainnet 133'/u1 derivation.
-const kZcashIronwoodMasqueradeEnvKey = 'ZCASH_IRONWOOD_MASQUERADE';
-const kZcashIronwoodMasquerade = bool.fromEnvironment(
-  kZcashIronwoodMasqueradeEnvKey,
-  defaultValue: false,
+final String kZcashDefaultNetworkName = normalizeZcashNetworkName(
+  kZcashDefaultNetworkRaw,
 );
-
-final String kZcashDefaultNetworkName = kZcashIronwoodMasquerade
-    ? 'main'
-    : normalizeZcashNetworkName(kZcashDefaultNetworkRaw);
 
 final String kZcashDefaultCurrencyTicker = zcashNetworkFromName(
   kZcashDefaultNetworkName,
@@ -119,7 +118,6 @@ String normalizeZcashNetworkName(String networkName) {
 }
 
 String resolveStoredOrDefaultZcashNetworkName(String? storedNetworkName) {
-  if (kZcashIronwoodMasquerade) return 'main';
   final stored = storedNetworkName?.trim();
   if (stored == null || stored.isEmpty) return kZcashDefaultNetworkName;
   return normalizeZcashNetworkName(stored);
@@ -135,9 +133,6 @@ ZcashNetwork zcashNetworkFromName(String networkName) {
 
 String secureStoreServiceForNetwork(String networkName) {
   final network = normalizeZcashNetworkName(networkName);
-  if (kZcashIronwoodMasquerade && network == 'main') {
-    return 'com.keplr.vizor.ironwood.secure_store';
-  }
   return network == 'main'
       ? 'com.keplr.vizor.secure_store'
       : 'com.keplr.vizor.$network.secure_store';

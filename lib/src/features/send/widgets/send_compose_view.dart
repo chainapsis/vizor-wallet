@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/amount_price_loading_bar.dart';
@@ -47,13 +48,13 @@ enum SendMemoMode {
 class SendComposeView extends StatelessWidget {
   const SendComposeView({
     super.key,
-    this.title = 'Send ZEC',
+    this.title,
     this.recipientText = '',
-    this.recipientHint = 'Zcash address',
+    this.recipientHint,
     this.route = SendPoolRoute.unknown,
     this.amountText = '',
     this.amountHint = '0.00',
-    this.maxLabel = 'Use Max',
+    this.maxLabel,
     this.amountInputIsUsd = false,
     this.amountConversionText = r'$ 0',
     this.amountConversionLoading = false,
@@ -61,11 +62,11 @@ class SendComposeView extends StatelessWidget {
     this.amountError,
     this.memoMode = SendMemoMode.prompt,
     this.memoText = '',
-    this.memoHint = 'Add a message',
+    this.memoHint,
     this.memoCounter = '512/512',
     this.memoError,
     this.reviewEnabled = false,
-    this.reviewLabel = 'Review',
+    this.reviewLabel,
     this.onReview,
     this.onContactsPressed,
     this.onAddMemo,
@@ -76,17 +77,17 @@ class SendComposeView extends StatelessWidget {
 
   /// Serif page title. Defaults to the Figma copy `Send ZEC`; the live
   /// screen can thread the network-scoped currency ticker.
-  final String title;
+  final String? title;
 
   // Recipient ("Send to") field.
   final String recipientText;
-  final String recipientHint;
+  final String? recipientHint;
   final SendPoolRoute route;
 
   // Amount field.
   final String amountText;
   final String amountHint;
-  final String maxLabel;
+  final String? maxLabel;
   final bool amountInputIsUsd;
   final String? amountConversionText;
   final bool amountConversionLoading;
@@ -99,13 +100,13 @@ class SendComposeView extends StatelessWidget {
   // Memo / message area.
   final SendMemoMode memoMode;
   final String memoText;
-  final String memoHint;
+  final String? memoHint;
   final String memoCounter;
   final String? memoError;
 
   // Primary CTA.
   final bool reviewEnabled;
-  final String reviewLabel;
+  final String? reviewLabel;
   final VoidCallback? onReview;
   final VoidCallback? onContactsPressed;
   final VoidCallback? onAddMemo;
@@ -182,7 +183,10 @@ class SendComposeView extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        title,
+                        title ??
+                            context.l10n.sendTitle(
+                              'ZEC', // l10n-ignore: currency ticker
+                            ), // l10n-ignore: currency ticker
                         textAlign: TextAlign.center,
                         style: AppTypography.headlineLarge.copyWith(
                           color: colors.text.accent,
@@ -209,7 +213,7 @@ class SendComposeView extends StatelessWidget {
                           constrainContent: true,
                           trailing: const AppIcon(AppIcons.chevronForward),
                           child: Text(
-                            reviewLabel,
+                            reviewLabel ?? context.l10n.sendReviewAction,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -243,13 +247,13 @@ class SendComposeView extends StatelessWidget {
     };
     return AppTextField(
       key: const ValueKey('send_address_field'),
-      label: 'Send to',
+      label: context.l10n.sendRecipientLabel,
       labelStyle: AppTypography.labelLarge.copyWith(
         color: colors.text.secondary,
       ),
       rightSlot: _SendRecipientLink(onTap: onContactsPressed),
       initialValue: recipientText,
-      hintText: recipientHint,
+      hintText: recipientHint ?? context.l10n.commonZcashAddress,
       leading: AppIcon(leadingName, size: 20, color: leadingColor),
       showClearButton: true,
       keyboardType: TextInputType.text,
@@ -279,13 +283,13 @@ class SendComposeView extends StatelessWidget {
 
     return AppTextField(
       key: const ValueKey('send_amount_field'),
-      label: 'Amount',
+      label: context.l10n.commonAmount,
       labelStyle: AppTypography.labelLarge.copyWith(
         color: colors.text.secondary,
       ),
       rightLabel: null,
       rightSlot: Text(
-        maxLabel,
+        maxLabel ?? context.l10n.sendUseMax,
         style: AppTypography.labelLarge.copyWith(color: colors.text.secondary),
       ),
       initialValue: amountText,
@@ -302,7 +306,9 @@ class SendComposeView extends StatelessWidget {
       leading: AppIcon(amountIconName, size: 20, color: amountIconColor),
       inlinePrefixText: amountInputIsUsd ? r'$' : null,
       inlinePrefixStyle: amountAffixStyle,
-      inlineSuffixText: amountInputIsUsd ? null : 'ZEC',
+      inlineSuffixText: amountInputIsUsd
+          ? null
+          : 'ZEC', // l10n-ignore: currency ticker
       inlineSuffixStyle: amountAffixStyle,
       showClearButton: true,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -341,7 +347,7 @@ class SendComposeView extends StatelessWidget {
             ),
           ),
           initialValue: memoText,
-          hintText: memoHint,
+          hintText: memoHint ?? context.l10n.commonAddAMessage,
           tone: isError
               ? AppTextFieldTone.destructive
               : AppTextFieldTone.neutral,
@@ -382,7 +388,7 @@ class _SendRecipientLink extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Contacts',
+            context.l10n.commonContacts,
             style: AppTypography.labelLarge.copyWith(
               color: colors.text.secondary,
             ),
@@ -400,7 +406,7 @@ class _SendRecipientLink extends StatelessWidget {
     if (onTap == null) return row;
     return Semantics(
       button: true,
-      label: 'Open contacts',
+      label: context.l10n.sendOpenContacts,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
@@ -519,7 +525,9 @@ class _AmountConversionRow extends StatelessWidget {
         child: Semantics(
           button: true,
           enabled: enabled,
-          label: enterUsdMode ? 'Enter amount in USD' : 'Enter amount in ZEC',
+          label: context.l10n.commonEnterAmountIn(
+            enterUsdMode ? 'USD' : 'ZEC', // l10n-ignore: currency codes
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -588,7 +596,7 @@ class _SendAddMemoCard extends StatelessWidget {
               AppIcon(AppIcons.scroll, size: 16, color: colors.icon.accent),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                'Add a memo',
+                context.l10n.sendAddMemo,
                 style: AppTypography.labelLarge.copyWith(
                   fontWeight: FontWeight.w400,
                   color: colors.text.accent,
@@ -598,7 +606,7 @@ class _SendAddMemoCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Encrypted, for shielded addresses only.',
+            context.l10n.sendMemoEncryptedHint,
             textAlign: TextAlign.center,
             style: AppTypography.labelLarge.copyWith(
               fontWeight: FontWeight.w400,

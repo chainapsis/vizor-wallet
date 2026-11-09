@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'app_review_test.dart' show MemoryReviewStore, FakeReviewNative;
 
@@ -127,6 +128,7 @@ void main() {
           builder: (context, _, _) {
             container = ProviderScope.containerOf(context, listen: false);
             return MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
               routerConfig: router,
               builder: (_, child) => AppTheme(
                 data: AppThemeData.light,
@@ -139,6 +141,10 @@ void main() {
           },
         ),
       ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_request_link_details')),
     );
     await tester.pumpAndSettle();
     controller.recordUse();
@@ -165,7 +171,7 @@ void main() {
 
   for (final (action, destination) in [
     ('Edit', '/send'),
-    ('Review', '/send/review'),
+    ('Review payment', '/send/review'),
   ]) {
     testWidgets('$action blocks reviews through slow release and navigation', (
       tester,

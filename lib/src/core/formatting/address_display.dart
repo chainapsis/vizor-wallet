@@ -44,7 +44,7 @@ String truncatedAddress(String address) {
       kTruncatedAddressTailLength +
       kTruncatedAddressSeparator.length;
   if (trimmed.length <= compactLength) return trimmed;
-  return '${trimmed.substring(0, kTruncatedAddressHeadLength)}'
+  return '${trimmed.substring(0, kTruncatedAddressHeadLength)}' // l10n-ignore: address format
       '$kTruncatedAddressSeparator'
       '${trimmed.substring(trimmed.length - kTruncatedAddressTailLength)}';
 }
@@ -59,7 +59,7 @@ const kTruncatedTxidEndLength = 8;
 String truncatedTxid(String txid) {
   final trimmed = txid.trim();
   if (trimmed.length <= kTruncatedTxidEndLength * 2) return trimmed;
-  return '${trimmed.substring(0, kTruncatedTxidEndLength)}'
+  return '${trimmed.substring(0, kTruncatedTxidEndLength)}' // l10n-ignore: txid format
       '...'
       '${trimmed.substring(trimmed.length - kTruncatedTxidEndLength)}';
 }
@@ -100,7 +100,7 @@ class AddressVerifyGroup {
 
   @override
   String toString() =>
-      'AddressVerifyGroup($text${highlighted ? ', highlighted' : ''})';
+      'AddressVerifyGroup($text${highlighted ? ', highlighted' : ''})'; // l10n-ignore: debug
 }
 
 /// Splits a full address into rows of fixed-size groups for the verify

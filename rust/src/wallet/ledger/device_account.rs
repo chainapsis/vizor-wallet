@@ -68,8 +68,7 @@ mod tests {
 
     fn key(seed: u8) -> secp256k1::PublicKey {
         secp256k1::PublicKey::from_secret_key(
-            &secp256k1::Secp256k1::new(),
-            &secp256k1::SecretKey::from_slice(&[seed; 32]).unwrap(),
+            &secp256k1::SecretKey::from_secret_bytes([seed; 32]).unwrap(),
         )
     }
 

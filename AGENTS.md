@@ -186,6 +186,27 @@ Android and Dart: `--dart-define=VIZOR_DEEPLINK_BASE_URL` (default
   Dart's `classifyIncomingLink`, which drops unknown paths on the origin
   silently.
 
+## Localization (VIZOR_I18N_PREVIEW)
+
+Read [docs/i18n/developer-guide.md](docs/i18n/developer-guide.md) before adding
+or changing user-facing text, ARB files, language selection, or copy that native
+code draws. [docs/i18n/README.md](docs/i18n/README.md) indexes the translation
+rules, adding a language, and Rust-originated text.
+
+- **After editing translations or updating `intl`, run
+  `fvm dart run tool/l10n/generate.dart`. `flutter gen-l10n` alone does not
+  regenerate the bundled font subsets.** `--watch` is optional for translation
+  work; do not auto-start it with normal app runs or builds.
+- Korean bundles Pretendard's 11,172 modern Hangul syllables and supported
+  jamo; Chinese bundles Noto Sans SC's 8,105 TGH 2013 characters. New UI and
+  date/number-formatting characters are included automatically. Unsupported
+  characters retain system fallback.
+- Commit the generated `assets/fonts/Vizor*UI-VF.ttf`,
+  `tool/l10n/ui_fonts.manifest.json`, and `tool/l10n/ui_font_characters.json`
+  with translation changes; never edit these generated files by hand.
+- Check freshness with `python3 tool/l10n/ui_fonts.py --check`. Screenshot
+  tests must load the shipped subsets, not substitute external/system fonts.
+
 ## Mainnet Block-Time Table
 
 On mainnet, wallet birthday conversions (import date to height, seed-phrase
@@ -306,13 +327,17 @@ Ledger accounts keep the decorative dot style.
 - **Exception**: sidebar entries and screen titles may use Title Case (e.g.
   onboarding step labels `Secret Passphrase`, `Wallet Birthday Height`) — do
   not sentence-case them in copy sweeps.
-- Existing rationale and full audit are in `qa-copy-review.csv` and
-  `copy-review-20260528-1554.csv` at the repo root. Reference these before
-  introducing new copy in this project.
+- English copy lives in `lib/l10n/app_en.arb`, where each key's description
+  says where it appears. Check `lib/l10n/glossary.yaml` for the shared terms
+  before introducing new copy.
 - When editing existing copy, also update widgetbook fixtures
   (`lib/widgetbook/*.dart`) and tests (`test/`) that assert on the literal
   string — `find.text(...)` matchers, `expectedNextAction` fields, and
   `_tooltipWithMessage(...)` helpers will break otherwise.
+
+## Privacy Mode
+
+Before adding or changing UI that shows an amount, read `docs/privacy-mode.md` (the hide-balance toggle).
 
 ## Release Notes
 
@@ -417,6 +442,28 @@ transparent addresses had activity.
   on the app-start `/unlock` screen. Never show it in any other passcode keypad
   context.
 
+### Mobile Screen Privacy
+
+Mobile screen privacy applies only while secret material is visible. Keep
+`SensitivePrivacyOverlay` on seed creation/import/review, settings seed, and
+viewing-key screens. It covers exposed secrets when the app loses foreground
+interaction and uses `NativeSensitiveContentBridge` for selective native capture
+exclusion (Android `FLAG_SECURE`, iOS `SecureScreenshotShield`). Ordinary screens
+and access gates with no exposed secret must remain uncovered in the app
+switcher; do not add app-wide native lifecycle covers.
+
+Keep `RouteCoverageAware` on import screens so capture exclusion survives route
+transitions and releases only after full coverage. Keep biometric prompt
+suppression around sensitive access gates, and exclude shielded content from
+screen-reader semantics without unmounting it. Desktop continues to use
+`SensitivePrivacyOverlay`.
+
+The mobile keep-awake lock owns system Back before payment cards and routes.
+Back may return from passcode entry to the lock status screen, but never acts
+on the covered app or interrupts authentication. Its idle deadline counts
+pointer, keyboard and deliberate platform semantics actions; automatic focus
+notifications do not extend it. Remove global input listeners on disposal.
+
 ### Dart Provider Structure
 
 ```
@@ -458,7 +505,8 @@ SyncProvider (sync_provider.dart)
   ├── Sync itself is account-agnostic (covers all accounts)
   ├── Polling pauses on app background (onHide), resumes on foreground (onResume)
   ├── refreshAfterSend() called after account switch for immediate update
-  └── refreshAfterUnlock() refreshes balances/history before foreground sync recovery
+  ├── refreshAfterUnlock() restores only the selected account's persisted display balance
+  └── refreshHomeInBackground() refreshes live balance/history after sync starts; each publishes independently
 
 SyncDisplayPercentageProvider (sync_display_progress_provider.dart)
   ├── Owns the 20 ms UI-only interpolation timer between Rust progress events
@@ -476,9 +524,10 @@ until sync callback arrives" flash.
 
 - `loadAppBootstrap()` reads:
   - secure storage (`zcash_accounts`, `zcash_active_account`, `zcash_wallet_network`)
-  - Rust wallet DB via `list_accounts`
-  - active-account DB data via `get_sync_status`, `get_balance`,
-    `get_transaction_history(limit: 10)`
+  - Rust wallet DB metadata via `list_accounts` (one projection; no viewing-key
+    decoding or address reads)
+  - the selected account's receive address and persisted display balance, only
+    when unlocked; no live balance summary or transaction history before `runApp`
 - If the wallet is locked, bootstrap does **not** hydrate active address or
   initial balance/history; it routes straight to `/unlock` and lets the unlock
   flow repopulate that state.
@@ -489,7 +538,7 @@ until sync callback arrives" flash.
 - `SyncProvider` starts from `bootstrap.initialSyncSnapshot` (balances, recent
   txs, scanned/tip heights) and then kicks off the normal live sync flow.
 - Bootstrap is best-effort: route/account bootstrap can still succeed even if
-  initial balance/history hydration fails, in which case sync state falls back
+  initial address/cache hydration fails, in which case sync state falls back
   to empty and the live sync repopulates it.
 
 ### Sync Engine (Rust-only)
@@ -676,6 +725,13 @@ Swift BackgroundMigrationPreparationManager
   `com.keplr.vizor.sync` is cancelled once at launch as a tombstone for requests
   submitted by older builds; no handler is registered for it.
 
+### Network Upgrades
+
+Read [docs/network-upgrades.md](docs/network-upgrades.md) before changing send
+expiry or block-time and wait-time estimates. It covers what the wallet refuses
+around an upgrade, where those rules live
+(`rust/src/wallet/network_upgrade.rs`), and NU7's block spacing.
+
 ### Tor and the network route
 
 Tor covers the app's foreground traffic only. The desired route lives in Rust
@@ -730,6 +786,14 @@ while an executed denomination preparation waits for confirmations.
 - `NotFound`, mempool height `0`, and fork height `UInt64.max` contribute zero
   confirmations. A normal mined height contributes
   `tip - minedHeight + 1`, capped at 3.
+- A preparation transaction the tracker saw broadcast while the next block
+  was still before a network upgrade, and that the server reports `NotFound`
+  on two consecutive passes once it is past, was dropped at activation (nodes
+  clear old-branch transactions, ZIP 200). The wave goes to the foreground
+  without failing the task, since only the foreground can stop the run.
+  Transactions first seen later may target the new branch and are not judged.
+  The check reads `zcash_next_upgrade_activation_height` and process memory,
+  not the wallet DB.
 - Reaching 3 confirmations finishes only the current observation wave. The
   manager stores a foreground-continuation token, posts an “Open Vizor”
   notification under its own `confirmedWaveReady` kind so healthy copy never
@@ -779,8 +843,9 @@ Before changing a Ledger send, Gift Card, shielding, swap, or voting flow, read
 `docs/ledger/limitations.md`. **32 actions per pool does not mean 32 recipients:**
 the device can review only **4 external shielded outputs across both pools**;
 internal change is excluded. Numeric limits live in `rust/src/wallet/ledger/limits.rs`.
-Keep account-key verification before PCZT transmission and retain the
-Orchard-to-Ironwood gate until the actual supported app passes its canary.
+Keep account-key verification before PCZT transmission. Apps before 3.10.0
+reject the NU7 branch and an Orchard spend into Ironwood; `LedgerAppSupport`
+carries what the connected app can sign, and the serializer refuses the rest.
 
 ### Signing Cancellation
 
@@ -800,8 +865,11 @@ A hardware TEX request's ZIP 320 ephemeral address follows the same boundary:
 releasing the request before that boundary returns the address, so cancelled
 approvals cannot exhaust the ephemeral gap limit; after it the address stays
 reserved.
-Normal app exit closes the proposal gate, requests sync cancellation, and hides
-its desktop window before awaiting reservation cleanup. Rust allows 250ms to
+Normal app exit closes the proposal gate and requests sync cancellation.
+Desktop exits hide the window before awaiting reservation cleanup, except on
+Linux. Linux keeps the window visible during the same bounded cleanup, then
+calls `exit(0)` instead of GTK hide/destroy teardown to avoid the compositor
+shutdown crash. Rust allows 250ms to
 acquire the wallet write lock and drain accepted DB creators, then releases only
 unsubmitted reservations without waiting on SQLite contention. Once the budget
 expires, it starts no further cleanup; unfinished work is left for startup
@@ -959,8 +1027,12 @@ the setting off restores public discovery from height 0.
 `create_wallet()` fetches chain tip from lightwalletd as birthday height before creating the account. This prevents new wallets from doing a full chain scan. Birthday fetch failure blocks wallet creation (network required).
 
 On mainnet, the wallet API (`rust/src/api/wallet.rs`, `restored_birthday`)
-stores every restored birthday rounded down to one past a 10,000-block grid
-point (`tree_states::restore_birthday`), so lightwalletd learns only the bucket.
+stores every restored birthday rounded down to one past a grid point
+(`tree_states::restore_birthday`), so lightwalletd learns only the bucket. The
+grid is every 10,000 blocks before NU7 and every 30,000 from it, about 8.7 days
+in both eras, and the bucket containing the activation starts at the last grid
+point before it. It is a height grid, not a calendar, so every app version
+draws the same buckets.
 When the grid point is a compiled checkpoint (`rust/src/wallet/tree_states.rs`)
 the first scan batch reads its state locally instead of sending
 `GetTreeState`; a restore newer than the table fetches the grid point's state.
@@ -970,7 +1042,7 @@ Restores are the discovery import
 (`import_hardware_account`). Newly created accounts (`create_wallet`,
 `add_account`, and `import_wallet` from onboarding's reveal-then-confirm
 flow), payment-link claims (`import_wallet`), and Gift Card observers keep the
-exact height; testnet, regtest, and masquerade builds are unchanged. Code that queries lightwalletd from a restored birthday must use the
+exact height; testnet and regtest are unchanged. Code that queries lightwalletd from a restored birthday must use the
 rounded value, never the exact requested height. The weekly
 `update-mainnet-chain-tables.yml` workflow appends checkpoints.
 
@@ -1036,6 +1108,19 @@ Seed-relevance rule:
 - `onResume`: refreshes balance → `_checkAndSync()` (which starts polling)
 - `onHide`: stops polling (no wasted network in background)
 - `SyncState.recentTransactions`: latest 10 transactions, updated on `hasNewTx`, sync completion, and app resume
+- `hasCachedBalance` permits Home to display the persisted snapshot without setting
+  `hasBalanceData`, current pool balances, sync completion, or spendability. An
+  accepted live read updates current balances independently of history. Persisted
+  display snapshots follow the same release conditions as in-memory completed-sync
+  snapshots: a valid balance at sync completion, or an explicit send, proposal-release,
+  or account-switch refresh. Intermediate reads preserve spendable, pending, and
+  holdings displays. `hasRecentTransactionsData` and `hasRecentTransactionsError`
+  own the activity loading state.
+- Only completed-sync or explicit-release balance reads enqueue display-only
+  snapshots through `walletBalanceCacheProvider`; intermediate reads leave the
+  saved snapshot intact. Deletion/reset suspend and drain its writes.
+  `ext_vizor_balance_cache` is in the wallet DB and removed with its account;
+  writes open existing DB files only and do not invalidate the wallet-summary cache.
 - All balance/history queries pass `activeAccountUuid` from `AccountProvider`
 
 ### Desktop Window Bootstrap
@@ -1145,9 +1230,9 @@ edge in `MobileBottomSafeArea`
   - Tests live in `integration_test/regtest_mobile_*_test.dart` and share `integration_test/support/mobile_regtest_flow.dart` (pump/tap helpers, regtest-guarded cleanup, mobile flow primitives). Desktop regtest tests keep their per-file helpers; do not merge them.
   - Mobile runs need THREE defines: `VIZOR_FORM_FACTOR=mobile`, `ZCASH_DEFAULT_NETWORK=regtest`, `ZCASH_E2E_LIGHTWALLETD_URL` — `run_mobile_e2e` in `scripts/e2e/lib-mobile.sh` injects them. Gift Card scenarios need a fourth, `VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true` (payment links stay gated off without it), plus `VIZOR_DEEPLINK_BASE_URL`; the runner passes both to `run_mobile_e2e` as extra defines rather than `run_mobile_e2e` injecting them.
   - Device selection: `SIMULATOR_UDID` env wins; otherwise the single booted simulator. The runner refuses to pick among multiple booted sims.
-  - Each `flutter test integration_test` invocation reinstalls the app: the wallet DB dies with the container while the iOS Keychain persists, so in-test `cleanupE2eWalletState()` (deleteAll + db files, regtest-guarded) runs at test start AND teardown. Cross-invocation wallet reuse is impossible by design. Gift Card scenarios pair it with `cleanupMobileE2ePaymentLinkClaimWallets()`, the regtest-guarded claim-wallet sweep — claim wallets from every network share one support directory, so the sweep is scoped to regtest names. Scenarios that leave the pasteboard populated clear it in teardown too; the simulator pasteboard outlives the app container.
+  - Each `flutter test integration_test` invocation reinstalls the app: the wallet DB dies with the container while the iOS Keychain persists until the reinstalled app's first launch clears it, so in-test `cleanupE2eWalletState()` (deleteAll + db files, regtest-guarded) runs at test start AND teardown. Cross-invocation wallet reuse needs `--no-uninstall`: the Ironwood restart runners pass it to their prepare phase so the resume phase reopens the same install. Gift Card scenarios pair it with `cleanupMobileE2ePaymentLinkClaimWallets()`, the regtest-guarded claim-wallet sweep — claim wallets from every network share one support directory, so the sweep is scoped to regtest names. Scenarios that leave the pasteboard populated clear it in teardown too; the simulator pasteboard outlives the app container.
   - The simulator shares the host loopback: `127.0.0.1` URLs, the in-test lightwalletd proxy, and the python E2E driver all work unchanged. Android emulators would need `10.0.2.2` and are out of scope.
-  - Desktop scenarios without mobile counterparts (feature gaps, add when the features land): custom-endpoint privacy (no mobile endpoint settings UI), shield-transparent ×2 (no mobile transparent balance / shield UI), mempool during-sync / expiry variants.
+  - Desktop scenarios without mobile counterparts (feature gaps, add when the features land): custom-endpoint privacy (no mobile endpoint settings UI), mempool during-sync / expiry variants.
   - Payment-request round trip and payment-URI locked-send: desktop runners only. The mobile receive pane has its own request sheet, so this is a harness gap rather than a feature gap.
   - Gift Card restart recovery and reorg retry: desktop runners only. The Gift Card round trip has a mobile counterpart driving the **Redeem a card → Paste card link** path; mobile claiming over a universal link still needs a publicly reachable HTTPS origin — see `scripts/e2e/README.md`. The payment-URI send also has a mobile counterpart, which instead pushes an `onUris` call over the `com.zcash.wallet/payment_uri` MethodChannel to raise the payment-request card.
 - Zcash regtest Rust integration tests:

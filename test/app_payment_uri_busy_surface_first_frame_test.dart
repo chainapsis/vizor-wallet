@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fakes/fake_sync_notifier.dart';
 
@@ -79,6 +80,7 @@ void main() {
           builder: (context, ref, _) {
             container = ProviderScope.containerOf(context, listen: false);
             return MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
               routerConfig: router,
               // AppTheme, because the host's notices render as app toasts.
               builder: (context, child) => AppTheme(

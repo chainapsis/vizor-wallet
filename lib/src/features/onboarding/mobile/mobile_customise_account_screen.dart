@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../payment_links/services/gift_claim_setup_coordinator.dart';
 import '../../../core/account_name_policy.dart';
 import '../../../core/theme/app_theme.dart';
@@ -101,7 +102,7 @@ class _MobileCustomiseAccountScreenState
   String? get _nameMessage {
     if (_submitError != null) return _submitError;
     return _nameLength > kAccountNameMaxCharacters
-        ? kAccountNameLengthMessage
+        ? context.l10n.accountNameTooLong
         : null;
   }
 
@@ -230,7 +231,7 @@ class _MobileCustomiseAccountScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _SubmitPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
+        _submitError = onboardingSubmitErrorMessage(context.l10n, e);
       });
     }
   }
@@ -256,16 +257,23 @@ class _MobileCustomiseAccountScreenState
     );
 
     final pendingPassword = args.pendingPassword;
+    final routerRefresh = ref.read(routerRefreshProvider);
     if (pendingPassword == null) {
-      await createAccount();
-      await completeGiftClaimImportSetup(ref);
-      clearCustomisedAccountDraft(ref, args.flow);
-      router.go(giftClaimSetupCompletionLocation(ref, otherwise: '/home'));
+      // The new account refreshes the router, which would rebuild this route
+      // without its typed arguments and dispose the screen before the Gift
+      // handoff. Hold the refresh until setup has navigated away.
+      await routerRefresh.pauseWhile(() async {
+        await createAccount();
+        if (!mounted) return;
+        await completeGiftClaimImportSetup(ref);
+        if (!mounted) return;
+        clearCustomisedAccountDraft(ref, args.flow);
+        router.go(giftClaimSetupCompletionLocation(ref, otherwise: '/home'));
+      });
       return;
     }
 
     final securityNotifier = ref.read(appSecurityProvider.notifier);
-    final routerRefresh = ref.read(routerRefreshProvider);
     var passwordPrepared = false;
     var passwordCommitted = false;
     try {
@@ -329,10 +337,8 @@ class _MobileCustomiseAccountScreenState
               .value,
       onBack: _isSubmitting ? null : _backAction,
       showBackButton: _backAction != null,
-      title: 'Customise Account',
-      subtitle:
-          'Add personality to your account by setting an account name and '
-          'choosing a profile picture.',
+      title: context.l10n.commonCustomiseAccount,
+      subtitle: context.l10n.onboardingCustomiseAccountSubtitle,
       bottomArea: AppButton(
         key: const ValueKey('mobile_customise_account_continue'),
         expand: true,
@@ -340,10 +346,15 @@ class _MobileCustomiseAccountScreenState
         onPressed: _canContinue ? _submit : null,
         trailing: const AppIcon(AppIcons.chevronForward),
         child: Text(switch (_submitPhase) {
-          _SubmitPhase.idle => widget.setupCommitted ? 'Try again' : 'Continue',
-          _SubmitPhase.stoppingSync => 'Stop syncing...',
+          _SubmitPhase.idle =>
+            widget.setupCommitted
+                ? context.l10n.commonTryAgain
+                : context.l10n.commonContinue,
+          _SubmitPhase.stoppingSync => context.l10n.onboardingStopSyncing,
           _SubmitPhase.creatingWallet =>
-            widget.setupCommitted ? 'Saving wallet...' : 'Creating wallet...',
+            widget.setupCommitted
+                ? context.l10n.onboardingSavingWallet
+                : context.l10n.onboardingCreatingWallet,
         }),
       ),
       child: Column(
@@ -465,7 +476,7 @@ class _AccountProfileCard extends StatelessWidget {
                               end: _randomiseTapSize,
                             ),
                             child: Text(
-                              'Account name',
+                              context.l10n.accountNameLabel,
                               style: AppTypography.labelLarge.copyWith(
                                 color: cardTextColor.withValues(alpha: 0.5),
                                 fontWeight: FontWeight.w400,
@@ -559,7 +570,7 @@ class _EditableProfilePicture extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: 'Change profile picture',
+      label: context.l10n.profilePictureChange,
       child: GestureDetector(
         key: const ValueKey('mobile_customise_account_avatar_button'),
         behavior: HitTestBehavior.opaque,

@@ -54,6 +54,34 @@ void main() {
   }
 
   test(
+    'list preserves optional recovered shielding amount from Rust',
+    () async {
+      final amount = BigInt.from(1970000);
+      api.operations = [
+        for (final value in [amount, null])
+          rust.LedgerSignedOperation(
+            notices: const [],
+            operationId: 'shield-$value',
+            accountUuid: 'account',
+            kind: 'shield',
+            state: 'signed_pending_broadcast',
+            shieldedZatoshi: value,
+            createdAtMs: 0,
+            updatedAtMs: 0,
+          ),
+      ];
+      final operations = await container()
+          .read(ledgerSignedOperationServiceProvider)
+          .list();
+      expect(operations.map((op) => op.shieldedZatoshi), [amount, null]);
+      expect(
+        operations.every((op) => op.kind == LedgerSignedOperationKind.shield),
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'production service registers before DB lookup and holds through Rust completion',
     () async {
       final db = Completer<String>();
@@ -147,6 +175,35 @@ void main() {
     expect(api.urls, [expected]);
   });
 
+  test('endpoint selection stays inside the durable operation lease', () async {
+    final c = container();
+    final lifecycle = c.read(ledgerOperationLifecycleProvider);
+    final selection = Completer<RpcEndpointConfig>();
+    final selected = defaultRpcEndpointConfig('main').copyWith(
+      lightwalletdUrl: 'https://selected.example:443',
+      presetId: kCustomRpcEndpointPresetId,
+    );
+    final service = RustLedgerSignedOperationService(
+      network: 'main',
+      lightwalletdUrl: 'https://unused.example:443',
+      loadWalletDbPath: () async => '/wallet.db',
+      lifecycle: lifecycle,
+      readBroadcastEndpoint: () => selection.future,
+    );
+    final running = service.broadcast(operationId: 'send');
+    await pumpEventQueue();
+    expect(api.urls, isEmpty);
+    var drained = false;
+    final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
+    await pumpEventQueue();
+    expect(drained, isFalse);
+
+    selection.complete(selected);
+    await running;
+    await drain;
+    expect(api.urls, ['https://selected.example:443']);
+  });
+
   test(
     'failure changes route for next attempt without replaying this call',
     () async {
@@ -227,7 +284,9 @@ void main() {
 
 class _Primary extends RpcEndpointNotifier {
   @override
-  RpcEndpointConfig build() => defaultRpcEndpointConfig('main');
+  RpcEndpointConfig build() => defaultRpcEndpointConfig(
+    'main',
+  ).copyWith(presetId: kManualUsRpcEndpointPresetId);
 }
 
 class _Api extends RustLibApi {
@@ -236,13 +295,23 @@ class _Api extends RustLibApi {
   Completer<void>? gate;
   String status = 'broadcasted';
   String? message;
+  List<rust.LedgerSignedOperation> operations = [];
   void reset() {
     urls.clear();
+    operations = [];
     error = null;
     gate = null;
     status = 'broadcasted';
     message = null;
   }
+
+  @override
+  Future<List<rust.LedgerSignedOperation>>
+  crateApiLedgerLedgerListSignedOperations({
+    required String dbPath,
+    required String network,
+    String? accountUuid,
+  }) async => operations;
 
   @override
   Future<rust.LedgerSignedOperationBroadcastResult>
@@ -258,6 +327,7 @@ class _Api extends RustLibApi {
     if (gate != null) await gate!.future;
     if (error != null) throw error!;
     return rust.LedgerSignedOperationBroadcastResult(
+      notices: const [],
       operationId: operationId,
       txid: 'txid',
       status: status,

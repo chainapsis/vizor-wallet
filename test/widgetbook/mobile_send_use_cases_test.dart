@@ -10,8 +10,14 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
 import 'package:zcash_wallet/widgetbook/send_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+
+import '../support/app_test_fonts.dart';
 
 void main() {
+  // The address action pills size to their label, so measure real glyphs.
+  setUpAll(loadAppTestFonts);
+
   testWidgets('mobile send recipient empty use case renders send screen', (
     tester,
   ) async {
@@ -20,7 +26,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(MobileSendScreen), findsOneWidget);
     expect(find.text('Select Recipient'), findsOneWidget);
-    expect(find.text('Zcash Address'), findsOneWidget);
+    expect(find.text('Address or request link'), findsOneWidget);
     expect(find.text('Paste'), findsNothing);
     expect(find.text('Scan a QR Code'), findsOneWidget);
     expect(find.text('Continue'), findsNothing);
@@ -124,7 +130,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('6 contacts'), findsOneWidget);
+    expect(find.text('Contacts'), findsOneWidget);
     expect(find.text('Contact label'), findsNWidgets(6));
     expect(
       tester
@@ -375,7 +381,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('24.312'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('mobile send amount USD use case renders USD input mode', (
@@ -387,7 +393,7 @@ void main() {
     expect(find.text(r'$'), findsOneWidget);
     expect(find.text('120.12'), findsOneWidget);
     expect(find.text('12 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('mobile send review default use case matches review layout', (
@@ -553,6 +559,7 @@ Future<void> _pumpMobileSendUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       theme: platform == null ? null : ThemeData(platform: platform),
       builder: (context, child) {
         if (textScaler == null) return child!;

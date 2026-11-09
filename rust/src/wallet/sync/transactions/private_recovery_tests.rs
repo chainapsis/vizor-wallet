@@ -26,6 +26,7 @@ use super::private_shielding_tests::{
 };
 use super::*;
 use crate::wallet::network::configure_regtest_nu6_3_activation_height;
+use zcash_client_backend::data_api::Account as _;
 
 /// A scanned wallet whose account private recovery may cover.
 fn private_wallet() -> (State, AccountUuid) {
@@ -84,12 +85,12 @@ fn output(
     }
 }
 
-/// The highest watched address the account derived in `scope`.
-fn last_derived(
+/// The highest watched address the account derived in `scope`, and its index.
+fn last_derived_entry(
     st: &State,
     account: AccountUuid,
     scope: TransparentKeyScope,
-) -> TransparentAddress {
+) -> (u32, TransparentAddress) {
     watch(st, account)
         .addresses
         .into_iter()
@@ -100,8 +101,16 @@ fn last_derived(
             _ => None,
         })
         .max_by_key(|(index, _)| *index)
-        .map(|(_, address)| address)
         .expect("the account derives addresses in this scope")
+}
+
+/// The highest watched address the account derived in `scope`.
+fn last_derived(
+    st: &State,
+    account: AccountUuid,
+    scope: TransparentKeyScope,
+) -> TransparentAddress {
+    last_derived_entry(st, account, scope).1
 }
 
 /// The Activity rows of the transaction `[tag; 32]`, read by Vizor's
@@ -150,23 +159,7 @@ fn an_unsettled_private_receive_never_shows_the_senders_fee() {
     assert!(!settled[0].provisional);
 
     // Activity at the end of the window grows it, and the run stops there.
-    let ws = watch(&st, account);
-    let mut grow = commit(&ws);
-    grow.receives = vec![output(
-        0x62,
-        0,
-        last_derived(&st, account, TransparentKeyScope::EXTERNAL),
-        30_000,
-        target - 2,
-        transparent_only(10_000, 1),
-    )];
-    assert!(
-        st.wallet_mut()
-            .db_mut()
-            .apply_transparent_ledger_commit(grow)
-            .unwrap()
-            .window_grew
-    );
+    unsettle_with(&mut st, account, 0x62);
 
     let unsettled = rows(&st, account, 0x61);
     assert_eq!(unsettled.len(), 1);
@@ -306,23 +299,7 @@ fn settled_mixed_activity_does_not_inherit_incomplete_payment_details() {
 
         // Growing the recovery window withdraws settled coverage, even though
         // the shielded residual is still available. The warning must return.
-        let ws = watch(&st, account);
-        let mut grow = commit(&ws);
-        grow.receives = vec![output(
-            0x72,
-            0,
-            last_derived(&st, account, TransparentKeyScope::EXTERNAL),
-            30_000,
-            target - 2,
-            transparent_only(10_000, 1),
-        )];
-        assert!(
-            st.wallet_mut()
-                .db_mut()
-                .apply_transparent_ledger_commit(grow)
-                .unwrap()
-                .window_grew
-        );
+        unsettle_with(&mut st, account, 0x72);
         assert!(rows(&st, account, 0x71).iter().all(|row| row.provisional));
     }
 }
@@ -595,24 +572,43 @@ fn detail(st: &State, account: AccountUuid, tag: u8, tx_kind: &str) -> Transacti
 /// Withdraws the account's settled coverage, as a later recovery run that
 /// grows the address window and stops before covering the new addresses does.
 fn unsettle(st: &mut State, account: AccountUuid) {
-    let ws = watch(st, account);
-    let target = ws.target.unwrap().height;
-    let mut grow = commit(&ws);
-    grow.receives = vec![output(
-        0x0f,
-        0,
-        last_derived(st, account, TransparentKeyScope::EXTERNAL),
-        30_000,
-        target - 2,
-        transparent_only(10_000, 1),
-    )];
-    assert!(
-        st.wallet_mut()
-            .db_mut()
-            .apply_transparent_ledger_commit(grow)
-            .unwrap()
-            .window_grew
-    );
+    unsettle_with(st, account, 0x0f);
+}
+
+/// [`unsettle`] with receives in the transaction `[tag; 32]`.
+///
+/// While the account was restoring, its recovery already checked a fixed
+/// window of addresses (every external index below 50), so growing the
+/// window into those addresses withdraws nothing: the wallet has already
+/// looked there. Activity at the last address grows the window by one gap at
+/// a time, so it is repeated, each run covering what the last one added,
+/// until the window reaches addresses the restore never checked.
+fn unsettle_with(st: &mut State, account: AccountUuid, tag: u8) {
+    const RESTORE_EXTERNAL_END: u32 = 50;
+    for index in 0.. {
+        let ws = watch(st, account);
+        let target = ws.target.unwrap().height;
+        let mut grow = commit(&ws);
+        grow.receives = vec![output(
+            tag,
+            index,
+            last_derived(st, account, TransparentKeyScope::EXTERNAL),
+            30_000,
+            target - 2,
+            transparent_only(10_000, 1),
+        )];
+        assert!(
+            st.wallet_mut()
+                .db_mut()
+                .apply_transparent_ledger_commit(grow)
+                .unwrap()
+                .window_grew
+        );
+        if last_derived_entry(st, account, TransparentKeyScope::EXTERNAL).0 >= RESTORE_EXTERNAL_END
+        {
+            break;
+        }
+    }
 }
 
 /// What a receipt shows of a row and its detail: the row's kind, amount,
@@ -972,4 +968,74 @@ fn inputs_of_two_accounts_keep_each_receipt_shared() {
             "{name}: the whole fee, separately"
         );
     }
+}
+
+/// The txids Vizor's own handle on `path` lists for transparent detail work.
+fn listed_detail_work(path: &str) -> Vec<TxId> {
+    open_wallet_db(path, NETWORK)
+        .unwrap()
+        .transparent_detail_work(std::time::SystemTime::now(), 100, &[], None)
+        .unwrap()
+        .requests
+        .into_iter()
+        .map(|request| request.txid)
+        .collect()
+}
+
+/// A lookup a private reply queues at one tip is not asked at that tip, even
+/// from a handle opened after the replying one closed: every Vizor handle on
+/// the wallet shares one transparent PIR session. A lower tip releases it.
+#[test]
+fn a_lookup_a_reply_queued_stays_held_on_new_handles_until_the_tip_changes() {
+    use crate::wallet::sync_engine::enhancement::test_mode;
+
+    let (mut st, account) = private_wallet();
+    cover(&mut st, account, vec![]);
+    promote(&mut st, account);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+    let other = dir.path().join("other.db").to_str().unwrap().to_owned();
+    let _path_mode = test_mode::set(&path, TransparentLedgerMode::PrivateRequired);
+    let _other_mode = test_mode::set(&other, TransparentLedgerMode::PrivateRequired);
+    for copy in [&path, &other] {
+        st.wallet()
+            .conn()
+            .execute("VACUUM INTO ?1", [copy])
+            .unwrap();
+    }
+    let tip = st.wallet().chain_height().unwrap().unwrap();
+    let ws = watch(&st, account);
+    let txid = TxId::from_bytes([0xb1; 32]);
+    let fresh = output(
+        0xb1,
+        0,
+        external(&ws),
+        60_000,
+        tip - 2,
+        transparent_only(1_000, 1),
+    );
+    let reply = |copy: &str| {
+        let mut batch = commit(&ws);
+        batch.receives = vec![fresh.clone()];
+        open_wallet_db(copy, NETWORK)
+            .unwrap()
+            .apply_transparent_ledger_commit(batch)
+            .unwrap();
+    };
+
+    reply(&path);
+    assert!(!listed_detail_work(&path).contains(&txid));
+    // The other wallet's session never saw this reply's tip, so the same
+    // reply there is held only by its own session.
+    assert!(!listed_detail_work(&other).contains(&txid));
+    reply(&other);
+    assert!(!listed_detail_work(&other).contains(&txid));
+
+    open_wallet_db(&path, NETWORK)
+        .unwrap()
+        .truncate_to_height(tip - 1)
+        .unwrap();
+    assert!(listed_detail_work(&path).contains(&txid));
+    // Only the reorged wallet released its work.
+    assert!(!listed_detail_work(&other).contains(&txid));
 }

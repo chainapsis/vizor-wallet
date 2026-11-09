@@ -4,11 +4,13 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_scan_sheet.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/payment_links_screen_support.dart';
 
@@ -49,6 +51,23 @@ void main() {
     expect(accepted, isEmpty);
   });
 
+  testWidgets('scan errors follow the shown language', (tester) async {
+    await _pumpScanner(
+      tester,
+      networkName: 'regtest',
+      locale: const Locale('ko'),
+    );
+    final ko = lookupAppLocalizations(const Locale('ko'));
+
+    _scan(tester, 'u1address');
+    await tester.pump();
+    expect(find.text(ko.paymentLinkScanNotGiftCard), findsOneWidget);
+
+    _scan(tester, incomingLink.toUri().toString());
+    await tester.pump();
+    expect(find.text(ko.paymentLinkScanOtherNetwork), findsOneWidget);
+  });
+
   testWidgets('closing ignores later camera detections', (tester) async {
     final accepted = <VizorPaymentLink>[];
     var closeCalls = 0;
@@ -78,6 +97,7 @@ Future<void> _pumpScanner(
   ValueChanged<VizorPaymentLink>? onScanned,
   VoidCallback? onClose,
   MobileScannerController? controller,
+  Locale? locale,
 }) async {
   await tester.binding.setSurfaceSize(const Size(375, 667));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -86,6 +106,9 @@ Future<void> _pumpScanner(
   scanner.value = scanner.value.copyWith(isInitialized: true, isRunning: true);
   await tester.pumpWidget(
     MaterialApp(
+      locale: locale,
+      supportedLocales: appSupportedLocales(preview: true),
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Align(

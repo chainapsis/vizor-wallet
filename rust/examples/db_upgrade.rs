@@ -103,7 +103,7 @@ const LOCAL_ORIGIN: i64 = 1;
 /// Matched as a prefix of `table:<name>`, `view:<name>`, `index:<name>`,
 /// `column:<table or view>.<column>`, or `unique:<table>(<sorted columns>)`.
 /// A removed table's indexes and unique keys go with it.
-const REMOVED_FOR_ALL_BUILDS: [&str; 2] = [
+const REMOVED_FOR_ALL_BUILDS: [&str; 9] = [
     // The ZIP 318 pool-migration engine. Published builds reference these
     // tables only through `ON DELETE CASCADE` from `accounts`, which is inert
     // once the tables are gone.
@@ -113,6 +113,17 @@ const REMOVED_FOR_ALL_BUILDS: [&str; 2] = [
     // would prevent those two obligations from coexisting. Older writers that
     // target txid alone are not compatible with the upgraded queue.
     "unique:tx_retrieval_queue(txid)",
+    // One-time IVK discovery replaced restore sweeps and nullifier retention.
+    // The wallet's own reads never named these tables.
+    "table:ironwood_nullifier_scan_blocks",
+    "table:ironwood_one_time_spend_retention",
+    "table:ironwood_one_time_sweeps",
+    // Marker-based one-time recovery drops obsolete progress fields and
+    // renames candidate bindings from payments/witnesses to directory/companion.
+    "column:ironwood_one_time_recovery.skipped_height",
+    "column:ironwood_one_time_keys.prebirthday_height",
+    "column:ironwood_one_time_payment_recovery.payments",
+    "column:ironwood_one_time_payment_recovery.witnesses",
 ];
 #[derive(Debug, Deserialize, Serialize)]
 struct Manifest {

@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/migration/widgets/ironwood_migration_p
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 class _FakeSecurityNotifier extends AppSecurityNotifier {
   _FakeSecurityNotifier({this.confirmResult = true});
@@ -174,6 +175,7 @@ void main() {
           ),
         ],
         child: const MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: IronwoodMigrationPrivacyLockHost(
             idleTimeout: Duration(milliseconds: 1),
             child: Text('Unwrapped child'),
@@ -463,6 +465,48 @@ void main() {
     await tester.pump();
     expect(protectedTaps, 1);
   });
+
+  testWidgets('locked overlay hides protected content from screen readers', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final clock = _TestClock();
+    var protectedTaps = 0;
+    await tester.pumpWidget(
+      _app(clock: clock, protectedTap: () => protectedTaps += 1),
+    );
+    await tester.pump();
+    final protected = find.semantics.byLabel(RegExp('Protected content'));
+    expect(protected, findsOneWidget);
+
+    await _elapseIdleInterval(tester, clock);
+
+    // A screen reader can neither read nor activate the covered app; its
+    // keyboard focus is in the lock's password field.
+    expect(protected, findsNothing);
+    expect(find.semantics.byLabel(RegExp('Unlock Vizor')), findsOneWidget);
+    expect(
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<
+            IronwoodMigrationVirtualUnlockScreen
+          >(),
+      isNotNull,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('unlock_password_field')),
+      'password1',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('unlock_submit_button')));
+    await tester.pump();
+
+    expect(protected, findsOneWidget);
+    tester.semantics.tap(protected);
+    await tester.pump();
+    expect(protectedTaps, 1);
+    semantics.dispose();
+  });
 }
 
 Widget _app({
@@ -489,6 +533,7 @@ List<Override> _overrides(_FakeSecurityNotifier security) {
 
 Widget _themedHost(_TestClock clock, {VoidCallback? protectedTap}) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, child) => AppTheme(
       data: AppThemeData.dark,
       child: IronwoodMigrationPrivacyLockHost(

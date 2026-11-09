@@ -2,10 +2,12 @@
 // Deterministic product widgets with scripted BLE failures; no native device IO.
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/features/ledger/services/ledger_bluetooth_access.dart';
+import '../src/core/l10n/l10n.dart';
 import '../src/core/layout/app_form_factor.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
@@ -22,6 +24,7 @@ Widget _signing(
   bool locationPermission = false,
 }) {
   final guidance = ledgerFailureGuidance(
+    lookupAppLocalizations(const Locale('en')),
     LedgerMobileException(failure, 'Scripted capture failure'),
   )!;
   return Builder(
@@ -36,9 +39,13 @@ Widget _signing(
         ),
         mobileTitle: 'Confirm transaction',
         mobile: kAppFormFactor == AppFormFactor.mobile,
+        platform: kAppFormFactor == AppFormFactor.mobile
+            ? defaultTargetPlatform
+            : TargetPlatform.macOS,
         failureOverride: LedgerSigningFailurePresentation(
           title: 'Ledger needs attention',
           statusLabel: 'Action needed',
+          actionNeeded: true,
           message: guidance.message,
           showDeviceAppPrompt: guidance.showDeviceAppPrompt,
           bluetoothRecovery: guidance.bluetoothRecovery,
@@ -133,6 +140,12 @@ Widget buildLedgerPermissionRequestCapture(BuildContext context) => _signing(
 Widget buildLedgerPermissionRestrictedCapture(BuildContext context) => _signing(
   LedgerMobileFailure.permissionDenied,
   permission: LedgerBluetoothPermission.restricted,
+);
+
+Widget buildLedgerLocationRestrictedCapture(BuildContext context) => _signing(
+  LedgerMobileFailure.permissionDenied,
+  permission: LedgerBluetoothPermission.restricted,
+  locationPermission: true,
 );
 
 class _PermissionCaptureBle extends _CaptureBle

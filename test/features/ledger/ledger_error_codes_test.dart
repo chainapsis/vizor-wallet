@@ -150,14 +150,18 @@ void main() {
         'ledger_status_6807: The Zcash app is not installed on this Ledger';
     const readiness = LedgerAppReadinessException(
       LedgerAppReadinessFailure.unavailable,
-      'Install the Zcash app on your Ledger with Ledger Live, then try again.',
+      'Install the Zcash app on your Ledger with Ledger Wallet, then try again.',
       cause: notInstalled,
     );
     expect(classifyLedgerError(readiness), LedgerFailureKind.appNotInstalled);
     expect(ledgerStatusWord(readiness), 0x6807);
     expect(
       classifyLedgerError(
-        const LedgerConnectionRequiredException('Reconnect.', cause: readiness),
+        const LedgerConnectionRequiredException(
+          'Reconnect.',
+          reason: LedgerConnectionRequiredReason.bluetooth,
+          cause: readiness,
+        ),
       ),
       LedgerFailureKind.appNotInstalled,
     );
@@ -175,13 +179,19 @@ void main() {
       LedgerFailureKind.cancelled,
     );
     expect(
-      classifyLedgerError(const LedgerConnectionRequiredException('Connect.')),
+      classifyLedgerError(
+        const LedgerConnectionRequiredException(
+          'Connect.',
+          reason: LedgerConnectionRequiredReason.bluetooth,
+        ),
+      ),
       LedgerFailureKind.transportLost,
     );
     expect(
       classifyLedgerError(
         const LedgerConnectionRequiredException(
           'Connect.',
+          reason: LedgerConnectionRequiredReason.usb,
           cause: LedgerAppReadinessException(
             LedgerAppReadinessFailure.unavailable,
             'Open the Zcash app on your Ledger, then try again.',

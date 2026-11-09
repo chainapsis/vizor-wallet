@@ -1,4 +1,5 @@
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
+import '../../support/test_l10n.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_bluetooth_access.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
 import 'dart:async';
@@ -593,8 +594,8 @@ void main() {
             final matcher = throwsA(
               predicate<Object>(
                 (e) =>
-                    ledgerFailureGuidance(e)?.message ==
-                    ledgerFailureGuidance(original)!.message,
+                    ledgerFailureGuidance(testL10n, e)?.message ==
+                    ledgerFailureGuidance(testL10n, original)!.message,
               ),
             );
             if (stage == 'sign') {
@@ -837,6 +838,9 @@ ProviderContainer _container({
         ble.keyReads++;
         return 'expected';
       }),
+      ledgerRecoveryAccountKeyMatcherProvider.overrideWithValue(
+        (expected, exported) async => expected == exported,
+      ),
       ledgerBluetoothExistingAccountConnectorProvider.overrideWithValue((
         index,
         device,

@@ -1,3 +1,6 @@
+import '../../support/home_initialization_checks.dart';
+import 'package:zcash_wallet/src/features/home/widgets/home_activity_skeleton.dart';
+import 'package:zcash_wallet/src/features/activity/swap_activity_row_items_provider.dart';
 import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
@@ -20,6 +23,7 @@ import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart'
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
+import 'package:zcash_wallet/src/features/home/providers/nu7_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
@@ -39,14 +43,30 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
+  registerHomeInitializationChecks(
+    mobile: false,
+    app: (state, notifier, cards) => _appHarness(
+      '/home',
+      syncState: state,
+      syncNotifier: notifier,
+      giftCardActivityFuture: cards,
+    ),
+    home: () => find.byType(HomeScreen),
+    importing: () => find.textContaining('Importing'),
+  );
+
   // Render with the real app fonts instead of the square-glyph test font.
   // The test font is much wider than Geist/Young Serif, which overflows the
   // balance row in ways the running app does not.
@@ -95,6 +115,40 @@ void main() {
       expect(find.text('****** ZEC ZEC'), findsNothing);
     },
   );
+
+  for (final privacyModeEnabled in [false, true]) {
+    testWidgets(
+      'home desktop zero balance with privacy mode $privacyModeEnabled',
+      (tester) async {
+        final semantics = tester.ensureSemantics();
+        await tester.pumpWidget(
+          _appHarness(
+            '/home',
+            privacyModeEnabled: privacyModeEnabled,
+            syncState: SyncState(
+              accountUuid: 'account-1',
+              hasAccountScopedData: true,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final amount = find.byKey(
+          const ValueKey('home_desktop_balance_amount_text'),
+        );
+        final expected = privacyModeEnabled ? '******' : '0';
+        expect(tester.widget<Text>(amount).data, expected);
+        expect(tester.getSemantics(amount).label, expected);
+        expect(
+          find.text('0'),
+          privacyModeEnabled ? findsNothing : findsOneWidget,
+        );
+        expect(find.textContaining('ZEC ZEC'), findsNothing);
+        expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+        semantics.dispose();
+      },
+    );
+  }
 
   testWidgets('home desktop shows fiat balance when pricing is available', (
     tester,
@@ -434,6 +488,119 @@ void main() {
     expect(find.text('Zcash Network Upgrade'), findsOneWidget);
   });
 
+  testWidgets('home shows the NU7 announcement until it is dismissed', (
+    tester,
+  ) async {
+    final store = _MemoryNu7AnnouncementStore();
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final overlay = find.byKey(const ValueKey('nu7_announcement_overlay'));
+    expect(overlay, findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('nu7_announcement_got_it_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(overlay, findsNothing);
+    expect(store.seen, {'main'});
+  });
+
+  testWidgets('the NU7 announcement fades in unless motion is reduced', (
+    tester,
+  ) async {
+    final overlay = find.byKey(const ValueKey('nu7_announcement_overlay'));
+    double opacity() => tester
+        .widget<FadeTransition>(
+          find
+              .ancestor(of: overlay, matching: find.byType(FadeTransition))
+              .first,
+        )
+        .opacity
+        .value;
+    Future<void> showAnnouncement() async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        ),
+      );
+      for (var frame = 0; frame < 10 && overlay.evaluate().isEmpty; frame++) {
+        await tester.pump();
+      }
+      expect(overlay, findsOneWidget);
+    }
+
+    await showAnnouncement();
+    expect(opacity(), lessThan(1));
+    await tester.pumpAndSettle();
+    expect(opacity(), 1);
+
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pumpWidget(const SizedBox());
+    await showAnnouncement();
+    expect(opacity(), 1);
+  });
+
+  testWidgets('home does not stack the NU7 announcement on the Ironwood one', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        ironwoodMigrationAnnouncementStateListenable:
+            _ironwoodAnnouncementTestProvider,
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ZcashWalletApp)),
+    );
+    container
+        .read(_ironwoodAnnouncementTestProvider.notifier)
+        .setAnnouncement(
+          IronwoodMigrationAnnouncementState.visible(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _migrationStatus(kIronwoodMigrationReadyPhase),
+          ),
+        );
+    await tester.pumpAndSettle();
+
+    final nu7Overlay = find.byKey(const ValueKey('nu7_announcement_overlay'));
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_announcement_overlay')),
+      findsOneWidget,
+    );
+    expect(nu7Overlay, findsNothing);
+
+    await tester.tapAt(const Offset(4, 4));
+    await tester.pumpAndSettle();
+    container
+        .read(_ironwoodAnnouncementTestProvider.notifier)
+        .setAnnouncement(const IronwoodMigrationAnnouncementState.hidden());
+    await tester.pumpAndSettle();
+
+    expect(nu7Overlay, findsOneWidget);
+  });
+
   testWidgets('home keeps Ironwood announcement visible during sync changes', (
     tester,
   ) async {
@@ -634,6 +801,47 @@ void main() {
       expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
     },
   );
+
+  testWidgets('home desktop CTA flags a migration stopped by the upgrade', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.stopped(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatus(kIronwoodMigrationStoppedByUpgradePhase),
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(340_000_000),
+          ironwoodBalance: BigInt.from(210_000_000),
+          spendableBalance: BigInt.from(210_000_000),
+          totalBalance: BigInt.from(550_000_000),
+        ),
+      ),
+    );
+    await tester.pump();
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('home_desktop_ironwood_migration_cta_button')),
+    );
+
+    expect(find.text('Migration stopped by network upgrade'), findsOneWidget);
+    expect(find.textContaining('still migrating'), findsNothing);
+    expect(
+      find.byKey(
+        const ValueKey('home_desktop_ironwood_migration_stopped_icon'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home_desktop_ironwood_migration_background')),
+      findsNothing,
+    );
+  });
 
   testWidgets('home keeps completed Ironwood visible during migration sync', (
     tester,
@@ -959,7 +1167,7 @@ void main() {
       _appHarness(
         '/home',
         swapEnabled: false,
-        etaLabels: const {'pending-receive': 'Est. 1–3 min'},
+        etaLabels: const {'pending-receive': ActivityEta.standard},
         syncState: SyncState(
           accountUuid: 'account-1',
           hasAccountScopedData: true,
@@ -993,7 +1201,7 @@ void main() {
             suppliedArgs = state.extra as ActivityTransactionStatusArgs;
             return ActivityTransactionStatusScreen(
               args: suppliedArgs!,
-              historyLoader: (_) => history.future,
+              historyLoader: (_, _) => history.future,
               detailLoader: (_, _) async => null,
             );
           },
@@ -1255,11 +1463,178 @@ void main() {
       find.byKey(const ValueKey('ledger_shield_signing_overlay_surface')),
       findsOneWidget,
     );
-    expect(find.text('Preparing transaction'), findsOneWidget);
+    expect(find.text('Prepare transaction'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
+
+  testWidgets('home holds the NU7 announcement during hardware shielding', (
+    tester,
+  ) async {
+    final store = _MemoryNu7AnnouncementStore()..seen.add('main');
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          transparentBalance: BigInt.from(242_000_000),
+          canShieldTransparentBalance: true,
+          totalBalance: BigInt.from(242_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('home_shield_balance_button')));
+    await tester.pump();
+
+    store.seen.clear();
+    ProviderScope.containerOf(
+      tester.element(find.byType(ZcashWalletApp)),
+    ).invalidate(nu7AnnouncementProvider);
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('ledger_shield_signing_overlay_surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('nu7_announcement_overlay')),
+      findsNothing,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  for (final height in [600.0, 720.0, 900.0]) {
+    testWidgets('five skeleton rows match loaded desktop geometry at $height', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(1080, height);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final initial = SyncState(
+        accountUuid: 'account-1',
+        hasBalanceData: true,
+        orchardBalance: BigInt.from(250000000),
+        totalBalance: BigInt.from(250000000),
+      );
+      await tester.pumpWidget(_appHarness('/home', syncState: initial));
+      await tester.pumpAndSettle();
+      final card = find.byKey(const ValueKey('home_desktop_activity_card'));
+      final before = tester.getRect(card);
+      final rows = [
+        for (var i = 0; i < 5; i++)
+          tester.getRect(
+            find.byKey(ValueKey('home_desktop_activity_skeleton_$i')),
+          ),
+      ];
+      final header = tester.getRect(find.text('Recent activity'));
+      final seeAll = tester.getRect(find.text('See all'));
+      final balance = tester.getRect(
+        find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(HomeScreen)),
+      );
+      (container.read(syncProvider.notifier) as FakeSyncNotifier).emit(
+        initial.copyWith(
+          hasRecentTransactionsData: true,
+          recentTransactions: [
+            for (var i = 0; i < 5; i++)
+              _receivedZecTx(
+                txidHex: 'geometry-$i',
+                amountZatoshi: 100000000,
+                blockTime: 1800000000 + i,
+              ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getRect(card), before);
+      expect(tester.getRect(find.text('Recent activity')), header);
+      expect(tester.getRect(find.text('See all')), seeAll);
+      expect(
+        tester.getRect(
+          find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+        ),
+        balance,
+      );
+      for (var i = 0; i < 5; i++) {
+        expect(
+          tester.getRect(find.byKey(ValueKey('home_desktop_activity_row_$i'))),
+          rows[i],
+        );
+      }
+      expect(find.byType(HomeActivitySkeletonRow), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets(
+    'local card records finish before showing the empty illustration',
+    (tester) async {
+      final cards = Completer<GiftCardActivityIndex>();
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          syncState: _syncedSyncState,
+          giftCardActivityFuture: cards.future,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(HomeActivitySkeletonRow), findsNWidgets(5));
+      expect(find.text('No activity, yet...'), findsNothing);
+      cards.complete(GiftCardActivityIndex.empty);
+      await tester.pumpAndSettle();
+      expect(find.byType(HomeActivitySkeletonRow), findsNothing);
+      expect(find.text('No activity, yet...'), findsOneWidget);
+    },
+  );
+
+  testWidgets('local card read failure does not look empty or keep skeletons', (
+    tester,
+  ) async {
+    final cards = Completer<GiftCardActivityIndex>();
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        syncState: _syncedSyncState,
+        giftCardActivityFuture: cards.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+    cards.completeError(StateError('local read failed'));
+    await tester.pumpAndSettle();
+    expect(find.byType(HomeActivitySkeletonRow), findsNothing);
+    expect(find.text('Unable to load activity.'), findsOneWidget);
+    expect(find.text('No activity, yet...'), findsNothing);
+  });
+
+  testWidgets(
+    'network sync failure does not classify unread history as empty',
+    (tester) async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            failure: classifySyncFailure('network: connection failed'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(HomeActivitySkeletonRow), findsNWidgets(5));
+      expect(find.text('No activity, yet...'), findsNothing);
+    },
+  );
 
   testWidgets('home desktop keeps recovery notice visible', (tester) async {
     await tester.pumpWidget(
@@ -1276,6 +1651,73 @@ void main() {
     );
   });
 
+  testWidgets(
+    'cache miss shows Home with an unloaded balance independently of history',
+    (tester) async {
+      await tester.pumpWidget(
+        _appHarness('/home', syncState: SyncState(accountUuid: 'account-1')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+        findsOneWidget,
+      );
+      final amount = tester.widget<Text>(
+        find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+      );
+      expect(amount.data, '—');
+      expect(find.byType(HomeActivitySkeletonRow), findsNWidgets(5));
+    },
+  );
+
+  for (final height in [600.0, 720.0, 900.0]) {
+    for (final failed in [false, true]) {
+      testWidgets(
+        'activity loading and error layout at height=$height failed=$failed',
+        (tester) async {
+          tester.view.physicalSize = Size(1080, height);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          await tester.pumpWidget(
+            _appHarness(
+              '/home',
+              syncState: SyncState(
+                accountUuid: 'account-1',
+                hasCachedBalance: true,
+                displayTotalBalance: BigInt.from(250000000),
+                displayShieldedBalance: BigInt.from(250000000),
+                hasRecentTransactionsError: failed,
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          if (failed) {
+            final area = find.byKey(
+              const ValueKey('home_desktop_empty_activity'),
+            );
+            final message = find.text('Unable to load activity.');
+            expect(tester.getCenter(message), tester.getCenter(area));
+            expect(find.byType(HomeActivitySkeletonRow), findsNothing);
+          } else {
+            expect(find.byType(HomeActivitySkeletonRow), findsNWidgets(5));
+            expect(find.text('Recent activity'), findsOneWidget);
+            expect(find.text('See all'), findsOneWidget);
+            expect(
+              find.byKey(const ValueKey('home_desktop_empty_activity')),
+              findsNothing,
+            );
+          }
+          expect(
+            find.text('How about running your first ZEC tx?'),
+            findsNothing,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
   testWidgets('home desktop keeps sync failure notice visible', (tester) async {
     await tester.pumpWidget(
       _appHarness(
@@ -1286,7 +1728,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
       ),
@@ -1294,7 +1735,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('home_notice_card')), findsOneWidget);
-    expect(find.text('Network connection lost.'), findsOneWidget);
+    expect(find.text(testL10n.syncFailureNetwork), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
   });
 
@@ -1364,6 +1805,55 @@ void main() {
 
     expect(privacy.retryCalls, 1);
   });
+
+  testWidgets(
+    'home desktop retries Tor for the actual automatic endpoint readiness failure',
+    (tester) async {
+      final privacy = _FakeNetworkPrivacyNotifier();
+      await tester.pumpWidget(_appHarness('/home', networkPrivacy: privacy));
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(HomeScreen)),
+      );
+      final endpoints = container.read(rpcEndpointFailoverProvider.notifier);
+      expect(
+        isAutomaticRpcEndpointConfig(
+          container.read(rpcEndpointFailoverProvider).primary,
+        ),
+        isTrue,
+      );
+      Object? readinessError;
+      try {
+        await endpoints.ensureReady();
+      } catch (error) {
+        readinessError = error;
+      }
+      expect(readinessError, isA<StateError>());
+      final failure = classifySyncFailure(readinessError!);
+      expect(failure.kind, SyncFailureKind.torUnavailable);
+
+      final sync = container.read(syncProvider.notifier) as FakeSyncNotifier;
+      sync.emit(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          failure: failure,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text("Tor couldn't connect. Retry, or turn Tor off in Settings."),
+        findsOneWidget,
+      );
+      expect(sync.startSyncs, 0);
+
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+
+      expect(privacy.retryCalls, 1);
+      expect(sync.startSyncs, 0);
+    },
+  );
 
   testWidgets('home desktop does not re-run a pending Tor disable from Retry', (
     tester,
@@ -1516,7 +2006,7 @@ SwapIntentRecord _swapActivityRecord({
     sellAmountText: '1.0000 ZEC',
     receiveEstimateText: '70.170000 USDC',
     status: status,
-    nextAction: status.label,
+    nextAction: status.name,
     direction: SwapDirection.zecToExternal,
     externalAsset: SwapAsset.usdc,
     depositAddress: 't1home-deposit',
@@ -1623,15 +2113,17 @@ rust_sync.MigrationStatus _migrationStatus(
 
 Widget _appHarness(
   String initialLocation, {
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   GoRouter? router,
   bool? swapEnabled,
   bool privacyModeEnabled = false,
   bool passwordRotationRecoveryFailed = false,
   double? priceChange24hPct,
   SyncState? syncState,
+  FakeSyncNotifier? syncNotifier,
   SwapActivityStore? swapActivityStore,
   GiftCardActivityIndex? giftCardActivityIndex,
+  Future<GiftCardActivityIndex>? giftCardActivityFuture,
   ThemeMode themeMode = ThemeMode.system,
   IronwoodHomeMigrationCtaState ironwoodHomeMigrationCtaState =
       const IronwoodHomeMigrationCtaState.hidden(),
@@ -1644,9 +2136,19 @@ Widget _appHarness(
   bool failIfMigrationResolverLoads = false,
   _FakeNetworkPrivacyNotifier? networkPrivacy,
   HardwareSignerKind? hardwareSignerKind,
+  Nu7AnnouncementState nu7Announcement = const Nu7AnnouncementState.hidden(),
+  _MemoryNu7AnnouncementStore? nu7AnnouncementStore,
 }) {
+  final nu7Store = nu7AnnouncementStore ?? _MemoryNu7AnnouncementStore();
   return ProviderScope(
     overrides: [
+      nu7AnnouncementProvider.overrideWith(
+        (ref) async => nu7Store.seen.contains(nu7Announcement.network)
+            ? const Nu7AnnouncementState.hidden()
+            : nu7Announcement,
+      ),
+      nu7AnnouncementStoreProvider.overrideWithValue(nu7Store),
+      nu7AnnouncementMotionEnabledProvider.overrideWithValue(false),
       if (etaLabels != null)
         activityEtaLabelsProvider.overrideWithValue(etaLabels),
       if (networkPrivacy != null)
@@ -1665,7 +2167,7 @@ Widget _appHarness(
         ),
       ),
       syncProvider.overrideWith(
-        () => FakeSyncNotifier(syncState ?? _syncedSyncState),
+        () => syncNotifier ?? FakeSyncNotifier(syncState ?? _syncedSyncState),
       ),
       ledgerSignedOperationServiceProvider.overrideWithValue(
         const _EmptyLedgerSignedOperationService(),
@@ -1680,9 +2182,15 @@ Widget _appHarness(
       swapIntentProvider.overrideWithValue(const _FakeSwapProvider()),
       if (swapActivityStore != null)
         swapActivityStoreProvider.overrideWithValue(swapActivityStore),
-      if (giftCardActivityIndex != null)
-        giftCardActivityIndexProvider.overrideWith(
-          (ref, accountUuid) async => giftCardActivityIndex,
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async =>
+            giftCardActivityFuture ??
+            giftCardActivityIndex ??
+            GiftCardActivityIndex.empty,
+      ),
+      if (swapActivityStore == null)
+        swapActivityRowItemsProvider.overrideWith(
+          (ref, accountUuid) async => const [],
         ),
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return ironwoodHomeMigrationCtaState;
@@ -1751,6 +2259,7 @@ Widget _appHarness(
     child: router == null
         ? const ZcashWalletApp()
         : MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.dark, child: child!),
@@ -1979,4 +2488,14 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
   Future<void> retry() async {
     retryCalls++;
   }
+}
+
+class _MemoryNu7AnnouncementStore implements Nu7AnnouncementStore {
+  final seen = <String>{};
+
+  @override
+  Future<bool> isSeen(String network) async => seen.contains(network);
+
+  @override
+  Future<void> markSeen(String network) async => seen.add(network);
 }

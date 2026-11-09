@@ -6,9 +6,11 @@ import 'package:flutter/material.dart'
     show CircularProgressIndicator, Colors, ScaffoldMessenger, SnackBar;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -30,9 +32,7 @@ import '../widgets/receive_address_widgets.dart';
 import '../widgets/request/request_amount_card.dart';
 import '../widgets/request/request_amount_model.dart';
 import '../../../core/widgets/app_tooltip.dart';
-
-const _renewShieldedAddressErrorMessage =
-    "We couldn't refresh your shielded address. Try again, or use your current one.";
+import '../../../core/widgets/untranslated_details.dart';
 
 bool _shouldRefreshTransparentAddressAfterSyncUpdate(
   SyncState previous,
@@ -47,7 +47,12 @@ bool _shouldRefreshTransparentAddressAfterSyncUpdate(
 }
 
 class ReceiveScreen extends ConsumerStatefulWidget {
-  const ReceiveScreen({super.key});
+  const ReceiveScreen({
+    this.initialType = ReceiveAddressType.shielded,
+    super.key,
+  });
+
+  final ReceiveAddressType initialType;
 
   @override
   ConsumerState<ReceiveScreen> createState() => _ReceiveScreenState();
@@ -58,8 +63,24 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   String? _shieldedAddress;
   String? _transparentAddress;
   String? _activeAccountUuid;
-  String? _errorText;
-  String? _transparentErrorText;
+  // Each error keeps the untranslated text behind it for "Show details";
+  // setting a new error clears it.
+  String? _errorTextValue;
+  String? _errorDetails;
+  String? get _errorText => _errorTextValue;
+  set _errorText(String? value) {
+    _errorTextValue = value;
+    _errorDetails = null;
+  }
+
+  String? _transparentErrorTextValue;
+  String? _transparentErrorDetails;
+  String? get _transparentErrorText => _transparentErrorTextValue;
+  set _transparentErrorText(String? value) {
+    _transparentErrorTextValue = value;
+    _transparentErrorDetails = null;
+  }
+
   String? _transparentLoadingAccountUuid;
   ReceiveAddressType? _infoDialogType;
   ZecRequestDraft? _requestDraft;
@@ -78,9 +99,13 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   bool _isLoading = true;
   bool _isLoadingTransparent = false;
   bool _isRenewingShielded = false;
+  late final PageController _qrPageController = PageController(
+    initialPage: _selectedType.index,
+  );
 
   @override
   void dispose() {
+    _qrPageController.dispose();
     _requestAmountController.dispose();
     _requestMessageController.dispose();
     super.dispose();
@@ -89,6 +114,8 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedType = widget.initialType;
+    _qrPageController.addListener(_loadTransparentWhenRevealed);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
@@ -103,7 +130,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorText = 'No active account';
+        _errorText = context.l10n.commonNoActiveAccount;
       });
       return;
     }
@@ -151,7 +178,8 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       setState(() {
         _shieldedAddress ??= walletAddress;
         _isLoading = false;
-        _errorText = e.toString();
+        _errorText = context.l10n.receiveShieldedAddressLoadFailed;
+        _errorDetails = e.toString();
       });
     }
   }
@@ -211,7 +239,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       setState(() {
         _isLoadingTransparent = false;
         _transparentLoadingAccountUuid = null;
-        _transparentErrorText = e.toString();
+        _transparentErrorText =
+            context.l10n.receiveTransparentAddressLoadFailed;
+        _transparentErrorDetails = e.toString();
       });
     }
   }
@@ -275,10 +305,11 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       }
       setState(() {
         _isRenewingShielded = false;
-        _errorText = '$_renewShieldedAddressErrorMessage\nDetails: $e';
+        _errorText = context.l10n.receiveRenewAddressError;
+        _errorDetails = e.toString();
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(_renewShieldedAddressErrorMessage)),
+        SnackBar(content: Text(context.l10n.receiveRenewAddressError)),
       );
     }
   }
@@ -286,12 +317,64 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   void _copySelectedAddress() {
     final address = _selectedAddress;
     if (address.isEmpty) return;
-    copyTextWithToast(context, text: address, toastMessage: 'Address copied');
+    copyTextWithToast(
+      context,
+      text: address,
+      toastMessage: context.l10n.commonAddressCopied,
+    );
+  }
+
+  Future<void> _shareSelectedAddress() async {
+    final address = _selectedAddress;
+    if (address.isEmpty) return;
+    try {
+      await SharePlus.instance.share(ShareParams(text: address));
+    } catch (e) {
+      log('Receive: ERROR sharing address: $e');
+      if (!mounted) return;
+      showAppToast(context, context.l10n.receiveShareFailed);
+    }
   }
 
   void _selectAddressType(ReceiveAddressType type) {
     if (_selectedType == type) return;
 
+    _showAddressType(type);
+    if (!_qrPageController.hasClients) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _qrPageController.jumpToPage(type.index);
+    } else {
+      unawaited(
+        _qrPageController.animateToPage(
+          type.index,
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeInOutCubic,
+        ),
+      );
+    }
+  }
+
+  // A drag shows the transparent card before the page change selects it, so
+  // start its first load as soon as it comes into view. A failed load waits
+  // for the selection to retry rather than retrying on every drag frame.
+  void _loadTransparentWhenRevealed() {
+    if (_selectedType == ReceiveAddressType.transparent) return;
+    if (!_qrPageController.position.haveDimensions) return;
+    if (_qrPageController.page! <= ReceiveAddressType.shielded.index) return;
+    if ((_transparentAddress ?? '').isNotEmpty) return;
+    if (_transparentLoadingAccountUuid != null) return;
+    if (_transparentErrorText != null) return;
+    unawaited(_loadTransparentReceiveAddress());
+  }
+
+  // A drag already moves the pager; only the selection follows it.
+  void _handleQrPageChanged(int page) {
+    final type = ReceiveAddressType.values[page];
+    if (_selectedType == type) return;
+    _showAddressType(type);
+  }
+
+  void _showAddressType(ReceiveAddressType type) {
     setState(() => _selectedType = type);
     if (type == ReceiveAddressType.transparent) {
       unawaited(_loadTransparentReceiveAddress());
@@ -443,7 +526,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       // Cancelling the save dialog is not an outcome worth a toast.
       if (saved == null) return;
       if (!mounted) return;
-      showAppToast(context, 'QR image saved to ${saved.folderName}');
+      showAppToast(context, context.l10n.receiveQrSaved(saved.folderName));
     } catch (e) {
       log('Receive: ERROR saving request QR image: $e');
       if (!mounted) return;
@@ -460,8 +543,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   void _reportRequestQrSaveFailed() {
     showAppToast(
       context,
-      "We couldn't save the QR image. Try another folder, or copy the "
-      'request link instead.',
+      context.l10n.receiveQrSaveFailed,
       iconName: AppIcons.cancel,
       tone: AppToastTone.destructive,
       duration: const Duration(seconds: 4),
@@ -511,6 +593,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
         ? _isLoading
         : _isLoadingTransparent;
     final selectedErrorText = isShielded ? _errorText : _transparentErrorText;
+    final selectedErrorDetails = isShielded
+        ? _errorDetails
+        : _transparentErrorDetails;
     final infoDialogType = _infoDialogType;
     final scanOptimizedQr =
         ref.watch(accountProvider).value?.activeAccount?.isKeystone ?? false;
@@ -532,14 +617,26 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
           children: [
             _ReceivePane(
               selectedType: _selectedType,
+              qrPageController: _qrPageController,
+              onQrPageChanged: _handleQrPageChanged,
+              shieldedAddress: _shieldedAddress ?? '',
+              transparentAddress: _transparentAddress ?? '',
+              isLoadingShielded: _isLoading,
+              // Not yet requested reads as loading, not as a failed load.
+              isLoadingTransparent:
+                  _isLoadingTransparent ||
+                  (_transparentAddress == null &&
+                      _transparentErrorText == null),
               address: address,
               errorText: selectedErrorText,
+              errorDetails: selectedErrorDetails,
               isLoading: isLoadingSelectedAddress,
               isRenewingShielded: _isRenewingShielded,
               scanOptimizedQr: scanOptimizedQr,
               onTypeChanged: _selectAddressType,
               onRenewShielded: isShielded ? _renewShieldedAddress : null,
               onCopy: _copySelectedAddress,
+              onShare: _shareSelectedAddress,
               onRequest: _openRequest,
               onShowHelp: () => _showAddressInfo(_selectedType),
             ),
@@ -571,7 +668,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                   copyTextWithToast(
                     context,
                     text: uri,
-                    toastMessage: kRequestLinkCopiedToast,
+                    toastMessage: context.l10n.receiveRequestLinkCopied,
                   );
                 },
                 onSaveQrImage: (png) =>
@@ -596,27 +693,43 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
 class _ReceivePane extends StatelessWidget {
   const _ReceivePane({
     required this.selectedType,
+    required this.qrPageController,
+    required this.onQrPageChanged,
+    required this.shieldedAddress,
+    required this.transparentAddress,
+    required this.isLoadingShielded,
+    required this.isLoadingTransparent,
     required this.address,
     required this.errorText,
+    this.errorDetails,
     required this.isLoading,
     required this.isRenewingShielded,
     required this.scanOptimizedQr,
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onCopy,
+    required this.onShare,
     required this.onRequest,
     required this.onShowHelp,
   });
 
   final ReceiveAddressType selectedType;
+  final PageController qrPageController;
+  final ValueChanged<int> onQrPageChanged;
+  final String shieldedAddress;
+  final String transparentAddress;
+  final bool isLoadingShielded;
+  final bool isLoadingTransparent;
   final String address;
   final String? errorText;
+  final String? errorDetails;
   final bool isLoading;
   final bool isRenewingShielded;
   final bool scanOptimizedQr;
   final ValueChanged<ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onCopy;
+  final VoidCallback onShare;
   final VoidCallback onRequest;
   final VoidCallback onShowHelp;
 
@@ -634,14 +747,22 @@ class _ReceivePane extends StatelessWidget {
         Expanded(
           child: _ReceiveContentLayout(
             selectedType: selectedType,
+            qrPageController: qrPageController,
+            onQrPageChanged: onQrPageChanged,
+            shieldedAddress: shieldedAddress,
+            transparentAddress: transparentAddress,
+            isLoadingShielded: isLoadingShielded,
+            isLoadingTransparent: isLoadingTransparent,
             address: address,
             errorText: errorText,
+            errorDetails: errorDetails,
             isLoading: isLoading,
             isRenewingShielded: isRenewingShielded,
             scanOptimizedQr: scanOptimizedQr,
             onTypeChanged: onTypeChanged,
             onRenewShielded: onRenewShielded,
             onCopy: onCopy,
+            onShare: onShare,
             onRequest: onRequest,
             onShowHelp: onShowHelp,
           ),
@@ -654,42 +775,65 @@ class _ReceivePane extends StatelessWidget {
 class _ReceiveContentLayout extends StatelessWidget {
   const _ReceiveContentLayout({
     required this.selectedType,
+    required this.qrPageController,
+    required this.onQrPageChanged,
+    required this.shieldedAddress,
+    required this.transparentAddress,
+    required this.isLoadingShielded,
+    required this.isLoadingTransparent,
     required this.address,
     required this.errorText,
+    this.errorDetails,
     required this.isLoading,
     required this.isRenewingShielded,
     required this.scanOptimizedQr,
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onCopy,
+    required this.onShare,
     required this.onRequest,
     required this.onShowHelp,
   });
 
   static const _contentWidth = 420.0;
 
-  /// One action row: the copy pill and, beside it, the compact request
-  /// button — the home card's "Pay" shape — so the fixed-coordinate content
-  /// keeps the single-button screen's height instead of growing a second row.
+  // Keep both action rows within the existing content height.
   static const _contentHeight = 656.0;
   static const _contentHeightWithError = 724.0;
-  static const _actionsTop = 596.0;
+  static const _actionsTop = 548.0;
   static const _actionButtonWidth = 230.0;
   static const _actionButtonHeight = 44.0;
-  static const _requestButtonWidth = 60.0;
+  static const _shareButtonWidth = 60.0;
   static const _actionsWidth =
-      _actionButtonWidth + AppSpacing.xs + _requestButtonWidth;
+      _actionButtonWidth + AppSpacing.xs + _shareButtonWidth;
   static const _actionsLeft = (_contentWidth - _actionsWidth) / 2;
+  // Panel inset (16) + QR block top (103.5) + tabs and their gap.
+  static const _qrTop =
+      16 +
+      _qrBlockTop +
+      _ReceiveQrBlock._tabsHeight +
+      _ReceiveQrBlock._tabsToQrGap;
+  static const _qrBlockTop = 103.5;
+  // Narrower than the 79px margin beside a resting card.
+  static const _qrEdgeFeather = 56.0;
 
   final ReceiveAddressType selectedType;
+  final PageController qrPageController;
+  final ValueChanged<int> onQrPageChanged;
+  final String shieldedAddress;
+  final String transparentAddress;
+  final bool isLoadingShielded;
+  final bool isLoadingTransparent;
   final String address;
   final String? errorText;
+  final String? errorDetails;
   final bool isLoading;
   final bool isRenewingShielded;
   final bool scanOptimizedQr;
   final ValueChanged<ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onCopy;
+  final VoidCallback onShare;
   final VoidCallback onRequest;
   final VoidCallback onShowHelp;
 
@@ -716,123 +860,228 @@ class _ReceiveContentLayout extends StatelessWidget {
             child: Center(
               child: SizedBox(
                 width: _contentWidth,
-                height: contentHeight,
-                child: Stack(
-                  clipBehavior: Clip.none,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Positioned(
-                      left: 12,
-                      top: 16,
-                      width: 396,
-                      height: 556,
+                    SizedBox(
+                      height: _contentHeight,
                       child: Stack(
+                        clipBehavior: Clip.none,
                         children: [
                           Positioned(
-                            left: 70,
-                            top: 38.5,
-                            width: 256,
-                            height: 33,
-                            child: Text(
-                              'Receive $kZcashDefaultCurrencyTicker',
-                              maxLines: 1,
-                              style: AppTypography.headlineLarge.copyWith(
-                                color: colors.text.accent,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                          Positioned(
-                            left: 67,
-                            top: 103.5,
-                            width: 262,
-                            height: 414,
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 160),
-                              child: isLoading
-                                  ? const SizedBox(
-                                      key: ValueKey('loading'),
-                                      width: 262,
-                                      height: 414,
-                                      child: Center(
-                                        child: CircularProgressIndicator(),
-                                      ),
-                                    )
-                                  : _ReceiveQrBlock(
-                                      key: ValueKey(selectedType),
-                                      type: selectedType,
-                                      address: address,
-                                      renewing: isRenewingShielded,
-                                      scanOptimizedQr: scanOptimizedQr,
-                                      onTypeChanged: onTypeChanged,
-                                      onRenew: onRenewShielded,
-                                      onShowHelp: onShowHelp,
+                            left: 12,
+                            top: 16,
+                            width: 396,
+                            height: 556,
+                            child: Stack(
+                              children: [
+                                Positioned(
+                                  left: 70,
+                                  top: 38.5,
+                                  width: 256,
+                                  height: 33,
+                                  child: Text(
+                                    context.l10n.receiveTitle(
+                                      kZcashDefaultCurrencyTicker,
                                     ),
+                                    maxLines: 1,
+                                    style: AppTypography.headlineLarge.copyWith(
+                                      color: colors.text.accent,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                                Positioned(
+                                  left: 67,
+                                  top: _qrBlockTop,
+                                  width: 262,
+                                  height: 414,
+                                  child: _ReceiveQrBlock(
+                                    type: selectedType,
+                                    address: address,
+                                    isLoading: isLoading,
+                                    qrPageController: qrPageController,
+                                    onTypeChanged: onTypeChanged,
+                                    onShowHelp: onShowHelp,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Positioned(
+                            left: _actionsLeft,
+                            top: _actionsTop,
+                            width: _actionsWidth,
+                            height: _actionButtonHeight * 2 + AppSpacing.xs,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  children: [
+                                    SizedBox(
+                                      width: _actionButtonWidth,
+                                      height: _actionButtonHeight,
+                                      child: ReceiveCopyAddressButton(
+                                        key: ValueKey(
+                                          _isShielded
+                                              ? 'receive_copy_shielded_address_button'
+                                              : 'receive_copy_transparent_address_button',
+                                        ),
+                                        label: _isShielded
+                                            ? context
+                                                  .l10n
+                                                  .commonCopyShieldedAddress
+                                            : context
+                                                  .l10n
+                                                  .receiveCopyTransparentAddress,
+                                        type: selectedType,
+                                        enabled:
+                                            address.isNotEmpty && !isLoading,
+                                        onTap: onCopy,
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppSpacing.xs),
+                                    AppTooltip(
+                                      message: _isShielded
+                                          ? context
+                                                .l10n
+                                                .receiveShareShieldedAddress
+                                          : context
+                                                .l10n
+                                                .receiveShareTransparentAddress,
+                                      child: Semantics(
+                                        button: true,
+                                        label: _isShielded
+                                            ? context
+                                                  .l10n
+                                                  .receiveShareShieldedAddress
+                                            : context
+                                                  .l10n
+                                                  .receiveShareTransparentAddress,
+                                        child: AppButton(
+                                          key: const ValueKey(
+                                            'receive_share_button',
+                                          ),
+                                          variant: AppButtonVariant.secondary,
+                                          height: _actionButtonHeight,
+                                          minWidth: _shareButtonWidth,
+                                          contentPadding: EdgeInsets.zero,
+                                          onPressed:
+                                              address.isNotEmpty && !isLoading
+                                              ? onShare
+                                              : null,
+                                          child: const ExcludeSemantics(
+                                            child: AppIcon(
+                                              AppIcons.share,
+                                              size: 20,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: AppSpacing.xs),
+                                AppButton(
+                                  key: const ValueKey('receive_request_button'),
+                                  variant: AppButtonVariant.ghost,
+                                  pressedBackgroundColor: const Color(
+                                    0x00000000,
+                                  ),
+                                  disabledBackgroundColor: const Color(
+                                    0x00000000,
+                                  ),
+                                  height: _actionButtonHeight,
+                                  expand: true,
+                                  onPressed: address.isNotEmpty && !isLoading
+                                      ? onRequest
+                                      : null,
+                                  child: Text(
+                                    context.l10n.receiveRequestZecButton,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Spans the content column; its edges feather so a
+                          // sliding card fades out instead of being cut off.
+                          Positioned(
+                            left: 0,
+                            top: _qrTop,
+                            width: _contentWidth,
+                            height: _ReceiveQrBlock._qrFrameHeight,
+                            child: ShaderMask(
+                              blendMode: BlendMode.dstIn,
+                              shaderCallback: (bounds) => LinearGradient(
+                                colors: const [
+                                  Color(0x00000000),
+                                  Color(0xFF000000),
+                                  Color(0xFF000000),
+                                  Color(0x00000000),
+                                ],
+                                stops: [
+                                  0,
+                                  _qrEdgeFeather / bounds.width,
+                                  1 - _qrEdgeFeather / bounds.width,
+                                  1,
+                                ],
+                              ).createShader(bounds),
+                              child: PageView(
+                                key: const ValueKey('receive_qr_pager'),
+                                controller: qrPageController,
+                                // Builds the other pool ahead so a slide never
+                                // waits on its bitmap.
+                                allowImplicitScrolling: true,
+                                onPageChanged: onQrPageChanged,
+                                children: [
+                                  for (final type in ReceiveAddressType.values)
+                                    Center(
+                                      child: _ReceiveQrCard(
+                                        key: ValueKey(
+                                          'receive_qr_${type.name}',
+                                        ),
+                                        type: type,
+                                        address:
+                                            type == ReceiveAddressType.shielded
+                                            ? shieldedAddress
+                                            : transparentAddress,
+                                        isLoading:
+                                            type == ReceiveAddressType.shielded
+                                            ? isLoadingShielded
+                                            : isLoadingTransparent,
+                                        renewing: isRenewingShielded,
+                                        scanOptimizedQr: scanOptimizedQr,
+                                        onRenew: onRenewShielded,
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    Positioned(
-                      left: _actionsLeft,
-                      top: _actionsTop,
-                      width: _actionsWidth,
-                      height: _actionButtonHeight,
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: _actionButtonWidth,
-                            height: _actionButtonHeight,
-                            child: ReceiveCopyAddressButton(
-                              key: ValueKey(
-                                _isShielded
-                                    ? 'receive_copy_shielded_address_button'
-                                    : 'receive_copy_transparent_address_button',
-                              ),
-                              label: _isShielded
-                                  ? 'Copy shielded address'
-                                  : 'Copy transparent address',
-                              type: selectedType,
-                              enabled: address.isNotEmpty && !isLoading,
-                              onTap: onCopy,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.xs),
-                          // Icon only, like the home card's "Pay" button: the
-                          // request is the secondary way to hand out this
-                          // address, and a second labelled pill under the
-                          // copy button pushed the screen past its frame.
-                          AppTooltip(
-                            message: 'Request $kZcashDefaultCurrencyTicker',
-                            child: Semantics(
-                              button: true,
-                              label: 'Request $kZcashDefaultCurrencyTicker',
-                              excludeSemantics: true,
-                              child: AppButton(
-                                key: const ValueKey('receive_request_button'),
-                                variant: AppButtonVariant.secondary,
-                                height: _actionButtonHeight,
-                                minWidth: _requestButtonWidth,
-                                contentPadding: EdgeInsets.zero,
-                                onPressed: address.isNotEmpty && !isLoading
-                                    ? onRequest
-                                    : null,
-                                child: const AppIcon(AppIcons.qr, size: 20),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    // In flow below the fixed layout, so the scroll extent
+                    // grows when larger text needs more than the slot.
                     if (errorText != null)
-                      Positioned(
-                        left: 12,
-                        top: _contentHeight,
-                        width: 396,
-                        child: Text(
-                          errorText!,
-                          textAlign: TextAlign.center,
-                          style: AppTypography.bodySmall.copyWith(
-                            color: colors.text.warning,
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minHeight: _contentHeightWithError - _contentHeight,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                errorText!,
+                                textAlign: TextAlign.center,
+                                style: AppTypography.bodySmall.copyWith(
+                                  color: colors.text.warning,
+                                ),
+                              ),
+                              ...untranslatedDetailsButton(errorDetails),
+                            ],
                           ),
                         ),
                       ),
@@ -851,12 +1100,10 @@ class _ReceiveQrBlock extends StatelessWidget {
   const _ReceiveQrBlock({
     required this.type,
     required this.address,
-    required this.renewing,
-    required this.scanOptimizedQr,
+    required this.isLoading,
+    required this.qrPageController,
     required this.onTypeChanged,
-    required this.onRenew,
     required this.onShowHelp,
-    super.key,
   });
 
   static const _width = 262.0;
@@ -864,22 +1111,14 @@ class _ReceiveQrBlock extends StatelessWidget {
   static const _tabsHeight = 36.0;
   static const _tabsToQrGap = 32.0;
   static const _qrFrameHeight = 310.0;
-  static const _qrSurfaceSize = 230.0;
-  static const _qrPaddingX = 16.0;
-  static const _qrPaddingY = 24.0;
   static const _addressGap = 12.0;
-  static const _renewTop = 262.0;
-  static const _renewSize = 48.0;
 
   final ReceiveAddressType type;
   final String address;
-  final bool renewing;
-  final bool scanOptimizedQr;
+  final bool isLoading;
+  final PageController qrPageController;
   final ValueChanged<ReceiveAddressType> onTypeChanged;
-  final VoidCallback? onRenew;
   final VoidCallback onShowHelp;
-
-  bool get _isShielded => type == ReceiveAddressType.shielded;
 
   @override
   Widget build(BuildContext context) {
@@ -891,57 +1130,110 @@ class _ReceiveQrBlock extends StatelessWidget {
           SizedBox(
             width: 256,
             height: _tabsHeight,
-            child: ReceiveTabs(selectedType: type, onChanged: onTypeChanged),
-          ),
-          const SizedBox(height: _tabsToQrGap),
-          SizedBox(
-            width: _width,
-            height: _qrFrameHeight + _addressGap + 24,
-            child: Column(
-              children: [
-                SizedBox(
-                  width: _width,
-                  height: _qrFrameHeight,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    alignment: Alignment.topCenter,
-                    children: [
-                      Positioned(
-                        top: 0,
-                        child: ReceiveQrSurface(
-                          address: address,
-                          size: _qrSurfaceSize,
-                          paddingX: _qrPaddingX,
-                          paddingY: _qrPaddingY,
-                          type: type,
-                          scanOptimized: scanOptimizedQr,
-                        ),
-                      ),
-                      if (_isShielded)
-                        Positioned(
-                          top: _renewTop,
-                          child: ReceiveRenewButton(
-                            key: const ValueKey(
-                              'receive_renew_shielded_address_button',
-                            ),
-                            renewing: renewing,
-                            size: _renewSize,
-                            onTap: onRenew,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: _addressGap),
-                ReceiveAddressLine(
-                  type: type,
-                  address: address,
-                  onShowHelp: onShowHelp,
-                ),
-              ],
+            // The chip follows the pager, so a slide moves both together.
+            child: AnimatedBuilder(
+              animation: qrPageController,
+              builder: (context, _) {
+                final attached =
+                    qrPageController.hasClients &&
+                    qrPageController.position.haveDimensions;
+                return ReceiveTabs(
+                  selectedType: type,
+                  position: attached
+                      ? qrPageController.page!
+                      : type.index.toDouble(),
+                  onChanged: onTypeChanged,
+                );
+              },
             ),
           ),
+          const SizedBox(height: _tabsToQrGap),
+          // The pane-wide pager draws the QR over this space.
+          const SizedBox(height: _qrFrameHeight),
+          const SizedBox(height: _addressGap),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            child: isLoading
+                ? const SizedBox(key: ValueKey('loading'), height: 24)
+                : ReceiveAddressLine(
+                    key: ValueKey(type),
+                    type: type,
+                    address: address,
+                    onShowHelp: onShowHelp,
+                  ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _ReceiveQrCard extends StatelessWidget {
+  const _ReceiveQrCard({
+    required this.type,
+    required this.address,
+    required this.isLoading,
+    required this.renewing,
+    required this.scanOptimizedQr,
+    required this.onRenew,
+    super.key,
+  });
+
+  static const _qrSurfaceSize = 230.0;
+  static const _qrPaddingX = 16.0;
+  static const _qrPaddingY = 24.0;
+  static const _renewTop = 262.0;
+  static const _renewSize = 48.0;
+
+  final ReceiveAddressType type;
+  final String address;
+  final bool isLoading;
+  final bool renewing;
+  final bool scanOptimizedQr;
+  final VoidCallback? onRenew;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: _ReceiveQrBlock._width,
+      height: _ReceiveQrBlock._qrFrameHeight,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 160),
+        child: isLoading
+            ? const Center(
+                key: ValueKey('loading'),
+                child: CircularProgressIndicator(),
+              )
+            : Stack(
+                key: const ValueKey('ready'),
+                clipBehavior: Clip.none,
+                alignment: Alignment.topCenter,
+                children: [
+                  Positioned(
+                    top: 0,
+                    child: ReceiveQrSurface(
+                      address: address,
+                      size: _qrSurfaceSize,
+                      paddingX: _qrPaddingX,
+                      paddingY: _qrPaddingY,
+                      type: type,
+                      scanOptimized: scanOptimizedQr,
+                    ),
+                  ),
+                  if (type == ReceiveAddressType.shielded)
+                    Positioned(
+                      top: _renewTop,
+                      child: ReceiveRenewButton(
+                        key: const ValueKey(
+                          'receive_renew_shielded_address_button',
+                        ),
+                        renewing: renewing,
+                        size: _renewSize,
+                        onTap: onRenew,
+                      ),
+                    ),
+                ],
+              ),
       ),
     );
   }
@@ -958,11 +1250,15 @@ class _ReceiveInfoDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final title = receiveAddressInfoTitle(type);
-    final subtitle = receiveAddressInfoSubtitle(type);
+    final title = receiveAddressInfoTitle(context.l10n, type);
+    final subtitle = receiveAddressInfoSubtitle(context.l10n, type);
     // Copy and icons come from the shared explainer content; the fixed
     // row heights are desktop-dialog layout.
-    final infoItems = receiveAddressInfoItems(type, touchUi: false);
+    final infoItems = receiveAddressInfoItems(
+      context.l10n,
+      type,
+      touchUi: false,
+    );
     final heights = _isShielded
         ? const [63.0, 63.0, 63.0]
         : const [42.0, 84.0, 105.0, 105.0];
@@ -1053,7 +1349,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
               size: AppButtonSize.medium,
               height: 36,
               minWidth: 280,
-              child: const Text('Close'),
+              child: Text(context.l10n.commonClose),
             ),
           ),
         ],

@@ -1,3 +1,8 @@
+import '../../../../core/l10n/l10n.dart';
+import '../../providers/home_activity_state.dart';
+import '../../providers/home_initialization_provider.dart';
+import '../../widgets/home_activity_skeleton.dart';
+import '../../../activity/widgets/deferred_gift_card_recovery.dart';
 import 'dart:async';
 
 import '../../../../providers/app_security_provider.dart';
@@ -17,14 +22,18 @@ import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav_account.dart';
+import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
 import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
+import '../../../../core/navigation/mobile_sidebar_route_observer.dart';
+import '../../../../core/navigation/route_stack.dart';
 import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
-import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/block_spacing_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/voting/voting_home_entry_provider.dart';
 import '../../../../providers/voting/voting_home_cache_provider.dart';
@@ -58,11 +67,11 @@ import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_balance_display.dart';
+import '../../widgets/mobile/shield/mobile_shield_backdrop.dart';
 import '../../providers/backup_reminder_provider.dart';
+import '../../providers/nu7_announcement_provider.dart';
+import '../../widgets/nu7_announcement.dart';
 import '../../widgets/mobile_home_carousel.dart';
-import '../../services/transparent_shielding_service.dart';
-import 'mobile_keystone_shield_screen.dart';
-import 'mobile_ledger_shield_screen.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
 /// up to ten recent activity rows — Figma `HOME` section frames
@@ -86,10 +95,9 @@ class MobileHomeScreen extends ConsumerWidget {
     );
     final isCurrentHomeRoute = GoRouterState.of(context).uri.path == '/home';
 
-    final isImporting =
-        activeAccountUuid != null &&
-        !sync.hasAccountScopedData &&
-        sync.failure == null;
+    final isImporting = ref
+        .watch(homeInitializationPresentationProvider)
+        .showImporting;
 
     return SwapActivityStatusAutoRefresh(
       child: Stack(
@@ -102,10 +110,13 @@ class MobileHomeScreen extends ConsumerWidget {
               children: [
                 const SizedBox(height: AppSpacing.s),
                 Builder(
-                  builder: (context) => MobileTopNavAccount(
-                    showSyncStatus: !isImporting,
-                    onAccountTap: () => showMobileAccountsSheet(context),
-                  ),
+                  builder: (context) =>
+                      MobileNavigationScope.isSidebarOf(context)
+                      ? MobileTopNav.back(title: context.l10n.navHome)
+                      : MobileTopNavAccount(
+                          showSyncStatus: !isImporting,
+                          onAccountTap: () => showMobileAccountsSheet(context),
+                        ),
                 ),
                 Expanded(
                   // VZR-74: dissolve scrolled content under the top nav
@@ -128,6 +139,7 @@ class MobileHomeScreen extends ConsumerWidget {
           ),
           const _SyncKeepAwakePromptHost(),
           const _IronwoodMigrationAnnouncementHost(),
+          const _Nu7AnnouncementHost(),
           _IronwoodMigrationAttentionMountGate(
             isHomeCurrent: isCurrentHomeRoute,
           ),
@@ -343,9 +355,10 @@ class _IronwoodMigrationAttentionHostState
     if (!mounted || _showing || _resumeRefreshInProgress) return;
     if (GoRouterState.of(context).uri.path != '/home') return;
     final cta = ref.read(ironwoodHomeMigrationPresentationProvider);
-    if (cta.mode != IronwoodHomeMigrationCtaMode.resume) return;
+    final stopped = cta.mode == IronwoodHomeMigrationCtaMode.stopped;
+    if (cta.mode != IronwoodHomeMigrationCtaMode.resume && !stopped) return;
     final accountUuid = cta.accountUuid;
-    final runId = cta.status?.activeRunId;
+    final runId = mobileIronwoodMigrationAttentionRunId(cta.status);
     final sync = ref.read(syncProvider).value;
     if (accountUuid == null || runId == null) return;
     final attention = mobileIronwoodMigrationAttention(
@@ -355,6 +368,7 @@ class _IronwoodMigrationAttentionHostState
       isKeystone: ref
           .read(accountProvider.notifier)
           .isKeystoneAccount(accountUuid),
+      blockSpacing: ref.read(blockSpacingProvider),
     );
     if (attention == null) return;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
@@ -422,10 +436,16 @@ class _IronwoodMigrationAttentionHostState
       );
       if (!mounted) return;
       if (action == _IronwoodAttentionAction.openMigration) {
-        context.push(
-          '/migration/private/status',
-          extra: const MobileIronwoodMigrationStatusEntry(),
-        );
+        // The stopped sheet's button says "Move remaining balance".
+        if (attention.kind ==
+            MobileIronwoodMigrationAttentionKind.upgradeStopped) {
+          context.push('/migration/options');
+        } else {
+          context.push(
+            '/migration/private/status',
+            extra: const MobileIronwoodMigrationStatusEntry(),
+          );
+        }
       }
     } finally {
       _showing = false;
@@ -520,6 +540,98 @@ class _IronwoodMigrationAnnouncementHostState
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
       // The announcement remains open so the user can retry.
+    }
+  }
+}
+
+/// Shows the NU7 announcement once per network while home is visible and
+/// uncovered.
+class _Nu7AnnouncementHost extends ConsumerStatefulWidget {
+  const _Nu7AnnouncementHost();
+
+  @override
+  ConsumerState<_Nu7AnnouncementHost> createState() =>
+      _Nu7AnnouncementHostState();
+}
+
+class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
+  bool _showing = false;
+  String? _shownFor;
+  GoRouter? _router;
+  late final MobileSidebarRouteObserver _popups;
+
+  @override
+  void initState() {
+    super.initState();
+    // Root sheets and dialogs do not change the router's location.
+    _popups = ref.read(mobileSidebarRouteObserverProvider)
+      ..addListener(_scheduleEvaluate);
+    _scheduleEvaluate();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (identical(_router, router)) return;
+    _router?.routerDelegate.removeListener(_scheduleEvaluate);
+    _router = router;
+    router.routerDelegate.addListener(_scheduleEvaluate);
+  }
+
+  @override
+  void dispose() {
+    _router?.routerDelegate.removeListener(_scheduleEvaluate);
+    _popups.removeListener(_scheduleEvaluate);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(nu7AnnouncementProvider, (_, _) => _evaluate());
+    return const SizedBox.shrink();
+  }
+
+  void _scheduleEvaluate() {
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        if (mounted) _evaluate();
+      })
+      ..ensureVisualUpdate();
+  }
+
+  void _evaluate() {
+    final network = ref.read(nu7AnnouncementProvider).value?.network;
+    if (network == null || _showing || _shownFor == network) return;
+    // This branch stays mounted behind other tabs, pushed routes and sheets.
+    if (_router?.routerDelegate.currentConfiguration.uri.path != '/home' ||
+        !isRouteTopmost(context)) {
+      return;
+    }
+    _shownFor = network;
+    unawaited(_show(network));
+  }
+
+  Future<void> _show(String network) async {
+    _showing = true;
+    try {
+      await showAppMobileSheet<void>(
+        context: context,
+        builder: (sheetContext) => SingleChildScrollView(
+          child: Nu7AnnouncementContent(
+            onClose: () => Navigator.of(sheetContext).pop(),
+          ),
+        ),
+      );
+      if (!mounted) return;
+      try {
+        await ref.read(nu7AnnouncementStoreProvider).markSeen(network);
+      } catch (_) {
+        return;
+      }
+      if (mounted) ref.invalidate(nu7AnnouncementProvider);
+    } finally {
+      _showing = false;
     }
   }
 }
@@ -669,7 +781,7 @@ class _SyncKeepAwakePromptSheet extends StatelessWidget {
 
     return MobileModalScaffold(
       key: const ValueKey('mobile_sync_keep_awake_prompt_sheet'),
-      title: 'Stay awake to sync?',
+      title: context.l10n.homeKeepAwakeTitle,
       onClose: onMaybeLater,
       bodyGap: AppSpacing.xxs,
       bottomPadding: AppSpacing.base,
@@ -678,8 +790,7 @@ class _SyncKeepAwakePromptSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Your phone pauses syncing when screen is off. This allows sync '
-            'to finish faster.',
+            context.l10n.homeKeepAwakeBody,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -690,15 +801,13 @@ class _SyncKeepAwakePromptSheet extends StatelessWidget {
             children: [
               _SyncKeepAwakePromptBullet(
                 iconName: AppIcons.lock,
-                text:
-                    'The app locks after 1 minute of inactivity. Syncing '
-                    'continues behind the lock.',
+                text: context.l10n.homeKeepAwakeLockNote,
                 textStyle: bodyStyle,
               ),
               const SizedBox(height: AppSpacing.xs),
               _SyncKeepAwakePromptBullet(
                 iconName: AppIcons.cog,
-                text: 'You can change this anytime in the Settings.',
+                text: context.l10n.homeKeepAwakeSettingsNote,
                 textStyle: bodyStyle.copyWith(fontWeight: FontWeight.w500),
               ),
             ],
@@ -713,8 +822,8 @@ class _SyncKeepAwakePromptSheet extends StatelessWidget {
             ),
             leading: const AppIcon(AppIcons.day),
             onPressed: onKeepAwake,
-            child: const Text(
-              'Keep screen awake',
+            child: Text(
+              context.l10n.commonKeepScreenAwake,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -729,8 +838,8 @@ class _SyncKeepAwakePromptSheet extends StatelessWidget {
               horizontal: AppSpacing.sm,
             ),
             onPressed: onMaybeLater,
-            child: const Text(
-              'Maybe later',
+            child: Text(
+              context.l10n.homeKeepAwakeLater,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -875,13 +984,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
-        pendingLabel:
-            activityEtaLabelFor(
-              transaction: transaction,
-              labels: ref.watch(activityEtaLabelsProvider),
-              giftCard: giftCard,
-            ) ??
-            ref.watch(activityPendingFallbackLabelProvider),
+        pendingEta: activityEtaFor(
+          transaction: transaction,
+          labels: ref.watch(activityEtaLabelsProvider),
+          giftCard: giftCard,
+        ),
+        pendingFallbackLabel: ref
+            .watch(activityPendingFallbackLabelProvider)
+            .text(context.l10n),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
@@ -944,6 +1054,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     );
     if (!prepared) return;
     _expectReviewVisit('/pay');
+    unawaited(AppHaptics.action());
     router.push(
       '/pay',
       extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
@@ -952,68 +1063,26 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
 
   Future<void> _shieldTransparentBalance() async {
     if (_isShieldingBalance) return;
-
-    late final String accountUuid;
-    try {
-      accountUuid = activeShieldingAccountUuid(ref);
-    } catch (_) {
-      _showShieldToast('No active account.');
-      return;
-    }
-
-    final accountNotifier = ref.read(accountProvider.notifier);
-    final hardwareSignerKind = accountNotifier.hardwareSignerKindForAccount(
-      accountUuid,
-    );
-    if (hardwareSignerKind == HardwareSignerKind.ledger) {
-      final result = await context.push<MobileLedgerShieldResult>(
-        '/home/ledger-shield',
-      );
-      if (mounted && result != null) {
-        showAppToast(context, 'Shielding complete');
-      }
-      return;
-    }
-    if (hardwareSignerKind == HardwareSignerKind.keystone) {
-      final result = await context.push<MobileKeystoneShieldResult>(
-        '/home/keystone-shield',
-      );
-      if (!mounted || result == null) return;
-      final message = result.message;
-      if (message != null && message.isNotEmpty) {
-        _showShieldToast(message);
-      } else if (result.succeeded) {
-        showAppToast(context, 'Shielding complete');
-      }
-      return;
-    }
-
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+    final kind = ref
+        .read(accountProvider.notifier)
+        .hardwareSignerKindForAccount(accountUuid);
+    final route = switch (kind) {
+      HardwareSignerKind.ledger => '/home/ledger-shield',
+      HardwareSignerKind.keystone => '/home/keystone-shield',
+      _ => '/home/shield',
+    };
+    final backdrop = MobileShieldBackdropHost.capture(context);
     setState(() => _isShieldingBalance = true);
     try {
-      final result = await shieldTransparentSoftwareBalance(
-        ref: ref,
-        accountUuid: accountUuid,
-        logContext: 'MobileHome',
-      );
-      if (!mounted) return;
-      final warning = shieldBalanceBroadcastStatusMessage(result);
-      if (warning != null) {
-        _showShieldToast(warning);
-      } else {
-        showAppToast(context, 'Shielding complete');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      _showShieldToast(friendlyShieldBalanceError(e));
+      await context.push<void>(route, extra: backdrop);
     } finally {
+      backdrop?.dispose();
       if (mounted) {
         setState(() => _isShieldingBalance = false);
       }
     }
-  }
-
-  void _showShieldToast(String message) {
-    showAppToast(context, message, iconName: AppIcons.warning);
   }
 
   String? _absorbedReceiveAmountText(rust_sync.TransactionInfo? transaction) {
@@ -1037,13 +1106,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     // button does.
     final sendDisabled = ref.watch(migrationSendGateProvider);
     final shieldedBalance = migrationRequired
-        ? sync.orchardBalance + sync.orchardPendingBalance
-        : sync.saplingBalance +
-              sync.orchardBalance +
-              sync.ironwoodBalance +
-              sync.saplingPendingBalance +
-              sync.orchardPendingBalance +
-              sync.ironwoodPendingBalance;
+        ? sync.displayOrchardBalance + sync.displayOrchardPendingBalance
+        : sync.displayShieldedBalance;
     final transparentBalance = TransparentBalanceDisplay.of(sync);
     final hasBalance =
         shieldedBalance > BigInt.zero ||
@@ -1071,17 +1135,19 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
           ref
               .read(accountProvider.notifier)
               .isKeystoneAccount(activeAccountUuid),
+      blockSpacing: ref.watch(blockSpacingProvider),
     );
 
     final uuid = activeAccountUuid;
-    final giftCardActivityIndex = uuid == null
-        ? GiftCardActivityIndex.empty
-        : ref.watch(giftCardActivityIndexProvider(uuid)).value ??
-              GiftCardActivityIndex.empty;
-    final swapItems = uuid == null
-        ? const <SwapActivityRowItem>[]
-        : ref.watch(swapActivityRowItemsProvider(uuid)).value ??
-              const <SwapActivityRowItem>[];
+    final giftCardSource = uuid == null
+        ? null
+        : ref.watch(giftCardActivityIndexProvider(uuid));
+    final swapSource = uuid == null
+        ? null
+        : ref.watch(swapActivityRowItemsProvider(uuid));
+    final giftCardActivityIndex =
+        giftCardSource?.value ?? GiftCardActivityIndex.empty;
+    final swapItems = swapSource?.value ?? const <SwapActivityRowItem>[];
     final absorption = sync.recentTransactions.isEmpty
         ? SwapActivityLegAbsorption.empty
         : matchSwapActivityLegAbsorption(
@@ -1133,17 +1199,34 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         entry.row,
     ];
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(
+    final initialPresentation = ref.watch(
+      homeInitializationPresentationProvider,
+    );
+    final activityState =
+        initialPresentation.activityUnavailable && recentRows.isEmpty
+        ? HomeActivityState.unavailable
+        : homeActivityState(
+            accountUuid: activeAccountUuid,
+            sync: sync,
+            hasRows: recentRows.isNotEmpty,
+            localSources: [?giftCardSource, ?swapSource],
+          );
+    final activityLoading = activityState == HomeActivityState.loading;
+
+    final content = ListView(
+      padding: EdgeInsets.fromLTRB(
         AppSpacing.sm,
         AppSpacing.sm,
         AppSpacing.sm,
-        kMobileTabBarHeight + AppSpacing.lg,
+        MobileNavigationScope.bottomClearanceOf(
+          context,
+          kMobileTabBarHeight + AppSpacing.lg,
+        ),
       ),
       children: [
         if (sync.failure?.kind == SyncFailureKind.privateStatusCoverage) ...[
           _PrivateStatusCoverageNotice(
-            message: sync.failure!.userMessage,
+            message: sync.failure!.userMessage(context.l10n),
             onSettings: () {
               _expectReviewVisit('/settings');
               context.go('/settings');
@@ -1154,7 +1237,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         Column(
           children: [
             _BalanceCard(
-              balanceText: privacyModeEnabled
+              balanceText: !sync.hasDisplayBalance
+                  ? '—'
+                  : privacyModeEnabled
                   ? fixedPrivacyMask()
                   : ZecAmount.fromZatoshi(
                       shieldedBalance,
@@ -1162,10 +1247,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               fiatBalanceText: shieldedFiatBalanceText,
               priceChange24hPct: priceChange24hPct,
               transparentBalanceText: transparentBalance.text(
+                context.l10n,
                 (amount) =>
                     ZecAmount.fromZatoshi(amount).compactBalance.amountText,
               ),
-              transparentBalanceHint: transparentBalance.hint,
+              transparentBalanceHint: transparentBalance.hint(context.l10n),
               hasTransparentBalance: transparentBalance.visible,
               canShieldBalance: sync.canShieldTransparentBalance,
               isShieldingBalance: _isShieldingBalance,
@@ -1176,7 +1262,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               onIronwoodMigrationTap: () {
                 final target = switch (widget.ironwoodMigrationCta.mode) {
                   IronwoodHomeMigrationCtaMode.start => '/migration/intro',
-                  IronwoodHomeMigrationCtaMode.resume =>
+                  IronwoodHomeMigrationCtaMode.resume ||
+                  IronwoodHomeMigrationCtaMode.stopped =>
                     '/migration/private/status',
                   IronwoodHomeMigrationCtaMode.hidden => null,
                 };
@@ -1187,7 +1274,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               ),
             ),
             const SizedBox(height: AppSpacing.s),
-            if (hasBalance)
+            if (hasBalance || !sync.hasDisplayBalance)
               Row(
                 children: [
                   Expanded(
@@ -1197,11 +1284,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       constrainContent: true,
                       onPressed: sendDisabled
                           ? null
-                          : () => _pushUsedScreen('/send'),
+                          : () {
+                              unawaited(AppHaptics.action());
+                              _pushUsedScreen('/send');
+                            },
                       leading: const _ButtonIcon(AppIcons.plane),
                       height: _mobileHomeActionButtonHeight,
-                      child: const Text(
-                        'Send',
+                      child: Text(
+                        context.l10n.homeSend,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1214,11 +1304,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       expand: true,
                       constrainContent: true,
                       variant: AppButtonVariant.secondary,
-                      onPressed: () => _pushUsedScreen('/receive'),
+                      onPressed: () {
+                        unawaited(AppHaptics.action());
+                        _pushUsedScreen('/receive');
+                      },
                       leading: const _ButtonIcon(AppIcons.arrowDownCircle),
                       height: _mobileHomeActionButtonHeight,
-                      child: const Text(
-                        'Receive',
+                      child: Text(
+                        context.l10n.homeReceive,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1235,7 +1328,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       height: _mobileHomeActionButtonHeight,
                       child: Semantics(
                         button: true,
-                        label: 'Pay',
+                        label: context.l10n.navPay,
                         child: AppButton(
                           key: const ValueKey('mobile_home_pay'),
                           minWidth: _mobileHomeActionButtonHeight,
@@ -1257,11 +1350,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 key: const ValueKey('mobile_home_receive'),
                 expand: true,
                 constrainContent: true,
-                onPressed: () => _pushUsedScreen('/receive'),
+                onPressed: () {
+                  unawaited(AppHaptics.action());
+                  _pushUsedScreen('/receive');
+                },
                 leading: const _ButtonIcon(AppIcons.addNew),
                 height: _mobileHomeActionButtonHeight,
-                child: const Text(
-                  'Receive your first ZEC',
+                child: Text(
+                  context.l10n.homeReceiveFirstZec,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1282,7 +1378,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     ),
                 attentionKind: migrationAttention?.kind,
                 actionNeededCount: migrationAttention?.count ?? 0,
-                remainingText: _mobileIronwoodRemainingAmountText(sync),
+                remainingText: _mobileIronwoodRemainingAmountText(
+                  sync,
+                  privacyModeEnabled: privacyModeEnabled,
+                ),
                 onTap: () {
                   final target = migrationRequired
                       ? '/migration/intro'
@@ -1294,10 +1393,13 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
           ],
         ),
         const SizedBox(height: AppSpacing.md),
-        if (recentRows.isEmpty)
-          const _EmptyActivity()
+        if (recentRows.isEmpty && !activityLoading)
+          _EmptyActivity(
+            isUnavailable: activityState == HomeActivityState.unavailable,
+          )
         else
           Padding(
+            key: const ValueKey('mobile_home_activity_list'),
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.xs,
               vertical: AppSpacing.s,
@@ -1312,17 +1414,45 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   },
                 ),
                 const SizedBox(height: AppSpacing.md),
-                for (var i = 0; i < recentRows.length; i++) ...[
-                  if (i > 0) const SizedBox(height: AppSpacing.s),
-                  KeyedSubtree(
-                    key: ValueKey('mobile_home_activity_row_$i'),
-                    child: ActivityFeedRowGroup(row: recentRows[i]),
+                Semantics(
+                  label: activityLoading
+                      ? context.l10n.commonLoadingActivity
+                      : null,
+                  child: Column(
+                    children: [
+                      for (
+                        var i = 0;
+                        i <
+                            (activityLoading
+                                ? homeActivitySkeletonCount
+                                : recentRows.length);
+                        i++
+                      ) ...[
+                        if (i > 0) const SizedBox(height: AppSpacing.s),
+                        if (activityLoading)
+                          HomeActivitySkeletonRow(
+                            key: ValueKey('mobile_home_activity_skeleton_$i'),
+                          )
+                        else
+                          KeyedSubtree(
+                            key: ValueKey('mobile_home_activity_row_$i'),
+                            child: ActivityFeedRowGroup(row: recentRows[i]),
+                          ),
+                      ],
+                    ],
                   ),
-                ],
+                ),
               ],
             ),
           ),
       ],
+    );
+    return DeferredGiftCardRecovery(
+      accountUuid: activeAccountUuid,
+      ready:
+          activityState == HomeActivityState.rows ||
+          activityState == HomeActivityState.empty,
+      child: content,
     );
   }
 }
@@ -1369,7 +1499,7 @@ class _PrivateStatusCoverageNotice extends StatelessWidget {
             key: const ValueKey('mobile_private_status_coverage_settings'),
             variant: AppButtonVariant.secondary,
             onPressed: onSettings,
-            child: const Text('Settings'),
+            child: Text(context.l10n.navSettings),
           ),
         ],
       ),
@@ -1503,9 +1633,9 @@ class _MobileVotingEntryState extends ConsumerState<_MobileVotingEntry> {
       child: _MobileHomeEntryCard(
         key: const ValueKey('mobile_home_coinholder_voting'),
         icon: AppIcons.vote,
-        title: 'Coinholder voting',
-        subtitle: 'Help to shape the network',
-        semanticsLabel: 'Open coinholder voting',
+        title: context.l10n.commonCoinholderVoting,
+        subtitle: context.l10n.homeVotingSubtitle,
+        semanticsLabel: context.l10n.homeVotingSemantics,
         onTap: () => context.push('/voting'),
       ),
     );
@@ -1528,8 +1658,8 @@ class _MobileSetupCarousel extends ConsumerWidget {
           child: _MobileHomeEntryCard(
             key: const ValueKey('mobile_home_backup'),
             icon: AppIcons.shieldKeyhole,
-            title: 'Secure your wallet',
-            subtitle: 'Back up your secret passphrase\nLast step',
+            title: context.l10n.homeBackupTitle,
+            subtitle: context.l10n.homeBackupSubtitle,
             emphasized: true,
             showChevron: false,
             onTap: () => context.push(
@@ -1552,8 +1682,8 @@ class _MobileSetupCarousel extends ConsumerWidget {
           child: _MobileHomeEntryCard(
             key: const ValueKey('mobile_home_zcash_education'),
             icon: AppIcons.book,
-            title: 'Learn about Zcash',
-            subtitle: 'Privacy, address types, and what to expect',
+            title: context.l10n.homeEducationTitle,
+            subtitle: context.l10n.homeEducationSubtitle,
             emphasized: true,
             showChevron: false,
             onTap: () => context.push(
@@ -1827,7 +1957,7 @@ class _BalanceCard extends StatelessWidget {
                               const SizedBox(width: AppSpacing.s),
                               Expanded(
                                 child: Text(
-                                  'Shielded balance',
+                                  context.l10n.commonShieldedBalance,
                                   style: _mobileHomeLabelMStyle.copyWith(
                                     color: cardText,
                                   ),
@@ -1924,10 +2054,17 @@ class _BalanceCard extends StatelessWidget {
   }
 }
 
-String? _mobileIronwoodRemainingAmountText(SyncState sync) {
+// Bare amount: the banner appends its own ` ZEC`.
+String? _mobileIronwoodRemainingAmountText(
+  SyncState sync, {
+  required bool privacyModeEnabled,
+}) {
   final remaining = sync.displayOrchardHoldingsBalance;
   if (remaining == BigInt.zero) return null;
-  return ZecAmount.fromZatoshi(remaining).compactBalance.amountText;
+  return hideIfPrivacyMode(
+    ZecAmount.fromZatoshi(remaining).compactBalance.amountText,
+    privacyModeEnabled: privacyModeEnabled,
+  );
 }
 
 int _mobileIronwoodSafelyObservedHeight(SyncState? sync) {
@@ -1956,7 +2093,7 @@ class _MobileIronwoodMigrationPill extends StatelessWidget {
     final contentColor = context.colors.text.homeCard;
     return Semantics(
       button: true,
-      label: 'Migration required',
+      label: context.l10n.homeMigrationRequired,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
@@ -1970,7 +2107,7 @@ class _MobileIronwoodMigrationPill extends StatelessWidget {
               const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: Text(
-                  'Migration required',
+                  context.l10n.homeMigrationRequired,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: _mobileHomeLabelMStyle.copyWith(color: contentColor),
@@ -2166,7 +2303,7 @@ class _MobileTransparentBalanceStrip extends StatelessWidget {
       privacyModeEnabled: privacyModeEnabled,
     );
     final balanceLabel = Text(
-      'Transparent: $displayedBalance',
+      context.l10n.homeTransparentBalance(displayedBalance),
       key: const ValueKey('mobile_home_transparent_balance_text'),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
@@ -2258,7 +2395,9 @@ class _MobileShieldBalanceButton extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                isLoading ? 'Shielding...' : 'Shield',
+                isLoading
+                    ? context.l10n.commonShielding
+                    : context.l10n.homeShield,
                 style: _mobileHomeLabelMStyle.copyWith(color: contentColor),
               ),
               const SizedBox(width: AppSpacing.xxs),
@@ -2284,7 +2423,9 @@ class _PrivacyEyeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: enabled ? 'Show balance' : 'Hide balance',
+      label: enabled
+          ? context.l10n.sidebarShowBalance
+          : context.l10n.sidebarHideBalance,
       button: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -2336,7 +2477,7 @@ class _RecentActivityHeader extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            'Recent activity',
+            context.l10n.homeRecentActivity,
             style: AppTypography.labelLarge.copyWith(
               color: colors.text.accent,
               fontWeight: FontWeight.w600,
@@ -2356,7 +2497,7 @@ class _RecentActivityHeader extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'See all',
+                      context.l10n.homeSeeAll,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.button.ghost.label,
                       ),
@@ -2379,7 +2520,9 @@ class _RecentActivityHeader extends StatelessWidget {
 }
 
 class _EmptyActivity extends StatelessWidget {
-  const _EmptyActivity();
+  const _EmptyActivity({this.isUnavailable = false});
+
+  final bool isUnavailable;
 
   @override
   Widget build(BuildContext context) {
@@ -2390,27 +2533,31 @@ class _EmptyActivity extends StatelessWidget {
         vertical: AppSpacing.s,
       ),
       child: Align(
-        alignment: Alignment.centerLeft,
+        alignment: Alignment.topCenter,
         child: SizedBox(
           width: _MobileRestImage.canvasWidth,
           child: Column(
             children: [
               Text(
-                'No activity, yet...',
+                isUnavailable
+                    ? context.l10n.homeActivityUnavailable
+                    : context.l10n.homeActivityEmpty,
                 style: AppTypography.headlineSmall.copyWith(
                   color: colors.text.accent,
                 ),
               ),
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                'How about running your\nfirst ZEC tx?',
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
+              if (!isUnavailable) ...[
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  context.l10n.homeActivityEmptyHintMobile,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              const _MobileRestImage(),
+                const SizedBox(height: AppSpacing.xxs),
+                const _MobileRestImage(),
+              ],
             ],
           ),
         ),
@@ -2502,7 +2649,7 @@ class _ImportingView extends StatelessWidget {
         SizedBox(
           width: 246,
           child: Text(
-            "We're importing your wallet...",
+            context.l10n.homeImportingTitleMobile,
             textAlign: TextAlign.center,
             style: _titleStyle.copyWith(color: colors.text.accent),
           ),
@@ -2511,7 +2658,7 @@ class _ImportingView extends StatelessWidget {
         SizedBox(
           width: 247,
           child: Text(
-            'Hang tight ... It might take some time. Keep Vizor open & running.',
+            context.l10n.homeImportingBodyMobile,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -2524,11 +2671,11 @@ class _ImportingView extends StatelessWidget {
     );
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
+      padding: EdgeInsets.fromLTRB(
         _horizontalPadding,
         _topGap,
         _horizontalPadding,
-        _bottomClearance,
+        MobileNavigationScope.bottomClearanceOf(context, _bottomClearance),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {

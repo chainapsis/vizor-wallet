@@ -1,17 +1,31 @@
 import 'package:flutter/material.dart';
 
 import '../src/core/config/rpc_endpoint_config.dart';
+import '../src/core/l10n/l10n.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/settings/widgets/mobile/mobile_tor_control.dart';
+import '../src/features/settings/widgets/mobile/mobile_private_queries_control.dart';
 import '../src/features/onboarding/mobile/mobile_network_settings_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_welcome_screen.dart';
 import '../src/providers/network_privacy_provider.dart';
+import '../src/providers/enhance_pir_provider.dart';
 import '../src/providers/rpc_endpoint_provider.dart';
 import 'mobile_welcome_preview_scope.dart';
 
 Widget buildMobileWelcomeNetworkOff(BuildContext context) =>
     _preview(const NetworkPrivacyState.off());
+Widget buildMobileWelcomePrivateQueriesEnabled(BuildContext context) =>
+    _preview(const NetworkPrivacyState.off(), privateQueriesEnabled: true);
+Widget buildMobileWelcomePrivateQueriesChanging(BuildContext context) =>
+    _preview(
+      const NetworkPrivacyState.off(),
+      privateQueriesTransition: EnhancePirTransition.changing,
+    );
+Widget buildMobileWelcomePrivateQueriesFailed(BuildContext context) => _preview(
+  const NetworkPrivacyState.off(),
+  privateQueriesTransition: EnhancePirTransition.unchanged,
+);
 Widget buildMobileWelcomeNetworkConnecting(BuildContext context) => _preview(
   const NetworkPrivacyState(
     torEnabled: true,
@@ -61,8 +75,9 @@ Widget buildMobileWelcomeNetworkSwitchFailed(BuildContext context) => _preview(
 );
 Widget buildMobileWelcomeNetworkWrongChain(BuildContext context) => _preview(
   const NetworkPrivacyState.off(),
-  rpcError: const FormatException(
-    'Endpoint is for test, but this wallet uses main.',
+  rpcError: RpcEndpointNetworkMismatch(
+    endpointNetwork: 'test',
+    walletNetwork: 'main',
   ),
 );
 Widget buildMobileWelcomeNetworkRpcSaveFailed(BuildContext context) => _preview(
@@ -76,10 +91,14 @@ Widget _preview(
   NetworkPrivacyState state, {
   Object? rpcError,
   bool rpcPending = false,
+  bool privateQueriesEnabled = false,
+  EnhancePirTransition? privateQueriesTransition,
 }) => mobileWelcomePreviewScope(
   // This preview already owns an inline modal; the scope keeps Welcome's
   // startup presentation from stacking another one on top of the scene.
   state: state,
+  privateQueriesEnabled: privateQueriesEnabled,
+  privateQueriesTransition: privateQueriesTransition,
   child: _Preview(rpcPending: rpcPending, rpcError: rpcError),
 );
 
@@ -115,6 +134,9 @@ class _PreviewState extends State<_Preview> {
                 enabled: !widget.rpcPending,
                 useGeneralDescription: true,
               ),
+              privateQueriesControl: MobilePrivateQueriesControl(
+                enabled: !widget.rpcPending,
+              ),
               current: defaultRpcEndpointConfig('main'),
               controller: _controller,
               focusNode: _focus,
@@ -123,11 +145,14 @@ class _PreviewState extends State<_Preview> {
               onClose: widget.rpcPending ? null : () {},
               canUpdate: !widget.rpcPending,
               submitting: widget.rpcPending,
-              error: widget.rpcError is FormatException
-                  ? (widget.rpcError as FormatException).message
-                  : widget.rpcError != null
-                  ? "Couldn't save the endpoint. Try again."
-                  : null,
+              error: switch (widget.rpcError) {
+                final FormatException error => rpcEndpointErrorText(
+                  context.l10n,
+                  error,
+                ),
+                null => null,
+                _ => context.l10n.endpointSaveFailed,
+              },
             )
           : MobileNetworkSettingsSheet(dismissal: _dismissal),
     ),

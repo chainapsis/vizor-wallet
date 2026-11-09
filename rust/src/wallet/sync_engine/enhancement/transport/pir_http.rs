@@ -1,7 +1,7 @@
 //! Transparent PIR and txid display PIR over the wallet's routed HTTPS
 //! transport.
 //!
-//! [`RoutedExchange`] is the raw [`HttpExchange`] `zakura_pir_transparent`
+//! [`RoutedExchange`] is the raw [`HttpExchange`] `zakura_pir_client::transparent`
 //! sends both services through. It shares [`RoutedTransport`] with the other
 //! private services: HTTPS only, Tor when the wallet wants it and the
 //! direct-route lease otherwise, no User-Agent, and the caller's
@@ -14,7 +14,9 @@
 //! panics on a runtime worker.
 //!
 //! Logs name the service, the method and the route template, never a shard
-//! id, digest, body or the origin.
+//! id, digest, body or the origin. A refused or lost exchange logs at `Warn`
+//! with its status or failure kind, so release builds record it; the rest
+//! stays at `Debug`.
 
 use bytes::Bytes;
 use http::{header::RETRY_AFTER, Method};
@@ -22,7 +24,9 @@ use http_body_util::BodyExt;
 use hyper::body::Body;
 use std::{fmt, time::Duration};
 use tokio::runtime::Handle;
-use zakura_pir_transparent::{HttpExchange, HttpFailure, HttpMethod, HttpReply, HttpRequest};
+use zakura_pir_client::transparent::{
+    HttpExchange, HttpFailure, HttpMethod, HttpReply, HttpRequest,
+};
 
 use super::{routed_response, secure_endpoint_uri, RoutedHttpError, RoutedTransport};
 use crate::wallet::sync_engine::{watch_for_exit, SyncError};
@@ -33,8 +37,10 @@ const MAP_DIGEST_HEADER: &str = "x-txid-map-sha256";
 /// One PIR service's origin over one routed HTTPS client. Every request is
 /// bounded by the service's deadline, from dispatch through the last body
 /// byte, and stops when `should_exit` does.
-pub(crate) struct RoutedExchange<'a, F> {
-    route: RoutedTransport<'a, F>,
+///
+/// Share the HTTP implementation across cancellation callback types.
+pub(crate) struct RoutedExchange<'a> {
+    route: RoutedTransport<'a, dyn Fn() -> bool + Sync + 'a>,
     /// The service's name in log lines.
     service: &'static str,
     /// The configured origin, without a trailing slash.
@@ -45,11 +51,11 @@ pub(crate) struct RoutedExchange<'a, F> {
     observer: Option<RequestObserver>,
 }
 
-impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
+impl<'a> RoutedExchange<'a> {
     /// Transparent PIR at `origin`.
     pub(crate) fn transparent(
         origin: &str,
-        should_exit: &'a F,
+        should_exit: &'a (dyn Fn() -> bool + Sync),
         handle: Handle,
     ) -> Result<Self, SyncError> {
         Self::new(
@@ -64,7 +70,7 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
     /// Txid display PIR at `origin`.
     pub(crate) fn txid(
         origin: &str,
-        should_exit: &'a F,
+        should_exit: &'a (dyn Fn() -> bool + Sync),
         handle: Handle,
     ) -> Result<Self, SyncError> {
         Self::new(
@@ -83,7 +89,7 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
     fn new(
         service: &'static str,
         origin: &str,
-        should_exit: &'a F,
+        should_exit: &'a (dyn Fn() -> bool + Sync),
         handle: Handle,
         timeout: Duration,
     ) -> Result<Self, SyncError> {
@@ -111,7 +117,7 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
     }
 
     async fn exchange(&self, request: &HttpRequest) -> Result<HttpReply, HttpFailure> {
-        let should_exit = self.route.should_exit;
+        let should_exit = &self.route.should_exit;
         if should_exit() {
             return Err(HttpFailure::Cancelled);
         }
@@ -163,20 +169,37 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
     }
 }
 
-impl<F: Fn() -> bool> HttpExchange for RoutedExchange<'_, F> {
+impl HttpExchange for RoutedExchange<'_> {
     fn send(&self, request: &HttpRequest) -> Result<HttpReply, HttpFailure> {
         let received = self.handle.block_on(self.exchange(request));
         let (service, method, template) =
             (self.service, request.method.as_str(), &request.template);
+        let level = exchange_log_level(&received);
         match &received {
-            Ok(reply) => log::debug!(
+            Ok(reply) => log::log!(
+                level,
                 "{service} {method} {template}: HTTP {}, {} bytes",
                 reply.status,
                 reply.body.len()
             ),
-            Err(failure) => log::debug!("{service} {method} {template}: {failure}"),
+            Err(failure) => log::log!(level, "{service} {method} {template}: {failure}"),
         }
         received
+    }
+}
+
+/// The level an exchange is logged at. A refusal or a lost exchange (time
+/// out, unreachable, too large) is the service failing the wallet, logged
+/// at `Warn` so release builds keep it; a success and the caller's own
+/// cancellation stay at `Debug`, below the app's `Info` filter.
+fn exchange_log_level(received: &Result<HttpReply, HttpFailure>) -> log::Level {
+    match received {
+        Ok(reply) if (200..300).contains(&reply.status) => log::Level::Debug,
+        Ok(_) => log::Level::Warn,
+        Err(HttpFailure::Cancelled) => log::Level::Debug,
+        Err(HttpFailure::Timeout | HttpFailure::Unreachable | HttpFailure::TooLarge) => {
+            log::Level::Warn
+        }
     }
 }
 
@@ -386,8 +409,8 @@ mod tests {
     fn request(method: HttpMethod, error_limit: usize) -> HttpRequest {
         HttpRequest {
             method,
-            path: format!("/v1/shards/{SHARD}/revisions/{REVISION}/query/directory"),
-            template: "/v1/shards/{id}/revisions/{rev}/query/directory".to_owned(),
+            path: format!("/v2/shards/{SHARD}/revisions/{REVISION}/query/directory"),
+            template: "/v2/shards/{id}/revisions/{rev}/query/directory".to_owned(),
             body: QUERY.to_vec(),
             limit: LIMIT,
             error_limit,
@@ -395,14 +418,14 @@ mod tests {
     }
 
     /// An exchange whose observer answers every request.
-    fn answered<'a, F: Fn() -> bool>(
+    fn answered<'a>(
         runtime: &Runtime,
-        should_exit: &'a F,
+        should_exit: &'a (dyn Fn() -> bool + Sync),
         answer: impl Fn(&ObservedRequest) -> http::Response<http_body_util::Full<Bytes>>
             + Send
             + Sync
             + 'static,
-    ) -> (RoutedExchange<'a, F>, RequestObserver) {
+    ) -> (RoutedExchange<'a>, RequestObserver) {
         let observer = RequestObserver::answering(answer);
         let exchange = RoutedExchange::transparent(ORIGIN, should_exit, runtime.handle().clone())
             .unwrap()
@@ -616,7 +639,35 @@ mod tests {
     use super::super::test_log::log_lines;
 
     #[test]
-    fn debug_log_lines_carry_only_route_templates() {
+    fn failed_exchanges_log_at_warn_and_the_rest_at_debug() {
+        let ok = |status| {
+            Ok(HttpReply {
+                status,
+                retry_after: None,
+                map_sha256: None,
+                body: Vec::new(),
+            })
+        };
+        assert_eq!(exchange_log_level(&ok(200)), log::Level::Debug);
+        assert_eq!(exchange_log_level(&ok(204)), log::Level::Debug);
+        for status in [404, 409, 429, 500, 503] {
+            assert_eq!(exchange_log_level(&ok(status)), log::Level::Warn);
+        }
+        assert_eq!(
+            exchange_log_level(&Err(HttpFailure::Cancelled)),
+            log::Level::Debug
+        );
+        for failure in [
+            HttpFailure::Timeout,
+            HttpFailure::Unreachable,
+            HttpFailure::TooLarge,
+        ] {
+            assert_eq!(exchange_log_level(&Err(failure)), log::Level::Warn);
+        }
+    }
+
+    #[test]
+    fn log_lines_carry_only_route_templates() {
         let runtime = runtime();
         let body = format!("{SHARD}{REVISION}{}", hex::encode(QUERY));
         let lines = log_lines(|| {
@@ -634,13 +685,13 @@ mod tests {
             stopped.send(&request(HttpMethod::Get, 0)).unwrap_err();
         });
 
-        let template = "/v1/shards/{id}/revisions/{rev}/query/directory";
+        let template = "/v2/shards/{id}/revisions/{rev}/query/directory";
         let expected = [
             format!(
                 "DEBUG transparent PIR POST {template}: HTTP 200, {} bytes",
                 body.len()
             ),
-            format!("DEBUG transparent PIR GET {template}: HTTP 409, 21 bytes"),
+            format!("WARN transparent PIR GET {template}: HTTP 409, 21 bytes"),
             format!("DEBUG transparent PIR GET {template}: cancelled"),
         ];
         // The exchange's own lines are exactly one per request, and nothing

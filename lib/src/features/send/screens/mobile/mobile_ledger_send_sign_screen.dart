@@ -8,12 +8,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
-import '../../../ledger/ledger_capability.dart';
 import '../../../ledger/services/ledger_signed_operation_service.dart';
 import '../../../ledger/services/ledger_signing_service.dart';
 import '../../../ledger/services/ledger_device_selection.dart';
@@ -23,6 +23,7 @@ import '../../../ledger/widgets/mobile_ledger_signing_surface.dart';
 import '../../services/sapling_params.dart';
 import '../../services/send_flow.dart';
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
+import '../../../../core/zcash/network_upgrade_hold.dart';
 
 enum _LedgerSendRecoveryAction {
   retrySigning,
@@ -54,6 +55,13 @@ typedef MobileLedgerSendProofAdder =
       String? spendParamsPath,
       String? outputParamsPath,
     });
+
+class _LedgerProofFailure {
+  const _LedgerProofFailure(this.cause);
+  final Object cause;
+  @override
+  String toString() => cause.toString();
+}
 
 /// Mobile-native Ledger signing surface for a standard Send proposal.
 ///
@@ -110,13 +118,17 @@ class _MobileLedgerSendSignScreenState
   Future<List<List<int>>>? _basePcztsFuture;
   List<List<int>>? _redactedPczts;
   List<List<int>>? _pcztsWithProofs;
+  Future<void>? _proofsFuture;
   final List<List<int>> _signedPczts = [];
   var _round = 0;
   var _attemptGeneration = 0;
   var _ownershipTransferred = false;
+  var _checkpointStarted = false;
   Future<bool>? _discardFuture;
   var _releasing = false;
   var _cancelled = false;
+  var _drainingFailure = false;
+  var _resumingApproval = false;
   late final SyncNotifier? _syncNotifier;
   late final String _operationId;
   late final LedgerOperationCanceller _cancelOperation;
@@ -138,11 +150,15 @@ class _MobileLedgerSendSignScreenState
   @override
   void dispose() {
     _attemptGeneration++;
-    final hasUncheckpointedSignature =
-        _signingComplete && !_ownershipTransferred;
-    if (!_ownershipTransferred && !hasUncheckpointedSignature) {
-      if (!_cancelled) unawaited(_cancelOperationSafely());
-      unawaited(_releaseProposal('MobileLedgerSendSign(dispose)'));
+    if (!_ownershipTransferred) {
+      if (!_signingComplete && !_cancelled) {
+        unawaited(_cancelOperationSafely());
+      }
+      // Approval alone does not transfer the proposal. Preserve inputs only
+      // once saving starts, because its native commit can outlive this screen.
+      if (!_checkpointStarted) {
+        unawaited(_releaseProposal('MobileLedgerSendSign(dispose)'));
+      }
     }
     super.dispose();
   }
@@ -156,10 +172,17 @@ class _MobileLedgerSendSignScreenState
       _signedPczts.length == _basePczts!.length;
 
   void _startSigning() {
-    if (_signingComplete || _cancelled) return;
+    if ((_signingComplete && _pcztsWithProofs != null) ||
+        _cancelled ||
+        _drainingFailure) {
+      return;
+    }
     final generation = ++_attemptGeneration;
     setState(() {
-      _phase = LedgerSigningModalPhase.preparing;
+      _resumingApproval = _redactedPczts != null;
+      _phase = _signingComplete
+          ? LedgerSigningModalPhase.finishing
+          : LedgerSigningModalPhase.preparing;
       _failure = null;
       _recoveryAction = null;
     });
@@ -167,6 +190,7 @@ class _MobileLedgerSendSignScreenState
   }
 
   Future<void> _prepareAndSign(int generation) async {
+    Future<void>? signing;
     try {
       final dbPath = await (widget.loadWalletDbPath ?? getWalletDbPath)();
       if (!_isCurrent(generation)) return;
@@ -193,7 +217,10 @@ class _MobileLedgerSendSignScreenState
 
       // PCZT creation consumes the proposal; select the live route once and
       // never retry the consumed proposal through a generic failover runner.
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
+      if (!_isCurrent(generation)) return;
       final basePczts = await _getOrCreateBasePczts(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -218,43 +245,16 @@ class _MobileLedgerSendSignScreenState
         _redactedPczts = redactedPczts;
       }
 
-      var pcztsWithProofs = _pcztsWithProofs;
-      if (pcztsWithProofs == null) {
-        final proved = <List<int>>[];
-        for (final pczt in basePczts) {
-          proved.add(
-            List<int>.unmodifiable(
-              await (widget.addProofs ?? rust_sync.addProofsToPczt)(
-                pcztBytes: pczt,
-                spendParamsPath: widget.args.needsSaplingParams
-                    ? saplingParams.spendPath
-                    : null,
-                outputParamsPath: widget.args.needsSaplingParams
-                    ? saplingParams.outputPath
-                    : null,
-              ),
-            ),
-          );
-          if (!_isCurrent(generation)) return;
-        }
-        pcztsWithProofs = List<List<int>>.unmodifiable(proved);
-        _pcztsWithProofs = pcztsWithProofs;
-      }
-
-      for (var index = _signedPczts.length; index < basePczts.length; index++) {
-        setState(() {
-          _round = index;
-          _phase = LedgerSigningModalPhase.awaitingDevice;
-        });
-        final signedPczt = await _connectionScope.run(
-          () => ref.read(ledgerPcztSignerProvider)(
-            widget.args.proposalAccountUuid,
-            redactedPczts![index],
-          ),
-        );
-        if (!_isCurrent(generation)) return;
-        _signedPczts.add(List<int>.unmodifiable(signedPczt));
-      }
+      // These branches consume separate copies of the same fixed transaction.
+      // Observe both immediately, but keep Ledger approval rounds sequential.
+      final proving = _prepareProofs(basePczts, saplingParams).then<void>(
+        (_) {},
+        onError: (Object error, StackTrace stack) =>
+            Error.throwWithStackTrace(_LedgerProofFailure(error), stack),
+      );
+      signing = _signPendingPczts(generation, redactedPczts);
+      await Future.wait([proving, signing], eagerError: true);
+      if (!_isCurrent(generation)) return;
       setState(() {
         _phase = LedgerSigningModalPhase.saving;
         _failure = null;
@@ -263,11 +263,107 @@ class _MobileLedgerSendSignScreenState
     } catch (error, stackTrace) {
       log('MobileLedgerSendSign._prepareAndSign: ERROR: $error\n$stackTrace');
       if (!_isCurrent(generation)) return;
+      if (error is _LedgerProofFailure) {
+        // A proof failure must end the active device request before retry.
+        // Invalidate its late result without discarding earlier signed rounds.
+        final recoveryGeneration = ++_attemptGeneration;
+        setState(() => _drainingFailure = true);
+        if (!_signingComplete) {
+          await _cancelOperationSafely();
+          try {
+            await signing;
+          } catch (_) {
+            // Keep the original proof failure as the recovery reason.
+          }
+          // Cancellation also invalidates a cached connection's guard. A
+          // request cancelled before transport entry cannot clear it itself.
+          _connectionScope.changeConnection();
+        }
+        if (!_isCurrent(recoveryGeneration)) return;
+        setState(() {
+          _drainingFailure = false;
+          _phase = LedgerSigningModalPhase.failed;
+          _failure = LedgerSigningFailurePresentation(
+            title: context.l10n.sendLedgerCouldNotFinishTitle,
+            statusLabel: context.l10n.commonActionNeeded,
+            actionNeeded: true,
+            message: _signingComplete
+                ? context.l10n.sendLedgerKeepOpenRetry
+                : context.l10n.sendLedgerCouldNotPrepare,
+            showDeviceAppPrompt: false,
+            actionLabel: context.l10n.commonTryAgain,
+          );
+          _recoveryAction = _LedgerSendRecoveryAction.retrySigning;
+        });
+        return;
+      }
       _setPreSignatureFailure(error);
       return;
     }
 
     await _checkpoint(generation);
+  }
+
+  Future<void> _prepareProofs(
+    List<List<int>> basePczts,
+    SaplingParamsStatus params,
+  ) {
+    if (_pcztsWithProofs != null) return Future<void>.value();
+    if (_proofsFuture case final existing?) return existing;
+    final addProofs = widget.addProofs ?? rust_sync.addProofsToPczt;
+    final needsSaplingParams = widget.args.needsSaplingParams;
+    final work = () async {
+      final proved = <List<int>>[];
+      for (final pczt in basePczts) {
+        proved.add(
+          List<int>.unmodifiable(
+            await addProofs(
+              pcztBytes: pczt,
+              spendParamsPath: needsSaplingParams ? params.spendPath : null,
+              outputParamsPath: needsSaplingParams ? params.outputPath : null,
+            ),
+          ),
+        );
+        // A proof already running in Rust owns its bytes and may finish after
+        // cancellation. Do not start another round or publish its result then.
+        if (!mounted || _cancelled) return;
+      }
+      _pcztsWithProofs = List<List<int>>.unmodifiable(proved);
+    }();
+    _proofsFuture = work;
+    unawaited(
+      work.then<void>(
+        (_) {},
+        onError: (Object error, StackTrace stack) {
+          if (identical(_proofsFuture, work)) _proofsFuture = null;
+        },
+      ),
+    );
+    return work;
+  }
+
+  Future<void> _signPendingPczts(
+    int generation,
+    List<List<int>> signerPczts,
+  ) async {
+    for (var index = _signedPczts.length; index < signerPczts.length; index++) {
+      if (!_isCurrent(generation)) return;
+      setState(() {
+        _round = index;
+        _phase = LedgerSigningModalPhase.awaitingDevice;
+      });
+      final signedPczt = await _connectionScope.run(
+        () => ref.read(ledgerPcztSignerProvider)(
+          widget.args.proposalAccountUuid,
+          signerPczts[index],
+        ),
+      );
+      if (!_isCurrent(generation)) return;
+      _signedPczts.add(List<int>.unmodifiable(signedPczt));
+    }
+    if (_isCurrent(generation) && _pcztsWithProofs == null) {
+      setState(() => _phase = LedgerSigningModalPhase.finishing);
+    }
   }
 
   Future<List<List<int>>> _getOrCreateBasePczts({
@@ -322,78 +418,91 @@ class _MobileLedgerSendSignScreenState
 
   void _setPreSignatureFailure(Object error) {
     final lower = error.toString().toLowerCase();
-    final guidance = ledgerFailureGuidance(error);
+    final guidance = ledgerFailureGuidance(context.l10n, error);
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
+      context.l10n,
       ref.read(rpcEndpointProvider).networkName,
     );
     late final LedgerSigningFailurePresentation presentation;
     late final _LedgerSendRecoveryAction? action;
 
-    if (lower.contains('proposal not found') ||
-        lower.contains('send flow mismatch')) {
-      presentation = const LedgerSigningFailurePresentation(
-        title: 'Transaction expired',
-        statusLabel: 'New transaction required',
-        message:
-            'This transaction can no longer be signed. Create and review a new transaction.',
-        showDeviceAppPrompt: false,
-        actionLabel: 'Create new transaction',
-      );
-      action = _LedgerSendRecoveryAction.createNewTransaction;
-    } else if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
-      presentation = const LedgerSigningFailurePresentation(
-        title: 'Ledger app update required',
-        statusLabel: 'Recovery unavailable',
-        message: kLedgerLegacyOrchardRecoveryUnavailableMessage,
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
+    if (upgradeHold != null) {
+      // Nothing to do here until the upgrade; the sheet only closes.
+      presentation = LedgerSigningFailurePresentation(
+        title: networkUpgradeHoldActionLabel(context.l10n),
+        statusLabel: context.l10n.commonActionNeeded,
+        actionNeeded: true,
+        message: upgradeHold,
         showDeviceAppPrompt: false,
       );
       action = null;
+    } else if (lower.contains('proposal not found') ||
+        lower.contains('send flow mismatch')) {
+      presentation = LedgerSigningFailurePresentation(
+        title: context.l10n.commonTransactionExpired,
+        statusLabel: context.l10n.sendLedgerStatusNewTransactionRequired,
+        actionNeeded: false,
+        message: context.l10n.sendLedgerExpiredMessage,
+        showDeviceAppPrompt: false,
+        actionLabel: context.l10n.sendLedgerCreateNewTransaction,
+      );
+      action = _LedgerSendRecoveryAction.createNewTransaction;
     } else if (lower.contains('sapling')) {
-      presentation = const LedgerSigningFailurePresentation(
-        title: 'Ledger signing unavailable',
-        statusLabel: 'Unsupported transaction',
-        message: kLedgerSaplingRecipientMessage,
+      presentation = LedgerSigningFailurePresentation(
+        title: context.l10n.sendLedgerSigningUnavailableTitle,
+        statusLabel: context.l10n.sendLedgerStatusUnsupportedTransaction,
+        actionNeeded: false,
+        message: context.l10n.ledgerFailureMsgSaplingRecipient,
         showDeviceAppPrompt: false,
       );
       action = null;
     } else if (guidance != null && !guidance.retryable) {
       // Retrying the same request fails the same way on the device.
       presentation = LedgerSigningFailurePresentation(
-        title: LedgerRequestFailure.fromError(error).title,
-        statusLabel: 'New transaction required',
+        title: LedgerRequestFailure.fromError(error).title(context.l10n),
+        statusLabel: context.l10n.sendLedgerStatusNewTransactionRequired,
+        actionNeeded: false,
         message: guidance.message,
         showDeviceAppPrompt: false,
-        actionLabel: 'Create new transaction',
+        actionLabel: context.l10n.sendLedgerCreateNewTransaction,
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
     } else if (guidance != null) {
       presentation = LedgerSigningFailurePresentation(
-        title: 'Ledger needs attention',
-        statusLabel: 'Action needed',
+        title: context.l10n.commonLedgerNeedsAttention,
+        requestFailure: LedgerRequestFailure.fromError(error),
+        statusLabel: context.l10n.commonActionNeeded,
+        actionNeeded: true,
         message: guidance.message,
         showDeviceAppPrompt: guidance.showDeviceAppPrompt,
         bluetoothRecovery: guidance.bluetoothRecovery,
         pairingRecovery: guidance.pairingRecovery,
         pairingInvalid: guidance.pairingInvalid,
-        actionLabel: 'Try again',
+        actionLabel: context.l10n.commonTryAgain,
       );
       action = _LedgerSendRecoveryAction.retrySigning;
     } else {
       final message = switch (LedgerRequestFailure.fromError(error)) {
         LedgerRequestFailure.declined =>
-          'The transaction was rejected on your Ledger.',
+          context.l10n.sendLedgerRejectedOnDevice,
         LedgerRequestFailure.transportLost =>
-          ledgerUsbErrorMessage(error, appInstruction: appInstruction) ??
-              'Connect and unlock your Ledger. $appInstruction',
-        _ =>
-          'Ledger signing could not be completed. Check your device and try again.',
+          ledgerUsbErrorMessage(
+                context.l10n,
+                error,
+                appInstruction: appInstruction,
+              ) ??
+              context.l10n.sendLedgerConnectAndUnlock(appInstruction),
+        _ => context.l10n.commonLedgerSigningCouldNotBeCompleted,
       };
       presentation = LedgerSigningFailurePresentation(
-        title: 'Ledger signing failed',
-        statusLabel: 'Action needed',
+        title: context.l10n.commonLedgerSigningFailed,
+        requestFailure: LedgerRequestFailure.fromError(error),
+        statusLabel: context.l10n.commonActionNeeded,
+        actionNeeded: true,
         message: message,
         showDeviceAppPrompt: false,
-        actionLabel: 'Try again',
+        actionLabel: context.l10n.commonTryAgain,
       );
       action = _LedgerSendRecoveryAction.retrySigning;
     }
@@ -411,6 +520,7 @@ class _MobileLedgerSendSignScreenState
     try {
       final operationService = ref.read(ledgerSignedOperationServiceProvider);
       if (proofs.length == 1) {
+        _checkpointStarted = true;
         await operationService.checkpoint(
           operationId: _operationId,
           accountUuid: widget.args.proposalAccountUuid,
@@ -420,6 +530,7 @@ class _MobileLedgerSendSignScreenState
         );
       } else if (operationService
           case final LedgerSignedOperationBatchCheckpointService batchService) {
+        _checkpointStarted = true;
         await batchService.checkpointBatch(
           operationId: _operationId,
           accountUuid: widget.args.proposalAccountUuid,
@@ -440,14 +551,17 @@ class _MobileLedgerSendSignScreenState
         _phase = LedgerSigningModalPhase.failed;
         _failure = LedgerSigningFailurePresentation(
           title: terminal
-              ? 'Signed transaction needs attention'
-              : 'Could not save signed transaction',
-          statusLabel: terminal ? 'Recovery required' : 'Signature preserved',
+              ? context.l10n.sendLedgerSignedNeedsAttentionTitle
+              : context.l10n.sendLedgerCouldNotSaveTitle,
+          statusLabel: terminal
+              ? context.l10n.sendLedgerStatusRecoveryRequired
+              : context.l10n.commonActionNeeded,
+          actionNeeded: !(terminal),
           message: terminal
-              ? 'Vizor could not verify the saved transaction. Do not sign or send it again.'
-              : 'Your Ledger signature is preserved. Retry saving without approving another transaction.',
+              ? context.l10n.sendLedgerCouldNotVerifySaved
+              : context.l10n.sendLedgerKeepOpenRetrySaving,
           showDeviceAppPrompt: false,
-          actionLabel: terminal ? null : 'Retry saving',
+          actionLabel: terminal ? null : context.l10n.commonRetrySaving,
         );
         _recoveryAction = terminal
             ? null
@@ -503,8 +617,10 @@ class _MobileLedgerSendSignScreenState
       if (failure != null) {
         _failure = LedgerSigningFailurePresentation(
           title: failure.title,
+          requestFailure: failure.requestFailure,
           statusLabel: failure.statusLabel,
-          message: 'Could not finish cancelling. Please try again.',
+          actionNeeded: failure.actionNeeded,
+          message: context.l10n.commonCancelFailedRetry,
           showDeviceAppPrompt: false,
           actionLabel: failure.actionLabel,
         );
@@ -513,7 +629,9 @@ class _MobileLedgerSendSignScreenState
   }
 
   Future<void> _cancelAndPop() async {
-    if (_signingComplete || _cancelled || _releasing) return;
+    if (_signingComplete || _cancelled || _releasing || _drainingFailure) {
+      return;
+    }
     setState(() => _cancelled = true);
     _attemptGeneration++;
     await _cancelOperationSafely();
@@ -568,13 +686,16 @@ class _MobileLedgerSendSignScreenState
 
   @override
   Widget build(BuildContext context) {
-    final canLeave = !_signingComplete && !_cancelled && !_releasing;
+    final canLeave =
+        !_signingComplete && !_cancelled && !_releasing && !_drainingFailure;
     return MobileLedgerSigningSurface(
       key: const ValueKey('mobile_ledger_signing_surface'),
-      title: 'Confirm transaction',
+      title: context.l10n.sendSignConfirmTransaction,
       canLeave: canLeave,
       onBack: () => unawaited(_cancelAndPop()),
       child: LedgerSigningModal(
+        cancelling: _cancelled || _releasing || _drainingFailure,
+        resumingApproval: _resumingApproval,
         accountUuid: widget.args.proposalAccountUuid,
         phase: _phase,
         failure: _failure,

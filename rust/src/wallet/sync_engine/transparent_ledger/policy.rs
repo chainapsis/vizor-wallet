@@ -22,7 +22,9 @@
 use std::path::Path;
 use std::time::Duration;
 
-use zakura_pir_transparent::{forget_private_recovery, ForgetError, Interrupted, WriteGate};
+use zakura_pir_client::transparent::{
+    forget_private_recovery, ForgetError, Interrupted, WriteGate,
+};
 use zcash_client_backend::data_api::transparent_ledger::{
     AppliedTransparentPolicy, ForgottenTransparentLedger, TransparentLedgerMode,
     TransparentLedgerRead,
@@ -89,6 +91,8 @@ pub(crate) async fn set_transparent_policy(
     if let Some(applied) = applied {
         log::info!("transparent policy: applied {:?}", applied.mode);
     }
+    // A settings change: the next sync may run recovery at the current tip.
+    super::clear_recovery_tip(db_path);
     if target == TransparentLedgerMode::Public {
         // Facts private recovery alone reported keep counting under the public
         // policy until they are forgotten, so the opt-out is not finished

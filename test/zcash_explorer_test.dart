@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/zcash_explorer.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   test('formats protocol-order txids for display and copying', () {
@@ -166,11 +167,12 @@ void main() {
 
   test('settings label is ZecBlock until a custom host is set', () {
     expect(
-      explorerSettingsLabel('', networkName: 'main'),
+      explorerSettingsLabel(testL10n, '', networkName: 'main'),
       kDefaultZcashExplorerLabel,
     );
     expect(
       explorerSettingsLabel(
+        testL10n,
         'https://privacy.example/tx/{txid}',
         networkName: 'main',
       ),
@@ -198,5 +200,12 @@ void main() {
       'http://127.0.0.1:8080/tx/'
       '477ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f',
     );
+  });
+
+  test('explorer errors have localized text with the same English', () {
+    for (final issue in ExplorerUrlIssue.values) {
+      final error = ExplorerUrlFormatException(issue);
+      expect(explorerUrlErrorText(testL10n, error), error.message);
+    }
   });
 }

@@ -1,28 +1,22 @@
 //! Request-recording tests for the real birthday API, without external services.
 
 use super::*;
-#[cfg(not(ironwood_masquerade))]
 use prost::Message;
-#[cfg(not(ironwood_masquerade))]
 use std::sync::Arc;
-#[cfg(not(ironwood_masquerade))]
 use zcash_client_backend::proto::service::{BlockId, TreeState};
 
-#[cfg(not(ironwood_masquerade))]
 struct FakeLwd {
     url: String,
     calls: Arc<Mutex<Vec<(String, Option<u64>)>>>,
     task: tokio::task::JoinHandle<()>,
 }
 
-#[cfg(not(ironwood_masquerade))]
 impl Drop for FakeLwd {
     fn drop(&mut self) {
         self.task.abort();
     }
 }
 
-#[cfg(not(ironwood_masquerade))]
 impl FakeLwd {
     async fn start(latest_status: u8, network: &str, tip: BlockTimePoint) -> Self {
         Self::start_with_block_height(latest_status, network, tip, tip.height).await
@@ -125,7 +119,6 @@ fn tip() -> BlockTimePoint {
     }
 }
 
-#[cfg(not(ironwood_masquerade))]
 #[tokio::test]
 async fn mainnet_birthday_with_metadata_needs_no_connection() {
     let height = estimate_import_birthday_height(
@@ -163,7 +156,6 @@ async fn mainnet_birthday_with_metadata_needs_no_connection() {
     );
 }
 
-#[cfg(not(ironwood_masquerade))]
 #[tokio::test]
 async fn mainnet_birthday_without_metadata_requests_only_public_tip() {
     let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
@@ -179,7 +171,6 @@ async fn mainnet_birthday_without_metadata_requests_only_public_tip() {
     );
 }
 
-#[cfg(not(ironwood_masquerade))]
 #[tokio::test]
 async fn mainnet_birthday_legacy_server_fetches_block_only_at_tip() {
     let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
@@ -199,7 +190,6 @@ async fn mainnet_birthday_legacy_server_fetches_block_only_at_tip() {
     );
 }
 
-#[cfg(not(ironwood_masquerade))]
 #[tokio::test]
 async fn mainnet_birthday_metadata_is_reused_and_errors_do_not_search() {
     let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
@@ -254,19 +244,8 @@ async fn mainnet_birthday_disabled_fast_path_uses_the_endpoint() {
     )
     .await
     .is_err());
-    #[cfg(ironwood_masquerade)]
-    assert!(estimate_import_birthday_height(
-        "not-a-lightwalletd-url".to_owned(),
-        1_659_305_748,
-        true,
-        Some(tip().height),
-        Some(tip().time)
-    )
-    .await
-    .is_err());
 }
 
-#[cfg(not(ironwood_masquerade))]
 #[tokio::test]
 async fn mainnet_birthday_legacy_server_rejects_mismatched_tip_block() {
     let _policy = crate::network_privacy::test_route_policy::lock_route_policy();

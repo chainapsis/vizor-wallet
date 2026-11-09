@@ -9,6 +9,8 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_surface.dart';
 import 'package:zcash_wallet/widgetbook/payment_request_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../support/test_l10n.dart';
 
 const _desktopSize = Size(1080, 720);
 const _mobileSize = Size(393, 852);
@@ -255,9 +257,9 @@ void main() {
           ),
           findsOneWidget,
         );
-        if (defaultPaymentRequestStatusMessage(status) != null) {
+        if (defaultPaymentRequestStatusMessage(testL10n, status) != null) {
           expect(
-            find.text(defaultPaymentRequestStatusMessage(status)!),
+            find.text(defaultPaymentRequestStatusMessage(testL10n, status)!),
             findsOneWidget,
           );
           final icons = find.descendant(
@@ -297,28 +299,28 @@ void main() {
     },
   );
 
-  testWidgets('replaced notice reflects the new input source', (tester) async {
-    for (final source in PaymentRequestSource.values) {
-      await tester.pumpWidget(const SizedBox.shrink());
-      await _pumpUseCase(
-        tester,
-        (_) => _surface(source: source, replaced: true),
-      );
-      expect(
-        find.text(
-          source == PaymentRequestSource.qrCode
-              ? 'Updated from the scanned QR'
-              : 'Replaced an earlier link',
-        ),
-        findsOneWidget,
-      );
-    }
+  testWidgets('replaced notice names the earlier link', (tester) async {
+    await _pumpUseCase(
+      tester,
+      (_) => _surface(source: PaymentRequestSource.link, replaced: true),
+    );
+    expect(find.text('Replaced an earlier link'), findsOneWidget);
+  });
+
+  testWidgets('scanned request preview carries no replaced notice', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildPaymentRequestScannedUseCase);
+    expect(_key('payment_request_replaced_notice'), findsNothing);
   });
   testWidgets('every registered use case renders in its own lane', (
     tester,
   ) async {
     for (final builder in <WidgetBuilder>[
       buildPaymentRequestFullUseCase,
+      buildPaymentRequestPastedUseCase,
+      buildPaymentRequestScannedMatchesLinkUseCase,
+      buildPaymentRequestScannedDiffersFromLinkUseCase,
       buildPaymentRequestMinimalUseCase,
       buildPaymentRequestLongValuesUseCase,
       buildPaymentRequestLongValuesExpandedUseCase,
@@ -344,6 +346,9 @@ void main() {
 
     for (final builder in <WidgetBuilder>[
       buildMobilePaymentRequestFullUseCase,
+      buildMobilePaymentRequestPastedUseCase,
+      buildMobilePaymentRequestScannedMatchesLinkUseCase,
+      buildMobilePaymentRequestScannedDiffersFromLinkUseCase,
       buildMobilePaymentRequestMinimalUseCase,
       buildMobilePaymentRequestLongValuesUseCase,
       buildMobilePaymentRequestLongValuesExpandedUseCase,
@@ -403,6 +408,7 @@ Future<void> _pumpUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Center(

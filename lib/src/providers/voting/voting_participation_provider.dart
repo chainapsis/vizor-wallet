@@ -21,9 +21,6 @@ import 'voting_round_visibility_provider.dart';
 import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
 
-const votingAlreadyUsedMessage =
-    'These funds were already used for this round. Voting cannot be restarted on this device.';
-
 /// Integration tests can supply their signed, local regtest config identity.
 /// This changes routing support only, never a participation result.
 final votingParticipationSourceSupportedProvider =
@@ -384,7 +381,10 @@ class VotingParticipationCoordinator {
                 nullifierImtRoot: details.nullifierImtRoot,
               );
           if (!current()) return;
-          final endpoint = ref.read(votingRpcEndpointConfigProvider);
+          final endpoint = reconcileLocalOnly
+              ? ref.read(votingRpcEndpointConfigProvider)
+              : await ref.read(votingReadyRpcEndpointProvider)();
+          if (!current() || endpoint.networkName != network) return;
           final context = rust.ApiVotingRoundContext(
             dbPath: dbPath,
             accountUuid: account,

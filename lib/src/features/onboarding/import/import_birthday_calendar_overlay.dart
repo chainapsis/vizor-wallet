@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
@@ -76,7 +78,6 @@ class _ImportBirthdayCalendarPanelState
   // within the same box so mode switches and paging never reflow the
   // panel (VZR-75).
   static const _modeAreaHeight = _cellSize * 7;
-  static const _weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   late DateTime _visibleMonth;
   late int _visibleYearPageStart;
@@ -112,7 +113,7 @@ class _ImportBirthdayCalendarPanelState
 
   String get _titleLabel {
     return switch (_selectionMode) {
-      _CalendarSelectionMode.day => _formatMonth(_visibleMonth),
+      _CalendarSelectionMode.day => _formatMonth(context.l10n, _visibleMonth),
       _CalendarSelectionMode.month => '${_visibleMonth.year}',
       _CalendarSelectionMode.year =>
         '$_visibleYearPageStart - ${_visibleYearPageStart + 11}',
@@ -251,7 +252,7 @@ class _ImportBirthdayCalendarPanelState
                 child: switch (_selectionMode) {
                   _CalendarSelectionMode.day => Column(
                     children: [
-                      _WeekdayRow(weekdays: _weekdays),
+                      _WeekdayRow(weekdays: _weekdayLabels(context.l10n)),
                       _DayGrid(
                         visibleMonth: _visibleMonth,
                         selectedDate: widget.selectedDate,
@@ -419,21 +420,6 @@ class _MonthGrid extends StatelessWidget {
     required this.onMonthSelected,
   });
 
-  static const _monthLabels = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-
   final int visibleYear;
   final DateTime selectedMonth;
   final DateTime firstMonth;
@@ -444,13 +430,14 @@ class _MonthGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cellWidth = width / 3;
+    final monthLabels = _shortMonthLabels(context.l10n);
     return SizedBox(
       width: width,
       child: Wrap(
         children: [
-          for (var index = 0; index < _monthLabels.length; index++)
+          for (var index = 0; index < monthLabels.length; index++)
             _MonthCell(
-              label: _monthLabels[index],
+              label: monthLabels[index],
               month: DateTime(visibleYear, index + 1),
               selectedMonth: selectedMonth,
               firstMonth: firstMonth,
@@ -799,20 +786,18 @@ int _yearPageStartFor(int year) {
   return year - ((year - 1) % pageSize);
 }
 
-String _formatMonth(DateTime date) {
-  const monthNames = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  return '${monthNames[date.month - 1]} ${date.year}';
-}
+// Month and weekday names come from intl's CLDR data so each language gets
+// its own forms ("January 2025", "2025년 1월", "2025年1月").
+String _formatMonth(AppLocalizations l10n, DateTime date) =>
+    DateFormat.yMMMM(l10n.localeName).format(date);
+
+// 2023-01-01 is a Sunday; the grid starts on Sunday.
+List<String> _weekdayLabels(AppLocalizations l10n) => [
+  for (var day = 1; day <= DateTime.daysPerWeek; day++)
+    DateFormat.E(l10n.localeName).format(DateTime(2023, 1, day)),
+];
+
+List<String> _shortMonthLabels(AppLocalizations l10n) => [
+  for (var month = 1; month <= 12; month++)
+    DateFormat.MMM(l10n.localeName).format(DateTime(2023, month)),
+];

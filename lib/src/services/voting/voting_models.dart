@@ -22,7 +22,11 @@ class VotingRoundSummary {
   factory VotingRoundSummary.fromJson(Map<String, dynamic> json) {
     return VotingRoundSummary(
       roundId: _roundIdFromJson(json),
-      title: _optionalStringFromJson(json, const ['title']) ?? '',
+      title:
+          _optionalStringFromJson(json, const [
+            'title', // l10n-ignore: JSON field name
+          ]) ?? // l10n-ignore: JSON field name
+          '', // l10n-ignore: JSON field name
       status: _optionalStringFromJson(json, const ['status']) ?? '',
       rawJson: Map.unmodifiable(json),
     );

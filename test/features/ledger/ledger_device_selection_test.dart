@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_serv
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'ledger_pairing_recovery_test.dart' as fixture;
 
 void main() {
@@ -38,6 +39,7 @@ void main() {
           UncontrolledProviderScope(
             container: c,
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.light,
                 child: Center(
@@ -72,7 +74,7 @@ void main() {
           );
           await pumpFrames(tester);
         }
-        expect(find.text('Select your Ledger'), findsOneWidget);
+        expect(find.text('Find Ledger'), findsOneWidget);
         expect(find.text('Different from saved connection'), findsOneWidget);
         expect(find.text('USB'), findsNothing);
         expect(ble.calls, contains('scan'));
@@ -80,8 +82,13 @@ void main() {
         expect(signs, 0);
         await tester.tap(find.text('Ledger Flex'));
         await pumpFrames(tester);
-        expect(find.text('Ledger saved'), findsOneWidget);
-        expect(find.text('Ledger Flex'), findsOneWidget);
+        expect(
+          find.text(
+            'This Ledger matches your account. Find it again to continue.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Ledger Flex · Bluetooth'), findsOneWidget);
         expect(find.text('Go back'), findsNothing);
         expect(signs, 0);
         expect(accounts.writes, 1);
@@ -89,7 +96,7 @@ void main() {
         final calls = List<String>.of(ble.calls);
         await pumpFrames(tester);
         expect(ble.calls, calls);
-        await tester.tap(find.text('Find my Ledger'));
+        await tester.tap(find.text('Find Ledger'));
         await pumpFrames(tester);
         expect(find.text('Different from saved connection'), findsNothing);
         await tester.tap(find.text('Ledger Flex'));
@@ -128,6 +135,7 @@ void main() {
         UncontrolledProviderScope(
           container: c,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: Center(
@@ -154,7 +162,10 @@ void main() {
       await pumpFrames(tester);
       await tester.tap(find.text('Ledger Flex'));
       await pumpFrames(tester);
-      expect(find.text('Connecting to your Ledger'), findsOneWidget);
+      expect(
+        find.text('Unlock Ledger and confirm opening Zcash if prompted.'),
+        findsOneWidget,
+      );
       expect(
         find.textContaining('approve sharing the viewing key'),
         findsNothing,
@@ -187,6 +198,7 @@ void main() {
           UncontrolledProviderScope(
             container: c,
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.light,
                 child: Center(
@@ -221,11 +233,16 @@ void main() {
         if (saved) {
           await tester.tap(find.text('Ledger Flex'));
           await pumpFrames(tester);
-          expect(find.text('Ledger saved'), findsOneWidget);
+          expect(
+            find.text(
+              'This Ledger matches your account. Find it again to continue.',
+            ),
+            findsOneWidget,
+          );
         }
         switch (cancel) {
           case 'close':
-            await tester.tap(find.bySemanticsLabel('Close'));
+            await tester.tap(find.text('Cancel'));
           case 'dispose':
             await tester.pumpWidget(const SizedBox());
           case 'lock':
@@ -261,6 +278,7 @@ void main() {
       UncontrolledProviderScope(
         container: c,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: Center(
@@ -298,9 +316,12 @@ void main() {
     await pumpFrames(tester);
     await tester.tap(find.text('Ledger Flex'));
     await pumpFrames(tester);
-    expect(find.text('Ledger saved'), findsOneWidget);
+    expect(
+      find.text('This Ledger matches your account. Find it again to continue.'),
+      findsOneWidget,
+    );
     expect(signs, 0);
-    await tester.tap(find.text('Find my Ledger'));
+    await tester.tap(find.text('Find Ledger'));
     await pumpFrames(tester);
     await tester.tap(find.text('Ledger Flex'));
     await pumpFrames(tester);

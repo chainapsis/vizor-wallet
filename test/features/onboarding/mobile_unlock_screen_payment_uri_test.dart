@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_unlock_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
@@ -28,8 +29,11 @@ import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 
 const _passcode = '123456';
 const _wrongPasscode = '999999';
@@ -45,6 +49,9 @@ const _parkedRequest = SendPrefillArgs(
 );
 
 class _FakeSecurityNotifier extends AppSecurityNotifier {
+  @override
+  String requireSessionPasswordForNativeSecretUse() => _passcode;
+
   @override
   Future<bool> unlock(String password) async {
     if (password != _passcode) return false;
@@ -80,6 +87,28 @@ class _FakeUnlockSyncNotifier extends FakeSyncNotifier {
 class _NoBiometricNotifier extends BiometricUnlockNotifier {
   @override
   Future<BiometricUnlockState> build() async => BiometricUnlockState.initial;
+}
+
+class _OptInBiometricNotifier extends BiometricUnlockNotifier {
+  final enableCompletion = Completer<void>();
+  String? passcode;
+
+  @override
+  Future<BiometricUnlockState> build() async => const BiometricUnlockState(
+    availability: BiometricAvailability(
+      supported: true,
+      enrolled: true,
+      kind: BiometricKind.face,
+    ),
+    enabled: false,
+  );
+
+  @override
+  Future<void> enable(String passcode) async {
+    this.passcode = passcode;
+    await enableCompletion.future;
+    throw const BiometricUnlockException(BiometricUnlockErrorKind.cancelled);
+  }
 }
 
 PaymentRequestPrecheck _stubPrecheck() => PaymentRequestPrecheck(
@@ -128,12 +157,17 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-List<Override> _overrides({required bool migrationGate}) => [
+List<Override> _overrides({
+  required bool migrationGate,
+  BiometricUnlockNotifier Function()? biometricNotifier,
+}) => [
   appBootstrapProvider.overrideWithValue(_bootstrap()),
   appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
   accountProvider.overrideWith(_FakeAccountNotifier.new),
   syncProvider.overrideWith(_FakeUnlockSyncNotifier.new),
-  biometricUnlockProvider.overrideWith(_NoBiometricNotifier.new),
+  biometricUnlockProvider.overrideWith(
+    biometricNotifier ?? _NoBiometricNotifier.new,
+  ),
   migrationSendGateProvider.overrideWithValue(migrationGate),
   paymentRequestPrecheckProvider.overrideWithValue(_stubPrecheck()),
 ];
@@ -143,6 +177,7 @@ late GoRouter _router;
 Future<ProviderContainer> _pumpUnlock(
   WidgetTester tester, {
   bool migrationGate = false,
+  BiometricUnlockNotifier Function()? biometricNotifier,
 }) async {
   tester.view.physicalSize = const Size(520, 1100);
   tester.view.devicePixelRatio = 1.0;
@@ -150,7 +185,10 @@ Future<ProviderContainer> _pumpUnlock(
   addTearDown(tester.view.resetDevicePixelRatio);
 
   final container = ProviderContainer(
-    overrides: _overrides(migrationGate: migrationGate),
+    overrides: _overrides(
+      migrationGate: migrationGate,
+      biometricNotifier: biometricNotifier,
+    ),
   );
   addTearDown(container.dispose);
 
@@ -177,6 +215,7 @@ Future<ProviderContainer> _pumpUnlock(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: _router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
@@ -198,6 +237,33 @@ Future<void> _enterPasscode(WidgetTester tester, String passcode) async {
 String _location() => _router.routerDelegate.currentConfiguration.uri.path;
 
 void main() {
+  testWidgets(
+    'a request stays parked during opt-in and survives cancellation',
+    (tester) async {
+      final biometric = _OptInBiometricNotifier();
+      final container = await _pumpUnlock(
+        tester,
+        biometricNotifier: () => biometric,
+      );
+      container.read(paymentUriPrefillProvider.notifier).set(_parkedRequest);
+      await tester.tap(find.byType(PasscodeBiometricOptIn));
+      await _enterPasscode(tester, _passcode);
+      expect(biometric.passcode, _passcode);
+      expect(_location(), '/unlock');
+      expect(container.read(paymentUriPrefillProvider)?.id, _parkedRequest.id);
+      expect(container.read(paymentRequestFlowProvider), isNull);
+
+      biometric.enableCompletion.complete();
+      await tester.pumpAndSettle();
+      expect(_location(), '/home');
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      expect(
+        container.read(paymentRequestFlowProvider)?.prefill.id,
+        _parkedRequest.id,
+      );
+    },
+  );
+
   testWidgets('a fresh parked link becomes a card over the unlocked wallet', (
     tester,
   ) async {
@@ -212,7 +278,7 @@ void main() {
     expect(flow!.prefill.id, _parkedRequest.id);
     expect(flow.view.source, PaymentRequestSource.link);
     expect(container.read(paymentUriPrefillProvider), isNull);
-    expect(find.text(kPaymentUriExpiredMessage), findsNothing);
+    expect(find.text(PaymentUriNotice.expired.text(testL10n)), findsNothing);
   });
 
   testWidgets('a scanned request retains its provenance after unlock', (
@@ -243,7 +309,7 @@ void main() {
     expect(_location(), '/home');
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(container.read(paymentUriPrefillProvider), isNull);
-    expect(find.text(kPaymentUriExpiredMessage), findsOneWidget);
+    expect(find.text(PaymentUriNotice.expired.text(testL10n)), findsOneWidget);
   });
 
   testWidgets('a migration send gate that closed while locked drops the link', (
@@ -261,7 +327,10 @@ void main() {
     expect(_location(), '/home');
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(container.read(paymentUriPrefillProvider), isNull);
-    expect(find.text(kPaymentUriMigrationSendGateMessage), findsOneWidget);
+    expect(
+      find.text(PaymentUriNotice.migrationSendGate.text(testL10n)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a failed unlock leaves the link parked', (tester) async {

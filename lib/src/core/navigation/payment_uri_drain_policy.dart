@@ -17,6 +17,7 @@
 /// on `/send/status`.
 library;
 
+import '../l10n/l10n.dart';
 import '../zcash/zip321_payment_request.dart';
 import 'app_route_predicates.dart';
 import 'incoming_link_entry_policy.dart';
@@ -36,76 +37,88 @@ export 'app_route_predicates.dart'
 /// the same age on the unlock-screen claim path.
 const kPaymentUriParkTtl = Duration(minutes: 10);
 
-/// Shown when the link cannot be opened at all: blocking storage failure or a
-/// wallet load error.
+/// What the payer is told about a `zcash:` link that is not being opened.
 ///
-/// It does not name a cause. A blocking failure is one of several things (a
-/// locked keyring, a failed DB migration), and `/storage-unavailable` already
-/// states the one that happened and offers Retry. What the payer needs here is
-/// the one thing that is always true: the link is gone, and re-opening it once
-/// the wallet is up recovers it.
-const kPaymentUriUnavailableMessage =
-    "Vizor couldn't open this payment link. "
-    'Open it again once your wallet has loaded.';
+/// Decisions and parked state carry the code; the toast resolves it with
+/// [text] in the locale of the moment it is shown.
+enum PaymentUriNotice {
+  /// The link cannot be opened at all: blocking storage failure or a wallet
+  /// load error.
+  ///
+  /// It does not name a cause. A blocking failure is one of several things (a
+  /// locked keyring, a failed DB migration), and `/storage-unavailable`
+  /// already states the one that happened and offers Retry. What the payer
+  /// needs here is the one thing that is always true: the link is gone, and
+  /// re-opening it once the wallet is up recovers it.
+  unavailable,
 
-/// Shown when a second `zcash:` link arrives before the first one has been
-/// delivered or claimed. The prefill holds one link at a time (latest wins,
-/// no queue), so the earlier one is gone and the user is told rather than
-/// left to wonder which link opened.
-const kPaymentUriReplacedMessage =
-    'Only the newest payment link was kept. Open the earlier one again to '
-    'pay it.';
+  /// A second `zcash:` link arrived before the first one was delivered or
+  /// claimed. The prefill holds one link at a time (latest wins, no queue), so
+  /// the earlier one is gone and the user is told rather than left to wonder
+  /// which link opened.
+  replaced,
 
-/// Shown when a parked link outlived [kPaymentUriParkTtl] before it could be
-/// delivered — most often a link tapped while locked and unlocked much later.
-///
-/// The user acted on that link deliberately, so the drop is stated rather than
-/// silent, and the link itself is still good: opening it again pays it.
-const kPaymentUriExpiredMessage =
-    'That payment link timed out. Open it again to pay.';
+  /// A parked link outlived [kPaymentUriParkTtl] before it could be delivered
+  /// — most often a link tapped while locked and unlocked much later.
+  ///
+  /// The user acted on that link deliberately, so the drop is stated rather
+  /// than silent, and the link itself is still good: opening it again pays it.
+  expired,
 
-/// Shown when there is no wallet yet and the user is not already inside a
-/// setup flow.
-const kPaymentUriNoWalletMessage =
-    'Set up or import a wallet before opening payment links.';
+  /// There is no wallet yet and the user is not already inside a setup flow.
+  noWallet,
 
-/// Shown when the link arrives while the user is part-way through onboarding,
-/// import, or adding an account. Navigating away from those screens throws
-/// away a typed seed phrase or a generated mnemonic, so the link is dropped
-/// and the user is left exactly where they were.
-const kPaymentUriOnboardingMessage =
-    'Finish setting up your wallet before opening payment links.';
+  /// The link arrived while the user is part-way through onboarding, import,
+  /// or adding an account. Navigating away from those screens throws away a
+  /// typed seed phrase or a generated mnemonic, so the link is dropped and the
+  /// user is left exactly where they were.
+  onboarding,
 
-/// Shown when a Private (Ironwood) migration has the account's whole
-/// spendable balance in flight, so the product disables sending entirely.
-/// Delivering the link would open a send form that cannot be submitted.
-const kPaymentUriMigrationSendGateMessage =
-    'Finish your Ironwood migration before opening payment links.';
+  /// A Private (Ironwood) migration has the account's whole spendable balance
+  /// in flight, so the product disables sending entirely. Delivering the link
+  /// would open a send form that cannot be submitted.
+  migrationSendGate,
 
-/// Shown when a `zcash:` link parses but asks for a ZIP-321 feature Vizor does
-/// not implement yet: more than one recipient, a binary memo, a custom asset.
-/// Nothing about the link is wrong, so it does not tell the sender off.
-const kPaymentUriUnsupportedMessage =
-    "This payment link uses a feature Vizor doesn't support yet.";
+  /// The link parses but asks for a ZIP-321 feature Vizor does not implement
+  /// yet: more than one recipient, a binary memo, a custom asset. Nothing
+  /// about the link is wrong, so it does not tell the sender off.
+  unsupported,
 
-/// Shown when a `zcash:` link cannot be parsed at all — bad encoding, a
-/// malformed amount, a missing address, a link too long to read.
-///
-/// The parser's own message is spec wording written for us, not for the payer,
-/// and it echoes back fragments of the link's own text; it belongs in the log.
-const kPaymentUriMalformedMessage =
-    "This payment link isn't valid. Ask the sender for a new one.";
+  /// The link cannot be parsed at all — bad encoding, a malformed amount, a
+  /// missing address, a link too long to read.
+  ///
+  /// The parser's own message is spec wording written for us, not for the
+  /// payer, and it echoes back fragments of the link's own text; it belongs in
+  /// the log.
+  malformed,
 
-/// The one sentence the payer sees when a `zcash:` link is refused.
+  /// The entry policy held the request behind another task; the wording is
+  /// [IncomingLinkNotice.paymentBusy].
+  busy;
+
+  String text(AppLocalizations l10n) => switch (this) {
+    unavailable => l10n.paymentUriUnavailable,
+    replaced => l10n.paymentUriReplaced,
+    expired => l10n.paymentUriExpired,
+    noWallet => l10n.paymentUriNoWallet,
+    onboarding => l10n.paymentUriOnboarding,
+    migrationSendGate => l10n.paymentUriMigrationSendGate,
+    unsupported => l10n.paymentUriUnsupported,
+    malformed => l10n.paymentUriMalformed,
+    busy => IncomingLinkNotice.paymentBusy.text(l10n),
+  };
+}
+
+/// The one notice the payer sees when a `zcash:` link is refused.
 ///
 /// Two buckets, because only two answers differ for the user: wait for Vizor
 /// to support the feature, or ask the sender for a link that works.
 /// [Zip321UnsupportedRequestException] carries the first, every other rejection
 /// the second.
-String paymentUriRejectionMessage(Object error) =>
+PaymentUriNotice paymentUriRejectionNotice(Object error) =>
     error is Zip321UnsupportedRequestException
-    ? kPaymentUriUnsupportedMessage
-    : kPaymentUriMalformedMessage;
+    ? PaymentUriNotice.unsupported
+    : PaymentUriNotice.malformed;
 
 /// What `_drainPendingPrefill` should do with the parked prefill.
 enum PaymentUriDrainAction {
@@ -113,14 +126,14 @@ enum PaymentUriDrainAction {
   /// screen, a later wallet emission) still owns it.
   wait,
 
-  /// Drop the prefill and show [PaymentUriDrainDecision.message].
+  /// Drop the prefill and show [PaymentUriDrainDecision.notice].
   dropWithMessage,
 
   /// Leave the prefill parked and route to `/unlock`; the unlock flow claims
   /// it after a successful unlock.
   routeToUnlock,
 
-  /// Drop the prefill, route to `/welcome`, and show the message.
+  /// Drop the prefill, route to `/welcome`, and show the notice.
   routeToWelcome,
 
   /// Clear the prefill and present it as a payment-request card.
@@ -129,15 +142,15 @@ enum PaymentUriDrainAction {
 
 /// The action plus everything needed to execute it.
 class PaymentUriDrainDecision {
-  const PaymentUriDrainDecision(this.action, {this.message});
+  const PaymentUriDrainDecision(this.action, {this.notice});
 
   final PaymentUriDrainAction action;
 
-  /// Snackbar text, when the action carries one.
-  final String? message;
+  /// Toast notice, when the action carries one.
+  final PaymentUriNotice? notice;
 
   @override
-  String toString() => 'PaymentUriDrainDecision($action, message: $message)';
+  String toString() => 'PaymentUriDrainDecision($action, notice: $notice)';
 }
 
 const _waitDecision = PaymentUriDrainDecision(PaymentUriDrainAction.wait);
@@ -224,7 +237,7 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   if (parkedFor != null && parkedFor > kPaymentUriParkTtl) {
     return const PaymentUriDrainDecision(
       PaymentUriDrainAction.dropWithMessage,
-      message: kPaymentUriExpiredMessage,
+      notice: PaymentUriNotice.expired,
     );
   }
 
@@ -234,7 +247,7 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   if (hasBlockingFailure || walletHasError) {
     return const PaymentUriDrainDecision(
       PaymentUriDrainAction.dropWithMessage,
-      message: kPaymentUriUnavailableMessage,
+      notice: PaymentUriNotice.unavailable,
     );
   }
 
@@ -250,9 +263,9 @@ PaymentUriDrainDecision decidePaymentUriDrain({
     // the plain no-wallet wording fits better than "finish setting up".
     return PaymentUriDrainDecision(
       PaymentUriDrainAction.dropWithMessage,
-      message: matchedLocation == '/welcome' && !hasWallet
-          ? kPaymentUriNoWalletMessage
-          : kPaymentUriOnboardingMessage,
+      notice: matchedLocation == '/welcome' && !hasWallet
+          ? PaymentUriNotice.noWallet
+          : PaymentUriNotice.onboarding,
     );
   }
 
@@ -267,14 +280,14 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   if (entry.action == IncomingLinkEntryAction.wait) {
     return PaymentUriDrainDecision(
       PaymentUriDrainAction.wait,
-      message: entry.message,
+      notice: entry.notice == null ? null : PaymentUriNotice.busy,
     );
   }
 
   if (!hasWallet) {
     return const PaymentUriDrainDecision(
       PaymentUriDrainAction.routeToWelcome,
-      message: kPaymentUriNoWalletMessage,
+      notice: PaymentUriNotice.noWallet,
     );
   }
 
@@ -307,7 +320,7 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   if (sendGatedByMigration) {
     return const PaymentUriDrainDecision(
       PaymentUriDrainAction.dropWithMessage,
-      message: kPaymentUriMigrationSendGateMessage,
+      notice: PaymentUriNotice.migrationSendGate,
     );
   }
 

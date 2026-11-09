@@ -61,7 +61,7 @@ void main() {
       expect(started.activeRunId, isNotNull);
 
       await postDriver('/mine', const {'blocks': 10});
-      final scheduled = await waitForMobileRegtestMigrationStatus(
+      final scheduled = await prepareMobilePrivateMigrationSchedule(
         tester,
         accountUuid,
         (status) => status.scheduledBroadcasts.length >= 3,
@@ -102,7 +102,7 @@ void main() {
         'stopping after the first scheduled child in run '
         '${started.activeRunId}',
       );
-      await snapshotWalletDbToDriver();
+      await stopWalletForProcessRestart();
     },
     timeout: const Timeout(Duration(minutes: 25)),
   );

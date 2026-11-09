@@ -2,9 +2,28 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/l10n/l10n.dart';
+
 const kActivityEtaFreshness = Duration(seconds: 30);
 const kActivityLongWait = Duration(minutes: 5);
 const kActivityFundingLongWait = Duration(minutes: 8);
+
+/// An estimate a pending row shows beside its clock icon.
+enum ActivityEta {
+  standard,
+  funding,
+  nu7,
+  nu7Funding,
+  takingLonger;
+
+  String label(AppLocalizations l10n) => switch (this) {
+    standard => l10n.activityEtaStandard,
+    funding => l10n.activityEtaFunding,
+    nu7 => l10n.activityEtaNu7,
+    nu7Funding => l10n.activityEtaNu7Funding,
+    takingLonger => l10n.activityEtaTakingLonger,
+  };
+}
 
 /// Broadcast responses and wallet history can use opposite txid byte orders.
 /// Use one local identity; never use the canonical form for network queries.
@@ -44,11 +63,12 @@ class PendingActivityEvidence {
   final Map<(String, String), DateTime> observedAt;
   final Set<String> unavailableHistoryAccounts;
 
-  String? labelFor(
+  ActivityEta? etaFor(
     String accountUuid,
     String txid,
     int scannedHeight, {
     bool waitingForFunding = false,
+    int blocksPerReferenceBlock = 1,
   }) {
     final checked = networkCheckedAt;
     final observed = observedAt[(accountUuid, activityTxidKey(txid))];
@@ -67,14 +87,16 @@ class PendingActivityEvidence {
         elapsed.isNegative) {
       return null;
     }
-    final longWait = waitingForFunding
-        ? kActivityFundingLongWait
-        : kActivityLongWait;
-    return elapsed >= longWait
-        ? 'Taking longer'
-        : waitingForFunding
-        ? 'Est. 2–6 min'
-        : 'Est. 1–3 min';
+    // The waits count 75-second blocks; NU7 blocks come three times as often.
+    final longWait =
+        (waitingForFunding ? kActivityFundingLongWait : kActivityLongWait) ~/
+        blocksPerReferenceBlock;
+    if (elapsed >= longWait) return ActivityEta.takingLonger;
+    final fasterBlocks = blocksPerReferenceBlock > 1;
+    if (waitingForFunding) {
+      return fasterBlocks ? ActivityEta.nu7Funding : ActivityEta.funding;
+    }
+    return fasterBlocks ? ActivityEta.nu7 : ActivityEta.standard;
   }
 }
 

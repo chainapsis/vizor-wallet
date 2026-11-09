@@ -14,10 +14,11 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_bat
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -27,6 +28,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, child) => AppTheme(
           data: AppThemeData.dark,
           child: MediaQuery(
@@ -45,8 +47,8 @@ void main() {
         ),
       ),
     );
-    final heading = find.text(kPaymentLinkClaimCheckingHeading);
-    final description = find.text(kPaymentLinkClaimCheckingDescription);
+    final heading = find.text(testL10n.paymentLinkClaimCheckingHeading);
+    final description = find.text(testL10n.paymentLinkClaimCheckingDescription);
     final progress = find.text('Checking the gift… 50%');
     expect(
       tester.getRect(heading).bottom,
@@ -156,8 +158,8 @@ void main() {
                   artwork: PaymentLinkCardArtwork.ruby,
                   statusLabel: 'Unused',
                   used: false,
-                  onCopyLink: () {},
-                  onShowQr: () {},
+                  onCopyLink: ready ? () {} : null,
+                  onShowQr: ready ? () {} : null,
                 ),
               ],
             ),
@@ -174,10 +176,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(primary);
       expect(primaryPressed, isTrue);
-      expect(
-        find.byType(PaymentLinkBatchMemberRow),
-        ready ? findsOneWidget : findsNothing,
-      );
+      expect(find.byType(PaymentLinkBatchMemberRow), findsOneWidget);
       expect(
         find.textContaining('hasn’t confirmed that the payment was sent'),
         ready ? findsNothing : findsOneWidget,
@@ -916,7 +915,7 @@ void main() {
       expect(
         tester
             .widget<AppButton>(
-              find.widgetWithText(AppButton, 'Confirm & review'),
+              find.widgetWithText(AppButton, 'Review & confirm'),
             )
             .onPressed,
         isNotNull,
@@ -939,7 +938,7 @@ void main() {
       expect(
         tester
             .widget<AppButton>(
-              find.widgetWithText(AppButton, 'Confirm & review'),
+              find.widgetWithText(AppButton, 'Review & confirm'),
             )
             .onPressed,
         isNull,
@@ -1584,7 +1583,7 @@ void main() {
       ),
     );
     expect(
-      tester.getTopLeft(find.text(kPaymentLinkClaimCheckingHeading)).dy,
+      tester.getTopLeft(find.text(testL10n.paymentLinkClaimCheckingHeading)).dy,
       closeTo(114.5, 1),
     );
     expect(
@@ -1816,6 +1815,7 @@ Future<void> _pump(
 }) {
   return tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (context, appChild) => MediaQuery(
         data: MediaQuery.of(
           context,

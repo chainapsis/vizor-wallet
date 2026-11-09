@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -10,6 +11,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import 'voting_auto_advance_indicator.dart';
+import '../../../core/l10n/locale_typography.dart';
 
 class VotingMetadataBadge extends StatelessWidget {
   const VotingMetadataBadge(this.label, {super.key});
@@ -44,7 +46,7 @@ class VotingMetadataBadge extends StatelessWidget {
 class VotingForumLinkButton extends StatelessWidget {
   const VotingForumLinkButton({
     required this.uri,
-    this.label = 'Forum discussion',
+    this.label,
     this.size = AppButtonSize.small,
     this.mobilePollList = false,
     this.contentPadding,
@@ -52,7 +54,7 @@ class VotingForumLinkButton extends StatelessWidget {
   });
 
   final Uri uri;
-  final String label;
+  final String? label;
   final AppButtonSize size;
   final bool mobilePollList;
   final EdgeInsets? contentPadding;
@@ -76,7 +78,7 @@ class VotingForumLinkButton extends StatelessWidget {
         leading: mobilePollList ? null : const AppIcon(AppIcons.link),
         trailing: mobilePollList ? const AppIcon(AppIcons.link) : null,
         child: Text(
-          label,
+          label ?? context.l10n.votingForumDiscussion,
           style: mobilePollList ? AppTypography.labelLarge : null,
         ),
       ),
@@ -88,14 +90,14 @@ class VotingProposalMetadataRow extends StatelessWidget {
   const VotingProposalMetadataRow({
     required this.zipBadges,
     required this.forumUri,
-    this.forumLabel = 'Forum discussion',
+    this.forumLabel,
     this.trailing,
     super.key,
   });
 
   final List<String> zipBadges;
   final Uri? forumUri;
-  final String forumLabel;
+  final String? forumLabel;
   final Widget? trailing;
 
   @override
@@ -176,7 +178,7 @@ class VotingProposalCard extends StatelessWidget {
             !proposal.options.any((option) => option.index == selectedChoice)
         ? VotingOptionView(
             index: selectedChoice,
-            label: 'Choice $selectedChoice',
+            label: context.l10n.votingChoiceFallback(selectedChoice),
           )
         : null;
     if (kAppFormFactor == AppFormFactor.mobile) {
@@ -608,10 +610,10 @@ class _VotingProposalOptionRow extends StatelessWidget {
               : colors.text.secondary
         : colors.text.secondary.withValues(alpha: 0.48);
     final trailingLabel = selected
-        ? 'Selected'
+        ? context.l10n.votingOptionSelected
         : readOnly
         ? null
-        : 'Choose';
+        : context.l10n.votingOptionChoose;
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadii.small),
       onTap: interactive
@@ -672,7 +674,7 @@ class _VotingProposalOptionRow extends StatelessWidget {
               const SizedBox(width: AppSpacing.sm),
               Text(
                 trailingLabel,
-                key: trailingLabel == 'Selected'
+                key: selected
                     ? const ValueKey('voting_selected_choice_indicator')
                     : null,
                 style: AppTypography.bodySmall.copyWith(
@@ -694,8 +696,8 @@ class VotingExpandableText extends StatefulWidget {
     required this.text,
     required this.style,
     this.collapsedMaxLines = 2,
-    this.collapsedLabel = 'View more',
-    this.expandedLabel = 'View less',
+    this.collapsedLabel,
+    this.expandedLabel,
     this.buttonAlignment = Alignment.centerRight,
     this.showToggleWhenNotOverflowing = false,
     this.controlsBuilder,
@@ -705,8 +707,8 @@ class VotingExpandableText extends StatefulWidget {
   final String text;
   final TextStyle style;
   final int collapsedMaxLines;
-  final String collapsedLabel;
-  final String expandedLabel;
+  final String? collapsedLabel;
+  final String? expandedLabel;
   final AlignmentGeometry buttonAlignment;
   final bool showToggleWhenNotOverflowing;
   final Widget Function(bool expanded, VoidCallback onToggle)? controlsBuilder;
@@ -764,8 +766,10 @@ class _VotingExpandableTextState extends State<VotingExpandableText> {
                 alignment: widget.buttonAlignment,
                 child: _VotingViewMoreButton(
                   expanded: _expanded,
-                  collapsedLabel: widget.collapsedLabel,
-                  expandedLabel: widget.expandedLabel,
+                  collapsedLabel:
+                      widget.collapsedLabel ?? context.l10n.votingViewMore,
+                  expandedLabel:
+                      widget.expandedLabel ?? context.l10n.votingViewLess,
                   onPressed: () {
                     setState(() {
                       _expanded = !_expanded;
@@ -789,7 +793,7 @@ bool _textExceedsMaxLines({
 }) {
   if (!maxWidth.isFinite || maxWidth <= 0) return false;
   final textPainter = TextPainter(
-    text: TextSpan(text: text, style: style),
+    text: TextSpan(text: text, style: withLocaleFontFallback(context, style)),
     textDirection: Directionality.of(context),
     textScaler: MediaQuery.textScalerOf(context),
     maxLines: maxLines,

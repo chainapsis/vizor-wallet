@@ -28,7 +28,7 @@ class Zip321PaymentRequest {
     // common case before the string is encoded.
     if (input.length > kMaxPaymentUriLength ||
         utf8.encode(input).length > kMaxPaymentUriLength) {
-      throw const Zip321ParseException('Payment link is too long.');
+      throw const Zip321ParseException('Request link is too long.');
     }
     final trimmed = input.trim();
     if (trimmed.isEmpty) {
@@ -162,11 +162,11 @@ class Zip321PaymentRequest {
 
     final hasBinaryMemo = parsedPayments.any((payment) => payment.memoIsBinary);
     final unsupportedReason = parsedPayments.length > 1
-        ? 'Multiple-recipient ZIP-321 requests are parsed but not supported yet.'
+        ? 'Multiple-recipient ZIP-321 requests are parsed but not supported yet.' // l10n-ignore: logged only; the payer sees PaymentUriNotice
         : hasBinaryMemo
-        ? 'Binary ZIP-321 memos are parsed but not supported yet.'
+        ? 'Binary ZIP-321 memos are parsed but not supported yet.' // l10n-ignore: logged only; the payer sees PaymentUriNotice
         : hasCustomAsset
-        ? 'Custom asset ZIP-321 requests are parsed but not supported yet.'
+        ? 'Custom asset ZIP-321 requests are parsed but not supported yet.' // l10n-ignore: logged only; the payer sees PaymentUriNotice
         : null;
 
     return Zip321PaymentRequest(

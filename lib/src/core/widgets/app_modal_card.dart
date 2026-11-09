@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import 'app_button.dart';
 import 'app_modal_shape.dart';
@@ -114,7 +115,7 @@ class AppModalActions extends StatelessWidget {
     required this.onCancel,
     required this.actionLabel,
     required this.onAction,
-    this.cancelLabel = 'Cancel',
+    this.cancelLabel,
     this.actionVariant = AppButtonVariant.primary,
     this.actionMinWidth = kAppModalButtonMinWidth,
     this.actionLeading,
@@ -124,7 +125,7 @@ class AppModalActions extends StatelessWidget {
   });
 
   final VoidCallback? onCancel;
-  final String cancelLabel;
+  final String? cancelLabel;
   final String actionLabel;
   final VoidCallback? onAction;
   final AppButtonVariant actionVariant;
@@ -190,7 +191,7 @@ class AppModalActions extends StatelessWidget {
       children: [
         buildButton(
           key: cancelKey,
-          label: cancelLabel,
+          label: cancelLabel ?? context.l10n.commonCancel,
           onPressed: onCancel,
           variant: AppButtonVariant.ghost,
         ),

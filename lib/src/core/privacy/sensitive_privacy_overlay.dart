@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
 
@@ -457,7 +458,10 @@ class _SensitivePrivacyOverlayState extends State<SensitivePrivacyOverlay> {
         return Stack(
           fit: StackFit.passthrough,
           children: [
-            widget.child,
+            // What the shield hides from the screen is hidden from screen
+            // readers too; the shield's icon says so instead. The child stays
+            // mounted, so its state survives the shield.
+            ExcludeSemantics(excluding: showShield, child: widget.child),
             if (showShield)
               Positioned.fill(
                 child: _SensitivePrivacyShield(
@@ -508,7 +512,7 @@ class _SensitivePrivacyShield extends StatelessWidget {
                   AppIcons.lock,
                   size: 50,
                   color: iconColor,
-                  semanticLabel: 'Sensitive content hidden',
+                  semanticLabel: context.l10n.commonSensitiveContentHidden,
                 ),
               ),
             ),

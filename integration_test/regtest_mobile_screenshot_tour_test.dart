@@ -307,7 +307,7 @@ void main() {
       );
       await pumpUntil(
         tester,
-        () => tester.any(find.text('Finish & review')),
+        () => tester.any(find.text('Review & finish')),
         description: 'amount ready',
         timeout: const Duration(minutes: 1),
       );

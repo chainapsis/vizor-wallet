@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
+import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
@@ -76,30 +77,28 @@ void main() {
     );
   }
 
-  testWidgets(
-    'mobile required migration presentation leaves send accessible',
-    (tester) async {
-      await tester.pumpWidget(
-        _appHarness(
-          '/send',
-          ironwoodPostMigrationState:
-              const IronwoodPostMigrationState.unavailable(),
-          ironwoodHomeMigrationCtaState:
-              const IronwoodHomeMigrationCtaState.start(
-                network: 'main',
-                accountUuid: 'account-1',
-              ),
-          ironwoodMigrationFlowData: _migrationFlowData,
-        ),
-      );
+  testWidgets('mobile required migration presentation leaves send accessible', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/send',
+        ironwoodPostMigrationState:
+            const IronwoodPostMigrationState.unavailable(),
+        ironwoodHomeMigrationCtaState:
+            const IronwoodHomeMigrationCtaState.start(
+              network: 'main',
+              accountUuid: 'account-1',
+            ),
+        ironwoodMigrationFlowData: _migrationFlowData,
+      ),
+    );
 
-      await tester.pumpAndSettle();
+    await tester.pumpAndSettle();
 
-      expect(find.byType(MobileSendScreen), findsOneWidget);
-      expect(find.byType(MobileIronwoodMigrationFlowScreen), findsNothing);
-    },
-    tags: 'mobile',
-  );
+    expect(find.byType(MobileSendScreen), findsOneWidget);
+    expect(find.byType(MobileIronwoodMigrationFlowScreen), findsNothing);
+  }, tags: 'mobile');
 
   testWidgets('completed Ironwood migration leaves swap route accessible', (
     tester,
@@ -208,6 +207,36 @@ void main() {
     expect(store.loadCount, 0);
     expect(find.text('Swapping...'), findsNothing);
   });
+
+  for (final network in ['main', 'test']) {
+    testWidgets('mobile $network Activity does not load disabled swaps', (
+      tester,
+    ) async {
+      final store = _CountingSwapActivityStore([
+        _swapActivityRecord(id: 'swap-hidden-mobile'),
+      ]);
+      await tester.pumpWidget(
+        _appHarness(
+          '/activity',
+          network: network,
+          swapEnabled: network == 'main' ? false : null,
+          swapActivityStore: store,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileActivityScreen), findsOneWidget);
+      expect(store.loadCount, 0);
+      expect(find.text('Swapping...'), findsNothing);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileActivityScreen)),
+      );
+      (container.read(syncProvider.notifier) as FakeSyncNotifier)
+          .reportFollowupUpdated();
+      await tester.pumpAndSettle();
+      expect(store.loadCount, 0);
+    }, tags: 'mobile');
+  }
 
   testWidgets('testnet wallet disables swap route and activity loading', (
     tester,

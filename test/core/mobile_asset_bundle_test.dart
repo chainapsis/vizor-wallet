@@ -34,6 +34,11 @@ void main() {
 
     expect(assets, contains('assets/profile_pictures/profile_picture_01.png'));
     expect(assets, contains('assets/animations/mobile_welcome.mp4'));
+    expect(assets, contains('assets/animations/welcome_landscape.mp4'));
+    expect(
+      assets,
+      contains('assets/illustrations/welcome_landscape_poster.webp'),
+    );
     expect(
       assets.where((asset) => asset.contains('/desktop/')),
       isEmpty,

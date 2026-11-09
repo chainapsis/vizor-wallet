@@ -11,6 +11,7 @@ import '../../../../core/formatting/address_display.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/privacy/privacy_mask.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
@@ -19,6 +20,7 @@ import '../../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
+import '../../../../core/widgets/review_info_row.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
@@ -29,7 +31,6 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../payment_links/widgets/mobile/payment_link_mobile_views.dart'
     show kPaymentLinkMobileCardHeight, kPaymentLinkMobileCardWidth;
-import '../../../payment_links/widgets/payment_link_copy.dart';
 import '../../../payment_links/widgets/payment_link_gift_card.dart';
 import '../../../send/widgets/send_recipient_resolver.dart';
 import '../../../send/widgets/send_review_layout.dart'
@@ -86,10 +87,8 @@ class MobileTransactionStatusScreen extends TransactionReceiptScreen {
     super.historyLoader,
     super.detailLoader,
     super.transparentDetailsPrioritizer,
-    super.transparentDetailsDebugLookup,
     super.transparentDetailsPublicLookup,
     super.publicLookupConfirmation,
-    super.showPrivateLookupDiagnostics,
     super.key,
   });
 
@@ -154,6 +153,7 @@ class _MobileTransactionStatusScreenState
   String _titleFor(GiftCardActivityMetadata? giftCard) {
     if (giftCard != null) {
       return giftCardActivityTitle(
+        context.l10n,
         giftCard.kind,
         isInFlight: _phaseFor(giftCard) == _TxPhase.pending,
         isFailed: _phaseFor(giftCard) == _TxPhase.failed,
@@ -162,23 +162,23 @@ class _MobileTransactionStatusScreenState
 
     if (_isShielding) {
       return switch (_phase) {
-        _TxPhase.pending => 'Shielding...',
-        _TxPhase.succeeded => 'Shielded',
-        _TxPhase.failed => 'Shielding failed',
+        _TxPhase.pending => context.l10n.commonShielding,
+        _TxPhase.succeeded => context.l10n.activityTitleShielded,
+        _TxPhase.failed => context.l10n.activityTitleShieldingFailed,
       };
     }
     if (_isMigration) {
       return switch (_phase) {
-        _TxPhase.pending => 'Migrating to Ironwood...',
-        _TxPhase.succeeded => 'Migrated to Ironwood',
-        _TxPhase.failed => 'Migration failed',
+        _TxPhase.pending => context.l10n.activityTitleMigrating,
+        _TxPhase.succeeded => context.l10n.activityTitleMigrated,
+        _TxPhase.failed => context.l10n.activityTitleMigrationFailed,
       };
     }
     if (_isIncoming) {
       return switch (_phase) {
-        _TxPhase.pending => 'Receiving...',
-        _TxPhase.succeeded => 'Received',
-        _TxPhase.failed => 'Receive failed',
+        _TxPhase.pending => context.l10n.activityTitleReceiving,
+        _TxPhase.succeeded => context.l10n.commonReceived,
+        _TxPhase.failed => context.l10n.activityTitleReceiveFailed,
       };
     }
     // Unclassified transactions and balance movements stay neutral, like
@@ -186,12 +186,12 @@ class _MobileTransactionStatusScreenState
     if (!_isSent ||
         _feePresentationFor(receiptTransaction, null) !=
             TransactionFeePresentation.separate) {
-      return 'Transaction';
+      return context.l10n.activityTitleTransaction;
     }
     return switch (_phase) {
-      _TxPhase.pending => 'Sending...',
-      _TxPhase.succeeded => 'Sent successfully',
-      _TxPhase.failed => 'Send failed',
+      _TxPhase.pending => context.l10n.commonSending,
+      _TxPhase.succeeded => context.l10n.commonSentSuccessfully,
+      _TxPhase.failed => context.l10n.commonSendFailed,
     };
   }
 
@@ -213,7 +213,7 @@ class _MobileTransactionStatusScreenState
       ),
     );
     if (!mounted) return;
-    showAppToast(context, 'Transaction Hash Copied');
+    showAppToast(context, context.l10n.activityToastHashCopiedMobile);
   }
 
   Future<void> _showFullAddressSheet(String address) {
@@ -243,6 +243,7 @@ class _MobileTransactionStatusScreenState
     listenForReceiptRefresh();
 
     final colors = context.colors;
+    final l10n = context.l10n;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final tx = receiptTransaction;
     final detail = matchingReceiptDetailFor(tx);
@@ -263,15 +264,15 @@ class _MobileTransactionStatusScreenState
           child: Column(
             children: [
               MobileTopNav.back(
-                title: 'Transaction',
+                title: l10n.activityTitleTransaction,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
               Expanded(
                 child: Center(
                   child: Text(
                     receiptLoading
-                        ? 'Loading transaction…'
-                        : (receiptError ?? 'Transaction could not be loaded.'),
+                        ? l10n.activityReceiptLoading
+                        : (receiptError ?? l10n.activityReceiptLoadFailed),
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -350,13 +351,13 @@ class _MobileTransactionStatusScreenState
 
     final hasAddress = address != null && address.isNotEmpty;
     final amountBottom = _isMigration
-        ? _BottomInfoRow(
+        ? _BottomInfo(
             iconName: AppIcons.migrationSplit,
             iconColor: colors.icon.regular,
-            text: 'From Orchard balance',
+            text: l10n.activityBalanceFromOrchard,
           )
         : _isIncoming && receivingAddress != null && receivingAddress.isNotEmpty
-        ? _BottomInfoRow(
+        ? _BottomInfo(
             iconName: _poolIconNameFor(
               receivingPoolLabel,
               address: receivingAddress,
@@ -369,34 +370,36 @@ class _MobileTransactionStatusScreenState
             text: _truncateAddress(receivingAddress),
           )
         : !hasAddress && !(_isSent && detailsLoading) && poolLabel != null
-        ? _BottomInfoRow(
+        ? _BottomInfo(
             iconName: _poolIconNameFor(poolLabel),
             iconColor: _poolIconColorFor(context, poolLabel),
             text: poolLabel,
           )
         : null;
-    final amountRow = MobileReviewInfoRow(
+    final amountRow = _reviewRow(
       label: switch (feePresentation) {
-        TransactionFeePresentation.separate => 'Amount',
-        TransactionFeePresentation.includedInAmount => kNetChangeText,
-        TransactionFeePresentation.feeOnly => kNetChangeText,
+        TransactionFeePresentation.separate => l10n.commonAmount,
+        TransactionFeePresentation.includedInAmount =>
+          l10n.activityReceiptNetChange,
+        TransactionFeePresentation.feeOnly => l10n.activityReceiptNetChange,
       },
       value: amountText,
       leading: const MobileReviewZecBadge(),
       // With no counterparty row (shielded senders are unknown), the
       // pool tag moves under the amount — Figma `Received` keeps the
       // pool on the bottom strip.
-      bottom: detailsLoading && _isIncoming
+      bottom: detailsLoading && _isIncoming ? null : amountBottom,
+      bottomPlaceholder: detailsLoading && _isIncoming
           ? const Align(
               alignment: Alignment.centerLeft,
               child: ReceiptValueSkeleton(),
             )
-          : amountBottom,
+          : null,
     );
     final addressRow = (address == null || address.isEmpty)
         ? null
-        : MobileReviewInfoRow(
-            label: _isIncoming ? 'From' : 'To',
+        : _reviewRow(
+            label: _isIncoming ? l10n.activityReceiptFrom : l10n.commonTo,
             value: namedRecipient != null
                 ? namedRecipient.name
                 : _truncateAddress(address),
@@ -413,7 +416,7 @@ class _MobileTransactionStatusScreenState
                       color: colors.icon.regular,
                     ),
                   ),
-            bottom: _BottomInfoRow(
+            bottom: _BottomInfo(
               iconName: poolLabel == null
                   ? null
                   : _poolIconNameFor(poolLabel, address: address),
@@ -425,13 +428,12 @@ class _MobileTransactionStatusScreenState
               text: namedRecipient != null
                   ? _truncateAddress(address)
                   : poolLabel,
-              trailing: _GhostIconLabelButton(
-                key: const ValueKey('mobile_tx_status_show_full_address'),
-                iconName: AppIcons.eye,
-                label: 'Show full address',
-                onTap: () => unawaited(_showFullAddressSheet(address)),
-              ),
             ),
+            trailingActionLabel: l10n.commonShowFullAddress,
+            trailingActionKey: const ValueKey(
+              'mobile_tx_status_show_full_address',
+            ),
+            onTrailingAction: () => unawaited(_showFullAddressSheet(address)),
           );
     // Without an exact source address, the account the wallet recorded as
     // sending the received outputs still names where the funds came from.
@@ -442,15 +444,15 @@ class _MobileTransactionStatusScreenState
           )
         : null;
     final sourceAccountPool = switch (sourcePool) {
-      'shielded' => 'Shielded',
-      'transparent' => 'Transparent',
+      'shielded' => l10n.poolShielded,
+      'transparent' => l10n.poolTransparent,
       _ => null,
     };
     final sourceAccountRow = sourceAccount == null
         ? null
-        : MobileReviewInfoRow(
+        : _reviewRow(
             key: const ValueKey('received_from_account'),
-            label: 'From',
+            label: l10n.activityReceiptFrom,
             value: sourceAccount.name,
             leading: AppProfilePicture(
               profilePictureId: sourceAccount.profilePictureId,
@@ -458,7 +460,7 @@ class _MobileTransactionStatusScreenState
             ),
             bottom: sourceAccountPool == null
                 ? null
-                : _BottomInfoRow(
+                : _BottomInfo(
                     iconName: _poolIconNameFor(sourceAccountPool),
                     iconColor: _poolIconColorFor(context, sourceAccountPool),
                     text: sourceAccountPool,
@@ -473,8 +475,8 @@ class _MobileTransactionStatusScreenState
         : null;
     final unknownFromRow = unknownFromLabel == null
         ? null
-        : MobileReviewInfoRow(
-            label: 'From',
+        : _reviewRow(
+            label: l10n.activityReceiptFrom,
             value: unknownFromLabel,
             leading: MobileReviewIconBadge(
               child: AppIcon(
@@ -484,10 +486,10 @@ class _MobileTransactionStatusScreenState
               ),
             ),
             bottom: sourcePool == 'shielded'
-                ? _BottomInfoRow(
-                    iconName: _poolIconNameFor('Shielded'),
-                    iconColor: _poolIconColorFor(context, 'Shielded'),
-                    text: 'Shielded',
+                ? _BottomInfo(
+                    iconName: _poolIconNameFor(l10n.poolShielded),
+                    iconColor: _poolIconColorFor(context, l10n.poolShielded),
+                    text: l10n.poolShielded,
                   )
                 : null,
           );
@@ -497,19 +499,19 @@ class _MobileTransactionStatusScreenState
     // Amount (Figma `Received` 4752:75264).
     final fromRow = _isIncoming
         ? detailsLoading
-              ? const ReceiptCounterpartySkeleton(label: 'From')
+              ? ReceiptCounterpartySkeleton(label: l10n.activityReceiptFrom)
               : addressRow ?? sourceAccountRow ?? unknownFromRow
         : null;
     // A send whose recipient the account did not record keeps the To row,
     // naming no one and offering nothing to verify.
     final toRow = _isSent && detailsLoading
-        ? const ReceiptCounterpartySkeleton(label: 'To')
+        ? ReceiptCounterpartySkeleton(label: l10n.commonTo)
         : addressRow ??
               (giftCard == null && receiptHasUnknownRecipient(tx, detail)
-                  ? MobileReviewInfoRow(
+                  ? _reviewRow(
                       key: const ValueKey('receipt_unknown_recipient'),
-                      label: 'To',
-                      value: kUnknownRecipientText,
+                      label: l10n.commonTo,
+                      value: l10n.activityDetailsUnknownRecipient,
                       strikethrough: failed,
                       leading: MobileReviewIconBadge(
                         child: AppIcon(
@@ -530,10 +532,9 @@ class _MobileTransactionStatusScreenState
         : _isMigration
         ? <Widget>[
             amountRow,
-            const MobileReviewFlowArrow(),
-            MobileReviewInfoRow(
-              label: 'To',
-              value: 'Ironwood balance',
+            _reviewRow(
+              label: l10n.commonTo,
+              value: l10n.activityBalanceIronwood,
               leading: MobileReviewIconBadge(
                 child: AppIcon(
                   AppIcons.shieldKeyholeOutline,
@@ -541,29 +542,28 @@ class _MobileTransactionStatusScreenState
                   color: colors.icon.regular,
                 ),
               ),
-              bottom: _BottomInfoRow(
+              bottom: _BottomInfo(
                 iconName: AppIcons.shieldKeyhole,
                 iconColor: colors.icon.success,
-                text: 'Ironwood',
+                text: 'Ironwood', // l10n-ignore: product name
               ),
             ),
           ]
         : _isShielding
         ? <Widget>[
-            MobileReviewInfoRow(
-              label: 'Amount',
+            _reviewRow(
+              label: l10n.commonAmount,
               value: amountText,
               leading: const MobileReviewZecBadge(),
-              bottom: _BottomInfoRow(
+              bottom: _BottomInfo(
                 iconName: AppIcons.transparentBalance,
                 iconColor: colors.icon.muted,
-                text: 'From transparent balance',
+                text: l10n.activityBalanceFromTransparent,
               ),
             ),
-            const MobileReviewFlowArrow(),
-            MobileReviewInfoRow(
-              label: 'To',
-              value: 'Shielded balance',
+            _reviewRow(
+              label: l10n.commonTo,
+              value: l10n.commonShieldedBalance,
               leading: MobileReviewIconBadge(
                 child: AppIcon(
                   AppIcons.shieldKeyholeOutline,
@@ -571,21 +571,18 @@ class _MobileTransactionStatusScreenState
                   color: colors.icon.regular,
                 ),
               ),
-              bottom: _BottomInfoRow(
+              bottom: _BottomInfo(
                 iconName: AppIcons.shieldKeyhole,
                 iconColor: colors.icon.brandCrimson,
-                text: 'Shielded',
+                text: l10n.poolShielded,
               ),
             ),
           ]
         : _isIncoming
-        ? <Widget>[
-            if (fromRow != null) ...[fromRow, const MobileReviewFlowArrow()],
-            amountRow,
-          ]
+        ? <Widget>[?fromRow, amountRow]
         : toRow == null
         ? <Widget>[amountRow]
-        : <Widget>[amountRow, const MobileReviewFlowArrow(), toRow];
+        : <Widget>[amountRow, toRow];
 
     return Scaffold(
       backgroundColor: colors.background.window,
@@ -645,20 +642,7 @@ class _MobileTransactionStatusScreenState
                           padding: const EdgeInsets.symmetric(
                             vertical: AppSpacing.md,
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              for (
-                                var i = 0;
-                                i < reviewChildren.length;
-                                i++
-                              ) ...[
-                                if (i > 0)
-                                  const SizedBox(height: AppSpacing.xs),
-                                reviewChildren[i],
-                              ],
-                            ],
-                          ),
+                          child: ReviewInfoFlow(rows: reviewChildren),
                         ),
                       const SizedBox(height: AppSpacing.md),
                       _DetailCard(
@@ -668,13 +652,13 @@ class _MobileTransactionStatusScreenState
                             : switch (_phaseFor(giftCard)) {
                                 _TxPhase.pending =>
                                   giftCard.kind == GiftCardActivityKind.created
-                                      ? 'Creating…'
-                                      : 'Redeeming…',
+                                      ? l10n.commonCreating
+                                      : l10n.activityGiftStatusRedeeming,
                                 _TxPhase.succeeded =>
                                   giftCard.kind == GiftCardActivityKind.created
-                                      ? 'Created'
-                                      : 'Redeemed',
-                                _TxPhase.failed => 'Failed',
+                                      ? l10n.commonCreated
+                                      : l10n.activityGiftStatusRedeemed,
+                                _TxPhase.failed => l10n.commonFailed,
                               },
                         failed: failed,
                         memo: memo,
@@ -716,10 +700,6 @@ class _MobileTransactionStatusScreenState
                         TransparentDetailsSection(
                           detail: detail,
                           privacyModeEnabled: privacyModeEnabled,
-                          debugLookupText: debugLookupText,
-                          onDebugLookup: offersDebugLookup(tx, detail)
-                              ? () => unawaited(runDebugLookup(tx))
-                              : null,
                           publicLookupText: publicLookupText,
                           onLoadPublicly: offersPublicDetailsLookup(detail)
                               ? () => unawaited(runPublicLookup(tx))
@@ -765,10 +745,13 @@ class _MobileTransactionStatusScreenState
 
   String _dateText(rust_sync.TransactionInfo? tx, {DateTime? override}) {
     if (tx == null) return '--';
-    if (override != null) return formatActivityTimestamp(override);
+    if (override != null) {
+      return formatActivityTimestamp(context.l10n, override);
+    }
     final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
     if (seconds <= BigInt.zero) return '--';
     return formatActivityTimestamp(
+      context.l10n,
       DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000),
     );
   }
@@ -803,7 +786,7 @@ class _MobileTransactionStatusScreenState
         privacyModeEnabled: privacyModeEnabled,
       );
     }
-    if (_showUnknownFee(tx)) return kUnknownFeeText;
+    if (_showUnknownFee(tx)) return context.l10n.commonUnknown;
     if (tx.fee <= BigInt.zero) return null;
     final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
     if (privacyModeEnabled) {
@@ -814,12 +797,12 @@ class _MobileTransactionStatusScreenState
 
   String? _poolLabel(String? pool, {bool ordinary = false}) {
     return switch (pool) {
-      'transparent' => 'Transparent',
-      'shielded' => 'Shielded',
-      'orchard' when ordinary => 'Orchard',
-      'sapling' when ordinary => 'Sapling',
-      'ironwood' => 'Ironwood',
-      'mixed' => 'Mixed',
+      'transparent' => context.l10n.poolTransparent,
+      'shielded' => context.l10n.poolShielded,
+      'orchard' when ordinary => 'Orchard', // l10n-ignore: product name
+      'sapling' when ordinary => 'Sapling', // l10n-ignore: product name
+      'ironwood' => 'Ironwood', // l10n-ignore: product name
+      'mixed' => context.l10n.activityPoolMixed,
       _ => null,
     };
   }
@@ -830,13 +813,15 @@ class _MobileTransactionStatusScreenState
     bool ordinary = false,
   }) {
     final lower = address?.trim().toLowerCase();
-    if (lower != null && lower.startsWith('tex')) return 'TEX';
+    if (lower != null && lower.startsWith('tex')) {
+      return 'TEX'; // l10n-ignore: protocol name
+    }
     return _poolLabel(pool, ordinary: ordinary);
   }
 
   String _poolIconNameFor(String? poolLabel, {String? address}) {
     final isTransparent =
-        poolLabel == 'Transparent' ||
+        poolLabel == context.l10n.poolTransparent ||
         (address != null &&
             zcashAddressDisplayKind(address) ==
                 ZcashAddressDisplayKind.transparent);
@@ -849,7 +834,7 @@ class _MobileTransactionStatusScreenState
     String? address,
   }) {
     final isTransparent =
-        poolLabel == 'Transparent' ||
+        poolLabel == context.l10n.poolTransparent ||
         (address != null &&
             zcashAddressDisplayKind(address) ==
                 ZcashAddressDisplayKind.transparent);
@@ -876,20 +861,22 @@ class _MobileTransactionStatusScreenState
 
   String? _unknownFromLabelForSourcePool(String? pool) {
     if (pool == null || pool.isEmpty) return null;
-    return pool == 'shielded' ? 'Shielded sender' : 'Unknown sender';
+    return pool == 'shielded'
+        ? context.l10n.activitySenderShielded
+        : context.l10n.activitySenderUnknown;
   }
 
   String _addressVerifyTitle(String address) {
     final lower = address.trim().toLowerCase();
-    if (lower.startsWith('u1')) return 'Unified address';
-    if (lower.startsWith('zs')) return 'Shielded address';
-    if (lower.startsWith('t')) return 'Transparent address';
-    return 'Zcash address';
+    if (lower.startsWith('u1')) return context.l10n.activityAddressUnified;
+    if (lower.startsWith('zs')) return context.l10n.commonShieldedAddress;
+    if (lower.startsWith('t')) return context.l10n.commonTransparentAddress;
+    return context.l10n.commonZcashAddress;
   }
 
   String _truncateAddress(String address) {
     if (address.length <= 14) return address;
-    return '${address.substring(0, 6)} ... '
+    return '${address.substring(0, 6)} ... ' // l10n-ignore: address
         '${address.substring(address.length - 5)}';
   }
 }
@@ -926,119 +913,41 @@ class _AddressVerifyZecIcon extends StatelessWidget {
 
 enum _TxPhase { pending, succeeded, failed }
 
-class _BottomInfoRow extends StatelessWidget {
-  const _BottomInfoRow({
-    required this.text,
-    this.iconName,
-    this.iconColor,
-    this.trailing,
-  });
+/// Bottom strip of a review row: an optional pool glyph and its text.
+class _BottomInfo {
+  const _BottomInfo({required this.text, this.iconName, this.iconColor});
 
   final String? text;
   final String? iconName;
   final Color? iconColor;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = text;
-    final trailingWidget = trailing;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final leadingWidth = iconName == null
-            ? 0.0
-            : AppIconSize.medium + AppSpacing.xxs;
-        final maxTrailingWidth = constraints.hasBoundedWidth
-            ? (constraints.maxWidth - leadingWidth)
-                  .clamp(0.0, constraints.maxWidth)
-                  .toDouble()
-            : double.infinity;
-
-        return Row(
-          children: [
-            if (iconName != null) ...[
-              AppIcon(
-                iconName!,
-                size: AppIconSize.medium,
-                color: iconColor ?? context.colors.text.secondary,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-            ],
-            if (label != null)
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: context.colors.text.secondary,
-                  ),
-                ),
-              )
-            else
-              const Spacer(),
-            if (trailingWidget != null)
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxTrailingWidth),
-                child: trailingWidget,
-              ),
-          ],
-        );
-      },
-    );
-  }
 }
 
-/// Ghost icon+label action, 24px tall — Figma ghost `Button`.
-class _GhostIconLabelButton extends StatelessWidget {
-  const _GhostIconLabelButton({
-    required this.iconName,
-    required this.label,
-    required this.onTap,
-    super.key,
-  });
-
-  final String iconName;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xxs),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              AppIcon(
-                iconName,
-                size: AppIconSize.medium,
-                color: colors.button.ghost.label,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.button.ghost.label,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+ReviewInfoRow _reviewRow({
+  required String label,
+  required String value,
+  required Widget leading,
+  _BottomInfo? bottom,
+  Widget? bottomPlaceholder,
+  bool strikethrough = false,
+  String? trailingActionLabel,
+  Key? trailingActionKey,
+  VoidCallback? onTrailingAction,
+  Key? key,
+}) {
+  return ReviewInfoRow(
+    key: key,
+    label: label,
+    value: value,
+    leading: leading,
+    struckThrough: strikethrough,
+    bottomLeftIconName: bottom?.iconName,
+    bottomLeftIconColor: bottom?.iconColor,
+    bottomLeftText: bottom?.text,
+    bottomLeftPlaceholder: bottomPlaceholder,
+    trailingActionLabel: trailingActionLabel,
+    trailingActionKey: trailingActionKey,
+    onTrailingAction: onTrailingAction,
+  );
 }
 
 /// The rounded detail card — Figma `Review Wrap`: status chip, message
@@ -1093,7 +1002,7 @@ class _DetailCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ListRow(
-            label: 'Status',
+            label: context.l10n.activityReceiptStatus,
             labelColor: failed ? colors.text.destructive : null,
             value: _StatusChip(phase: phase, statusText: statusText),
           ),
@@ -1103,7 +1012,7 @@ class _DetailCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
           ] else if (memoText != null && memoText.isNotEmpty) ...[
             _ListRow(
-              label: 'Message',
+              label: context.l10n.commonMessage,
               value: _ValueWithIcon(
                 key: const ValueKey('mobile_tx_status_message_toggle'),
                 text: messageExpanded ? null : _previewMemo(memoText),
@@ -1128,13 +1037,13 @@ class _DetailCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
           ],
           _ListRow(
-            label: 'Timestamp',
+            label: context.l10n.commonTimestamp,
             value: _ValueWithIcon(text: timestampText),
           ),
           const SizedBox(height: AppSpacing.xs),
           _ListRow(
             key: const ValueKey('mobile_tx_status_txid'),
-            label: 'Tx ID',
+            label: context.l10n.commonTxId,
             value: _ValueWithIcon(
               text: txidText,
               iconName: AppIcons.arrowTopRight,
@@ -1145,16 +1054,17 @@ class _DetailCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
             _ListRow(
               key: const ValueKey('mobile_tx_status_details_incomplete'),
-              label: 'Details',
+              label: context.l10n.activityReceiptDetails,
               value: _ValueWithIcon(
-                text: 'Incomplete',
+                text: context.l10n.activityReceiptIncomplete,
                 iconName: AppIcons.help,
                 iconColor: context.colors.icon.regular.withValues(alpha: 0.72),
                 onTap: () => unawaited(
                   showMobileTxFeeInfoSheet(
                     context,
-                    title: 'Details incomplete',
-                    description: kIncompleteDetailsHelpText,
+                    title: context.l10n.activityReceiptDetailsIncomplete,
+                    description:
+                        context.l10n.activityReceiptDetailsIncompleteHelp,
                   ),
                 ),
               ),
@@ -1167,10 +1077,10 @@ class _DetailCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.sm),
             _ListRow(
               label: isCardCreation
-                  ? 'Card fee'
+                  ? context.l10n.activityReceiptCardFee
                   : showsNetworkFee
-                  ? 'Network fee'
-                  : 'Tx fee',
+                  ? context.l10n.commonNetworkFee
+                  : context.l10n.txFeeInfoTitle,
               labelStyle: AppTypography.labelLarge,
               value: _ValueWithIcon(
                 text: feeText,
@@ -1180,14 +1090,15 @@ class _DetailCard extends StatelessWidget {
                   isCardCreation
                       ? showMobileTxFeeInfoSheet(
                           context,
-                          title: 'Card fee',
-                          description: kPaymentLinkCardFeeHelpText,
+                          title: context.l10n.activityReceiptCardFee,
+                          description: context.l10n.paymentLinkCardFeeHelpText,
                         )
                       : showsNetworkFee
                       ? showMobileTxFeeInfoSheet(
                           context,
-                          title: 'Network fee',
-                          description: kUnattributedNetworkFeeHelpText,
+                          title: context.l10n.commonNetworkFee,
+                          description:
+                              context.l10n.activityReceiptUnattributedFeeHelp,
                         )
                       : showMobileTxFeeInfoSheet(context),
                 ),
@@ -1326,12 +1237,12 @@ class _StatusChip extends StatelessWidget {
     final (iconName, text, color) = switch (phase) {
       _TxPhase.pending => (
         AppIcons.loader,
-        'In progress',
+        context.l10n.commonInProgress,
         colors.text.secondary,
       ),
       _TxPhase.succeeded => (
         AppIcons.checkCircle,
-        'Completed',
+        context.l10n.commonCompleted,
         colors.text.positiveStrong,
       ),
       // The Figma frame says "Failed, refunded minus tx fee", but the
@@ -1339,7 +1250,7 @@ class _StatusChip extends StatelessWidget {
       // no fee is spent at all.
       _TxPhase.failed => (
         AppIcons.cross,
-        'Failed, funds returned',
+        context.l10n.activityStatusFailedFundsReturned,
         colors.text.destructive,
       ),
     };

@@ -18,7 +18,7 @@ use crate::wallet::{
     network::WalletNetwork,
     sync_engine::{SyncError, TransparentLookupGate, WalletDatabase},
 };
-use zakura_transaction_status::{
+use zakura_pir_client::status::policy::{
     DisabledSource, StatusError, StatusMode, StatusObservation, StatusReader, StatusRequest,
     StatusSource,
 };
@@ -63,7 +63,7 @@ impl<P: StatusSource, R: StatusSource> RoutedStatusReader<P, R> {
                 self.private
                     .observe(StatusRequest {
                         txid: request.txid(),
-                        coverage: zakura_pir_status::LocalCoverageContext {
+                        coverage: zakura_pir_client::status::LocalCoverageContext {
                             earliest_possible_inclusion: request
                                 .earliest_possible_inclusion()
                                 .map(u32::from),
@@ -120,6 +120,11 @@ where
         .copied()
         .filter(|work| !attempted.contains(&work.txid()))
         .filter(|work| !(*private_failed && is_private(work)))
+        // A private txid answered at this tip, or created by a reply here,
+        // waits for the next block, whatever the reply said.
+        .filter(|work| {
+            !is_private(work) || super::content_failures::may_ask_status(db_path, &work.txid())
+        })
         .filter(|work| public_allowed || is_private(work))
         .collect();
     let actionable = !pending.is_empty();
@@ -147,8 +152,18 @@ where
         let txid = work.txid();
         attempted.insert(txid);
         let observation = match reader.observe(work, required_through).await {
-            Ok(observation) => observation.into(),
+            Ok(observation) => {
+                if is_private(&work) {
+                    super::content_failures::status_answered(db_path, txid);
+                }
+                observation.into()
+            }
             Err(StatusError::CoverageIncomplete) if is_private(&work) => {
+                // A row without this txid's record is a reply about it, so
+                // the txid waits for the next block like any other answer.
+                // The sync then fails without retrying at this tip (see
+                // `SyncError::recovery_strategy`).
+                super::content_failures::status_answered(db_path, txid);
                 // GetStatus work is expected to be highly unlikely in private
                 // mode. Temporarily fail visibly so this feedback gate detects
                 // real occurrences; if users encounter it, we will design the
@@ -170,6 +185,18 @@ where
                 return Err(SyncError::db(
                     "transaction status: local wallet database read failed",
                 ));
+            }
+            // The private source reserves Malformed for a row decode error
+            // after accepting the manifest, setup and query envelope. Such a
+            // service could aim it at chosen rows. The work stays durable
+            // for a later sync, and the other txids are still asked, so
+            // nothing else in the sync changes.
+            Err(StatusError::Malformed) if is_private(&work) => {
+                super::content_failures::status_answered(db_path, txid);
+                log::warn!(
+                    "private status reply did not decode; the transaction waits for a later sync"
+                );
+                continue;
             }
             Err(error) if is_private(&work) => {
                 // Inconclusive: keep the work and stop querying the private

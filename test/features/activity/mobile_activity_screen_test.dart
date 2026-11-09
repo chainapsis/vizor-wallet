@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -24,9 +25,12 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 import '../../support/wallet_path_read_blocker.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -116,16 +120,22 @@ SwapIntentRecord _payActivityRecord({
 
 Widget _app(
   MobileActivityHistoryLoader loader, {
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
+  ActivityPendingFallback? pendingFallback,
   FakeSyncNotifier? syncNotifier,
   SwapActivityStore? swapActivityStore,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   GoRouter? router,
+  bool? swapEnabled,
 }) {
   return ProviderScope(
     overrides: [
+      if (swapEnabled != null)
+        swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       if (etaLabels != null)
         activityEtaLabelsProvider.overrideWithValue(etaLabels),
+      if (pendingFallback != null)
+        activityPendingFallbackLabelProvider.overrideWithValue(pendingFallback),
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(
         () =>
@@ -142,11 +152,13 @@ Widget _app(
     ],
     child: router != null
         ? MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.dark, child: child!),
           )
         : MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.dark,
               child: MobileActivityScreen(historyLoader: loader),
@@ -181,6 +193,24 @@ class _FakeSwapActivityStore implements SwapActivityStore {
 }
 
 void main() {
+  testWidgets('disabled swaps leave normal Activity visible', (tester) async {
+    final store = _FakeSwapActivityStore([
+      _payActivityRecord(id: 'disabled-pay', depositTxHash: 'deposit'),
+    ]);
+    await tester.pumpWidget(
+      _app(
+        (_) async => [
+          _tx(txidHex: 'received', blockTime: BigInt.from(1800000000)),
+        ],
+        swapActivityStore: store,
+        swapEnabled: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Payment in progress'), findsNothing);
+    expect(find.text('Received'), findsOneWidget);
+  });
+
   testWidgets(
     'same-epoch failed history refresh withholds ETA until recovery',
     (tester) async {
@@ -207,7 +237,7 @@ void main() {
             return isRefreshing ? refreshing.future : [pending];
           },
           syncNotifier: sync,
-          etaLabels: const {'pending': 'Est. 1–3 min'},
+          etaLabels: const {'pending': ActivityEta.standard},
         ),
       );
       await tester.pump(const Duration(milliseconds: 300));
@@ -261,7 +291,7 @@ void main() {
             return refreshed.future;
           },
           syncNotifier: sync,
-          etaLabels: const {'old-pending': 'Est. 1–3 min'},
+          etaLabels: const {'old-pending': ActivityEta.standard},
         ),
       );
       await tester.pump(const Duration(milliseconds: 300));
@@ -314,39 +344,45 @@ void main() {
     await (FontLoader(
       'Geist',
     )..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))).load();
-    final labels = [
-      'Est. 1–3 min',
-      'Est. 2–6 min',
-      'Taking longer',
-      'Checking status',
-      'Waiting for connection',
+    const etas = [
+      ActivityEta.standard,
+      ActivityEta.funding,
+      ActivityEta.takingLonger,
     ];
-    await tester.pumpWidget(
-      _app(
-        (_) async => [
-          for (var i = 0; i < labels.length; i++)
-            _tx(
-              txidHex: 'pending-$i',
-              blockTime: BigInt.zero,
-              minedHeight: BigInt.zero,
-              kind: 'sent',
-            ),
-        ],
-        etaLabels: {
-          for (var i = 0; i < labels.length; i++) 'pending-$i': labels[i],
-        },
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pump(const Duration(milliseconds: 300));
-    for (final label in labels) {
-      expect(
-        tester
-            .renderObject<RenderParagraph>(find.text(label))
-            .didExceedMaxLines,
-        isFalse,
-        reason: label,
+    // The last pending row has no estimate, so it shows the fallback status.
+    for (final fallback in ActivityPendingFallback.values) {
+      final labels = [
+        for (final eta in etas) eta.label(testL10n),
+        fallback.text(testL10n),
+      ];
+      await tester.pumpWidget(
+        _app(
+          (_) async => [
+            for (var i = 0; i < labels.length; i++)
+              _tx(
+                txidHex: 'pending-$i',
+                blockTime: BigInt.zero,
+                minedHeight: BigInt.zero,
+                kind: 'sent',
+              ),
+          ],
+          etaLabels: {
+            for (var i = 0; i < etas.length; i++) 'pending-$i': etas[i],
+          },
+          pendingFallback: fallback,
+        ),
       );
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+      for (final label in labels) {
+        expect(
+          tester
+              .renderObject<RenderParagraph>(find.text(label))
+              .didExceedMaxLines,
+          isFalse,
+          reason: label,
+        );
+      }
     }
     expect(tester.takeException(), isNull);
   });
@@ -365,7 +401,10 @@ void main() {
           ),
           _tx(txidHex: 'mined', blockTime: BigInt.from(1800000000)),
         ],
-        etaLabels: const {'pending': 'Est. 1–3 min', 'mined': 'Est. 1–3 min'},
+        etaLabels: const {
+          'pending': ActivityEta.standard,
+          'mined': ActivityEta.standard,
+        },
       ),
     );
     await tester.pump(const Duration(milliseconds: 300));
@@ -398,7 +437,7 @@ void main() {
             suppliedArgs = state.extra as MobileTransactionStatusArgs;
             return MobileTransactionStatusScreen(
               args: suppliedArgs!,
-              historyLoader: (_) => history.future,
+              historyLoader: (_, _) => history.future,
               detailLoader: (_, _) async => null,
             );
           },
@@ -455,7 +494,12 @@ void main() {
       findsNothing,
     );
     expect(
-      tester.getTopLeft(find.byKey(const ValueKey('mobile_activity_feed'))).dy,
+      MatrixUtils.transformPoint(
+        tester
+            .renderObject(find.byKey(const ValueKey('mobile_activity_feed')))
+            .getTransformTo(null),
+        Offset.zero,
+      ).dy,
       moreOrLessEquals(kMobileTopNavHeight + AppSpacing.s),
     );
     expect(find.text('This week'), findsOneWidget);
@@ -548,7 +592,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      tester.getTopLeft(find.byKey(const ValueKey('mobile_activity_feed'))).dy,
+      MatrixUtils.transformPoint(
+        tester
+            .renderObject(find.byKey(const ValueKey('mobile_activity_feed')))
+            .getTransformTo(null),
+        Offset.zero,
+      ).dy,
       moreOrLessEquals(kMobileTopNavHeight + AppSpacing.s),
     );
     expect(find.text('No activity yet'), findsOneWidget);

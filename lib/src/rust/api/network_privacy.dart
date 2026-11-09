@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import '../network_privacy.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply_headers`, `binary_search_birthday_height`, `block_at_height`, `classify_mainnet_tip_reply`, `collect_body`, `is_mainnet`, `mainnet_tip`, `network_http_response`, `normalize_tor_http_error`, `timed_birthday_request`, `validate_mainnet_tip`, `with_api_response_body_timeout`, `with_tor_http_request_cancellation`, `with_tor_http_request_timeout`, `write_body_to_file`
+// These functions are ignored because they are not marked as `pub`: `apply_headers`, `binary_search_birthday_height`, `block_at_height`, `classify_mainnet_tip_reply`, `collect_body`, `collect_limited_body`, `effective_body_limit`, `is_mainnet`, `mainnet_tip`, `network_http_response`, `normalize_tor_http_error`, `timed_birthday_request`, `validate_mainnet_tip`, `with_api_response_body_timeout`, `with_tor_http_request_cancellation`, `with_tor_http_request_timeout`, `write_body_to_file`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MainnetTipReply`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `eq`, `fmt`
 
@@ -73,16 +73,20 @@ Future<void> stopTorUpdateRelay() =>
 /// `timeout_milliseconds` bounds the HTTP exchange only. A request made while
 /// Tor is still bootstrapping waits for the route first, under the bootstrap's
 /// own deadline, and the caller's cancellation covers that wait.
+/// `max_body_bytes` stops reception before buffering a reply beyond its budget.
+/// The budget is always capped at 16 MiB, including when it is omitted.
 Future<NetworkHttpResponse> torHttpGet({
   required String url,
   required List<NetworkHttpHeader> headers,
   BigInt? timeoutMilliseconds,
   BigInt? requestId,
+  BigInt? maxBodyBytes,
 }) => RustLib.instance.api.crateApiNetworkPrivacyTorHttpGet(
   url: url,
   headers: headers,
   timeoutMilliseconds: timeoutMilliseconds,
   requestId: requestId,
+  maxBodyBytes: maxBodyBytes,
 );
 
 /// Makes a POST request on a fresh Tor circuit. Every app-owned HTTP call is
@@ -91,18 +95,22 @@ Future<NetworkHttpResponse> torHttpGet({
 /// `timeout_milliseconds` bounds the HTTP exchange only. A request made while
 /// Tor is still bootstrapping waits for the route first, under the bootstrap's
 /// own deadline, and the caller's cancellation covers that wait.
+/// `max_body_bytes` stops reception before buffering a reply beyond its budget.
+/// The budget is always capped at 16 MiB, including when it is omitted.
 Future<NetworkHttpResponse> torHttpPost({
   required String url,
   required List<NetworkHttpHeader> headers,
   required List<int> body,
   BigInt? timeoutMilliseconds,
   BigInt? requestId,
+  BigInt? maxBodyBytes,
 }) => RustLib.instance.api.crateApiNetworkPrivacyTorHttpPost(
   url: url,
   headers: headers,
   body: body,
   timeoutMilliseconds: timeoutMilliseconds,
   requestId: requestId,
+  maxBodyBytes: maxBodyBytes,
 );
 
 /// Reserves a process-unique cancellation token for one Tor HTTP request.

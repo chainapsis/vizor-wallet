@@ -5,7 +5,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../../main.dart' show log;
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/storage/linux_keyring_coordinator.dart';
@@ -36,14 +38,6 @@ class MobileAccountsSheet extends ConsumerStatefulWidget {
   ConsumerState<MobileAccountsSheet> createState() =>
       _MobileAccountsSheetState();
 }
-
-const _accountsSheetLabelMStyle = TextStyle(
-  fontFamily: 'Geist',
-  fontWeight: FontWeight.w500,
-  fontSize: 14,
-  height: 16 / 14,
-  letterSpacing: -0.06,
-);
 
 const _accountsSheetCurrentNameStyle = TextStyle(
   fontFamily: 'Geist',
@@ -100,8 +94,9 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
     final syncNotifier = ref.read(syncProvider.notifier);
     try {
       await accountNotifier.switchAccount(uuid);
-    } on WalletMutationBusyException catch (error) {
-      if (mounted) showAppToast(context, error.toString());
+      unawaited(AppHaptics.selection());
+    } on WalletMutationBusyException {
+      if (mounted) showAppToast(context, context.l10n.walletMutationBusy);
       return;
     }
     if (mounted) Navigator.of(context).pop();
@@ -134,17 +129,18 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
           );
       if (!mounted) return;
       if (address.trim().isEmpty) {
-        showAppToast(context, "Address couldn't be copied");
+        showAppToast(context, context.l10n.sidebarAddressCopyFailed);
         return;
       }
 
       await Clipboard.setData(ClipboardData(text: address));
+      unawaited(AppHaptics.copy());
       if (!mounted) return;
-      showAppToast(context, 'Address copied');
+      showAppToast(context, context.l10n.commonAddressCopied);
     } catch (e) {
       log('MobileAccountsSheet: ERROR copying shielded address: $e');
       if (!mounted) return;
-      showAppToast(context, "Address couldn't be copied");
+      showAppToast(context, context.l10n.sidebarAddressCopyFailed);
     } finally {
       if (mounted) {
         setState(() => _isCopyingAddress = false);
@@ -201,8 +197,8 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
           const SizedBox(height: _accountsSheetCurrentToTitleGap),
           if (others.isNotEmpty) ...[
             Text(
-              'Other accounts',
-              style: _accountsSheetLabelMStyle.copyWith(
+              context.l10n.accountsOtherAccounts,
+              style: AppTypography.labelLarge.copyWith(
                 color: colors.text.accent,
               ),
             ),
@@ -245,7 +241,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                         return MobileListRow(
                           key: ValueKey('account_row_${account.uuid}'),
                           minRowHeight: _accountsSheetRowHeight,
-                          textStyle: _accountsSheetLabelMStyle,
+                          textStyle: AppTypography.labelLarge,
                           leading: MobileAccountAvatar(
                             profilePictureId: account.profilePictureId,
                             size: AppProfilePictureSize.navLarge,
@@ -279,9 +275,8 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                     context.push('/accounts');
                   },
                   height: AppButtonSizing.largeHeight,
-                  child: const Text(
-                    'Manage accounts',
-                    style: _accountsSheetLabelMStyle,
+                  child: Text(
+                    context.l10n.accountsManage,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -346,7 +341,7 @@ class _CopyAddressButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _AccountSheetButtonShell(
-      label: 'Copy shielded address',
+      label: context.l10n.commonCopyShieldedAddress,
       onTap: onTap,
       child: SizedBox(
         width: 40,
@@ -372,7 +367,7 @@ class _AddAccountButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return _AccountSheetButtonShell(
-      label: 'Add account',
+      label: context.l10n.commonAddAccount,
       onTap: onTap,
       child: Container(
         key: const ValueKey('mobile_accounts_add'),

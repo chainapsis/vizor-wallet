@@ -3,10 +3,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart' show Icons, Scaffold;
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/inline_spans.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/l10n/locale_typography.dart';
+import '../../../keystone/widgets/keystone_prompt_lines.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanViewfinderCorners;
 
@@ -163,8 +167,8 @@ class _StepOneContent extends StatelessWidget {
     final colors = context.colors;
     return Semantics(
       label: round == MobileIronwoodKeystoneSigningRound.denominationSplit
-          ? 'Confirm migration preparation with Keystone'
-          : 'Confirm migration transfer with Keystone',
+          ? context.l10n.migrationMobileKeystoneConfirmPrepSemantics
+          : context.l10n.migrationMobileKeystoneConfirmTransferSemantics,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxHeight < 720;
@@ -189,7 +193,7 @@ class _StepOneContent extends StatelessWidget {
                     ),
                     SizedBox(height: compact ? AppSpacing.xxs : AppSpacing.s),
                     Text(
-                      'Step 1/2',
+                      context.l10n.commonStepOneOfTwo,
                       key: const ValueKey(
                         'mobile_ironwood_keystone_signing_step',
                       ),
@@ -200,8 +204,8 @@ class _StepOneContent extends StatelessWidget {
                     SizedBox(height: compact ? AppSpacing.xxs : AppSpacing.s),
                     Text(
                       loading
-                          ? 'Confirm Migration with Keystone'
-                          : 'Scan with Keystone',
+                          ? context.l10n.migrationKeystoneConfirmTitle
+                          : context.l10n.commonScanWithKeystone,
                       key: loading
                           ? const ValueKey(
                               'mobile_ironwood_keystone_signing_title',
@@ -238,7 +242,7 @@ class _StepOneContent extends StatelessWidget {
                     SizedBox(height: compact ? AppSpacing.s : 38),
                     if (loading)
                       Text(
-                        'Loading QR code ...',
+                        context.l10n.commonLoadingQRCode,
                         key: const ValueKey(
                           'mobile_ironwood_keystone_signing_loading',
                         ),
@@ -269,7 +273,7 @@ class _StepOneContent extends StatelessWidget {
                             AppIcons.chevronForward,
                             size: 20,
                           ),
-                          child: const Text('Next step'),
+                          child: Text(context.l10n.commonNextStep),
                         ),
                       ),
                     ),
@@ -280,7 +284,7 @@ class _StepOneContent extends StatelessWidget {
                       ),
                       variant: AppButtonVariant.ghost,
                       onPressed: onCancel,
-                      child: const Text('Cancel'),
+                      child: Text(context.l10n.commonCancel),
                     ),
                     const SizedBox(height: AppSpacing.s),
                   ],
@@ -325,7 +329,7 @@ class _LoadingQrState extends State<_LoadingQr>
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Loading QR code',
+      label: context.l10n.migrationMobileKeystoneLoadingQrSemantics,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: SizedBox.square(
@@ -383,42 +387,18 @@ class _KeystoneScanPrompt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = AppTypography.bodyMedium.copyWith(color: color);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Wrap(
-          alignment: WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 6,
-          runSpacing: 2,
-          children: [
-            Text('Tap', style: style),
-            const _KeystoneScanPromptIcon(),
-            Text('on your Keystone,', style: style),
-          ],
-        ),
-        const SizedBox(height: 2),
-        // The help affordance trails the last word of the sentence rather
-        // than the whole two-line block, so it reads as part of the prompt.
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Flexible(
-              fit: FlexFit.loose,
-              child: Text(
-                'then scan this QR code',
-                textAlign: TextAlign.center,
-                style: style,
-              ),
-            ),
-            if (onShowHelp != null) ...[
-              const SizedBox(width: 6),
-              _KeystoneScanHelpButton(color: color, onShowHelp: onShowHelp!),
-            ],
-          ],
-        ),
-      ],
+    // The help affordance trails the last word of the sentence rather than
+    // the whole two-line block, so it reads as part of the prompt.
+    return KeystonePromptLines(
+      text: context.l10n.commonKeystoneScanPrompt(kInlineSlot),
+      icon: const _KeystoneScanPromptIcon(),
+      style: style,
+      inlineGap: 6,
+      lineGap: 2,
+      trailingGap: 6,
+      trailing: onShowHelp == null
+          ? null
+          : _KeystoneScanHelpButton(color: color, onShowHelp: onShowHelp!),
     );
   }
 }
@@ -439,7 +419,7 @@ class _KeystoneScanHelpButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'Keystone QR scanning help',
+      label: context.l10n.migrationMobileKeystoneHelpSemantics,
       excludeSemantics: true,
       child: SizedBox.square(
         key: const ValueKey('mobile_ironwood_keystone_scan_help'),
@@ -537,7 +517,7 @@ class _QrContainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Keystone request QR code',
+      label: context.l10n.migrationMobileKeystoneRequestQrSemantics,
       child: Container(
         key: const ValueKey('mobile_ironwood_keystone_signing_qr_container'),
         width: size,
@@ -579,20 +559,20 @@ class _ScannerContent extends StatelessWidget {
       data: AppThemeData.dark,
       child: Semantics(
         label: round == MobileIronwoodKeystoneSigningRound.denominationSplit
-            ? 'Scan the signed migration preparation from Keystone'
-            : 'Scan the signed migration transfer from Keystone',
+            ? context.l10n.migrationMobileKeystoneScanPrepSemantics
+            : context.l10n.migrationMobileKeystoneScanTransferSemantics,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final topInset = MediaQuery.paddingOf(context).top;
             final displayHeight = _measuredTextHeight(
               context,
-              text: 'Step 2/2',
+              text: context.l10n.commonStepTwoOfTwo,
               style: AppTypography.displayLarge,
               maxWidth: constraints.maxWidth,
             );
             final titleHeight = _measuredTextHeight(
               context,
-              text: 'Confirm with Keystone',
+              text: context.l10n.commonConfirmWithKeystone,
               style: AppTypography.bodyMediumStrong,
               maxWidth: constraints.maxWidth,
             );
@@ -681,14 +661,14 @@ class _ScannerContent extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.s),
                       Text(
-                        'Step 2/2',
+                        context.l10n.commonStepTwoOfTwo,
                         style: AppTypography.displayLarge.copyWith(
                           color: const Color(0xFFFFFFFF),
                         ),
                       ),
                       const SizedBox(height: AppSpacing.s),
                       Text(
-                        'Confirm with Keystone',
+                        context.l10n.commonConfirmWithKeystone,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: const Color(0xFFFFFFFF),
                         ),
@@ -735,7 +715,7 @@ class _ScannerContent extends StatelessWidget {
                       alignment: Alignment.topCenter,
                       child: Text(
                         message ??
-                            'Scan the QR code on your\nKeystone to confirm',
+                            context.l10n.migrationMobileKeystoneScanCaption,
                         textAlign: TextAlign.center,
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
@@ -763,7 +743,7 @@ class _ScannerContent extends StatelessWidget {
                         key: const ValueKey(
                           'mobile_ironwood_keystone_signing_flashlight',
                         ),
-                        label: 'Toggle flashlight',
+                        label: context.l10n.commonToggleFlashlight,
                         onPressed: onToggleFlashlight,
                         child: const Icon(
                           Icons.flashlight_on_outlined,
@@ -775,7 +755,7 @@ class _ScannerContent extends StatelessWidget {
                         key: const ValueKey(
                           'mobile_ironwood_keystone_signing_qr_action',
                         ),
-                        label: 'Show transaction QR',
+                        label: context.l10n.commonShowTransactionQR,
                         onPressed: onShowRequestQr,
                         child: AppIcon(
                           AppIcons.qr,
@@ -803,7 +783,7 @@ class _ScannerContent extends StatelessWidget {
     required double maxWidth,
   }) {
     final painter = TextPainter(
-      text: TextSpan(text: text, style: style),
+      text: TextSpan(text: text, style: withLocaleFontFallback(context, style)),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
     )..layout(maxWidth: maxWidth);
@@ -879,7 +859,7 @@ class _ScanProgressRow extends StatelessWidget {
     const track = Color(0x59FFFFFF);
     const fill = Color(0xFFFFFFFF);
     return Semantics(
-      label: 'Scan progress',
+      label: context.l10n.migrationMobileKeystoneScanProgress,
       value: '${(normalized * 100).round()}%',
       child: Row(
         key: const ValueKey('mobile_ironwood_keystone_signing_scan_progress'),

@@ -4,10 +4,11 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/storage/wallet_paths.dart';
-import '../../ledger/ledger_capability.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/block_spacing_provider.dart';
 import '../../../providers/chain_upgrade_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -58,7 +59,7 @@ String ironwoodMigrationCompletionSeenStorageKey({
   required String accountUuid,
   required String completionId,
 }) {
-  return 'zcash_ironwood_migration_completion_seen_'
+  return 'zcash_ironwood_migration_completion_seen_' // l10n-ignore: storage key
       '${network}_${accountUuid}_$completionId';
 }
 
@@ -243,7 +244,6 @@ class IronwoodMigrationInputs {
     required this.accountUuid,
     required this.accountName,
     required this.profilePictureId,
-    this.isLedgerAccount = false,
     required this.hasAccountScopedData,
     required this.isSyncing,
     required this.isBackgroundMode,
@@ -260,7 +260,6 @@ class IronwoodMigrationInputs {
   final String? accountUuid;
   final String accountName;
   final String profilePictureId;
-  final bool isLedgerAccount;
   final bool hasAccountScopedData;
   final bool isSyncing;
   final bool isBackgroundMode;
@@ -289,10 +288,6 @@ class IronwoodMigrationInputs {
   bool get hasOrchardFunds =>
       orchardBalance >= kIronwoodMigrationMinimumStartableZatoshi;
 
-  LedgerCapability get automaticOrchardMigrationCapability => isLedgerAccount
-      ? ledgerAutomaticOrchardMigrationCapability
-      : const LedgerCapability.supported();
-
   bool get hasIronwoodSpendableFunds => ironwoodBalance > BigInt.zero;
 
   bool get hasIronwoodPendingFunds => ironwoodPendingBalance > BigInt.zero;
@@ -312,7 +307,6 @@ class IronwoodMigrationInputs {
             other.accountUuid == accountUuid &&
             other.accountName == accountName &&
             other.profilePictureId == profilePictureId &&
-            other.isLedgerAccount == isLedgerAccount &&
             other.hasAccountScopedData == hasAccountScopedData &&
             other.isSyncing == isSyncing &&
             other.isBackgroundMode == isBackgroundMode &&
@@ -331,7 +325,6 @@ class IronwoodMigrationInputs {
     accountUuid,
     accountName,
     profilePictureId,
-    isLedgerAccount,
     hasAccountScopedData,
     isSyncing,
     isBackgroundMode,
@@ -349,13 +342,11 @@ class _IronwoodMigrationAccountInputs {
     required this.accountUuid,
     required this.accountName,
     required this.profilePictureId,
-    required this.isLedgerAccount,
   });
 
   final String? accountUuid;
   final String accountName;
   final String profilePictureId;
-  final bool isLedgerAccount;
 
   @override
   bool operator ==(Object other) {
@@ -363,13 +354,11 @@ class _IronwoodMigrationAccountInputs {
         other is _IronwoodMigrationAccountInputs &&
             other.accountUuid == accountUuid &&
             other.accountName == accountName &&
-            other.profilePictureId == profilePictureId &&
-            other.isLedgerAccount == isLedgerAccount;
+            other.profilePictureId == profilePictureId;
   }
 
   @override
-  int get hashCode =>
-      Object.hash(accountUuid, accountName, profilePictureId, isLedgerAccount);
+  int get hashCode => Object.hash(accountUuid, accountName, profilePictureId);
 }
 
 class _IronwoodMigrationSyncInputs {
@@ -451,7 +440,7 @@ class IronwoodMigrationAnnouncementState {
   final rust_sync.MigrationStatus? status;
 }
 
-enum IronwoodHomeMigrationCtaMode { hidden, start, resume }
+enum IronwoodHomeMigrationCtaMode { hidden, start, resume, stopped }
 
 class IronwoodHomeMigrationCtaState {
   const IronwoodHomeMigrationCtaState._({
@@ -486,6 +475,19 @@ class IronwoodHomeMigrationCtaState {
          status: status,
        );
 
+  /// The network upgrade stopped the last run. Orchard funds remain, so the
+  /// home keeps the migration surfaces without the in-progress send gate.
+  const IronwoodHomeMigrationCtaState.stopped({
+    required String network,
+    required String accountUuid,
+    required rust_sync.MigrationStatus status,
+  }) : this._(
+         mode: IronwoodHomeMigrationCtaMode.stopped,
+         network: network,
+         accountUuid: accountUuid,
+         status: status,
+       );
+
   final IronwoodHomeMigrationCtaMode mode;
   final String? network;
   final String? accountUuid;
@@ -493,9 +495,11 @@ class IronwoodHomeMigrationCtaState {
 
   bool get visible => mode != IronwoodHomeMigrationCtaMode.hidden;
 
-  String get buttonLabel => switch (mode) {
-    IronwoodHomeMigrationCtaMode.start => 'Migrate to Ironwood Pool',
-    IronwoodHomeMigrationCtaMode.resume => 'Continue migration',
+  String buttonLabel(AppLocalizations l10n) => switch (mode) {
+    IronwoodHomeMigrationCtaMode.start => l10n.migrationCtaStart,
+    IronwoodHomeMigrationCtaMode.resume => l10n.migrationContinueMigration,
+    IronwoodHomeMigrationCtaMode.stopped =>
+      l10n.commonMigrationStoppedByNetworkUpgrade,
     IronwoodHomeMigrationCtaMode.hidden => '',
   };
 }
@@ -625,10 +629,11 @@ final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
 
       return _IronwoodMigrationAccountInputs(
         accountUuid: activeAccountUuid,
-        accountName: activeAccount?.name ?? 'Username',
+        accountName:
+            activeAccount?.name ??
+            'Username', // l10n-ignore: placeholder account name
         profilePictureId:
             activeAccount?.profilePictureId ?? kDefaultProfilePictureId,
-        isLedgerAccount: activeAccount?.isLedger ?? false,
       );
     }),
   );
@@ -665,7 +670,6 @@ final ironwoodMigrationInputsProvider = Provider<IronwoodMigrationInputs>((
     accountUuid: activeAccount.accountUuid,
     accountName: activeAccount.accountName,
     profilePictureId: activeAccount.profilePictureId,
-    isLedgerAccount: activeAccount.isLedgerAccount,
     hasAccountScopedData: sync.hasAccountScopedData,
     isSyncing: sync.isSyncing,
     isBackgroundMode: sync.isBackgroundMode,
@@ -777,6 +781,10 @@ final ironwoodMigrationCompletionProvider =
 
 final ironwoodMigrationAnnouncementProvider =
     FutureProvider<IronwoodMigrationAnnouncementState>((ref) async {
+      // Home announces only the latest upgrade; from NU7 that is NU7's.
+      if (ref.watch(nu7ActiveAtWalletTipProvider)) {
+        return const IronwoodMigrationAnnouncementState.hidden();
+      }
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
       if (!inputs.ironwoodActiveAtTip) {
         return const IronwoodMigrationAnnouncementState.hidden();
@@ -794,8 +802,7 @@ final ironwoodMigrationAnnouncementProvider =
         return const IronwoodMigrationAnnouncementState.hidden();
       }
 
-      if (!inputs.automaticOrchardMigrationCapability.supported ||
-          !inputs.hasOrchardFunds) {
+      if (!inputs.hasOrchardFunds) {
         return const IronwoodMigrationAnnouncementState.hidden();
       }
 
@@ -828,9 +835,6 @@ final ironwoodMigrationAnnouncementProvider =
 final ironwoodHomeMigrationCtaProvider =
     FutureProvider<IronwoodHomeMigrationCtaState>((ref) async {
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
-      if (!inputs.automaticOrchardMigrationCapability.supported) {
-        return const IronwoodHomeMigrationCtaState.hidden();
-      }
       final postMigrationState = await _loadIronwoodPostMigrationState(
         ref,
         inputs,
@@ -912,11 +916,6 @@ final ironwoodHomeBalancePresentationProvider =
 final ironwoodHomeMigrationPresentationProvider =
     Provider<IronwoodHomeMigrationCtaState>((ref) {
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
-      if (!inputs.automaticOrchardMigrationCapability.supported) {
-        ref.watch(_ironwoodHomeMigrationPresentationCacheProvider).lastVisible =
-            null;
-        return const IronwoodHomeMigrationCtaState.hidden();
-      }
       final postMigrationAsync = ref.watch(ironwoodPostMigrationStateProvider);
       final postMigrationState = postMigrationAsync.value;
       final current = postMigrationState == null
@@ -960,8 +959,7 @@ final ironwoodMigrationAwareDisplaySpendableProvider = Provider.autoDispose
 final ironwoodMigrationRouteCtaProvider =
     FutureProvider<IronwoodHomeMigrationCtaState>((ref) async {
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
-      if (!inputs.ironwoodActiveAtTip ||
-          !inputs.automaticOrchardMigrationCapability.supported) {
+      if (!inputs.ironwoodActiveAtTip) {
         return const IronwoodHomeMigrationCtaState.hidden();
       }
 
@@ -988,6 +986,16 @@ final ironwoodMigrationRouteCtaProvider =
 
       if (_shouldResumeIronwoodMigration(status)) {
         return IronwoodHomeMigrationCtaState.resume(
+          network: inputs.network,
+          accountUuid: accountUuid,
+          status: status,
+        );
+      }
+
+      // Rust reports the stopped run only while Orchard funds remain, so it
+      // is durable state like a resume, not a requirement read mid-sync.
+      if (inputs.hasAccountScopedData && _isStoppedByUpgrade(status)) {
+        return IronwoodHomeMigrationCtaState.stopped(
           network: inputs.network,
           accountUuid: accountUuid,
           status: status,
@@ -1056,6 +1064,14 @@ IronwoodHomeMigrationCtaState _homeMigrationCtaForPostMigrationState(
   }
 
   if (postMigrationState.mode == IronwoodPostMigrationMode.required) {
+    final status = postMigrationState.status;
+    if (status != null && _isStoppedByUpgrade(status)) {
+      return IronwoodHomeMigrationCtaState.stopped(
+        network: network,
+        accountUuid: accountUuid,
+        status: status,
+      );
+    }
     return IronwoodHomeMigrationCtaState.start(
       network: network,
       accountUuid: accountUuid,
@@ -1108,10 +1124,6 @@ Future<IronwoodPostMigrationState> _loadIronwoodPostMigrationState(
 ) async {
   if (!inputs.ironwoodActiveAtTip) {
     return const IronwoodPostMigrationState.inactive();
-  }
-
-  if (!inputs.automaticOrchardMigrationCapability.supported) {
-    return const IronwoodPostMigrationState.unavailable();
   }
 
   final accountUuid = inputs.accountUuid;
@@ -1187,6 +1199,16 @@ IronwoodPostMigrationState _postMigrationStateForStatus({
     );
   }
 
+  // A stopped run is durable Rust state, so it survives sync like a resume;
+  // the first sync after activation is when users most need to see it.
+  if (_isStoppedByUpgrade(status)) {
+    return IronwoodPostMigrationState.required(
+      network: inputs.network,
+      accountUuid: accountUuid,
+      status: status,
+    );
+  }
+
   // A rewind/rescan can temporarily make already-spent Orchard notes look
   // spendable. Only derive a new migration requirement from settled balances.
   if (inputs.isSyncing || inputs.isBackgroundMode) {
@@ -1226,8 +1248,16 @@ IronwoodPostMigrationState _postMigrationStateForStatus({
   );
 }
 
+/// A run stopped by the upgrade leaves Orchard funds to move with a new run,
+/// so it counts as startable; the CTA shows it as stopped.
 bool _shouldStartIronwoodMigration(String phase) {
-  return kIronwoodMigrationStartPhases.contains(phase);
+  return kIronwoodMigrationStartPhases.contains(phase) ||
+      phase == kIronwoodMigrationStoppedByUpgradePhase;
+}
+
+bool _isStoppedByUpgrade(rust_sync.MigrationStatus status) {
+  return status.activeRunId == null &&
+      status.phase == kIronwoodMigrationStoppedByUpgradePhase;
 }
 
 bool _shouldResumeIronwoodMigration(rust_sync.MigrationStatus status) {

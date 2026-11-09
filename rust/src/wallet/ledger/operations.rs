@@ -7,6 +7,7 @@ use std::{
 use rusqlite::{params, OptionalExtension};
 
 use crate::wallet::failure::{FailureCode, WalletFailure};
+use crate::wallet::sync::broadcast_notice::{self, BroadcastNotice};
 use crate::wallet::sync::proposal_locks;
 
 use crate::wallet::{
@@ -27,10 +28,14 @@ pub(crate) struct SignedOperationMetadata {
     pub kind: String,
     pub external_ref: Option<String>,
     pub expiry_height: Option<u32>,
+    pub shielded_zatoshi: Option<u64>,
     pub state: String,
     pub txid: Option<String>,
     pub status: Option<String>,
     pub message: Option<String>,
+    /// `message` as notices; empty for rows that earlier builds wrote and for
+    /// retryable errors, whose `message` is shown as it is.
+    pub notices: Vec<BroadcastNotice>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
 }
@@ -41,6 +46,7 @@ pub(crate) struct BroadcastResult {
     pub txid: String,
     pub status: String,
     pub message: Option<String>,
+    pub notices: Vec<BroadcastNotice>,
     pub requires_ack: bool,
 }
 
@@ -241,6 +247,86 @@ pub(crate) fn checkpoint_batch(
     })
 }
 
+/// Upgrade ownerless shielding checkpoints before the first balance snapshot.
+/// Wallet locks and outbox attribution share a transaction; no signed bytes change.
+pub(crate) fn recover_shield_reservations(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    use voting_crypto_deps::rand::rngs::OsRng;
+    use zcash_client_backend::{
+        data_api::OutputLockStore,
+        wallet::{LockOwner, OutputRef},
+    };
+    use zcash_client_sqlite::util::SystemClock;
+    use zcash_client_sqlite::{SqlTransaction, WalletDb};
+    use zcash_primitives::transaction::TxId;
+    use zcash_protocol::{consensus::BlockHeight, PoolType};
+    with_wallet_db_write_lock("ledger.recover_shield_reservations", || {
+        let mut conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_table(&conn)?;
+        proposal_locks::ensure_schema(&conn)?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let rows = {
+            let mut stmt = tx.prepare(&format!("SELECT operation_id, proof_pczt, expiry_height FROM {TABLE} op
+                WHERE network = ?1 AND kind = 'shield'
+                AND (state = 'signed_pending_broadcast' OR
+                    (state = 'result_pending_ack' AND status NOT IN ('broadcasted', 'expired')))
+                AND NOT EXISTS (SELECT 1 FROM vizor_send_proposal_locks l WHERE l.operation_id = op.operation_id)"))
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([network_name(network)], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Vec<u8>>(1)?,
+                        row.get::<_, Option<u32>>(2)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|e| e.to_string())?
+        };
+        for (operation_id, bytes, expiry) in rows {
+            let mut inputs = std::collections::BTreeSet::new();
+            let mut owner = None;
+            for bytes in decode_pczt_batch(&bytes)? {
+                if let Some(bound) = proposal_locks::pczt_owner(&bytes)? {
+                    if owner.is_some_and(|old| old != bound) {
+                        return Err("Shield checkpoint has different reservation owners".into());
+                    }
+                    owner = Some(bound);
+                }
+                let pczt = pczt::Pczt::parse(&bytes)
+                    .map_err(|e| format!("Recover shield checkpoint: {e:?}"))?;
+                for input in pczt.transparent().inputs() {
+                    inputs.insert(OutputRef::new(
+                        TxId::from_bytes(*input.prevout_txid()),
+                        PoolType::TRANSPARENT,
+                        *input.prevout_index(),
+                    ));
+                }
+            }
+            let inputs = inputs.into_iter().collect::<Vec<_>>();
+            if inputs.is_empty() {
+                return Err("Shield checkpoint has no transparent inputs".into());
+            }
+            let owner = owner.unwrap_or_else(|| LockOwner::random(&mut OsRng));
+            let expiry = BlockHeight::from_u32(expiry.filter(|h| *h > 0).unwrap_or(u32::MAX));
+            {
+                let mut rng = OsRng;
+                let clock = SystemClock;
+                let mut db =
+                    WalletDb::from_connection(SqlTransaction::new(&tx), &network, &clock, &mut rng);
+                db.lock_outputs(&inputs, owner, expiry)
+                    .map_err(|e| format!("Restore shield checkpoint inputs: {e:?}"))?;
+            }
+            proposal_locks::restore_signed_owner(&tx, owner, &inputs, expiry, &operation_id)?;
+        }
+        tx.commit()
+            .map_err(|e| format!("Commit shield reservation recovery: {e}"))
+    })
+}
+
 pub(crate) fn list(
     db_path: &str,
     network: WalletNetwork,
@@ -255,7 +341,8 @@ pub(crate) fn list(
         ensure_table(&conn)?;
         let sql = format!(
             "SELECT operation_id, account_uuid, kind, external_ref, expiry_height,
-                    state, txid, status, message, created_at_ms, updated_at_ms
+                    state, txid, status, message, created_at_ms, updated_at_ms,
+                    CASE WHEN kind = 'shield' THEN proof_pczt END, notices
              FROM {TABLE}
              WHERE network = ?1 AND (?2 IS NULL OR account_uuid = ?2)
              ORDER BY created_at_ms, operation_id"
@@ -302,6 +389,7 @@ pub(crate) async fn broadcast(
             &result.txids,
             &result.status,
             result.message.as_deref(),
+            &result.notices,
         )
         .map_err(WalletFailure::from),
         Err(error) => {
@@ -357,19 +445,19 @@ pub(crate) fn acknowledge(
         ensure_table(&connection)?;
         proposal_locks::ensure_schema(&connection)?;
         let conn = connection.transaction().map_err(|e| e.to_string())?;
-        let (status, message): (Option<String>, Option<String>) = conn
+        let (status, message, notices): (Option<String>, Option<String>, Option<String>) = conn
             .query_row(
                 &format!(
                     "DELETE FROM {TABLE}
                      WHERE network = ?1 AND operation_id = ?2 AND state = ?3
-                     RETURNING status, message"
+                     RETURNING status, message, notices"
                 ),
                 params![
                     network_name(network),
                     operation_id,
                     STATE_RESULT_PENDING_ACK
                 ],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()
             .map_err(|e| format!("Acknowledge Ledger operation: {e}"))?
@@ -380,11 +468,13 @@ pub(crate) fn acknowledge(
             })?;
         // Partial results may still report failed wallet storage. Caller metadata
         // alone cannot protect inputs while sync recovers an unrecorded spend.
-        // This diagnostic is emitted by store_and_broadcast_pczts_inner when
-        // both wallet-storage paths fail, regardless of the broadcast count.
-        let storage_failed = message
-            .as_deref()
-            .is_some_and(|message| message.contains("local storage failed"));
+        // store_and_broadcast_pczts_inner reports it when both wallet-storage
+        // paths fail, regardless of the broadcast count. Rows from earlier
+        // builds have only the English message.
+        let storage_failed = result_reports_storage_failure(
+            message.as_deref(),
+            &broadcast_notice::notices_from_json(notices.as_deref()),
+        );
         let release = status.as_deref() == Some("partial_broadcast") && !storage_failed;
         if release {
             proposal_locks::release_operation(&conn, operation_id)?;
@@ -440,6 +530,17 @@ fn load_for_broadcast(
     })
 }
 
+/// Whether a stored result says wallet storage failed after the broadcast.
+/// Rows from earlier builds have only the English message.
+fn result_reports_storage_failure(message: Option<&str>, notices: &[BroadcastNotice]) -> bool {
+    if notices.is_empty() {
+        return message.is_some_and(|message| message.contains("local storage failed"));
+    }
+    notices
+        .iter()
+        .any(|notice| notice.kind == broadcast_notice::kind::STORAGE_FAILED)
+}
+
 fn apply_broadcast_outcome(
     db_path: &str,
     network: WalletNetwork,
@@ -448,8 +549,10 @@ fn apply_broadcast_outcome(
     txid: &str,
     status: &str,
     message: Option<&str>,
+    notices: &[BroadcastNotice],
 ) -> Result<BroadcastResult, String> {
     let clean_terminal = status == "broadcasted" && !kind.requires_ack();
+    let notices_json = broadcast_notice::notices_to_json(notices)?;
     let network = network_name(network);
     let now = now_ms()?;
     with_wallet_db_write_lock("ledger.operations.record_broadcast", || {
@@ -467,7 +570,8 @@ fn apply_broadcast_outcome(
             conn.execute(
                 &format!(
                     "UPDATE {TABLE}
-                     SET state = ?3, txid = ?4, status = ?5, message = ?6, updated_at_ms = ?7
+                     SET state = ?3, txid = ?4, status = ?5, message = ?6, updated_at_ms = ?7,
+                         notices = ?9
                      WHERE network = ?1 AND operation_id = ?2 AND state = ?8"
                 ),
                 params![
@@ -479,6 +583,7 @@ fn apply_broadcast_outcome(
                     message,
                     now,
                     STATE_SIGNED_PENDING_BROADCAST,
+                    notices_json,
                 ],
             )
             .map_err(|e| format!("Record Ledger broadcast result: {e}"))?
@@ -498,6 +603,7 @@ fn apply_broadcast_outcome(
             txid: txid.to_string(),
             status: status.to_string(),
             message: message.map(str::to_string),
+            notices: notices.to_vec(),
             requires_ack: !clean_terminal,
         })
     })
@@ -534,7 +640,8 @@ fn record_broadcast_failure(
         conn.execute(
             &format!(
                 "UPDATE {TABLE}
-                 SET status = 'retryable_error', message = ?3, updated_at_ms = ?4
+                 SET status = 'retryable_error', message = ?3, notices = NULL,
+                     updated_at_ms = ?4
                  WHERE network = ?1 AND operation_id = ?2 AND state = ?5"
             ),
             params![
@@ -702,6 +809,18 @@ fn ensure_table(conn: &rusqlite::Connection) -> Result<(), String> {
         tx.commit()
             .map_err(|e| format!("Commit Ledger outbox migration: {e}"))?;
     }
+    // Added after release; earlier builds ignore it and read `message`.
+    let has_notices: bool = conn
+        .query_row(
+            &format!("SELECT COUNT(*) > 0 FROM pragma_table_info('{TABLE}') WHERE name = 'notices'"),
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Read Ledger outbox columns: {e}"))?;
+    if !has_notices {
+        conn.execute_batch(&format!("ALTER TABLE {TABLE} ADD COLUMN notices TEXT;"))
+            .map_err(|e| format!("Add Ledger outbox notices: {e}"))?;
+    }
     conn.execute_batch(&format!(
         "CREATE INDEX IF NOT EXISTS vizor_ledger_signed_operations_account
          ON {TABLE}(network, account_uuid, created_at_ms);"
@@ -717,7 +836,8 @@ fn load_metadata(
     conn.query_row(
         &format!(
             "SELECT operation_id, account_uuid, kind, external_ref, expiry_height,
-                    state, txid, status, message, created_at_ms, updated_at_ms
+                    state, txid, status, message, created_at_ms, updated_at_ms,
+                    CASE WHEN kind = 'shield' THEN proof_pczt END, notices
              FROM {TABLE} WHERE network = ?1 AND operation_id = ?2"
         ),
         params![network, operation_id],
@@ -729,6 +849,12 @@ fn load_metadata(
 
 fn metadata_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SignedOperationMetadata> {
     let expiry_height: Option<i64> = row.get(4)?;
+    // Reconstruct display metadata from the durable payload, including old
+    // checkpoints. A malformed amount must not hide an operation from recovery.
+    let proof_pczt: Option<Vec<u8>> = row.get(11)?;
+    let shielded_zatoshi = proof_pczt
+        .as_deref()
+        .and_then(|bytes| checkpoint_shielded_zatoshi(bytes).ok());
     Ok(SignedOperationMetadata {
         operation_id: row.get(0)?,
         account_uuid: row.get(1)?,
@@ -741,13 +867,62 @@ fn metadata_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SignedOperatio
                 Box::new(e),
             )
         })?,
+        shielded_zatoshi,
         state: row.get(5)?,
         txid: row.get(6)?,
         status: row.get(7)?,
         message: row.get(8)?,
+        notices: broadcast_notice::notices_from_json(row.get::<_, Option<String>>(12)?.as_deref()),
         created_at_ms: row.get(9)?,
         updated_at_ms: row.get(10)?,
     })
+}
+
+/// A shielding transaction moves transparent inputs into shielded pools. The
+/// bundles' public value balances are spends minus outputs, so their negation
+/// gives the shielded amount after fees, even when individual values are redacted.
+fn checkpoint_shielded_zatoshi(encoded: &[u8]) -> Result<u64, String> {
+    decode_pczt_batch(encoded)?
+        .iter()
+        .try_fold(0u64, |total, bytes| {
+            let pczt = pczt::Pczt::parse(bytes)
+                .map_err(|e| format!("Parse shielding checkpoint: {e:?}"))?;
+            if pczt.transparent().inputs().is_empty()
+                || !pczt.transparent().outputs().is_empty()
+                || !pczt.sapling().spends().is_empty()
+            {
+                return Err("Checkpoint is not a transparent shielding transaction".into());
+            }
+            let amount = shielded_value_from_balances(
+                *pczt.sapling().value_sum(),
+                *pczt.orchard().value_sum(),
+                *pczt.ironwood().value_sum(),
+            )?;
+            total
+                .checked_add(amount)
+                .ok_or_else(|| "Shielding checkpoint total overflow".into())
+        })
+}
+
+fn shielded_value_from_balances(
+    sapling: i128,
+    orchard: (u64, bool),
+    ironwood: (u64, bool),
+) -> Result<u64, String> {
+    let signed_value = |(magnitude, negative): (u64, bool)| {
+        if negative {
+            -i128::from(magnitude)
+        } else {
+            i128::from(magnitude)
+        }
+    };
+    sapling
+        .checked_add(signed_value(orchard))
+        .and_then(|value| value.checked_add(signed_value(ironwood)))
+        .and_then(i128::checked_neg)
+        .and_then(|value| u64::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "Shielding checkpoint has no valid positive shielded value".into())
 }
 
 fn validate_identifier(label: &str, value: &str) -> Result<(), String> {
@@ -830,7 +1005,7 @@ mod tests {
     }
 
     fn signed_pczt(target_height: u32) -> (Vec<u8>, Vec<u8>, u32) {
-        let sk = secp256k1::SecretKey::from_slice(&[7; 32]).unwrap();
+        let sk = secp256k1::SecretKey::from_secret_bytes([7; 32]).unwrap();
         signed_pczt_with_input(target_height, sk, OutPoint::new([1; 32], 0), 1_000_000)
     }
 
@@ -840,8 +1015,7 @@ mod tests {
         prevout: OutPoint,
         value: u64,
     ) -> (Vec<u8>, Vec<u8>, u32) {
-        let secp = secp256k1::Secp256k1::new();
-        let pubkey = sk.public_key(&secp);
+        let pubkey = sk.public_key();
         let pubkey_bytes = pubkey.serialize();
         let address = TransparentAddress::from_pubkey(&pubkey);
 
@@ -893,7 +1067,7 @@ mod tests {
             .unwrap()
             .transparent_sighash(0)
             .unwrap();
-        let signature = secp.sign_ecdsa(&secp256k1::Message::from_digest(sighash), &sk);
+        let signature = secp256k1::ecdsa::sign(secp256k1::Message::from_digest(sighash), &sk);
         let mut ledger_der = signature.serialize_der().to_vec();
         ledger_der[0] |= 1;
         let signature_bytes = super::super::apply_signatures(
@@ -928,6 +1102,131 @@ mod tests {
             &signature,
         )
         .unwrap()
+    }
+
+    fn shielding_pczt(amount: u64) -> Vec<u8> {
+        #[derive(Clone, Copy, Debug)]
+        struct ShieldNetwork;
+        impl Parameters for ShieldNetwork {
+            fn network_type(&self) -> NetworkType {
+                NetworkType::Test
+            }
+            fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+                let _ = nu;
+                Some(BlockHeight::from_u32(1))
+            }
+        }
+        let fvk = orchard::keys::FullViewingKey::from(
+            &orchard::keys::SpendingKey::from_bytes([0x43; 32]).unwrap(),
+        );
+        let pubkey = secp256k1::SecretKey::from_secret_bytes([7; 32])
+            .unwrap()
+            .public_key();
+        let address = TransparentAddress::from_pubkey(&pubkey);
+        let mut builder = Builder::new(
+            ShieldNetwork,
+            100.into(),
+            BuildConfig::Standard {
+                sapling_anchor: None,
+                orchard_anchor: None,
+                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+                orchard_padding: BundlePadding::DEFAULT,
+                ironwood_padding: BundlePadding::DEFAULT,
+            },
+        );
+        let recipient = fvk.address_at(0u32, orchard::keys::Scope::Internal);
+        builder
+            .add_ironwood_output::<zip317::FeeError>(
+                None,
+                recipient,
+                Zatoshis::from_u64(amount).unwrap(),
+                zcash_protocol::memo::MemoBytes::empty(),
+            )
+            .unwrap();
+        let fee = 15_000;
+        builder
+            .add_transparent_p2pkh_input(
+                pubkey,
+                OutPoint::new([1; 32], 0),
+                TxOut::new(
+                    Zatoshis::from_u64(amount + fee).unwrap(),
+                    address.script().into(),
+                ),
+            )
+            .unwrap();
+        let PcztResult { pczt_parts, .. } = builder
+            .build_for_pczt(OsRng, &zip317::FeeRule::standard())
+            .unwrap();
+        Creator::build_from_parts(pczt_parts)
+            .unwrap()
+            .serialize()
+            .unwrap()
+    }
+
+    #[test]
+    fn recovers_shielded_amount_from_pczt_and_batch_without_fees() {
+        let orchard = shielding_pczt(990_000);
+        let ironwood = shielding_pczt(1_970_000);
+        for (pczt, expected) in [(&orchard, 990_000), (&ironwood, 1_970_000)] {
+            assert_eq!(
+                checkpoint_shielded_zatoshi(&encode_pczt_batch(&[pczt.clone()]).unwrap()).unwrap(),
+                expected
+            );
+        }
+        assert_eq!(
+            checkpoint_shielded_zatoshi(&encode_pczt_batch(&[orchard, ironwood]).unwrap()).unwrap(),
+            2_960_000
+        );
+        assert!(checkpoint_shielded_zatoshi(b"invalid").is_err());
+        assert!(
+            checkpoint_shielded_zatoshi(&encode_pczt_batch(&[signed_pczt(100).0]).unwrap())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn shielding_balances_cover_legacy_orchard_and_ironwood_and_reject_invalid_totals() {
+        assert_eq!(
+            shielded_value_from_balances(0, (990_000, true), (0, false)).unwrap(),
+            990_000
+        );
+        assert_eq!(
+            shielded_value_from_balances(0, (0, false), (1_970_000, true)).unwrap(),
+            1_970_000
+        );
+        assert_eq!(
+            shielded_value_from_balances(0, (990_000, true), (1_970_000, true)).unwrap(),
+            2_960_000
+        );
+        assert!(shielded_value_from_balances(0, (0, false), (0, false)).is_err());
+        assert!(shielded_value_from_balances(0, (1, false), (0, false)).is_err());
+        assert!(shielded_value_from_balances(i128::MIN, (0, false), (0, false)).is_err());
+        assert!(shielded_value_from_balances(0, (u64::MAX, true), (1, true)).is_err());
+    }
+
+    #[test]
+    fn existing_shield_checkpoint_gets_amount_without_schema_change() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = file.path().to_str().unwrap();
+        checkpoint_test_operation(path, "old-shield", "shield");
+        let conn = rusqlite::Connection::open(path).unwrap();
+        let proof = encode_pczt_batch(&[shielding_pczt(990_000)]).unwrap();
+        conn.execute(
+            &format!("UPDATE {TABLE} SET proof_pczt = ?1 WHERE operation_id = 'old-shield'"),
+            [&proof],
+        )
+        .unwrap();
+        let recovered = list(path, WalletNetwork::Main, Some("account-1")).unwrap();
+        assert_eq!(recovered[0].shielded_zatoshi, Some(990_000));
+        // Unreadable display metadata does not suppress durable recovery work.
+        conn.execute(
+            &format!("UPDATE {TABLE} SET proof_pczt = x'00' WHERE operation_id = 'old-shield'"),
+            [],
+        )
+        .unwrap();
+        let recovered = list(path, WalletNetwork::Main, None).unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].shielded_zatoshi, None);
     }
 
     #[test]
@@ -1227,6 +1526,10 @@ mod tests {
         conn.execute_batch(&format!("INSERT INTO {TABLE} VALUES ('main', 'op', 'account', 'swap_deposit', 'external', X'010203', X'040506', 4000000, 'result_pending_ack', 'txid', 'broadcasted', NULL, 1, 2);")).unwrap();
         ensure_table(&conn).unwrap();
         ensure_table(&conn).unwrap();
+        let notices: Option<String> = conn
+            .query_row(&format!("SELECT notices FROM {TABLE}"), [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(notices, None);
         let payloads: (Vec<u8>, Vec<u8>, String) = conn.query_row(
             &format!("SELECT proof_pczt, signature_pczt, txid FROM {TABLE} WHERE operation_id = 'op'"), [],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -1250,6 +1553,7 @@ mod tests {
             "gift-txid",
             "broadcasted",
             None,
+            &[],
         )
         .unwrap();
         assert!(result.requires_ack);
@@ -1274,6 +1578,7 @@ mod tests {
             "txid-1",
             "broadcasted",
             None,
+            &[],
         )
         .unwrap();
         assert!(result.requires_ack);
@@ -1292,10 +1597,64 @@ mod tests {
             "txid-2",
             "broadcasted",
             None,
+            &[],
         )
         .unwrap();
         assert!(!result.requires_ack);
         assert!(list(db_path, WalletNetwork::Main, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn broadcast_notices_round_trip_through_the_outbox() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        checkpoint_test_operation(db_path, "swap-1", "swap_deposit");
+        let notices = vec![
+            BroadcastNotice::transaction_unknown(2, 2, "deadline exceeded"),
+            BroadcastNotice::stored_locally(),
+        ];
+        let message = broadcast_notice::english(&notices);
+        let result = apply_broadcast_outcome(
+            db_path,
+            WalletNetwork::Main,
+            "swap-1",
+            OperationKind::SwapDeposit,
+            "txid-1",
+            "partial_broadcast",
+            message.as_deref(),
+            &notices,
+        )
+        .unwrap();
+        assert_eq!(result.notices, notices);
+        let listed = list(db_path, WalletNetwork::Main, None).unwrap();
+        assert_eq!(listed[0].notices, notices);
+        assert_eq!(listed[0].message, message);
+    }
+
+    #[test]
+    fn storage_failure_reads_notices_and_falls_back_to_legacy_text() {
+        let legacy = "Transaction 2 of 2 has an unknown broadcast result: x A transaction may \
+                      already be on the network, but local storage failed: disk full.";
+        assert!(result_reports_storage_failure(Some(legacy), &[]));
+        assert!(!result_reports_storage_failure(
+            Some("Transaction 2 of 2 has an unknown broadcast result: x"),
+            &[]
+        ));
+        assert!(!result_reports_storage_failure(None, &[]));
+        assert!(result_reports_storage_failure(
+            None,
+            &[
+                BroadcastNotice::transaction_unknown(2, 2, "x"),
+                BroadcastNotice::storage_failed("disk full"),
+            ]
+        ));
+        assert!(!result_reports_storage_failure(
+            Some(legacy),
+            &[
+                BroadcastNotice::transaction_unknown(2, 2, "x"),
+                BroadcastNotice::stored_locally(),
+            ]
+        ));
     }
 
     #[test]
@@ -1315,6 +1674,7 @@ mod tests {
         let listed = list(db_path, WalletNetwork::Main, None).unwrap();
         assert_eq!(listed[0].state, STATE_SIGNED_PENDING_BROADCAST);
         assert_eq!(listed[0].status.as_deref(), Some("retryable_error"));
+        assert!(listed[0].notices.is_empty());
         assert!(acknowledge(db_path, WalletNetwork::Main, "send-1").is_err());
     }
 
@@ -1426,7 +1786,7 @@ mod tests {
         .unwrap()
         .derive_external_secret_key(NonHardenedChildIndex::from_index(0).unwrap())
         .unwrap();
-        let address = TransparentAddress::from_pubkey(&sk.public_key(&secp256k1::Secp256k1::new()));
+        let address = TransparentAddress::from_pubkey(&sk.public_key());
         let (proof, signature, _) =
             signed_pczt_with_input(200, sk, OutPoint::new([1; 32], 0), 1_000_000);
         let mut db =

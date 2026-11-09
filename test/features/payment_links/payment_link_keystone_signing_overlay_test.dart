@@ -7,11 +7,14 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_keystone_signing_overlay.dart';
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   for (final outcome in ['complete', 'fail', 'cancel']) {
@@ -131,6 +134,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -205,6 +209,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -283,6 +288,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -307,6 +313,84 @@ void main() {
     expect(find.text('Broadcast timed out before confirmation.'), findsNothing);
     expect(find.text('Back to gift card'), findsNothing);
   });
+
+  for (final (message, copy) in [
+    (
+      "Transactions can't be sent this close to the network upgrade. "
+          'Try again after it activates.',
+      networkUpgradeHoldText(testL10n),
+    ),
+    (
+      'Hardware signing request expired before broadcast: txid=ab',
+      testL10n.paymentLinkLedgerFundingExpired,
+    ),
+  ]) {
+    testWidgets('shows terminal copy for funding refused as expired: $copy', (
+      tester,
+    ) async {
+      final service = _FakeHardwareSigningService(
+        broadcastStatus: 'expired',
+        broadcastMessage: message,
+      );
+      var completed = false;
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => PaymentLinkKeystoneSigningOverlay(
+              amountZatoshi: BigInt.from(10000000),
+              sourceAccountUuid: 'hardware-account',
+              onCancel: () {},
+              onFundingBroadcast: (_, _) async => completed = true,
+            ),
+          ),
+          GoRoute(
+            path: '/send/keystone/scan',
+            builder: (context, _) => Center(
+              child: TextButton(
+                key: const ValueKey('fake_keystone_signature_done'),
+                onPressed: () => context.pop<List<int>>(const [4, 5, 6]),
+                child: const Text('Return signature'),
+              ),
+            ),
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            paymentLinkHardwareSigningServiceProvider.overrideWithValue(
+              service,
+            ),
+          ],
+          child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.dark, child: child!),
+          ),
+        ),
+      );
+      addTearDown(router.dispose);
+
+      for (var i = 0; i < 20 && service.proofDrafts.isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.text('Get signature'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('fake_keystone_signature_done')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(completed, isFalse);
+      expect(find.text(copy), findsOneWidget);
+      expect(find.textContaining('uncertain'), findsNothing);
+    });
+  }
 
   testWidgets('discards the prepared draft when broadcast fails', (
     tester,
@@ -344,6 +428,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -408,6 +493,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -495,6 +581,7 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
     int? birthdayHeight,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);

@@ -13,6 +13,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/feedback/app_haptics.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
@@ -153,19 +155,20 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
   Future<void> _copyLink(String uri) async {
     try {
       await Clipboard.setData(ClipboardData(text: uri));
+      unawaited(AppHaptics.copy());
     } catch (e) {
       log('ReceiveRequest: ERROR copying request link: $e');
       if (!mounted) return;
       showAppToast(
         context,
-        "Couldn't copy the request link. Try sharing it instead.",
+        context.l10n.receiveRequestCopyFailed,
         iconName: AppIcons.cancel,
         tone: AppToastTone.destructive,
       );
       return;
     }
     if (!mounted) return;
-    showAppToast(context, kRequestLinkCopiedToast);
+    showAppToast(context, context.l10n.receiveRequestLinkCopied);
   }
 
   Future<void> _share(Uint8List png) async {
@@ -187,7 +190,7 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
     if (!mounted) return;
     showAppToast(
       context,
-      "Couldn't share this request. Copy the link instead.",
+      context.l10n.receiveRequestShareFailed,
       iconName: AppIcons.cancel,
       tone: AppToastTone.destructive,
     );

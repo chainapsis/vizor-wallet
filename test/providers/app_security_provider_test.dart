@@ -28,7 +28,6 @@ void main() {
           rust_wallet.AccountInfo(
             uuid: 'account-1',
             name: 'Account 1',
-            unifiedAddress: 'u1test',
             birthdayHeight: 2000000,
             isSeedAnchor: true,
             isHardware: false,

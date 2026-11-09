@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
-import 'package:zcash_wallet/src/core/navigation/incoming_link_entry_policy.dart';
 import 'package:zcash_wallet/src/core/zcash/zip321_payment_request.dart';
+import '../../support/test_l10n.dart';
 
 /// Calls [decidePaymentUriDrain] with the "healthy, unlocked, on /home, link
 /// just arrived" baseline so each test only states the row it exercises.
@@ -49,13 +49,13 @@ void main() {
         parkedFor: kPaymentUriParkTtl + const Duration(seconds: 1),
       );
       expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriExpiredMessage);
+      expect(decision.notice, PaymentUriNotice.expired);
     });
 
     test('the expired notice says the link can just be opened again', () {
       expect(
-        kPaymentUriExpiredMessage,
-        'That payment link timed out. Open it again to pay.',
+        PaymentUriNotice.expired.text(testL10n),
+        'That request link timed out. Open it again to pay.',
       );
     });
 
@@ -74,7 +74,7 @@ void main() {
         isUnlocked: false,
       );
       expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriExpiredMessage);
+      expect(decision.notice, PaymentUriNotice.expired);
     });
 
     test('no drop is silent any more', () {
@@ -90,7 +90,7 @@ void main() {
         decide(sendGatedByMigration: true),
         decide(hasWallet: false),
       ]) {
-        expect(decision.message, isNotNull, reason: '$decision');
+        expect(decision.notice, isNotNull, reason: '$decision');
       }
     });
   });
@@ -99,13 +99,13 @@ void main() {
     test('a blocking bootstrap failure drops with the unavailable message', () {
       final decision = decide(hasBlockingFailure: true);
       expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriUnavailableMessage);
+      expect(decision.notice, PaymentUriNotice.unavailable);
     });
 
     test('a wallet load error drops with the unavailable message', () {
       final decision = decide(walletHasError: true);
       expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriUnavailableMessage);
+      expect(decision.notice, PaymentUriNotice.unavailable);
     });
 
     test('waits while wallet existence is still unknown', () {
@@ -133,24 +133,20 @@ void main() {
           PaymentUriDrainAction.dropWithMessage,
           reason: location,
         );
-        expect(
-          decision.message,
-          kPaymentUriOnboardingMessage,
-          reason: location,
-        );
+        expect(decision.notice, PaymentUriNotice.onboarding, reason: location);
       }
     });
 
     test('/welcome with no wallet gets the plainer no-wallet wording', () {
       final decision = decide(matchedLocation: '/welcome', hasWallet: false);
       expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriNoWalletMessage);
+      expect(decision.notice, PaymentUriNotice.noWallet);
     });
 
     test('/welcome with a wallet gets the onboarding wording', () {
       expect(
-        decide(matchedLocation: '/welcome').message,
-        kPaymentUriOnboardingMessage,
+        decide(matchedLocation: '/welcome').notice,
+        PaymentUriNotice.onboarding,
       );
     });
   });
@@ -159,7 +155,7 @@ void main() {
     test('waits rather than dropping while a signing session is up', () {
       final decision = decide(hasBusySurface: true);
       expect(decision.action, PaymentUriDrainAction.wait);
-      expect(decision.message, kIncomingPaymentBusyMessage);
+      expect(decision.notice, PaymentUriNotice.busy);
     });
 
     test('presents once the hold is given back', () {
@@ -218,7 +214,7 @@ void main() {
         sendIsInFlight: true,
       );
       expect(decision.action, PaymentUriDrainAction.wait);
-      expect(decision.message, kIncomingPaymentBusyMessage);
+      expect(decision.notice, PaymentUriNotice.busy);
     });
 
     test('presents once the receipt is on screen', () {
@@ -248,7 +244,7 @@ void main() {
         parkedFor: kPaymentUriParkTtl + const Duration(seconds: 1),
       );
       expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriExpiredMessage);
+      expect(decision.notice, PaymentUriNotice.expired);
     });
 
     test('waiting outranks the migration gate and the wallet rows', () {
@@ -275,7 +271,7 @@ void main() {
     test('drops with the migration message', () {
       final decision = decide(sendGatedByMigration: true);
       expect(decision.action, PaymentUriDrainAction.dropWithMessage);
-      expect(decision.message, kPaymentUriMigrationSendGateMessage);
+      expect(decision.notice, PaymentUriNotice.migrationSendGate);
     });
 
     test('is not read until the wallet is unlocked and past /unlock', () {
@@ -309,7 +305,7 @@ void main() {
       // app must not answer a link with the migration sentence.
       final decision = decide(sendGatedByMigration: true, hasWallet: false);
       expect(decision.action, PaymentUriDrainAction.routeToWelcome);
-      expect(decision.message, kPaymentUriNoWalletMessage);
+      expect(decision.notice, PaymentUriNotice.noWallet);
     });
   });
 
@@ -317,7 +313,7 @@ void main() {
     test('routes to /welcome with the no-wallet message', () {
       final decision = decide(hasWallet: false);
       expect(decision.action, PaymentUriDrainAction.routeToWelcome);
-      expect(decision.message, kPaymentUriNoWalletMessage);
+      expect(decision.notice, PaymentUriNotice.noWallet);
     });
   });
 
@@ -325,7 +321,7 @@ void main() {
     test('routes to /unlock and keeps the prefill parked', () {
       final decision = decide(isUnlocked: false);
       expect(decision.action, PaymentUriDrainAction.routeToUnlock);
-      expect(decision.message, isNull);
+      expect(decision.notice, isNull);
     });
 
     test('waits on the unlock and reset flows instead of navigating', () {
@@ -381,24 +377,24 @@ void main() {
   group('notice copy', () {
     test('the unavailable notice states the recovery, not the cause', () {
       expect(
-        kPaymentUriUnavailableMessage,
-        "Vizor couldn't open this payment link. "
+        PaymentUriNotice.unavailable.text(testL10n),
+        "Vizor couldn't open this request link. "
         'Open it again once your wallet has loaded.',
       );
     });
 
     test('the replaced notice says how to get the earlier link back', () {
       expect(
-        kPaymentUriReplacedMessage,
-        'Only the newest payment link was kept. Open the earlier one again to '
+        PaymentUriNotice.replaced.text(testL10n),
+        'Only the newest request link was kept. Open the earlier one again to '
         'pay it.',
       );
     });
 
     test('the migration notice names the migration the user is in', () {
       expect(
-        kPaymentUriMigrationSendGateMessage,
-        'Finish your Ironwood migration before opening payment links.',
+        PaymentUriNotice.migrationSendGate.text(testL10n),
+        'Finish your Ironwood migration before opening request links.',
       );
     });
   });
@@ -409,13 +405,13 @@ void main() {
   group('rejection buckets', () {
     test('a request Vizor cannot answer yet reads as unsupported', () {
       expect(
-        paymentUriRejectionMessage(
+        paymentUriRejectionNotice(
           const Zip321UnsupportedRequestException(
             'Multiple-recipient ZIP-321 requests are parsed but not supported '
             'yet.',
           ),
         ),
-        kPaymentUriUnsupportedMessage,
+        PaymentUriNotice.unsupported,
       );
     });
 
@@ -431,10 +427,10 @@ void main() {
         final request = Zip321PaymentRequest.parse(raw);
         expect(request.isSupported, isFalse, reason: raw);
         expect(
-          paymentUriRejectionMessage(
+          paymentUriRejectionNotice(
             Zip321UnsupportedRequestException(request.unsupportedReason!),
           ),
-          kPaymentUriUnsupportedMessage,
+          PaymentUriNotice.unsupported,
           reason: raw,
         );
       }
@@ -453,8 +449,8 @@ void main() {
         final error = _parseError(raw);
         expect(error, isA<Zip321ParseException>(), reason: raw);
         expect(
-          paymentUriRejectionMessage(error),
-          kPaymentUriMalformedMessage,
+          paymentUriRejectionNotice(error),
+          PaymentUriNotice.malformed,
           reason: raw,
         );
       }
@@ -462,8 +458,8 @@ void main() {
 
     test('the two sentences never leak the parser wording', () {
       for (final message in [
-        kPaymentUriUnsupportedMessage,
-        kPaymentUriMalformedMessage,
+        PaymentUriNotice.unsupported.text(testL10n),
+        PaymentUriNotice.malformed.text(testL10n),
       ]) {
         expect(message, isNot(contains('ZIP-321')));
       }

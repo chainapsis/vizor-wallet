@@ -20,6 +20,9 @@ import '../../send/widgets/sapling_params_prompt.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_hardware_signing_service.dart';
 import '../services/payment_link_service.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
+import '../../../core/l10n/l10n.dart';
 
 class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
   const PaymentLinkKeystoneSigningOverlay({
@@ -29,6 +32,7 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
     required this.onFundingBroadcast,
     this.presentation,
     this.birthdayHeight,
+    this.expectedQuote,
     this.batch,
     this.onBatchRefused,
     super.key,
@@ -38,10 +42,11 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
   final String sourceAccountUuid;
   final PaymentLinkPresentation? presentation;
   final int? birthdayHeight;
+  final PaymentLinkFundingQuote? expectedQuote;
   final PaymentLinkBatchDraft? batch;
 
-  /// A group whose proposal no longer matches its quote, or that its signer
-  /// cannot sign, returns here instead of offering a retry.
+  /// A single card or group whose proposal no longer matches its quote, or
+  /// that its signer cannot sign, returns here before a draft exists.
   final FutureOr<void> Function(Object refusal)? onBatchRefused;
   final FutureOr<void> Function() onCancel;
   final Future<void> Function(
@@ -112,6 +117,7 @@ class _PaymentLinkKeystoneSigningOverlayState
               sourceAccountUuid: widget.sourceAccountUuid,
               presentation: widget.presentation,
               birthdayHeight: widget.birthdayHeight,
+              expectedQuote: widget.expectedQuote,
             )
           : service.createBatchFundingPczt(widget.batch!);
       _draftCreation = creation;
@@ -131,8 +137,7 @@ class _PaymentLinkKeystoneSigningOverlayState
             if (!mounted || _cancelled) return;
             setState(() {
               _phase = _PaymentLinkKeystonePhase.failed;
-              _error =
-                  'Signing was cancelled before proving parameters were downloaded.';
+              _error = context.l10n.commonSigningCancelledBeforeParams;
             });
             return;
           }
@@ -173,14 +178,7 @@ class _PaymentLinkKeystoneSigningOverlayState
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._preparePczt: $error\n$stackTrace');
       if (_cancelled) return;
-      final refused = widget.onBatchRefused;
-      if (refused != null &&
-          mounted &&
-          _draft == null &&
-          isPaymentLinkBatchRefusal(error)) {
-        await refused(error);
-        return;
-      }
+      if (await _handlePreparationRefusal(error)) return;
       try {
         await _discardDraft();
       } catch (cleanupError) {
@@ -192,6 +190,19 @@ class _PaymentLinkKeystoneSigningOverlayState
         _error = _friendlyError(error);
       });
     }
+  }
+
+  Future<bool> _handlePreparationRefusal(Object error) async {
+    final refused = widget.onBatchRefused;
+    if (refused == null ||
+        !mounted ||
+        _cancelled ||
+        _draft != null ||
+        !isPaymentLinkBatchRefusal(error)) {
+      return false;
+    }
+    await refused(error);
+    return true;
   }
 
   Future<bool> _showDownloadPrompt() {
@@ -240,7 +251,7 @@ class _PaymentLinkKeystoneSigningOverlayState
       log('PaymentLinkKeystoneSigning._getSignature: $error\n$stackTrace');
       if (!mounted) return;
       setState(() {
-        _error = 'This QR code does not match the current Keystone request.';
+        _error = context.l10n.commonThisQRCodeDoesNotMatch;
       });
     }
   }
@@ -268,6 +279,7 @@ class _PaymentLinkKeystoneSigningOverlayState
   /// its own failed phase, while the mobile signing flow renders the throw on
   /// its failure page.
   Future<void> _completeFunding(List<int> signatures) async {
+    final l10n = context.l10n;
     final draft = _draft;
     final pcztWithProofs = _pcztWithProofs;
     final saplingParams = _saplingParams;
@@ -302,15 +314,28 @@ class _PaymentLinkKeystoneSigningOverlayState
         status: result.status,
         txids: result.txids,
       );
+      if (result.status == 'expired') {
+        // Refused before submission; the service removed the draft.
+        throw _PaymentLinkFundingExpiredException(
+          networkUpgradeHoldMessage(l10n, result.message ?? '') ??
+              l10n.paymentLinkLedgerFundingExpired,
+        );
+      }
       if (!fundingAccepted) {
         // The network may already hold this transaction, so the draft stays.
         throw _PaymentLinkFundingUncertainException(
-          result.message ??
-              'The funding status is uncertain. Check activity before trying again.',
+          broadcastResultText(
+                l10n,
+                notices: result.notices,
+                message: result.message,
+              ) ??
+              l10n.paymentLinkKeystoneFundingUncertain,
         );
       }
       await widget.onFundingBroadcast(draft.link, result);
     } on _PaymentLinkFundingUncertainException {
+      rethrow;
+    } on _PaymentLinkFundingExpiredException {
       rethrow;
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._broadcast: $error\n$stackTrace');
@@ -344,9 +369,20 @@ class _PaymentLinkKeystoneSigningOverlayState
       sourceAccountUuid: widget.sourceAccountUuid,
       presentation: widget.presentation,
       birthdayHeight: widget.birthdayHeight,
+      expectedQuote: widget.expectedQuote,
     );
     _draftCreation = creation;
-    final draft = await creation;
+    final PaymentLinkHardwarePcztDraft draft;
+    try {
+      draft = await creation;
+    } catch (error) {
+      // The mobile flow owns its failure surface; consume a pre-draft refusal
+      // here so the parent can refresh Review before that surface handles it.
+      if (await _handlePreparationRefusal(error)) {
+        throw const MobileKeystonePcztSigningAborted();
+      }
+      rethrow;
+    }
     _draft = draft;
     if (!mounted || _cancelled) {
       await _discardDraft();
@@ -435,7 +471,7 @@ class _PaymentLinkKeystoneSigningOverlayState
       setState(() {
         _cancelling = false;
         _phase = _PaymentLinkKeystonePhase.failed;
-        _error = 'Could not finish cancelling. Please try again.';
+        _error = context.l10n.commonCancelFailedRetry;
       });
       showAppToast(
         context,
@@ -495,23 +531,23 @@ class _PaymentLinkKeystoneSigningOverlayState
               urParts: _urParts,
               error: _error,
               title: isBroadcasting
-                  ? 'Broadcasting gift card funding'
-                  : 'Sign gift card on Keystone',
+                  ? context.l10n.paymentLinkKeystoneBroadcastingTitle
+                  : context.l10n.paymentLinkKeystoneSignTitle,
               subtitle: isBroadcasting
-                  ? 'Submitting transaction'
-                  : 'Scan to sign',
+                  ? context.l10n.commonSubmittingTransaction
+                  : context.l10n.commonScanToSign,
               instruction: isBroadcasting
-                  ? 'Keep Vizor open while the transaction is sent.'
+                  ? context.l10n.commonKeepVizorOpenWhileTheTransaction
                   : _phase == _PaymentLinkKeystonePhase.failed
                   ? null
                   : _phase == _PaymentLinkKeystonePhase.ready &&
                         _pcztWithProofs == null
-                  ? 'Scan with Keystone while Vizor finishes preparing the transaction.'
-                  : 'After you scanned, click Get signature.',
+                  ? context.l10n.paymentLinkKeystoneScanWhilePreparing
+                  : context.l10n.commonKeystoneAfterScan,
               primaryLabel:
                   _phase == _PaymentLinkKeystonePhase.failed || isBroadcasting
                   ? null
-                  : 'Get signature',
+                  : context.l10n.commonGetSignature,
               onPrimary:
                   !_cancelled &&
                       _phase == _PaymentLinkKeystonePhase.ready &&
@@ -519,12 +555,12 @@ class _PaymentLinkKeystoneSigningOverlayState
                   ? () => unawaited(_getSignature())
                   : null,
               secondaryLabel: _cancelling
-                  ? 'Cancelling…'
+                  ? context.l10n.commonCancelling
                   : isBroadcasting
                   ? null
                   : _phase == _PaymentLinkKeystonePhase.failed
-                  ? 'Back to gift card'
-                  : 'Cancel',
+                  ? context.l10n.paymentLinkBackToGiftCard
+                  : context.l10n.commonCancel,
               onSecondary: _cancel,
             ),
           ),
@@ -552,14 +588,15 @@ class _PaymentLinkKeystoneSigningOverlayState
           child: AbsorbPointer(
             absorbing: _cancelling,
             child: MobileKeystonePcztSigningFlow(
-              title: _cancelling ? 'Cancelling…' : 'Confirm Gift Card',
-              description:
-                  'Use your Keystone wallet to scan this transaction QR code. '
-                  'Follow the steps on your device.',
-              scanCaption:
-                  'Scan the QR code on your Keystone to finish creating',
-              readingSignatureLabel: 'Reading signature…',
-              finalizingSignatureLabel: 'Creating your gift card…',
+              title: _cancelling
+                  ? context.l10n.commonCancelling
+                  : context.l10n.paymentLinkConfirmGiftCardTitle,
+              description: context.l10n.commonKeystoneScanTransaction,
+              scanCaption: context.l10n.paymentLinkKeystoneScanCaption,
+              readingSignatureLabel:
+                  context.l10n.commonReadingSignatureEllipsis,
+              finalizingSignatureLabel:
+                  context.l10n.paymentLinkKeystoneCreatingGiftCard,
               keyPrefix: 'payment_link_keystone_sign',
               logTag: 'PaymentLinkKeystoneSigning',
               expectedSignedUrType: 'zcash-batch-sig-result',
@@ -584,21 +621,35 @@ class _PaymentLinkKeystoneSigningOverlayState
 
   String _friendlyError(Object error) {
     if (error is _PaymentLinkFundingUncertainException) return error.message;
+    if (error is _PaymentLinkFundingExpiredException) return error.message;
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
+    if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return context.l10n.commonProvingParamsFailed;
     }
     if (lower.contains('proposal not found')) {
-      return 'Transaction expired before it could be signed.';
+      return context.l10n.commonSigningExpired;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return 'Gift card funding could not be broadcast.';
+      return context.l10n.paymentLinkKeystoneBroadcastFailed;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
-      return 'Keystone signature could not be applied.';
+      return context.l10n.commonKeystoneSignatureCouldNotBeApplied;
     }
-    return 'Gift card signing could not be completed.';
+    return context.l10n.paymentLinkKeystoneSigningFailed;
   }
+}
+
+/// A funding Rust reported expired before submitting it, so nothing reached
+/// the network.
+class _PaymentLinkFundingExpiredException implements Exception {
+  const _PaymentLinkFundingExpiredException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 /// A funding broadcast whose acceptance could not be confirmed. The draft is

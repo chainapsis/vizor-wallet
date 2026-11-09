@@ -1,24 +1,27 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/l10n/l10n.dart' show AppLocalizations;
 import '../../providers/rpc_endpoint_provider.dart';
 import '../../core/config/network_config.dart';
+import '../../rust/wallet/ledger.dart' show LedgerAppSupport;
 
 /// What Vizor may ask a connected Ledger Zcash app to do, by app version.
 /// Transaction budgets are enforced by Rust `ledger/limits.rs`;
 /// see `docs/ledger/limitations.md` for the full support/enforcement map.
 ///
-/// | Version  | New account | Signing | Memo shown as a hash |
-/// |----------|-------------|---------|----------------------|
-/// | < 3.9.3  | refused     | refused | —                    |
-/// | 3.9.3    | refused     | yes     | refused              |
-/// | >= 3.9.4 | yes         | yes     | yes                  |
+/// | Version   | New account | Signing | Memo shown as a hash | NU7 branch, Orchard to Ironwood |
+/// |-----------|-------------|---------|----------------------|---------------------------------|
+/// | < 3.9.3   | refused     | refused | —                    | —                               |
+/// | 3.9.3     | refused     | yes     | refused              | refused                         |
+/// | 3.9.4     | yes         | yes     | yes                  | refused                         |
+/// | >= 3.10.0 | yes         | yes     | yes                  | yes                             |
 ///
 /// The app shows a memo as text only when every byte is printable ASCII, and
 /// as a hash otherwise.
 ///
 /// Signing starts at 3.9.3 because Vizor builds transactions to that app's
-/// limits. Ledger Live still installs older versions on older firmware.
+/// limits. Ledger Wallet still installs older versions on older firmware.
 const kMinimumLedgerZcashAppVersion = '3.9.3';
 
 /// Before this version the app crashed while hashing a memo for display, so
@@ -30,13 +33,32 @@ const kLedgerMemoHashAppVersion = '3.9.4';
 /// `LEDGER_MEMO_HASH_UNSUPPORTED` in `rust/src/wallet/ledger/parse.rs`, which is
 /// the error Rust returns and `ledgerFailureGuidance` matches on.
 const ledgerMemoHashUnsupportedError =
-    'Update the Ledger Zcash app to sign non-English memos';
+    'Update the Ledger Zcash app to sign non-English memos'; // l10n-ignore: matches the Rust error; shown via ledgerFailureMsgMemoHashUnsupported
+
+/// Before this version the app rejects the NU7 consensus branch and an Orchard
+/// spend into Ironwood, and Ledger Wallet offers it only on each device's
+/// latest firmware.
+const kLedgerNu7AppVersion = '3.10.0';
+
+/// Shown when Rust refuses either for an older app. Keep this identical to
+/// `LEDGER_APP_UPDATE_REQUIRED` in `rust/src/wallet/ledger/parse.rs`.
+const ledgerAppUpdateRequiredError =
+    'Update your Ledger and its Zcash app to $kLedgerNu7AppVersion or newer ' // l10n-ignore: matches the Rust error; shown via ledgerFailureMsgAppUpdateRequired
+    'in Ledger Wallet.';
+
+/// Shown when Rust refuses a transaction that keeps change in Orchard: the app
+/// will not sign the zero-valued spend paired with that change. Keep this
+/// identical to `LEDGER_ORCHARD_CHANGE_UNSUPPORTED` in
+/// `rust/src/wallet/ledger/parse.rs`.
+const ledgerOrchardChangeUnsupportedError =
+    "Ledger can't sign a transaction that keeps change in Orchard. Migrate " // l10n-ignore: matches the Rust error; shown via ledgerFailureMsgOrchardChange
+    'your Orchard balance to Ironwood first.';
 
 /// Accounts connected from now on start without the 3.9.3 memo limit; those
 /// connected earlier keep signing from [kMinimumLedgerZcashAppVersion].
 const kMinimumLedgerZcashAppVersionForNewAccounts = kLedgerMemoHashAppVersion;
 
-/// Ledger's device-review budget, shared by the supported 3.9.3/3.9.4 apps.
+/// Ledger's device-review budget, shared by the supported 3.9.3 to 3.10.0 apps.
 /// This is independent of the 32-action budget per shielded pool: internal
 /// change is excluded, external Orchard and Ironwood outputs are combined.
 /// Rust enforces it when preparing a Gift Card batch. See
@@ -52,29 +74,27 @@ bool ledgerAppVersionAllowsNewAccounts(String appVersion) =>
 bool ledgerSupportsMemoHash(String? appVersion) =>
     appVersion != null && _atLeast(appVersion, kLedgerMemoHashAppVersion);
 
-const kLedgerLegacyOrchardRecoveryErrorCode =
-    'ledger_legacy_orchard_recovery_unsupported';
-const kLedgerLegacyOrchardRecoveryUnavailableMessage =
-    'This Ledger Zcash app cannot move recovered Orchard funds into Ironwood. '
-    'Update the Ledger Zcash app when a compatible version is available.';
+bool ledgerSupportsNu7Branch(String? appVersion) =>
+    appVersion != null && _atLeast(appVersion, kLedgerNu7AppVersion);
 
-/// A Ledger account can recover legacy Orchard funds when the same seed was
-/// previously used through another wallet or Ledger Zcash app build.
-///
-/// Keep this as an explicit capability boundary so the preserved migration
-/// signer can be re-enabled deliberately after a future Ledger app is verified
-/// against the migration canary.
-const ledgerAutomaticOrchardMigrationCapability = LedgerCapability.unsupported(
-  'Automatic Orchard migration is not available for Ledger accounts.',
-);
+/// What the Rust signing entry points may send to the app at `appVersion`.
+LedgerAppSupport ledgerAppSupport(String? appVersion) {
+  final fromNu7App = ledgerSupportsNu7Branch(appVersion);
+  return LedgerAppSupport(
+    memoHash: ledgerSupportsMemoHash(appVersion),
+    nu7Branch: fromNu7App,
+    orchardToIronwood: fromNu7App,
+  );
+}
 
 bool isLedgerMemoHashUnsupported(Object error) =>
     error.toString().contains(ledgerMemoHashUnsupportedError);
 
-bool isLedgerLegacyOrchardRecoveryUnsupported(Object error) => error
-    .toString()
-    .toLowerCase()
-    .contains(kLedgerLegacyOrchardRecoveryErrorCode);
+bool isLedgerAppUpdateRequired(Object error) =>
+    error.toString().contains(ledgerAppUpdateRequiredError);
+
+bool isLedgerOrchardChangeUnsupported(Object error) =>
+    error.toString().contains(ledgerOrchardChangeUnsupportedError);
 
 enum LedgerBluetoothCapability { supported, unsupported, unknown }
 
@@ -110,8 +130,10 @@ LedgerBluetoothCapability ledgerBluetoothTransportCapabilityForModel({
   return LedgerBluetoothCapability.supported;
 }
 
-String ledgerBluetoothSupportedModels(TargetPlatform platform) =>
-    'Nano X, Flex, Stax, and Nano Gen5';
+String ledgerBluetoothSupportedModels(
+  AppLocalizations l10n,
+  TargetPlatform platform,
+) => l10n.ledgerBluetoothModelsList;
 
 class LedgerCapability {
   const LedgerCapability._({required this.supported, this.reason});
@@ -127,7 +149,8 @@ class LedgerCapability {
   void requireSupported() {
     if (!supported) {
       throw UnsupportedError(
-        reason ?? 'Ledger is not supported in this build.',
+        reason ??
+            'Ledger is not supported in this build.', // l10n-ignore: exception text
       );
     }
   }
@@ -139,12 +162,12 @@ LedgerCapability ledgerStaticCapability({
 }) {
   if (!ledgerSupportsUsb(platform) && !isLedgerMobilePlatform(platform)) {
     return const LedgerCapability.unsupported(
-      'Ledger is supported on Vizor for macOS, Windows, Linux, iOS, and Android.',
+      'Ledger is supported on Vizor for macOS, Windows, Linux, iOS, and Android.', // l10n-ignore: exception text
     );
   }
   if (zcashNetworkFromName(networkName) != ZcashNetwork.mainnet) {
     return const LedgerCapability.unsupported(
-      'Ledger is currently supported only for Zcash mainnet.',
+      'Ledger is currently supported only for Zcash mainnet.', // l10n-ignore: exception text
     );
   }
   return const LedgerCapability.supported();
@@ -164,7 +187,7 @@ bool isLedgerMobilePlatform(TargetPlatform platform) =>
 void requireSupportedLedgerAppVersion(String version) {
   if (!_atLeast(version, kMinimumLedgerZcashAppVersion)) {
     throw UnsupportedError(
-      'Update the Ledger Zcash app to version '
+      'Update the Ledger Zcash app to version ' // l10n-ignore: exception text
       '$kMinimumLedgerZcashAppVersion or newer.',
     );
   }
@@ -181,6 +204,16 @@ final ledgerStaticCapabilityProvider = Provider<LedgerCapability>((ref) {
   );
   return ledgerStaticCapability(platform: platform, networkName: networkName);
 });
+
+/// The number the app at `appVersion` shows for `accountIndex` when sharing a
+/// viewing key: 3.10.0 numbers accounts from 1. Null for an unknown version.
+int? ledgerDeviceAccountNumber(int accountIndex, String? appVersion) {
+  final version = appVersion == null ? null : _parseVersion(appVersion);
+  if (version == null) return null;
+  final fromOne =
+      _compareVersion(version, _parseVersion(kLedgerNu7AppVersion)!) >= 0;
+  return fromOne ? accountIndex + 1 : accountIndex;
+}
 
 bool _atLeast(String version, String minimum) {
   final parsed = _parseVersion(version);

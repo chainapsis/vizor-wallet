@@ -51,6 +51,7 @@ abstract interface class PaymentLinkHardwareSigningService {
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
     int? birthdayHeight,
+    PaymentLinkFundingQuote? expectedQuote,
   });
 
   Future<List<String>> encodeSigningUrParts({
@@ -121,11 +122,18 @@ class PaymentLinkHardwareFundingResult {
     required this.status,
     required this.fundingMetadataSaved,
     this.message,
+    this.notices = const [],
   });
 
   final String txids;
   final String status;
+
+  /// Rust's English result text.
   final String? message;
+
+  /// [message] as sentences for the display language
+  /// (`broadcastResultText`).
+  final List<rust_sync.BroadcastNotice> notices;
   final bool fundingMetadataSaved;
 }
 
@@ -149,6 +157,10 @@ class RustPaymentLinkHardwareSigningService
     if (batch.links.any((link) => link.network != endpoint.networkName)) {
       throw StateError('The Gift Card network changed.');
     }
+    await _paymentLinkService.validateFundingReserve(
+      batch.quote.claimFeeReserveZatoshi ~/ BigInt.from(batch.quote.count),
+      network: endpoint.networkName,
+    );
     try {
       return await _createPczt(
         accountUuid: batch.quote.sourceAccountUuid,
@@ -163,6 +175,9 @@ class RustPaymentLinkHardwareSigningService
             addresses: [for (final link in batch.links) link.address],
             amountZatoshi: paymentLinkFundingAmountZatoshi(
               batch.quote.recipientAmountZatoshi,
+              claimFeeReserveZatoshi:
+                  batch.quote.claimFeeReserveZatoshi ~/
+                  BigInt.from(batch.quote.count),
             ),
           );
           return proposal;
@@ -191,13 +206,16 @@ class RustPaymentLinkHardwareSigningService
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
     int? birthdayHeight,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     final link = await _paymentLinkService.createFundingDraft(
       amountZatoshi: amountZatoshi,
       sourceAccountUuid: sourceAccountUuid,
       presentation: presentation,
       birthdayHeight: birthdayHeight,
+      expectedQuote: expectedQuote,
     );
+    final fundingAmount = await _paymentLinkService.fundingAmountForDraft(link);
     return _createPczt(
       accountUuid: sourceAccountUuid,
       links: [link],
@@ -207,8 +225,14 @@ class RustPaymentLinkHardwareSigningService
         accountUuid: sourceAccountUuid,
         sendFlowId: sendFlowId,
         toAddress: link.address,
-        amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+        amountZatoshi: fundingAmount,
       ),
+      checkProposal: (proposal) {
+        if (expectedQuote != null &&
+            proposal.feeZatoshi != expectedQuote.fundingFeeZatoshi) {
+          throw const PaymentLinkBatchQuoteChanged();
+        }
+      },
       removeDrafts: () =>
           _recoveryStore.removeUnsubmittedDraft(address: link.address),
     );
@@ -241,7 +265,9 @@ class RustPaymentLinkHardwareSigningService
             accountUuid: accountUuid,
             operation: () async {
               final dbPath = await getWalletDbPath();
-              final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+              final endpoint = await _ref
+                  .read(rpcEndpointFailoverProvider.notifier)
+                  .ensureReady();
               BigInt? proposalId;
               var consumed = false;
               try {
@@ -419,7 +445,9 @@ class RustPaymentLinkHardwareSigningService
       'PaymentLinkHardwareSigning: proposal cleanup remains pending '
       'flow=${draft.sendFlowId} proposal=${draft.proposalId} error=$lastError',
     );
-    throw StateError('Could not finish cancelling. Please try again.');
+    throw StateError(
+      'Could not finish cancelling. Please try again.',
+    ); // l10n-ignore: StateError text; overlays show their own localized copy
   }
 
   @override
@@ -432,7 +460,9 @@ class RustPaymentLinkHardwareSigningService
     FutureOr<void> Function()? onSubmissionStarted,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final endpoint = await _ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .ensureReady();
     final rust_sync.StoreAndBroadcastPcztsResult stored;
     try {
       // The durable marker lands before the broadcast: a draft without it
@@ -469,6 +499,22 @@ class RustPaymentLinkHardwareSigningService
         _surfaces.close(link.address);
       }
     }
+    if (stored.status == 'expired') {
+      // Rust refused it before submission, so nothing reached the network.
+      try {
+        if (draft.batch case final batch?) {
+          await _recoveryStore.removeTerminalBatch(batch.id);
+        } else {
+          await _recoveryStore.removeUnbroadcastDraft(
+            address: draft.link.address,
+          );
+        }
+      } catch (error) {
+        log(
+          'PaymentLinkHardwareSigning: expired funding cleanup failed: $error',
+        );
+      }
+    }
     if (isPaymentLinkFundingBroadcastAccepted(stored.status) &&
         draft.sourceAccountUuid != null) {
       _paymentLinkService.observeActivityBroadcast(
@@ -483,6 +529,7 @@ class RustPaymentLinkHardwareSigningService
           .firstWhere((txid) => txid.isNotEmpty, orElse: () => ''),
       status: stored.status,
       message: stored.message,
+      notices: stored.notices,
     );
 
     final fundingAccepted = isPaymentLinkFundingSubmitted(
@@ -535,6 +582,7 @@ class RustPaymentLinkHardwareSigningService
       txids: result.txid,
       status: result.status,
       message: result.message,
+      notices: result.notices,
       fundingMetadataSaved: fundingMetadataSaved,
     );
   }

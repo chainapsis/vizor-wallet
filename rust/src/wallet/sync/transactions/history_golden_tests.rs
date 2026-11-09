@@ -41,6 +41,7 @@ use super::private_shielding_tests::{
 use super::*;
 use crate::wallet::keys;
 use crate::wallet::network::configure_regtest_nu6_3_activation_height;
+use zcash_client_backend::data_api::Account as _;
 
 const NETWORK: WalletNetwork = WalletNetwork::Regtest;
 /// The scanned chain tip of every wallet built by [`wallet`].
@@ -91,6 +92,41 @@ fn txid(tag: u8) -> [u8; 32] {
     let mut bytes = [tag; 32];
     bytes[31] = 0x5a;
     bytes
+}
+
+/// Every transaction's rows read alone ([`get_transaction_rows`], as a
+/// receipt reads them) are exactly its rows in the whole `history`, field
+/// for field and in order: a receipt shows what Activity lists.
+fn assert_rows_read_alone_match(path: &str, account: &str, history: &[TransactionInfo]) {
+    let txids: std::collections::BTreeSet<&str> =
+        history.iter().map(|row| row.txid_hex.as_str()).collect();
+    for txid in txids {
+        let alone: Vec<String> = get_transaction_rows(path, NETWORK, account, txid)
+            .unwrap()
+            .iter()
+            .map(full_row)
+            .collect();
+        let listed: Vec<String> = history
+            .iter()
+            .filter(|row| row.txid_hex == txid)
+            .map(full_row)
+            .collect();
+        assert_eq!(alone, listed, "rows of {}", tag(txid));
+    }
+    let unknown = hex::encode([0xee; 32]);
+    assert!(get_transaction_rows(path, NETWORK, account, &unknown)
+        .unwrap()
+        .is_empty());
+}
+
+/// Every field of a row, for exact comparison.
+fn full_row(r: &TransactionInfo) -> String {
+    format!(
+        "{} block_time={} created={}",
+        row_line(r),
+        r.block_time,
+        r.created_time
+    )
 }
 
 fn row_line(r: &TransactionInfo) -> String {
@@ -162,6 +198,7 @@ fn detail_line(d: &TransactionDetail, names: &Names) -> String {
         ),
         Some(TransparentDetailsView::Pending) => "pending".to_owned(),
         Some(TransparentDetailsView::Unavailable) => "unavailable".to_owned(),
+        Some(TransparentDetailsView::GaveUp) => "gave-up".to_owned(),
         Some(TransparentDetailsView::NotCovered) => "not-covered".to_owned(),
     };
     format!(
@@ -563,13 +600,46 @@ impl W {
     }
 
     fn history(&self, account: AccountUuid, limit: Option<u32>) -> Vec<TransactionInfo> {
-        get_transaction_history(
-            &self.path,
-            NETWORK,
-            limit,
-            &account.expose_uuid().to_string(),
-        )
-        .unwrap()
+        let account = account.expose_uuid().to_string();
+        let history = get_transaction_history(&self.path, NETWORK, limit, &account).unwrap();
+        if limit.is_none() {
+            assert_rows_read_alone_match(&self.path, &account, &history);
+            let index =
+                history_pages::index(&self.path, NETWORK, parse_account_uuid(&account).unwrap())
+                    .unwrap();
+            for batch in index.summaries.chunks(20) {
+                let ids: Vec<_> = batch.iter().map(|s| s.txid_hex.clone()).collect();
+                let page = history_pages::rows(
+                    &self.path,
+                    NETWORK,
+                    parse_account_uuid(&account).unwrap(),
+                    &index.snapshot_id,
+                    &ids,
+                )
+                .unwrap();
+                if page.stale {
+                    break;
+                }
+                let expected: Vec<_> = history
+                    .iter()
+                    .filter(|r| ids.contains(&r.txid_hex))
+                    .map(full_row)
+                    .collect();
+                assert_eq!(
+                    page.transactions.iter().map(full_row).collect::<Vec<_>>(),
+                    expected,
+                    "paged rows agree with unlimited history"
+                );
+            }
+            // The unchanged unlimited path is the oracle for every golden's
+            // bounded read, including all fields and intra-transaction rows.
+            for limit in [0, 1, 2, 10, u32::MAX] {
+                let recent =
+                    get_transaction_history(&self.path, NETWORK, Some(limit), &account).unwrap();
+                assert_eq!(recent, history[..history.len().min(limit as usize)]);
+            }
+        }
+        history
     }
 
     /// The Activity rows of the transactions `tags`, in display order.
@@ -657,6 +727,129 @@ fn tex_pair(w: &mut W, funding: u8, send: u8, eph: i64, amount: u64, fees: (u64,
         amount - send_fee,
         None,
     );
+}
+
+/// Exercise the candidate loader with real library reads and record which
+/// transactions it asks for. The unlimited production read remains the oracle.
+fn recent_batches(w: &W, limit: u32) -> (Vec<TransactionInfo>, Vec<usize>) {
+    let conn = open_readonly_conn(&w.path).unwrap();
+    let read = conn.unchecked_transaction().unwrap();
+    let bases = read_history_bases(&read, &w.path, NETWORK, w.a).unwrap();
+    let mut seen = HashSet::new();
+    let mut batches = Vec::new();
+    let rows = recent_history::assemble_recent_history(
+        bases,
+        w.a.expose_uuid().as_bytes(),
+        limit,
+        |batch| {
+            batches.push(batch.len());
+            for base in batch.iter() {
+                assert!(
+                    seen.insert(base.txid.clone()),
+                    "must not load a transaction twice"
+                );
+            }
+            attach_history_details(&read, &w.path, NETWORK, w.a, batch)?;
+            read_history_outputs(
+                &read,
+                w.a.expose_uuid().as_bytes(),
+                batch.iter().map(|b| b.txid.as_slice()),
+            )
+        },
+    )
+    .unwrap();
+    let all =
+        get_transaction_history(&w.path, NETWORK, None, &w.a.expose_uuid().to_string()).unwrap();
+    assert_eq!(rows, all[..all.len().min(limit as usize)]);
+    (rows, batches)
+}
+
+fn recent_receipts(w: &W) {
+    for tag in 0x60..0xa0 {
+        let tx = w.tx(tag, Some(190), None, None);
+        w.recv(tx, Pool::Orchard, 0, w.a, 100_000, Recv::Ext, None);
+    }
+}
+
+fn hidden_funding(w: &mut W, tag: u8) {
+    let input = w.fund(w.a, Pool::Orchard, 1_010_000);
+    let tx = w.tx(tag, None, Some(CREATED), Some(10_000));
+    w.spend(input, tx);
+    w.recv(tx, Pool::Transparent, 0, w.a, 1_000_000, Recv::Eph(0), None);
+    let eph = w.eph(w.a, 0).address;
+    w.sent(
+        tx,
+        Pool::Transparent,
+        0,
+        w.a,
+        Some(w.a),
+        Some(&eph),
+        1_000_000,
+        None,
+    );
+}
+
+#[test]
+fn golden_recent_history_loads_only_latest_receipts() {
+    let w = wallet();
+    recent_receipts(&w);
+    assert_eq!(recent_batches(&w, 10).1, [20]);
+    assert!(recent_batches(&w, 0).1.is_empty());
+    assert_eq!(recent_batches(&w, u32::MAX).0.len(), 64);
+    // A second account has no history, even with the first account populated.
+    assert!(w.history(w.b, Some(10)).is_empty());
+}
+
+#[test]
+fn golden_recent_history_expands_and_reuses_hidden_dependencies() {
+    let mut w = wallet();
+    recent_receipts(&w);
+    for tag in 0xb0..0xdd {
+        hidden_funding(&mut w, tag);
+    }
+    let (rows, batches) = recent_batches(&w, 10);
+    assert_eq!(rows.len(), 10);
+    // The 45 hidden pending transactions form one dependency group. Expanding
+    // through them must neither re-read the group nor stop before visible rows.
+    assert!(batches.len() > 1, "{batches:?}");
+    assert_eq!(batches[0], 45);
+}
+
+#[test]
+fn golden_recent_history_does_not_fill_quota_with_older_tex_peers() {
+    let mut w = wallet();
+    recent_receipts(&w);
+    tex_pair(&mut w, 0xa2, 0xa1, 0, 10_010_000, (40_000, 10_000));
+    w.set(
+        0xa1,
+        "mined_height = 101, tx_index = 1, min_observed_height = 101",
+    );
+    for tag in 0xb0..0xc3 {
+        hidden_funding(&mut w, tag);
+    }
+    let (rows, batches) = recent_batches(&w, 1);
+    assert_eq!(rows[0].tx_kind, "received");
+    assert_eq!(rows[0].mined_height, 190);
+    assert_eq!(batches[0], 21);
+    assert!(batches.len() > 1);
+}
+
+#[test]
+fn golden_recent_history_keeps_distant_same_amount_tex_pairs() {
+    let mut w = wallet();
+    recent_receipts(&w);
+    tex_pair(&mut w, 0xa8, 0xa7, 0, 10_010_000, (40_000, 10_000));
+    tex_pair(&mut w, 0xaa, 0xa9, 1, 10_010_000, (50_000, 10_000));
+    for tag in [0xa8, 0xaa] {
+        w.set(
+            tag,
+            "mined_height = 101, tx_index = 1, min_observed_height = 101",
+        );
+    }
+    let (rows, batches) = recent_batches(&w, 1);
+    assert_eq!(rows[0].fee, 60_000);
+    assert_eq!(rows[0].funding_parent_txid, Some(hex::encode(txid(0xaa))));
+    assert_eq!(batches, [22]);
 }
 
 /// Was `history_suppresses_funding_step_after_limit_filtering`.
@@ -2055,11 +2248,11 @@ fn encode(address: &TransparentAddress) -> String {
     zcash_keys::encoding::encode_transparent_address_p(&NETWORK, address)
 }
 
-fn last_derived(
+fn last_derived_entry(
     st: &State,
     account: AccountUuid,
     scope: TransparentKeyScope,
-) -> TransparentAddress {
+) -> (u32, TransparentAddress) {
     watch(st, account)
         .addresses
         .into_iter()
@@ -2070,8 +2263,19 @@ fn last_derived(
             _ => None,
         })
         .max_by_key(|(index, _)| *index)
-        .map(|(_, address)| address)
         .unwrap()
+}
+
+fn last_derived(
+    st: &State,
+    account: AccountUuid,
+    scope: TransparentKeyScope,
+) -> TransparentAddress {
+    last_derived_entry(st, account, scope).1
+}
+
+fn last_derived_index(st: &State, account: AccountUuid, scope: TransparentKeyScope) -> u32 {
+    last_derived_entry(st, account, scope).0
 }
 
 fn event(
@@ -2299,8 +2503,9 @@ impl Recovered {
     fn shown(&self, tag: u8, kinds: &[&str]) -> Vec<String> {
         let (_dir, path) = self.copy();
         let account = self.account.expose_uuid().to_string();
-        let mut lines: Vec<String> = get_transaction_history(&path, NETWORK, None, &account)
-            .unwrap()
+        let history = get_transaction_history(&path, NETWORK, None, &account).unwrap();
+        assert_rows_read_alone_match(&path, &account, &history);
+        let mut lines: Vec<String> = history
             .iter()
             .filter(|row| row.txid_hex == hex::encode(txid(tag)))
             .map(row_line)
@@ -2316,31 +2521,46 @@ impl Recovered {
 
     /// Withdraws the account's settled coverage, as a later recovery run
     /// that grows the address window and stops before covering it does.
+    ///
+    /// While the account was restoring, its recovery already checked a fixed
+    /// window of addresses (every external index below 50), so growing the
+    /// window into those addresses withdraws nothing: the wallet has already
+    /// looked there. Activity at the last address grows the window by one gap
+    /// at a time, so it is repeated, each run covering what the last one
+    /// added, until the window reaches addresses the restore never checked.
     fn unsettle(&mut self) {
-        let ws = watch(&self.st, self.account);
-        let target = ws.target.unwrap().height;
-        let mut grow = commit(&ws);
-        grow.receives = vec![event(
-            0x0f,
-            0,
-            last_derived(&self.st, self.account, TransparentKeyScope::EXTERNAL),
-            30_000,
-            target - 2,
-            Some(TransactionMetadata {
-                fee: WholeTransactionFee::Exact(Zatoshis::const_from_u64(10_000)),
-                transparent_input_count: 1,
-                has_shielded_components: false,
-            }),
-            false,
-        )];
-        assert!(
-            self.st
-                .wallet_mut()
-                .db_mut()
-                .apply_transparent_ledger_commit(grow)
-                .unwrap()
-                .window_grew
-        );
+        const RESTORE_EXTERNAL_END: u32 = 50;
+        for output in 0.. {
+            let ws = watch(&self.st, self.account);
+            let target = ws.target.unwrap().height;
+            let mut grow = commit(&ws);
+            grow.receives = vec![event(
+                0x0f,
+                output,
+                last_derived(&self.st, self.account, TransparentKeyScope::EXTERNAL),
+                30_000,
+                target - 2,
+                Some(TransactionMetadata {
+                    fee: WholeTransactionFee::Exact(Zatoshis::const_from_u64(10_000)),
+                    transparent_input_count: 1,
+                    has_shielded_components: false,
+                }),
+                false,
+            )];
+            assert!(
+                self.st
+                    .wallet_mut()
+                    .db_mut()
+                    .apply_transparent_ledger_commit(grow)
+                    .unwrap()
+                    .window_grew
+            );
+            if last_derived_index(&self.st, self.account, TransparentKeyScope::EXTERNAL)
+                >= RESTORE_EXTERNAL_END
+            {
+                break;
+            }
+        }
     }
 }
 
@@ -2619,4 +2839,185 @@ fn golden_shared_or_mixed_funding_keeps_receipts_incomplete() {
             received to=- from=- src=- acct=- memo=None complete=0 prov=1 settled=1 delta=-10000 fee=Some(10000) net=Some(10000) outs=[] t=rows[0:own:100000:1,1:F33:50000:0]/2 omit["shielded_and_transparent_funding"]
         "#,
     );
+}
+
+#[test]
+fn golden_activity_pages_reuse_and_invalidate_local_snapshots() {
+    let w = wallet();
+    recent_receipts(&w);
+    let expected =
+        get_transaction_history(&w.path, NETWORK, None, &w.a.expose_uuid().to_string()).unwrap();
+    // Cache eviction by concurrent tests is a legitimate stale response. Retry
+    // from a fresh index, exactly as a client does after invalidation.
+    let mut verified = false;
+    for _ in 0..100 {
+        let index = history_pages::index(&w.path, NETWORK, w.a).unwrap();
+        let mut actual = Vec::new();
+        let mut stale = false;
+        for batch in index.summaries.chunks(20) {
+            let ids: Vec<_> = batch.iter().map(|s| s.txid_hex.clone()).collect();
+            let page =
+                history_pages::rows(&w.path, NETWORK, w.a, &index.snapshot_id, &ids).unwrap();
+            if page.stale {
+                stale = true;
+                break;
+            }
+            actual.extend(page.transactions);
+        }
+        if stale {
+            continue;
+        }
+        assert_eq!(actual, expected);
+        // A writer using another connection invalidates this index. No old
+        // details may be returned under its token after the commit.
+        w.conn
+            .execute(
+                "UPDATE transactions SET fee = 12345 WHERE txid = ?1",
+                [txid(0x60).as_slice()],
+            )
+            .unwrap();
+        let page = history_pages::rows(
+            &w.path,
+            NETWORK,
+            w.a,
+            &index.snapshot_id,
+            &[hex::encode(txid(0x60))],
+        )
+        .unwrap();
+        assert!(page.stale);
+        verified = true;
+        break;
+    }
+    assert!(
+        verified,
+        "snapshot repeatedly evicted by concurrent fixtures"
+    );
+    let index = history_pages::index(&w.path, NETWORK, w.a).unwrap();
+    assert!(history_pages::rows(
+        &w.path,
+        NETWORK,
+        w.a,
+        &index.snapshot_id,
+        &vec![hex::encode(txid(0x60)); 21]
+    )
+    .is_err());
+    history_pages::evict_db(&w.path);
+    // A reset can remove the physical database immediately after eviction,
+    // including on platforms that reject deletion of open SQLite files.
+    drop(w.conn);
+    std::fs::remove_file(&w.path).unwrap();
+}
+
+#[test]
+fn golden_activity_page_continues_across_unrelated_sync_writes() {
+    let w = wallet();
+    recent_receipts(&w);
+    let mut verified = false;
+    for attempt in 0..100 {
+        let index = history_pages::index(&w.path, NETWORK, w.a).unwrap();
+        let mut evicted = false;
+        for n in 0..5 {
+            w.conn
+                .execute(
+                    "UPDATE accounts SET name = ?1 WHERE uuid = ?2",
+                    params![
+                        format!("renamed-{attempt}-{n}"),
+                        w.a.expose_uuid().as_bytes()
+                    ],
+                )
+                .unwrap();
+            let page = history_pages::rows(
+                &w.path,
+                NETWORK,
+                w.a,
+                &index.snapshot_id,
+                &[hex::encode(txid(0x60))],
+            )
+            .unwrap();
+            if page.stale {
+                evicted = true;
+                break;
+            }
+            assert_eq!(page.transactions.len(), 1);
+        }
+        // Another fixture can evict the bounded LRU. An implementation that
+        // rejects every commit never completes even one of these attempts.
+        if evicted {
+            continue;
+        }
+        assert!(
+            history_pages::rows(&w.path, NETWORK, w.a, &index.snapshot_id, &[])
+                .unwrap()
+                .stale,
+            "a continued page cannot certify an older Dart detail buffer"
+        );
+        let refreshed = history_pages::index(&w.path, NETWORK, w.a).unwrap();
+        assert_ne!(
+            refreshed.snapshot_id, index.snapshot_id,
+            "explicit refresh must replace cached Dart detail facts too"
+        );
+        w.conn
+            .execute(
+                "UPDATE accounts SET name = 'again' WHERE uuid = ?1",
+                [w.a.expose_uuid().as_bytes()],
+            )
+            .unwrap();
+        assert!(
+            history_pages::rows(&w.path, NETWORK, w.a, &refreshed.snapshot_id, &[])
+                .unwrap()
+                .stale
+        );
+        verified = true;
+        break;
+    }
+    assert!(
+        verified,
+        "unrelated commits repeatedly invalidated the page"
+    );
+}
+
+#[test]
+fn golden_activity_page_rereads_detail_only_enrichment() {
+    let w = wallet();
+    let tx = w.tx(0xe2, Some(190), None, None);
+    w.recv(tx, Pool::Orchard, 0, w.a, 0, Recv::Ext, None);
+    let mut verified = false;
+    for _ in 0..100 {
+        w.conn
+            .execute(
+                "UPDATE orchard_received_notes SET memo = NULL WHERE transaction_id = ?1",
+                [tx],
+            )
+            .unwrap();
+        let index = history_pages::index(&w.path, NETWORK, w.a).unwrap();
+        let ids = [hex::encode(txid(0xe2))];
+        let before = history_pages::rows(&w.path, NETWORK, w.a, &index.snapshot_id, &ids).unwrap();
+        if before.stale {
+            continue;
+        }
+        assert!(!before.transactions[0].details_complete);
+        w.conn
+            .execute(
+                "UPDATE orchard_received_notes SET memo = ?1 WHERE transaction_id = ?2",
+                params![padded_memo(b"enriched memo"), tx],
+            )
+            .unwrap();
+        let after = history_pages::rows(&w.path, NETWORK, w.a, &index.snapshot_id, &ids).unwrap();
+        if after.stale {
+            continue;
+        }
+        assert!(
+            after.transactions[0].details_complete,
+            "same summary must not retain the pre-enrichment detail cache"
+        );
+        assert_ne!(
+            history_pages::index(&w.path, NETWORK, w.a)
+                .unwrap()
+                .snapshot_id,
+            index.snapshot_id
+        );
+        verified = true;
+        break;
+    }
+    assert!(verified, "detail enrichment never produced a coherent page");
 }

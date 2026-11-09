@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -124,7 +125,7 @@ class _MobileSwapSlippageStepperModalState
     final valueColor = invalid ? colors.text.destructive : colors.text.accent;
 
     return MobileModalScaffold(
-      title: 'Slippage',
+      title: context.l10n.swapSlippageTitle,
       onClose: widget.onCancel,
       constrainBody: true,
       // _Modal Type slippage variant: pb-16 (vs the default 24).
@@ -141,8 +142,8 @@ class _MobileSwapSlippageStepperModalState
                 children: [
                   Text(
                     widget.paymentMode
-                        ? 'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.'
-                        : "Sets the maximum rate change you'll accept. Network fees are separate.",
+                        ? context.l10n.swapSlippageDescriptionPay
+                        : context.l10n.swapSlippageDescriptionSwap,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodySmall.copyWith(
                       color: colors.text.secondary,
@@ -186,7 +187,7 @@ class _MobileSwapSlippageStepperModalState
                             constraints: const BoxConstraints(minHeight: 16),
                             child: invalid
                                 ? Text(
-                                    'Slippage must be 0.1 - 5%',
+                                    context.l10n.swapSlippageRangeError,
                                     key: const ValueKey(
                                       'mobile_swap_slippage_error',
                                     ),
@@ -212,7 +213,7 @@ class _MobileSwapSlippageStepperModalState
             key: const ValueKey('swap_slippage_update_button'),
             expand: true,
             onPressed: _canUpdate ? () => widget.onSubmitted(_bps!) : null,
-            child: const Text('Update'),
+            child: Text(context.l10n.commonUpdate),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -220,7 +221,7 @@ class _MobileSwapSlippageStepperModalState
             variant: AppButtonVariant.ghost,
             expand: true,
             onPressed: widget.onCancel,
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
         ],
       ),
