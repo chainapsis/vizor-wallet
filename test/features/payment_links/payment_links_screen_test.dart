@@ -2079,6 +2079,7 @@ void main() {
         tester,
         bootstrap: hardwareBootstrap,
         hardwareSigning: hardwareSigning,
+        birthdayPrefetch: () async => 3500000,
       );
 
       await tester.tap(find.text('Create new card'));

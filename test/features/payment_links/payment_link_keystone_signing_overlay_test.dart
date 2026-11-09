@@ -33,6 +33,7 @@ void main() {
             syncProvider.overrideWith(_CleanupSyncNotifier.new),
           ],
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.dark,
               child: PaymentLinkKeystoneSigningOverlay(
