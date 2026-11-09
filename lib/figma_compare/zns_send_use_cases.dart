@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:go_router/go_router.dart';
 
 import '../src/app_bootstrap.dart';
@@ -23,7 +24,10 @@ import '../src/features/send/screens/mobile/mobile_send_screen.dart';
 import '../src/features/send/screens/send_screen.dart';
 import '../src/features/send/services/send_proving_key_warmup.dart';
 import '../src/features/send/widgets/send_recipient_resolver.dart';
+import '../src/features/settings/screens/mobile/mobile_settings_screen.dart';
+import '../src/features/settings/screens/settings_screen.dart';
 import '../src/providers/account_models.dart';
+import '../src/providers/network_privacy_provider.dart';
 import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
@@ -65,6 +69,14 @@ Widget buildZnsDesktopContactsUseCase(BuildContext context) =>
 
 Widget buildZnsMobileContactsUseCase(BuildContext context) =>
     const _ContactsHarness(mobile: true);
+
+/// Settings with Zcash names off, as on a new install. The ZNS settings
+/// capture test scrolls to the toggle, and taps it for the "on" state.
+Widget buildZnsDesktopSettingsUseCase(BuildContext context) =>
+    const _SettingsHarness(mobile: false);
+
+Widget buildZnsMobileSettingsUseCase(BuildContext context) =>
+    const _SettingsHarness(mobile: true);
 
 enum _Step { recipient, amount, review }
 
@@ -136,6 +148,7 @@ class _CaptureAddressBookRepository implements AddressBookRepository {
 Widget _captureScope({
   required Widget child,
   ZnsNameResolver resolver = const _CaptureZnsResolver(),
+  List<Override> extraOverrides = const [],
 }) => ProviderScope(
   overrides: [
     appBootstrapProvider.overrideWithValue(_bootstrap),
@@ -153,9 +166,72 @@ Widget _captureScope({
     ownAccountAddressesProvider.overrideWith((ref) async => const {}),
     znsNamesOnProvider.overrideWithValue(true),
     znsNameResolverProvider.overrideWithValue(resolver),
+    ...extraOverrides,
   ],
   child: child,
 );
+
+/// Holds the Zcash names setting in memory, starting off.
+class _CaptureZnsNamesStore implements ZnsNamesSettingStore {
+  bool _enabled = false;
+
+  @override
+  Future<bool> readEnabled() async => _enabled;
+
+  @override
+  Future<void> writeEnabled(bool enabled) async => _enabled = enabled;
+}
+
+/// Tor off and idle, without the native Tor runtime.
+class _CaptureNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  @override
+  NetworkPrivacyState build() => const NetworkPrivacyState.off();
+
+  @override
+  Future<void> setTorEnabled(bool enabled) async {}
+}
+
+class _SettingsHarness extends StatefulWidget {
+  const _SettingsHarness({required this.mobile});
+
+  final bool mobile;
+
+  @override
+  State<_SettingsHarness> createState() => _SettingsHarnessState();
+}
+
+class _SettingsHarnessState extends State<_SettingsHarness> {
+  final _namesStore = _CaptureZnsNamesStore();
+  late final GoRouter _router = GoRouter(
+    initialLocation: '/settings',
+    routes: [
+      GoRoute(path: '/', builder: (_, _) => const SizedBox.shrink()),
+      GoRoute(
+        path: '/settings',
+        builder: (_, _) => widget.mobile
+            ? const MobileSettingsScreen()
+            : const SettingsScreen(),
+      ),
+    ],
+  );
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _captureScope(
+      extraOverrides: [
+        znsNamesSettingStoreProvider.overrideWithValue(_namesStore),
+        networkPrivacyProvider.overrideWith(_CaptureNetworkPrivacyNotifier.new),
+      ],
+      child: Router.withConfig(config: _router),
+    );
+  }
+}
 
 /// Desktop `SendScreen` validates through Rust directly, so the capture
 /// installs an FRB mock that accepts every address as unified.

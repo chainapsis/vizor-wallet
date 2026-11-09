@@ -3453,6 +3453,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'zns-desktop-settings',
+    description: 'Desktop Settings, for the ZNS settings capture test',
+    builder: buildZnsDesktopSettingsUseCase,
+    allowPointer: true,
+  ),
+  FigmaCompareScenario(
+    id: 'zns-mobile-settings',
+    description: 'Mobile Settings, for the ZNS settings capture test',
+    builder: buildZnsMobileSettingsUseCase,
+    allowPointer: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'zns-mobile-send-resolved',
     description: 'Mobile recipient step with a Zcash name resolved',
     builder: buildZnsMobileSendResolvedUseCase,
