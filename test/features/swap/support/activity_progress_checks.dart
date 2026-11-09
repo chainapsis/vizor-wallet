@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart'
 import 'package:zcash_wallet/src/features/swap/widgets/swap_progress_explorer_footer.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 
 import '../../../figma_compare/figma_compare_font_loader.dart';
 
@@ -240,6 +241,7 @@ Future<ProviderContainer> _pump(
       accountProvider.overrideWith(_ProgressAccounts.new),
       addressBookProvider.overrideWith(_ProgressAddressBook.new),
       swapStateProvider.overrideWith(() => _ProgressSwap(intent)),
+      privacyModeProvider.overrideWith(_ProgressPrivacyMode.new),
     ],
   );
   addTearDown(container.dispose);
@@ -303,4 +305,9 @@ class _ProgressAccounts extends AccountNotifier {
 class _ProgressAddressBook extends AddressBookNotifier {
   @override
   FutureOr<AddressBookState> build() => const AddressBookState();
+}
+
+class _ProgressPrivacyMode extends PrivacyModeNotifier {
+  @override
+  bool build() => false;
 }

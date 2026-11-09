@@ -32,6 +32,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_bat
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
@@ -4389,6 +4390,69 @@ void main() {
     expect(find.text('Additional ZEC needed'), findsNothing);
   });
 
+  testWidgets('group creation masks the balance and shortfall in privacy mode', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      final operations = FakePaymentLinkOperations();
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        batchOperations: _FakeDesktopBatchOperations(operations),
+        privacyNotifier: _EnabledPrivacy(),
+        syncNotifier: FakeSyncNotifier(
+          SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            isSyncComplete: true,
+            percentage: 1,
+            displayTargetPercentage: 1,
+            // Above 2 × 0.1 so the cards are quoted, below the 0.2005 total.
+            spendableBalance: BigInt.from(20010000),
+            displaySpendableBalance: BigInt.from(20010000),
+          ),
+        ),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_create_batch_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('payment_link_bulk_amount')),
+        '0.1',
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('payment_link_bulk_available')),
+          matching: find.text('****** ZEC'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel('****** ZEC available'), findsOneWidget);
+      final shortfall = find.ancestor(
+        of: find.text('Additional ZEC needed'),
+        matching: find.byType(Row),
+      );
+      expect(
+        find.descendant(of: shortfall.first, matching: find.text('****** ZEC')),
+        findsOneWidget,
+      );
+      // The draft's own cost stays visible; only balance-derived values hide.
+      expect(find.text('0.2002 ZEC'), findsOneWidget);
+      expect(find.text('0.2005 ZEC'), findsOneWidget);
+      expect(find.textContaining('0.2001'), findsNothing);
+      expect(find.textContaining('0.0004'), findsNothing);
+      expect(find.textContaining('ZEC ZEC'), findsNothing);
+      expect(find.bySemanticsLabel(RegExp(r'0\.2001|0\.0004')), findsNothing);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
   for (final inFlight in [false, true]) {
     testWidgets('leaving the route discards an unsent group '
         '(${inFlight ? 'quote in flight' : 'quote ready'})', (tester) async {
@@ -4478,6 +4542,11 @@ class _InterruptedPreviewOperations extends FakePaymentLinkOperations {
     }
     return session;
   }
+}
+
+class _EnabledPrivacy extends PrivacyModeNotifier {
+  @override
+  bool build() => true;
 }
 
 Future<void> _reviewTwoCards(WidgetTester tester) async {

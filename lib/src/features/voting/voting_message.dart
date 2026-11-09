@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show immutable, listEquals;
 import '../../core/formatting/duration_format.dart';
 import '../../core/l10n/l10n.dart';
 import '../../core/l10n/untranslated_text_log.dart';
+import '../../core/privacy/privacy_mask.dart';
 import '../../providers/account_models.dart';
 import '../../rust/third_party/zcash_voting/wire.dart';
 import '../../services/voting/pir_snapshot_resolver.dart';
@@ -481,21 +482,31 @@ final class VotingLedgerFailure extends VotingMessage {
 
 /// Voting power the privacy trim withholds from the round.
 final class VotingPrivacyTrimNotice extends VotingMessage {
-  const VotingPrivacyTrimNotice(this.droppedValueZatoshi);
+  const VotingPrivacyTrimNotice(
+    this.droppedValueZatoshi, {
+    required this.privacyModeEnabled,
+  });
 
   final BigInt droppedValueZatoshi;
+  final bool privacyModeEnabled;
 
   @override
-  String text(AppLocalizations l10n) =>
-      l10n.votingPrivacyTrimNotice(formatVotingPower(droppedValueZatoshi));
+  String text(AppLocalizations l10n) => l10n.votingPrivacyTrimNotice(
+    hideAmountIfPrivacyMode(
+      formatVotingPower(droppedValueZatoshi),
+      privacyModeEnabled: privacyModeEnabled,
+      denomination: 'ZEC', // l10n-ignore: currency ticker
+    ),
+  );
 
   @override
   bool operator ==(Object other) =>
       other is VotingPrivacyTrimNotice &&
-      other.droppedValueZatoshi == droppedValueZatoshi;
+      other.droppedValueZatoshi == droppedValueZatoshi &&
+      other.privacyModeEnabled == privacyModeEnabled;
 
   @override
-  int get hashCode => droppedValueZatoshi.hashCode;
+  int get hashCode => Object.hash(droppedValueZatoshi, privacyModeEnabled);
 
   @override
   String toString() => 'VotingPrivacyTrimNotice($droppedValueZatoshi)';

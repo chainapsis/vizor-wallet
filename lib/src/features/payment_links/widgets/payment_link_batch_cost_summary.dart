@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -20,6 +21,7 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
     required this.amountText,
     required this.messageText,
     required this.spendable,
+    required this.privacyModeEnabled,
     required this.quote,
     required this.preparing,
     required this.waitingForSync,
@@ -33,6 +35,9 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
   final String amountText;
   final String messageText;
   final BigInt? spendable;
+
+  /// Masks the shortfall, which is the total minus [spendable].
+  final bool privacyModeEnabled;
   final PaymentLinkBatchQuote? quote;
   final bool preparing;
 
@@ -149,14 +154,18 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
       color: colors.text.accent,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
+    final shortfallText = hideAmountIfPrivacyMode(
+      money(shortfall),
+      privacyModeEnabled: privacyModeEnabled,
+    );
     final shortfallLine = shortfall == null
         ? null
         : _line(
             context,
             context.l10n.paymentLinkCostAdditionalZecNeeded,
             total == null
-                ? context.l10n.paymentLinkCostAtLeast(money(shortfall))
-                : money(shortfall),
+                ? context.l10n.paymentLinkCostAtLeast(shortfallText)
+                : shortfallText,
             error: true,
           );
     final message = messageText.trim();

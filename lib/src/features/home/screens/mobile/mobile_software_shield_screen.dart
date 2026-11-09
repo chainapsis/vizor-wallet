@@ -2,9 +2,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/l10n/l10n.dart';
-import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../services/transparent_shielding_service.dart';
 import '../../widgets/mobile/shield/mobile_shield_scene.dart';
@@ -75,31 +75,40 @@ class _MobileSoftwareShieldScreenState
   }
 
   @override
-  Widget build(BuildContext context) => MobileShieldScene(
-    backdrop: widget.backdrop,
-    phase: _phase,
-    amount: formatZecAmount(_amount),
-    resultAmount: formatZecAmount(_resultAmount ?? _expected),
-    title: switch (_phase) {
-      MobileShieldPhase.review => context.l10n.homeShieldBalanceTitle,
-      MobileShieldPhase.succeeded => context.l10n.commonShieldedSuccessfully,
-      MobileShieldPhase.pending => context.l10n.homeShieldQueuedTitle,
-      MobileShieldPhase.failed => context.l10n.homeShieldFailedTitle,
-      _ => context.l10n.homeShieldingBalance,
-    },
-    body: _message,
-    canLeave: _phase != MobileShieldPhase.working,
-    onCommit: _commit,
-    onClose: _close,
-    onComplete: _close,
-    footer:
-        _phase == MobileShieldPhase.failed ||
-            _phase == MobileShieldPhase.pending
-        ? AppButton(
-            onPressed: _close,
-            expand: true,
-            child: Text(context.l10n.commonBackToWallet),
-          )
-        : null,
-  );
+  Widget build(BuildContext context) {
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
+    return MobileShieldScene(
+      backdrop: widget.backdrop,
+      phase: _phase,
+      amount: mobileShieldAmountText(
+        _amount,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
+      resultAmount: mobileShieldAmountText(
+        _resultAmount ?? _expected,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
+      title: switch (_phase) {
+        MobileShieldPhase.review => context.l10n.homeShieldBalanceTitle,
+        MobileShieldPhase.succeeded => context.l10n.commonShieldedSuccessfully,
+        MobileShieldPhase.pending => context.l10n.homeShieldQueuedTitle,
+        MobileShieldPhase.failed => context.l10n.homeShieldFailedTitle,
+        _ => context.l10n.homeShieldingBalance,
+      },
+      body: _message,
+      canLeave: _phase != MobileShieldPhase.working,
+      onCommit: _commit,
+      onClose: _close,
+      onComplete: _close,
+      footer:
+          _phase == MobileShieldPhase.failed ||
+              _phase == MobileShieldPhase.pending
+          ? AppButton(
+              onPressed: _close,
+              expand: true,
+              child: Text(context.l10n.commonBackToWallet),
+            )
+          : null,
+    );
+  }
 }

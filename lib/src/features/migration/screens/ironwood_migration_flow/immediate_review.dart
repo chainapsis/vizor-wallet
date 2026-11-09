@@ -124,8 +124,9 @@ class _IronwoodMigrationImmediateReviewContentState
     final planUnavailable = planAsync.asData != null && plan == null;
     final planLoading = planAsync.isLoading;
     final colors = context.colors;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final amount = plan != null
-        ? '${_formatZecAmountCompact(plan.migratedZatoshi)} ZEC' // l10n-ignore: amount format
+        ? '${_displayZecAmountCompact(plan.migratedZatoshi, privacyModeEnabled: privacyModeEnabled)} ZEC' // l10n-ignore: amount format
         : planLoading
         ? context.l10n.commonCalculatingEllipsis
         : context.l10n.migrationImmediateUnavailable;

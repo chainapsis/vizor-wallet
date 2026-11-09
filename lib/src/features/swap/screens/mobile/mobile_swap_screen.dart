@@ -14,11 +14,13 @@ import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/privacy_mode_provider.dart';
 import '../../../address_book/contact_label_generator.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
@@ -342,9 +344,12 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     final migrationSpendable = ref.watch(
       ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
     );
-    final zecAvailableText = ZecAmount.fromZatoshi(
-      migrationSpendable,
-    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+    final zecAvailableText = hideAmountIfPrivacyMode(
+      ZecAmount.fromZatoshi(
+        migrationSpendable,
+      ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
+      privacyModeEnabled: ref.watch(privacyModeProvider),
+    );
 
     void openReview() {
       final generation = _sidebarExitGeneration;

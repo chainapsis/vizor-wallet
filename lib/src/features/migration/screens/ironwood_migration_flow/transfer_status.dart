@@ -50,6 +50,7 @@ List<AppCarouselItem> _migrationInProgressCarouselItems(
 class _MigrationStatusContent extends StatelessWidget {
   const _MigrationStatusContent({
     required this.status,
+    required this.privacyModeEnabled,
     required this.currentHeight,
     required this.action,
     required this.isAdvancing,
@@ -57,6 +58,7 @@ class _MigrationStatusContent extends StatelessWidget {
   });
 
   final rust_sync.MigrationStatus status;
+  final bool privacyModeEnabled;
   final int currentHeight;
   final _StatusAction action;
   final bool isAdvancing;
@@ -118,10 +120,12 @@ class _MigrationStatusContent extends StatelessWidget {
         ? _MigrationCompleteStatusContent(
             key: const ValueKey('ironwood_migration_status_complete'),
             totalZatoshi: total,
+            privacyModeEnabled: privacyModeEnabled,
             onDone: onAction,
           )
         : _MigrationLiveStatusContent(
             key: const ValueKey('ironwood_migration_active_status'),
+            privacyModeEnabled: privacyModeEnabled,
             isPreparing: isPreparing,
             status: status,
             parts: parts,
@@ -164,10 +168,12 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
   const _MigrationCompleteStatusContent({
     super.key,
     required this.totalZatoshi,
+    required this.privacyModeEnabled,
     required this.onDone,
   });
 
   final BigInt totalZatoshi;
+  final bool privacyModeEnabled;
   final VoidCallback? onDone;
 
   @override
@@ -179,7 +185,10 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
       children: [
         Text(
           context.l10n.migrationCompleteTitle(
-            _formatZecAmountCompact(totalZatoshi),
+            _displayZecAmountCompact(
+              totalZatoshi,
+              privacyModeEnabled: privacyModeEnabled,
+            ),
           ),
           textAlign: TextAlign.center,
           style: AppTypography.headlineLarge.copyWith(
@@ -313,11 +322,13 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
 class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
   const _MigrationUpgradeStoppedStatusContent({
     required this.status,
+    required this.privacyModeEnabled,
     required this.onMoveRemaining,
     this.orchardBalanceZatoshi,
   });
 
   final rust_sync.MigrationStatus status;
+  final bool privacyModeEnabled;
   final VoidCallback onMoveRemaining;
 
   /// What the next run moves; the options and review start from it too.
@@ -369,14 +380,14 @@ class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
         _MigrationSummaryMetric(
           label: context.l10n.migrationUpgradeStopMovedLabel,
           value:
-              '${_formatZecAmountCompact(moved)} ZEC', // l10n-ignore: amount format
+              '${_displayZecAmountCompact(moved, privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
           secondary: true,
         ),
         const SizedBox(height: 16),
         _MigrationSummaryMetric(
           label: context.l10n.migrationUpgradeStopRemainingLabel,
           value:
-              '${_formatZecAmountCompact(remaining)} ZEC', // l10n-ignore: amount format
+              '${_displayZecAmountCompact(remaining, privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
         ),
       ],
     );
@@ -424,6 +435,7 @@ class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
             width: 256,
             height: 256,
             child: _MigrationMorphingRing(
+              privacyModeEnabled: privacyModeEnabled,
               preparing: false,
               preparationColor: colors.text.accent.withValues(alpha: 0.20),
               palette: _migrationRingPalette(colors),
@@ -477,6 +489,7 @@ class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
 class _MigrationLiveStatusContent extends ConsumerWidget {
   const _MigrationLiveStatusContent({
     super.key,
+    required this.privacyModeEnabled,
     required this.isPreparing,
     required this.status,
     required this.parts,
@@ -491,6 +504,7 @@ class _MigrationLiveStatusContent extends ConsumerWidget {
     required this.waitingForAnchor,
   });
 
+  final bool privacyModeEnabled;
   final bool isPreparing;
   final rust_sync.MigrationStatus status;
   final List<rust_sync.MigrationPartStatus> parts;
@@ -585,6 +599,7 @@ class _MigrationLiveStatusContent extends ConsumerWidget {
                 height: 256,
                 child: _MigrationMorphingRing(
                   key: const ValueKey('ironwood_migration_morphing_ring'),
+                  privacyModeEnabled: privacyModeEnabled,
                   preparing: isPreparing,
                   preparationColor: colors.text.accent.withValues(alpha: 0.20),
                   palette: _migrationRingPalette(colors),
@@ -627,7 +642,7 @@ class _MigrationLiveStatusContent extends ConsumerWidget {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                '~${_formatZecAmountCompact(preparationPresentation.amount)} ZEC', // l10n-ignore: amount format
+                                '~${_displayZecAmountCompact(preparationPresentation.amount, privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
                                 textAlign: TextAlign.center,
                                 style: AppTypography.headlineSmall.copyWith(
                                   color: colors.text.accent,
@@ -675,7 +690,7 @@ class _MigrationLiveStatusContent extends ConsumerWidget {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                '${_formatZecAmountCompact(ringPresentation.amountZatoshi)} ZEC', // l10n-ignore: amount format
+                                '${_displayZecAmountCompact(ringPresentation.amountZatoshi, privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
                                 style: AppTypography.headlineSmall.copyWith(
                                   color: colors.text.accent,
                                 ),
@@ -765,7 +780,7 @@ class _MigrationLiveStatusContent extends ConsumerWidget {
                             ),
                             label: context.l10n.migrationSummaryLeftToMigrate,
                             value:
-                                '${_formatZecAmountCompact(leftToMigrate > BigInt.zero ? leftToMigrate : BigInt.zero)} ZEC', // l10n-ignore: amount format
+                                '${_displayZecAmountCompact(leftToMigrate > BigInt.zero ? leftToMigrate : BigInt.zero, privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
                           ),
                           const SizedBox(height: 16),
                           _MigrationSummaryMetric(
@@ -796,6 +811,7 @@ class _MigrationLiveStatusContent extends ConsumerWidget {
                       _MigrationSigningBatchCard(
                         batchNumber: batchNumber,
                         value: batchValue,
+                        privacyModeEnabled: privacyModeEnabled,
                         percentage: percentage,
                         noteCount: signingSegmentIndices.length,
                       ),
@@ -1242,12 +1258,14 @@ class _MigrationSigningBatchCard extends StatelessWidget {
   const _MigrationSigningBatchCard({
     required this.batchNumber,
     required this.value,
+    required this.privacyModeEnabled,
     required this.percentage,
     required this.noteCount,
   });
 
   final int batchNumber;
   final BigInt value;
+  final bool privacyModeEnabled;
   final String percentage;
   final int noteCount;
 
@@ -1275,7 +1293,7 @@ class _MigrationSigningBatchCard extends StatelessWidget {
           Text.rich(
             TextSpan(
               text:
-                  '${_formatZecAmountCompact(value)} ZEC ', // l10n-ignore: amount format
+                  '${_displayZecAmountCompact(value, privacyModeEnabled: privacyModeEnabled)} ZEC ', // l10n-ignore: amount format
               style: AppTypography.labelLarge,
               children: [
                 TextSpan(
@@ -1404,6 +1422,7 @@ class _MigrationRingCenterTransitionState
 class _MigrationMorphingRing extends StatefulWidget {
   const _MigrationMorphingRing({
     super.key,
+    required this.privacyModeEnabled,
     required this.preparing,
     required this.preparationColor,
     required this.palette,
@@ -1413,6 +1432,7 @@ class _MigrationMorphingRing extends StatefulWidget {
     required this.child,
   });
 
+  final bool privacyModeEnabled;
   final bool preparing;
   final Color preparationColor;
   final _MigrationRingPalette palette;
@@ -1646,7 +1666,10 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
             for (var index = 0; index < widget.values.length; index++)
               context.l10n.migrationSemanticsNote(
                 (index + 1).toString(),
-                _formatZecAmountCompact(widget.values[index]),
+                _displayZecAmountCompact(
+                  widget.values[index],
+                  privacyModeEnabled: widget.privacyModeEnabled,
+                ),
                 _migrationRingStatusSemantics(
                   context.l10n,
                   index < widget.statuses.length

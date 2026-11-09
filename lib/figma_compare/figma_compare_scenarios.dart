@@ -140,6 +140,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     outsideScaffold: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-account-removal-passcode',
+    description: 'Passcode confirmation before account removal',
+    builder: buildMobilePasscodeAccountRemovalCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-account-removal-passcode-face-id',
+    description: 'Account removal passcode with the Face ID retry action',
+    builder: buildMobilePasscodeAccountRemovalFaceIdCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'desktop-endpoint-selection',
     description: 'Desktop endpoint list with Automatic selected',
     builder: buildDesktopEndpointSelectionCapture,

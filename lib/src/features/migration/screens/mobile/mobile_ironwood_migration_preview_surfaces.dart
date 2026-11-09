@@ -1148,6 +1148,7 @@ const _migrationPreviewPartsPerBatch = 8;
 class _MigrationProgressPreview extends StatelessWidget {
   const _MigrationProgressPreview({
     required this.state,
+    this.privacyModeEnabled = false,
     this.isHardware = false,
     this.showPreparationCompleteModal = false,
     this.completedParts,
@@ -1179,6 +1180,10 @@ class _MigrationProgressPreview extends StatelessWidget {
   });
 
   final _MigrationProgressState state;
+
+  /// Previews pass sample text and leave this off; the live status masks the
+  /// strings it passes and sets this for the amount formatted here.
+  final bool privacyModeEnabled;
   final bool isHardware;
   final bool showPreparationCompleteModal;
   final int? completedParts;
@@ -1269,6 +1274,7 @@ class _MigrationProgressPreview extends StatelessWidget {
               children: [
                 _MigrationBatchDial(
                   state: state,
+                  privacyModeEnabled: privacyModeEnabled,
                   completedBatches: resolvedCompletedBatches,
                   totalBatches: resolvedTotalBatches,
                   totalParts: totalParts,
@@ -1334,6 +1340,7 @@ class _MigrationProgressPreview extends StatelessWidget {
 class _MigrationBatchDial extends StatelessWidget {
   const _MigrationBatchDial({
     required this.state,
+    required this.privacyModeEnabled,
     required this.completedBatches,
     required this.totalBatches,
     required this.totalParts,
@@ -1349,6 +1356,7 @@ class _MigrationBatchDial extends StatelessWidget {
   });
 
   final _MigrationProgressState state;
+  final bool privacyModeEnabled;
   final int completedBatches;
   final int totalBatches;
   final int totalParts;
@@ -1410,7 +1418,7 @@ class _MigrationBatchDial extends StatelessWidget {
                     ? FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          '${_migrationDisplayZec(presentation.amountZatoshi)} ZEC', // l10n-ignore: amount format
+                          '${hideIfPrivacyMode(_migrationDisplayZec(presentation.amountZatoshi), privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
                           maxLines: 1,
                           style: amountStyle,
                         ),
@@ -2352,9 +2360,13 @@ class _MigrationCompleteSurfaceState
   @override
   Widget build(BuildContext context) {
     return _MigrationCompletePreview(
-      amountText: migrationCompletedAmountText(
-        widget.status,
-        fallbackAmountText: widget.fallbackAmountText,
+      amountText: hideAmountIfPrivacyMode(
+        migrationCompletedAmountText(
+          widget.status,
+          fallbackAmountText: widget.fallbackAmountText,
+        ),
+        privacyModeEnabled: ref.watch(privacyModeProvider),
+        denomination: 'ZEC', // l10n-ignore: currency ticker
       ),
       onDone: widget.onDone,
     );

@@ -162,6 +162,7 @@ class _IronwoodMigrationPrivateReviewContentState
         ? ref.watch(ironwoodMigrationPrivatePlanProvider)
         : AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(previewPlan);
     final plan = planAsync.asData?.value;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final tipHeight = ref.watch(
       syncProvider.select((sync) => sync.asData?.value.chainTipHeight),
     );
@@ -200,6 +201,7 @@ class _IronwoodMigrationPrivateReviewContentState
 
         return _MigrationReviewContent(
           plan: plan,
+          privacyModeEnabled: privacyModeEnabled,
           blockTimes: blockTimes,
           isStarting: _isStarting,
           error: _startError,
@@ -611,6 +613,7 @@ const _migrationPlanDonutSize = 256.0;
 class _MigrationReviewContent extends StatelessWidget {
   const _MigrationReviewContent({
     required this.plan,
+    required this.privacyModeEnabled,
     required this.blockTimes,
     required this.isStarting,
     required this.onContinue,
@@ -618,6 +621,7 @@ class _MigrationReviewContent extends StatelessWidget {
   });
 
   final rust_sync.OrchardMigrationPrivatePlan plan;
+  final bool privacyModeEnabled;
   final BlockTimeEstimate blockTimes;
   final bool isStarting;
   final VoidCallback onContinue;
@@ -681,7 +685,7 @@ class _MigrationReviewContent extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '${_formatZecAmountCompact(plan.totalMigratableZatoshi)}\nZEC', // l10n-ignore: amount format
+                      '${_displayZecAmountCompact(plan.totalMigratableZatoshi, privacyModeEnabled: privacyModeEnabled)}\nZEC', // l10n-ignore: amount format
                       textAlign: TextAlign.center,
                       style: AppTypography.headlineLarge.copyWith(
                         color: colors.text.accent,

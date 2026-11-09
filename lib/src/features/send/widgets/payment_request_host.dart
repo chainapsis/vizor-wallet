@@ -19,11 +19,13 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/navigation/external_action_guard_provider.dart';
+import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/payment_request_flow_provider.dart';
+import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../address_book/models/address_book_contact.dart';
@@ -175,6 +177,15 @@ class _PaymentRequestHostState extends ConsumerState<PaymentRequestHost>
             zecUsdUnitPrice: zecUsdUnitPrice,
           ),
         );
+    final spendableText = request.spendableText;
+    final displayedRequest = spendableText == null
+        ? request
+        : request.withSpendableText(
+            hideAmountIfPrivacyMode(
+              spendableText,
+              privacyModeEnabled: ref.watch(privacyModeProvider),
+            ),
+          );
 
     // The Android system back press is answered by
     // `MobileExitBackDispatcher.handleBackAboveRouter`, not by a `PopScope`
@@ -194,7 +205,7 @@ class _PaymentRequestHostState extends ConsumerState<PaymentRequestHost>
               key: const ValueKey('payment_request_host_surface'),
               animation: _isMobile ? _sheetAnimation : null,
               cardKey: ValueKey(flow.prefill.id),
-              request: request,
+              request: displayedRequest,
               onContinue: _review,
               onEdit: _edit,
               onCancel: () {

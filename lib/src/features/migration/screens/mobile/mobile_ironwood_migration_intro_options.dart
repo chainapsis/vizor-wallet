@@ -1,9 +1,13 @@
 part of 'mobile_ironwood_migration_flow_screen.dart';
 
 class _MobileMigrationIntro extends StatelessWidget {
-  const _MobileMigrationIntro({required this.data});
+  const _MobileMigrationIntro({
+    required this.data,
+    required this.privacyModeEnabled,
+  });
 
   final IronwoodMigrationFlowData data;
+  final bool privacyModeEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +42,10 @@ class _MobileMigrationIntro extends StatelessWidget {
                     children: [
                       SizedBox(
                         height: 172,
-                        child: _MobilePoolMigrationHero(data: data),
+                        child: _MobilePoolMigrationHero(
+                          data: data,
+                          privacyModeEnabled: privacyModeEnabled,
+                        ),
                       ),
                       const SizedBox(height: 46),
                       SvgPicture.asset(
@@ -61,7 +68,12 @@ class _MobileMigrationIntro extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.md),
                       Text(
-                        context.l10n.migrationMobileIntroBody(data.amountText),
+                        context.l10n.migrationMobileIntroBody(
+                          hideIfPrivacyMode(
+                            data.amountText,
+                            privacyModeEnabled: privacyModeEnabled,
+                          ),
+                        ),
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.muted,
@@ -141,12 +153,14 @@ class _MobileMigrationOptions extends ConsumerStatefulWidget {
   const _MobileMigrationOptions({
     required this.data,
     required this.privateEnabled,
+    required this.privacyModeEnabled,
     this.privateUnavailableForLedger = false,
     this.movingRest = false,
   });
 
   final IronwoodMigrationFlowData data;
   final bool privateEnabled;
+  final bool privacyModeEnabled;
   final bool privateUnavailableForLedger;
   final bool movingRest;
 
@@ -239,9 +253,12 @@ class _MobileMigrationOptionsState
         ? '/migration/private/status'
         : '/migration/how-it-works';
     final l10n = context.l10n;
-    final restAmount = ZecAmount.fromZatoshi(
-      widget.data.amountZatoshi,
-    ).compactBalance.amountText;
+    final restAmount = hideIfPrivacyMode(
+      ZecAmount.fromZatoshi(
+        widget.data.amountZatoshi,
+      ).compactBalance.amountText,
+      privacyModeEnabled: widget.privacyModeEnabled,
+    );
     return _MobileIronwoodMigrationBackScope(
       // The in-flight step saves a migration draft and then routes on. Leaving
       // in the middle would strand that work on a screen the user has left.

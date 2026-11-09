@@ -8,10 +8,12 @@ import 'package:go_router/go_router.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/untranslated_details.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
@@ -264,6 +266,7 @@ class _VotingSubmissionConfirmationViewState
         message: context.l10n.votingConfirmationConfirmedBody,
         votingPower: _formatVotingPower(
           _refreshedVotingPowerZatoshi ?? state.eligibleWeightZatoshi,
+          privacyModeEnabled: ref.watch(privacyModeProvider),
         ),
         isReturningToPolls: _isReturningToPolls,
         doneEnabled: !_isReturningToPolls,
@@ -310,9 +313,16 @@ class _VotingSubmissionConfirmationViewState
     }
   }
 
-  String _formatVotingPower(BigInt? zatoshi) {
+  String _formatVotingPower(
+    BigInt? zatoshi, {
+    required bool privacyModeEnabled,
+  }) {
     if (zatoshi == null) return context.l10n.votingNotAvailable;
-    return formatVotingPower(zatoshi);
+    return hideAmountIfPrivacyMode(
+      formatVotingPower(zatoshi),
+      privacyModeEnabled: privacyModeEnabled,
+      denomination: 'ZEC', // l10n-ignore: currency ticker
+    );
   }
 
   void _retryVotingPowerRefresh(

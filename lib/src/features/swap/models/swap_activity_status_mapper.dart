@@ -12,6 +12,7 @@ import 'swap_deposit_broadcast_result.dart';
 import 'swap_detail_tooltips.dart';
 import 'swap_fiat_value_formatting.dart';
 import 'swap_models.dart';
+import 'swap_privacy_mask.dart';
 import 'swap_status_presentation.dart';
 import 'swap_token_amount_formatting.dart';
 import '../../../core/l10n/l10n.dart';
@@ -155,6 +156,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   SwapActivityAccountDetail? accountDetail,
   Iterable<AddressBookContact> addressBookContacts = const [],
   BigInt? confirmedDepositFeeZatoshi,
+  bool privacyModeEnabled = false,
 }) {
   final sellAsset = swapActivitySellAsset(intent) ?? SwapAsset.zec;
   final receiveAsset = swapActivityReceiveAsset(intent) ?? SwapAsset.usdc;
@@ -165,19 +167,26 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
           l10n,
           intent,
           confirmedDepositFeeZatoshi: confirmedDepositFeeZatoshi,
+          privacyModeEnabled: privacyModeEnabled,
         )
       : null;
   final recipientAddress = intent.oneClickRecipient?.trim();
   final refundAddress = intent.oneClickRefundTo?.trim();
-  final payFiatText = _swapActivityFiatTextForAsset(
-    intent: intent,
-    side: _SwapActivityAmountSide.sell,
-    amountText: intent.sellAmount,
+  final payFiatText = swapFiatTextForPrivacy(
+    _swapActivityFiatTextForAsset(
+      intent: intent,
+      side: _SwapActivityAmountSide.sell,
+      amountText: intent.sellAmount,
+    ),
+    privacyModeEnabled: privacyModeEnabled,
   );
-  final receiveFiatText = _swapActivityFiatTextForAsset(
-    intent: intent,
-    side: _SwapActivityAmountSide.receive,
-    amountText: intent.receiveEstimate,
+  final receiveFiatText = swapFiatTextForPrivacy(
+    _swapActivityFiatTextForAsset(
+      intent: intent,
+      side: _SwapActivityAmountSide.receive,
+      amountText: intent.receiveEstimate,
+    ),
+    privacyModeEnabled: privacyModeEnabled,
   );
 
   // The summary's bottom lines: fiat on the ZEC side, the counterparty
@@ -225,8 +234,14 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     receiveAsset: receiveAsset,
     payFiatText: payFiatText,
     receiveFiatText: receiveFiatText,
-    payAmountText: intent.sellAmount,
-    receiveAmountText: intent.receiveEstimate,
+    payAmountText: swapAmountTextForPrivacy(
+      intent.sellAmount,
+      privacyModeEnabled: privacyModeEnabled,
+    ),
+    receiveAmountText: swapAmountTextForPrivacy(
+      intent.receiveEstimate,
+      privacyModeEnabled: privacyModeEnabled,
+    ),
     payLabel: payMode
         ? _payIntentShowsPaidCopy(intent)
               ? l10n.swapActivityYouPaid
@@ -262,6 +277,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
       l10n,
       intent,
       addressBookContacts: addressBookContacts,
+      privacyModeEnabled: privacyModeEnabled,
     ),
     progressTabLabel: payMode
         ? l10n.commonPaymentProgress
@@ -289,9 +305,20 @@ PayActivityStatusPresentation? _payActivityStatusPresentation(
   AppLocalizations l10n,
   SwapIntent intent, {
   BigInt? confirmedDepositFeeZatoshi,
+  required bool privacyModeEnabled,
 }) {
   final phase = payActivityStatusPhaseFor(intent.status);
   if (phase == null) return null;
+  String amount(String text) =>
+      swapAmountTextForPrivacy(text, privacyModeEnabled: privacyModeEnabled);
+  final refundedAmountText =
+      phase == PayActivityStatusPhase.refunded &&
+          intent.providerRefundInfo?.hasRecordedRefund == true
+      ? intent.providerRefundInfo!.refundedAmountText
+      : null;
+  final refundFeeText = phase == PayActivityStatusPhase.refunded
+      ? intent.providerRefundInfo?.recordedRefundFeeText
+      : null;
 
   final timestamp = phase != PayActivityStatusPhase.inProgress
       ? intent.completedAt ?? intent.updatedAt ?? intent.createdAt
@@ -318,25 +345,23 @@ PayActivityStatusPresentation? _payActivityStatusPresentation(
             separator: '...',
           ),
     txIdUri: swapActivityExplorerUri(intent),
-    convertedFromText: intent.sellAmount,
+    convertedFromText: amount(intent.sellAmount),
     transactionFeeText:
         confirmedDepositFeeZatoshi != null &&
             confirmedDepositFeeZatoshi > BigInt.zero
-        ? ZecAmount.fromZatoshi(confirmedDepositFeeZatoshi).fee.toString()
+        ? amount(
+            ZecAmount.fromZatoshi(confirmedDepositFeeZatoshi).fee.toString(),
+          )
         : l10n.swapActivityNotReported,
     refundAddress:
         phase == PayActivityStatusPhase.failed ||
             phase == PayActivityStatusPhase.refunded
         ? intent.oneClickRefundTo?.trim()
         : null,
-    refundedAmountText:
-        phase == PayActivityStatusPhase.refunded &&
-            intent.providerRefundInfo?.hasRecordedRefund == true
-        ? intent.providerRefundInfo!.refundedAmountText
-        : null,
-    refundFeeText: phase == PayActivityStatusPhase.refunded
-        ? intent.providerRefundInfo?.recordedRefundFeeText
-        : null,
+    refundedAmountText: refundedAmountText == null
+        ? null
+        : amount(refundedAmountText),
+    refundFeeText: refundFeeText == null ? null : amount(refundFeeText),
   );
 }
 
@@ -532,7 +557,10 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   AppLocalizations l10n,
   SwapIntent intent, {
   required Iterable<AddressBookContact> addressBookContacts,
+  required bool privacyModeEnabled,
 }) {
+  String amount(String text) =>
+      swapAmountTextForPrivacy(text, privacyModeEnabled: privacyModeEnabled);
   final sourceSymbol = swapActivityPairSymbol(l10n, intent.pair, 0);
   final receiveSymbol = swapActivityPairSymbol(l10n, intent.pair, 1);
   final sourceAsset = swapActivitySellAsset(intent);
@@ -577,6 +605,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       refundAddress: refundAddress,
       sourceAsset: sourceAsset,
       addressBookContacts: addressBookContacts,
+      privacyModeEnabled: privacyModeEnabled,
     );
   }
 
@@ -642,13 +671,13 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         SwapStatusDetailRowData(
           label: l10n.commonRefundedAmount,
           kind: SwapStatusDetailKind.refundedAmount,
-          value: intent.providerRefundInfo!.refundedAmountText!,
+          value: amount(intent.providerRefundInfo!.refundedAmountText!),
         ),
       if (failed && recordedRefundFee != null)
         SwapStatusDetailRowData(
           label: l10n.commonRefundFee,
           kind: SwapStatusDetailKind.refundFee,
-          value: recordedRefundFee,
+          value: amount(recordedRefundFee),
         ),
       if (!failed)
         SwapStatusDetailRowData(
@@ -658,10 +687,12 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
               : SwapStatusDetailKind.totalFees,
           value: swapDetailValueText(
             l10n,
-            intent.totalFeesText ??
-                intent.swapFeeText ??
-                intent.providerRefundInfo?.refundFeeText ??
-                l10n.swapActivityDetailIncluded,
+            amount(
+              intent.totalFeesText ??
+                  intent.swapFeeText ??
+                  intent.providerRefundInfo?.refundFeeText ??
+                  l10n.swapActivityDetailIncluded,
+            ),
           ),
           help: true,
           helpTooltip: swapTotalFeesTooltip(l10n),
@@ -683,6 +714,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       sendsZec: sendsZec,
       userExternalContactId: intent.userExternalContactId,
       addressBookContacts: addressBookContacts,
+      privacyModeEnabled: privacyModeEnabled,
     );
   }
 
@@ -744,7 +776,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         kind: SwapStatusDetailKind.guaranteedMinimum,
         value: swapDetailValueText(
           l10n,
-          intent.minimumReceiveText ?? intent.receiveEstimate,
+          amount(intent.minimumReceiveText ?? intent.receiveEstimate),
         ),
         help: true,
         helpTooltip: swapMinimumReceiveTooltip(l10n, receiveSymbol),
@@ -795,7 +827,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       kind: SwapStatusDetailKind.swapFee,
       value: swapDetailValueText(
         l10n,
-        intent.swapFeeText ?? l10n.swapActivityDetailIncludedInRate,
+        amount(intent.swapFeeText ?? l10n.swapActivityDetailIncludedInRate),
       ),
       help: true,
       helpTooltip: swapFeeTooltip(l10n),
@@ -815,7 +847,10 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
   required String? refundAddress,
   required SwapAsset? sourceAsset,
   required Iterable<AddressBookContact> addressBookContacts,
+  required bool privacyModeEnabled,
 }) {
+  String amount(String text) =>
+      swapAmountTextForPrivacy(text, privacyModeEnabled: privacyModeEnabled);
   final terminal = intent.status.isTerminal;
   final paid = _payIntentShowsPaidCopy(intent);
   final feeText = _firstNonEmpty([
@@ -828,7 +863,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
     if (!failed)
       SwapStatusDetailRowData(
         label: paid ? l10n.swapActivityYouPaid : l10n.commonYouPay,
-        value: intent.sellAmount,
+        value: amount(intent.sellAmount),
       ),
     if (!failed && payRateText != null)
       SwapStatusDetailRowData(label: l10n.commonRate, value: payRateText),
@@ -837,7 +872,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
         label: terminal
             ? l10n.swapActivityDetailFees
             : l10n.commonNetworkConversionFees,
-        value: swapDetailValueText(l10n, feeText),
+        value: swapDetailValueText(l10n, amount(feeText)),
         help: true,
         helpTooltip: terminal
             ? swapTotalFeesTooltip(l10n)
@@ -847,13 +882,13 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
       SwapStatusDetailRowData(
         label: l10n.commonRefundedAmount,
         kind: SwapStatusDetailKind.refundedAmount,
-        value: intent.providerRefundInfo!.refundedAmountText!,
+        value: amount(intent.providerRefundInfo!.refundedAmountText!),
       ),
     if (failed && recordedRefundFee != null)
       SwapStatusDetailRowData(
         label: l10n.commonRefundFee,
         kind: SwapStatusDetailKind.refundFee,
-        value: recordedRefundFee,
+        value: amount(recordedRefundFee),
       ),
     ?_swapActivityTxIdRow(l10n, intent),
     if (depositTxHash != null && depositTxHash.isNotEmpty)
@@ -933,7 +968,10 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
   required bool sendsZec,
   required String? userExternalContactId,
   required Iterable<AddressBookContact> addressBookContacts,
+  required bool privacyModeEnabled,
 }) {
+  String amount(String text) =>
+      swapAmountTextForPrivacy(text, privacyModeEnabled: privacyModeEnabled);
   final sourceAsset = swapActivitySellAsset(intent);
   final receiveAsset = swapActivityReceiveAsset(intent);
   final providerInfo = intent.providerRefundInfo;
@@ -957,7 +995,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailMissingDeposit,
         kind: SwapStatusDetailKind.missingDeposit,
-        value: missingDepositText,
+        value: amount(missingDepositText),
       ),
     if (depositMemo != null && depositMemo.isNotEmpty)
       SwapStatusDetailRowData(
@@ -978,13 +1016,13 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
     SwapStatusDetailRowData(
       label: l10n.swapActivityDetailRequiredDeposit,
       kind: SwapStatusDetailKind.requiredDeposit,
-      value: requiredDepositText,
+      value: amount(requiredDepositText),
     ),
     if (providerInfo?.depositedAmountText != null)
       SwapStatusDetailRowData(
         label: l10n.swapActivityDetailDetectedDeposit,
         kind: SwapStatusDetailKind.detectedDeposit,
-        value: providerInfo!.depositedAmountText!,
+        value: amount(providerInfo!.depositedAmountText!),
       ),
     if (deadlineText != null)
       SwapStatusDetailRowData(
@@ -996,7 +1034,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
       SwapStatusDetailRowData(
         label: l10n.commonRefundFee,
         kind: SwapStatusDetailKind.refundFee,
-        value: providerInfo!.refundFeeText!,
+        value: amount(providerInfo!.refundFeeText!),
       ),
     if (refundAddress != null && refundAddress.isNotEmpty)
       ..._addressDetailRows(

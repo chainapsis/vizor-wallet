@@ -267,7 +267,10 @@ Widget buildMobileVotingPrivacyTrimUseCase(BuildContext context) =>
     _buildMobileVotingActiveUseCase(
       context,
       eligible: true,
-      votingEligibilityMessage: VotingPrivacyTrimNotice(BigInt.from(12500000)),
+      votingEligibilityMessage: VotingPrivacyTrimNotice(
+        BigInt.from(12500000),
+        privacyModeEnabled: false,
+      ),
     );
 
 Widget buildMobileVotingEligibilityErrorUseCase(BuildContext context) =>

@@ -247,6 +247,7 @@ class _IronwoodMigrationScheduleRouteState
         (status?.canAbandon == true ||
             (widget.previewStatus != null && widget.previewCanStop));
     final canFinishImmediately = canStop;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final canManage =
         status != null &&
         status.activeRunId != null &&
@@ -307,6 +308,7 @@ class _IronwoodMigrationScheduleRouteState
           : widget.preparation
           ? _MigrationPreparationScheduleContent(
               status: status,
+              privacyModeEnabled: privacyModeEnabled,
               currentHeight: _currentMigrationHeight(syncState),
               onManage: canManage
                   ? () => _openManage(
@@ -317,6 +319,7 @@ class _IronwoodMigrationScheduleRouteState
             )
           : _MigrationScheduleContent(
               status: status,
+              privacyModeEnabled: privacyModeEnabled,
               currentHeight: _currentMigrationHeight(syncState),
               onManage: canManage
                   ? () => _openManage(
@@ -723,11 +726,13 @@ class _MigrationManageError extends StatelessWidget {
 class _MigrationPreparationScheduleContent extends ConsumerWidget {
   const _MigrationPreparationScheduleContent({
     required this.status,
+    required this.privacyModeEnabled,
     required this.currentHeight,
     this.onManage,
   });
 
   final rust_sync.MigrationStatus status;
+  final bool privacyModeEnabled;
   final int currentHeight;
   final VoidCallback? onManage;
 
@@ -852,6 +857,7 @@ class _MigrationPreparationScheduleContent extends ConsumerWidget {
                       itemBuilder: (context, index) =>
                           _MigrationPreparationRoundSection(
                             round: rounds[index],
+                            privacyModeEnabled: privacyModeEnabled,
                             currentHeight: currentHeight,
                           ),
                     ),
@@ -912,10 +918,12 @@ int _currentPreparationRound(List<_PreparationRound> rounds) {
 class _MigrationPreparationRoundSection extends StatelessWidget {
   const _MigrationPreparationRoundSection({
     required this.round,
+    required this.privacyModeEnabled,
     required this.currentHeight,
   });
 
   final _PreparationRound round;
+  final bool privacyModeEnabled;
   final int currentHeight;
 
   @override
@@ -951,6 +959,7 @@ class _MigrationPreparationRoundSection extends StatelessWidget {
             ),
             number: round.transactions[index].number,
             transaction: round.transactions[index].transaction,
+            privacyModeEnabled: privacyModeEnabled,
             currentHeight: currentHeight,
           ),
           if (index != round.transactions.length - 1)
@@ -966,12 +975,14 @@ class _MigrationPreparationStageCard extends StatelessWidget {
   const _MigrationPreparationStageCard({
     required this.number,
     required this.transaction,
+    required this.privacyModeEnabled,
     required this.currentHeight,
     super.key,
   });
 
   final int number;
   final rust_sync.MigrationPreparationTransactionStatus transaction;
+  final bool privacyModeEnabled;
   final int currentHeight;
 
   @override
@@ -982,6 +993,7 @@ class _MigrationPreparationStageCard extends StatelessWidget {
         context.l10n,
         number,
         transaction,
+        privacyModeEnabled: privacyModeEnabled,
       ),
       excludeSemantics: true,
       child: Column(
@@ -1002,7 +1014,7 @@ class _MigrationPreparationStageCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        '$number. ${_formatZecAmountCompact(transaction.approximateValueZatoshi)} ZEC', // l10n-ignore: amount format
+                        '$number. ${_displayZecAmountCompact(transaction.approximateValueZatoshi, privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelLarge.copyWith(
@@ -1037,6 +1049,7 @@ class _MigrationPreparationStageCard extends StatelessWidget {
                         'ironwood_migration_preparation_output_${transaction.stageIndex}_$outputIndex',
                       ),
                       output: transaction.outputs[outputIndex],
+                      privacyModeEnabled: privacyModeEnabled,
                     ),
                   ],
                 ],
@@ -1049,9 +1062,14 @@ class _MigrationPreparationStageCard extends StatelessWidget {
 }
 
 class _MigrationPreparationOutputRow extends StatelessWidget {
-  const _MigrationPreparationOutputRow({required this.output, super.key});
+  const _MigrationPreparationOutputRow({
+    required this.output,
+    required this.privacyModeEnabled,
+    super.key,
+  });
 
   final rust_sync.MigrationPreparationOutputStatus output;
+  final bool privacyModeEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -1080,7 +1098,7 @@ class _MigrationPreparationOutputRow extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '${_formatZecAmountCompact(displayedValue)} ZEC', // l10n-ignore: amount format
+              '${_displayZecAmountCompact(displayedValue, privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppTypography.bodyMedium.copyWith(
@@ -1205,8 +1223,9 @@ String _formatPreparationDuration(
 String _preparationScheduleRowSemantics(
   AppLocalizations l10n,
   int number,
-  rust_sync.MigrationPreparationTransactionStatus transaction,
-) {
+  rust_sync.MigrationPreparationTransactionStatus transaction, {
+  required bool privacyModeEnabled,
+}) {
   final state = switch (transaction.state) {
     rust_sync.MigrationPreparationTransactionState.awaitingInputs =>
       l10n.migrationScheduleSemanticsAwaiting(
@@ -1247,7 +1266,10 @@ String _preparationScheduleRowSemantics(
             ),
         };
         return l10n.migrationScheduleSemanticsOutput(
-          _formatZecAmountCompact(displayedValue),
+          _displayZecAmountCompact(
+            displayedValue,
+            privacyModeEnabled: privacyModeEnabled,
+          ),
           destination,
         );
       })
@@ -1255,7 +1277,10 @@ String _preparationScheduleRowSemantics(
   return [
     l10n.migrationScheduleSemanticsSplit(
       number.toString(),
-      _formatZecAmountCompact(transaction.approximateValueZatoshi),
+      _displayZecAmountCompact(
+        transaction.approximateValueZatoshi,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
       state,
     ),
     if (outputs.isNotEmpty) l10n.migrationScheduleSemanticsOutputs(outputs),
@@ -1314,11 +1339,13 @@ class _MigrationScheduleErrorContent extends StatelessWidget {
 class _MigrationScheduleContent extends ConsumerWidget {
   const _MigrationScheduleContent({
     required this.status,
+    required this.privacyModeEnabled,
     required this.currentHeight,
     this.onManage,
   });
 
   final rust_sync.MigrationStatus status;
+  final bool privacyModeEnabled;
   final int currentHeight;
   final VoidCallback? onManage;
 
@@ -1358,7 +1385,7 @@ class _MigrationScheduleContent extends ConsumerWidget {
                 _MigrationSummaryMetric(
                   label: context.l10n.migrationSummaryLeftToMigrate,
                   value:
-                      '${_formatZecAmountCompact(leftToMigrate > BigInt.zero ? leftToMigrate : BigInt.zero)} ZEC', // l10n-ignore: amount format
+                      '${_displayZecAmountCompact(leftToMigrate > BigInt.zero ? leftToMigrate : BigInt.zero, privacyModeEnabled: privacyModeEnabled)} ZEC', // l10n-ignore: amount format
                 ),
                 const SizedBox(height: 16),
                 _MigrationSummaryMetric(
@@ -1407,6 +1434,7 @@ class _MigrationScheduleContent extends ConsumerWidget {
                       number: index + 1,
                       part: part,
                       total: total,
+                      privacyModeEnabled: privacyModeEnabled,
                       currentHeight: currentHeight,
                       waitingWindowHeight: migrationPartWaitingWindowHeight(
                         status: status,
@@ -1429,6 +1457,7 @@ class _MigrationScheduleRow extends StatelessWidget {
     required this.number,
     required this.part,
     required this.total,
+    required this.privacyModeEnabled,
     required this.currentHeight,
     this.waitingWindowHeight,
   });
@@ -1436,6 +1465,7 @@ class _MigrationScheduleRow extends StatelessWidget {
   final int number;
   final rust_sync.MigrationPartStatus part;
   final BigInt total;
+  final bool privacyModeEnabled;
   final int currentHeight;
   final int? waitingWindowHeight;
 
@@ -1448,6 +1478,7 @@ class _MigrationScheduleRow extends StatelessWidget {
         context.l10n,
         number,
         part,
+        privacyModeEnabled: privacyModeEnabled,
         currentHeight: currentHeight,
         waitingWindowHeight: waitingWindowHeight,
       ),
@@ -1470,7 +1501,7 @@ class _MigrationScheduleRow extends StatelessWidget {
                   child: Text.rich(
                     TextSpan(
                       text:
-                          '$number. ${_formatZecAmountCompact(value)} ZEC ', // l10n-ignore: amount format
+                          '$number. ${_displayZecAmountCompact(value, privacyModeEnabled: privacyModeEnabled)} ZEC ', // l10n-ignore: amount format
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                         fontWeight: FontWeight.w500,
@@ -1611,6 +1642,7 @@ String _migrationScheduleRowSemantics(
   AppLocalizations l10n,
   int number,
   rust_sync.MigrationPartStatus part, {
+  required bool privacyModeEnabled,
   required int currentHeight,
   int? waitingWindowHeight,
 }) {
@@ -1661,7 +1693,10 @@ String _migrationScheduleRowSemantics(
   };
   return l10n.migrationScheduleSemanticsNote(
     number.toString(),
-    _formatZecAmountCompact(part.valueZatoshi),
+    _displayZecAmountCompact(
+      part.valueZatoshi,
+      privacyModeEnabled: privacyModeEnabled,
+    ),
     stateLabel,
   );
 }
