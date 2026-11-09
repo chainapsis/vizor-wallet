@@ -23,20 +23,30 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
       ref.watch(appBootstrapProvider).rpcEndpointConfig;
 
   Future<void> setPreset(RpcEndpointPreset preset) async {
+    if (preset.isAutomatic) {
+      await setAutomatic();
+      return;
+    }
     final normalized = normalizeRpcEndpointUrl(
       preset.url,
       allowDefaultPort: true,
     );
-    _requireAllowedEndpoint(normalized);
     await _verifyNetwork(normalized);
     await _persist(
       state.copyWith(lightwalletdUrl: normalized, presetId: preset.id),
     );
   }
 
+  Future<void> setAutomatic() async {
+    final config = defaultRpcEndpointConfig(state.networkName);
+    if (!isAutomaticRpcEndpointConfig(config)) {
+      throw const FormatException('Automatic selection is unavailable.');
+    }
+    await _persist(config);
+  }
+
   Future<void> setCustom(String input) async {
     final normalized = normalizeRpcEndpointUrl(input, allowDefaultPort: true);
-    _requireAllowedEndpoint(normalized);
     await _verifyNetwork(normalized);
     await _persist(
       state.copyWith(
@@ -44,14 +54,6 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
         presetId: kCustomRpcEndpointPresetId,
       ),
     );
-  }
-
-  void _requireAllowedEndpoint(String lightwalletdUrl) {
-    if (!isRpcEndpointAllowedForBuild(lightwalletdUrl)) {
-      throw const FormatException(
-        'Ironwood Masquerade uses a fixed test endpoint.',
-      );
-    }
   }
 
   Future<void> _persist(RpcEndpointConfig next) async {

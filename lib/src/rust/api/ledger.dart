@@ -4,11 +4,8 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
-
 import '../wallet/ledger.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-
 import 'sync.dart';
 
 // These functions are ignored because they are not marked as `pub`: `expected_ledger_account`, `ledger_account_fingerprint`, `parse_ledger_db_network`, `require_mainnet`, `to_action_sigs`, `to_apdu_command`, `to_device_app`, `to_signed_operation`
@@ -70,6 +67,18 @@ Future<LedgerAccountExport> ledgerParseMobileUfvkResponses({
   accountIndex: accountIndex,
   network: network,
   responses: responses,
+);
+
+/// Verify a Ledger export against a stored account, allowing only a stored-only
+/// Sapling component. Does not access the device or change either viewing key.
+Future<bool> ledgerAccountViewingKeysMatch({
+  required String expectedUfvk,
+  required String exportedUfvk,
+  required String network,
+}) => RustLib.instance.api.crateApiLedgerLedgerAccountViewingKeysMatch(
+  expectedUfvk: expectedUfvk,
+  exportedUfvk: exportedUfvk,
+  network: network,
 );
 
 /// Build the transport-neutral compact shielded PCZT signing exchange.

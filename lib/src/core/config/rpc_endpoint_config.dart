@@ -5,7 +5,7 @@ export 'network_config.dart';
 
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
 const kCustomRpcEndpointPresetId = 'custom';
-const kIronwoodMasqueradeRpcEndpointPresetId = 'ironwood-masquerade';
+const kManualUsRpcEndpointPresetId = 'us-zec-stardust';
 const kRegtestSlowRpcEndpointPresetId = 'slow-regtest';
 const kRegtestUnavailableRpcEndpointPresetId = 'unavailable-regtest';
 
@@ -59,25 +59,27 @@ class RpcEndpointPreset {
   final bool isDefault;
 
   String get hostPort => rpcEndpointHostPort(url);
+
+  bool get isAutomatic => id == kDefaultRpcEndpointPresetId;
+
+  String get displayLabel => isAutomatic ? label : hostPort;
 }
 
-// Public lightwalletd presets. Keep the mainnet default aligned with Zodl's
-// default endpoint while preserving zec.rocks as a selectable fallback.
-const kIronwoodMasqueradeRpcEndpointPreset = RpcEndpointPreset(
-  id: kIronwoodMasqueradeRpcEndpointPresetId,
-  region: 'Ironwood',
-  label: 'Ironwood Masquerade',
-  url: 'https://lwd.157.245.208.35.sslip.io:443',
-  isDefault: true,
-);
-
+// The default ID stores automatic selection intent. Its URL remains a local
+// compatibility seed; network operations resolve the actual server separately.
 final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
   RpcEndpointPreset(
     id: kDefaultRpcEndpointPresetId,
     region: 'Default',
-    label: 'Stardust US',
+    label: 'Automatic',
     url: ZcashNetwork.mainnet.lightwalletdUrl,
     isDefault: true,
+  ),
+  RpcEndpointPreset(
+    id: kManualUsRpcEndpointPresetId,
+    region: 'Americas',
+    label: 'Stardust US',
+    url: ZcashNetwork.mainnet.lightwalletdUrl,
   ),
   const RpcEndpointPreset(
     id: 'eu-zec-stardust',
@@ -184,10 +186,7 @@ final kRegtestRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
 List<RpcEndpointPreset> rpcEndpointPresetsForNetwork(String networkName) {
   final network = zcashNetworkFromName(networkName);
   return switch (network) {
-    ZcashNetwork.mainnet =>
-      kZcashIronwoodMasquerade
-          ? const [kIronwoodMasqueradeRpcEndpointPreset]
-          : kMainnetRpcEndpointPresets,
+    ZcashNetwork.mainnet => kMainnetRpcEndpointPresets,
     ZcashNetwork.testnet => kTestnetRpcEndpointPresets,
     ZcashNetwork.regtest => kRegtestRpcEndpointPresets,
   };
@@ -207,18 +206,55 @@ RpcEndpointConfig defaultRpcEndpointConfig(String networkName) {
   );
 }
 
+bool isAutomaticRpcEndpointConfig(RpcEndpointConfig config) =>
+    config.network == ZcashNetwork.mainnet &&
+    config.presetId == kDefaultRpcEndpointPresetId;
+
+/// Reviewed public servers eligible for automatic selection. Community
+/// endpoints remain available for explicit selection and legacy failover.
+List<RpcEndpointConfig> automaticRpcEndpointCandidatesFor(
+  RpcEndpointConfig config,
+) {
+  if (!isAutomaticRpcEndpointConfig(config)) return const [];
+  const ids = [
+    kManualUsRpcEndpointPresetId,
+    'eu-zec-rocks',
+    'kr-zec-stardust',
+    'zec-rocks',
+    'eu-zec-stardust',
+    'ap-zec-rocks',
+    'na-zec-rocks',
+    'sa-zec-rocks',
+  ];
+  return List.unmodifiable([
+    for (final id in ids)
+      if (findRpcEndpointPresetById(config.networkName, id) case final preset?)
+        RpcEndpointConfig(
+          networkName: config.networkName,
+          lightwalletdUrl: preset.url,
+          presetId: preset.id,
+        ),
+  ]);
+}
+
 bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
   return config.presetId == kCustomRpcEndpointPresetId;
 }
 
-bool isRpcEndpointAllowedForBuild(String lightwalletdUrl) {
-  if (!kZcashIronwoodMasquerade) return true;
-  return normalizeRpcEndpointUrl(lightwalletdUrl, allowDefaultPort: true) ==
-      normalizeRpcEndpointUrl(
-        kIronwoodMasqueradeRpcEndpointPreset.url,
-        allowDefaultPort: true,
-      );
-}
+/// Operator identity for the fixed Automatic pool, not arbitrary custom hosts.
+/// Birthday confirmation prefers diverse operators but accepts regional peers.
+String? automaticRpcEndpointOperatorForUrl(String url) =>
+    switch (Uri.tryParse(url)?.host.toLowerCase()) {
+      'us.zec.stardust.rest' ||
+      'eu.zec.stardust.rest' ||
+      'kr.zec.stardust.rest' => 'stardust',
+      'zec.rocks' ||
+      'eu.zec.rocks' ||
+      'ap.zec.rocks' ||
+      'na.zec.rocks' ||
+      'sa.zec.rocks' => 'zec-rocks',
+      _ => null,
+    };
 
 RpcEndpointPreset? explicitRpcEndpointPresetFor(RpcEndpointConfig config) {
   final presetId = config.presetId?.trim();
@@ -234,6 +270,11 @@ RpcEndpointPreset? explicitRpcEndpointPresetFor(RpcEndpointConfig config) {
 List<RpcEndpointConfig> fallbackRpcEndpointCandidatesFor(
   RpcEndpointConfig primary,
 ) {
+  if (isAutomaticRpcEndpointConfig(primary)) {
+    // Automatic's stored compatibility URL is not the resolved current server.
+    // Consumers remove their actual current URL from this fixed public pool.
+    return automaticRpcEndpointCandidatesFor(primary);
+  }
   final primaryPreset = _selectedFallbackPrimaryPreset(primary);
   if (primaryPreset == null) return const [];
 
@@ -242,6 +283,7 @@ List<RpcEndpointConfig> fallbackRpcEndpointCandidatesFor(
   final candidates = <RpcEndpointConfig>[];
 
   for (final preset in rpcEndpointPresetsForNetwork(primary.networkName)) {
+    if (preset.isAutomatic) continue;
     final normalized = normalizeRpcEndpointUrl(
       preset.url,
       allowDefaultPort: true,
@@ -291,10 +333,6 @@ RpcEndpointConfig resolveStoredRpcEndpointConfig({
   required String? storedUrl,
   required String? storedPresetId,
 }) {
-  if (kZcashIronwoodMasquerade) {
-    return defaultRpcEndpointConfig(ZcashNetwork.mainnet.name);
-  }
-
   final network = zcashNetworkFromName(networkName);
   final presetId = storedPresetId?.trim();
   if (presetId != null &&
@@ -352,6 +390,7 @@ RpcEndpointPreset? findRpcEndpointPresetByUrl(
         ]
       : rpcEndpointPresetsForNetwork(networkName);
   for (final preset in presets) {
+    if (preset.isAutomatic) continue;
     if (normalizeRpcEndpointUrl(preset.url, allowDefaultPort: true) ==
         normalized) {
       return preset;

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'account_initialization_provider.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kDebugMode, protected;
@@ -1401,7 +1402,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         ref.read(walletTransparentPrivateProvider.notifier).update(private);
       });
     });
-    unawaited(ref.read(chainUpgradeStatusProvider.future));
+    unawaited(
+      ref
+          .read(chainUpgradeStatusProvider.future)
+          .then<void>(
+            (_) {},
+            onError: (Object error, StackTrace stack) {
+              log('Sync: chain upgrade warmup failed: $error');
+            },
+          ),
+    );
     final shutdown = ref.read(appShutdownSignalProvider);
     shutdown.addListener(_stopForAppExit);
     ref.onDispose(() => shutdown.removeListener(_stopForAppExit));
@@ -1740,6 +1750,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// Quiesce scan/poll work without waiting on network I/O or cancelling durable
   /// sends. Generation changes also reject preflight completions already queued.
   void _stopForAppExit() {
+    ref.read(rpcEndpointFailoverProvider.notifier).cancelAutomaticSelection();
     _resumeTipCheckPending = false;
     _newBlockCheckPending = false;
     _queuedSyncStart = null;
@@ -1829,6 +1840,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final prev = state.value;
     final accountUuid = _getActiveAccountUuid();
     final scopedPrev = _previousScopedState(prev, accountUuid);
+    final initialization = ref.read(accountInitializationProvider.notifier);
+    if (accountUuid != null && !(scopedPrev?.hasDisplayBalance ?? false)) {
+      initialization.register(accountUuid, AccountInitializationKind.unknown);
+    }
+    final initializationTokens = initialization.pendingTokens();
+
     final startedAt = DateTime.now();
     final previousScannedHeight = prev?.scannedHeight ?? 0;
     final previousChainTipHeight = prev?.chainTipHeight ?? 0;
@@ -1943,9 +1960,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           await _keepCompanionsOutOfBackups(dbPath);
           if (gen != _syncGen) return;
           try {
-            final tip = await ref
-                .read(rpcEndpointFailoverProvider.notifier)
-                .getLatestBlockHeight();
+            final endpoints = ref.read(rpcEndpointFailoverProvider.notifier);
+            endpoints.applyPendingInitialComparison();
+            final tip = await endpoints.getLatestBlockHeight();
             await ref
                 .read(chainUpgradeStatusProvider.notifier)
                 .refreshAtTip(tip);
@@ -2024,7 +2041,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               if (progress.isComplete) {
                 _lastForegroundCompletionAt = DateTime.now();
               }
-              final handling = _onSyncProgress(progress);
+              final handling = _onSyncProgress(
+                progress,
+                initializationTokens: initializationTokens,
+              );
               _lastForegroundProgressHandling = handling;
               unawaited(
                 handling.catchError((Object error, StackTrace stackTrace) {
@@ -2105,6 +2125,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               );
             },
           );
+          ref
+              .read(rpcEndpointFailoverProvider.notifier)
+              .startInitialComparisonAfterSyncStart();
         })
         .catchError((e, st) {
           if (gen != _syncGen) return;
@@ -2691,6 +2714,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> clearSensitiveStateForLock() async {
+    ref.read(rpcEndpointFailoverProvider.notifier).cancelAutomaticSelection();
     // A public details load the user started stores nothing after a lock.
     ref.read(publicDetailsLoadsProvider).cancel();
     _resumeTipCheckPending = false;
@@ -2884,6 +2908,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ref.read(pendingActivityEvidenceProvider.notifier).setForeground(false);
     ++_foregroundEpoch;
     if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
+      ref.read(rpcEndpointFailoverProvider.notifier).cancelAutomaticSelection();
       _stopPolling();
       _queuedSyncStart = null;
     }
@@ -2935,6 +2960,19 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         _requiresUnlock ||
         !canRunAppProcessWork(isInForeground: _isInForeground) ||
         !hasAccounts) {
+      return;
+    }
+    // A frozen current height would never trigger the normal new-block path.
+    // Start only at this idle boundary; startSync coalesces behind a stream that
+    // is still releasing its Rust guard and applies the recommendation there.
+    if (ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .hasPendingHeightCorrection) {
+      // Resume may have consumed the timer for this immediate check. Keep a
+      // periodic retry if a native guard or operation lease defers admission.
+      _resumeTipCheckPending = false;
+      startSync();
+      if (gen == _syncGen && !_requiresUnlock) _startPolling();
       return;
     }
     _pollCheckInFlight = true;
@@ -3226,9 +3264,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
   }
 
-  Future<void> _onSyncProgress(SyncProgressEvent event) async {
+  Future<void> _onSyncProgress(
+    SyncProgressEvent event, {
+    Map<String, Object>? initializationTokens,
+  }) async {
     if (!ref.mounted || _requiresUnlock) {
       return;
+    }
+    final initialization = ref.read(accountInitializationProvider.notifier);
+    final tokens = initializationTokens ?? initialization.pendingTokens();
+    if (event.isComplete || (event.remainingScanBlocks ?? 0) > 0) {
+      initialization.observeScan(tokens, completed: event.isComplete);
     }
     final progressEventVersion = ++_progressEventVersion;
     final epoch = _sensitiveStateEpoch;
@@ -3616,6 +3662,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             (currentState?.startedFromCompletedSync ?? false),
       ),
     );
+
+    if (event.isComplete && useFetchedAccountData && balanceReadIsCurrent) {
+      initialization.reportReads(
+        accountUuid,
+        tokens[accountUuid],
+        available: useFetchedBalance && useFetchedRecentTxs,
+      );
+    }
 
     // Handle sync completion here (not in onDone) to avoid race with async state update.
     if (event.isComplete) {
@@ -4112,6 +4166,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final readSyncStartedAt = prev?.lastSyncStartedAt;
     final readTipHeight = prev?.chainTipHeight ?? 0;
 
+    final initializationToken = ref
+        .read(accountInitializationProvider)[uuid]
+        ?.token;
+
+    void reportInitializationReads({required bool available}) {
+      if (_acceptsAccountRead(uuid, epoch, version, sequence)) {
+        ref
+            .read(accountInitializationProvider.notifier)
+            .reportReads(uuid, initializationToken, available: available);
+      }
+    }
+
     // Both reads start together, but each publishes as soon as it is ready.
     // Keep history's errors observed even when the balance read is superseded.
     final historyUpdate = _refreshAccountHistory(
@@ -4154,6 +4220,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
     if (requireAuthoritativeBalance && balance == null) {
+      reportInitializationReads(available: false);
       throw StateError('Balance unavailable after releasing send proposal');
     }
     final current = (state.value ?? SyncState()).scopedToAccount(uuid);
@@ -4174,6 +4241,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
       _markBalanceReadCommitted(sequence);
       await historyUpdate;
+      reportInitializationReads(available: false);
       return;
     }
     if (balance != null) {
@@ -4219,8 +4287,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     // Send/release callers can await the whole refresh, while Home sees the
     // accepted balance above before history and shielding checks finish.
+    var historyAvailable = false;
     await Future.wait([
-      historyUpdate,
+      historyUpdate.then<void>((available) => historyAvailable = available),
       if (balance != null)
         _refreshShieldStatus(
           dbPath: dbPath,
@@ -4232,6 +4301,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           transparentBalance: balance.transparent,
         ),
     ]);
+    reportInitializationReads(available: balance != null && historyAvailable);
   }
 
   /// A read is dropped by a wallet transition ([_balanceReadVersion]) or once
@@ -4245,7 +4315,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       version == _balanceReadVersion &&
       sequence >= _committedBalanceReadSequence;
 
-  Future<void> _refreshAccountHistory({
+  Future<bool> _refreshAccountHistory({
     required String dbPath,
     required String network,
     required String accountUuid,
@@ -4266,7 +4336,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         balanceReadVersion,
         balanceReadSequence,
       )) {
-        return;
+        return false;
       }
       final current = (state.value ?? SyncState()).scopedToAccount(accountUuid);
       state = AsyncData(
@@ -4280,6 +4350,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       ref
           .read(pendingActivityEvidenceProvider.notifier)
           .historyReadCompleted(accountUuid, available: true);
+      return true;
     } catch (error) {
       if (_acceptsAccountRead(
         accountUuid,
@@ -4302,6 +4373,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         error: error,
       );
     }
+    return false;
   }
 
   Future<void> _refreshShieldStatus({

@@ -902,7 +902,6 @@ mod tests {
         assert_eq!(curve.points, vec![(100, 1_000.0)]);
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn mainnet_curve_matches_compiled_checkpoints() {
         let sizes = mainnet_tree_sizes(WalletNetwork::Main);
@@ -1049,7 +1048,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn planner_and_progress_count_the_same_batches() {
         let main = WorkModel::compiled(WalletNetwork::Main);

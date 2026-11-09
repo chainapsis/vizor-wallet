@@ -25,15 +25,14 @@ pub(crate) fn set_preference_confirmed(confirmed: bool) {
 /// The transparent ledger mode for the private queries `preference` on
 /// `network`.
 ///
-/// `PrivateRequired` only on mainnet with private queries on, outside
-/// masquerade builds; otherwise `Public`. It never weakens a wallet: reads
-/// honor a stricter durable policy, and only an explicit toggle-off lowers
-/// one.
+/// `PrivateRequired` only on mainnet with private queries on; otherwise
+/// `Public`. It never weakens a wallet: reads honor a stricter durable policy,
+/// and only an explicit toggle-off lowers one.
 pub(crate) fn transparent_mode_for_preference(
     network: WalletNetwork,
     preference: bool,
 ) -> TransparentLedgerMode {
-    if network == WalletNetwork::Main && preference && !cfg!(ironwood_masquerade) {
+    if network == WalletNetwork::Main && preference {
         TransparentLedgerMode::PrivateRequired
     } else {
         TransparentLedgerMode::Public
@@ -170,7 +169,7 @@ impl EnhancementPolicy {
     /// Captures the private queries preference for the supported network.
     pub(crate) fn for_preference(network: WalletNetwork, preference: bool) -> Self {
         Self {
-            private: network == WalletNetwork::Main && preference && !cfg!(ironwood_masquerade),
+            private: network == WalletNetwork::Main && preference,
             transparent: transparent_mode_for_preference(network, preference),
         }
     }
@@ -321,8 +320,7 @@ mod tests {
             WalletNetwork::Regtest,
         ] {
             for preference in [false, true] {
-                let enabled =
-                    network == WalletNetwork::Main && preference && !cfg!(ironwood_masquerade);
+                let enabled = network == WalletNetwork::Main && preference;
                 let expected = if enabled {
                     TransparentLedgerMode::PrivateRequired
                 } else {
@@ -339,22 +337,12 @@ mod tests {
         }
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn private_preference_selects_private_status_and_payload_on_mainnet() {
         let policy = EnhancementPolicy::for_preference(WalletNetwork::Main, true);
         assert!(policy.is_private());
         assert_eq!(policy.status_mode(), TransactionStatusMode::Private);
         assert_eq!(policy.payload_mode(), EnhancementMode::PrivateIronwood);
-    }
-
-    #[cfg(ironwood_masquerade)]
-    #[test]
-    fn private_preference_is_unavailable_in_masquerade_builds() {
-        let policy = EnhancementPolicy::for_preference(WalletNetwork::Main, true);
-        assert!(!policy.is_private());
-        assert_eq!(policy.status_mode(), TransactionStatusMode::Public);
-        assert_eq!(policy.payload_mode(), EnhancementMode::Standard);
     }
 
     /// A supplemental source guard: release builds must ignore every

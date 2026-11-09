@@ -1,4 +1,5 @@
 import '../../providers/home_activity_state.dart';
+import '../../providers/home_initialization_provider.dart';
 import '../../widgets/home_activity_skeleton.dart';
 import '../../../activity/widgets/deferred_gift_card_recovery.dart';
 import 'dart:async';
@@ -93,7 +94,9 @@ class MobileHomeScreen extends ConsumerWidget {
     );
     final isCurrentHomeRoute = GoRouterState.of(context).uri.path == '/home';
 
-    final isImporting = activeAccountUuid != null && sync.isImportingAccount;
+    final isImporting = ref
+        .watch(homeInitializationPresentationProvider)
+        .showImporting;
 
     return SwapActivityStatusAutoRefresh(
       child: Stack(
@@ -1197,12 +1200,18 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         entry.row,
     ];
 
-    final activityState = homeActivityState(
-      accountUuid: activeAccountUuid,
-      sync: sync,
-      hasRows: recentRows.isNotEmpty,
-      localSources: [?giftCardSource, ?swapSource],
+    final initialPresentation = ref.watch(
+      homeInitializationPresentationProvider,
     );
+    final activityState =
+        initialPresentation.activityUnavailable && recentRows.isEmpty
+        ? HomeActivityState.unavailable
+        : homeActivityState(
+            accountUuid: activeAccountUuid,
+            sync: sync,
+            hasRows: recentRows.isNotEmpty,
+            localSources: [?giftCardSource, ?swapSource],
+          );
     final activityLoading = activityState == HomeActivityState.loading;
 
     final content = ListView(
@@ -1369,7 +1378,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     ),
                 attentionKind: migrationAttention?.kind,
                 actionNeededCount: migrationAttention?.count ?? 0,
-                remainingText: _mobileIronwoodRemainingAmountText(sync),
+                remainingText: _mobileIronwoodRemainingAmountText(
+                  sync,
+                  privacyModeEnabled: privacyModeEnabled,
+                ),
                 onTap: () {
                   final target = migrationRequired
                       ? '/migration/intro'
@@ -2040,10 +2052,17 @@ class _BalanceCard extends StatelessWidget {
   }
 }
 
-String? _mobileIronwoodRemainingAmountText(SyncState sync) {
+// Bare amount: the banner appends its own ` ZEC`.
+String? _mobileIronwoodRemainingAmountText(
+  SyncState sync, {
+  required bool privacyModeEnabled,
+}) {
   final remaining = sync.displayOrchardHoldingsBalance;
   if (remaining == BigInt.zero) return null;
-  return ZecAmount.fromZatoshi(remaining).compactBalance.amountText;
+  return hideIfPrivacyMode(
+    ZecAmount.fromZatoshi(remaining).compactBalance.amountText,
+    privacyModeEnabled: privacyModeEnabled,
+  );
 }
 
 int _mobileIronwoodSafelyObservedHeight(SyncState? sync) {

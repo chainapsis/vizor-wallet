@@ -393,7 +393,7 @@ fn load_details(
         let outputs = read_history_outputs(
             conn,
             account.expose_uuid().as_bytes(),
-            batch.iter().map(|b| b.txid.as_slice()),
+            batch.iter().map(TxBase::txid_bytes),
         )?;
         snapshot.outputs.extend(outputs);
         for base in batch.iter() {

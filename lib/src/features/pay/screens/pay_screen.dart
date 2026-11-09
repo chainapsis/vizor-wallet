@@ -28,6 +28,7 @@ import '../../swap/screens/swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
 import '../../swap/widgets/swap_asset_selector_modal.dart';
 import '../../swap/widgets/swap_slippage_modal.dart';
+import '../../swap/widgets/near_intents_service_notice_host.dart';
 import '../models/pay_recent_recipients.dart';
 import '../widgets/pay_add_contact_modal.dart';
 import '../widgets/pay_amount_step.dart';
@@ -374,169 +375,177 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
-        child: Stack(
-          children: [
-            PayWizardPage(
-              scrollController: _scrollController,
-              title: title,
-              currentIndex: _wizardStep.index,
-              backLabel: backLabel,
-              onBack: () {
-                switch (_wizardStep) {
-                  case _PayWizardStep.amount:
-                    if (context.canPop()) {
-                      context.pop();
-                    } else {
-                      context.go('/home');
-                    }
-                  case _PayWizardStep.recipient:
-                    _goToStep(_PayWizardStep.amount);
-                  case _PayWizardStep.review:
-                    _goToStep(_PayWizardStep.recipient);
-                }
-              },
-              headingTrailing: _wizardStep == _PayWizardStep.amount
-                  ? _PaySlippageControl(
-                      label: formatSwapSlippage(swapState.slippageBps),
-                      selected: _payModal == _PayModalSurface.slippage,
-                      onTap: () =>
-                          setState(() => _payModal = _PayModalSurface.slippage),
-                    )
-                  : null,
-              actions: actions,
-              onStepSelected: (index) =>
-                  _goToStep(_PayWizardStep.values[index]),
-              child: switch (_wizardStep) {
-                _PayWizardStep.amount => PayAmountStep(
-                  state: swapState,
-                  controller: _amountController,
-                  focusNode: _amountFocusNode,
-                  onAmountChanged: swapNotifier.updateReceiveAmount,
-                  onFiatAmountChanged: swapNotifier.updateReceiveAmountFiat,
-                  onToggleFiatInputMode: () => swapNotifier.toggleFiatInputMode(
-                    SwapAmountInputSide.receive,
-                  ),
-                  onOpenAssetSelector: () => setState(
-                    () => _payModal = _PayModalSurface.assetSelector,
-                  ),
-                ),
-                _PayWizardStep.recipient => PayRecipientStep(
-                  controller: _recipientController,
-                  typedAddress: swapState.destinationText,
-                  addressError: swapState.destinationAddressFormatError,
-                  network: network,
-                  contacts: contacts,
-                  recents: recents,
-                  busy: swapState.quoteLoading,
-                  enabled:
-                      swapState.externalAssetIsAvailable &&
-                      !addressBookInitialLoading,
-                  selectedContactId: swapState.userExternalContactId,
-                  onAddressChanged: _handleAddressChanged,
-                  onOpenScanner: () => setState(
-                    () => _payModal = _PayModalSurface.addressScanner,
-                  ),
-                  onChooseRecipient: _chooseRecipient,
-                ),
-                _PayWizardStep.review =>
-                  quote == null
-                      ? const SizedBox(height: 428)
-                      : PayReviewStep(
-                          quote: quote,
-                          recipientAddress: recipientAddress,
-                          recipientContact: recipientContact,
-                          payingFiatText: swapReviewFiatTextForAsset(
-                            swapState,
-                            quote: quote,
-                            asset: quote.receiveAsset,
-                            amount: quote.receiveAmount,
-                          ),
-                          convertedFiatText: swapReviewFiatTextForAsset(
-                            swapState,
-                            quote: quote,
-                            asset: quote.sellAsset,
-                            amount: quote.sellAmount,
-                          ),
-                          expiresInText: _expiresInText,
-                          expired: swapState.quoteExpired,
-                          starting:
-                              _startingIntent || swapState.startSubmitting,
-                          startBlockedReason: startBlockedReason,
-                          startError: swapState.statusError,
-                          onShowFullAddress: () => setState(
-                            () => _payModal = _PayModalSurface.verifyAddress,
-                          ),
-                          onConfirm: _startIntent,
-                          onReviewAgain: () => unawaited(_openReview()),
+        child: NearIntentsServiceNoticeHost(
+          direction: SwapDirection.zecToExternal,
+          externalAsset: swapState.externalAsset,
+          payMode: true,
+          enabled: _wizardStep == _PayWizardStep.amount,
+          blocked: _payModal != null,
+          child: Stack(
+            children: [
+              PayWizardPage(
+                scrollController: _scrollController,
+                title: title,
+                currentIndex: _wizardStep.index,
+                backLabel: backLabel,
+                onBack: () {
+                  switch (_wizardStep) {
+                    case _PayWizardStep.amount:
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/home');
+                      }
+                    case _PayWizardStep.recipient:
+                      _goToStep(_PayWizardStep.amount);
+                    case _PayWizardStep.review:
+                      _goToStep(_PayWizardStep.recipient);
+                  }
+                },
+                headingTrailing: _wizardStep == _PayWizardStep.amount
+                    ? _PaySlippageControl(
+                        label: formatSwapSlippage(swapState.slippageBps),
+                        selected: _payModal == _PayModalSurface.slippage,
+                        onTap: () => setState(
+                          () => _payModal = _PayModalSurface.slippage,
                         ),
-              },
-            ),
-            if (_payModal != null)
-              AppPaneModalOverlay(
-                onDismiss: _closePayModal,
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: switch (_payModal!) {
-                    _PayModalSurface.assetSelector => SwapAssetSelectorModal(
-                      assets: swapState.supportedExternalAssets,
-                      selected: swapState.externalAsset,
-                      onSelected: (asset) {
-                        ref
-                            .read(swapStateProvider.notifier)
-                            .selectPayExternalAsset(
-                              asset,
-                              clearDestinationOnChainChange: true,
-                            );
-                        _closePayModal();
-                      },
+                      )
+                    : null,
+                actions: actions,
+                onStepSelected: (index) =>
+                    _goToStep(_PayWizardStep.values[index]),
+                child: switch (_wizardStep) {
+                  _PayWizardStep.amount => PayAmountStep(
+                    state: swapState,
+                    controller: _amountController,
+                    focusNode: _amountFocusNode,
+                    onAmountChanged: swapNotifier.updateReceiveAmount,
+                    onFiatAmountChanged: swapNotifier.updateReceiveAmountFiat,
+                    onToggleFiatInputMode: () => swapNotifier
+                        .toggleFiatInputMode(SwapAmountInputSide.receive),
+                    onOpenAssetSelector: () => setState(
+                      () => _payModal = _PayModalSurface.assetSelector,
                     ),
-                    _PayModalSurface.addressScanner => AddressQrScanModal(
-                      onAddressScanned: _handleAddressScanned,
-                      onCancel: _closePayModal,
+                  ),
+                  _PayWizardStep.recipient => PayRecipientStep(
+                    controller: _recipientController,
+                    typedAddress: swapState.destinationText,
+                    addressError: swapState.destinationAddressFormatError,
+                    network: network,
+                    contacts: contacts,
+                    recents: recents,
+                    busy: swapState.quoteLoading,
+                    enabled:
+                        swapState.externalAssetIsAvailable &&
+                        !addressBookInitialLoading,
+                    selectedContactId: swapState.userExternalContactId,
+                    onAddressChanged: _handleAddressChanged,
+                    onOpenScanner: () => setState(
+                      () => _payModal = _PayModalSurface.addressScanner,
                     ),
-                    // The contact picker surface is mobile-only; the desktop
-                    // wizard surfaces contacts inline on the recipient step.
-                    _PayModalSurface.contactPicker => const SizedBox.shrink(),
-                    _PayModalSurface.addContact =>
-                      network == null
-                          ? const SizedBox.shrink()
-                          : PayAddContactModal(
-                              network: network,
-                              address: recipientAddress,
-                              onCancel: _closePayModal,
-                              onSave: (label, profilePictureId) => _saveContact(
-                                network,
-                                label,
-                                profilePictureId,
-                              ),
+                    onChooseRecipient: _chooseRecipient,
+                  ),
+                  _PayWizardStep.review =>
+                    quote == null
+                        ? const SizedBox(height: 428)
+                        : PayReviewStep(
+                            quote: quote,
+                            recipientAddress: recipientAddress,
+                            recipientContact: recipientContact,
+                            payingFiatText: swapReviewFiatTextForAsset(
+                              swapState,
+                              quote: quote,
+                              asset: quote.receiveAsset,
+                              amount: quote.receiveAmount,
                             ),
-                    _PayModalSurface.slippage => SwapSlippageModal(
-                      slippageBps: swapState.slippageBps,
-                      paymentMode: true,
-                      onSubmitted: (bps) {
-                        ref
-                            .read(swapStateProvider.notifier)
-                            .updateSlippageBps(bps);
-                        _closePayModal();
-                      },
-                      onCancel: _closePayModal,
-                    ),
-                    _PayModalSurface.verifyAddress => VerifyAddressModal(
-                      address: recipientAddress,
-                      variant: recipientContact == null
-                          ? VerifyAddressModalVariant.unknown
-                          : VerifyAddressModalVariant.knownContact,
-                      unknownAddressKind:
-                          VerifyAddressModalAddressKind.external,
-                      contactName: recipientContact?.label,
-                      contactProfilePictureId:
-                          recipientContact?.profilePictureId,
-                      onClose: _closePayModal,
-                    ),
-                  },
-                ),
+                            convertedFiatText: swapReviewFiatTextForAsset(
+                              swapState,
+                              quote: quote,
+                              asset: quote.sellAsset,
+                              amount: quote.sellAmount,
+                            ),
+                            expiresInText: _expiresInText,
+                            expired: swapState.quoteExpired,
+                            starting:
+                                _startingIntent || swapState.startSubmitting,
+                            startBlockedReason: startBlockedReason,
+                            startError: swapState.statusError,
+                            onShowFullAddress: () => setState(
+                              () => _payModal = _PayModalSurface.verifyAddress,
+                            ),
+                            onConfirm: _startIntent,
+                            onReviewAgain: () => unawaited(_openReview()),
+                          ),
+                },
               ),
-          ],
+              if (_payModal != null)
+                AppPaneModalOverlay(
+                  onDismiss: _closePayModal,
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: switch (_payModal!) {
+                      _PayModalSurface.assetSelector => SwapAssetSelectorModal(
+                        assets: swapState.supportedExternalAssets,
+                        selected: swapState.externalAsset,
+                        onSelected: (asset) {
+                          ref
+                              .read(swapStateProvider.notifier)
+                              .selectPayExternalAsset(
+                                asset,
+                                clearDestinationOnChainChange: true,
+                              );
+                          _closePayModal();
+                        },
+                      ),
+                      _PayModalSurface.addressScanner => AddressQrScanModal(
+                        onAddressScanned: _handleAddressScanned,
+                        onCancel: _closePayModal,
+                      ),
+                      // The contact picker surface is mobile-only; the desktop
+                      // wizard surfaces contacts inline on the recipient step.
+                      _PayModalSurface.contactPicker => const SizedBox.shrink(),
+                      _PayModalSurface.addContact =>
+                        network == null
+                            ? const SizedBox.shrink()
+                            : PayAddContactModal(
+                                network: network,
+                                address: recipientAddress,
+                                onCancel: _closePayModal,
+                                onSave: (label, profilePictureId) =>
+                                    _saveContact(
+                                      network,
+                                      label,
+                                      profilePictureId,
+                                    ),
+                              ),
+                      _PayModalSurface.slippage => SwapSlippageModal(
+                        slippageBps: swapState.slippageBps,
+                        paymentMode: true,
+                        onSubmitted: (bps) {
+                          ref
+                              .read(swapStateProvider.notifier)
+                              .updateSlippageBps(bps);
+                          _closePayModal();
+                        },
+                        onCancel: _closePayModal,
+                      ),
+                      _PayModalSurface.verifyAddress => VerifyAddressModal(
+                        address: recipientAddress,
+                        variant: recipientContact == null
+                            ? VerifyAddressModalVariant.unknown
+                            : VerifyAddressModalVariant.knownContact,
+                        unknownAddressKind:
+                            VerifyAddressModalAddressKind.external,
+                        contactName: recipientContact?.label,
+                        contactProfilePictureId:
+                            recipientContact?.profilePictureId,
+                        onClose: _closePayModal,
+                      ),
+                    },
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

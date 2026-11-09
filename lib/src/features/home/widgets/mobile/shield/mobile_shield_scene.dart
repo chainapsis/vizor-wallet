@@ -5,6 +5,8 @@ import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import '../../../../../core/formatting/zec_amount.dart';
+import '../../../../../core/privacy/privacy_mask.dart';
 import '../../../../../core/theme/app_theme.dart';
 import '../../../../../core/widgets/app_button.dart';
 import 'balance_art.dart';
@@ -19,6 +21,15 @@ import 'shield_hardware_motion.dart';
 import 'shield_particle_art.dart';
 import 'shield_timeline.dart';
 import 'slide_to_shield.dart';
+
+/// The scene draws `ZEC` beside the amount, so the amount stays bare.
+String mobileShieldAmountText(
+  BigInt zatoshi, {
+  required bool privacyModeEnabled,
+}) => hideIfPrivacyMode(
+  formatZecAmount(zatoshi),
+  privacyModeEnabled: privacyModeEnabled,
+);
 
 // Transaction owners supply real states. This presentation never starts a
 // transaction, guesses its progress, or treats a pending broadcast as success.

@@ -314,6 +314,10 @@ Ledger accounts keep the decorative dot style.
   string — `find.text(...)` matchers, `expectedNextAction` fields, and
   `_tooltipWithMessage(...)` helpers will break otherwise.
 
+## Privacy Mode
+
+Before adding or changing UI that shows an amount, read `docs/privacy-mode.md` (the hide-balance toggle).
+
 ## Release Notes
 
 When asked to prepare user-facing release notes or a changelog for a release,
@@ -1001,7 +1005,7 @@ Restores are the discovery import
 (`import_hardware_account`). Newly created accounts (`create_wallet`,
 `add_account`, and `import_wallet` from onboarding's reveal-then-confirm
 flow), payment-link claims (`import_wallet`), and Gift Card observers keep the
-exact height; testnet, regtest, and masquerade builds are unchanged. Code that queries lightwalletd from a restored birthday must use the
+exact height; testnet and regtest are unchanged. Code that queries lightwalletd from a restored birthday must use the
 rounded value, never the exact requested height. The weekly
 `update-mainnet-chain-tables.yml` workflow appends checkpoints.
 

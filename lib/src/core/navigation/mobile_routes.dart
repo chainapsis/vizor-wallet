@@ -4,8 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../feedback/app_review.dart';
+import '../../features/donation/donation_config.dart';
+import '../../features/donation/screens/donation_screen.dart';
+import '../../features/donation/screens/mobile/mobile_donation_review_screen.dart';
+import '../../providers/rpc_endpoint_provider.dart';
 
 import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
+import '../../features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
 import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/home/screens/mobile/mobile_software_shield_screen.dart';
@@ -165,6 +170,15 @@ List<RouteBase> _walletRoutes() {
       ),
     ),
     GoRoute(
+      path: '/accounts/confirm-removal',
+      pageBuilder: (context, state) => _mobilePage(
+        key: state.pageKey,
+        child: MobileAccountRemovalPasscodeScreen(
+          isLastAccount: state.extra == true,
+        ),
+      ),
+    ),
+    GoRoute(
       path: '/settings/seed-phrase',
       pageBuilder: (context, state) => _mobilePage(
         key: state.pageKey,
@@ -241,6 +255,25 @@ List<RouteBase> _walletRoutes() {
                 ? parseZecAmount(prefill?.amountText ?? '')
                 : null,
           ),
+        );
+      },
+    ),
+    GoRoute(
+      path: '/donation',
+      redirect: (context, _) => _mobileDonationRedirect(context),
+      pageBuilder: (context, state) =>
+          _mobilePage(key: state.pageKey, child: const DonationScreen()),
+    ),
+    GoRoute(
+      path: '/donation/review',
+      redirect: (context, state) =>
+          _mobileDonationRedirect(context) ??
+          (state.extra is MobileDonationReviewArgs ? null : '/donation'),
+      pageBuilder: (context, state) {
+        final args = state.extra! as MobileDonationReviewArgs;
+        return _mobilePage(
+          key: payloadScopedPageKey(state, args.sendFlowId),
+          child: MobileDonationReviewScreen(args: args),
         );
       },
     ),
@@ -720,6 +753,16 @@ List<RouteBase> _walletRoutes() {
     ),
   ];
 }
+
+String? _mobileDonationRedirect(BuildContext context) =>
+    donationFeatureEnabledForNetwork(
+      ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(rpcEndpointProvider).networkName,
+    )
+    ? null
+    : '/settings';
 
 CupertinoPage<dynamic> _mobilePage({
   required LocalKey key,

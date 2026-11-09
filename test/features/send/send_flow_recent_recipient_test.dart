@@ -198,7 +198,7 @@ AppBootstrapState _bootstrap({required bool isHardware}) {
     ),
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: kZcashDefaultNetworkName,
-    rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+    rpcEndpointConfig: _fixedRpcEndpoint(),
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
     isPasswordConfigured: true,
@@ -345,4 +345,13 @@ class _FakePathProviderPlatform extends Fake
 
   @override
   Future<String?> getApplicationSupportPath() async => root;
+}
+
+// Recipient-history tests use a fixed broadcast transport, independently of
+// automatic endpoint discovery.
+RpcEndpointConfig _fixedRpcEndpoint() {
+  final endpoint = defaultRpcEndpointConfig(kZcashDefaultNetworkName);
+  return endpoint.network == ZcashNetwork.mainnet
+      ? endpoint.copyWith(presetId: kManualUsRpcEndpointPresetId)
+      : endpoint;
 }

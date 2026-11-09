@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dar
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/donation/donation_config.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/models/send_scan_result.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
@@ -233,7 +234,10 @@ class _TestZecUsdPriceNotifier extends Notifier<double?> {
   }
 }
 
-AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
+AppBootstrapState _bootstrap({
+  AccountState? accountState,
+  bool privacyModeEnabled = false,
+}) => AppBootstrapState(
   initialLocation: '/send',
   initialAccountState:
       accountState ??
@@ -246,7 +250,7 @@ AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
   themeMode: ThemeMode.light,
-  privacyModeEnabled: false,
+  privacyModeEnabled: privacyModeEnabled,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
@@ -483,6 +487,10 @@ class _FakeAddressBookRepository implements AddressBookRepository {
 }
 
 Widget _app({
+  bool initialReview = false,
+  bool useRouteSteps = false,
+  SendFlowKind flowKind = SendFlowKind.send,
+  ValueChanged<SendReviewArgs>? onStatusRoute,
   List<AddressBookContact> contacts = const [],
   AccountState? accountState,
   Map<String, AccountInfo> ownAccounts = const {},
@@ -520,6 +528,9 @@ Widget _app({
           initialRecipient: initialRecipient,
           initialAmount: initialAmount,
           initialAmountReady: initialAmountReady,
+          initialReview: initialReview,
+          useRouteSteps: useRouteSteps,
+          flowKind: flowKind,
           initialFeeZatoshi: initialFeeZatoshi,
           initialMemo: initialMemo,
           validateAddress: validateAddress,
@@ -537,6 +548,14 @@ Widget _app({
         },
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
+      GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
+      GoRoute(
+        path: '/send/status',
+        builder: (_, state) {
+          onStatusRoute?.call(state.extra! as SendReviewArgs);
+          return const Text('donation status');
+        },
+      ),
     ],
   );
   return ProviderScope(
@@ -585,10 +604,12 @@ Widget _app({
   );
 }
 
-Widget _amountStepWithPriceLoadingApp() {
+Widget _amountStepWithPriceLoadingApp({bool privacyModeEnabled = false}) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(privacyModeEnabled: privacyModeEnabled),
+      ),
       sendProvingKeyWarmupProvider.overrideWithValue(() {}),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       zecLiveUsdUnitPriceProvider.overrideWithValue(null),
@@ -946,6 +967,146 @@ void main() {
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
   });
+
+  testWidgets(
+    'donation review fixes the recipient and preserves donation on proposal',
+    (tester) async {
+      _proposeSendSucceeds = true;
+      SendReviewArgs? submitted;
+      await tester.pumpWidget(
+        _app(
+          initialReview: true,
+          flowKind: SendFlowKind.donation,
+          initialRecipient: _shieldedAddress,
+          initialAmount: '0.02',
+          initialAmountReady: true,
+          initialFeeZatoshi: BigInt.from(10000),
+          initialMemo: 'must not be sent',
+          onStatusRoute: (args) => submitted = args,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Review donation'), findsOneWidget);
+      expect(find.byKey(const ValueKey('mobile_send_cancel')), findsNothing);
+      expect(find.text('Vizor Wallet'), findsOneWidget);
+      expect(find.text('Total'), findsOneWidget);
+      expect(find.byKey(const ValueKey('mobile_send_memo_row')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+      expect(_lastProposeToAddress, kVizorDonationAddress);
+      expect(_lastProposeMemo, isNull);
+      expect(submitted?.flowKind, SendFlowKind.donation);
+      expect(submitted?.amountZatoshi, BigInt.from(2000000));
+    },
+  );
+
+  testWidgets(
+    'donation proposal failure keeps donation copy and returns to settings',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          initialReview: true,
+          useRouteSteps: true,
+          flowKind: SendFlowKind.donation,
+          initialAmount: '0.02',
+          initialAmountReady: true,
+          initialFeeZatoshi: BigInt.from(10000),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(_proposeCalls, 1);
+      expect(find.text('Donation failed'), findsNWidgets(2));
+      expect(find.textContaining('to Vizor Wallet'), findsOneWidget);
+      expect(find.text('Send failed'), findsNothing);
+      expect(find.text('Donation failed. Try again.'), findsOneWidget);
+      expect(find.text('Send failed. Try again.'), findsNothing);
+      expect(find.text('Back to wallet'), findsNothing);
+      expect(
+        find.textContaining(kVizorDonationAddress.substring(0, 13)),
+        findsNothing,
+      );
+
+      await tester.tap(find.text('Return to settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('settings'), findsOneWidget);
+      expect(find.text('home'), findsNothing);
+    },
+  );
+
+  testWidgets('donation proposal failure can retry the same donation', (
+    tester,
+  ) async {
+    SendReviewArgs? submitted;
+    await tester.pumpWidget(
+      _app(
+        initialReview: true,
+        useRouteSteps: true,
+        flowKind: SendFlowKind.donation,
+        initialAmount: '0.02',
+        initialAmountReady: true,
+        initialFeeZatoshi: BigInt.from(10000),
+        onStatusRoute: (args) => submitted = args,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('Donation failed'), findsNWidgets(2));
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_try_again')));
+    await tester.pumpAndSettle();
+    expect(find.text('Review donation'), findsOneWidget);
+    expect(find.text('Vizor Wallet'), findsOneWidget);
+
+    _proposeSendSucceeds = true;
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(_proposeCalls, 2);
+    expect(_lastProposeToAddress, kVizorDonationAddress);
+    expect(submitted?.flowKind, SendFlowKind.donation);
+    expect(submitted?.amountZatoshi, BigInt.from(2000000));
+  });
+
+  testWidgets(
+    'donation review uses existing Ledger signing with donation args',
+    (tester) async {
+      _proposeSendSucceeds = true;
+      Object? handedOff;
+      await tester.pumpWidget(
+        _app(
+          initialReview: true,
+          flowKind: SendFlowKind.donation,
+          accountState: const AccountState(
+            accounts: [
+              AccountInfo(
+                uuid: 'account-1',
+                name: 'Ledger',
+                order: 0,
+                isHardware: true,
+                hardwareSignerKind: HardwareSignerKind.ledger,
+              ),
+            ],
+            activeAccountUuid: 'account-1',
+          ),
+          initialRecipient: kVizorDonationAddress,
+          initialAmount: '0.02',
+          initialAmountReady: true,
+          initialFeeZatoshi: BigInt.from(10000),
+          onLedgerRoute: (args) => handedOff = args,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Confirm with Ledger'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+      expect(handedOff, isA<SendReviewArgs>());
+      expect((handedOff as SendReviewArgs).flowKind, SendFlowKind.donation);
+      expect((handedOff as SendReviewArgs).address, kVizorDonationAddress);
+    },
+  );
 
   testWidgets('starts Orchard proving-key warmup when mobile send loads', (
     tester,
@@ -3859,6 +4020,36 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     expect(loadingFinder, findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('amount step masks the spendable balance in privacy mode', (
+    tester,
+  ) async {
+    final visibleBalance = ZecAmount.fromZatoshi(
+      BigInt.from(500000000),
+    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+    final balanceRow = find.byKey(
+      const ValueKey('mobile_send_amount_balance_row'),
+    );
+
+    await tester.pumpWidget(_amountStepWithPriceLoadingApp());
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(of: balanceRow, matching: find.text(visibleBalance)),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(
+      _amountStepWithPriceLoadingApp(privacyModeEnabled: true),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(of: balanceRow, matching: find.text('****** ZEC')),
+      findsOneWidget,
+    );
+    expect(find.textContaining(visibleBalance), findsNothing);
   });
 
   testWidgets('amount input displays a leading zero and keeps the cursor', (

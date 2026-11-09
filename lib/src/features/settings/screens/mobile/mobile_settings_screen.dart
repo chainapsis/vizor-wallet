@@ -11,6 +11,7 @@ import '../../../payment_links/providers/payment_link_cards_provider.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/app_version_config.dart';
 import '../../../../core/config/zcash_explorer.dart';
+import '../../../../core/config/rpc_endpoint_config.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -36,6 +37,7 @@ import '../../../onboarding/shared/onboarding_welcome_art.dart'
     show VizorWordmark;
 import '../../widgets/mobile/mobile_network_privacy_card.dart';
 import '../../widgets/settings_new_badge.dart';
+import '../../../donation/donation_config.dart';
 
 /// Mobile settings tab — Figma `SETTINGS` root frame (4494:65997).
 ///
@@ -48,7 +50,9 @@ class MobileSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final account = ref.watch(accountProvider).value?.activeAccount;
     final endpointConfig = ref.watch(rpcEndpointProvider);
-    final endpoint = endpointConfig.hostPort;
+    final endpoint = isAutomaticRpcEndpointConfig(endpointConfig)
+        ? 'Automatic'
+        : endpointConfig.hostPort;
     final explorer = explorerSettingsLabel(
       ref.watch(zcashExplorerProvider),
       networkName: endpointConfig.networkName,
@@ -296,6 +300,26 @@ class MobileSettingsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 const MobileNetworkPrivacyCard(),
+                if (donationFeatureEnabledForNetwork(
+                  endpointConfig.networkName,
+                )) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  _SettingsGroup(
+                    title: 'Misc',
+                    rows: [
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_donation_row'),
+                        leading: _RowIcon(AppIcons.donation, glyphSize: 16.5),
+                        label: 'Support Vizor',
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        chevronColor: settingsChevronColor,
+                        showChevron: true,
+                        onTap: () => context.push('/donation'),
+                      ),
+                    ],
+                  ),
+                ],
                 // The About row stays hidden until the legal documents
                 // are ready — the /about screen exists but must not be
                 // user-reachable (product decision, 2026-06).
@@ -743,15 +767,19 @@ class _SyncKeepAwakeToggle extends StatelessWidget {
 const _settingsRowHeight = 44.0;
 
 class _RowIcon extends StatelessWidget {
-  const _RowIcon(this.iconName);
+  const _RowIcon(this.iconName, {this.glyphSize = 20});
 
   final String iconName;
+  final double glyphSize;
 
   @override
   Widget build(BuildContext context) {
     // Muted per the Figma settings rows — the leading glyphs are
     // decorative, not max-contrast.
-    return AppIcon(iconName, size: 20, color: context.colors.icon.muted);
+    final icon = AppIcon(iconName, size: 20, color: context.colors.icon.muted);
+    return glyphSize == 20
+        ? icon
+        : Transform.scale(scale: glyphSize / 20, child: icon);
   }
 }
 

@@ -4,6 +4,9 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:zcash_wallet/src/features/swap/domain/near_intents_service_status.dart';
+import 'package:zcash_wallet/src/features/swap/providers/near_intents_service_status_provider.dart';
+import 'support/service_status_fixture.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -59,12 +62,16 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
 );
 
 Widget _app({
+  NearIntentsServiceStatus? serviceStatus,
   _MobileDelayedQuoteSwapProvider? swapProvider,
   SwapComposerPreferencesStore? composerPreferencesStore,
   List<AddressBookContact> addressBookContacts = const [],
 }) => ProviderScope(
   overrides: [
     appBootstrapProvider.overrideWithValue(_bootstrap()),
+    nearIntentsServiceStatusProvider.overrideWith(
+      () => FixtureServiceStatusNotifier(serviceStatus),
+    ),
     addressBookRepositoryProvider.overrideWithValue(
       _FakeAddressBookRepository(addressBookContacts),
     ),
@@ -95,6 +102,30 @@ Widget _app({
 );
 
 void main() {
+  testWidgets('service notice can be dismissed before using mobile Swap', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(_app(serviceStatus: serviceStatusFixture()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Swaps may not work right now.'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('near_intents_service_notice_ok')),
+    );
+    await tester.pumpAndSettle();
+    final button = find.byKey(const ValueKey('mobile_swap_review_button'));
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    expect(button.hitTestable(), findsOneWidget);
+    expect(tester.widget<AppButton>(button).onPressed, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('slippage buttons stay above the keyboard on a compact route', (
     tester,
   ) async {

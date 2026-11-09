@@ -152,14 +152,16 @@ void main() {
       find.byType(PayActivityStatusContent),
     );
     expect(content.status.phase, PayActivityStatusPhase.inProgress);
-    expect(
-      tester.getSize(find.byKey(const ValueKey('pay_activity_status_content'))),
-      PayActivityStatusContent.contentSize,
-    );
     expect(find.text('Pay in progress...'), findsOneWidget);
     expect(find.text('990 USDC'), findsOneWidget);
     expect(find.text(r'$990.12'), findsOneWidget);
     expect(find.text('New address'), findsOneWidget);
+    expect(find.text('Payment progress'), findsOneWidget);
+    expect(find.text('View on NEAR Intents'), findsOneWidget);
+    expect(find.text('ZEC spent'), findsOneWidget);
+    await tester.tap(find.text('Transaction details'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('In progress'), findsOneWidget);
     _expectPayStatusDetails();
   });

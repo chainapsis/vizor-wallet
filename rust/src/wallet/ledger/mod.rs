@@ -4,6 +4,7 @@
 //! changing a product flow. Action capacity and recipient review slots are
 //! separate budgets. Every USB operation opens a fresh HID session.
 
+pub(crate) mod account_identity;
 pub(crate) mod apdu;
 pub(crate) mod device_account;
 pub(crate) mod limits;

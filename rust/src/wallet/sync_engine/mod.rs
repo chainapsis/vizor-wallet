@@ -33,9 +33,12 @@ use crate::wallet::{
     sync, transparent_receive_cache, tree_states,
 };
 
+// Test modules reach it through `use super::*`.
+#[cfg(test)]
+use ::transparent::address::TransparentAddress;
 use {
     ::transparent::{
-        address::{Script, TransparentAddress},
+        address::Script,
         bundle::{OutPoint, TxOut},
         keys::TransparentKeyScope,
     },
@@ -89,9 +92,11 @@ use lwd::{
     open_block_download_lwd_transport, open_isolated_lwd_transport_until,
 };
 use progress_work::{JobProgress, WorkModel};
+#[cfg(test)]
+pub(crate) use tip_cache::record_latest_block;
 pub(crate) use tip_cache::{
     get_latest_block_recorded, latest_block_for_transaction,
-    latest_block_for_transaction_with_client,
+    latest_block_for_transaction_with_client, TipRequestScope,
 };
 
 /// What a [`SyncProgressEvent`] reports.
@@ -1758,29 +1763,6 @@ async fn repair_anchor_root_mismatch_if_needed(
     )))
 }
 
-fn transparent_utxo_query_network(network: WalletNetwork) -> WalletNetwork {
-    #[cfg(ironwood_masquerade)]
-    if network == WalletNetwork::Main {
-        return WalletNetwork::Test;
-    }
-
-    network
-}
-
-fn transparent_address_for_query(
-    address: &str,
-    source_network: WalletNetwork,
-    query_network: WalletNetwork,
-) -> Result<String, String> {
-    if source_network == query_network {
-        return Ok(address.to_string());
-    }
-
-    TransparentAddress::decode(&source_network, address)
-        .map(|address| address.encode(&query_network))
-        .map_err(|e| format!("decode transparent address {address}: {e}"))
-}
-
 struct TransparentRefresh {
     addresses: Vec<String>,
     start_height: BlockHeight,
@@ -1926,18 +1908,12 @@ async fn refresh_utxos(
             TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT
         };
 
-        let query_network = transparent_utxo_query_network(network);
-        let mut external_addresses = keys::get_external_transparent_receive_addresses_from_db(
+        let external_addresses = keys::get_external_transparent_receive_addresses_from_db(
             db_data_path,
             network,
             Some(&account_uuid),
         )
         .map_err(|e| SyncError::db(format!("external transparent receive addresses: {e}")))?;
-        for address in &mut external_addresses {
-            address.address =
-                transparent_address_for_query(&address.address, network, query_network)
-                    .map_err(SyncError::parse)?;
-        }
         let external_batches = match transparent_receive_cache::plan_external_utxo_refresh(
             db_data_path,
             network,
@@ -2013,7 +1989,7 @@ async fn refresh_utxos(
                 .filter(|(_, meta)| meta.scope() == Some(TransparentKeyScope::INTERNAL))
                 .map(|(addr, meta)| {
                     meta.address_index()
-                        .map(|index| (index.index(), addr.encode(&query_network)))
+                        .map(|index| (index.index(), addr.encode(&network)))
                         .ok_or_else(|| SyncError::db("Ledger internal address has no child index"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -2054,7 +2030,7 @@ async fn refresh_utxos(
             .into_iter()
             .filter(|(_, metadata)| metadata.scope() != Some(TransparentKeyScope::EXTERNAL))
             .map(|(addr, metadata)| {
-                let query_address = addr.encode(&query_network);
+                let query_address = addr.encode(&network);
                 if metadata.scope() == Some(TransparentKeyScope::INTERNAL) {
                     internal_addresses.insert(query_address.clone());
                 }
@@ -3132,15 +3108,30 @@ struct TipPrefetch {
 }
 
 impl TipPrefetch {
+    /// A cancelled session's late answer stays out of the tip cache. A mode
+    /// handoff is seen by the session, which aborts this request when it drops
+    /// it; until then an answer can only be recorded for the current route.
     fn spawn(
         mut client: CompactTxStreamerClient<Channel>,
         lightwalletd_url: &str,
         network: WalletNetwork,
+        scope: TipRequestScope,
+        cancel: Arc<AtomicBool>,
     ) -> Self {
         let lightwalletd_url = lightwalletd_url.to_owned();
         Self {
             handle: Some(tokio::spawn(async move {
-                get_latest_block_recorded(&mut client, &lightwalletd_url, network).await
+                get_latest_block_recorded(
+                    &mut client,
+                    &lightwalletd_url,
+                    network,
+                    scope,
+                    move || {
+                        crate::wallet::sync::proposal_locks::is_shutting_down()
+                            || cancel.load(Ordering::Relaxed)
+                    },
+                )
+                .await
             })),
             requested_at: std::time::Instant::now(),
         }
@@ -3186,6 +3177,7 @@ async fn post_batch_tip(
     client: &mut CompactTxStreamerClient<Channel>,
     lightwalletd_url: &str,
     network: WalletNetwork,
+    scope: TipRequestScope,
     should_exit: &impl Fn() -> bool,
 ) -> (
     std::time::Instant,
@@ -3200,7 +3192,7 @@ async fn post_batch_tip(
             std::time::Instant::now(),
             unless_exiting(
                 should_exit,
-                get_latest_block_recorded(client, lightwalletd_url, network),
+                get_latest_block_recorded(client, lightwalletd_url, network, scope, should_exit),
             )
             .await,
         ),
@@ -3391,6 +3383,13 @@ pub async fn run_sync_inner(
         {
             Ok(()) => return Ok(()),
             Err(sync_err) => {
+                // A sustained slow body already consumed its transfer budget.
+                // Repeating it here would pin the caller to the same endpoint
+                // for four such budgets before Dart can choose another server.
+                // Custom endpoints still surface the error without switching.
+                if lwd::is_slow_endpoint_error(&sync_err) {
+                    return Err(sync_err.to_string());
+                }
                 // Inspect the typed error's recovery strategy before
                 // flattening to a `String` at the public boundary. Fatal
                 // variants (`Db`, `Parse`) bail out immediately with no
@@ -3786,6 +3785,7 @@ async fn run_sync_impl(
     let tor_route = crate::network_privacy::is_tor_desired();
     // A retry takes a fresh Tor circuit, so a bad exit does not fail every
     // attempt on the client's shared one.
+    let tip_scope = TipRequestScope::capture();
     let transport = if fresh_circuit {
         open_isolated_lwd_transport_until(lightwalletd_url, should_exit).await?
     } else {
@@ -3809,7 +3809,13 @@ async fn run_sync_impl(
     // first could later report completion above a lagging endpoint.
     let tip_result = unless_exiting(
         &should_exit,
-        get_latest_block_recorded(&mut client, lightwalletd_url, network),
+        get_latest_block_recorded(
+            &mut client,
+            lightwalletd_url,
+            network,
+            tip_scope,
+            should_exit,
+        ),
     )
     .await;
     let Some(tip_result) =
@@ -4341,7 +4347,13 @@ async fn run_sync_impl(
             last_periodic_tip_refresh_attempt = std::time::Instant::now();
             let fresh_tip_result = unless_exiting(
                 &should_exit,
-                get_latest_block_recorded(&mut client, lightwalletd_url, network),
+                get_latest_block_recorded(
+                    &mut client,
+                    lightwalletd_url,
+                    network,
+                    tip_scope,
+                    should_exit,
+                ),
             )
             .await;
             let Some(fresh_tip_result) = fresh_tip_result
@@ -4491,7 +4503,13 @@ async fn run_sync_impl(
                 ) {
                     let fresh_tip_result = unless_exiting(
                         &should_exit,
-                        get_latest_block_recorded(&mut client, lightwalletd_url, network),
+                        get_latest_block_recorded(
+                            &mut client,
+                            lightwalletd_url,
+                            network,
+                            tip_scope,
+                            should_exit,
+                        ),
                     )
                     .await;
                     let Some(fresh_tip_result) = fresh_tip_result
@@ -5002,8 +5020,15 @@ async fn run_sync_impl(
         if tip_check_due {
             last_post_batch_tip_check = std::time::Instant::now();
         }
-        let tip_prefetch = (tip_check_due && !should_exit())
-            .then(|| TipPrefetch::spawn(client.clone(), lightwalletd_url, network));
+        let tip_prefetch = (tip_check_due && !should_exit()).then(|| {
+            TipPrefetch::spawn(
+                client.clone(),
+                lightwalletd_url,
+                network,
+                tip_scope,
+                cancel.clone(),
+            )
+        });
 
         // Scan from memory. There are three reorg-adjacent signals from
         // librustzcash that all need to land on `SyncError::Continuity`
@@ -5483,6 +5508,7 @@ async fn run_sync_impl(
                 &mut client,
                 lightwalletd_url,
                 network,
+                tip_scope,
                 &should_exit,
             )
             .await;
@@ -6684,11 +6710,32 @@ mod tests {
         assert!(refresh_tip_for_queued_range(3_513_790, &mut refreshed_for));
     }
 
+    fn spawn_tip_prefetch(lwd: &test_lwd::CapturingLwd) -> TipPrefetch {
+        TipPrefetch::spawn(
+            lwd.client.clone(),
+            &lwd.url,
+            WalletNetwork::Main,
+            TipRequestScope::capture(),
+            Arc::new(AtomicBool::new(false)),
+        )
+    }
+
+    async fn wait_for_tip_request(lwd: &test_lwd::CapturingLwd) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while lwd.count("/GetLatestBlock") == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_tip_prefetch_returns_the_tip_requested_before_it_is_read() {
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
         let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
         let before = std::time::Instant::now();
-        let prefetch = TipPrefetch::spawn(lwd.client.clone(), &lwd.url, WalletNetwork::Main);
+        let prefetch = spawn_tip_prefetch(&lwd);
         let requested_at = prefetch.requested_at;
         let tip = prefetch.resolve(&|| false).await.unwrap().unwrap();
 
@@ -6699,9 +6746,10 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_tip_prefetch_yields_to_an_exit_while_the_server_holds_it() {
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
         let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
         let _held = lwd.hold_responses("/GetLatestBlock");
-        let prefetch = TipPrefetch::spawn(lwd.client.clone(), &lwd.url, WalletNetwork::Main);
+        let prefetch = spawn_tip_prefetch(&lwd);
 
         let resolved =
             tokio::time::timeout(Duration::from_secs(5), prefetch.resolve(&|| true)).await;
@@ -6709,24 +6757,46 @@ mod tests {
         assert!(matches!(resolved, Ok(None)));
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_cancelled_sessions_tip_prefetch_stays_out_of_the_tip_cache() {
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+        let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
+        let gate = lwd.hold_responses("/GetLatestBlock");
+        let cancel = Arc::new(AtomicBool::new(false));
+        let prefetch = TipPrefetch::spawn(
+            lwd.client.clone(),
+            &lwd.url,
+            WalletNetwork::Main,
+            TipRequestScope::capture(),
+            cancel.clone(),
+        );
+        wait_for_tip_request(&lwd).await;
+
+        cancel.store(true, Ordering::SeqCst);
+        gate.notify_one();
+        let tip = prefetch.resolve(&|| false).await.unwrap();
+        assert!(tip.unwrap_err().to_string().contains("cancelled"));
+
+        gate.notify_one();
+        latest_block_for_transaction(&lwd.url, WalletNetwork::Main)
+            .await
+            .unwrap();
+        assert_eq!(lwd.count("/GetLatestBlock"), 2);
+    }
+
     /// A prefetched tip whose request the server has received, then the
     /// moment this batch's status lookups finished.
     async fn prefetch_then_status_lookups(
         lwd: &test_lwd::CapturingLwd,
     ) -> (TipPrefetch, std::time::Instant) {
-        let prefetch = TipPrefetch::spawn(lwd.client.clone(), &lwd.url, WalletNetwork::Main);
-        tokio::time::timeout(Duration::from_secs(5), async {
-            while lwd.count("/GetLatestBlock") == 0 {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        })
-        .await
-        .unwrap();
+        let prefetch = spawn_tip_prefetch(lwd);
+        wait_for_tip_request(lwd).await;
         (prefetch, std::time::Instant::now())
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_batch_without_released_statuses_uses_its_tip_prefetch() {
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
         let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
         let (prefetch, _) = prefetch_then_status_lookups(&lwd).await;
         let prefetch_requested_at = prefetch.requested_at;
@@ -6738,6 +6808,7 @@ mod tests {
             &mut client,
             &lwd.url,
             WalletNetwork::Main,
+            TipRequestScope::capture(),
             &|| false,
         )
         .await;
@@ -6749,6 +6820,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_released_status_is_checked_against_a_tip_requested_after_its_lookup() {
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
         let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
         let (prefetch, lookups_done) = prefetch_then_status_lookups(&lwd).await;
         let mut client = lwd.client.clone();
@@ -6759,6 +6831,7 @@ mod tests {
             &mut client,
             &lwd.url,
             WalletNetwork::Main,
+            TipRequestScope::capture(),
             &|| false,
         )
         .await;
@@ -7810,7 +7883,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn first_batch_of_a_rounded_mainnet_birthday_needs_no_tree_state_request() {
         use zcash_client_backend::proto::compact_formats::{ChainMetadata, CompactBlock};
@@ -7914,7 +7986,6 @@ mod tests {
 
     /// Queued batches must match the batches the loop then plans, or every
     /// prefetch is thrown away.
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn prefetch_ranges_match_the_planned_batches() {
         let h = BlockHeight::from_u32;
@@ -7993,7 +8064,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn planned_batch_end_fits_the_byte_budget() {
         let h = BlockHeight::from_u32;
@@ -8014,7 +8084,6 @@ mod tests {
 
     /// The budgets follow from the compiled tree sizes at fixed heights, so a
     /// longer table does not move them.
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn batch_byte_budget_matches_its_derivation() {
         let main = WorkModel::compiled(WalletNetwork::Main);
@@ -8045,7 +8114,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn plan_end_bounds_the_estimate() {
         let h = BlockHeight::from_u32;

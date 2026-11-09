@@ -837,6 +837,9 @@ ProviderContainer _container({
         ble.keyReads++;
         return 'expected';
       }),
+      ledgerRecoveryAccountKeyMatcherProvider.overrideWithValue(
+        (expected, exported) async => expected == exported,
+      ),
       ledgerBluetoothExistingAccountConnectorProvider.overrideWithValue((
         index,
         device,

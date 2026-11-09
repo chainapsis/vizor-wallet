@@ -6,6 +6,89 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_status_page_content.dart';
 
 void main() {
+  for (final lookup in [
+    (
+      address: ' t1deposit ',
+      intentHash: 'intent',
+      localTx: 'local',
+      originTx: 'origin',
+      expected: 'https://explorer.near-intents.org/transactions/t1deposit',
+    ),
+    (
+      address: 't1deposit',
+      intentHash: null,
+      localTx: null,
+      originTx: null,
+      expected: 'https://explorer.near-intents.org/transactions/t1deposit',
+    ),
+    (
+      address: '  ',
+      intentHash: ' intent ',
+      localTx: 'local',
+      originTx: 'origin',
+      expected: 'https://explorer.near-intents.org/?search=intent',
+    ),
+    (
+      address: null,
+      intentHash: null,
+      localTx: ' local ',
+      originTx: 'origin',
+      expected: 'https://explorer.near-intents.org/?search=local',
+    ),
+    (
+      address: null,
+      intentHash: null,
+      localTx: '  ',
+      originTx: ' origin ',
+      expected: 'https://explorer.near-intents.org/?search=origin',
+    ),
+    (
+      address: ' ',
+      intentHash: ' ',
+      localTx: null,
+      originTx: null,
+      expected: null,
+    ),
+  ]) {
+    test('progress and detail lookups agree for ${lookup.expected}', () {
+      for (final pay in [false, true]) {
+        for (final status in [
+          SwapIntentStatus.awaitingDeposit,
+          SwapIntentStatus.processing,
+          SwapIntentStatus.incompleteDeposit,
+          SwapIntentStatus.complete,
+        ]) {
+          final presentation = swapActivityStatusPresentationForIntent(
+            _state(),
+            _intent(
+              status: status,
+              direction: SwapDirection.zecToExternal,
+              externalAsset: SwapAsset.usdc,
+              depositAddress: lookup.address,
+              nearIntentHash: lookup.intentHash,
+              depositTxHash: lookup.localTx,
+              originChainTxHash: lookup.originTx,
+              payMode: pay,
+            ),
+          );
+          expect(presentation.explorerUri?.toString(), lookup.expected);
+          if (pay && status != SwapIntentStatus.incompleteDeposit) {
+            expect(presentation.payStatus!.txIdUri, presentation.explorerUri);
+          } else {
+            final rows = presentation.details.where(
+              (row) => row.label == 'Tx ID',
+            );
+            if (lookup.expected == null) {
+              expect(rows, isEmpty);
+            } else {
+              expect(rows.single.linkUri, presentation.explorerUri);
+            }
+          }
+        }
+      }
+    });
+  }
+
   test('labels the Pay amount by outcome', () {
     expect(
       payActivityStatusAmountLabel(PayActivityStatusPhase.inProgress),
@@ -171,6 +254,7 @@ void main() {
       'You paid',
       'Rate',
       'Fees',
+      'Tx ID',
       'ZEC tx (shielded)',
       'USDC delivery tx',
     ]);
@@ -594,10 +678,7 @@ void main() {
     }
   });
 
-  test('omits the tx id detail row on desktop', () {
-    // The "Tx ID" row is a mobile-only addition; desktop keeps the original
-    // detail set. Mobile-lane coverage of the row lives in
-    // mobile_swap_activity_tx_id_test.dart.
+  test('adds an explorer row while retaining the copyable source tx', () {
     final presentation = swapActivityStatusPresentationForIntent(
       _state(),
       _intent(
@@ -610,7 +691,16 @@ void main() {
       ),
     );
 
-    expect(presentation.details.where((row) => row.label == 'Tx ID'), isEmpty);
+    final txId = _detailRow(presentation.details, 'Tx ID');
+    expect(txId.linkUri, presentation.explorerUri);
+    expect(
+      txId.linkUri.toString(),
+      'https://explorer.near-intents.org/transactions/t1provider-deposit',
+    );
+    final source = _detailRow(presentation.details, 'ZEC deposit tx');
+    expect(source.copyable, isTrue);
+    expect(source.copyText, 'zec-origin-txid');
+    expect(source.linkUri, isNull);
   });
 
   test('adds address book labels to matching address detail rows', () {
@@ -1057,6 +1147,99 @@ void main() {
     expect(_detailValue(presentation.details, 'Missing deposit'), '0.65 USDC');
   });
 
+  test('privacy mode masks incomplete deposit amounts in their own asset', () {
+    final deadline = DateTime(2026, 5, 7, 12);
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.incompleteDeposit,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        pair: 'USDC -> ZEC',
+        sellAmount: '100.00 USDC',
+        receiveEstimate: '1.4250 ZEC',
+        depositAddress: '0xdeposit-address',
+        depositMemo: 'memo-7',
+        oneClickRefundTo: '0xrefund-address',
+        providerRefundInfo: const SwapProviderRefundInfo(
+          depositedAmountText: '60.00 USDC',
+          refundFeeText: '0.25 USDC',
+        ),
+        depositDeadline: deadline,
+      ),
+      privacyModeEnabled: true,
+    );
+
+    expect(presentation.payAmountText, '****** USDC');
+    expect(presentation.receiveAmountText, '****** ZEC');
+    // The missing amount is still derived from the real values.
+    for (final label in [
+      'Required deposit',
+      'Detected deposit',
+      'Missing deposit',
+      'Refund fee',
+    ]) {
+      expect(_detailValue(presentation.details, label), '****** USDC');
+    }
+    expect(_detailValue(presentation.details, 'Memo'), 'memo-7');
+    expect(
+      _detailValue(presentation.details, 'Deposit USDC to'),
+      '0xdeposit-address',
+    );
+    expect(
+      _detailValue(presentation.details, 'Deposit deadline'),
+      'May 7, 2026 12:00',
+    );
+    _expectNoRawOrMixedAmounts(presentation, ['100.00', '1.425', '60', '40']);
+  });
+
+  test('privacy mode keeps fixed copy, placeholders, rate and slippage', () {
+    final inProgress = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+      ).copyWith(slippageToleranceText: '1.5%'),
+      privacyModeEnabled: true,
+    );
+    expect(inProgress.payFiatText, r'$--');
+    expect(inProgress.receiveFiatText, r'$--');
+    expect(
+      _detailValue(inProgress.details, 'Swap fee'),
+      'Included in shown rate',
+    );
+    expect(_detailValue(inProgress.details, 'Slippage tolerance'), '1.5%');
+    expect(
+      _detailValue(inProgress.details, 'Guaranteed minimum'),
+      '****** USDC',
+    );
+    _expectNoRawOrMixedAmounts(inProgress, ['2.0000', '140.00']);
+
+    final pay = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        oneClickRecipient: '0xrecipient-address',
+        totalFeesText: '0.0040 ZEC',
+        payMode: true,
+      ),
+      privacyModeEnabled: true,
+    );
+    expect(pay.payStatus!.convertedFromText, '****** ZEC');
+    // No confirmed deposit fee yet: fixed copy, nothing to mask.
+    expect(pay.payStatus!.transactionFeeText, 'Not reported');
+    expect(_detailValue(pay.details, 'Rate'), '1 ZEC = 70 USDC');
+    expect(_detailValue(pay.details, 'You paid'), '****** ZEC');
+    expect(
+      _detailValue(pay.details, 'Network + conversion fees'),
+      '****** ZEC',
+    );
+    _expectNoRawOrMixedAmounts(pay, ['2.0000', '140.00', '0.0040']);
+  });
+
   test('maps deposit instructions by swap direction', () {
     final zecInstruction = SwapActivityDepositInstruction.fromIntent(
       _intent(
@@ -1297,6 +1480,37 @@ SwapIntent _intent({
 
 String _detailValue(List<SwapStatusDetailRowData> rows, String label) {
   return _detailRow(rows, label).value;
+}
+
+/// Every display string of [presentation] hides [rawAmounts] and never pairs
+/// two symbols (`****** ZEC ZEC`) or labels one leg with another's symbol.
+void _expectNoRawOrMixedAmounts(
+  SwapActivityStatusPresentation presentation,
+  List<String> rawAmounts,
+) {
+  final payStatus = presentation.payStatus;
+  final texts = [
+    presentation.payAmountText,
+    presentation.receiveAmountText,
+    presentation.payFiatText,
+    presentation.receiveFiatText,
+    presentation.payDetailText,
+    presentation.receiveDetailText,
+    for (final row in presentation.details) row.value,
+    if (payStatus != null) ...[
+      payStatus.convertedFromText,
+      payStatus.transactionFeeText,
+      ?payStatus.refundedAmountText,
+      ?payStatus.refundFeeText,
+    ],
+  ];
+  final mixed = RegExp(r'\b(ZEC|USDC) (ZEC|USDC)\b');
+  for (final text in texts) {
+    expect(text, isNot(matches(mixed)));
+    for (final raw in rawAmounts) {
+      expect(text, isNot(contains(raw)), reason: '"$text" shows $raw');
+    }
+  }
 }
 
 SwapStatusDetailRowData _detailRow(

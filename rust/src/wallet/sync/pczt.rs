@@ -88,6 +88,7 @@ use zcash_protocol::consensus::{NetworkConstants, Parameters};
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::failure::{FailureCode, WalletFailure};
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::sync_engine::TipRequestScope;
 
 use super::hardware_authority::DispatchRefusal;
 use super::{
@@ -1795,6 +1796,7 @@ async fn store_and_broadcast_pczts_inner(
 
     // Only unmined rounds need a live tip and expiry checks. Mined evidence is
     // already a completed submission, even after the original expiry height.
+    let expiry_scope = TipRequestScope::capture();
     let expiry_transport =
         match crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url).await {
             Ok(transport) => transport,
@@ -1806,6 +1808,7 @@ async fn store_and_broadcast_pczts_inner(
         &mut CompactTxStreamerClient::new(expiry_transport.clone()),
         lightwalletd_url,
         network,
+        expiry_scope,
     )
     .await
     {
@@ -1858,7 +1861,7 @@ async fn store_and_broadcast_pczts_inner(
     }) {
         return refuse_expired(error);
     }
-    let mut first_transport = Some(expiry_transport);
+    let mut first_transport = Some((expiry_transport, expiry_scope));
     let mut newly_broadcasted = 0;
     let broadcast_plan = 'broadcast: loop {
         for (index, item) in prepared.iter().enumerate() {
@@ -1875,9 +1878,12 @@ async fn store_and_broadcast_pczts_inner(
             let transport = if let Some(transport) = first_transport.take() {
                 Ok(transport)
             } else {
-                crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url).await
+                let scope = TipRequestScope::capture();
+                crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url)
+                    .await
+                    .map(|transport| (transport, scope))
             };
-            let transport = match transport {
+            let (transport, tip_scope) = match transport {
                 Ok(transport) => transport,
                 Err(error) => {
                     match pczt_broadcast_step(
@@ -1954,6 +1960,7 @@ async fn store_and_broadcast_pczts_inner(
                             &transport,
                             lightwalletd_url,
                             network,
+                            tip_scope,
                             &item.extracted.tx,
                         )
                         .await?;
@@ -2510,6 +2517,7 @@ pub async fn extract_and_broadcast_pczt(
     // but a response deadline is ambiguous: lightwalletd may already
     // have relayed the transaction, so we store locally and let the
     // normal pending/resubmit path reconcile it.
+    let tip_scope = TipRequestScope::capture();
     let transport = crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
@@ -2517,6 +2525,7 @@ pub async fn extract_and_broadcast_pczt(
         &mut CompactTxStreamerClient::new(transport.clone()),
         lightwalletd_url,
         network,
+        tip_scope,
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -2543,7 +2552,8 @@ pub async fn extract_and_broadcast_pczt(
         &[],
         latest.height,
         |dispatched| async {
-            ensure_pczt_submission_unexpired(&transport, lightwalletd_url, network, &tx).await?;
+            ensure_pczt_submission_unexpired(&transport, lightwalletd_url, network, tip_scope, &tx)
+                .await?;
             crate::wallet::sync_engine::send_transaction_signalling(
                 transport, &tx_bytes, dispatched,
             )
@@ -2596,12 +2606,15 @@ async fn ensure_pczt_submission_unexpired(
     transport: &tonic::transport::Channel,
     lightwalletd_url: &str,
     network: WalletNetwork,
+    tip_scope: TipRequestScope,
     tx: &Transaction,
 ) -> Result<(), PcztSubmissionError> {
     let latest = crate::wallet::sync_engine::get_latest_block_recorded(
         &mut CompactTxStreamerClient::new(transport.clone()),
         lightwalletd_url,
         network,
+        tip_scope,
+        || false,
     )
     .await
     .map_err(|error| {
@@ -2735,6 +2748,67 @@ mod tests {
             error_code,
             error_message: error_message.to_string(),
         }
+    }
+
+    #[tokio::test]
+    async fn pczt_submission_rejects_pre_authority_transport_after_route_change() {
+        use crate::network_privacy;
+        use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion};
+        use zcash_protocol::consensus::BranchId;
+
+        let _route = network_privacy::test_route_policy::lock_route_policy();
+        let server = crate::wallet::sync_engine::test_lwd::CapturingLwd::start_with(
+            Vec::new(),
+            3_000_000,
+            |_| {},
+        )
+        .await;
+        let scope = TipRequestScope::capture();
+        let transport = crate::wallet::sync_engine::open_isolated_lwd_transport(&server.url)
+            .await
+            .unwrap();
+        crate::wallet::sync_engine::latest_block_for_transaction_with_client(
+            &mut CompactTxStreamerClient::new(transport.clone()),
+            &server.url,
+            WalletNetwork::Main,
+            scope,
+        )
+        .await
+        .unwrap();
+        let tx = TransactionData::<Authorized>::from_parts(
+            TxVersion::V5,
+            BranchId::Nu5,
+            0,
+            BlockHeight::from_u32(3_001_000),
+            None,
+            None,
+            None,
+            None,
+        )
+        .freeze()
+        .unwrap();
+
+        // Authority/device approval may yield while the route changes. The
+        // final check must use the scope captured before opening the channel.
+        network_privacy::begin_tor_enable();
+        network_privacy::disable_tor();
+        let error = ensure_pczt_submission_unexpired(
+            &transport,
+            &server.url,
+            WalletNetwork::Main,
+            scope,
+            &tx,
+        )
+        .await
+        .unwrap_err();
+        match error {
+            PcztSubmissionError::TipUnavailable(message) => {
+                assert!(message.contains("tip request route changed"), "{message}");
+            }
+            _ => panic!("old transport must fail as a route error before submission"),
+        }
+        assert_eq!(server.count("/GetLatestBlock"), 1);
+        assert_eq!(server.count("/SendTransaction"), 0);
     }
 
     #[test]
@@ -3328,11 +3402,10 @@ mod tests {
         };
         use shardtree::{store::memory::MemoryShardStore, ShardTree};
         use voting_crypto_deps::rand::rngs::OsRng;
-        use zcash_note_encryption::try_note_decryption;
         use zcash_primitives::transaction::{builder::PcztResult, fees::zip317};
         use zcash_protocol::{
             consensus::{BlockHeight, NetworkType, NetworkUpgrade, Parameters},
-            memo::{Memo, MemoBytes},
+            memo::MemoBytes,
             value::Zatoshis,
         };
 
@@ -3366,8 +3439,6 @@ mod tests {
             Vec<u32>,
             [u8; 96],
         ) {
-            let mut rng = OsRng;
-
             let seed = [7u8; 32];
             let seed_fingerprint = [8u8; 32];
             let account_index = zip32::AccountId::ZERO;
@@ -3375,34 +3446,26 @@ mod tests {
                 .expect("valid Orchard ZIP 32 spending key");
             let orchard_ask = orchard::keys::SpendAuthorizingKey::from(&orchard_sk);
             let orchard_fvk = orchard::keys::FullViewingKey::from(&orchard_sk);
-            let orchard_ivk = orchard_fvk.to_ivk(orchard::keys::Scope::Internal);
             let orchard_ovk = orchard_fvk.to_ovk(orchard::keys::Scope::Internal);
             let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
 
-            // Pretend we already received an Orchard (V2) note.
+            // Model an already-received V2 note without proving a historical
+            // output, which the current builder deliberately rejects.
             let value = orchard::value::NoteValue::from_raw(1_000_000);
-            let note = {
-                let orchard_bundle_version = orchard::bundle::BundleVersion::orchard_v2();
-                let mut orchard_builder = orchard::builder::Builder::new(
-                    orchard::builder::BundleType::DEFAULT,
-                    orchard_bundle_version,
-                    orchard_bundle_version.default_flags(),
-                    orchard::Anchor::empty_tree(),
-                )
+            let rho = orchard::note::Rho::from_bytes(&[1; 32]).unwrap();
+            let rseed = (0u8..=255)
+                .find_map(|byte| {
+                    orchard::note::RandomSeed::from_bytes([byte; 32], &rho).into_option()
+                })
                 .unwrap();
-                orchard_builder
-                    .add_output(None, recipient, value, Memo::Empty.encode().into_bytes())
-                    .unwrap();
-                let (bundle, meta) = orchard_builder.build::<i64>(&mut rng).unwrap().unwrap();
-                let action = bundle
-                    .actions()
-                    .get(meta.output_action_index(0).unwrap())
-                    .unwrap();
-                let domain = orchard::note_encryption::OrchardDomain::for_action(action);
-                let (note, _, _) =
-                    try_note_decryption(&domain, &orchard_ivk.prepare(), action).unwrap();
-                note
-            };
+            let note = orchard::Note::from_parts(
+                recipient,
+                value,
+                rho,
+                rseed,
+                orchard::note::NoteVersion::V2,
+            )
+            .unwrap();
 
             // Single-leaf Orchard tree for the spend witness/anchor.
             let (anchor, merkle_path) = {
@@ -4278,7 +4341,10 @@ mod tests {
             None,
             BlockHeight::from_u32(1),
             TransactionBalance::new(vec![], Zatoshis::const_from_u64(10_000)).unwrap(),
-            super::super::send::ConservativeZip317FeeRule::for_target(&crate::wallet::network::WalletNetwork::Regtest, zcash_protocol::consensus::BlockHeight::from_u32(120)),
+            super::super::send::ConservativeZip317FeeRule::for_target(
+                &crate::wallet::network::WalletNetwork::Regtest,
+                zcash_protocol::consensus::BlockHeight::from_u32(120),
+            ),
             BlockHeight::from_u32(2).into(),
             ConfirmationsPolicy::default(),
             false,
