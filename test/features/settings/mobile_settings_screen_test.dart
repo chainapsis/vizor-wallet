@@ -1732,7 +1732,7 @@ void main() {
     );
 
     testWidgets('the sheet saves the chosen language', (tester) async {
-      final saved = <AppLanguage?>[];
+      final saved = <AppLanguage>[];
       await tester.pumpWidget(
         _app(extraOverrides: languagePreviewOverrides(saved)),
       );
@@ -1745,8 +1745,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.byKey(const ValueKey('mobile_language_option_system')),
+        find.byKey(const ValueKey('mobile_language_option_en')),
         findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_language_option_system')),
+        findsNothing,
       );
       await tester.tap(find.byKey(const ValueKey('mobile_language_option_zh')));
       await tester.pump();
@@ -1758,7 +1762,7 @@ void main() {
     });
 
     testWidgets('closing the sheet keeps the language', (tester) async {
-      final saved = <AppLanguage?>[];
+      final saved = <AppLanguage>[];
       await tester.pumpWidget(
         _app(extraOverrides: languagePreviewOverrides(saved)),
       );

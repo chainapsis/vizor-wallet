@@ -484,7 +484,7 @@ void main() {
   });
 
   for (final error in [
-    const FormatException('Endpoint is for test, but this wallet uses main.'),
+    RpcEndpointNetworkMismatch(endpointNetwork: 'test', walletNetwork: 'main'),
     const RpcEndpointSaveException('storage unavailable'),
   ]) {
     testWidgets('RPC error keeps draft and distinguishes $error', (

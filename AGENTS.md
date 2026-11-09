@@ -198,8 +198,10 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
   `--dart-define=VIZOR_I18N_PREVIEW=true`. Without it `supportedLocales` is
   English only, so Korean and Chinese devices keep the English UI. Widgetbook
   previews every language.
-- The preference (`zcash_app_language`: `system` or a language tag) is plain
-  storage read during bootstrap, like the theme mode.
+- The preference (`zcash_app_language`, a language tag) is plain storage read
+  during bootstrap, like the theme mode. Nothing stored, or an unknown value,
+  is English. There is no "follow the device" option: on a device in a
+  language Vizor lacks, it would look like that language.
 - Every `MaterialApp` root passes `appSupportedLocales()` and
   `appLocalizationsDelegates`. A new root must too.
 - Widgets read strings through `context.l10n` (`lib/src/core/l10n/l10n.dart`),
@@ -222,10 +224,10 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
   (`// l10n-ignore:`), and the finishing steps. Translation rules live in
   `docs/i18n/`.
 - Korean is edited in `lib/l10n/source/app_ko.arb`. Regenerate
-  `lib/l10n/app_ko.arb` with `fvm dart run tool/l10n/korean_arb.dart`; it adds
-  invisible word joiners so Flutter breaks Korean lines between words, not
-  inside them. Compare shipped Korean strings in tests with the joiners
-  removed.
+  `lib/l10n/app_ko.arb` with `fvm dart run tool/l10n/korean_arb.dart`; it joins
+  the characters of each word with invisible U+200D so Flutter breaks Korean
+  lines between words, not inside them. Compare shipped Korean strings in tests
+  with that tool's `wordJoiner` removed.
 - Copy that Swift or Kotlin draws (notifications, background-task captions,
   system prompts, native error messages Dart shows) uses `native*` ARB keys.
   `fvm dart run tool/l10n/native_strings.dart` regenerates

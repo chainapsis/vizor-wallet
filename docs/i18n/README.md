@@ -5,7 +5,8 @@ copy lives in `lib/l10n/app_<locale>.arb`; `app_en.arb` is the source.
 
 Korean is the exception: edit `lib/l10n/source/app_ko.arb`, then run
 `fvm dart run tool/l10n/korean_arb.dart`. The generated `lib/l10n/app_ko.arb`
-adds invisible word joiners so lines break between words.
+joins the characters of each word with invisible U+200D so lines break
+between words.
 
 - [Glossary](../../lib/l10n/glossary.yaml): one entry per concept. Use the
   term for your language whenever the English source contains the English
@@ -52,9 +53,11 @@ fonts once with `scripts/fetch-capture-fonts.sh`; it stores them in
   ```
 
   Each line records one scenario in one language: the first layout exception,
-  the texts cut off by `maxLines` or a single line, and the Rows and Columns
-  whose children do not fit. A translation that adds an exception or cut-off
-  text that English does not have breaks that screen. Add
+  the texts cut off by `maxLines` or a single line, the Korean words broken
+  across lines because their box is too narrow (`wordSplits`), and the Rows
+  and Columns whose children do not fit. A translation that adds an exception
+  or cut-off text that English does not have breaks that screen, and so does
+  any word split. Add
   `--dart-define=LOCALE_SCAN_SCENARIOS=<id prefixes>` to rerun a few, and
   `--update-goldens --dart-define=LOCALE_SCAN_OUTPUT=<directory>` for PNGs.
 

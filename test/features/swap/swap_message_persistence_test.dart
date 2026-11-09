@@ -12,13 +12,14 @@ import 'package:zcash_wallet/src/features/swap/models/swap_status_presentation.d
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' show BroadcastNotice;
 
+import '../../../tool/l10n/korean_arb.dart' show wordJoiner;
 import '../../support/test_l10n.dart';
 
 final _ko = lookupAppLocalizations(const Locale('ko'));
 
 /// Korean as a reader sees it: the shipped strings carry invisible word
 /// joiners for line breaking.
-String _plain(String text) => text.replaceAll('⁠', '');
+String _plain(String text) => text.replaceAll(wordJoiner, '');
 
 const _autoRefreshKo = '최신 상태를 새로고침하지 못했어요.\n계속 시도하고 이 화면을 자동으로 업데이트할게요.';
 const _broadcastUnknownKo =

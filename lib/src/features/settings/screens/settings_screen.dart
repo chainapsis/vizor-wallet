@@ -145,7 +145,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _closeModal();
   }
 
-  Future<void> _updateLanguage(AppLanguage? language) async {
+  Future<void> _updateLanguage(AppLanguage language) async {
     await ref.read(appLanguageProvider.notifier).set(language);
     if (!mounted) return;
     _closeModal();
@@ -265,9 +265,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 endpointLabel: endpointLabel,
                 explorerLabel: explorerLabel,
                 themeLabel: _themeLabel(context.l10n, themeMode),
-                languageLabel: showLanguage
-                    ? appLanguageLabel(context, appLanguage, languages)
-                    : null,
+                languageLabel: showLanguage ? appLanguage.nativeName : null,
                 updateLabel: updateState == null
                     ? null
                     : _updateLabel(context.l10n, updateState),

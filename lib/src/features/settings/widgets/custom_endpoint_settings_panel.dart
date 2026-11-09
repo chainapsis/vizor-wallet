@@ -85,7 +85,7 @@ class _CustomEndpointSettingsPanelState
       normalizeRpcEndpointUrl(_controller.text, allowDefaultPort: true);
       return null;
     } on FormatException catch (e) {
-      return e.message;
+      return rpcEndpointErrorText(context.l10n, e);
     }
   }
 
@@ -113,7 +113,7 @@ class _CustomEndpointSettingsPanelState
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() {
-        _submitError = e.message;
+        _submitError = rpcEndpointErrorText(context.l10n, e);
         _isSubmitting = false;
       });
     } catch (e, st) {

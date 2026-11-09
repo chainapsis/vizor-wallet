@@ -57,7 +57,7 @@ class AppBootstrapState {
     required this.rpcEndpointConfig,
     this.explorerUrlTemplate = '',
     required this.themeMode,
-    this.appLanguage,
+    this.appLanguage = AppLanguage.en,
     required this.privacyModeEnabled,
     required this.isPasswordConfigured,
     required this.isUnlocked,
@@ -79,8 +79,8 @@ class AppBootstrapState {
   final String explorerUrlTemplate;
   final ThemeMode themeMode;
 
-  /// The saved language preference; `null` follows the device language.
-  final AppLanguage? appLanguage;
+  /// The saved language; English when nothing is saved or it cannot be read.
+  final AppLanguage appLanguage;
   final bool privacyModeEnabled;
   final bool swapEnabledOverrideCachedForRelease;
   final bool syncKeepAwakeEnabled;
@@ -654,7 +654,7 @@ Future<ThemeMode> _readThemeMode(AppSecureStore storage) async {
   }
 }
 
-Future<AppLanguage?> _readAppLanguage(AppSecureStore storage) async {
+Future<AppLanguage> _readAppLanguage(AppSecureStore storage) async {
   try {
     return decodeAppLanguagePreference(
       await storage.readString(kAppLanguageKey),
@@ -663,7 +663,7 @@ Future<AppLanguage?> _readAppLanguage(AppSecureStore storage) async {
     rethrow;
   } catch (e) {
     log('bootstrap: failed to read app language: $e');
-    return null;
+    return AppLanguage.en;
   }
 }
 

@@ -22,8 +22,7 @@ enum AppLanguage {
   ), // l10n-ignore: language's own name
   ko(tag: 'ko', nativeName: '한국어', released: false),
 
-  /// Simplified Chinese. The `zh` base also serves Traditional-script devices
-  /// until a `zh_Hant` file exists.
+  /// Simplified Chinese.
   zh(tag: 'zh', nativeName: '简体中文', released: false);
 
   const AppLanguage({
@@ -51,9 +50,6 @@ enum AppLanguage {
   }
 }
 
-/// Stored value for "follow the device language".
-const kAppLanguageSystemValue = 'system';
-
 /// Languages this build offers, English first.
 List<AppLanguage> availableAppLanguages({bool preview = kI18nPreviewEnabled}) {
   return [
@@ -71,31 +67,15 @@ List<Locale> appSupportedLocales({bool preview = kI18nPreviewEnabled}) {
 
 const appLocalizationsDelegates = AppLocalizations.localizationsDelegates;
 
-/// The `MaterialApp.locale` for a saved preference. `null` follows the
-/// device; a language this build does not offer also follows the device.
-Locale? appLocaleFor(AppLanguage? preference, List<AppLanguage> available) {
-  if (preference == null || !available.contains(preference)) return null;
-  return preference.locale;
+/// The `MaterialApp.locale` for a saved preference. A language this build
+/// does not offer shows English.
+Locale appLocaleFor(AppLanguage preference, List<AppLanguage> available) {
+  return (available.contains(preference) ? preference : AppLanguage.en).locale;
 }
 
-/// The language "follow the device" resolves to, matching `MaterialApp`'s
-/// default resolution: the first device locale whose language is offered,
-/// else English.
-AppLanguage resolveDeviceLanguage(
-  List<Locale> deviceLocales,
-  List<AppLanguage> available,
-) {
-  final locale = basicLocaleListResolution(deviceLocales, [
-    for (final language in available) language.locale,
-  ]);
-  return AppLanguage.fromTag(locale.languageCode) ?? AppLanguage.en;
-}
-
-/// `null` means follow the device language, including for unknown values.
-AppLanguage? decodeAppLanguagePreference(String? raw) {
-  return AppLanguage.fromTag(raw);
-}
-
-String encodeAppLanguagePreference(AppLanguage? preference) {
-  return preference?.tag ?? kAppLanguageSystemValue;
+/// The saved language tag. Nothing stored, or a value this build does not
+/// know, is English, so existing installs keep the English UI until the user
+/// picks a language.
+AppLanguage decodeAppLanguagePreference(String? raw) {
+  return AppLanguage.fromTag(raw) ?? AppLanguage.en;
 }

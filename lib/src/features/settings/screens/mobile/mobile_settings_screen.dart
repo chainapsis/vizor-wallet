@@ -296,11 +296,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                         key: const ValueKey('mobile_settings_language_row'),
                         leading: _RowIcon(AppIcons.language),
                         label: context.l10n.settingsLanguageLabel,
-                        value: appLanguageLabel(
-                          context,
-                          appLanguage,
-                          languages,
-                        ),
+                        value: appLanguage.nativeName,
                         minRowHeight: _settingsRowHeight,
                         textStyle: settingsRowStyle,
                         valueTextStyle: settingsRowStyle,
@@ -519,7 +515,7 @@ class MobileSettingsScreen extends ConsumerWidget {
   Future<void> _showLanguageSheet(
     BuildContext context,
     WidgetRef ref,
-    AppLanguage? current,
+    AppLanguage current,
     List<AppLanguage> languages,
   ) async {
     final choice = await showMobileLanguageSheet(
@@ -527,9 +523,9 @@ class MobileSettingsScreen extends ConsumerWidget {
       current: current,
       available: languages,
     );
-    if (choice == null || choice.language == current) return;
+    if (choice == null || choice == current) return;
     try {
-      await ref.read(appLanguageProvider.notifier).set(choice.language);
+      await ref.read(appLanguageProvider.notifier).set(choice);
     } catch (_) {
       if (context.mounted) {
         showAppToast(context, context.l10n.settingsLanguageUpdateFailed);

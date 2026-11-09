@@ -161,7 +161,7 @@ class _MobileNetworkSettingsSheetState
       normalizeRpcEndpointUrl(_controller.text, allowDefaultPort: true);
       return null;
     } on FormatException catch (error) {
-      return error.message;
+      return rpcEndpointErrorText(context.l10n, error);
     }
   }
 
@@ -193,7 +193,11 @@ class _MobileNetworkSettingsSheetState
       Navigator.of(context).pop();
       widget.onUpdated?.call();
     } on FormatException catch (error) {
-      _finishWithError(OnboardingSubmitError.text(error.message));
+      _finishWithError(
+        OnboardingSubmitError.localized(
+          (l10n) => rpcEndpointErrorText(l10n, error),
+        ),
+      );
     } on RpcEndpointSaveException {
       _finishWithError(
         OnboardingSubmitError.localized((l10n) => l10n.endpointSaveFailed),

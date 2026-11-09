@@ -390,7 +390,7 @@ void main() {
     testWidgets('the language button opens the picker and applies on Update', (
       tester,
     ) async {
-      final saved = <AppLanguage?>[];
+      final saved = <AppLanguage>[];
       await tester.pumpWidget(
         _welcomeScreen(extraOverrides: languagePreviewOverrides(saved)),
       );

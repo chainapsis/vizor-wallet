@@ -989,20 +989,16 @@ class _ClearMnemonicButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 52,
+    // A minimum width, not a fixed one: Korean "지우기" is wider than "Clear".
+    return AppButton(
+      key: const ValueKey('import_mnemonic_clear_button'),
+      onPressed: onPressed,
+      variant: AppButtonVariant.secondary,
+      size: AppButtonSize.mediumLarge,
       height: 24,
-      child: AppButton(
-        key: const ValueKey('import_mnemonic_clear_button'),
-        onPressed: onPressed,
-        variant: AppButtonVariant.secondary,
-        size: AppButtonSize.mediumLarge,
-        height: 24,
-        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-        expand: true,
-        constrainContent: true,
-        child: Text(context.l10n.commonClear),
-      ),
+      minWidth: 52,
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+      child: Text(context.l10n.commonClear),
     );
   }
 }

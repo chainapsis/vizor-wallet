@@ -9,12 +9,13 @@ import 'package:zcash_wallet/figma_compare/figma_compare_scenarios.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 
+import '../../tool/l10n/korean_arb.dart' show wordJoiner;
 import 'figma_compare_capture_support.dart';
 
 /// Renders every registered scenario in every language and appends one JSON
 /// line per render to `LOCALE_SCAN_REPORT`: the first layout exception (a
-/// RenderFlex overflow, for example) and the texts cut off by `maxLines` or a
-/// single line. Compare a translation's lines with English to find the
+/// RenderFlex overflow, for example), the texts cut off by `maxLines` or a
+/// single line, and the Korean words broken across lines. Compare a translation's lines with English to find the
 /// screens it breaks. `LOCALE_SCAN_SCENARIOS` limits the run to ids starting
 /// with one of its comma-separated prefixes, and `LOCALE_SCAN_OUTPUT` (a
 /// directory) also writes `<scenario>.<language>.png` for each render.
@@ -62,6 +63,7 @@ void runLocaleLayoutScan({
             'language': language.tag,
             'exception': exception?.toString().split('\n').first,
             'cutOff': _cutOffTexts(tester),
+            'wordSplits': _wordSplits(tester),
             'overflowingFlexes': _overflowingFlexes(tester),
           };
           report?.writeAsStringSync(
@@ -111,6 +113,63 @@ List<String> _overflowingFlexes(WidgetTester tester) {
     chains.add('${(extent - available).toStringAsFixed(1)}px: $chain');
   }
   return chains;
+}
+
+// Korean words carry joiners between their characters (korean_arb.dart), so
+// a line that ends next to one broke a word that did not fit its box.
+List<String> _wordSplits(WidgetTester tester) {
+  final found = <String>{};
+  for (final paragraph
+      in tester.allRenderObjects.whereType<RenderParagraph>()) {
+    // Text that does not wrap cannot split a word; _cutOffTexts reports it.
+    if (!paragraph.hasSize || !paragraph.softWrap) continue;
+    final text = paragraph.text.toPlainText(includeSemanticsLabels: false);
+    if (!text.contains(wordJoiner)) continue;
+    var hasInlineWidget = false;
+    paragraph.text.visitChildren((span) {
+      hasInlineWidget = span is PlaceholderSpan;
+      return !hasInlineWidget;
+    });
+    // TextPainter cannot lay out WidgetSpans without their sizes.
+    if (hasInlineWidget) continue;
+    final painter = TextPainter(
+      text: paragraph.text,
+      textAlign: paragraph.textAlign,
+      textDirection: paragraph.textDirection,
+      textScaler: paragraph.textScaler,
+      maxLines: paragraph.maxLines,
+      // RenderParagraph reserves room for this on the last line.
+      ellipsis: paragraph.overflow == TextOverflow.ellipsis ? '\u2026' : null,
+      locale: paragraph.locale,
+      strutStyle: paragraph.strutStyle,
+      textWidthBasis: paragraph.textWidthBasis,
+      textHeightBehavior: paragraph.textHeightBehavior,
+    )..layout(maxWidth: paragraph.size.width);
+    // A line cut short by maxLines ends at the truncation, not a break.
+    final lines = painter.computeLineMetrics().length;
+    final breaks = painter.didExceedMaxLines ? lines - 1 : lines;
+    var offset = 0;
+    for (var line = 0; line < breaks; line++) {
+      final end = painter.getLineBoundary(TextPosition(offset: offset)).end;
+      if (end <= offset || end >= text.length) break;
+      if (text[end - 1] == wordJoiner || text[end] == wordJoiner) {
+        final from = (end - 12).clamp(0, text.length);
+        final to = (end + 12).clamp(0, text.length);
+        found.add(
+          '${text.substring(from, end)}|${text.substring(end, to)}'.replaceAll(
+            wordJoiner,
+            '',
+          ),
+        );
+      }
+      offset = end;
+      while (offset < text.length && text[offset] == '\n') {
+        offset++;
+      }
+    }
+    painter.dispose();
+  }
+  return found.toList();
 }
 
 bool _isCutOff(RenderParagraph paragraph) {

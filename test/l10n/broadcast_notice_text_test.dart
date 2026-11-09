@@ -7,6 +7,8 @@ import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:zcash_wallet/src/core/zcash/broadcast_notice_text.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' show BroadcastNotice;
 
+import '../../tool/l10n/korean_arb.dart' show wordJoiner;
+
 /// Shared with `rust/src/wallet/sync/broadcast_notice.rs`, whose formatter
 /// writes the same English into each broadcast result's `message`.
 List<({List<BroadcastNotice> notices, String message})> _fixtures() {
@@ -22,7 +24,7 @@ List<({List<BroadcastNotice> notices, String message})> _fixtures() {
   ];
 }
 
-String _withoutJoiners(String text) => text.replaceAll('⁠', '');
+String _withoutJoiners(String text) => text.replaceAll(wordJoiner, '');
 
 void main() {
   final en = lookupAppLocalizations(const Locale('en'));

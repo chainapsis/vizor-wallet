@@ -6,13 +6,13 @@ import 'package:zcash_wallet/src/providers/app_language_provider.dart';
 class FakeAppLanguageNotifier extends AppLanguageNotifier {
   FakeAppLanguageNotifier(this.saved);
 
-  final List<AppLanguage?> saved;
+  final List<AppLanguage> saved;
 
   @override
-  AppLanguage? build() => null;
+  AppLanguage build() => AppLanguage.en;
 
   @override
-  Future<void> set(AppLanguage? language) async {
+  Future<void> set(AppLanguage language) async {
     saved.add(language);
     state = language;
   }
@@ -20,7 +20,7 @@ class FakeAppLanguageNotifier extends AppLanguageNotifier {
 
 /// Offers every language, as a `VIZOR_I18N_PREVIEW` build does, and records
 /// choices in [saved].
-List<Override> languagePreviewOverrides(List<AppLanguage?> saved) => [
+List<Override> languagePreviewOverrides(List<AppLanguage> saved) => [
   availableAppLanguagesProvider.overrideWithValue(AppLanguage.values),
   appLanguageProvider.overrideWith(() => FakeAppLanguageNotifier(saved)),
 ];
