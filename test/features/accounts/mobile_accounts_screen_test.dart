@@ -33,6 +33,7 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -283,16 +284,51 @@ class _FakeWalletMutationSyncNotifier extends FakeSyncNotifier {
 }
 
 class _FakeBiometricUnlockNotifier extends BiometricUnlockNotifier {
+  _FakeBiometricUnlockNotifier({
+    this.initial = BiometricUnlockState.initial,
+    this.probe,
+    this.read,
+  });
+
+  final BiometricUnlockState initial;
+  final Future<BiometricUnlockState> Function()? probe;
+  final Future<String?> Function(_FakeBiometricUnlockNotifier)? read;
+  final reasons = <String>[];
   var disableCount = 0;
 
   @override
-  Future<BiometricUnlockState> build() async => BiometricUnlockState.initial;
+  Future<BiometricUnlockState> build() async =>
+      probe != null ? await probe!() : initial;
+
+  @override
+  Future<String?> readPasscode({required String reason}) async {
+    reasons.add(reason);
+    return read?.call(this);
+  }
 
   @override
   Future<void> disable() async {
     disableCount += 1;
     state = const AsyncData(BiometricUnlockState.initial);
   }
+}
+
+const _faceBiometricState = BiometricUnlockState(
+  availability: BiometricAvailability(
+    supported: true,
+    enrolled: true,
+    kind: BiometricKind.face,
+  ),
+  enabled: true,
+);
+
+Future<void> _openRemovalGate(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const ValueKey('mobile_account_menu_remove')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const ValueKey('mobile_account_remove_confirm')));
+  await tester.pump();
 }
 
 Widget _nestedShellApp(AccountState accounts, ValueNotifier<int> tabTaps) {
@@ -691,6 +727,246 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  group('removal biometrics', () {
+    AccountState accountsFor({required bool lastAccount}) => AccountState(
+      accounts: [
+        _account('a', 'Active'),
+        if (!lastAccount) _account('b', 'Other'),
+      ],
+      activeAccountUuid: 'a',
+    );
+
+    Future<
+      ({
+        _FakeAccountNotifier accounts,
+        _FakeSecurityNotifier security,
+        _FakeWalletMutationSyncNotifier sync,
+      })
+    >
+    pumpRemovalApp(
+      WidgetTester tester,
+      _FakeBiometricUnlockNotifier biometric, {
+      bool lastAccount = false,
+    }) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(393, 852);
+      addTearDown(tester.view.reset);
+      final state = accountsFor(lastAccount: lastAccount);
+      final accounts = _FakeAccountNotifier(state);
+      final security = _FakeSecurityNotifier();
+      final sync = _FakeWalletMutationSyncNotifier();
+      await tester.pumpWidget(
+        _app(
+          state,
+          accountNotifier: () => accounts,
+          securityNotifier: security,
+          biometricNotifier: () => biometric,
+          syncNotifier: () => sync,
+        ),
+      );
+      await tester.pumpAndSettle();
+      return (accounts: accounts, security: security, sync: sync);
+    }
+
+    for (final lastAccount in [false, true]) {
+      testWidgets('a successful prompt authorizes the mutation '
+          '(last: $lastAccount)', (tester) async {
+        final biometric = _FakeBiometricUnlockNotifier(
+          initial: _faceBiometricState,
+          read: (_) async => '123456',
+        );
+        final app = await pumpRemovalApp(
+          tester,
+          biometric,
+          lastAccount: lastAccount,
+        );
+
+        await _openRemovalGate(tester);
+        await tester.pumpAndSettle();
+
+        expect(biometric.reasons, [
+          lastAccount ? 'Confirm wallet reset' : 'Confirm account removal',
+        ]);
+        expect(app.security.confirmations, ['123456']);
+        expect(app.accounts.removedUuid, lastAccount ? isNull : 'a');
+        expect(app.accounts.resetCount, lastAccount ? 1 : 0);
+        expect(find.byType(MobileAccountRemovalPasscodeScreen), findsNothing);
+      });
+    }
+
+    testWidgets('cancelling falls back to the keypad and can retry', (
+      tester,
+    ) async {
+      var reads = 0;
+      final biometric = _FakeBiometricUnlockNotifier(
+        initial: _faceBiometricState,
+        read: (_) async => ++reads == 1 ? null : '123456',
+      );
+      final app = await pumpRemovalApp(tester, biometric);
+
+      await _openRemovalGate(tester);
+      await tester.pumpAndSettle();
+
+      expect(app.security.confirmations, isEmpty);
+      expect(app.accounts.removedUuid, isNull);
+      expect(app.sync.pauseCount, 0);
+      expect(find.byType(PasscodeBiometricButton), findsOneWidget);
+
+      await tester.tap(find.byType(PasscodeBiometricButton));
+      await tester.pumpAndSettle();
+
+      expect(reads, 2);
+      expect(app.accounts.removedUuid, 'a');
+    });
+
+    testWidgets('the retry action stays reachable on a small screen', (
+      tester,
+    ) async {
+      var reads = 0;
+      final biometric = _FakeBiometricUnlockNotifier(
+        initial: _faceBiometricState,
+        read: (_) async => ++reads == 1 ? null : '123456',
+      );
+      final app = await pumpRemovalApp(tester, biometric);
+      tester.view.physicalSize = const Size(320, 568);
+
+      await _openRemovalGate(tester);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byType(PasscodeBiometricButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(PasscodeBiometricButton));
+      await tester.pumpAndSettle();
+
+      expect(reads, 2);
+      expect(app.accounts.removedUuid, 'a');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the keypad still works after cancelling the prompt', (
+      tester,
+    ) async {
+      final biometric = _FakeBiometricUnlockNotifier(
+        initial: _faceBiometricState,
+      );
+      final app = await pumpRemovalApp(tester, biometric);
+
+      await _openRemovalGate(tester);
+      await tester.pumpAndSettle();
+      await _enterPasscode(tester);
+
+      expect(app.security.confirmations, ['123456']);
+      expect(app.accounts.removedUuid, 'a');
+    });
+
+    testWidgets('an invalidated escrow explains the fallback to the keypad', (
+      tester,
+    ) async {
+      final biometric = _FakeBiometricUnlockNotifier(
+        initial: _faceBiometricState,
+        read: (notifier) async {
+          await notifier.disable();
+          return null;
+        },
+      );
+      final app = await pumpRemovalApp(tester, biometric);
+
+      await _openRemovalGate(tester);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Face ID changed. Enter your passcode.'),
+        findsOneWidget,
+      );
+      expect(find.byType(PasscodeBiometricButton), findsNothing);
+      expect(app.accounts.removedUuid, isNull);
+
+      await _enterPasscode(tester);
+      expect(app.accounts.removedUuid, 'a');
+    });
+
+    testWidgets('a stale escrowed passcode does not authorize the mutation', (
+      tester,
+    ) async {
+      final biometric = _FakeBiometricUnlockNotifier(
+        initial: _faceBiometricState,
+        read: (_) async => '000000',
+      );
+      final app = await pumpRemovalApp(tester, biometric);
+
+      await _openRemovalGate(tester);
+      await tester.pumpAndSettle();
+
+      expect(app.security.confirmations, ['000000']);
+      expect(find.text('Incorrect passcode'), findsOneWidget);
+      expect(app.accounts.removedUuid, isNull);
+      expect(app.sync.pauseCount, 0);
+    });
+
+    testWidgets('a prompt error falls back to the keypad', (tester) async {
+      final biometric = _FakeBiometricUnlockNotifier(
+        initial: _faceBiometricState,
+        read: (_) async => throw StateError('prompt failed'),
+      );
+      final app = await pumpRemovalApp(tester, biometric);
+
+      await _openRemovalGate(tester);
+      await tester.pumpAndSettle();
+
+      expect(app.accounts.removedUuid, isNull);
+      await _enterPasscode(tester);
+      expect(app.accounts.removedUuid, 'a');
+    });
+
+    testWidgets('a result arriving after leaving the gate is dropped', (
+      tester,
+    ) async {
+      final pending = Completer<String?>();
+      final biometric = _FakeBiometricUnlockNotifier(
+        initial: _faceBiometricState,
+        read: (_) => pending.future,
+      );
+      final app = await pumpRemovalApp(tester, biometric);
+
+      await _openRemovalGate(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Back'));
+      pending.complete('123456');
+      await tester.pumpAndSettle();
+
+      expect(app.security.confirmations, isEmpty);
+      expect(app.accounts.removedUuid, isNull);
+      expect(app.sync.pauseCount, 0);
+      expect(find.byType(MobileAccountRemovalPasscodeScreen), findsNothing);
+    });
+
+    for (final (name, interrupt)
+        in <(String, Future<void> Function(WidgetTester))>[
+          ('leaving', (tester) => tester.tap(find.bySemanticsLabel('Back'))),
+          ('typing', (tester) => tester.tap(find.bySemanticsLabel('Digit 1'))),
+        ]) {
+      testWidgets('$name during the availability probe skips the prompt', (
+        tester,
+      ) async {
+        final probe = Completer<BiometricUnlockState>();
+        final biometric = _FakeBiometricUnlockNotifier(
+          probe: () => probe.future,
+          read: (_) async => '123456',
+        );
+        final app = await pumpRemovalApp(tester, biometric);
+
+        await _openRemovalGate(tester);
+        await tester.pump(const Duration(seconds: 1));
+        await interrupt(tester);
+        await tester.pump();
+        probe.complete(_faceBiometricState);
+        await tester.pumpAndSettle();
+
+        expect(biometric.reasons, isEmpty);
+        expect(app.accounts.removedUuid, isNull);
+      });
+    }
+  });
 
   for (final setupPending in [false, true]) {
     testWidgets('the last remaining seed account resets the app on removal '

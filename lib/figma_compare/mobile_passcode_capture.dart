@@ -17,6 +17,7 @@ import '../src/features/settings/screens/mobile/mobile_viewing_key_screen.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/app_security_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
+import '../src/services/biometric_unlock.dart';
 
 /// Real passcode screens with no wallet, storage, network or Rust dependency.
 enum PasscodeCaptureScreen {
@@ -143,3 +144,15 @@ Widget buildMobilePasscodeSeedPhraseCapture(BuildContext context) =>
 
 Widget buildMobilePasscodeAccountRemovalCapture(BuildContext context) =>
     const MobilePasscodeCapture(screen: PasscodeCaptureScreen.accountRemoval);
+Widget buildMobilePasscodeAccountRemovalFaceIdCapture(BuildContext context) =>
+    const MobilePasscodeCapture(
+      screen: PasscodeCaptureScreen.accountRemoval,
+      biometric: BiometricUnlockState(
+        availability: BiometricAvailability(
+          supported: true,
+          enrolled: true,
+          kind: BiometricKind.face,
+        ),
+        enabled: true,
+      ),
+    );
