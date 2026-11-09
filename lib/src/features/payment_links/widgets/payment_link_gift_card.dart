@@ -30,12 +30,12 @@ enum PaymentLinkCardArtwork {
   dragon('payment_link_card_dragon.webp'),
   knightMagic('payment_link_card_knight_magic.webp'),
   gandalf('payment_link_card_gandalf.webp'),
+  rogueCat('payment_link_card_rogue_cat.webp'),
   crystal('payment_link_card_crystal.webp'),
   diamond('payment_link_card_diamond.webp'),
   ruby('payment_link_card_ruby.webp'),
   coin('payment_link_card_coin.webp'),
-  gift('payment_link_card_gift.webp'),
-  rogueCat('payment_link_card_rogue_cat.webp');
+  gift('payment_link_card_gift.webp');
 
   const PaymentLinkCardArtwork(this.fileName);
 
