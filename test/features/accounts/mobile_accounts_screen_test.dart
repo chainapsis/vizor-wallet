@@ -33,6 +33,7 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -135,6 +136,7 @@ Widget _app(
       }),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),
@@ -338,6 +340,7 @@ Widget _nestedShellApp(AccountState accounts, ValueNotifier<int> tabTaps) {
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
       home: AppMobileShell(
         body: Navigator(
@@ -361,6 +364,7 @@ Widget _nestedShellApp(AccountState accounts, ValueNotifier<int> tabTaps) {
 
 Widget _profilePictureSheetHarness() {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     home: Builder(
       builder: (context) => GestureDetector(
@@ -1589,6 +1593,15 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_account_edit_save')));
     await tester.pump();
     expect(find.text('Account name'), findsOneWidget);
+    expect(find.text('Enter a name.'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_account_edit_name')),
+      'a' * 21,
+    );
+    await tester.tap(find.byKey(const ValueKey('mobile_account_edit_save')));
+    await tester.pump();
+    expect(find.text('Name can be up to 20 characters.'), findsOneWidget);
   });
 
   testWidgets('profile picture sheet wraps the grid on narrow phones', (
@@ -1824,6 +1837,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, child) => AppTheme(
           data: AppThemeData.light,
           child: MediaQuery(

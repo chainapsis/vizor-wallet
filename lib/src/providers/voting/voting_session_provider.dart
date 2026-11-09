@@ -9,7 +9,7 @@ import '../../core/storage/linux_keyring_coordinator.dart';
 import '../../core/storage/linux_secret_operation_guard.dart';
 import '../account_provider.dart';
 import '../../features/ledger/services/ledger_signing_service.dart';
-import '../../features/voting/voting_error_messages.dart';
+import '../../features/voting/voting_message.dart';
 import '../../services/voting/voting_rust_exception.dart';
 import '../../services/voting/voting_retry.dart';
 import '../../features/voting/voting_flow_models.dart';
@@ -358,7 +358,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final current = state.value;
       final error = current?.error;
       if (error != null && !error.isEligibilityFailure) {
-        throw error.cause ?? StateError(error.message);
+        throw error.cause ?? _VotingSessionErrorException(error);
       }
       return current?.eligibleWeightZatoshi;
     });
@@ -669,8 +669,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (hardware != context.isHardwareAccount) {
         _setError(
           hardware
-              ? 'Keystone voting is only available for hardware accounts.'
-              : 'Sign delegation bundles with ${context.hardwareSignerLabel} before submitting.',
+              ? const VotingNotice(VotingNoticeKind.keystoneHardwareOnly)
+              : VotingSignerNotice(
+                  VotingSignerNoticeKind.signBundles,
+                  context.signerForCopy,
+                ),
           context: context,
         );
         return;
@@ -693,7 +696,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       final hasPendingBundles = delegationBundleIndexes.isNotEmpty;
       if (!hasPendingBundles) {
-        final terminal = terminalDelegationMessage(roundPlan);
+        final terminal = terminalDelegationNotice(roundPlan);
         if (terminal != null) {
           _setError(terminal, context: context);
           return;
@@ -724,14 +727,21 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         // PIR only matters because a bundle needs a proof built against it, so
         // this is checked where there is a bundle to prove.
         if (needsPir && pirEndpoint == null) {
-          _setError('PIR endpoint has not been resolved.', context: context);
+          _setError(
+            const VotingNotice(VotingNoticeKind.pirEndpointUnresolved),
+            context: context,
+          );
           return;
         }
         if (hardware) {
           for (final bundleIndex in delegationBundleIndexes) {
             if (!signatures.containsKey(bundleIndex)) {
               _setError(
-                'Sign delegation bundle ${bundleIndex + 1} with ${context.hardwareSignerLabel} before submitting.',
+                VotingSignerNotice(
+                  VotingSignerNoticeKind.signBundle,
+                  context.signerForCopy,
+                  bundleNumber: bundleIndex + 1,
+                ),
                 context: context,
               );
               return;
@@ -741,7 +751,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           // Software delegation signs with the account seed at the wallet
           // boundary; the SDK receives only the SpendAuth signature.
           _setError(
-            'Software delegation requires this account mnemonic. Unlock this account or switch to one with mnemonic access.',
+            const VotingNotice(VotingNoticeKind.softwareMnemonicRequired),
             context: context,
           );
           return;
@@ -890,7 +900,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     VotingSessionState current,
     rust_wire.RoundPlanView? roundPlan,
   ) {
-    final terminal = terminalDelegationMessage(roundPlan);
+    final terminal = terminalDelegationNotice(roundPlan);
     _setStateForContext(
       context,
       current.copyWith(
@@ -921,7 +931,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final current = await future;
       final requests = current.keystoneSigningRequests;
       if (requests.isEmpty) {
-        _setError('No Keystone signing request is waiting for a signature.');
+        _setError(
+          const VotingNotice(VotingNoticeKind.keystoneNoSigningRequest),
+        );
         return;
       }
 
@@ -931,21 +943,19 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       // batch even if Dart did not receive its successful return value.
       final storedSignatures = await _loadHardwareSignatures(context);
 
-      void reject(String message) {
+      void reject(VotingNoticeKind kind) {
         _setStateForContext(
           context,
           current.copyWith(
             phase: VotingSessionPhase.keystoneSigning,
             keystoneSignatures: storedSignatures,
-            keystoneScanError: message,
+            keystoneScanError: VotingNotice(kind),
           ),
         );
       }
 
       if (batchSignatures.isEmpty) {
-        reject(
-          'Keystone returned no voting signatures. Scan the result again.',
-        );
+        reject(VotingNoticeKind.keystoneNoSignatures);
         return;
       }
 
@@ -957,17 +967,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final bundleIndex = batchSignature.bundleIndex;
         final request = requestsByBundle[bundleIndex];
         if (request == null || !seenBundleIndexes.add(bundleIndex)) {
-          reject(
-            'Keystone returned signatures that do not match this voting request. Scan the result for the QR shown here.',
-          );
+          reject(VotingNoticeKind.keystoneSignatureMismatch);
           return;
         }
         if (batchSignature.pool != _ironwoodPcztPool ||
             batchSignature.actionIndex != request.actionIndex ||
             batchSignature.signature.length != 64) {
-          reject(
-            'Keystone returned an invalid voting signature. Scan the result for the QR shown here.',
-          );
+          reject(VotingNoticeKind.keystoneInvalidSignature);
           return;
         }
       }
@@ -996,19 +1002,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       } on VotingRustException catch (error) {
         if (error.kind ==
             rust_wire.VotingErrorKindView.keystoneSignatureConflict) {
-          reject(
-            'This Keystone result conflicts with a signature already saved for this voting request. Restart Keystone signing and scan the newly generated result.',
-          );
+          reject(VotingNoticeKind.keystoneSignatureConflict);
           return;
         }
-        reject(
-          'Could not save the Keystone signatures. Scan the same Keystone result again.',
-        );
+        reject(VotingNoticeKind.keystoneSignatureSaveFailed);
         return;
       } catch (error) {
-        reject(
-          'Could not save the Keystone signatures. Scan the same Keystone result again.',
-        );
+        reject(VotingNoticeKind.keystoneSignatureSaveFailed);
         return;
       }
 
@@ -1039,7 +1039,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }, cleanupProcessStateOnError: false);
   }
 
-  Future<void> reportKeystoneScanError(String message) {
+  Future<void> reportKeystoneScanError(VotingMessage message) {
     return _enqueue(() async {
       final current = await future;
       final context = await _loadContext(_roundId);
@@ -1072,7 +1072,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           current.phase != VotingSessionPhase.ledgerSigning ||
           request == null) {
         _setError(
-          'No Ledger voting bundle is waiting for approval.',
+          const VotingNotice(VotingNoticeKind.ledgerNoPendingBundle),
           context: context,
         );
         return;
@@ -1083,8 +1083,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           signatures: signatures,
           actionIndex: request.actionIndex,
         );
-      } on StateError catch (error) {
-        _setError(error.message, context: context);
+      } on StateError {
+        _setError(
+          const VotingNotice(VotingNoticeKind.ledgerSignatureMismatch),
+          context: context,
+        );
         return;
       }
 
@@ -1107,10 +1110,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             );
       } catch (error) {
         _setError(
-          votingRustExceptionOf(error)?.kind ==
-                  rust_wire.VotingErrorKindView.keystoneSignatureConflict
-              ? 'This Ledger signature conflicts with the signature already saved for this voting bundle.'
-              : 'Could not save the Ledger voting signature. Retry this bundle.',
+          VotingNotice(
+            votingRustExceptionOf(error)?.kind ==
+                    rust_wire.VotingErrorKindView.keystoneSignatureConflict
+                ? VotingNoticeKind.ledgerSignatureConflict
+                : VotingNoticeKind.ledgerSignatureSaveFailed,
+          ),
           context: context,
         );
         return;
@@ -1137,7 +1142,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       if (signedPrefixCount <= 0) {
         _setError(
-          'Sign at least one Keystone bundle before skipping the rest.',
+          const VotingNotice(VotingNoticeKind.keystoneSkipNeedsSignature),
           context: context,
         );
         return;
@@ -1300,8 +1305,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         storedHotkeySecret = await _hotkeyForVoteCasting(context);
         if (storedHotkeySecret == null) {
           _setError(
-            'Voting hotkey is missing. Delegate this round before casting votes.',
-            cause: const VotingHotkeyUnavailable('missing stored hotkey'),
+            const VotingNotice(VotingNoticeKind.hotkeyMissing),
+            cause: const VotingHotkeyUnavailable(
+              'missing stored hotkey', // l10n-ignore: reason for a logged cause
+            ),
             context: context,
           );
           return;
@@ -1433,7 +1440,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         final report = await _runRound(
           session,
           context,
-          label: 'vote',
+          label: 'vote', // l10n-ignore: log label
           // "Question N of M" counts the choices the voter selected, so it
           // must not renumber when a resume picks up less than all of them.
           policy: const rust_session.ApiRoundDrivePolicy(
@@ -1925,7 +1932,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       session,
       context,
       signer: signer,
-      label: '$logLabel-delegation',
+      label: '$logLabel-delegation', // l10n-ignore: log label
       policy: const rust_session.ApiRoundDrivePolicy(
         selectedChoiceProgress: true,
       ),
@@ -3391,8 +3398,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return next;
   }
 
-  static String _actionErrorMessage(Object error) {
-    return friendlyVotingErrorMessage(error);
+  static VotingMessage _actionErrorMessage(Object error) {
+    return votingMessageForError(error);
   }
 
   static bool _needsDelegationPreparation(VotingSessionState state) {
@@ -3550,10 +3557,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     } on PirSnapshotNoMatchingEndpoint catch (e) {
       _logPirSnapshotMismatch(context: context, error: e);
       _setError(
-        pirSnapshotMismatchMessage(
+        VotingPirMismatch(
           expectedSnapshotHeight: e.expectedSnapshotHeight,
           diagnostics: e.diagnostics,
-          includeDiagnostics: true,
         ),
         cause: e,
         pirDiagnostics: e.diagnostics,
@@ -3561,7 +3567,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       return;
     } catch (e) {
-      _setError('Failed to resolve PIR endpoint.', cause: e, context: context);
+      _setError(
+        const VotingNotice(VotingNoticeKind.pirEndpointResolveFailed),
+        cause: e,
+        context: context,
+      );
       return;
     }
 
@@ -3657,7 +3667,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             ? base
             : base.copyWith(
                 error: VotingSessionError(
-                  message: minimumVotingEligibilityMessage(
+                  message: VotingEligibilityFailure(
+                    VotingEligibilityFailureKind.minimumWeight,
                     snapshotHeight: context.round.snapshotHeight,
                   ),
                   isEligibilityFailure: true,
@@ -3665,7 +3676,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               ),
       );
     } catch (error) {
-      final message = friendlyVotingErrorMessage(error);
+      final message = votingMessageForError(error);
       final eligibilityError =
           votingRustExceptionOf(error)?.isEligibilityFailure ?? false;
       _setStateForContext(
@@ -3944,7 +3955,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   /// Preserves resolved PIR diagnostics unless the error supplies replacements.
   void _setError(
-    String message, {
+    VotingMessage message, {
     Object? cause,
     List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
     _VotingSessionContext? context,
@@ -3983,7 +3994,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   bool _requireKeystoneVotingAccount(_VotingSessionContext context) {
     if (context.isKeystoneAccount) return true;
     _setError(
-      'Keystone voting is only available for Keystone accounts.',
+      const VotingNotice(VotingNoticeKind.keystoneAccountOnly),
       context: context,
     );
     return false;
@@ -3997,7 +4008,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       return true;
     }
     _setError(
-      '${signerKind == HardwareSignerKind.ledger ? 'Ledger' : 'Keystone'} voting is only available for matching hardware accounts.',
+      VotingSignerNotice(
+        VotingSignerNoticeKind.matchingAccountOnly,
+        signerKind,
+      ),
       context: context,
     );
     return false;
@@ -4405,7 +4419,7 @@ class _VoteBundleFailure {
 }
 
 class _VoteBundleBatchException
-    implements Exception, VotingRustExceptionSource {
+    implements Exception, VotingRustExceptionSource, VotingMessageSource {
   const _VoteBundleBatchException(this.failures);
 
   final List<_VoteBundleFailure> failures;
@@ -4416,17 +4430,20 @@ class _VoteBundleBatchException
         failures.map((failure) => failure.error),
       );
 
+  String get _details => failures
+      .map(
+        (failure) =>
+            'bundle ${failure.bundleIndex + 1} ' // l10n-ignore: exception diagnostic text
+            'proposal ${failure.proposalId}: ${failure.error}',
+      )
+      .join('; ');
+
   @override
-  String toString() {
-    final details = failures
-        .map(
-          (failure) =>
-              'bundle ${failure.bundleIndex + 1} '
-              'proposal ${failure.proposalId}: ${failure.error}',
-        )
-        .join('; ');
-    return 'Vote casting failed: $details';
-  }
+  VotingMessage get votingMessage =>
+      VotingBatchFailure(VotingBatchFailureKind.voteCasting, _details);
+
+  @override
+  String toString() => 'Vote casting failed: $_details'; // l10n-ignore: log text; screens use votingMessage
 }
 
 class _DelegationBundleFailure {
@@ -4444,7 +4461,7 @@ class _DelegationBundleFailure {
 }
 
 class _DelegationBundleBatchException
-    implements Exception, VotingRustExceptionSource {
+    implements Exception, VotingRustExceptionSource, VotingMessageSource {
   const _DelegationBundleBatchException(this.failures);
 
   final List<_DelegationBundleFailure> failures;
@@ -4455,19 +4472,23 @@ class _DelegationBundleBatchException
         failures.map((failure) => failure.error),
       );
 
+  String get _details => failures
+      .map(
+        (failure) => switch (failure.bundleIndex) {
+          final int bundleIndex =>
+            'bundle ${bundleIndex + 1} ${failure.stage}: ${failure.error}', // l10n-ignore: exception diagnostic text
+          null =>
+            'round ${failure.stage}: ${failure.error}', // l10n-ignore: exception diagnostic text
+        },
+      )
+      .join('; ');
+
   @override
-  String toString() {
-    final details = failures
-        .map(
-          (failure) => switch (failure.bundleIndex) {
-            final int bundleIndex =>
-              'bundle ${bundleIndex + 1} ${failure.stage}: ${failure.error}',
-            null => 'round ${failure.stage}: ${failure.error}',
-          },
-        )
-        .join('; ');
-    return 'Delegation bundle processing failed: $details';
-  }
+  VotingMessage get votingMessage =>
+      VotingBatchFailure(VotingBatchFailureKind.delegation, _details);
+
+  @override
+  String toString() => 'Delegation bundle processing failed: $_details'; // l10n-ignore: log text; screens use votingMessage
 }
 
 class _VotingSessionContext {
@@ -4500,7 +4521,9 @@ class _VotingSessionContext {
       isHardwareAccount && hardwareSignerKind == HardwareSignerKind.keystone;
   bool get isLedgerAccount =>
       isHardwareAccount && hardwareSignerKind == HardwareSignerKind.ledger;
-  String get hardwareSignerLabel => isLedgerAccount ? 'Ledger' : 'Keystone';
+  HardwareSignerKind get signerForCopy =>
+      isLedgerAccount ? HardwareSignerKind.ledger : HardwareSignerKind.keystone;
+  String get hardwareSignerLabel => votingHardwareSignerName(signerForCopy);
 }
 
 class _StaleVotingSessionAction implements Exception {
@@ -4548,22 +4571,40 @@ class VotingRoundStepFailure implements Exception, VotingRustExceptionSource {
 /// Terminal means the submission ended without a confirmation and the SDK
 /// plans no retry for it, so the diagnostic it carries is the only account of
 /// what happened.
-class VotingChainTerminalOutcome implements Exception {
+class VotingChainTerminalOutcome implements Exception, VotingMessageSource {
   const VotingChainTerminalOutcome(this.step, this.chainOutcome);
 
   final rust_wire.NextStepView? step;
   final rust_wire.ChainSubmissionOutcomeView? chainOutcome;
 
   @override
+  VotingMessage get votingMessage {
+    final diagnostic = chainOutcome?.diagnostic?.message;
+    final kind = switch (chainOutcome?.kind) {
+      rust_wire.ChainSubmissionOutcomeKind.rejected =>
+        VotingNoticeKind.chainRejected,
+      rust_wire.ChainSubmissionOutcomeKind.submittedWithoutHash =>
+        VotingNoticeKind.chainSubmittedWithoutHash,
+      _ => VotingNoticeKind.chainNoUsableTransaction,
+    };
+    if (diagnostic != null) {
+      return VotingLiteralMessage(diagnostic, summary: kind);
+    }
+    return VotingNotice(kind);
+  }
+
+  /// English for logs; screens use [votingMessage].
+  @override
   String toString() {
     final diagnostic = chainOutcome?.diagnostic?.message;
     if (diagnostic != null) return diagnostic;
     return switch (chainOutcome?.kind) {
       rust_wire.ChainSubmissionOutcomeKind.rejected =>
-        'Chain submission was rejected.',
+        'Chain submission was rejected.', // l10n-ignore: log text
       rust_wire.ChainSubmissionOutcomeKind.submittedWithoutHash =>
-        'Submission may have reached the chain, but no transaction hash was returned. Do not retry it.',
-      _ => 'Chain submission ended without a usable transaction.',
+        'Submission may have reached the chain, but no transaction hash was returned. Do not retry it.', // l10n-ignore: log text
+      _ =>
+        'Chain submission ended without a usable transaction.', // l10n-ignore: log text
     };
   }
 }
@@ -4572,23 +4613,38 @@ class VotingChainTerminalOutcome implements Exception {
 ///
 /// Not terminal: running the round again later may still resolve it, which is
 /// why it is reported separately from a rejection.
-class VotingChainPendingOutcome implements Exception {
+class VotingChainPendingOutcome implements Exception, VotingMessageSource {
   const VotingChainPendingOutcome(this.step, this.chainOutcome);
 
   final rust_wire.NextStepView? step;
   final rust_wire.ChainSubmissionOutcomeView? chainOutcome;
 
   @override
+  VotingMessage get votingMessage =>
+      switch (chainOutcome?.diagnostic?.message) {
+        final String diagnostic => VotingLiteralMessage(
+          diagnostic,
+          summary: VotingNoticeKind.chainRecoveryPending,
+        ),
+        null => const VotingNotice(VotingNoticeKind.chainRecoveryPending),
+      };
+
+  /// English for logs; screens use [votingMessage].
+  @override
   String toString() =>
       chainOutcome?.diagnostic?.message ??
-      'Chain submission recovery is still pending.';
+      'Chain submission recovery is still pending.'; // l10n-ignore: log text
 }
 
-class _ChainSubmissionCancelled implements Exception {
+class _ChainSubmissionCancelled implements Exception, VotingMessageSource {
   const _ChainSubmissionCancelled();
 
   @override
-  String toString() => 'Chain submission was cancelled.';
+  VotingMessage get votingMessage =>
+      const VotingNotice(VotingNoticeKind.chainCancelled);
+
+  @override
+  String toString() => 'Chain submission was cancelled.'; // l10n-ignore: log text; screens use votingMessage
 }
 
 class _VotingBackgroundWorkQuiesced implements Exception {
@@ -4597,7 +4653,7 @@ class _VotingBackgroundWorkQuiesced implements Exception {
   final VotingWalletSyncReadiness? readiness;
 }
 
-class _VotingWalletSyncTimeout implements Exception {
+class _VotingWalletSyncTimeout implements Exception, VotingMessageSource {
   const _VotingWalletSyncTimeout({
     required this.readiness,
     required this.maxWait,
@@ -4607,13 +4663,30 @@ class _VotingWalletSyncTimeout implements Exception {
   final Duration maxWait;
 
   @override
-  String toString() {
-    return 'Wallet sync did not reach this voting round snapshot within '
-        '${formatElapsedSeconds(maxWait)}. Scanned block '
-        '${formatBlockHeight(readiness.scannedHeight)} of '
-        '${formatBlockHeight(readiness.snapshotHeight)}. Let wallet sync '
-        'catch up and retry.';
-  }
+  VotingMessage get votingMessage => VotingWalletSyncTimeout(
+    maxWait: maxWait,
+    scannedHeight: readiness.scannedHeight,
+    snapshotHeight: readiness.snapshotHeight,
+  );
+
+  @override
+  String toString() =>
+      'wallet sync timeout after ${formatElapsedSeconds(maxWait)} ' // l10n-ignore: log text; screens use votingMessage
+      'scanned=${readiness.scannedHeight} '
+      'snapshot=${readiness.snapshotHeight}';
+}
+
+/// A session error rethrown to a caller that awaited the action.
+class _VotingSessionErrorException implements Exception, VotingMessageSource {
+  const _VotingSessionErrorException(this.error);
+
+  final VotingSessionError error;
+
+  @override
+  VotingMessage get votingMessage => error.message;
+
+  @override
+  String toString() => 'VotingSessionError(${error.message})';
 }
 
 class VotingSubmissionSessionNotifier extends VotingSessionNotifier {

@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/feedback/app_review.dart';
 import 'package:zcash_wallet/src/core/feedback/app_review_host.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'app_review_test.dart' show MemoryReviewStore, FakeReviewNative;
 
 void main() {
@@ -25,6 +26,7 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pumpWidget(
       MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (context, child) => ValueListenableBuilder<bool>(
           valueListenable: safe,
@@ -188,6 +190,7 @@ void main() {
           appReviewSurfaceSafeProvider.overrideWithValue(true),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) => AppReviewHost(router: router, child: child!),
         ),

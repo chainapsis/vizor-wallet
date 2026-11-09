@@ -7,7 +7,7 @@ class IronwoodMigrationAccountRevokedException implements Exception {
 
   @override
   String toString() =>
-      'Ironwood migration is stopping for account $accountUuid.';
+      'Ironwood migration is stopping for account $accountUuid.'; // l10n-ignore: matched or logged error text
 }
 
 class IronwoodMigrationAccountRevocation {

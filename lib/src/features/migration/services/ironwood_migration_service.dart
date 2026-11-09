@@ -20,7 +20,7 @@ import 'ironwood_migration_background_credential_store.dart';
 import 'ironwood_migration_operation_registry.dart';
 
 const _credentialRecoveryRequiredError =
-    'Ironwood migration credential is missing for the active run.';
+    'Ironwood migration credential is missing for the active run.'; // l10n-ignore: matched or logged error text
 
 bool ironwoodMigrationNeedsCredentialRecovery(String? error) {
   return error?.contains(_credentialRecoveryRequiredError) ?? false;
@@ -73,7 +73,7 @@ class IronwoodMigrationOutboxProtocolException extends FormatException {
 class IronwoodMigrationCredentialContextMismatchException extends StateError {
   IronwoodMigrationCredentialContextMismatchException()
     : super(
-        'Ironwood migration credential manifest does not match the active '
+        'Ironwood migration credential manifest does not match the active ' // l10n-ignore: matched or logged error text
         'wallet context.',
       );
 }
@@ -94,7 +94,9 @@ bool _isUnusableMigrationCredentialError(Object error) {
       error is IronwoodMigrationCredentialContextMismatchException) {
     return true;
   }
-  return error.toString().contains('Failed to decrypt secure-storage payload');
+  const undecryptable =
+      'Failed to decrypt secure-storage payload'; // l10n-ignore: storage error text
+  return error.toString().contains(undecryptable);
 }
 
 typedef IronwoodMigrationStatusGetter =

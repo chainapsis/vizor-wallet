@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_esti
 import 'package:zcash_wallet/src/features/onboarding/import/import_wallet_birthday_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_chrome.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('Ledger birthday continues with a height callback', (
@@ -92,6 +93,7 @@ Widget _harness(Widget screen) {
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(
         data: AppThemeData.light,

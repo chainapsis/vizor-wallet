@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -71,7 +72,24 @@ class _PaymentLinkLedgerSigningOverlayState
   bool _checkpointed = false;
   bool _terminal = false;
   bool _requestNeedsRebuilding = false;
-  String? _error;
+  String? _errorText;
+
+  /// The upgrade hold [_error] explains, kept beside the localized text so
+  /// the modal can tell a hold apart without comparing copy.
+  NetworkUpgradeHold? _errorHold;
+
+  String? get _error => _errorText;
+
+  set _error(String? text) {
+    _errorText = text;
+    _errorHold = null;
+  }
+
+  void _setError(String text, NetworkUpgradeHold? hold) {
+    _errorText = text;
+    _errorHold = hold;
+  }
+
   LedgerFailureGuidance? _deviceGuidance;
   LedgerRequestFailure? _requestFailure;
 
@@ -203,6 +221,7 @@ class _PaymentLinkLedgerSigningOverlayState
               ? LedgerRequestFailure.fromError(error)
               : null;
           _deviceGuidance = ledgerFailureGuidance(
+            context.l10n,
             error,
             requestKind: LedgerRequestKind.giftCard,
           );
@@ -211,26 +230,31 @@ class _PaymentLinkLedgerSigningOverlayState
               !_terminal &&
               !_checkpointed &&
               _deviceGuidance?.retryable == false;
-          _error = error is LedgerGiftFundingTerminalException
-              ? error.userMessage
-              : _checkpointed
-              ? 'Gift card funding is saved for recovery. Try again to check its status and finish saving.'
-              : networkUpgradeHoldMessage(error) ??
-                    _deviceGuidance?.message ??
-                    _ledgerFailureMessage(error);
+          final hold =
+              error is LedgerGiftFundingTerminalException || _checkpointed
+              ? null
+              : networkUpgradeHoldKind(error);
+          _setError(
+            error is LedgerGiftFundingTerminalException
+                ? error.userMessage(context.l10n)
+                : _checkpointed
+                ? context.l10n.paymentLinkLedgerSavedForRecovery
+                : hold?.message(context.l10n) ??
+                      _deviceGuidance?.message ??
+                      _ledgerFailureMessage(error),
+            hold,
+          );
         });
       }
     }
   }
 
-  String _ledgerFailureMessage(
-    Object error,
-  ) => switch (LedgerRequestFailure.fromError(error)) {
-    LedgerRequestFailure.declined =>
-      'The gift card funding was rejected on your Ledger.',
-    _ =>
-      'Ledger signing could not be completed. Check your device and try again.',
-  };
+  String _ledgerFailureMessage(Object error) =>
+      switch (LedgerRequestFailure.fromError(error)) {
+        LedgerRequestFailure.declined =>
+          context.l10n.paymentLinkLedgerFundingRejected,
+        _ => context.l10n.commonLedgerSigningCouldNotBeCompleted,
+      };
 
   Future<void> _present(PaymentLinkHardwareFundingResult result) async {
     if (!_active) return;
@@ -289,7 +313,7 @@ class _PaymentLinkLedgerSigningOverlayState
         _phase = LedgerSigningModalPhase.failed;
         _deviceGuidance = null;
         _requestFailure = null;
-        _error = 'Could not finish cancelling. Please try again.';
+        _error = context.l10n.commonCancelFailedRetry;
       });
     }
   }
@@ -311,7 +335,7 @@ class _PaymentLinkLedgerSigningOverlayState
 
   @override
   Widget build(BuildContext context) {
-    final upgradeHold = _error == kNetworkUpgradeHoldMessage;
+    final upgradeHold = _errorHold == NetworkUpgradeHold.hold;
     final canRetry = !_terminal && !_requestNeedsRebuilding;
     final canLeave = !_durableBusy && !_cancelled;
     final modal = LedgerSigningModal(
@@ -332,21 +356,22 @@ class _PaymentLinkLedgerSigningOverlayState
                   !_terminal &&
                   (_deviceGuidance?.bluetoothRecovery ?? false),
               title: upgradeHold
-                  ? kNetworkUpgradeHoldActionLabel
-                  : 'Gift card funding needs attention',
+                  ? networkUpgradeHoldActionLabel(context.l10n)
+                  : context.l10n.paymentLinkFundingNeedsAttention,
               statusLabel: _requestNeedsRebuilding
-                  ? 'New gift card required'
-                  : 'Action needed',
+                  ? context.l10n.paymentLinkNewGiftCardRequired
+                  : context.l10n.commonActionNeeded,
+              actionNeeded: !(_requestNeedsRebuilding),
               message: _error!,
               showDeviceAppPrompt:
                   !_checkpointed &&
                   (_deviceGuidance?.showDeviceAppPrompt ?? false),
               showConnectionPicker: !upgradeHold,
-              actionLabel: canRetry ? 'Try again' : null,
+              actionLabel: canRetry ? context.l10n.commonTryAgain : null,
             )
           : null,
       onCancel: canLeave ? () => unawaited(_cancel()) : null,
-      cancelLabel: 'Back to gift card',
+      cancelLabel: context.l10n.paymentLinkBackToGiftCard,
       onFailureAction:
           _phase == LedgerSigningModalPhase.failed && !_cancelled && canRetry
           ? _start
@@ -354,7 +379,7 @@ class _PaymentLinkLedgerSigningOverlayState
     );
     final content = kAppFormFactor == AppFormFactor.mobile
         ? MobileLedgerSigningSurface(
-            title: 'Confirm Gift Card',
+            title: context.l10n.paymentLinkConfirmGiftCardTitle,
             canLeave: canLeave,
             onBack: () => unawaited(_cancel()),
             child: modal,

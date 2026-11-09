@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../input/caps_lock_warning.dart';
+import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
 import 'app_tooltip.dart';
+import '../l10n/locale_typography.dart';
 
 enum AppTextFieldTone { neutral, destructive, success, brandCrimson }
 
@@ -47,7 +49,7 @@ class AppTextField extends StatefulWidget {
     this.surface = AppTextFieldSurface.primary,
     this.showClearButton = false,
     this.clearButtonRequiresText = true,
-    this.clearButtonSemanticLabel = 'Clear text',
+    this.clearButtonSemanticLabel,
     this.onClear,
     this.onChanged,
     this.onSubmitted,
@@ -115,7 +117,7 @@ class AppTextField extends StatefulWidget {
   final AppTextFieldSurface surface;
   final bool showClearButton;
   final bool clearButtonRequiresText;
-  final String clearButtonSemanticLabel;
+  final String? clearButtonSemanticLabel;
   final VoidCallback? onClear;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
@@ -258,7 +260,10 @@ class _AppTextFieldState extends State<AppTextField> {
     );
 
     final textPainter = TextPainter(
-      text: TextSpan(text: _controller.text, style: valueStyle),
+      text: TextSpan(
+        text: _controller.text,
+        style: withLocaleFontFallback(context, valueStyle),
+      ),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
       strutStyle: textStrutStyle,
@@ -356,7 +361,10 @@ class _AppTextFieldState extends State<AppTextField> {
     double measureInlineText(String text, TextStyle style) {
       if (text.isEmpty) return 0;
       final painter = TextPainter(
-        text: TextSpan(text: text, style: style),
+        text: TextSpan(
+          text: text,
+          style: withLocaleFontFallback(context, style),
+        ),
         textDirection: textDirection,
         textScaler: MediaQuery.textScalerOf(context),
         strutStyle: textStrutStyle,
@@ -436,7 +444,8 @@ class _AppTextFieldState extends State<AppTextField> {
         ? _AppTextFieldClearButton(
             onTap: _clear,
             iconColor: neutralIconColor,
-            semanticLabel: widget.clearButtonSemanticLabel,
+            semanticLabel:
+                widget.clearButtonSemanticLabel ?? context.l10n.commonClearText,
           )
         : null;
     final inlinePrefixText = _multiline ? null : widget.inlinePrefixText;
@@ -930,7 +939,10 @@ class _AppTextFieldMessage extends StatelessWidget {
         }
 
         final textPainter = TextPainter(
-          text: TextSpan(text: text, style: style),
+          text: TextSpan(
+            text: text,
+            style: withLocaleFontFallback(context, style),
+          ),
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
           ellipsis: '...',

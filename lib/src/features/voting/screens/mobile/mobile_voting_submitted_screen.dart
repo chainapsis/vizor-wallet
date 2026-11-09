@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 
@@ -164,7 +165,7 @@ class _MobileVotingSubmittedScreenState
                                         left: 0,
                                         right: 0,
                                         child: Text(
-                                          'Voted',
+                                          context.l10n.votingStatusVoted,
                                           key: const ValueKey(
                                             'mobile_voting_submitted_title',
                                           ),
@@ -183,8 +184,9 @@ class _MobileVotingSubmittedScreenState
                                           child: SizedBox(
                                             width: 259,
                                             child: Text(
-                                              'Your vote has been submitted and '
-                                              'can’t be changed.',
+                                              context
+                                                  .l10n
+                                                  .votingMobileSubmittedBody,
                                               textAlign: TextAlign.center,
                                               style: AppTypography
                                                   .bodyMediumStrong
@@ -209,7 +211,9 @@ class _MobileVotingSubmittedScreenState
                                               onPressed: _finish,
                                               expand: true,
                                               constrainContent: true,
-                                              child: const Text('Go home'),
+                                              child: Text(
+                                                context.l10n.commonGoHome,
+                                              ),
                                             ),
                                           ),
                                         ),

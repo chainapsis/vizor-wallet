@@ -1,3 +1,5 @@
+import '../../../core/l10n/l10n.dart';
+
 enum SwapActivityReturnTarget {
   swap,
   pay,
@@ -11,11 +13,11 @@ enum SwapActivityReturnTarget {
     SwapActivityReturnTarget.home => 'home',
   };
 
-  String get label => switch (this) {
-    SwapActivityReturnTarget.swap => 'Swap',
-    SwapActivityReturnTarget.pay => 'Pay',
-    SwapActivityReturnTarget.activity => 'Activity',
-    SwapActivityReturnTarget.home => 'Home',
+  String label(AppLocalizations l10n) => switch (this) {
+    SwapActivityReturnTarget.swap => l10n.navSwap,
+    SwapActivityReturnTarget.pay => l10n.navPay,
+    SwapActivityReturnTarget.activity => l10n.navActivity,
+    SwapActivityReturnTarget.home => l10n.navHome,
   };
 
   String get path => switch (this) {

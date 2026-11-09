@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
@@ -11,6 +12,11 @@ import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'support/mobile_test_assets.dart';
 
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
+  // In the app, MaterialApp's localization delegates load intl's CLDR date
+  // data before any screen formats a date (core/formatting/date_format.dart).
+  // Load the same data for tests that call formatters outside a widget tree.
+  await GlobalMaterialLocalizations.delegate.load(const Locale('en'));
+
   // Native integration tests use their actual platform bundle. This hook only
   // changes the host widget-test bundle, which normally includes every platform.
   if (kAppFormFactor != AppFormFactor.mobile ||

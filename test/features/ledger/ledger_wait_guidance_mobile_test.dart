@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'ledger_wait_guidance_test_support.dart';
 
@@ -29,6 +31,7 @@ void main() {
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
         ],
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: Builder(
@@ -55,7 +58,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    final instruction = find.text(kLedgerSigningWaitInstruction);
+    final instruction = find.text(testL10n.ledgerSigningWaitInstruction);
     expect(instruction, findsOneWidget);
     expect(tester.widget<Text>(instruction).maxLines, isNull);
     await tester.ensureVisible(find.text('Keep Ledger connected.'));

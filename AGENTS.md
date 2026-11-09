@@ -186,6 +186,27 @@ Android and Dart: `--dart-define=VIZOR_DEEPLINK_BASE_URL` (default
   Dart's `classifyIncomingLink`, which drops unknown paths on the origin
   silently.
 
+## Localization (VIZOR_I18N_PREVIEW)
+
+Read [docs/i18n/developer-guide.md](docs/i18n/developer-guide.md) before adding
+or changing user-facing text, ARB files, language selection, or copy that native
+code draws. [docs/i18n/README.md](docs/i18n/README.md) indexes the translation
+rules, adding a language, and Rust-originated text.
+
+- **After editing translations or updating `intl`, run
+  `fvm dart run tool/l10n/generate.dart`. `flutter gen-l10n` alone does not
+  regenerate the bundled font subsets.** `--watch` is optional for translation
+  work; do not auto-start it with normal app runs or builds.
+- Korean bundles Pretendard's 11,172 modern Hangul syllables and supported
+  jamo; Chinese bundles Noto Sans SC's 8,105 TGH 2013 characters. New UI and
+  date/number-formatting characters are included automatically. Unsupported
+  characters retain system fallback.
+- Commit the generated `assets/fonts/Vizor*UI-VF.ttf`,
+  `tool/l10n/ui_fonts.manifest.json`, and `tool/l10n/ui_font_characters.json`
+  with translation changes; never edit these generated files by hand.
+- Check freshness with `python3 tool/l10n/ui_fonts.py --check`. Screenshot
+  tests must load the shipped subsets, not substitute external/system fonts.
+
 ## Mainnet Block-Time Table
 
 On mainnet, wallet birthday conversions (import date to height, seed-phrase
@@ -306,9 +327,9 @@ Ledger accounts keep the decorative dot style.
 - **Exception**: sidebar entries and screen titles may use Title Case (e.g.
   onboarding step labels `Secret Passphrase`, `Wallet Birthday Height`) — do
   not sentence-case them in copy sweeps.
-- Existing rationale and full audit are in `qa-copy-review.csv` and
-  `copy-review-20260528-1554.csv` at the repo root. Reference these before
-  introducing new copy in this project.
+- English copy lives in `lib/l10n/app_en.arb`, where each key's description
+  says where it appears. Check `lib/l10n/glossary.yaml` for the shared terms
+  before introducing new copy.
 - When editing existing copy, also update widgetbook fixtures
   (`lib/widgetbook/*.dart`) and tests (`test/`) that assert on the literal
   string — `find.text(...)` matchers, `expectedNextAction` fields, and

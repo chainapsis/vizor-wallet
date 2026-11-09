@@ -184,47 +184,44 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets(
-    'macOS hides through the guarded native exit channel',
-    (tester) async {
-      const exitChannel = MethodChannel('com.zcash.wallet/desktop_exit');
-      const windowChannel = MethodChannel('window_manager');
-      final calls = <String>[];
-      final gate = Completer<void>();
-      for (final channel in [exitChannel, windowChannel]) {
-        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+  testWidgets('macOS hides through the guarded native exit channel', (
+    tester,
+  ) async {
+    const exitChannel = MethodChannel('com.zcash.wallet/desktop_exit');
+    const windowChannel = MethodChannel('window_manager');
+    final calls = <String>[];
+    final gate = Completer<void>();
+    for (final channel in [exitChannel, windowChannel]) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        calls.add('${channel.name}:${call.method}');
+        return null;
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
           channel,
-          (call) async {
-            calls.add('${channel.name}:${call.method}');
-            return null;
-          },
-        );
-        addTearDown(
-          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-            channel,
-            null,
-          ),
-        );
-      }
-      await tester.pumpWidget(
-        SigningShutdownHost(
-          desktop: true,
-          coordinator: SigningShutdownCoordinator(
-            releaseReservations: () => gate.future,
-          ),
-          child: const SizedBox(),
+          null,
         ),
       );
-      final exit = tester.binding.handleRequestAppExit();
-      await tester.pump();
-      expect(calls, contains('com.zcash.wallet/desktop_exit:hideForExit'));
-      expect(calls, isNot(contains('window_manager:hide')));
-      gate.complete();
-      expect(await exit, AppExitResponse.exit);
-      await tester.pumpWidget(const SizedBox());
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
-  );
+    }
+    await tester.pumpWidget(
+      SigningShutdownHost(
+        desktop: true,
+        coordinator: SigningShutdownCoordinator(
+          releaseReservations: () => gate.future,
+        ),
+        child: const SizedBox(),
+      ),
+    );
+    final exit = tester.binding.handleRequestAppExit();
+    await tester.pump();
+    expect(calls, contains('com.zcash.wallet/desktop_exit:hideForExit'));
+    expect(calls, isNot(contains('window_manager:hide')));
+    gate.complete();
+    expect(await exit, AppExitResponse.exit);
+    await tester.pumpWidget(const SizedBox());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
   testWidgets('backgrounding preserves signing; an exit request releases it', (
     tester,

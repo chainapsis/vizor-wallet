@@ -2,9 +2,10 @@
 //!
 //! Most wallet errors are messages for a person. A few also tell the caller
 //! how to proceed: keep a signed transaction and retry it, discard a Ledger
-//! operation, or point the user at the Private queries toggle. Those carry a
-//! [`FailureCode`] beside the message, so rewording a message never changes
-//! retry behavior. The API layer passes the code to Dart as a typed field.
+//! operation, point the user at the Private queries toggle, or show a
+//! translated explanation. Those carry a [`FailureCode`] beside the message,
+//! so rewording a message never changes retry behavior or the copy the app
+//! shows. The API layer passes the code to Dart as a typed field.
 
 use std::fmt;
 
@@ -30,6 +31,38 @@ pub enum FailureCode {
     /// off: turning it off did not finish. Turning it off again lowers the
     /// policy.
     OptOutUnfinished,
+    /// A scanned QR is not a UR at all. Scanners skip the frame.
+    InvalidUr,
+    /// A scanned UR has a different registry type from the one the screen
+    /// expects: the device shows another QR.
+    UnexpectedUrType,
+    /// The multi-part UR decoder rejected a fragment and was reset. The scan
+    /// starts over from a clean session.
+    UrSessionReset,
+    /// The transaction needs more spend signatures than one Keystone batch
+    /// round can return. A smaller amount needs fewer.
+    KeystoneBatchSignatureLimit,
+    /// The transaction spends transparent or Sapling inputs, which the
+    /// Keystone signatures-only batch response cannot sign.
+    KeystoneBatchUnsupportedInput,
+    /// A Gift Card group the wallet would fund with more than one
+    /// transaction. Fewer cards or smaller amounts fit in one.
+    PaymentLinkBatchNotOneTransaction,
+    /// A Gift Card group that would spend Sapling funds, which the Keystone
+    /// cannot sign.
+    PaymentLinkBatchKeystoneSapling,
+    /// A Gift Card group needing more spend signatures than one Keystone
+    /// batch round can return.
+    PaymentLinkBatchKeystoneSignatureLimit,
+    /// A Gift Card group with more shielded recipients than the Ledger can
+    /// display for review.
+    PaymentLinkBatchLedgerRecipientLimit,
+    /// A Gift Card group that would spend Sapling funds, which the Ledger
+    /// cannot sign.
+    PaymentLinkBatchLedgerSapling,
+    /// A Gift Card group with more actions in one pool than the Ledger can
+    /// sign.
+    PaymentLinkBatchLedgerTooLarge,
 }
 
 /// An error message, and what the caller should do about it when that is

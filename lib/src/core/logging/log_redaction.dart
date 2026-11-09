@@ -168,13 +168,13 @@ const _notAlnum = r'[^0-9A-Za-z]';
 const _pathStart = r'(^|file://|[^0-9A-Za-z_.~/\\\-])';
 const _pathChar = '[^$_space\'"<>|:;,()\\[\\]{}\\\\]';
 const _unixRoots =
-    'Users|home|root|private|var|tmp|data|storage|sdcard|mnt|media|Volumes|run';
+    'Users|home|root|private|var|tmp|data|storage|sdcard|mnt|media|Volumes|run'; // l10n-ignore: regular expression
 
 String _bech32(List<String> hrps) {
   final lower = hrps.join('|');
   final upper = hrps.map((hrp) => hrp.toUpperCase()).join('|');
   final upperCharset = _bech32Charset.toUpperCase();
-  return '(?:(?:$lower)1[$_bech32Charset]{$_bech32MinData,}'
+  return '(?:(?:$lower)1[$_bech32Charset]{$_bech32MinData,}' // l10n-ignore: regular expression
       '|(?:$upper)1[$upperCharset]{$_bech32MinData,})';
 }
 

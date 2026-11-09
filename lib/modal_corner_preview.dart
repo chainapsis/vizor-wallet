@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import 'src/core/layout/app_form_factor.dart';
 import 'src/core/layout/mobile/app_mobile_sheet.dart';
+import 'src/core/l10n/app_language.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/legacy_material_theme.dart';
 import 'src/core/widgets/app_button.dart';
@@ -32,6 +33,8 @@ class _PreviewState extends State<_Preview> {
     theme: buildLegacyLightTheme(),
     darkTheme: buildLegacyDarkTheme(),
     themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+    supportedLocales: appSupportedLocales(),
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, child) => AppTheme(
       data: dark ? AppThemeData.dark : AppThemeData.light,
       child: child!,

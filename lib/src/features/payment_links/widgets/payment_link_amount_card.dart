@@ -9,6 +9,7 @@ import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import 'payment_link_action.dart';
 import 'payment_link_gift_card.dart';
+import '../../../core/l10n/l10n.dart';
 
 enum PaymentLinkAmountCurrency {
   zec,
@@ -143,7 +144,9 @@ class _PaymentLinkAmountCardState extends State<PaymentLinkAmountCard>
         ],
         onAmountChanged: widget.onAmountChanged,
         currencySymbol: widget.currency.label,
-        emptyAmountLabel: _isUsd ? 'Enter dollars' : 'Enter amount',
+        emptyAmountLabel: _isUsd
+            ? context.l10n.paymentLinkAmountEnterDollars
+            : context.l10n.commonEnterAmount,
         supportingText: widget.supportingText,
         supportingLoading: widget.supportingLoading,
         supportingTextBuilder: (context, text) => FadeTransition(
@@ -155,7 +158,7 @@ class _PaymentLinkAmountCardState extends State<PaymentLinkAmountCard>
         maxAmountText: widget.maxAmountText,
         onUseMax: widget.onUseMax,
         showMaxButton: true,
-        semanticLabel: 'Gift card amount input',
+        semanticLabel: context.l10n.paymentLinkAmountInputSemantic,
       ),
       Positioned(
         top: AppSpacing.sm - _hitSlop,
@@ -236,8 +239,11 @@ class _PaymentLinkAmountCardState extends State<PaymentLinkAmountCard>
     final action = PaymentLinkAction(
       key: ValueKey('payment_link_amount_currency_${currency.name}'),
       semanticLabel: !enabled && widget.usdDisabledReason != null
-          ? 'Enter amount in ${currency.label}. ${widget.usdDisabledReason}'
-          : 'Enter amount in ${currency.label}',
+          ? context.l10n.paymentLinkAmountCurrencyDisabledSemantic(
+              currency.label,
+              widget.usdDisabledReason!,
+            )
+          : context.l10n.commonEnterAmountIn(currency.label),
       selected: selected,
       onPressed: enabled ? () => widget.onCurrencyChanged(currency) : null,
       builder: (context, hovered, focused) => SizedBox(

@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/payment_uri_busy_surface_expectations.dart';
@@ -86,7 +87,10 @@ void main() {
           container: container,
           child: AppTheme(
             data: AppThemeData.dark,
-            child: MaterialApp.router(routerConfig: router),
+            child: MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
+              routerConfig: router,
+            ),
           ),
         ),
       );
@@ -144,7 +148,10 @@ Widget Function(Widget) _host(ProviderContainer container) =>
       container: container,
       child: AppTheme(
         data: AppThemeData.dark,
-        child: MaterialApp(home: Scaffold(body: child)),
+        child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
+          home: Scaffold(body: child),
+        ),
       ),
     );
 

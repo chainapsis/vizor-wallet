@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import 'welcome_button_tokens.dart';
@@ -66,8 +67,8 @@ class WelcomeAccentButton extends StatelessWidget {
         );
       },
       onPressed: onPressed,
-      child: const Text(
-        'Get started',
+      child: Text(
+        context.l10n.onboardingWelcomeGetStarted,
         style: TextStyle(shadows: WelcomeButtonTokens.accentLabelShadows),
       ),
     ),

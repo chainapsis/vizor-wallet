@@ -7,6 +7,7 @@ import '../../../../services/qr_scanner.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../models/vizor_payment_link.dart';
 import '../../models/payment_link_scan_payload.dart';
+import '../../../../core/l10n/l10n.dart';
 
 class PaymentLinkScanSheet extends StatefulWidget {
   const PaymentLinkScanSheet({
@@ -30,7 +31,7 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
   late final MobileScannerController _controller;
   bool _finished = false;
   int _scanResetToken = 0;
-  String? _error;
+  PaymentLinkQrIssue? _issue;
 
   bool get _canScan =>
       mounted && !_finished && ModalRoute.of(context)?.isCurrent != false;
@@ -53,9 +54,9 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
     super.dispose();
   }
 
-  void _reject(String message) {
+  void _reject(PaymentLinkQrIssue issue) {
     setState(() {
-      _error = message;
+      _issue = issue;
       _scanResetToken++;
     });
   }
@@ -66,8 +67,8 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
       final link = decodePaymentLinkQr(raw, networkName: widget.networkName);
       _finished = true;
       widget.onScanned(link);
-    } on FormatException catch (error) {
-      _reject(error.message);
+    } on PaymentLinkQrException catch (error) {
+      _reject(error.issue);
     }
   }
 
@@ -75,9 +76,12 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
   Widget build(BuildContext context) {
     return MobileQrScanCard(
       controller: _controller,
-      caption: 'Scan the gift card QR code',
-      permissionTitle: 'Scan gift card QR',
-      error: _error,
+      caption: context.l10n.paymentLinkScanSheetSemantic,
+      permissionTitle: context.l10n.paymentLinkScanSheetTitle,
+      error: switch (_issue) {
+        final issue? => paymentLinkQrIssueText(context.l10n, issue),
+        null => null,
+      },
       onClose: () {
         _finished = true;
         widget.onClose();

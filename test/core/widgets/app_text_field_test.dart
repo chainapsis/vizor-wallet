@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   for (final scale in [1.0, 1.5]) {
@@ -542,6 +543,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Scaffold(
@@ -594,6 +596,7 @@ class _ThemedHarness extends StatelessWidget {
     final body = Center(child: child);
 
     return MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       theme: ThemeData(platform: TargetPlatform.macOS),
       home: AppTheme(
         data: AppThemeData.light,

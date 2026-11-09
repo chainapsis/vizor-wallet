@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import 'ledger_progress_status.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -14,7 +15,7 @@ class LedgerBluetoothRecovery extends StatelessWidget {
     this.onRetry,
     this.onClose,
     this.onBusyChanged,
-    this.retryLabel = 'Reconnect',
+    this.retryLabel,
     this.enabled = true,
     super.key,
   });
@@ -22,7 +23,7 @@ class LedgerBluetoothRecovery extends StatelessWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onClose;
   final ValueChanged<bool>? onBusyChanged;
-  final String retryLabel;
+  final String? retryLabel;
   final LedgerMobileBleService? service;
 
   @override
@@ -67,7 +68,9 @@ class LedgerBluetoothRecovery extends StatelessWidget {
         LedgerBluetoothRestrictedHelp(model: model),
         const SizedBox(height: AppSpacing.md),
         if (model.busy)
-          const LedgerProgressStatus(label: 'Checking Bluetooth access…')
+          LedgerProgressStatus(
+            label: context.l10n.ledgerCheckingBluetoothAccess,
+          )
         else
           AppButton(
             onPressed: model.onAction,

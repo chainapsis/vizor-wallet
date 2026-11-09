@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../../main.dart' show log;
 import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
@@ -17,6 +18,7 @@ import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_hardware_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_hardware_signing_service.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
 
 class SwapKeystoneSigningOverlay extends ConsumerStatefulWidget {
@@ -113,8 +115,7 @@ class _SwapKeystoneSigningOverlayState
             if (!mounted) return;
             setState(() {
               _phase = _SwapKeystonePhase.failed;
-              _error =
-                  'Signing was cancelled before proving parameters were downloaded.';
+              _error = context.l10n.commonSigningCancelledBeforeParams;
             });
             return;
           }
@@ -212,7 +213,7 @@ class _SwapKeystoneSigningOverlayState
       log('SwapKeystoneSigning._getSignature: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _error = 'This QR code does not match the current Keystone request.';
+        _error = context.l10n.commonThisQRCodeDoesNotMatch;
       });
     }
   }
@@ -261,9 +262,13 @@ class _SwapKeystoneSigningOverlayState
         setState(() {
           _phase = _SwapKeystonePhase.failed;
           _error =
-              networkUpgradeHoldMessage(result.message ?? '') ??
-              result.message ??
-              'The transaction status is uncertain. Refresh activity before trying again.';
+              networkUpgradeHoldMessage(context.l10n, result.message ?? '') ??
+              broadcastResultText(
+                context.l10n,
+                notices: result.notices,
+                message: result.message,
+              ) ??
+              context.l10n.swapKeystoneStatusUncertain;
         });
         return;
       }
@@ -277,6 +282,7 @@ class _SwapKeystoneSigningOverlayState
         txHash: result.txid,
         status: result.status,
         message: result.message,
+        notices: result.notices,
       );
       await widget.onDepositBroadcast(broadcast);
     } catch (e, st) {
@@ -313,7 +319,7 @@ class _SwapKeystoneSigningOverlayState
       setState(() {
         _cancelling = false;
         _phase = _SwapKeystonePhase.failed;
-        _error = 'Could not finish cancelling. Please try again.';
+        _error = context.l10n.commonCancelFailedRetry;
       });
     }
   }
@@ -345,7 +351,6 @@ class _SwapKeystoneSigningOverlayState
       _SwapKeystonePhase.broadcasting => KeystoneSigningModalPhase.preparing,
     };
     final isBroadcasting = _phase == _SwapKeystonePhase.broadcasting;
-    const action = 'ZEC deposit';
 
     return Stack(
       key: const ValueKey('swap_keystone_signing_overlay_surface'),
@@ -358,19 +363,19 @@ class _SwapKeystoneSigningOverlayState
             urParts: _urParts,
             error: _error,
             title: isBroadcasting
-                ? 'Broadcasting $action'
-                : 'Sign $action on Keystone',
+                ? context.l10n.swapKeystoneBroadcastingTitle
+                : context.l10n.swapKeystoneSignTitle,
             subtitle: isBroadcasting
-                ? 'Submitting transaction'
-                : 'Scan to sign',
+                ? context.l10n.commonSubmittingTransaction
+                : context.l10n.commonScanToSign,
             instruction: isBroadcasting
-                ? 'Keep Vizor open while the transaction is sent.'
+                ? context.l10n.commonKeepVizorOpenWhileTheTransaction
                 : _phase == _SwapKeystonePhase.failed
                 ? null
-                : _error ?? 'After you scanned, click Get signature.',
+                : _error ?? context.l10n.commonKeystoneAfterScan,
             primaryLabel: _phase == _SwapKeystonePhase.failed || isBroadcasting
                 ? null
-                : 'Get signature',
+                : context.l10n.commonGetSignature,
             onPrimary:
                 !_cancelling &&
                     _phase == _SwapKeystonePhase.ready &&
@@ -378,12 +383,10 @@ class _SwapKeystoneSigningOverlayState
                 ? () => unawaited(_getSignature())
                 : null,
             secondaryLabel: _cancelling
-                ? 'Cancelling…'
+                ? context.l10n.commonCancelling
                 : isBroadcasting
                 ? null
-                : _phase == _SwapKeystonePhase.failed
-                ? 'Cancel'
-                : 'Cancel',
+                : context.l10n.commonCancel,
             onSecondary: _cancel,
           ),
         ),
@@ -399,30 +402,31 @@ class _SwapKeystoneSigningOverlayState
   }
 
   String _friendlyError(Object error) {
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('does not support tex')) {
-      return 'Keystone does not support TEX sends yet.';
+      return context.l10n.swapKeystoneNoTex;
     }
     final batchError = keystoneBatchSigningFriendlyError(
+      context.l10n,
       error,
-      subject: 'deposit',
+      subject: KeystoneBatchSubject.deposit,
     );
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return context.l10n.commonProvingParamsFailed;
     }
     if (lower.contains('proposal not found')) {
-      return 'Transaction expired before it could be signed.';
+      return context.l10n.commonSigningExpired;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return 'Transaction could not be broadcast.';
+      return context.l10n.swapKeystoneBroadcastFailed;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
-      return 'Keystone signature could not be applied.';
+      return context.l10n.commonKeystoneSignatureCouldNotBeApplied;
     }
-    return 'ZEC deposit signing could not be completed.';
+    return context.l10n.swapKeystoneIncomplete;
   }
 }
 

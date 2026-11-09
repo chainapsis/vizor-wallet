@@ -47,7 +47,7 @@ final ownAccountAddressesProvider = FutureProvider<Map<String, AccountInfo>>((
         accountUuid: account.uuid,
         limit: _selfSendTransparentLookbackLimit,
       ),
-      addressKind: 'transparent receive',
+      addressKind: 'transparent receive', // l10n-ignore: log label
     );
   }
   return byAddress;

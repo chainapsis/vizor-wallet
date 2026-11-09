@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../src/core/config/rpc_endpoint_config.dart';
+import '../src/core/l10n/l10n.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/settings/widgets/mobile/mobile_tor_control.dart';
@@ -19,11 +20,11 @@ Widget buildMobileWelcomePrivateQueriesEnabled(BuildContext context) =>
 Widget buildMobileWelcomePrivateQueriesChanging(BuildContext context) =>
     _preview(
       const NetworkPrivacyState.off(),
-      privateQueriesTransition: kEnhancePirChangingMessage,
+      privateQueriesTransition: EnhancePirTransition.changing,
     );
 Widget buildMobileWelcomePrivateQueriesFailed(BuildContext context) => _preview(
   const NetworkPrivacyState.off(),
-  privateQueriesTransition: kEnhancePirUnchangedMessage,
+  privateQueriesTransition: EnhancePirTransition.unchanged,
 );
 Widget buildMobileWelcomeNetworkConnecting(BuildContext context) => _preview(
   const NetworkPrivacyState(
@@ -74,8 +75,9 @@ Widget buildMobileWelcomeNetworkSwitchFailed(BuildContext context) => _preview(
 );
 Widget buildMobileWelcomeNetworkWrongChain(BuildContext context) => _preview(
   const NetworkPrivacyState.off(),
-  rpcError: const FormatException(
-    'Endpoint is for test, but this wallet uses main.',
+  rpcError: RpcEndpointNetworkMismatch(
+    endpointNetwork: 'test',
+    walletNetwork: 'main',
   ),
 );
 Widget buildMobileWelcomeNetworkRpcSaveFailed(BuildContext context) => _preview(
@@ -90,7 +92,7 @@ Widget _preview(
   Object? rpcError,
   bool rpcPending = false,
   bool privateQueriesEnabled = false,
-  String? privateQueriesTransition,
+  EnhancePirTransition? privateQueriesTransition,
 }) => mobileWelcomePreviewScope(
   // This preview already owns an inline modal; the scope keeps Welcome's
   // startup presentation from stacking another one on top of the scene.
@@ -143,11 +145,14 @@ class _PreviewState extends State<_Preview> {
               onClose: widget.rpcPending ? null : () {},
               canUpdate: !widget.rpcPending,
               submitting: widget.rpcPending,
-              error: widget.rpcError is FormatException
-                  ? (widget.rpcError as FormatException).message
-                  : widget.rpcError != null
-                  ? "Couldn't save the endpoint. Try again."
-                  : null,
+              error: switch (widget.rpcError) {
+                final FormatException error => rpcEndpointErrorText(
+                  context.l10n,
+                  error,
+                ),
+                null => null,
+                _ => context.l10n.endpointSaveFailed,
+              },
             )
           : MobileNetworkSettingsSheet(dismissal: _dismissal),
     ),

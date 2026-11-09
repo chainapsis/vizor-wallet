@@ -1,26 +1,24 @@
 import 'package:go_router/go_router.dart';
 
-import '../layout/mobile/app_mobile_tab_bar.dart';
+import '../l10n/l10n.dart';
 import '../widgets/app_icon.dart';
 
-const mobileDestinations = <({String path, AppMobileTabItem item})>[
-  (
-    path: '/home',
-    item: AppMobileTabItem(iconName: AppIcons.home, label: 'Home'),
-  ),
-  (
-    path: '/swap',
-    item: AppMobileTabItem(iconName: AppIcons.swapArrows, label: 'Swap'),
-  ),
-  (
-    path: '/activity',
-    item: AppMobileTabItem(iconName: AppIcons.history, label: 'Activity'),
-  ),
-  (
-    path: '/settings',
-    item: AppMobileTabItem(iconName: AppIcons.cog, label: 'Settings'),
-  ),
+const mobileDestinations = <({String path, String iconName})>[
+  (path: '/home', iconName: AppIcons.home),
+  (path: '/swap', iconName: AppIcons.swapArrows),
+  (path: '/activity', iconName: AppIcons.history),
+  (path: '/settings', iconName: AppIcons.cog),
 ];
+
+/// Tab bar and sidebar label of a [mobileDestinations] path.
+String mobileDestinationLabel(AppLocalizations l10n, String path) =>
+    switch (path) {
+      '/home' => l10n.navHome,
+      '/swap' => l10n.navSwap,
+      '/activity' => l10n.navActivity,
+      '/settings' => l10n.navSettings,
+      _ => throw ArgumentError.value(path, 'path', 'Not a mobile destination'),
+    };
 
 /// Sidebar visibility and navigation are separate: protected flows keep the
 /// sidebar visible but cannot be abandoned via its newly available controls.

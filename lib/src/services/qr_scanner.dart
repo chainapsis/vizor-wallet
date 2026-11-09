@@ -5,7 +5,9 @@ import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../main.dart' show log;
+import '../core/zcash/wallet_error_code.dart';
 import '../rust/api/keystone.dart' as rust_keystone;
+import '../rust/api/sync.dart' as rust_sync;
 import '../rust/wallet/keystone.dart' show UrDecodeResult;
 
 /// Default camera facing per platform.
@@ -282,14 +284,11 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
     }
   }
 
-  bool _shouldResetScanSessionAfterError(Object error) {
-    return error.toString().contains('UR session reset:');
-  }
+  bool _shouldResetScanSessionAfterError(Object error) =>
+      walletErrorCode(error) == rust_sync.ApiWalletErrorCode.urSessionReset;
 
-  bool _shouldIgnoreDecodeError(Object error) {
-    final message = error.toString();
-    return message.contains('Invalid UR: missing type prefix');
-  }
+  bool _shouldIgnoreDecodeError(Object error) =>
+      walletErrorCode(error) == rust_sync.ApiWalletErrorCode.invalidUr;
 
   @override
   Widget build(BuildContext context) {

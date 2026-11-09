@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_proposal_list.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fixtures/navigation_proposals.dart';
 
@@ -50,6 +51,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (context, child) => AppTheme(
               data: AppThemeData.light,

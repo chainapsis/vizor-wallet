@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
@@ -56,6 +57,7 @@ void registerSwapActivityPrivacyChecks({required bool mobile}) {
           ),
         ],
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           builder: (_, navigator) =>
               AppTheme(data: AppThemeData.light, child: navigator!),
           home: MediaQuery(

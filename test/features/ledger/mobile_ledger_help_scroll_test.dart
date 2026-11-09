@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_co
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_help_navigation.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_sheet_content.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -61,6 +62,7 @@ void main() {
           late StateSetter updateHost;
           await tester.pumpWidget(
             MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.light,
                 child: Builder(

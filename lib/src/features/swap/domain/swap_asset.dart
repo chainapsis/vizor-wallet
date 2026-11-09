@@ -1,3 +1,4 @@
+// l10n-ignore-file: token and chain names and symbols are data
 class SwapAsset {
   const SwapAsset._({
     required this.name,

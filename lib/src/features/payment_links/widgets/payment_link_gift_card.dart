@@ -12,6 +12,8 @@ import '../../../core/widgets/app_icon.dart';
 import 'payment_link_action.dart';
 import 'payment_link_card_motion.dart';
 import 'payment_link_skeleton.dart';
+import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/locale_typography.dart';
 
 const _amountCaretWidth = 2.0;
 const _amountCaretHeight = 34.0;
@@ -22,23 +24,38 @@ const _supportingValueShadows = <Shadow>[
 
 /// Built-in artwork choices for gift cards.
 enum PaymentLinkCardArtwork {
-  knight('payment_link_card_knight.webp', 'Knight'),
-  chestLava('payment_link_card_chest_lava.webp', 'Chest in lava cave'),
-  chestCave('payment_link_card_chest_cave.webp', 'Chest in crystal cave'),
-  dragon('payment_link_card_dragon.webp', 'Dragon'),
-  knightMagic('payment_link_card_knight_magic.webp', 'Magic knight'),
-  gandalf('payment_link_card_gandalf.webp', 'Wizard'),
-  crystal('payment_link_card_crystal.webp', 'Crystal'),
-  diamond('payment_link_card_diamond.webp', 'Diamond'),
-  ruby('payment_link_card_ruby.webp', 'Ruby'),
-  coin('payment_link_card_coin.webp', 'Zcash coin'),
-  gift('payment_link_card_gift.webp', 'Gift box'),
-  rogueCat('payment_link_card_rogue_cat.webp', 'Rogue cat');
+  knight('payment_link_card_knight.webp'),
+  chestLava('payment_link_card_chest_lava.webp'),
+  chestCave('payment_link_card_chest_cave.webp'),
+  dragon('payment_link_card_dragon.webp'),
+  knightMagic('payment_link_card_knight_magic.webp'),
+  gandalf('payment_link_card_gandalf.webp'),
+  crystal('payment_link_card_crystal.webp'),
+  diamond('payment_link_card_diamond.webp'),
+  ruby('payment_link_card_ruby.webp'),
+  coin('payment_link_card_coin.webp'),
+  gift('payment_link_card_gift.webp'),
+  rogueCat('payment_link_card_rogue_cat.webp');
 
-  const PaymentLinkCardArtwork(this.fileName, this.semanticLabel);
+  const PaymentLinkCardArtwork(this.fileName);
 
   final String fileName;
-  final String semanticLabel;
+
+  /// Name read aloud for the artwork.
+  String semanticLabel(AppLocalizations l10n) => switch (this) {
+    PaymentLinkCardArtwork.knight => l10n.commonKnight,
+    PaymentLinkCardArtwork.chestLava => l10n.paymentLinkArtworkChestLava,
+    PaymentLinkCardArtwork.chestCave => l10n.paymentLinkArtworkChestCave,
+    PaymentLinkCardArtwork.dragon => l10n.paymentLinkArtworkDragon,
+    PaymentLinkCardArtwork.knightMagic => l10n.paymentLinkArtworkKnightMagic,
+    PaymentLinkCardArtwork.gandalf => l10n.commonWizard,
+    PaymentLinkCardArtwork.crystal => l10n.paymentLinkArtworkCrystal,
+    PaymentLinkCardArtwork.diamond => l10n.paymentLinkArtworkDiamond,
+    PaymentLinkCardArtwork.ruby => l10n.paymentLinkArtworkRuby,
+    PaymentLinkCardArtwork.coin => l10n.paymentLinkArtworkCoin,
+    PaymentLinkCardArtwork.gift => l10n.paymentLinkArtworkGift,
+    PaymentLinkCardArtwork.rogueCat => l10n.paymentLinkArtworkRogueCat,
+  };
 
   String get assetPath => 'assets/illustrations/payment_links/$fileName';
 
@@ -116,8 +133,8 @@ class PaymentLinkGiftCard extends StatefulWidget {
     this.supportingText,
     this.supportingTextBuilder,
     this.supportingLoading = false,
-    this.currencySymbol = 'ZEC',
-    this.emptyAmountLabel = 'Enter amount',
+    this.currencySymbol = 'ZEC', // l10n-ignore: amount format
+    this.emptyAmountLabel,
     this.showCaret = true,
     this.showBack = false,
     this.message = '',
@@ -126,7 +143,7 @@ class PaymentLinkGiftCard extends StatefulWidget {
     this.messageEditorKey,
     this.messageInputFormatters = const [],
     this.onMessageChanged,
-    this.emptyMessageLabel = 'Start typing…',
+    this.emptyMessageLabel,
     this.maxMessageLength = 128,
     this.messageCharacterCount,
     this.onTap,
@@ -181,7 +198,7 @@ class PaymentLinkGiftCard extends StatefulWidget {
   final TransitionBuilder? supportingTextBuilder;
   final bool supportingLoading;
   final String currencySymbol;
-  final String emptyAmountLabel;
+  final String? emptyAmountLabel;
   final bool showCaret;
 
   final bool showBack;
@@ -191,7 +208,7 @@ class PaymentLinkGiftCard extends StatefulWidget {
   final Key? messageEditorKey;
   final List<TextInputFormatter> messageInputFormatters;
   final ValueChanged<String>? onMessageChanged;
-  final String emptyMessageLabel;
+  final String? emptyMessageLabel;
   final int maxMessageLength;
   final int? messageCharacterCount;
 
@@ -355,8 +372,10 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
     final label =
         widget.semanticLabel ??
         (widget.showBack
-            ? 'Gift card message'
-            : 'Gift card, ${widget.artwork.semanticLabel} design');
+            ? context.l10n.paymentLinkGiftCardMessageSemantic
+            : context.l10n.paymentLinkGiftCardDesignSemantic(
+                widget.artwork.semanticLabel(context.l10n),
+              ));
     final amount = widget.hasAmountEditor
         ? widget.amountController!.text
         : widget.amountText;
@@ -389,7 +408,9 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                 messageEditorKey: widget.messageEditorKey,
                 messageInputFormatters: widget.messageInputFormatters,
                 onMessageChanged: widget.onMessageChanged,
-                emptyMessageLabel: widget.emptyMessageLabel,
+                emptyMessageLabel:
+                    widget.emptyMessageLabel ??
+                    context.l10n.paymentLinkStartTyping,
                 maxMessageLength: widget.maxMessageLength,
                 messageCharacterCount: widget.messageCharacterCount,
                 onDeleteMessage: widget.onDeleteMessage,
@@ -410,7 +431,8 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                 supportingTextBuilder: widget.supportingTextBuilder,
                 supportingLoading: widget.supportingLoading,
                 currencySymbol: widget.currencySymbol,
-                emptyAmountLabel: widget.emptyAmountLabel,
+                emptyAmountLabel:
+                    widget.emptyAmountLabel ?? context.l10n.commonEnterAmount,
                 semanticLabel: label,
                 showCaret: widget.showCaret,
                 motion: motion,
@@ -421,8 +443,10 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                 top: AppSpacing.sm,
                 right: AppSpacing.sm,
                 child: Semantics(
-                  label:
-                      'Use max: ${widget.maxAmountText} ${widget.currencySymbol}',
+                  label: context.l10n.paymentLinkUseMaxCurrencySemantic(
+                    widget.maxAmountText ?? '',
+                    widget.currencySymbol,
+                  ),
                   button: true,
                   child: AppButton(
                     key: const ValueKey('payment_link_max_button'),
@@ -432,7 +456,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.xs,
                     ),
-                    child: const Text('Max'),
+                    child: Text(context.l10n.sendMaxButton),
                   ),
                 ),
               ),
@@ -545,7 +569,7 @@ class _PaymentLinkGiftCardFrontBackground extends StatelessWidget {
         Image.asset(
           artwork.assetPath,
           fit: BoxFit.cover,
-          semanticLabel: artwork.semanticLabel,
+          semanticLabel: artwork.semanticLabel(context.l10n),
         ),
         const DecoratedBox(
           key: ValueKey('payment_link_card_artwork_fade'),
@@ -624,7 +648,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
           if (amount != null || (showInlineMax && maxAmount != null)) ...[
             if (amount != null && supportingLoading) ...[
               Semantics(
-                label: 'Fiat value loading',
+                label: context.l10n.paymentLinkFiatLoadingSemantic,
                 child: ExcludeSemantics(
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -662,7 +686,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
             ] else if (showInlineMax && maxAmount != null) ...[
               if (onUseMax == null)
                 Text(
-                  'Use max: $maxAmount',
+                  context.l10n.paymentLinkUseMaxSemantic(maxAmount),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
@@ -672,9 +696,12 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
               else
                 PaymentLinkAction(
                   onPressed: onUseMax,
-                  semanticLabel: 'Use max: $maxAmount $currencySymbol',
+                  semanticLabel: context.l10n.paymentLinkUseMaxCurrencySemantic(
+                    maxAmount,
+                    currencySymbol,
+                  ),
                   builder: (context, hovered, focused) => Text(
-                    'Use max: $maxAmount',
+                    context.l10n.paymentLinkUseMaxSemantic(maxAmount),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.labelLarge.copyWith(
@@ -844,7 +871,10 @@ class _PaymentLinkAmountTextField extends StatelessWidget {
     final cursorGap = focused && value.isNotEmpty ? _amountElementGap : 0.0;
     final measuredText = value.isEmpty && !focused ? emptyAmountLabel : value;
     final painter = TextPainter(
-      text: TextSpan(text: measuredText, style: style),
+      text: TextSpan(
+        text: measuredText,
+        style: withLocaleFontFallback(context, style),
+      ),
       maxLines: 1,
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
@@ -1096,7 +1126,7 @@ class _PaymentLinkGiftCardBackContent extends StatelessWidget {
             bottom: AppSpacing.sm,
             child: PaymentLinkAction(
               onPressed: onDeleteMessage,
-              semanticLabel: 'Delete gift card message',
+              semanticLabel: context.l10n.paymentLinkDeleteMessageSemantic,
               builder: (context, _, focused) => SizedBox(
                 width: 36,
                 height: 36,

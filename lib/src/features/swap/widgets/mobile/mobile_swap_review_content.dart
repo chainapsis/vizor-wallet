@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/theme/app_theme.dart';
@@ -11,7 +12,9 @@ import '../../domain/swap_contract.dart';
 import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_detail_tooltips.dart';
-import '../swap_review_page_content.dart' show swapReviewSlippageToleranceText;
+import '../../models/swap_quote_text.dart';
+import '../swap_review_page_content.dart'
+    show swapReviewMinimumReceiveText, swapReviewSlippageToleranceText;
 import '../swap_amount_text.dart' show compactSwapAmountText;
 import 'mobile_swap_review_header.dart';
 
@@ -56,7 +59,6 @@ class MobileSwapReviewContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final sendsZec = quote.direction.sendsZec;
     final externalAddress = addressPlan.userExternalAddress.trim();
-    final externalLabel = sendsZec ? 'To' : 'From';
     final externalContactLabel = addressBookContactForSwapAsset(
       contacts: addressBookContacts,
       asset: sendsZec ? quote.receiveAsset : quote.sellAsset,
@@ -76,10 +78,12 @@ class MobileSwapReviewContent extends StatelessWidget {
             label: externalContactLabel,
             compactAddress: externalCompact,
           );
-    final externalBottom = '$externalLabel: $externalAddressText';
+    final externalBottom = sendsZec
+        ? context.l10n.swapReviewToAddress(externalAddressText)
+        : context.l10n.swapReviewFromAddress(externalAddressText);
 
     final payRow = MobileSwapReviewHeaderRow(
-      label: "You're paying",
+      label: context.l10n.commonYourePaying,
       amountText: trimSwapAmountText(
         compactSwapAmountText(quote.sellAmountText),
       ),
@@ -87,7 +91,7 @@ class MobileSwapReviewContent extends StatelessWidget {
       bottomText: sendsZec ? payFiatTextOverride : null,
     );
     final receiveRow = MobileSwapReviewHeaderRow(
-      label: "You're receiving",
+      label: context.l10n.commonYoureReceiving,
       amountText: trimSwapAmountText(
         compactSwapAmountText(quote.receiveEstimateText),
       ),
@@ -112,9 +116,7 @@ class MobileSwapReviewContent extends StatelessWidget {
         ],
         if (expired) ...[
           const SizedBox(height: AppSpacing.s),
-          const _MobileReviewNotice(
-            message: 'Quote expired. Review again for an updated rate.',
-          ),
+          _MobileReviewNotice(message: context.l10n.swapReviewQuoteExpired),
         ],
         if (startError != null) ...[
           const SizedBox(height: AppSpacing.s),
@@ -158,22 +160,25 @@ class _ReviewCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ReviewRow(
-            label: 'Slippage tolerance',
-            value: swapReviewSlippageToleranceText(quote),
+            label: context.l10n.commonSlippageTolerance,
+            value: swapReviewSlippageToleranceText(context.l10n, quote),
           ),
           _ReviewRow(
-            label: 'Guaranteed minimum',
-            value: compactSwapAmountText(quote.minimumReceiveText),
-            helpTooltip: swapMinimumReceiveTooltip(quote.receiveAsset.symbol),
+            label: context.l10n.commonGuaranteedMinimum,
+            value: swapReviewMinimumReceiveText(context.l10n, quote),
+            helpTooltip: swapMinimumReceiveTooltip(
+              context.l10n,
+              quote.receiveAsset.symbol,
+            ),
           ),
           const SizedBox(height: AppSpacing.sm),
           // Figma `border/neutral/default`.
           Container(height: 1, color: colors.border.regular),
           const SizedBox(height: AppSpacing.sm),
           _ReviewRow(
-            label: 'Swap fee',
-            value: quote.feeLabel,
-            helpTooltip: swapFeeTooltip,
+            label: context.l10n.commonSwapFee,
+            value: swapDetailValueText(context.l10n, quote.feeLabel),
+            helpTooltip: swapFeeTooltip(context.l10n),
           ),
         ],
       ),
@@ -314,16 +319,18 @@ class MobileSwapReviewActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final startingLabel = sendsZec ? 'Sending' : 'Locking quote';
+    final startingLabel = sendsZec
+        ? context.l10n.swapReviewStartingSending
+        : context.l10n.swapReviewStartingLockingQuote;
     final primaryLabel = inactive
-        ? 'Return to swap'
+        ? context.l10n.swapReviewReturnToSwap
         : expired
-        ? 'Review again'
+        ? context.l10n.swapReviewReviewAgain
         : startBlockedReason != null
-        ? 'Not enough ZEC'
+        ? context.l10n.commonNotEnoughZec
         : starting
         ? startingLabel
-        : 'Confirm & swap';
+        : context.l10n.swapReviewConfirmAndSwap;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -361,7 +368,7 @@ class MobileSwapReviewActions extends StatelessWidget {
                 height: AppButtonSizing.largeHeight,
                 child: Center(
                   child: Text(
-                    'Cancel',
+                    context.l10n.commonCancel,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.button.ghost.label,
                     ),

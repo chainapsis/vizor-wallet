@@ -37,6 +37,7 @@ import 'mobile/mobile_swap_status_content.dart';
 import 'mobile/mobile_swap_timeout_content.dart';
 import 'pay_activity_status_content.dart';
 import 'swap_status_page_content.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Which rendering the detail surface uses. The orchestration (intent
 /// selection, status refresh, deposit submission, hardware signing)
@@ -361,7 +362,9 @@ class _SwapActivityDetailSurfaceState
     }
     showAppToast(
       _toastContext(context),
-      result.broadcast.isCertain ? 'ZEC deposit sent' : 'Checking ZEC deposit',
+      result.broadcast.isCertain
+          ? _toastContext(context).l10n.swapPanelDepositSent
+          : _toastContext(context).l10n.swapPanelDepositChecking,
     );
   }
 
@@ -387,12 +390,15 @@ class _SwapActivityDetailSurfaceState
             txHash: result.txHash,
             broadcastStatus: result.status,
             broadcastMessage: result.message,
+            broadcastNotices: result.notices,
           );
     }
     if (!toastContext.mounted) return;
     showAppToast(
       toastContext,
-      result.isCertain ? 'ZEC deposit sent' : 'Checking ZEC deposit',
+      result.isCertain
+          ? toastContext.l10n.swapPanelDepositSent
+          : toastContext.l10n.swapPanelDepositChecking,
     );
   }
 
@@ -493,8 +499,10 @@ class _SwapActivityDetailSurfaceState
                       showAppToast(
                         _toastContext(context),
                         result.isCertain
-                            ? 'ZEC deposit sent'
-                            : 'Checking ZEC deposit',
+                            ? _toastContext(context).l10n.swapPanelDepositSent
+                            : _toastContext(
+                                context,
+                              ).l10n.swapPanelDepositChecking,
                       );
                     },
                   )
@@ -559,7 +567,7 @@ class _SwapActivityDetailPaneContent extends StatelessWidget {
         leading: returnTarget == null
             ? const SizedBox.shrink()
             : AppBackLink(
-                label: returnTarget.label,
+                label: returnTarget.label(context.l10n),
                 minWidth: 60,
                 onTap: () => context.go(returnTarget.path),
               ),
@@ -722,6 +730,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final depositInstruction = SwapActivityDepositInstruction.fromIntent(
+      context.l10n,
       intent,
     );
     final statusError = intent.statusError ?? state.statusError;
@@ -749,7 +758,8 @@ class _SwapActivityFlowContent extends StatelessWidget {
           asset: swapActivitySellAsset(intent) ?? SwapAsset.zec,
           amountText: intent.sellAmount,
           depositAddress: depositInstruction.address,
-          expiresInLabel: swapDepositDeadlineLabel(intent) ?? '2hrs',
+          expiresInLabel:
+              swapDepositDeadlineLabel(context.l10n, intent) ?? '2hrs',
           expiresAt: intent.depositDeadline,
           memo: depositInstruction.memo,
           checking: depositChecking || state.statusRefreshing,
@@ -762,7 +772,8 @@ class _SwapActivityFlowContent extends StatelessWidget {
           asset: swapActivitySellAsset(intent) ?? SwapAsset.zec,
           amountText: intent.sellAmount,
           depositAddress: depositInstruction.address,
-          expiresInLabel: swapDepositDeadlineLabel(intent) ?? '2hrs',
+          expiresInLabel:
+              swapDepositDeadlineLabel(context.l10n, intent) ?? '2hrs',
           expiresAt: intent.depositDeadline,
           memo: depositInstruction.memo,
           onDepositZec: () => onSignZecDeposit(intent),
@@ -789,11 +800,13 @@ class _SwapActivityFlowContent extends StatelessWidget {
         if (showStatusError) ...[
           const SizedBox(height: AppSpacing.md),
           if (mobile)
-            _ActivityStatusErrorPanel(message: statusError)
+            _ActivityStatusErrorPanel(message: statusError.text(context.l10n))
           else
             SizedBox(
               width: 400,
-              child: _ActivityStatusErrorPanel(message: statusError),
+              child: _ActivityStatusErrorPanel(
+                message: statusError.text(context.l10n),
+              ),
             ),
         ],
       ],
@@ -879,6 +892,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           .value;
     }
     final presentation = swapActivityStatusPresentationForIntent(
+      context.l10n,
       state,
       intent,
       accountDetail: accountInfo == null
@@ -917,7 +931,10 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
                 asset: presentation.receiveAsset,
                 amountText: trimSwapAmountText(presentation.receiveAmountText),
                 fiatText: presentation.receiveFiatText,
-                label: payActivityStatusAmountLabel(payStatus.phase),
+                label: payActivityStatusAmountLabel(
+                  context.l10n,
+                  payStatus.phase,
+                ),
                 recipientAddress: recipient,
                 recipientName: recipientContact?.label,
                 recipientProfilePictureId: recipientContact?.profilePictureId,
@@ -934,7 +951,14 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           amountText: trimSwapAmountText(presentation.receiveAmountText),
           asset: presentation.receiveAsset,
           bottomText: hasRecipient
-              ? 'To: ${_headerRecipientText(recipient, presentation: presentation, contacts: addressBookContacts, contactId: recipientContactId)}'
+              ? context.l10n.swapPanelRecipientTo(
+                  _headerRecipientText(
+                    recipient,
+                    presentation: presentation,
+                    contacts: addressBookContacts,
+                    contactId: recipientContactId,
+                  ),
+                )
               : presentation.receiveFiatText,
           fullAddress: recipientFullAddress,
         ),
@@ -1013,8 +1037,11 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           _activeTab = tab;
         });
       },
-      onCopy: (text) =>
-          copyTextWithToast(context, text: text, toastMessage: 'Copied'),
+      onCopy: (text) => copyTextWithToast(
+        context,
+        text: text,
+        toastMessage: context.l10n.commonCopied,
+      ),
     );
   }
 }
@@ -1058,7 +1085,7 @@ String? _payDepositTxid(SwapIntent intent) {
 /// Figma-style 6 ... 5 truncation for the header's "To:" line.
 String _truncateHeaderAddress(String address) {
   if (address.length <= 14) return address;
-  return '${address.substring(0, 6)} ... '
+  return '${address.substring(0, 6)} ... ' // l10n-ignore: address truncation
       '${address.substring(address.length - 5)}';
 }
 
@@ -1116,14 +1143,14 @@ class _SwapActivityMissingPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Couldn't load this swap. Try again or pull to refresh.",
+            context.l10n.swapPanelLoadFailedTitle,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.text.accent,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Return to Activity and select a saved swap.',
+            context.l10n.swapPanelLoadFailedBody,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),

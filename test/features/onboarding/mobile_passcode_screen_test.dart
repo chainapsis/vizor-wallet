@@ -22,6 +22,8 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/router_refresh_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 Widget _app() {
   return ProviderScope(
@@ -29,6 +31,7 @@ Widget _app() {
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, c) => AppTheme(
         data: AppThemeData.light,
         child: MobileOnboardingProgressFrame(child: c!),
@@ -141,6 +144,7 @@ Widget _routerHarness(
     if (refresh != null) routerRefreshProvider.overrideWithValue(refresh),
   ],
   child: MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, c) => AppTheme(
       data: AppThemeData.light,
@@ -405,7 +409,7 @@ void main() {
         await _enter(tester, '123456');
         await tester.pumpAndSettle();
         expect(find.text('Create Passcode'), findsOneWidget);
-        expect(find.text('Account save failed'), findsOneWidget);
+        expect(find.text(testL10n.onboardingSubmitFailed), findsOneWidget);
         expect(security.rollbackCalls, 1);
         expect(security.commitCalls, 0);
         expect(security.preparedPassword, isNull);

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/sync_keep_awake_interaction_listener.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets(
@@ -170,6 +171,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: Scaffold(
             body: SyncKeepAwakeInteractionListener(
               child: Center(
@@ -222,6 +224,7 @@ Widget _interactionApp(
 }) => UncontrolledProviderScope(
   container: container,
   child: MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: Scaffold(
       body: SyncKeepAwakeInteractionListener(
         child:

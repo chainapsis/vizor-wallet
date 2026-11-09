@@ -19,17 +19,57 @@ extension SwapIntentStatusLabels on SwapIntentStatus {
     SwapIntentStatus.failed => true,
     _ => false,
   };
-
-  String get label => switch (this) {
-    SwapIntentStatus.awaitingDeposit => 'Awaiting deposit',
-    SwapIntentStatus.awaitingExternalDeposit => 'Awaiting external deposit',
-    SwapIntentStatus.depositObserved => 'Deposit observed',
-    SwapIntentStatus.processing => 'Processing',
-    SwapIntentStatus.providerStatusUnknown => 'Checking status',
-    SwapIntentStatus.incompleteDeposit => 'Incomplete deposit',
-    SwapIntentStatus.complete => 'Complete',
-    SwapIntentStatus.refunded => 'Refunded',
-    SwapIntentStatus.expired => 'Expired',
-    SwapIntentStatus.failed => 'Failed',
-  };
 }
+
+/// The next step of a swap, stored by name in a swap record's `nextAction`.
+/// No screen shows it, so it has no copy.
+enum SwapNextAction {
+  sendDeposit,
+  depositDetected,
+  processing,
+  unrecognizedStatus,
+  incompleteDeposit,
+  complete,
+  refundSent,
+  startFreshQuote,
+  failed,
+  signLedgerDeposit,
+  signKeystoneDeposit;
+
+  /// The value to keep for a stored `nextAction`: a name, or the English an
+  /// earlier build wrote, becomes the name; other text stays as stored.
+  static String normalizeStored(String stored) {
+    for (final action in values) {
+      if (action.name == stored) return stored;
+    }
+    if (_legacySendDeposit.hasMatch(stored)) return sendDeposit.name;
+    return _legacyNextActions[stored]?.name ?? stored;
+  }
+}
+
+final _legacySendDeposit = RegExp(
+  r'^Send .+ to the one-time deposit address$', // l10n-ignore: legacy persisted text
+);
+
+const _legacyNextActions = <String, SwapNextAction>{
+  'Deposit detected': // l10n-ignore: legacy persisted text
+      SwapNextAction.depositDetected,
+  'Swap is processing': // l10n-ignore: legacy persisted text
+      SwapNextAction.processing,
+  'Provider returned a status this wallet does not recognize': // l10n-ignore: legacy persisted text
+      SwapNextAction.unrecognizedStatus,
+  'Deposit is below the quoted amount': // l10n-ignore: legacy persisted text
+      SwapNextAction.incompleteDeposit,
+  'Swap complete': // l10n-ignore: legacy persisted text
+      SwapNextAction.complete,
+  'Refund sent to your refund address': // l10n-ignore: legacy persisted text
+      SwapNextAction.refundSent,
+  'Start a fresh quote': // l10n-ignore: legacy persisted text
+      SwapNextAction.startFreshQuote,
+  'Swap failed': // l10n-ignore: legacy persisted text
+      SwapNextAction.failed,
+  'Sign and send the ZEC deposit with Ledger.': // l10n-ignore: legacy persisted text
+      SwapNextAction.signLedgerDeposit,
+  'Sign and send the ZEC deposit with Keystone.': // l10n-ignore: legacy persisted text
+      SwapNextAction.signKeystoneDeposit,
+};

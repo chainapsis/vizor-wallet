@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -19,10 +20,16 @@ import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   test('import flow ends with account customisation', () {
-    expect(ImportOnboardingStep.customiseAccount.label, 'Customise wallet');
+    expect(
+      ImportOnboardingStep.customiseAccount.label(
+        lookupAppLocalizations(const Locale('en')),
+      ),
+      'Customise wallet',
+    );
     expect(
       importOnboardingStepFromLocation('/import/customise-account'),
       ImportOnboardingStep.customiseAccount,
@@ -317,6 +324,7 @@ Widget _birthdayHarness({
       ),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: MediaQuery(
         data: const MediaQueryData(textScaler: TextScaler.linear(0.5)),
         child: Material(
@@ -368,6 +376,7 @@ Widget _birthdayRouterHarness({required ImportBirthdayArgs args}) {
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => MediaQuery(
         data: const MediaQueryData(textScaler: TextScaler.linear(0.5)),
@@ -395,6 +404,7 @@ Widget _modalHarness({
       privacyModeProvider.overrideWith(() => _Privacy(privacyModeEnabled)),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: MediaQuery(
         data: const MediaQueryData(textScaler: TextScaler.linear(1)),
         child: AppTheme(

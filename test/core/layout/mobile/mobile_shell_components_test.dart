@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   setUpAll(() async {
@@ -322,6 +323,7 @@ void main() {
     Future<void> pumpCard(AppThemeData theme) async {
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           builder: (context, navigator) =>
               AppTheme(data: theme, child: navigator!),
           home: const Center(
@@ -391,6 +393,7 @@ void main() {
 
 Widget _harness(Widget child) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     // AppTheme wraps the navigator (like the real app's AppThemeHost in
     // MaterialApp.builder) so root-navigator overlays — modal sheets shown
     // with useRootNavigator — can resolve it too.

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -30,12 +31,13 @@ class DesktopLedgerSigningContent extends StatelessWidget {
     this.roundNumber = 1,
     this.roundCount = 1,
     this.roundFeeNotice,
-    this.cancelLabel = 'Cancel',
+    this.cancelLabel,
     super.key,
   });
   final LedgerSigningStage stage;
   final LedgerAppReadinessPhase readiness;
-  final String message, failureTitle, cancelLabel;
+  final String message, failureTitle;
+  final String? cancelLabel;
   final bool failed,
       declined,
       saving,
@@ -49,6 +51,8 @@ class DesktopLedgerSigningContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final cancelText = cancelLabel ?? l10n.commonCancel;
     final opening =
         stage == LedgerSigningStage.preparing &&
         readiness == LedgerAppReadinessPhase.confirmOpening;
@@ -60,28 +64,30 @@ class DesktopLedgerSigningContent extends StatelessWidget {
         ? 1
         : 0;
     final instruction = declined
-        ? 'Signing was declined on Ledger. Try again when you’re ready.'
+        ? l10n.ledgerSigningDeclined
         : saving
-        ? 'Saving the signed transaction.'
+        ? l10n.ledgerSigningSaving
         : finishing
-        ? 'Approved on Ledger. Vizor is finishing the transaction.'
+        ? l10n.ledgerSigningApprovedFinishing
         : opening
-        ? 'Confirm opening Zcash on Ledger.'
+        ? l10n.ledgerConfirmOpeningZcash
         : stage == LedgerSigningStage.sending
-        ? kLedgerSigningWaitInstruction
+        ? l10n.ledgerSigningWaitInstruction
         : stage == LedgerSigningStage.reviewing
-        ? 'When prompted, check the amount and recipient on Ledger.'
+        ? l10n.ledgerSigningCheckAmountRecipient
         : stage == LedgerSigningStage.finishing
-        ? 'Finishing the Ledger request.'
-        : 'Keep Ledger connected.';
+        ? l10n.ledgerSigningFinishingRequest
+        : l10n.ledgerSigningKeepLedgerConnected;
     final note = current == 2
-        ? 'Keep Vizor open.'
+        ? l10n.ledgerSigningKeepVizorOpen
         : opening
-        ? 'Keep Zcash open.'
+        ? l10n.ledgerKeepZcashOpen
         : stage == LedgerSigningStage.reviewing
-        ? 'Approve to sign.${roundCount > 1 && roundNumber < roundCount ? '\n\nYou will approve the next transaction separately.' : ''}'
+        ? (roundCount > 1 && roundNumber < roundCount
+              ? l10n.ledgerSigningApproveToSignNext
+              : l10n.ledgerSigningApproveToSign)
         : stage == LedgerSigningStage.sending
-        ? 'Keep Ledger connected.'
+        ? l10n.ledgerSigningKeepLedgerConnected
         : null;
     final useProcedure = !cancelling && !broadcasting && (!failed || declined);
     Widget? footer;
@@ -89,7 +95,7 @@ class DesktopLedgerSigningContent extends StatelessWidget {
       if (failed && actionLabel != null && onCancel != null) {
         footer = AppModalActions(
           onCancel: onCancel,
-          cancelLabel: cancelLabel,
+          cancelLabel: cancelText,
           actionLabel: actionLabel!,
           onAction: onAction,
         );
@@ -107,22 +113,22 @@ class DesktopLedgerSigningContent extends StatelessWidget {
             size: AppButtonSize.mediumLarge,
             variant: AppButtonVariant.ghost,
             minWidth: kAppModalButtonMinWidth,
-            child: Text(cancelLabel),
+            child: Text(cancelText),
           ),
         );
       }
     }
     return LedgerModalContent(
       title: cancelling
-          ? 'Cancelling request'
+          ? l10n.ledgerCancellingRequest
           : failed && !declined
           ? failureTitle
           : broadcasting
-          ? 'Sending transaction'
-          : 'Sign transaction',
+          ? l10n.ledgerSigningTitleSendingTx
+          : l10n.ledgerSigningTitleSign,
       identity: cancelling ? null : identity,
       onBack: cancelling ? null : onChangeConnection,
-      backLabel: 'Change connection',
+      backLabel: l10n.ledgerSigningChangeConnection,
       footer: footer,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -135,15 +141,18 @@ class DesktopLedgerSigningContent extends StatelessWidget {
               steps: [
                 for (var i = 0; i < 3; i++)
                   LedgerStep(
-                    const [
-                      'Prepare transaction',
-                      'Review on Ledger',
-                      'Finish transaction',
+                    [
+                      l10n.ledgerSigningStepPrepare,
+                      l10n.ledgerSigningStepReview,
+                      l10n.ledgerSigningStepFinish,
                     ][i],
                     message: i == current ? instruction : null,
                     note: i == current && !declined ? note : null,
                     detail: i == 1 && roundCount > 1
-                        ? 'Transaction $roundNumber of $roundCount'
+                        ? l10n.ledgerSigningTransactionProgress(
+                            '$roundNumber',
+                            '$roundCount',
+                          )
                         : null,
                     busy: i == current && !failed,
                     requiresDeviceAction:
@@ -155,9 +164,7 @@ class DesktopLedgerSigningContent extends StatelessWidget {
             )
           else ...[
             Text(
-              cancelling
-                  ? 'Keep Vizor open while the Ledger request is cancelled.'
-                  : message,
+              cancelling ? l10n.ledgerSigningKeepOpenWhileCancelling : message,
               style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.secondary,
               ),
@@ -171,7 +178,9 @@ class DesktopLedgerSigningContent extends StatelessWidget {
                     const SizedBox(width: AppSpacing.xs),
                     Expanded(
                       child: Text(
-                        cancelling ? 'Cancelling…' : 'Keep Vizor open.',
+                        cancelling
+                            ? l10n.commonCancelling
+                            : l10n.ledgerSigningKeepVizorOpen,
                         style: AppTypography.bodySmall,
                       ),
                     ),
