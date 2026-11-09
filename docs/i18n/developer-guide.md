@@ -129,9 +129,8 @@ enum-label and mapper patterns, and what stays a literal
 
 Commit the generated files with the change.
 
-While a language is unreleased, a missing key shows the English message and
-`gen-l10n` lists it in `build/l10n_untranslated.json`. A released language must
-translate every key. To remove a key, remove it from all three source files: a
+While a language is unreleased, a missing key shows the English message. A
+released language must translate every key. To remove a key, remove it from all three source files: a
 translation cannot keep a key that English does not have.
 
 ### Korean line breaks
@@ -256,7 +255,6 @@ would reject.
 | Symptom | Cause and fix |
 | --- | --- |
 | `No AppLocalizations found above this widget.` | The tree has no delegates. Pass `appLocalizationsDelegates` to the `MaterialApp`, or wrap a test in `LocalizedTestScope`. |
-| `gen-l10n` cannot write `build/l10n_untranslated.json` | A fresh checkout has no `build/` directory. Run `mkdir build`. |
 | A Korean string looks equal in a failing test | Invisible U+200D. Remove `wordJoiner` before comparing. |
 | The gate test reports a literal that is not copy | Add `// l10n-ignore: <reason>` on that line, if it fits the list in [extracting-strings.md](extracting-strings.md#leave-these-as-literals). |
 | Overflow only in Korean or Chinese | A fixed-height box. Use a minimum height, or shorten the translation. |

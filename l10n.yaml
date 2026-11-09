@@ -5,4 +5,3 @@ output-class: AppLocalizations
 nullable-getter: false
 required-resource-attributes: true
 format: true
-untranslated-messages-file: build/l10n_untranslated.json
