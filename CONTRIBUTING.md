@@ -42,14 +42,16 @@ platform integrations.
 | Path | Responsibility |
 | --- | --- |
 | `lib/` | Flutter UI, routing, Riverpod state, secure-storage coordination, and platform service interfaces |
-| `rust/src/wallet/` | Zcash keys, accounts, synchronization, balances, transaction construction, PCZT, and Keystone integration |
+| `rust/src/wallet/` | Zcash keys, accounts, synchronization, balances, transaction construction, PCZT, and Keystone and Ledger integration |
 | `rust/src/api/` | Flutter Rust Bridge API exposed to Dart |
 | `lib/src/rust/` | Generated Dart bindings; do not edit by hand |
+| `lib/l10n/`, `tool/l10n/` | User-facing copy in ARB files, the glossary, and the tools that generate from them |
 | `ios/`, `android/`, `macos/`, `windows/`, `linux/` | Native runners and platform-specific integrations |
 | `test/` | Dart unit and widget tests, including desktop and mobile-token lanes |
 | `rust/tests/` | Rust regtest integration tests |
 | `integration_test/` | Device and regtest end-to-end tests |
 | `scripts/` | Build, packaging, Figma comparison, regtest, and E2E runners |
+| `docs/` | Design and behavior notes; localization is in `docs/i18n/` |
 | `release_notes/` | Canonical user-facing desktop release notes |
 
 The key architectural boundary is intentional: Rust owns Zcash cryptography,
@@ -195,10 +197,11 @@ After changing any file under `rust/src/api/`, regenerate bindings from the
 repository root:
 
 ```bash
-flutter_rust_bridge_codegen generate
+scripts/generate-rust-bridge.sh
 ```
 
-Commit all resulting changes in `lib/src/rust/` and
+Do not run `flutter_rust_bridge_codegen generate` directly: it fails on rustc's
+expanded `super let`, which the script works around. Commit all resulting changes in `lib/src/rust/` and
 `rust/src/frb_generated.rs` with the API change. Do not manually patch generated
 files. The project uses Flutter Rust Bridge `2.11.1`; use a compatible codegen
 binary.
@@ -212,6 +215,8 @@ binary.
   are only for actual OS-specific behavior.
 - A test that asserts mobile-only UI must begin with `@Tags(['mobile'])` and run
   in the mobile test lane. Untagged tests must be form-factor agnostic.
+- New user-facing text goes into ARB files and is read through `context.l10n`.
+  See [Translations](#translations).
 - User-facing copy uses sentence case by default. Preserve canonical names and
   acronyms such as Vizor, Zcash, ZEC, USDC, USDT, NEAR, and Keystone. Sidebar
   entries and screen titles may use title case.
@@ -242,8 +247,9 @@ to the design file.
 ## Testing
 
 Run the smallest relevant tests while developing and the complete applicable
-set before opening a pull request. In the PR description, list the exact
-commands run and any tests not run, with the reason.
+set before opening a pull request. No GitHub workflow in this repository runs
+them, so they only protect the code when you run them. In the PR description,
+list the exact commands run and any tests not run, with the reason.
 
 ### Baseline checks
 
@@ -324,7 +330,8 @@ A pull request should:
 - Link the relevant issue or design when one exists.
 - Include tests for new behavior and exact local validation commands.
 - Include before/after captures for visual changes.
-- Include generated Flutter Rust Bridge files when an exposed Rust API changes.
+- Include generated Flutter Rust Bridge files when an exposed Rust API changes,
+  and generated localization files when ARB files change.
 - Avoid unrelated dependency, lockfile, formatting, asset, and generated-file
   churn.
 - Remain a draft while known failures or required work remain.
@@ -350,13 +357,23 @@ mobile-only or internal changes.
 
 ## Translations
 
-User-facing copy lives in `lib/l10n/app_<locale>.arb`. New UI text goes into
-`app_en.arb` with an `@key` description and is read through `context.l10n`;
-do not hardcode it in widgets. Translators start from
-[docs/i18n](docs/i18n/README.md), which covers the glossary, the per-language
-style guides and the checks a translation must pass. Changes to security copy
-(secret passphrase, signing, amounts, warnings) need approval from a
-maintainer who reads the language.
+User-facing copy lives in ARB files. New UI text goes into
+`lib/l10n/app_en.arb` with an `@key` description and is read through
+`context.l10n`; do not hardcode it in widgets. Korean is edited in
+`lib/l10n/source/app_ko.arb`, and `lib/l10n/app_ko.arb` is generated from it.
+
+- Developers: read the [localization guide](docs/i18n/developer-guide.md). It
+  covers the steps, the generated files, native copy, and the checks to run.
+- Translators: start from [docs/i18n](docs/i18n/README.md), which covers the
+  glossary, the per-language style guides, and how to check a language on screen.
+
+Only an in-house native reviewer approves `[security]` copy (secret passphrase,
+signing, amounts, warnings). A translator or community contributor may propose
+it.
+
+Unreleased languages stay hidden behind `--dart-define=VIZOR_I18N_PREVIEW=true`.
+A change to English copy reaches users in the next release without that flag, so
+list it in the pull request description.
 
 ## License
 
