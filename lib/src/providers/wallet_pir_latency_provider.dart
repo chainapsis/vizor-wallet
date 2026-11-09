@@ -11,7 +11,7 @@ final walletPirServerProbeProvider = Provider<WalletPirServerProbe>((ref) {
   return (baseUrl, cancelled) => measureWalletPirPing(() async {
     final uri = Uri.parse(rust.walletPirServerPingUrl(baseUrl: baseUrl));
     final response = await client.request(
-      'GET',
+      'GET', // l10n-ignore: HTTP method
       uri,
       headers: const {'Cache-Control': 'no-cache'},
       timeout: const Duration(seconds: 5),

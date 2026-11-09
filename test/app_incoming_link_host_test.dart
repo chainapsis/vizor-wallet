@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:zcash_wallet/src/core/navigation/incoming_link_entry_policy.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,7 +14,6 @@ import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/custom_endpoint_settings_panel.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -23,8 +23,10 @@ import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fakes/fake_sync_notifier.dart';
+import 'support/test_l10n.dart';
 import 'support/payment_links_screen_support.dart'
     show loadPaymentLinksTestFonts;
 
@@ -110,6 +112,7 @@ void main() {
           builder: (context, ref, _) {
             container = ProviderScope.containerOf(context, listen: false);
             return MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
               routerConfig: router,
               builder: (context, child) => AppTheme(
                 data: AppThemeData.dark,
@@ -283,7 +286,10 @@ void main() {
       isNotNull,
       reason: 'the Gift Card waits, it is not dropped',
     );
-    expect(find.text(kPaymentLinkDeferredByActiveFlowMessage), findsOneWidget);
+    expect(
+      find.text(IncomingLinkNotice.giftBusy.text(testL10n)),
+      findsOneWidget,
+    );
 
     // The user answers the card. The Gift Card is released by the same
     // listener that watches the card's own state.

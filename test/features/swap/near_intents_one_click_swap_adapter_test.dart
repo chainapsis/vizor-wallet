@@ -1791,7 +1791,7 @@ void main() {
       );
       expect(request.uri.queryParameters['depositMemo'], '123');
       expect(status.status, SwapIntentStatus.complete);
-      expect(status.nextAction, 'Swap complete');
+      expect(status.nextAction, SwapNextAction.complete.name);
     },
   );
 
@@ -1852,10 +1852,7 @@ void main() {
 
       expect(status.status, SwapIntentStatus.providerStatusUnknown);
       expect(status.providerStatusRaw, 'AWAITING_SOLVER');
-      expect(
-        status.nextAction,
-        'Provider returned a status this wallet does not recognize',
-      );
+      expect(status.nextAction, SwapNextAction.unrecognizedStatus.name);
     },
   );
 
@@ -2173,7 +2170,7 @@ void main() {
         final status = await provider.getStatus('status-deposit');
 
         expect(status.status, scenario.expectedStatus);
-        expect(status.nextAction, scenario.expectedNextAction);
+        expect(status.nextAction, scenario.expectedNextAction.name);
         expect(status.pairText, scenario.expectedPairText);
       });
     }
@@ -2662,7 +2659,7 @@ void main() {
       final status = await provider.getStatus('expired-deposit');
 
       expect(status.status, SwapIntentStatus.awaitingDeposit);
-      expect(status.nextAction, 'Send ZEC to the one-time deposit address');
+      expect(status.nextAction, SwapNextAction.sendDeposit.name);
       expect(status.depositInstruction.deadline, DateTime.utc(2026, 5, 7, 12));
     },
   );
@@ -2992,63 +2989,63 @@ const _statusScenarios = [
     oneClickStatus: 'PENDING_DEPOSIT',
     direction: SwapDirection.zecToExternal,
     expectedStatus: SwapIntentStatus.awaitingDeposit,
-    expectedNextAction: 'Send ZEC to the one-time deposit address',
+    expectedNextAction: SwapNextAction.sendDeposit,
     expectedPairText: 'ZEC -> USDC',
   ),
   _StatusScenario(
     oneClickStatus: 'PENDING_DEPOSIT',
     direction: SwapDirection.externalToZec,
     expectedStatus: SwapIntentStatus.awaitingExternalDeposit,
-    expectedNextAction: 'Send USDC to the one-time deposit address',
+    expectedNextAction: SwapNextAction.sendDeposit,
     expectedPairText: 'USDC -> ZEC',
   ),
   _StatusScenario(
     oneClickStatus: 'KNOWN_DEPOSIT_TX',
     direction: SwapDirection.zecToExternal,
     expectedStatus: SwapIntentStatus.depositObserved,
-    expectedNextAction: 'Deposit detected',
+    expectedNextAction: SwapNextAction.depositDetected,
     expectedPairText: 'ZEC -> USDC',
   ),
   _StatusScenario(
     oneClickStatus: 'PROCESSING',
     direction: SwapDirection.externalToZec,
     expectedStatus: SwapIntentStatus.processing,
-    expectedNextAction: 'Swap is processing',
+    expectedNextAction: SwapNextAction.processing,
     expectedPairText: 'USDC -> ZEC',
   ),
   _StatusScenario(
     oneClickStatus: 'INCOMPLETE_DEPOSIT',
     direction: SwapDirection.externalToZec,
     expectedStatus: SwapIntentStatus.incompleteDeposit,
-    expectedNextAction: 'Deposit is below the quoted amount',
+    expectedNextAction: SwapNextAction.incompleteDeposit,
     expectedPairText: 'USDC -> ZEC',
   ),
   _StatusScenario(
     oneClickStatus: 'SUCCESS',
     direction: SwapDirection.zecToExternal,
     expectedStatus: SwapIntentStatus.complete,
-    expectedNextAction: 'Swap complete',
+    expectedNextAction: SwapNextAction.complete,
     expectedPairText: 'ZEC -> USDC',
   ),
   _StatusScenario(
     oneClickStatus: 'SUCCESS',
     direction: SwapDirection.externalToZec,
     expectedStatus: SwapIntentStatus.complete,
-    expectedNextAction: 'Swap complete',
+    expectedNextAction: SwapNextAction.complete,
     expectedPairText: 'USDC -> ZEC',
   ),
   _StatusScenario(
     oneClickStatus: 'REFUNDED',
     direction: SwapDirection.zecToExternal,
     expectedStatus: SwapIntentStatus.refunded,
-    expectedNextAction: 'Refund sent to your refund address',
+    expectedNextAction: SwapNextAction.refundSent,
     expectedPairText: 'ZEC -> USDC',
   ),
   _StatusScenario(
     oneClickStatus: 'FAILED',
     direction: SwapDirection.externalToZec,
     expectedStatus: SwapIntentStatus.failed,
-    expectedNextAction: 'Swap failed',
+    expectedNextAction: SwapNextAction.failed,
     expectedPairText: 'USDC -> ZEC',
   ),
 ];
@@ -3065,7 +3062,7 @@ class _StatusScenario {
   final String oneClickStatus;
   final SwapDirection direction;
   final SwapIntentStatus expectedStatus;
-  final String expectedNextAction;
+  final SwapNextAction expectedNextAction;
   final String expectedPairText;
 }
 

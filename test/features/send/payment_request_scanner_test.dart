@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import '../../support/test_l10n.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_scanner.dart';
@@ -45,16 +46,16 @@ void main() {
     await expectLater(
       decodePaymentRequestQr('utest1other', networkName: 'main'),
       throwsA(
-        isA<FormatException>().having(
-          (e) => e.message,
-          'message',
+        isA<PaymentRequestQrException>().having(
+          (e) => e.issue.text(testL10n),
+          'text',
           'This address belongs to a different network.',
         ),
       ),
     );
     await expectLater(
       decodePaymentRequestQr('not-a-zcash-address', networkName: 'main'),
-      throwsFormatException,
+      throwsA(isA<PaymentRequestQrException>()),
     );
   });
   test('a scanned request carries all new terms and its input provenance', () {
@@ -75,7 +76,7 @@ void main() {
         () => parsePaymentRequestQr(
           'zcash:u1one?address.1=u1two&amount=1&amount.1=2',
         ),
-        throwsFormatException,
+        throwsA(isA<PaymentRequestQrException>()),
       );
     },
   );
@@ -84,7 +85,10 @@ void main() {
       'zcash:u1recipient?amount=bad',
       'https://link.vizor.cash/payment-links/open#fixture',
     ]) {
-      expect(() => parsePaymentRequestQr(raw), throwsFormatException);
+      expect(
+        () => parsePaymentRequestQr(raw),
+        throwsA(isA<PaymentRequestQrException>()),
+      );
     }
   });
 }

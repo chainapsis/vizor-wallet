@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/feedback/app_haptics.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/network_privacy_provider.dart';
@@ -36,15 +37,17 @@ class MobileTorControl extends ConsumerWidget {
     final state = ref.watch(networkPrivacyProvider);
     final notifier = ref.read(networkPrivacyProvider.notifier);
     final presentation = _presentationFor(
+      context.l10n,
       state,
       platform: defaultTargetPlatform,
     );
     final description =
         useGeneralDescription &&
             state.status != NetworkPrivacyConnectionStatus.failed
-        ? 'Use Tor to hide your IP address from servers. Other apps use their '
-              'own network settings.'
-              '${defaultTargetPlatform == TargetPlatform.iOS ? ' Ironwood private migration connects directly while Vizor is closed.' : ''}'
+        ? context.l10n.settingsTorGeneralDescription +
+              (defaultTargetPlatform == TargetPlatform.iOS
+                  ? context.l10n.settingsTorGeneralIosSuffix
+                  : '')
         : presentation.description;
     final toggleAction = networkPrivacyToggleAction(state);
     final interactive = enabled && toggleAction.isInteractive;
@@ -61,8 +64,8 @@ class MobileTorControl extends ConsumerWidget {
         ? () => unawaited(request(toggleAction.requestedTorEnabled))
         : null;
     final retryLabel = (state.targetTorEnabled ?? state.torEnabled)
-        ? 'Try again'
-        : 'Try direct connection';
+        ? context.l10n.commonTryAgain
+        : context.l10n.settingsTorTryDirect;
     final onRetry = !enabled || state.isBusy
         ? null
         : () => unawaited(request(state.targetTorEnabled ?? state.torEnabled));
@@ -74,7 +77,7 @@ class MobileTorControl extends ConsumerWidget {
           button: true,
           toggled: state.torEnabled,
           enabled: interactive,
-          label: toggleAction.semanticsLabel,
+          label: toggleAction.semanticsLabel(context.l10n),
           // The excluded subtree holds the status text, and four of the five
           // states report `toggled: true`, so the status has to ride on the
           // node itself to reach assistive technology at all.
@@ -107,7 +110,7 @@ class MobileTorControl extends ConsumerWidget {
                     const SizedBox(width: AppSpacing.s),
                     Expanded(
                       child: Text(
-                        'Use Tor',
+                        context.l10n.settingsTorUse,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.accent,
@@ -191,44 +194,38 @@ class _MobileTorPresentation {
 }
 
 _MobileTorPresentation _presentationFor(
+  AppLocalizations l10n,
   NetworkPrivacyState state, {
   required TargetPlatform platform,
 }) {
   final targetTorEnabled = state.targetTorEnabled ?? state.torEnabled;
   return switch ((state.status, targetTorEnabled)) {
     (NetworkPrivacyConnectionStatus.connecting, true) => _MobileTorPresentation(
-      statusLabel: 'Connecting…',
+      statusLabel: l10n.commonConnecting,
       // Names the way out. On a network that blocks Tor the wait runs to the
       // bootstrap deadline with every request failing closed, and relaunching
       // the app only starts the same wait again, so the escape has to be stated
       // where the user is looking.
-      description:
-          'New requests wait until the Tor connection is ready. Turn Tor '
-          'off to stop connecting and use a direct connection.',
+      description: l10n.settingsTorDescConnecting,
       statusColor: (colors) => colors.text.secondary,
       iconColor: (colors) => colors.icon.muted,
     ),
     (NetworkPrivacyConnectionStatus.connecting, false) =>
       _MobileTorPresentation(
-        statusLabel: 'Switching…',
-        description:
-            'Vizor is switching network requests to a direct '
-            'connection.',
+        statusLabel: l10n.settingsTorStatusSwitching,
+        description: l10n.settingsTorDescSwitchingMobile,
         statusColor: (colors) => colors.text.secondary,
         iconColor: (colors) => colors.icon.muted,
       ),
     (NetworkPrivacyConnectionStatus.connected, _) => _MobileTorPresentation(
-      statusLabel: 'Connected',
+      statusLabel: l10n.settingsTorStatusConnected,
       // iOS can continue Ironwood private migration through its native
       // background task after Vizor closes. That task is pinned direct, so
       // name the exception instead of weakening the foreground guarantee with
       // "most". Android has no corresponding background migration lane.
       description: platform == TargetPlatform.iOS
-          ? 'Vizor’s network requests go through Tor. Ironwood private '
-                'migration uses a direct connection while Vizor is closed. '
-                'Links opened in other apps use those apps’ network settings.'
-          : 'Vizor’s network requests go through Tor. Links opened in other '
-                'apps use those apps’ network settings.',
+          ? l10n.settingsTorDescConnectedIos
+          : l10n.settingsTorDescConnected,
       statusColor: (colors) => colors.text.brandCrimson,
       iconColor: (colors) => colors.icon.brandCrimson,
     ),
@@ -238,10 +235,8 @@ _MobileTorPresentation _presentationFor(
     (NetworkPrivacyConnectionStatus.failed, true) =>
       state.torEnabled
           ? _MobileTorPresentation(
-              statusLabel: 'Failed',
-              description:
-                  'Vizor could not connect to Tor. Requests stay blocked '
-                  'until it connects or you turn Tor off.',
+              statusLabel: l10n.commonFailed,
+              description: l10n.settingsTorDescBootstrapFailed,
               statusColor: (colors) => colors.text.brandCrimson,
               iconColor: (colors) => colors.icon.brandCrimson,
             )
@@ -249,10 +244,8 @@ _MobileTorPresentation _presentationFor(
           // of what is happening: nothing was enabled, and requests keep
           // flowing directly.
           : _MobileTorPresentation(
-              statusLabel: 'Setting not saved',
-              description:
-                  'Vizor could not save the change, so Tor was not turned '
-                  'on. Requests keep using a direct connection.',
+              statusLabel: l10n.settingsTorStatusNotSaved,
+              description: l10n.settingsTorDescEnableNotSaved,
               statusColor: (colors) => colors.text.brandCrimson,
               iconColor: (colors) => colors.icon.brandCrimson,
             ),
@@ -264,10 +257,8 @@ _MobileTorPresentation _presentationFor(
           // The transport never switched. Tor is still up and still carrying
           // traffic.
           ? _MobileTorPresentation(
-              statusLabel: 'Switch failed',
-              description:
-                  'Vizor could not switch to a direct connection. Tor is '
-                  'still on and requests keep going through it.',
+              statusLabel: l10n.settingsTorStatusSwitchFailed,
+              description: l10n.settingsTorDescSwitchFailedStillOn,
               statusColor: (colors) => colors.text.brandCrimson,
               iconColor: (colors) => colors.icon.brandCrimson,
             )
@@ -278,19 +269,14 @@ _MobileTorPresentation _presentationFor(
           // promise the user the opposite of what is actually carrying their
           // traffic.
           : _MobileTorPresentation(
-              statusLabel: 'Setting not saved',
-              description:
-                  'Requests now use a direct connection, but Vizor could not '
-                  'save the change. Tor turns back on the next time you open '
-                  'the app.',
+              statusLabel: l10n.settingsTorStatusNotSaved,
+              description: l10n.settingsTorDescDisableNotSaved,
               statusColor: (colors) => colors.text.brandCrimson,
               iconColor: (colors) => colors.icon.brandCrimson,
             ),
     (NetworkPrivacyConnectionStatus.off, _) => _MobileTorPresentation(
-      statusLabel: 'Off',
-      description:
-          'Wallet sync and in-app requests connect directly. Turn Tor '
-          'on to hide your IP address from the servers Vizor talks to.',
+      statusLabel: l10n.settingsStatusOff,
+      description: l10n.settingsTorDescOffMobile,
       statusColor: (colors) => colors.text.secondary,
       iconColor: (colors) => colors.icon.muted,
     ),

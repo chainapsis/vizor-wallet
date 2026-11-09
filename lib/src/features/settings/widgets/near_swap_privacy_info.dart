@@ -32,7 +32,7 @@ const kNearSwapPrivacyHardwareCopy =
 typedef NearSwapPrivacySetting = ({
   bool enabled,
   String description,
-  String? transition,
+  EnhancePirTransition? transition,
 });
 
 /// The NEAR swap privacy option's state, or null when Settings doesn't offer

@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 
 class _FixtureMnemonic extends CreateOnboardingMnemonicNotifier {
@@ -37,6 +38,7 @@ Widget _app(
       createOnboardingMnemonicProvider.overrideWith(_FixtureMnemonic.new),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(

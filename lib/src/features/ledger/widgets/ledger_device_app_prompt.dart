@@ -1,16 +1,24 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
-String ledgerZcashAppName(String networkName) => 'Zcash';
+String ledgerZcashAppName(String networkName) =>
+    'Zcash'; // l10n-ignore: product name
 
-String ledgerZcashAppOpenInstruction(String networkName) {
-  return 'Open the ${ledgerZcashAppName(networkName)} app';
+String ledgerZcashAppOpenInstruction(
+  AppLocalizations l10n,
+  String networkName,
+) {
+  return l10n.ledgerOpenAppInstruction(ledgerZcashAppName(networkName));
 }
 
-String ledgerZcashAppOpenErrorInstruction(String networkName) {
-  return '${ledgerZcashAppOpenInstruction(networkName)} on your Ledger.';
+String ledgerZcashAppOpenErrorInstruction(
+  AppLocalizations l10n,
+  String networkName,
+) {
+  return l10n.ledgerOpenAppOnLedger(ledgerZcashAppName(networkName));
 }
 
 class LedgerDeviceAppPrompt extends StatelessWidget {
@@ -46,7 +54,7 @@ class LedgerDeviceAppPrompt extends StatelessWidget {
                 AppIcons.zcash,
                 size: 24,
                 color: colors.icon.regular,
-                semanticLabel: '$appName app',
+                semanticLabel: context.l10n.ledgerAppSemanticsLabel(appName),
               ),
             ),
           ),
@@ -56,7 +64,7 @@ class LedgerDeviceAppPrompt extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  ledgerZcashAppOpenInstruction(networkName),
+                  ledgerZcashAppOpenInstruction(context.l10n, networkName),
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.accent,
                     fontWeight: FontWeight.w600,
@@ -64,7 +72,7 @@ class LedgerDeviceAppPrompt extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xxs),
                 Text(
-                  'Keep it open on your Ledger.',
+                  context.l10n.ledgerKeepItOpen,
                   style: AppTypography.bodySmall.copyWith(
                     color: colors.text.secondary,
                   ),
@@ -77,7 +85,7 @@ class LedgerDeviceAppPrompt extends StatelessWidget {
             AppIcons.ledger,
             size: 20,
             color: colors.icon.muted,
-            semanticLabel: 'Ledger',
+            semanticLabel: 'Ledger', // l10n-ignore: product name
           ),
         ],
       ),

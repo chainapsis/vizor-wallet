@@ -4,6 +4,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../onboarding/shared/onboarding_chrome.dart';
+import '../../../core/l10n/l10n.dart';
 
 enum DesktopGiftSetupStep { redeem, password, customise }
 
@@ -30,18 +31,18 @@ class DesktopGiftSetupShell extends StatelessWidget {
     sidebar: OnboardingSidebarChrome(
       steps: [
         OnboardingSidebarStepData(
-          label: 'Redeem the card',
+          label: context.l10n.paymentLinkRedeemCardStepTitle,
           iconName: AppIcons.giftCardOutline,
           active: step == DesktopGiftSetupStep.redeem,
         ),
         OnboardingSidebarStepData(
-          label: 'Customise wallet',
+          label: context.l10n.commonCustomiseWallet,
           iconName: AppIcons.user,
           active: step == DesktopGiftSetupStep.customise,
         ),
         if (showPasswordStep)
           OnboardingSidebarStepData(
-            label: 'Set Password',
+            label: context.l10n.onboardingStepSetPassword,
             iconName: AppIcons.lock,
             active: step == DesktopGiftSetupStep.password,
           ),

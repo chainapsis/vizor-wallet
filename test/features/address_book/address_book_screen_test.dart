@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/features/address_book/screens/address_book_scre
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('does not show a loading spinner while contacts load', (
@@ -804,6 +805,7 @@ Widget _addressBookHarness(
       syncProvider.overrideWith(() => _FakeSyncNotifier(SyncState())),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -68,10 +69,6 @@ class VerifyAddressModal extends StatelessWidget {
 
   bool get _hasPreviousTransactions => (previousTransactionCount ?? 0) > 0;
 
-  String get _previousTransactionsLabel => previousTransactionCount == 1
-      ? '1 previous transaction'
-      : '$previousTransactionCount previous transactions';
-
   @override
   Widget build(BuildContext context) {
     return AccountModalCard(
@@ -93,9 +90,9 @@ class VerifyAddressModal extends StatelessWidget {
                   size: AppButtonSize.mediumLarge,
                   expand: true,
                   constrainContent: true,
-                  child: const FittedBox(
+                  child: FittedBox(
                     fit: BoxFit.scaleDown,
-                    child: Text('Close', maxLines: 1),
+                    child: Text(context.l10n.commonClose, maxLines: 1),
                   ),
                 ),
               ),
@@ -104,7 +101,7 @@ class VerifyAddressModal extends StatelessWidget {
                 child: FullAddressCopyButton(
                   address: address,
                   expand: true,
-                  label: 'Copy',
+                  label: context.l10n.commonCopy,
                 ),
               ),
             ],
@@ -185,7 +182,9 @@ class VerifyAddressModal extends StatelessWidget {
                         const SizedBox(width: AppSpacing.xxs),
                         Flexible(
                           child: Text(
-                            _previousTransactionsLabel,
+                            context.l10n.sendVerifyAddressPreviousTransactions(
+                              previousTransactionCount!,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: AppTypography.labelLarge.copyWith(

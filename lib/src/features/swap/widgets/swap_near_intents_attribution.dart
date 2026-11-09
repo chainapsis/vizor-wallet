@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 
 class SwapNearIntentsAttribution extends StatelessWidget {
@@ -45,7 +46,7 @@ class SwapNearIntentsAttribution extends StatelessWidget {
             width: 64.296,
             height: 10.32,
             colorFilter: colorFilter,
-            semanticsLabel: 'Powered by',
+            semanticsLabel: context.l10n.swapPoweredByLabel,
           ),
           const SizedBox(height: 6.2),
           SvgPicture.asset(
@@ -54,7 +55,7 @@ class SwapNearIntentsAttribution extends StatelessWidget {
             width: 90,
             height: 11,
             colorFilter: colorFilter,
-            semanticsLabel: 'nearIntents',
+            semanticsLabel: 'nearIntents', // l10n-ignore: brand wordmark
           ),
         ],
       ),

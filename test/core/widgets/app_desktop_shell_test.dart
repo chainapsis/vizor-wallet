@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import '../../support/localized_test_scope.dart';
 
 void main() {
   testWidgets('desktop shell owns the default macOS window backing', (
@@ -11,8 +12,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: const Directionality(
-          textDirection: TextDirection.ltr,
+        child: const LocalizedTestScope(
           child: AppDesktopShell(
             sidebar: SizedBox(width: 256),
             pane: AppDesktopPane(child: SizedBox.expand()),
@@ -34,8 +34,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: const Directionality(
-          textDirection: TextDirection.ltr,
+        child: const LocalizedTestScope(
           child: AppDesktopPane(child: SizedBox.expand()),
         ),
       ),
@@ -52,8 +51,7 @@ void main() {
       await tester.pumpWidget(
         AppTheme(
           data: AppThemeData.light,
-          child: const Directionality(
-            textDirection: TextDirection.ltr,
+          child: const LocalizedTestScope(
             child: AppDesktopShell(
               backgroundColor: Colors.transparent,
               sidebar: SizedBox(width: 256),
@@ -102,8 +100,7 @@ Future<void> _pumpSidebarSurface(
   await tester.pumpWidget(
     AppTheme(
       data: theme,
-      child: const Directionality(
-        textDirection: TextDirection.ltr,
+      child: const LocalizedTestScope(
         child: SizedBox(
           width: 256,
           height: 640,

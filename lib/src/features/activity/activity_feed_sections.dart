@@ -3,6 +3,9 @@
 /// under "This week" / month-year / "Earlier" titles.
 library;
 
+import 'package:intl/intl.dart' show DateFormat;
+
+import '../../core/l10n/l10n.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import 'models/activity_row_data.dart';
 import 'widgets/activity_feed.dart';
@@ -48,6 +51,7 @@ DateTime? transactionActivityTimestamp(
 /// Sorts [entries] newest-first and groups consecutive entries that
 /// share a section title.
 List<ActivityFeedSectionData> buildActivityFeedSections(
+  AppLocalizations l10n,
   List<ActivityEntry> entries, {
   int? limit,
 }) {
@@ -64,7 +68,7 @@ List<ActivityFeedSectionData> buildActivityFeedSections(
   String? currentTitle;
 
   for (final (_, entry) in visible) {
-    final title = _activitySectionTitle(entry.timestamp);
+    final title = _activitySectionTitle(l10n, entry.timestamp);
     if (title != currentTitle) {
       currentTitle = title;
       currentRows = <ActivityRowData>[];
@@ -76,40 +80,21 @@ List<ActivityFeedSectionData> buildActivityFeedSections(
   return sections;
 }
 
-String _activitySectionTitle(DateTime? timestamp) {
-  if (timestamp == null) return 'Earlier';
+String _activitySectionTitle(AppLocalizations l10n, DateTime? timestamp) {
+  if (timestamp == null) return l10n.activitySectionEarlier;
 
   final local = timestamp.toLocal();
   final now = DateTime.now();
   final weekStart = _startOfWeek(now);
   final nextWeekStart = weekStart.add(const Duration(days: 7));
   if (!local.isBefore(weekStart) && local.isBefore(nextWeekStart)) {
-    return 'This week';
+    return l10n.activitySectionThisWeek;
   }
 
-  return '${_monthName(local.month)} ${local.year}';
+  return DateFormat.yMMMM(l10n.localeName).format(local);
 }
 
 DateTime _startOfWeek(DateTime date) {
   final localDate = DateTime(date.year, date.month, date.day);
   return localDate.subtract(Duration(days: date.weekday - DateTime.monday));
-}
-
-String _monthName(int month) {
-  const months = [
-    '',
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  return months[month];
 }

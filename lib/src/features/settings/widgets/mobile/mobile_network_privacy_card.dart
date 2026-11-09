@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_icon_hover_button.dart';
@@ -43,7 +44,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              'Privacy',
+              context.l10n.settingsPrivacyTitle,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.secondary,
               ),
@@ -78,7 +79,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                   // Feedback for this toggle only, as under Private queries.
                   if (nearSwapPrivacy.transition case final transition?)
                     Text(
-                      transition,
+                      transition.message(context.l10n),
                       key: const ValueKey(
                         'mobile_settings_near_swap_privacy_transition',
                       ),

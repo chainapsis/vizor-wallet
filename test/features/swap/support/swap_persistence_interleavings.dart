@@ -311,7 +311,7 @@ Future<List<String>> _runInterleaving(WidgetTester tester, int seed) async {
         continue;
       }
       if (!intent.startPending ||
-          SwapActivityDepositInstruction.fromIntent(intent) != null) {
+          SwapActivityDepositInstruction.fromIntent(testL10n, intent) != null) {
         exposedEarly.add(intent.id);
       }
     }

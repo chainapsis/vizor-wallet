@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
 import 'package:zcash_wallet/src/services/native_modal_corners.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/prepared_modal_sheet_route.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -51,6 +52,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, navigator) =>
             AppTheme(data: AppThemeData.dark, child: navigator!),
         home: Align(
@@ -227,6 +229,7 @@ void main() {
       final navigator = GlobalKey<NavigatorState>();
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           navigatorKey: navigator,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -318,6 +321,7 @@ void main() {
       final navigator = GlobalKey<NavigatorState>();
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           navigatorKey: navigator,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -373,6 +377,7 @@ void main() {
     final navigator = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         navigatorKey: navigator,
         builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
         home: Builder(
@@ -474,6 +479,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.dark,
           child: const Center(

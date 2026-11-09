@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../core/l10n/l10n.dart';
 
 const kWalletPirPingInterval = Duration(seconds: 10);
 
@@ -18,10 +19,10 @@ class WalletPirPingSample {
   final WalletPirPingStatus status;
   final Duration? latency;
 
-  String get label => switch (status) {
-    WalletPirPingStatus.checking => 'Checking...',
+  String label(AppLocalizations l10n) => switch (status) {
+    WalletPirPingStatus.checking => l10n.commonChecking,
     WalletPirPingStatus.available => '${latency!.inMilliseconds}ms',
-    WalletPirPingStatus.unavailable => 'Unavailable',
+    WalletPirPingStatus.unavailable => l10n.endpointLatencyUnavailable,
   };
 }
 

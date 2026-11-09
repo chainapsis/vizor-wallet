@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
@@ -16,6 +17,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 
 // Mobile Activity for an incoming private swap whose wallet start is pending.
 // Desktop runs the same detail surface from a held start in
@@ -29,7 +31,7 @@ void main() {
       find.byKey(const ValueKey('swap_activity_start_pending')),
       findsOneWidget,
     );
-    expect(find.text(swapStartingText), findsOneWidget);
+    expect(find.text(testL10n.swapStartPending), findsOneWidget);
     expect(find.byType(SwapDepositTokensPageContent), findsNothing);
 
     // A refused start removes the swap by id.
@@ -58,10 +60,10 @@ void main() {
       tester,
       _starting.copyWith(
         status: SwapIntentStatus.failed,
-        statusError: swapStartFailedText,
+        statusError: const SwapNotice(SwapNoticeKind.startNotFinished),
       ),
     );
-    expect(find.text(swapStartFailedText), findsOneWidget);
+    expect(find.text(testL10n.swapNoticeStartNotFinished), findsOneWidget);
     expect(find.byType(SwapDepositTokensPageContent), findsNothing);
   });
 
@@ -82,7 +84,7 @@ void main() {
         ),
       ),
     );
-    expect(statusText, swapStartingText);
+    expect(statusText, testL10n.swapStartPending);
   });
 }
 
@@ -145,6 +147,7 @@ class _EmptyAddressBookNotifier extends AddressBookNotifier {
 
 /// `child` under the app theme at phone size.
 Widget _themed(Widget child) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   builder: (_, navigator) =>
       AppTheme(data: AppThemeData.light, child: navigator!),
   home: MediaQuery(

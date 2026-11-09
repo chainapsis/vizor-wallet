@@ -9,6 +9,8 @@ import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   testWidgets(
@@ -503,8 +505,8 @@ void main() {
 
   test('formatActivityTimestamp drops the clock time when dateOnly', () {
     final dt = DateTime(2026, 5, 14, 17, 45);
-    expect(formatActivityTimestamp(dt), 'May 14, 17:45');
-    expect(formatActivityTimestamp(dt, dateOnly: true), 'May 14');
+    expect(formatActivityTimestamp(testL10n, dt), 'May 14, 17:45');
+    expect(formatActivityTimestamp(testL10n, dt, dateOnly: true), 'May 14');
   });
 }
 
@@ -516,6 +518,7 @@ Future<void> _pumpMappedTransactions(
 }) {
   return tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Builder(
@@ -543,6 +546,7 @@ Future<void> _pumpActivityFeed(
 }) {
   return tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(data: AppThemeData.light, child: _feed(rows)),
     ),
   );
@@ -565,6 +569,7 @@ Future<void> _pumpActivityFeedSliver(
 }) {
   return tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Center(
@@ -637,6 +642,7 @@ ActivityRowData _row({
     amountSubtitle: amountSubtitle,
     amountSubtitleIconName: amountSubtitleIconName,
     statusText: 'Completed',
+    statusIsRoutine: true,
     timestampText: 'Today, 13:11',
     childRows: childRows,
     onTap: onTap,

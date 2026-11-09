@@ -121,24 +121,22 @@ void main() {
     expect(router.state.uri.path, '/settings');
   }, variant: platforms);
 
-  testWidgets(
-    'cancelled iOS swipe retains the page and message',
-    (tester) async {
-      await openFromSettings(tester);
-      await createToReview(tester);
-      final gesture = await tester.startGesture(const Offset(1, 150));
-      await gesture.moveBy(const Offset(30, 0));
-      await tester.pump();
-      await gesture.moveBy(const Offset(70, 0));
-      await tester.pump(const Duration(milliseconds: 500));
-      await gesture.up();
-      await tester.pumpAndSettle();
-      expect(keyed(_review), findsOneWidget);
-      await back(tester);
-      expect(find.text('Keep this message'), findsOneWidget);
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
-  );
+  testWidgets('cancelled iOS swipe retains the page and message', (
+    tester,
+  ) async {
+    await openFromSettings(tester);
+    await createToReview(tester);
+    final gesture = await tester.startGesture(const Offset(1, 150));
+    await gesture.moveBy(const Offset(30, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(70, 0));
+    await tester.pump(const Duration(milliseconds: 500));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(keyed(_review), findsOneWidget);
+    await back(tester);
+    expect(find.text('Keep this message'), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   testWidgets(
     'funding blocks back until completion then discards draft routes',
@@ -228,21 +226,19 @@ void main() {
     expect(keyed('payment_link_mobile_redeem_checking'), findsNothing);
   }, variant: platforms);
 
-  testWidgets(
-    'received preview back releases session and returns to cards',
-    (tester) async {
-      final operations = FakePaymentLinkOperations();
-      final router = await openFromSettings(tester, operations: operations);
-      await tap(tester, 'payment_links_mobile_redeem_button');
-      await tester.tap(find.text('Paste card link'));
-      await tester.pumpAndSettle();
-      await back(tester);
-      expect(keyed('payment_links_mobile_create_button'), findsOneWidget);
-      expect(router.state.uri.path, '/payment-links');
-      expect(operations.discardedClaimAddresses, [incomingLink.address]);
-    },
-    variant: platforms,
-  );
+  testWidgets('received preview back releases session and returns to cards', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations();
+    final router = await openFromSettings(tester, operations: operations);
+    await tap(tester, 'payment_links_mobile_redeem_button');
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+    await back(tester);
+    expect(keyed('payment_links_mobile_create_button'), findsOneWidget);
+    expect(router.state.uri.path, '/payment-links');
+    expect(operations.discardedClaimAddresses, [incomingLink.address]);
+  }, variant: platforms);
 
   testWidgets(
     'waiting received card Go home retains its explicit destination',
@@ -263,25 +259,21 @@ void main() {
     variant: platforms,
   );
 
-  testWidgets(
-    'received swipe reveals the cards destination',
-    (tester) async {
-      await openFromSettings(tester);
-      await tap(tester, 'payment_links_mobile_redeem_button');
-      await tester.tap(find.text('Paste card link'));
-      await tester.pumpAndSettle();
-      final gesture = await tester.startGesture(const Offset(1, 150));
-      await gesture.moveBy(const Offset(30, 0));
-      await tester.pump();
-      await gesture.moveBy(const Offset(200, 0));
-      await tester.pump();
-      expect(keyed('payment_links_mobile_create_button'), findsOneWidget);
-      await gesture.up();
-      await tester.pumpAndSettle();
-      expect(keyed('payment_links_mobile_create_button'), findsOneWidget);
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
-  );
+  testWidgets('received swipe reveals the cards destination', (tester) async {
+    await openFromSettings(tester);
+    await tap(tester, 'payment_links_mobile_redeem_button');
+    await tester.tap(find.text('Paste card link'));
+    await tester.pumpAndSettle();
+    final gesture = await tester.startGesture(const Offset(1, 150));
+    await gesture.moveBy(const Offset(30, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(200, 0));
+    await tester.pump();
+    expect(keyed('payment_links_mobile_create_button'), findsOneWidget);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(keyed('payment_links_mobile_create_button'), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   testWidgets('claim execution blocks every back path until completion', (
     tester,

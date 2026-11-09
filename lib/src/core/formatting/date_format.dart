@@ -1,41 +1,49 @@
-const _monthAbbreviations = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
+import 'package:intl/intl.dart' show DateFormat;
 
-/// Abbreviated English month name for a 1-indexed [month] (1 = Jan, 12 = Dec).
-String monthAbbreviation(int month) => _monthAbbreviations[month - 1];
+// Pass `context.l10n.localeName` (or `AppLocalizations.localeName`). Month
+// and weekday names come from intl's CLDR data, so every language gets its
+// own order and forms.
 
-/// Formats a date as `Jan 5` in the local time zone.
-String formatMonthDay(DateTime date) {
+/// Formats a date as `Jan 5` (English) in the local time zone.
+String formatMonthDay(DateTime date, String localeName) =>
+    DateFormat.MMMd(localeName).format(date.toLocal());
+
+/// Formats a date as `Jan 5, 2026` (English) in the local time zone.
+String formatMonthDayYear(DateTime date, String localeName) =>
+    DateFormat.yMMMd(localeName).format(date.toLocal());
+
+/// Formats a timestamp as `25 May, 13:30` in English, the Figma send status
+/// format, and as the CLDR month-day plus 24-hour time elsewhere
+/// (`5월 25일 13:30`, `5月25日 13:30`), in the local time zone.
+String formatDayMonthTime(DateTime date, String localeName) {
   final local = date.toLocal();
-  return '${monthAbbreviation(local.month)} ${local.day}';
+  final format = localeName == 'en'
+      ? DateFormat('d MMM, HH:mm', 'en') // l10n-ignore: date pattern
+      : DateFormat.MMMd(localeName).add_Hm();
+  return format.format(local);
 }
 
-/// Formats a date as `Jan 5, 2026` in the local time zone.
-String formatMonthDayYear(DateTime date) {
-  final local = date.toLocal();
-  return '${monthAbbreviation(local.month)} ${local.day}, ${local.year}';
+/// Formats a date field value as `05/25/2026` (English), `2026. 05. 25.`
+/// (Korean) or `2026/05/25` (Chinese): the CLDR numeric order with month and
+/// day padded to two digits, as the `onboardingBirthdayDateHint` placeholder
+/// shows. The date's own fields are used, without a time-zone conversion.
+String formatNumericDate(DateTime date, String localeName) =>
+    _padMonthAndDay(DateFormat.yMd(localeName), localeName).format(date);
+
+/// Month-and-year counterpart of [formatNumericDate]: `05/2026` (English),
+/// `2026. 05.` (Korean), `2026/05` (Chinese).
+String formatNumericMonthYear(DateTime date, String localeName) =>
+    _padMonthAndDay(DateFormat.yM(localeName), localeName).format(date);
+
+DateFormat _padMonthAndDay(DateFormat format, String localeName) {
+  final padded = format.pattern!.replaceAllMapped(
+    _singleMonthOrDay,
+    (match) => '${match[1]}${match[1]}',
+  );
+  return DateFormat(padded, localeName);
 }
 
-/// Formats a timestamp as `25 May, 13:30` (Figma send status format) in the
-/// local time zone.
-String formatDayMonthTime(DateTime date) {
-  final local = date.toLocal();
-  final hh = local.hour.toString().padLeft(2, '0');
-  final mm = local.minute.toString().padLeft(2, '0');
-  return '${local.day} ${monthAbbreviation(local.month)}, $hh:$mm';
-}
+final _singleMonthOrDay = RegExp('(?<![Md])([Md])(?![Md])');
 
 /// Parses a flexible date value into a local-zone [DateTime].
 ///

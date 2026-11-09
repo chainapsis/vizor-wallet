@@ -57,9 +57,11 @@ class OnboardingAuthCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // [height] is a minimum so a longer translation grows the card instead
+    // of overflowing it.
     return Container(
       width: width,
-      height: height,
+      constraints: BoxConstraints(minHeight: height),
       padding: padding,
       decoration: BoxDecoration(
         color: colors.background.ground,

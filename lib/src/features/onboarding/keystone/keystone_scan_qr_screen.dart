@@ -2,6 +2,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
+import '../../../core/zcash/wallet_error_code.dart';
 import '../import/desktop_import_navigation.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
@@ -37,7 +39,7 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
       if (accounts.isEmpty) {
         setState(() {
           _decoding = false;
-          _error = 'No Zcash accounts were found on this Keystone QR.';
+          _error = context.l10n.keystoneScanNoAccounts;
         });
         return;
       }
@@ -54,17 +56,16 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
       if (!mounted) return;
       setState(() {
         _decoding = false;
-        _error =
-            'This QR code could not be decoded as a Keystone Zcash account.';
+        _error = context.l10n.keystoneScanDecodeFailed;
       });
     }
   }
 
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
-    final message = error.toString().contains('Unexpected UR type')
-        ? 'Open the Zcash account QR on Keystone, then scan again.'
-        : 'Keep the QR code steady and fully visible.';
+    final message = isUnexpectedUrTypeError(error)
+        ? context.l10n.keystoneScanOpenAccountQr
+        : context.l10n.commonKeepQrSteady;
     if (_error == message) return;
     setState(() {
       _error = message;
@@ -75,7 +76,7 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
   Widget build(BuildContext context) {
     return KeystoneOnboardingTrailingPane(
       backTarget: OnboardingBackTarget.route(
-        label: KeystoneOnboardingStep.howToConnect.label,
+        label: KeystoneOnboardingStep.howToConnect.label(context.l10n),
         routePath: desktopImportLocation(
           context,
           KeystoneOnboardingStep.howToConnect.routePath,
@@ -143,9 +144,9 @@ class _ScanQrLayout extends StatelessWidget {
                       onProgress: onProgress,
                       onDecodeError: onDecodeError,
                       onComplete: onComplete,
-                      decodingLabel: 'Reading accounts...',
+                      decodingLabel: context.l10n.keystoneScanReadingAccounts,
                       unavailableMessage:
-                          'Keystone import uses camera QR scanning only. Connect a camera and try again.',
+                          context.l10n.keystoneScanCameraRequired,
                     ),
                   ],
                 ),
@@ -170,7 +171,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Scan QR Code',
+            context.l10n.commonScanQrCode,
             style: AppTypography.displayLarge.copyWith(
               fontFamily: 'Young Serif',
               fontWeight: FontWeight.w400,
@@ -184,7 +185,7 @@ class _TitleBlock extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Prepare your Keystone wallet',
+          context.l10n.commonPrepareYourKeystoneWallet,
           style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
           textAlign: TextAlign.center,
         ),

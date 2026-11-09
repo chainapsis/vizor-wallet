@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../support/mobile_test_assets.dart';
 
@@ -102,6 +103,7 @@ void main() {
       DefaultAssetBundle(
         bundle: _FilteredBundle(assets),
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: Image.asset(
             _desktop,
             errorBuilder: (_, _, _) => const Text('fallback'),

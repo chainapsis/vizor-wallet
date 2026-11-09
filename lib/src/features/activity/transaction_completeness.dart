@@ -1,27 +1,9 @@
+import '../../core/l10n/l10n.dart';
 import '../../providers/account_models.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 
-/// Shown for a fee the wallet has not recorded. An unknown fee is never 0.
-const kUnknownFeeText = 'Unknown';
-
-/// Temporary private-mode feedback for an entry discovery can still change.
-const kIncompleteDetailsText = 'Details incomplete';
-
-/// Explains [kIncompleteDetailsText] on a receipt.
-const kIncompleteDetailsHelpText =
-    'Some details of this transaction, such as its recipients, memos, or '
-    'fee, are not known yet. The amount shown may change.';
-
-/// Labels a balance movement without claiming an external payment or
-/// attributing the whole transaction's fee to the account.
-const kNetChangeText = 'Net change';
-
 bool transactionFeeIsUnknown(rust_sync.TransactionInfo tx) =>
     tx.feeState == rust_sync.TransactionFeeState.unknown;
-
-/// A known total fee does not establish how much this account paid.
-const kUnattributedNetworkFeeHelpText =
-    "Total fee for this transaction. Your account's share of this fee is unknown.";
 
 /// Display-only fee evidence for this receipt. Never promotes account attribution
 /// or accepts a late detail response for another transaction or activity role.
@@ -44,10 +26,10 @@ enum TransactionFeePresentation {
   separate,
 
   /// The amount is the balance change with the fee in it
-  /// ([kNetChangeText]); the fee keeps its own line.
+  /// (`activityReceiptNetChange`); the fee keeps its own line.
   includedInAmount,
 
-  /// The whole balance change is the fee: one [kNetChangeText] line, with no
+  /// The whole balance change is the fee: one `activityReceiptNetChange` line, with no
   /// separate amount or fee line.
   feeOnly,
 }
@@ -102,7 +84,7 @@ bool transactionActivitySummaryIncomplete(rust_sync.TransactionInfo tx) =>
 /// details or fee arrive, or whose fee presentation changes, may change
 /// nothing else a signature compares.
 String transactionCompletenessSignature(rust_sync.TransactionInfo tx) =>
-    '${tx.feeState.name}:${tx.detailsComplete}:${tx.provisional}:'
+    '${tx.feeState.name}:${tx.detailsComplete}:${tx.provisional}:' // l10n-ignore: signature
     '${transactionFeePresentation(tx).name}';
 
 /// The entry a receipt showing a provisional row of `txidHex` now shows.
@@ -119,51 +101,33 @@ rust_sync.TransactionInfo? provisionalRoleSuccessor(
   return rows.length == 1 ? rows.single : null;
 }
 
-/// Shown for a transparent or mixed transaction whose outputs are not known
-/// yet: no lookup has answered, or the last one failed. A later sync fills
-/// them in.
-const kTransparentDetailsUnavailableText =
-    'Details unavailable — will update when the service is reachable';
-
-/// Shown when private mode cannot look the transaction's outputs up.
-const kTransparentDetailsNotCoveredText = 'Not available in private mode';
-
-/// Labels the list of what a transaction's private details leave out.
-const kTransparentDetailsOmittedLabel = 'Not shown';
-
-/// Labels the offer to load one transaction's full details from the server.
-const kLoadDetailsPubliclyLabel = 'Full details';
-
-/// The offer itself; the confirmation says what loading reveals.
-const kLoadDetailsPubliclyText = 'Load publicly';
-
-/// Shown while a public load runs.
-const kLoadDetailsPubliclyLoadingText = 'Loading…';
-
-/// Shown after a public load failed; the row stays tappable.
-const kLoadDetailsPubliclyFailedText = 'Failed — try again';
-
 /// Short phrases for what the private details leave out, by the names
 /// `TransactionDetail.transparentOmissions` uses.
-const Map<String, String> _omissionPhrases = {
-  'multiple_source_scripts': 'other sending addresses',
-  'more_than_two_outputs': 'outputs after the second',
-  'shielded_and_transparent_funding': 'the shielded part of the funding',
-  'non_standard_sender': 'the sending address',
-  'non_standard_output': 'an output address',
-  'shared_funding': 'inputs from other wallets',
-};
+String? _omissionPhrase(AppLocalizations l10n, String omission) =>
+    switch (omission) {
+      'multiple_source_scripts' => l10n.activityOmissionOtherSenders,
+      'more_than_two_outputs' => l10n.activityOmissionLaterOutputs,
+      'shielded_and_transparent_funding' =>
+        l10n.activityOmissionShieldedFunding,
+      'non_standard_sender' => l10n.activityOmissionSender,
+      'non_standard_output' => l10n.activityOmissionOutputAddress,
+      'shared_funding' => l10n.activityOmissionSharedFunding,
+      _ => null,
+    };
 
 /// What [detail]'s transparent details leave out, in the order the wallet
 /// lists them; empty when nothing is left out.
-List<String> transparentOmissionPhrases(rust_sync.TransactionDetail? detail) {
+List<String> transparentOmissionPhrases(
+  AppLocalizations l10n,
+  rust_sync.TransactionDetail? detail,
+) {
   final count = detail?.transparentOutputCount;
   return [
     for (final omission in detail?.transparentOmissions ?? const <String>[])
       if (omission == 'more_than_two_outputs' && count != null && count > 2)
-        count == 3 ? '1 more output' : '${count - 2} more outputs'
+        l10n.activityOmissionMoreOutputs(count - 2)
       else
-        _omissionPhrases[omission] ?? omission.replaceAll('_', ' '),
+        _omissionPhrase(l10n, omission) ?? omission.replaceAll('_', ' '),
   ];
 }
 
@@ -201,17 +165,6 @@ bool transparentDetailsAwaited(
   rust_sync.TransparentDetailsState.notCovered => false,
   null => false,
 };
-
-/// Names the recipient of a send the account recorded no recipient for.
-const kUnknownRecipientText = 'Unknown recipient';
-
-/// Labels the list of a transaction's other transparent outputs on a receipt
-/// with no recorded recipient.
-const kTransactionOutputsText = 'Transaction outputs';
-
-/// Says the listed outputs are the transaction's, not payments the account
-/// is known to have made.
-const kTransactionOutputsUnattributedText = 'Recipient not confirmed';
 
 /// The address a receipt names as the recipient: only the one the account
 /// recorded for its payment.

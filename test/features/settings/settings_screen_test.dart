@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
-import 'package:zcash_wallet/src/core/config/private_transparent_recovery_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -27,14 +26,21 @@ import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_contr
 import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/app_language_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/one_time_ivk.dart'
     show ReceiveError, ReceiveErrorKind, SwapRecoveryStatus;
 import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_app_language_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
+import '../../support/test_l10n.dart';
+
+final _en = lookupAppLocalizations(const Locale('en'));
 
 void main() {
   testWidgets('private recovery is labelled experimental', (tester) async {
@@ -54,6 +60,7 @@ void main() {
     Future<String> description() async {
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.dark,
             child: EnhancePirPrivacyControl(
@@ -72,7 +79,7 @@ void main() {
     }
 
     final defaultCopy = await description();
-    expect(defaultCopy, kPrivateQueriesSettingsCopy);
+    expect(defaultCopy, testL10n.settingsPrivateQueriesCopy);
   });
 
   test('uninstall setting is supported only on macOS and Linux', () {
@@ -423,7 +430,7 @@ void main() {
     }
   });
 
-  testWidgets('Settings preserves the underlying Windows update error', (
+  testWidgets('Settings shows its own copy for a native Windows update error', (
     tester,
   ) async {
     _overridePlatform(TargetPlatform.windows);
@@ -446,11 +453,18 @@ void main() {
       await tester.tap(find.text('Updates'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Signed feed verification failed.'), findsOneWidget);
+      // The native text stays behind "Show details" under the app's copy.
       expect(
         find.text("Couldn't complete the update. Try again."),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Signed feed verification failed.'),
         findsNothing,
       );
+      await tester.tap(find.text(testL10n.commonShowDetails));
+      await tester.pumpAndSettle();
+      expect(find.text('Signed feed verification failed.'), findsOneWidget);
     } finally {
       await tester.binding.setSurfaceSize(null);
       _resetPlatformOverride();
@@ -583,10 +597,10 @@ void main() {
     // Leaving a wait is not a second transition, and does not announce itself
     // as one.
     expect(
-      NetworkPrivacyToggleAction.cancelPendingTor.semanticsLabel,
+      NetworkPrivacyToggleAction.cancelPendingTor.semanticsLabel(_en),
       'Stop connecting to Tor',
     );
-    expect(NetworkPrivacyToggleAction.disable.semanticsLabel, 'Use Tor');
+    expect(NetworkPrivacyToggleAction.disable.semanticsLabel(_en), 'Use Tor');
     expect(NetworkPrivacyToggleAction.none.isInteractive, isFalse);
   });
 
@@ -694,8 +708,8 @@ void main() {
   });
 
   for (final (name, own) in [
-    ('while it changes', kEnhancePirChangingMessage),
-    ('when it fails', kEnhancePirUnchangedMessage),
+    ('while it changes', EnhancePirTransition.changing),
+    ('when it fails', EnhancePirTransition.unchanged),
   ]) {
     testWidgets('NEAR swap privacy feedback shows under its own row $name', (
       tester,
@@ -716,7 +730,7 @@ void main() {
           of: find.byKey(
             const ValueKey('settings_near_swap_privacy_sub_option'),
           ),
-          matching: find.text(own),
+          matching: find.text(own.message(testL10n)),
         ),
         findsOneWidget,
       );
@@ -1373,11 +1387,14 @@ void main() {
         walletPrivate: true,
       );
       expect(_turnOffDialog, findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffTitle), findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffBody), findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffDisclosure), findsOneWidget);
+      expect(find.text(_en.settingsPrivateQueriesTurnOffTitle), findsOneWidget);
+      expect(find.text(_en.settingsPrivateQueriesTurnOffBody), findsOneWidget);
       expect(
-        kPrivateQueriesTurnOffDisclosure,
+        find.text(_en.settingsPrivateQueriesTurnOffDisclosure),
+        findsOneWidget,
+      );
+      expect(
+        _en.settingsPrivateQueriesTurnOffDisclosure,
         allOf(
           contains('every transparent address of every account'),
           contains('IDs of transactions private recovery found'),
@@ -1385,7 +1402,7 @@ void main() {
         ),
       );
       expect(
-        kPrivateQueriesTurnOffBody,
+        _en.settingsPrivateQueriesTurnOffBody,
         'Vizor will rebuild your transparent history publicly, allowing the '
         'server to learn all your addresses.',
       );
@@ -1539,6 +1556,76 @@ void main() {
       _resetPlatformOverride();
     }
   });
+
+  group('language', () {
+    testWidgets(
+      'the Language row is hidden while English is the only language',
+      (tester) async {
+        await tester.pumpWidget(
+          _settingsHarness(
+            extraOverrides: [
+              availableAppLanguagesProvider.overrideWithValue(const [
+                AppLanguage.en,
+              ]),
+            ],
+          ),
+        );
+        await tester.pump();
+
+        expect(
+          find.byKey(const ValueKey('settings_language_row')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('a language applies only after Update', (tester) async {
+      final saved = <AppLanguage>[];
+      await tester.pumpWidget(
+        _settingsHarness(extraOverrides: languagePreviewOverrides(saved)),
+      );
+      await tester.pump();
+
+      final row = find.byKey(const ValueKey('settings_language_row'));
+      await tester.ensureVisible(row);
+      expect(
+        find.descendant(of: row, matching: find.text('English')),
+        findsOneWidget,
+      );
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+
+      for (final option in ['en', 'ko', 'zh']) {
+        expect(find.byKey(ValueKey('language_option_$option')), findsOneWidget);
+      }
+      expect(
+        find.byKey(const ValueKey('language_option_system')),
+        findsNothing,
+      );
+      expect(find.text('简体中文'), findsOneWidget);
+
+      // Update stays disabled until the choice differs from the saved one.
+      await tester.tap(
+        find.byKey(const ValueKey('account_modal_action_button')),
+      );
+      await tester.pump();
+      expect(saved, isEmpty);
+
+      await tester.tap(find.byKey(const ValueKey('language_option_ko')));
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('account_modal_action_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(saved, [AppLanguage.ko]);
+      expect(find.byKey(const ValueKey('language_option_ko')), findsNothing);
+      expect(
+        find.descendant(of: row, matching: find.text('한국어')),
+        findsOneWidget,
+      );
+    });
+  });
 }
 
 void _overridePlatform(TargetPlatform platform) {
@@ -1630,20 +1717,21 @@ Widget _settingsHarness({
       ...extraOverrides,
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
 }
 
-/// Setting feedback fixed at `message`.
+/// Setting feedback fixed at `transition`.
 class _Feedback extends EnhancePirTransitionNotifier {
-  _Feedback(this.message);
+  _Feedback(this.transition);
 
-  final String? message;
+  final EnhancePirTransition? transition;
 
   @override
-  String? build() => message;
+  EnhancePirTransition? build() => transition;
 }
 
 class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {

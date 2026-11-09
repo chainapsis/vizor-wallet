@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app_bootstrap.dart';
 import '../core/config/zcash_explorer.dart';
+import '../core/l10n/l10n.dart';
 import '../core/storage/app_secure_store.dart';
 
 class ZcashExplorerNotifier extends Notifier<String> {
@@ -12,8 +13,8 @@ class ZcashExplorerNotifier extends Notifier<String> {
 
   bool get isCustom => state.trim().isNotEmpty;
 
-  String labelForNetwork(String networkName) {
-    return explorerSettingsLabel(state, networkName: networkName);
+  String labelForNetwork(AppLocalizations l10n, String networkName) {
+    return explorerSettingsLabel(l10n, state, networkName: networkName);
   }
 
   Future<void> setCustom(String input) async {

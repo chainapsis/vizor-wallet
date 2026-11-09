@@ -170,7 +170,8 @@ class RustGiftCardTrackingBackend implements GiftCardTrackingBackend {
       await ref
           .read(rpcEndpointFailoverProvider.notifier)
           .runWithEndpointFallback<void>(
-            operation: 'Gift Card usage sync',
+            operation:
+                'Gift Card usage sync', // l10n-ignore: endpoint failover operation label, logged only
             action: (endpoint) {
               if (epoch != _cancelEpoch) {
                 throw StateError('Gift Card scan cancelled');

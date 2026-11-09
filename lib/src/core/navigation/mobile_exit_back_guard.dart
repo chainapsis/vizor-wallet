@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemNavigator;
 
+import '../l10n/l10n.dart';
 import '../layout/app_form_factor.dart';
 import '../theme/app_theme.dart';
 
@@ -14,7 +15,6 @@ class MobileExitBackGuard {
     : _platform = platform,
       _now = now ?? DateTime.now;
 
-  static const exitHintMessage = 'Go back again to exit';
   static const confirmationWindow = Duration(seconds: 2);
 
   final TargetPlatform? _platform;
@@ -224,15 +224,15 @@ class _MobileExitBackHintOverlay {
             ? AppThemeData.dark
             : AppThemeData.light);
 
+    final message = context.l10n.appExitBackHint;
+
     dismiss();
 
     late final OverlayEntry entry;
     entry = OverlayEntry(
       builder: (_) => AppTheme(
         data: theme,
-        child: const _MobileExitBackHint(
-          message: MobileExitBackGuard.exitHintMessage,
-        ),
+        child: _MobileExitBackHint(message: message),
       ),
     );
     _entry = entry;

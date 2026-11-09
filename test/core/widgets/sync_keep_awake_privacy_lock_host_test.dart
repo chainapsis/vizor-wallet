@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -207,6 +208,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routeInformationProvider: router.routeInformationProvider,
           routeInformationParser: router.routeInformationParser,
           routerDelegate: router.routerDelegate,
@@ -231,7 +233,7 @@ void main() {
     }
     expect(router.canPop(), isTrue);
     expect(cardDismissals, 0);
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(find.text('Go back again to exit'), findsNothing);
     await tester.tap(find.text('Unlock Vizor'));
     await tester.pump();
     expect(find.text('Welcome Back'), findsOneWidget);
@@ -433,6 +435,7 @@ void main() {
       await tester.pumpWidget(
         _app(
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             builder: (_, child) => AppTheme(
               data: AppThemeData.dark,
               child: SyncKeepAwakePrivacyLockHost(
@@ -947,6 +950,7 @@ void main() {
           UncontrolledProviderScope(
             container: container,
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               builder: (context, child) => AppTheme(
                 data: AppThemeData.dark,
                 child: MediaQuery(
@@ -1297,6 +1301,7 @@ void main() {
           syncProvider.overrideWith(() => syncNotifier),
         ],
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
           home: const SyncKeepAwakePrivacyLockScreen(),
@@ -1456,6 +1461,7 @@ Widget _privacyScreenApp({
       ),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
       home: SyncKeepAwakePrivacyLockScreen(mode: mode),
     ),
@@ -1464,6 +1470,7 @@ Widget _privacyScreenApp({
 
 Widget _themedApp({Duration idleTimeout = const Duration(milliseconds: 50)}) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
     home: SyncKeepAwakePrivacyLockHost(
       idleTimeout: idleTimeout,
@@ -1487,6 +1494,7 @@ const _coveredBalance = 'Shielded 1.25 ZEC';
 /// navigator, so the covered screen keeps its own route.
 Widget _coveredApp({required FocusNode sendFocus}) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, child) => AppTheme(
       data: AppThemeData.dark,
       child: SyncKeepAwakePrivacyLockHost(

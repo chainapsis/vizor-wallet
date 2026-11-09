@@ -32,6 +32,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -1060,6 +1061,7 @@ Widget _app(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
@@ -1384,6 +1386,7 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
     String? outputParamsPath,
   }) async {
     return const rust_sync.ExtractAndBroadcastPcztResult(
+      notices: [],
       txid: 'hardware-broadcast-txid',
       status: SwapDepositBroadcastStatus.broadcasted,
       message: null,

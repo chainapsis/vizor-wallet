@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../fakes/fake_sync_notifier.dart';
+import '../support/test_l10n.dart';
 
 /// Rust stand-in whose proposal is held open until the test releases it, so
 /// "checking" is an observable state rather than a race.
@@ -330,7 +331,7 @@ void main() {
     final state = container.read(paymentRequestFlowProvider)!;
     expect(state.view.status, PaymentRequestStatus.invalidAddress);
     expect(
-      state.view.resolvedStatusMessage,
+      state.view.resolvedStatusMessage(testL10n),
       "Recipient address doesn't look right",
       reason: 'a malformed address keeps the status default copy',
     );
@@ -350,7 +351,10 @@ void main() {
 
       final state = container.read(paymentRequestFlowProvider)!;
       expect(state.view.status, PaymentRequestStatus.invalidAddress);
-      expect(state.view.resolvedStatusMessage, kWrongNetworkAddressMessage);
+      expect(
+        state.view.resolvedStatusMessage(testL10n),
+        testL10n.sendRecipientWrongNetwork,
+      );
       expect(state.canReview, isFalse);
     },
   );
@@ -368,7 +372,7 @@ void main() {
     final state = container.read(paymentRequestFlowProvider)!;
     expect(state.view.status, PaymentRequestStatus.failed);
     expect(
-      state.view.resolvedStatusMessage,
+      state.view.resolvedStatusMessage(testL10n),
       "Couldn't check this request — try again or edit the details",
     );
     expect(state.canReview, isFalse);
@@ -1338,7 +1342,7 @@ void main() {
       PaymentRequestStatus.checking,
       reason: 'the card says it is working again, not that it is blocked',
     );
-    expect(state.view.resolvedStatusMessage, isNull);
+    expect(state.view.resolvedStatusMessage(testL10n), isNull);
     expect(api.proposeAttempts, 2);
 
     api.gate!.complete();
@@ -1373,7 +1377,7 @@ void main() {
           'coming — the card stops promising an update it cannot make',
     );
     expect(
-      flowState(container)!.view.resolvedStatusMessage,
+      flowState(container)!.view.resolvedStatusMessage(testL10n),
       'Still syncing — check again when the wallet is up to date',
     );
     expect(api.proposeAttempts, 4);

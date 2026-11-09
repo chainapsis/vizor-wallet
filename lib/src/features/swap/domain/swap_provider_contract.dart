@@ -4,10 +4,6 @@ import 'swap_fiat_value_basis.dart';
 import 'swap_intent_status.dart';
 import 'swap_quote.dart';
 
-/// Shown for an amount the provider's status cannot state, such as a swap
-/// whose token it no longer lists.
-const kSwapAmountNotReported = 'Not reported';
-
 class SwapIntentSnapshot {
   const SwapIntentSnapshot({
     required this.id,
@@ -52,8 +48,7 @@ class SwapIntentSnapshot {
       sellAmountText: quote.sellAmountText,
       receiveEstimateText: quote.receiveEstimateText,
       status: status,
-      nextAction:
-          'Send ${quote.sellAsset.symbol} to the one-time deposit address',
+      nextAction: SwapNextAction.sendDeposit.name,
       depositInstruction: quote.depositInstruction,
       sellAmountBaseUnits: quote.sellAmountBaseUnits,
       swapFeeText: quote.feeLabel,
@@ -71,6 +66,8 @@ class SwapIntentSnapshot {
   final String sellAmountText;
   final String receiveEstimateText;
   final SwapIntentStatus status;
+
+  /// A [SwapNextAction] name.
   final String nextAction;
   final SwapDepositInstruction depositInstruction;
   final String? swapFeeText;

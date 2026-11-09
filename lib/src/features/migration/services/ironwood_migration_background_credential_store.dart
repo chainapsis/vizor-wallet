@@ -24,7 +24,7 @@ class IronwoodMigrationBackgroundCredentialRunMismatchException
 
   @override
   String toString() =>
-      'Ironwood migration credential belongs to run $expectedRunId, '
+      'Ironwood migration credential belongs to run $expectedRunId, ' // l10n-ignore: matched or logged error text
       'not $activeRunId.';
 }
 

@@ -257,7 +257,7 @@ class ZecRequestDraft {
   /// it. Anything else the builder refuses is said out loud: without that, an
   /// amount the conversion line happily prices leaves "Create request"
   /// disabled with nothing on screen accounting for it.
-  String? _amountError(String amountZec) {
+  RequestAmountError? _amountError(String amountZec) {
     final raw = amountZec.trim();
     if (raw.isEmpty) return null;
     try {
@@ -265,13 +265,13 @@ class ZecRequestDraft {
       return null;
     } on Zip321BuildException catch (e) {
       return switch (e.kind) {
-        Zip321BuildErrorKind.amountDecimals => kRequestAmountDecimalsError,
-        Zip321BuildErrorKind.amountSupply => kRequestAmountSupplyError,
+        Zip321BuildErrorKind.amountDecimals => RequestAmountError.decimals,
+        Zip321BuildErrorKind.amountSupply => RequestAmountError.supply,
         // `amountFormat` covers two unrelated rejections: a number still
         // being typed, and text that is not a number. Only the second is
         // something the user can be asked to correct.
         Zip321BuildErrorKind.amountFormat =>
-          _amountIsUnfinished(raw) ? null : kRequestAmountFormatError,
+          _amountIsUnfinished(raw) ? null : RequestAmountError.format,
         _ => null,
       };
     }

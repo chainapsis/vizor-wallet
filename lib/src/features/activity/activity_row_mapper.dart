@@ -1,12 +1,14 @@
 import 'package:flutter/widgets.dart';
 
+import '../../core/formatting/date_format.dart';
 import '../../core/formatting/zec_amount.dart';
+import '../../core/l10n/l10n.dart';
 import '../../core/layout/app_form_factor.dart';
 import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../providers/pending_activity_evidence_provider.dart'
-    show kActivityEtaLabels;
+    show ActivityEta;
 import '../../rust/api/sync.dart' as rust_sync;
 import 'activity_amount_text.dart';
 import 'gift_card_activity_index.dart';
@@ -34,7 +36,8 @@ ActivityRowData buildTransactionActivityRow({
   String? giftCardStableId,
   DateTime? giftCardActivityTimestamp,
   String? giftCardDisplayPool,
-  String? pendingLabel,
+  ActivityEta? pendingEta,
+  String? pendingFallbackLabel,
   bool showPendingEstimate = true,
   bool privacyModeEnabled = false,
   bool privateQueriesEnabled = false,
@@ -42,6 +45,7 @@ ActivityRowData buildTransactionActivityRow({
   VoidCallback? onTap,
 }) {
   final colors = context.colors;
+  final l10n = context.l10n;
   // A visible expired leg does not fail a multi-leg claim still being received.
   final isFailed = transaction.expiredUnmined && !giftCardClaimInFlight;
   final isPending =
@@ -70,13 +74,19 @@ ActivityRowData buildTransactionActivityRow({
   final replacesPool =
       showPendingEstimate && isPending && (isInbound || isSent || isShielded);
   final subtitle = replacesPool
-      ? pendingLabel ?? 'Checking status'
+      ? pendingEta?.label(l10n) ??
+            pendingFallbackLabel ??
+            l10n.commonCheckingStatus
       : isMigration
-      ? 'Orchard → Ironwood'
+      ? 'Orchard → Ironwood' // l10n-ignore: product names only
       : isNetChange
       ? null
       : isInbound || isSent
-      ? _poolLabel(normalizeActivityPool(displayPool), ordinary: isPayment)
+      ? _poolLabel(
+          l10n,
+          normalizeActivityPool(displayPool),
+          ordinary: isPayment,
+        )
       : null;
 
   // Unconfirmed transactions render as in-flight rows: a pulsing loader
@@ -89,6 +99,7 @@ ActivityRowData buildTransactionActivityRow({
     stableId: giftCardStableId ?? activityStableTransactionId(transaction),
     title: giftCardKind != null
         ? giftCardActivityTitle(
+            l10n,
             giftCardKind,
             isInFlight: isInFlight,
             isFailed: isFailed,
@@ -96,21 +107,21 @@ ActivityRowData buildTransactionActivityRow({
           )
         : isFailed && (isSent || isMigration)
         ? isMigration
-              ? 'Migration failed'
-              : 'Send failed'
+              ? l10n.activityTitleMigrationFailed
+              : l10n.commonSendFailed
         : isInFlight
         ? _pendingTxTitle(
             isMigration
-                ? 'Migrating to Ironwood'
+                ? l10n.activityTitleMigratingVerb
                 : isSent
-                ? 'Sending'
+                ? l10n.activityTitleSendingVerb
                 : isShielded
-                ? 'Shielding'
-                : 'Receiving',
+                ? l10n.activityTitleShieldingVerb
+                : l10n.activityTitleReceivingVerb,
           )
         : isNetChange
-        ? kNetChangeText
-        : _txTitle(kind),
+        ? l10n.activityReceiptNetChange
+        : _txTitle(l10n, kind),
     leadingIconName: giftCardKind != null && !isInFlight
         ? AppIcons.giftCard
         : _txIcon(kind, isPending: isPending),
@@ -118,7 +129,7 @@ ActivityRowData buildTransactionActivityRow({
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,
     subtitleIconName: replacesPool
-        ? (kActivityEtaLabels.contains(subtitle) ? AppIcons.time : null)
+        ? (pendingEta != null ? AppIcons.time : null)
         : isNetChange
         ? null
         : _poolIcon(normalizeActivityPool(displayPool), ordinary: isPayment),
@@ -142,16 +153,17 @@ ActivityRowData buildTransactionActivityRow({
         ? colors.text.positiveStrong
         : outgoingAmountColor(colors),
     amountSubtitle: isFailed && amount != BigInt.zero
-        ? 'Refunded'
+        ? l10n.commonRefunded
         : privateQueriesEnabled &&
               transactionActivitySummaryIncomplete(transaction)
-        ? kIncompleteDetailsText
+        ? l10n.activityReceiptDetailsIncomplete
         : null,
     statusText: isFailed
-        ? 'Failed'
+        ? l10n.commonFailed
         : isPending
-        ? 'In progress'
-        : 'Completed',
+        ? l10n.commonInProgress
+        : l10n.commonCompleted,
+    statusIsRoutine: !isFailed,
     statusIconName: isFailed
         ? AppIcons.skull
         : isPending
@@ -159,6 +171,7 @@ ActivityRowData buildTransactionActivityRow({
         : null,
     statusColor: isFailed ? colors.text.destructive : colors.text.secondary,
     timestampText: formatActivityTimestamp(
+      l10n,
       giftCardActivityTimestamp ?? _txTimestamp(transaction),
       dateOnly: dateOnlyTimestamp,
     ),
@@ -169,6 +182,7 @@ ActivityRowData buildTransactionActivityRow({
 /// Shared by the activity row and the transaction receipt so a Gift Card
 /// keeps one title across both surfaces.
 String giftCardActivityTitle(
+  AppLocalizations l10n,
   GiftCardActivityKind kind, {
   required bool isInFlight,
   required bool isFailed,
@@ -177,25 +191,27 @@ String giftCardActivityTitle(
   if (kind == GiftCardActivityKind.created &&
       batchCount != null &&
       batchCount > 1) {
-    if (isFailed) return 'Gift card group failed';
-    if (isInFlight) return _pendingTxTitle('Creating $batchCount cards');
-    return 'Created $batchCount gift cards';
+    if (isFailed) return l10n.activityGiftGroupFailed;
+    if (isInFlight) {
+      return _pendingTxTitle(l10n.activityGiftCreatingMany(batchCount));
+    }
+    return l10n.activityGiftCreatedMany(batchCount);
   }
   if (isFailed) {
     return switch (kind) {
-      GiftCardActivityKind.created => 'Gift card creation failed',
-      GiftCardActivityKind.redeemed => 'Gift card redemption failed',
+      GiftCardActivityKind.created => l10n.activityGiftCreationFailed,
+      GiftCardActivityKind.redeemed => l10n.activityGiftRedemptionFailed,
     };
   }
   if (isInFlight) {
     return _pendingTxTitle(switch (kind) {
-      GiftCardActivityKind.created => 'Creating a card',
-      GiftCardActivityKind.redeemed => 'Redeeming a card',
+      GiftCardActivityKind.created => l10n.activityGiftCreating,
+      GiftCardActivityKind.redeemed => l10n.activityGiftRedeeming,
     });
   }
   return switch (kind) {
-    GiftCardActivityKind.created => 'Created a gift card',
-    GiftCardActivityKind.redeemed => 'Redeemed a gift card',
+    GiftCardActivityKind.created => l10n.activityGiftCreated,
+    GiftCardActivityKind.redeemed => l10n.activityGiftRedeemed,
   };
 }
 
@@ -253,10 +269,14 @@ String _transactionAmountText({
 
 /// Desktop keeps the older relative "Today, 13:40" form. Mobile activity
 /// sections use absolute "May 29, 13:40" stamps, or date-only section labels.
-String formatActivityTimestamp(DateTime? timestamp, {bool dateOnly = false}) {
+String formatActivityTimestamp(
+  AppLocalizations l10n,
+  DateTime? timestamp, {
+  bool dateOnly = false,
+}) {
   if (timestamp == null) return '--';
   final local = timestamp.toLocal();
-  final date = '${_monthName(local.month)} ${local.day}';
+  final date = formatMonthDay(local, l10n.localeName);
   if (dateOnly) return date;
   final time =
       '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
@@ -264,9 +284,9 @@ String formatActivityTimestamp(DateTime? timestamp, {bool dateOnly = false}) {
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
   final localDate = DateTime(local.year, local.month, local.day);
-  if (localDate == today) return 'Today, $time';
+  if (localDate == today) return l10n.activityRowToday(time);
   if (localDate == today.subtract(const Duration(days: 1))) {
-    return 'Yesterday, $time';
+    return l10n.activityRowYesterday(time);
   }
   return '$date, $time';
 }
@@ -274,14 +294,14 @@ String formatActivityTimestamp(DateTime? timestamp, {bool dateOnly = false}) {
 String _pendingTxTitle(String verb) =>
     kAppFormFactor == AppFormFactor.mobile ? '$verb...' : '$verb ...';
 
-String _txTitle(String kind) {
+String _txTitle(AppLocalizations l10n, String kind) {
   return switch (kind) {
-    'receiving' => 'Receiving',
-    'received' => 'Received',
-    'sent' => 'Sent',
-    'shielded' => 'Shielded',
-    'migration' => 'Migrated to Ironwood',
-    _ => 'Transaction',
+    'receiving' => l10n.activityTitleReceivingVerb,
+    'received' => l10n.commonReceived,
+    'sent' => l10n.activityTitleSent,
+    'shielded' => l10n.activityTitleShielded,
+    'migration' => l10n.activityTitleMigrated,
+    _ => l10n.activityTitleTransaction,
   };
 }
 
@@ -306,14 +326,18 @@ String _txIcon(String kind, {required bool isPending}) {
   };
 }
 
-String? _poolLabel(String pool, {bool ordinary = false}) {
+String? _poolLabel(
+  AppLocalizations l10n,
+  String pool, {
+  bool ordinary = false,
+}) {
   return switch (pool) {
-    'transparent' => 'Transparent',
-    'shielded' => 'Shielded',
-    'orchard' when ordinary => 'Orchard',
-    'sapling' when ordinary => 'Sapling',
-    'ironwood' => 'Ironwood',
-    'mixed' => 'Mixed',
+    'transparent' => l10n.poolTransparent,
+    'shielded' => l10n.poolShielded,
+    'orchard' when ordinary => 'Orchard', // l10n-ignore: product name
+    'sapling' when ordinary => 'Sapling', // l10n-ignore: product name
+    'ironwood' => 'Ironwood', // l10n-ignore: product name
+    'mixed' => l10n.activityPoolMixed,
     _ => null,
   };
 }
@@ -332,23 +356,4 @@ DateTime? _txTimestamp(rust_sync.TransactionInfo tx) {
   final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
   if (seconds <= BigInt.zero) return null;
   return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
-}
-
-String _monthName(int month) {
-  const months = [
-    '',
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  return months[month];
 }

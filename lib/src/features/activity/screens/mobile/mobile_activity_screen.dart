@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/config/swap_feature_config.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -121,7 +122,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
       _isLoading = pager.transactions == null && pager.isLoading;
       _error = pager.error == null
           ? null
-          : "Couldn't load activity. Try again in a moment.";
+          : context.l10n.activityLoadFailedMobile;
     });
     restoreAnchor();
     if (!pager.isLoading && pager.error == null && pager.transactions != null) {
@@ -250,17 +251,19 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
-        pendingLabel:
+        pendingEta:
             (_hasFreshTransactionHistory &&
-                    _transactionsSnapshot ==
-                        activityHistorySnapshot(ref.watch(syncProvider).value)
-                ? activityEtaLabelFor(
-                    transaction: transaction,
-                    labels: ref.watch(activityEtaLabelsProvider),
-                    giftCard: giftCard,
-                  )
-                : null) ??
-            ref.watch(activityPendingFallbackLabelProvider),
+                _transactionsSnapshot ==
+                    activityHistorySnapshot(ref.watch(syncProvider).value)
+            ? activityEtaFor(
+                transaction: transaction,
+                labels: ref.watch(activityEtaLabelsProvider),
+                giftCard: giftCard,
+              )
+            : null),
+        pendingFallbackLabel: ref
+            .watch(activityPendingFallbackLabelProvider)
+            .text(context.l10n),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
@@ -406,6 +409,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         ),
     ];
     final sections = buildActivityFeedSections(
+      context.l10n,
       entries,
       limit: _pager?.visibleCount ?? activityPageSize,
     );
@@ -415,7 +419,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         bottom: false,
         child: Column(
           children: [
-            MobileTopNav.back(title: 'Activity'),
+            MobileTopNav.back(title: context.l10n.navActivity),
             Expanded(
               child: CustomScrollView(
                 controller: _scrollAnchor.controller,

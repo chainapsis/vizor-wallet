@@ -12,7 +12,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/app_version_config.dart';
-import 'package:zcash_wallet/src/core/config/private_transparent_recovery_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
@@ -21,7 +20,6 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/near_swap_privacy_info.dart';
-import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/swap_history_check_control.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
@@ -30,6 +28,7 @@ import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_welcome_a
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_language_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
@@ -37,9 +36,15 @@ import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/theme_mode_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../fakes/fake_app_language_notifier.dart';
+import 'package:zcash_wallet/l10n/app_localizations.dart';
+import '../../support/test_l10n.dart';
+
+final _en = lookupAppLocalizations(const Locale('en'));
 
 const _accountState = AccountState(
   accounts: [
@@ -203,6 +208,7 @@ Widget _app({
   );
   final app = router == null
       ? MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           builder: themedBuilder,
           home: withTabBar
               ? AppMobileShell(
@@ -221,7 +227,11 @@ Widget _app({
                 )
               : const MobileSettingsScreen(),
         )
-      : MaterialApp.router(routerConfig: router, builder: themedBuilder);
+      : MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
+          routerConfig: router,
+          builder: themedBuilder,
+        );
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -259,14 +269,14 @@ Widget _app({
   );
 }
 
-/// Setting feedback fixed at `message`.
+/// Setting feedback fixed at `transition`.
 class _Feedback extends EnhancePirTransitionNotifier {
-  _Feedback(this.message);
+  _Feedback(this.transition);
 
-  final String? message;
+  final EnhancePirTransition? transition;
 
   @override
-  String? build() => message;
+  EnhancePirTransition? build() => transition;
 }
 
 Widget _routedApp({PaymentLinkCardsLoader? cardsLoader}) {
@@ -328,6 +338,7 @@ Widget _routedApp({PaymentLinkCardsLoader? cardsLoader}) {
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) =>
           AppTheme(data: AppThemeData.dark, child: child!),
@@ -382,16 +393,16 @@ void main() {
     expect(note, findsOneWidget);
     expect(find.textContaining('suspended'), findsNothing);
     expect(find.textContaining('transparent funds'), findsOneWidget);
-    expect(find.text(kPrivateQueriesSettingsCopy), findsOneWidget);
+    expect(find.text(testL10n.settingsPrivateQueriesCopy), findsOneWidget);
   });
 
   for (final (platform, copy) in [
     (
       TargetPlatform.iOS,
-      '$kPrivateQueriesSettingsCopy While on, migration confirmations are '
-          'checked only when Vizor is open.',
+      '${testL10n.settingsPrivateQueriesCopy} '
+          '${testL10n.settingsPrivateQueriesIosNote}',
     ),
-    (TargetPlatform.android, kPrivateQueriesSettingsCopy),
+    (TargetPlatform.android, testL10n.settingsPrivateQueriesCopy),
   ]) {
     testWidgets(
       'private queries uses the shared settings copy on ${platform.name}, '
@@ -684,8 +695,8 @@ void main() {
   });
 
   for (final (name, own) in [
-    ('while it changes', kEnhancePirChangingMessage),
-    ('when it fails', kEnhancePirUnchangedMessage),
+    ('while it changes', EnhancePirTransition.changing),
+    ('when it fails', EnhancePirTransition.unchanged),
   ]) {
     testWidgets('NEAR swap privacy feedback shows under its own row $name', (
       tester,
@@ -706,7 +717,7 @@ void main() {
         const ValueKey('mobile_settings_near_swap_privacy_transition'),
       );
       await tester.scrollUntilVisible(feedback, 200);
-      expect(tester.widget<Text>(feedback).data, own);
+      expect(tester.widget<Text>(feedback).data, own.message(testL10n));
       expect(
         find.descendant(
           of: find.byKey(
@@ -996,9 +1007,12 @@ void main() {
         walletPrivate: true,
       );
       expect(_turnOffSheet, findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffTitle), findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffBody), findsOneWidget);
-      expect(find.text(kPrivateQueriesTurnOffDisclosure), findsOneWidget);
+      expect(find.text(_en.settingsPrivateQueriesTurnOffTitle), findsOneWidget);
+      expect(find.text(_en.settingsPrivateQueriesTurnOffBody), findsOneWidget);
+      expect(
+        find.text(_en.settingsPrivateQueriesTurnOffDisclosure),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
@@ -1968,6 +1982,79 @@ void main() {
       find.descendant(of: row, matching: find.text('Off')),
       findsOneWidget,
     );
+  });
+
+  group('language', () {
+    testWidgets(
+      'the Language row is hidden while English is the only language',
+      (tester) async {
+        await tester.pumpWidget(
+          _app(
+            extraOverrides: [
+              availableAppLanguagesProvider.overrideWithValue(const [
+                AppLanguage.en,
+              ]),
+            ],
+          ),
+        );
+        await tester.pump();
+
+        expect(
+          find.byKey(const ValueKey('mobile_settings_language_row')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('the sheet saves the chosen language', (tester) async {
+      final saved = <AppLanguage>[];
+      await tester.pumpWidget(
+        _app(extraOverrides: languagePreviewOverrides(saved)),
+      );
+      await tester.pump();
+
+      final row = find.byKey(const ValueKey('mobile_settings_language_row'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('mobile_language_option_en')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_language_option_system')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('mobile_language_option_zh')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('mobile_language_update')));
+      await tester.pumpAndSettle();
+
+      expect(saved, [AppLanguage.zh]);
+      expect(find.byType(MobileModalScaffold), findsNothing);
+    });
+
+    testWidgets('closing the sheet keeps the language', (tester) async {
+      final saved = <AppLanguage>[];
+      await tester.pumpWidget(
+        _app(extraOverrides: languagePreviewOverrides(saved)),
+      );
+      await tester.pump();
+
+      final row = find.byKey(const ValueKey('mobile_settings_language_row'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_language_option_ko')));
+      await tester.pump();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(saved, isEmpty);
+    });
   });
 }
 

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/l10n.dart';
 import '../navigation/app_back_resolver.dart';
 import '../navigation/external_action_guard_provider.dart';
 import '../theme/app_theme.dart';
@@ -54,7 +55,7 @@ class _AppBackLinkState extends State<AppBackLink> {
 
     return Semantics(
       button: true,
-      label: widget.semanticsLabel ?? 'Back to ${widget.label}',
+      label: widget.semanticsLabel ?? context.l10n.commonBackTo(widget.label),
       onTap: _activate,
       child: ExcludeSemantics(
         child: FocusableActionDetector(

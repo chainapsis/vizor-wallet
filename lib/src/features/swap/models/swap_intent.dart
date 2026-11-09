@@ -1,13 +1,6 @@
 import '../domain/swap_contract.dart';
 import 'swap_deposit_broadcast_result.dart';
-
-/// Shown in place of a swap's funding instructions while its wallet start is
-/// pending (see [SwapIntent.startPending]).
-const swapStartingText = 'Starting swap…';
-
-/// Shown for a swap whose wallet start never finished.
-const swapStartFailedText =
-    "This swap didn't finish starting. Start a new swap if you still want one.";
+import 'swap_message.dart';
 
 class SwapIntentRecord {
   const SwapIntentRecord({
@@ -108,6 +101,9 @@ class SwapIntentRecord {
   final String sellAmountText;
   final String receiveEstimateText;
   final SwapIntentStatus status;
+
+  /// A [SwapNextAction] name. Records from earlier builds may hold other
+  /// text; no screen shows it.
   final String nextAction;
   final BigInt? sellAmountBaseUnits;
   final SwapDirection? direction;
@@ -128,8 +124,8 @@ class SwapIntentRecord {
   final SwapProviderRefundInfo? providerRefundInfo;
   final SwapFiatValueBasis? fiatValueBasis;
   final DateTime? lastStatusCheckedAt;
-  final String? statusError;
-  final String? broadcastNotice;
+  final SwapMessage? statusError;
+  final SwapMessage? broadcastNotice;
   final String? broadcastStatus;
   final String? oneClickRecipient;
   final String? oneClickRefundTo;
@@ -181,8 +177,8 @@ class SwapIntentRecord {
     SwapProviderRefundInfo? providerRefundInfo,
     SwapFiatValueBasis? fiatValueBasis,
     DateTime? lastStatusCheckedAt,
-    String? statusError,
-    String? broadcastNotice,
+    SwapMessage? statusError,
+    SwapMessage? broadcastNotice,
     String? broadcastStatus,
     String? oneClickRecipient,
     String? oneClickRefundTo,
@@ -307,6 +303,9 @@ class SwapIntent {
   final String receiveEstimate;
   final String provider;
   final SwapIntentStatus status;
+
+  /// A [SwapNextAction] name. Records from earlier builds may hold other
+  /// text; no screen shows it.
   final String nextAction;
   final BigInt? sellAmountBaseUnits;
   final SwapDirection? direction;
@@ -327,7 +326,7 @@ class SwapIntent {
   final SwapProviderRefundInfo? providerRefundInfo;
   final SwapFiatValueBasis? fiatValueBasis;
   final DateTime? lastStatusCheckedAt;
-  final String? statusError;
+  final SwapMessage? statusError;
   final String? oneClickRecipient;
   final String? oneClickRefundTo;
   final String? userExternalContactId;
@@ -352,11 +351,9 @@ class SwapIntent {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? completedAt;
-  final String? broadcastNotice;
+  final SwapMessage? broadcastNotice;
   final String? broadcastStatus;
   final DateTime? depositClaimedAt;
-
-  String get statusLabel => status.label;
 
   /// On-chain evidence that funds genuinely moved, used by the account-removal
   /// gate and the deadline-expiry carve-out.
@@ -400,7 +397,7 @@ class SwapIntent {
     SwapProviderRefundInfo? providerRefundInfo,
     SwapFiatValueBasis? fiatValueBasis,
     DateTime? lastStatusCheckedAt,
-    String? statusError,
+    SwapMessage? statusError,
     String? oneClickRecipient,
     String? oneClickRefundTo,
     String? userExternalContactId,
@@ -413,7 +410,7 @@ class SwapIntent {
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? completedAt,
-    String? broadcastNotice,
+    SwapMessage? broadcastNotice,
     String? broadcastStatus,
     DateTime? depositClaimedAt,
     bool clearStatusError = false,

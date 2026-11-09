@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fakes/fake_sync_notifier.dart';
 
@@ -89,6 +90,7 @@ void main() {
           incomingUriServiceProvider.overrideWithValue(incomingUris),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (context, child) => AppTheme(
             data: AppThemeData.dark,

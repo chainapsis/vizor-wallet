@@ -97,22 +97,14 @@ class SwapZecStagingAddressUnavailableException implements Exception {
 
   final Object cause;
 
-  /// Whether reserving a private swap address failed. Its text leaves out
-  /// closing older swaps, which frees no private address. Running out of them
-  /// has its own wallet error.
+  /// Whether reserving a private swap address failed. Its quote error leaves
+  /// out closing older swaps, which frees no private address. Running out of
+  /// them has its own wallet error.
   final bool privateAddress;
 
-  /// The quote error shown for this failure, worded as before private swaps
-  /// for an ordinary address.
+  // The quote error shows SwapNoticeKind.receiveAddressUnavailable instead.
   @override
-  String toString() {
-    if (privateAddress) {
-      return 'Could not prepare a fresh wallet receive address. '
-          'Try again after wallet sync.';
-    }
-    return 'Could not prepare a fresh wallet receive address. '
-        'Retry after wallet sync or close older pending swaps before requesting a new quote.';
-  }
+  String toString() => 'SwapZecStagingAddressUnavailableException: $cause'; // l10n-ignore: log text
 }
 
 /// A quote on a software account while the NEAR swap privacy setting couldn't

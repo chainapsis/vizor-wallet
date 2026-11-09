@@ -9,9 +9,6 @@ library;
 
 import '../../../core/navigation/incoming_link_entry_policy.dart';
 
-const kPaymentLinkDeferredByActiveFlowMessage = kIncomingGiftBusyMessage;
-const kPaymentLinkDeferredByAccountSetupMessage = kIncomingGiftSetupMessage;
-
 /// Routes whose in-progress user input or signing state must not be replaced
 /// by an incoming Gift Card.
 ///
@@ -23,14 +20,14 @@ bool paymentLinkEntryBlockedAtLocation(
   String matchedLocation, {
   bool paymentRequestCardPresented = false,
 }) {
-  return paymentLinkEntryDeferredMessageAtLocation(
+  return paymentLinkEntryDeferredNoticeAtLocation(
         matchedLocation,
         paymentRequestCardPresented: paymentRequestCardPresented,
       ) !=
       null;
 }
 
-String? paymentLinkEntryDeferredMessageAtLocation(
+IncomingLinkNotice? paymentLinkEntryDeferredNoticeAtLocation(
   String matchedLocation, {
   bool paymentRequestCardPresented = false,
 }) {
@@ -38,5 +35,5 @@ String? paymentLinkEntryDeferredMessageAtLocation(
     kind: IncomingLinkKind.giftCard,
     location: matchedLocation,
     paymentRequestPresented: paymentRequestCardPresented,
-  ).message;
+  ).notice;
 }

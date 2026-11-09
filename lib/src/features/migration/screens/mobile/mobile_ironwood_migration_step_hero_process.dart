@@ -1,14 +1,20 @@
 part of 'mobile_ironwood_migration_flow_screen.dart';
 
 class _MobilePoolMigrationHero extends StatelessWidget {
-  const _MobilePoolMigrationHero({required this.data});
+  const _MobilePoolMigrationHero({
+    required this.data,
+    required this.privacyModeEnabled,
+  });
 
   final IronwoodMigrationFlowData data;
+  final bool privacyModeEnabled;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final amount = '${data.amountText} $kZcashDefaultCurrencyTicker';
+    final amount =
+        '${hideIfPrivacyMode(data.amountText, privacyModeEnabled: privacyModeEnabled)} ' // l10n-ignore: amount format
+        '$kZcashDefaultCurrencyTicker';
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadii.xLarge),
       child: ColoredBox(
@@ -68,7 +74,7 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                                       ),
                                       const SizedBox(width: AppSpacing.xxs),
                                       Text(
-                                        'Migration',
+                                        context.l10n.migrationStageMigration,
                                         style: AppTypography.bodyMediumStrong
                                             .copyWith(
                                               color: colors.text.inverse,
@@ -131,13 +137,13 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '(Legacy)',
+                          context.l10n.migrationPoolLegacy,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.muted,
                           ),
                         ),
                         Text(
-                          'Orchard Pool',
+                          context.l10n.migrationPoolOrchard,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.accent,
                           ),
@@ -157,7 +163,7 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          'Ironwood Pool',
+                          context.l10n.migrationPoolIronwood,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.positiveStrong,
                           ),
@@ -217,30 +223,24 @@ class _MobileMigrationProcessCard extends StatelessWidget {
           ),
           borderRadius: 24,
           showShadow: false,
-          child: const Column(
+          child: Column(
             children: [
               _ProcessRow(
                 number: 1,
-                title: 'Choose how you migrate',
-                body:
-                    'Compare a privacy-optimized schedule with a faster '
-                    'migration.',
+                title: context.l10n.migrationMobileProcessChooseTitle,
+                body: context.l10n.migrationMobileProcessChooseBody,
               ),
               SizedBox(height: AppSpacing.sm),
               _ProcessRow(
                 number: 2,
-                title: 'Prepare your balance',
-                body:
-                    'Vizor reorganizes your balance into common-sized parts '
-                    'before migration begins.',
+                title: context.l10n.migrationMobileProcessPrepareTitle,
+                body: context.l10n.migrationMobileProcessPrepareBody,
               ),
               SizedBox(height: AppSpacing.sm),
               _ProcessRow(
                 number: 3,
-                title: 'Move to Ironwood',
-                body:
-                    'Privacy-optimized migrations send parts at staggered '
-                    'times to reduce linkability.',
+                title: context.l10n.migrationMobileProcessMoveTitle,
+                body: context.l10n.migrationMobileProcessMoveBody,
               ),
             ],
           ),
@@ -271,15 +271,14 @@ class _MobileMigrationProcessCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Spend as funds arrive',
+                        context.l10n.migrationMobileProcessSpendTitle,
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.homeCard,
                         ),
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        'Each confirmed Ironwood amount is available to spend '
-                        'while the rest continues.',
+                        context.l10n.migrationMobileProcessSpendBody,
                         style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.homeCard,
                         ),

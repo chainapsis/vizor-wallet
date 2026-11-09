@@ -39,7 +39,7 @@ class NearIntentsOneClickSwapAdapter
   List<_OneClickToken>? _tokenCache;
 
   @override
-  String get providerLabel => 'NEAR Intents';
+  String get providerLabel => 'NEAR Intents'; // l10n-ignore: brand name
 
   @override
   Future<List<SwapAsset>> listSupportedExternalAssets() async {
@@ -100,7 +100,7 @@ class NearIntentsOneClickSwapAdapter
       'recipient': requestedRecipient,
       'recipientType': 'DESTINATION_CHAIN',
       'deadline': _deadlineIso(deadline),
-      'depositMode': 'SIMPLE',
+      'depositMode': 'SIMPLE', // l10n-ignore: protocol value
       'quoteWaitingTimeMs': quoteWaitingTimeMs,
       if (referral != null && referral!.isNotEmpty) 'referral': referral,
     };
@@ -203,7 +203,7 @@ class NearIntentsOneClickSwapAdapter
           'nearSenderAccount': nearSenderAccount,
       },
     );
-    _expectSuccess(response, 'deposit submit');
+    _expectSuccess(response, 'deposit submit'); // l10n-ignore: log label
     return _snapshotFromStatusResponse(
       _OneClickStatusResponse.fromJson(response.jsonObject),
       tokens,
@@ -222,7 +222,7 @@ class NearIntentsOneClickSwapAdapter
       _endpoint('/v0/tokens'),
       headers: _headers(),
     );
-    _expectSuccess(response, 'token list');
+    _expectSuccess(response, 'token list'); // l10n-ignore: log label
     final tokens = [
       for (final item in response.jsonList)
         if (item is Map<String, dynamic>) _OneClickToken.fromJson(item),
@@ -310,7 +310,7 @@ class NearIntentsOneClickSwapAdapter
       sellAmountText: sellAmountText,
       receiveEstimateText: receiveEstimateText,
       status: status,
-      nextAction: _nextAction(status, quote.sellAsset.symbol),
+      nextAction: _nextAction(status).name,
       depositInstruction: quote.depositInstruction,
       sellAmountBaseUnits: quote.sellAmountBaseUnits,
       swapFeeText: quote.feeLabel,
@@ -372,10 +372,10 @@ class NearIntentsOneClickSwapAdapter
       pairText:
           '${sellAsset?.symbol ?? 'Unlisted token'} -> '
           '${receiveAsset?.symbol ?? 'Unlisted token'}',
-      sellAmountText: kSwapAmountNotReported,
-      receiveEstimateText: kSwapAmountNotReported,
+      sellAmountText: kSwapNotReportedToken,
+      receiveEstimateText: kSwapNotReportedToken,
       status: status,
-      nextAction: _nextAction(status, sellAsset?.symbol),
+      nextAction: _nextAction(status).name,
       depositInstruction: SwapDepositInstruction(
         asset:
             sellAsset ??
@@ -386,8 +386,6 @@ class NearIntentsOneClickSwapAdapter
               decimals: 0,
             ),
         address: depositAddress,
-        expiresInLabel: _expiryLabel(request.deadline),
-        reuseWarning: 'Do not reuse this address',
         memo: quote.depositMemo,
         deadline: _parseIsoDateTime(request.deadline),
       ),
@@ -430,10 +428,6 @@ class NearIntentsOneClickSwapAdapter
       userDeadline ?? quote.timeWhenInactive,
     );
     final depositDeadline = _parseIsoDateTime(userDeadline);
-    final quoteExpiryLabel = _expiryLabel(
-      userDeadline ?? quote.timeWhenInactive,
-    );
-    final depositExpiryLabel = _expiryLabel(userDeadline);
 
     return SwapQuote(
       direction: direction,
@@ -445,7 +439,7 @@ class NearIntentsOneClickSwapAdapter
       receiveAmount: receiveAmount,
       minimumReceiveAmount: minimumReceive.amount,
       providerLabel: providerLabel,
-      feeLabel: 'Included in shown rate',
+      feeLabel: kSwapIncludedInRateToken,
       totalFeesText: _appFeesText(
         appFeeBps: response.quoteRequest.appFeeBpsOrNull,
         amountInFormatted: quote.amountInFormatted,
@@ -453,13 +447,10 @@ class NearIntentsOneClickSwapAdapter
         sellAsset: sellAsset,
         sellToken: sellToken,
       ),
-      expiryLabel: quoteExpiryLabel,
       quoteExpiresAt: quoteExpiresAt,
       depositInstruction: SwapDepositInstruction(
         asset: sellAsset,
         address: quote.depositAddress ?? _placeholderDepositAddress,
-        expiresInLabel: depositExpiryLabel,
-        reuseWarning: 'Do not reuse this address',
         memo: quote.depositMemo,
         deadline: depositDeadline,
       ),
@@ -513,8 +504,8 @@ class NearIntentsOneClickSwapAdapter
     if (slippageBps == null || slippageBps < 0) {
       return _MinimumReceiveDisplay(
         amount: receiveAmount,
-        text: kSwapAmountNotReported,
-        slippageToleranceTextOverride: kSwapAmountNotReported,
+        text: kSwapNotReportedToken,
+        slippageToleranceTextOverride: kSwapNotReportedToken,
       );
     }
 
@@ -1013,7 +1004,8 @@ class NearIntentsOneClickSwapAdapter
     return {
       if (contentType) HttpHeaders.contentTypeHeader: 'application/json',
       if (bearerToken != null && bearerToken!.isNotEmpty)
-        HttpHeaders.authorizationHeader: 'Bearer $bearerToken',
+        HttpHeaders.authorizationHeader:
+            'Bearer $bearerToken', // l10n-ignore: HTTP header
     };
   }
 

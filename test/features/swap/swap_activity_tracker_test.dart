@@ -8,6 +8,8 @@ import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_res
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
 
+import '../../support/test_l10n.dart';
+
 void main() {
   test(
     'automatic refresh skips unsigned ZEC deposits but tracks created ones',
@@ -1013,9 +1015,12 @@ void main() {
     const expectedMessage =
         'Swap is unavailable over Tor because the service blocked this '
         'connection.\nTurn off Tor in Settings to use swap.';
-    expect(result.refreshError, expectedMessage);
-    expect(result.intents.single.statusError, expectedMessage);
-    expect(store.savedRecords.single.statusError, expectedMessage);
+    expect(result.refreshError?.text(testL10n), expectedMessage);
+    expect(result.intents.single.statusError?.text(testL10n), expectedMessage);
+    expect(
+      store.savedRecords.single.statusError?.text(testL10n),
+      expectedMessage,
+    );
   });
 }
 

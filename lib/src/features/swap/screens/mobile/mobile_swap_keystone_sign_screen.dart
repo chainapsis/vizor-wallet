@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 import 'dart:typed_data';
@@ -129,11 +130,11 @@ class _MobileSwapKeystoneSignScreenState
         child: AbsorbPointer(
           absorbing: _cancelling,
           child: MobileKeystonePcztSigningFlow(
-            title: _cancelling ? 'Cancelling…' : 'Sign ZEC deposit',
-            failedTitle: 'Keystone signing failed',
-            description:
-                'Use your Keystone wallet to scan this transaction QR code. '
-                'Follow the steps on your device.',
+            title: _cancelling
+                ? context.l10n.commonCancelling
+                : context.l10n.swapSignZecDeposit,
+            failedTitle: context.l10n.swapKeystoneFailedTitle,
+            description: context.l10n.commonKeystoneScanTransaction,
             preparePczt: _preparePczt,
             onSigned: _handleSignedPczt,
             friendlyError: _friendlyError,
@@ -141,14 +142,12 @@ class _MobileSwapKeystoneSignScreenState
             signedPcztDecoder:
                 widget.signedPcztDecoder ?? _decodeSigningResponse,
             expectedSignedUrType: 'zcash-batch-sig-result',
-            unexpectedUrMessage:
-                'Open the signature result QR on Keystone, then scan again.',
+            unexpectedUrMessage: context.l10n.commonKeystoneScanSignatureResult,
             scannerBuilder: widget.scannerBuilder,
             forceScannerActiveForTesting: widget.forceScannerActiveForTesting,
             keyPrefix: 'mobile_swap_keystone_sign',
-            scanCaption:
-                'Scan the QR code on your Keystone to finish the ZEC deposit',
-            finalizingSignatureLabel: 'Broadcasting ZEC deposit...',
+            scanCaption: context.l10n.swapKeystoneScanCaption,
+            finalizingSignatureLabel: context.l10n.swapKeystoneFinalizing,
             logTag: 'MobileSwapKeystoneSign',
           ),
         ),
@@ -321,6 +320,7 @@ class _MobileSwapKeystoneSignScreenState
         txHash: result.txid,
         status: result.status,
         message: result.message,
+        notices: result.notices,
       ),
     );
   }
@@ -388,7 +388,7 @@ class _MobileSwapKeystoneSignScreenState
       if (mounted) {
         showAppToast(
           context,
-          'Could not finish cancelling. Please try again.',
+          context.l10n.commonCancelFailedRetry,
           iconName: AppIcons.warningCircle,
           tone: AppToastTone.destructive,
         );
@@ -441,7 +441,7 @@ class _MobileSwapKeystoneSignScreenState
   String _friendlyBroadcastFailureMessage(String? message) {
     final trimmed = message?.trim();
     if (trimmed == null || trimmed.isEmpty) {
-      return 'Transaction could not be broadcast.';
+      return context.l10n.swapKeystoneBroadcastFailed;
     }
     return _friendlyError(trimmed);
   }
@@ -450,30 +450,31 @@ class _MobileSwapKeystoneSignScreenState
     if (error is _MobileSwapKeystoneSignFailureException) {
       return error.message;
     }
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('does not support tex')) {
-      return 'Keystone does not support TEX sends yet.';
+      return context.l10n.swapKeystoneNoTex;
     }
     final batchError = keystoneBatchSigningFriendlyError(
+      context.l10n,
       error,
-      subject: 'deposit',
+      subject: KeystoneBatchSubject.deposit,
     );
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return context.l10n.commonProvingParamsFailed;
     }
     if (lower.contains('proposal not found')) {
-      return 'Transaction expired before it could be signed.';
+      return context.l10n.commonSigningExpired;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
-      return 'Keystone signature could not be applied.';
+      return context.l10n.commonKeystoneSignatureCouldNotBeApplied;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return 'Transaction could not be broadcast.';
+      return context.l10n.swapKeystoneBroadcastFailed;
     }
-    return 'ZEC deposit signing could not be completed.';
+    return context.l10n.swapKeystoneIncomplete;
   }
 }
 

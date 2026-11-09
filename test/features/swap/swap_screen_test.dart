@@ -64,6 +64,7 @@ import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
+import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
@@ -83,9 +84,12 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/swap_activity_fixture_intents.dart';
 
+import '../../support/localized_test_scope.dart';
+import '../../support/test_l10n.dart';
 import '../../support/leading_decimal_input.dart';
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 part 'support/swap_screen_test_fakes.dart';
 part 'support/swap_persistence_interleavings.dart';
@@ -1270,7 +1274,7 @@ void main() {
     expect(state.externalAsset, savedBaseUsdc);
     expect(container.read(paySelectedAssetProvider), savedBaseUsdc);
     expect(
-      state.externalAssetSupportError,
+      state.externalAssetSupportError(testL10n),
       'USDC on Base is not currently supported.',
     );
     expect(find.byKey(const ValueKey('pay_amount_error')), findsOneWidget);
@@ -1496,6 +1500,7 @@ void main() {
           details: const [
             SwapStatusDetailRowData(
               label: 'USDC deposit to',
+              kind: SwapStatusDetailKind.depositAddress,
               value: '0x123kjhc ... 4x98g20',
               copyable: true,
             ),
@@ -1505,10 +1510,12 @@ void main() {
             ),
             SwapStatusDetailRowData(
               label: 'Timestamp',
+              kind: SwapStatusDetailKind.timestamp,
               value: 'May 20, 2026 13:20',
             ),
             SwapStatusDetailRowData(
               label: 'Total fees',
+              kind: SwapStatusDetailKind.totalFees,
               value: '~0.25 USDC',
               help: true,
             ),
@@ -1559,14 +1566,17 @@ void main() {
           details: const [
             SwapStatusDetailRowData(
               label: 'Refund to',
+              kind: SwapStatusDetailKind.refundTo,
               value: '0x123kjhc ... 4x98g20',
             ),
             SwapStatusDetailRowData(
               label: 'Timestamp',
+              kind: SwapStatusDetailKind.timestamp,
               value: 'May 20, 2026 13:20',
             ),
             SwapStatusDetailRowData(
               label: 'Total fees',
+              kind: SwapStatusDetailKind.totalFees,
               value: '~0.25 USDC',
               help: true,
             ),
@@ -1713,9 +1723,9 @@ void main() {
     expect(find.text('Slippage tolerance'), findsOneWidget);
     expect(find.text('Guaranteed minimum'), findsOneWidget);
     expect(find.text('Price protection'), findsNothing);
-    expect(_tooltipWithMessage(swapFeeTooltip), findsOneWidget);
+    expect(_tooltipWithMessage(swapFeeTooltip(testL10n)), findsOneWidget);
     expect(
-      _tooltipWithMessage(swapGenericMinimumReceiveTooltip),
+      _tooltipWithMessage(swapGenericMinimumReceiveTooltip(testL10n)),
       findsOneWidget,
     );
 
@@ -2138,9 +2148,14 @@ void main() {
         _statusTestPage(
           activeTab: SwapStatusTab.details,
           details: const [
-            SwapStatusDetailRowData(label: 'Account', value: 'John'),
+            SwapStatusDetailRowData(
+              label: 'Account',
+              kind: SwapStatusDetailKind.account,
+              value: 'John',
+            ),
             SwapStatusDetailRowData(
               label: 'USDC recipient',
+              kind: SwapStatusDetailKind.recipient,
               value: '0x123kjhc ... 4x98g20',
               copyable: true,
               addressBookLabel: 'Treasury',
@@ -2148,6 +2163,7 @@ void main() {
             ),
             SwapStatusDetailRowData(
               label: 'Swap fee',
+              kind: SwapStatusDetailKind.swapFee,
               value: 'Included in shown rate',
               help: true,
             ),
@@ -2183,9 +2199,14 @@ void main() {
         _statusTestPage(
           activeTab: SwapStatusTab.details,
           details: const [
-            SwapStatusDetailRowData(label: 'Account', value: 'John'),
+            SwapStatusDetailRowData(
+              label: 'Account',
+              kind: SwapStatusDetailKind.account,
+              value: 'John',
+            ),
             SwapStatusDetailRowData(
               label: 'USDC recipient',
+              kind: SwapStatusDetailKind.recipient,
               value: '0x1234567…89abc',
               copyable: true,
               addressBookLabel: 'eth account',
@@ -2193,19 +2214,23 @@ void main() {
             ),
             SwapStatusDetailRowData(
               label: 'Deposit ZEC to',
+              kind: SwapStatusDetailKind.depositAddress,
               value: 't1V4tMBk8 ... hunXYpe',
             ),
             SwapStatusDetailRowData(
               label: 'Swap fee',
+              kind: SwapStatusDetailKind.swapFee,
               value: 'Included in shown rate',
               help: true,
             ),
             SwapStatusDetailRowData(
               label: 'Slippage tolerance',
+              kind: SwapStatusDetailKind.slippageTolerance,
               value: '0.01 USDC (1.0%)',
             ),
             SwapStatusDetailRowData(
               label: 'Guaranteed minimum',
+              kind: SwapStatusDetailKind.guaranteedMinimum,
               value: '52.00 USDC',
               help: true,
             ),
@@ -2236,15 +2261,21 @@ void main() {
         _statusTestPage(
           activeTab: SwapStatusTab.details,
           details: const [
-            SwapStatusDetailRowData(label: 'Account', value: 'John'),
+            SwapStatusDetailRowData(
+              label: 'Account',
+              kind: SwapStatusDetailKind.account,
+              value: 'John',
+            ),
             SwapStatusDetailRowData(
               label: 'Deposit USDC to',
+              kind: SwapStatusDetailKind.depositAddress,
               value: compactAddress,
               copyable: true,
               copyText: fullAddress,
             ),
             SwapStatusDetailRowData(
               label: 'Swap fee',
+              kind: SwapStatusDetailKind.swapFee,
               value: 'Included in shown rate',
               help: true,
             ),
@@ -2280,6 +2311,7 @@ void main() {
           details: [
             SwapStatusDetailRowData(
               label: 'USDC deposit tx',
+              kind: SwapStatusDetailKind.sourceTx,
               value: compactTxHash,
               copyable: true,
               copyText: fullTxHash,
@@ -2287,6 +2319,7 @@ void main() {
             ),
             const SwapStatusDetailRowData(
               label: 'Total fees',
+              kind: SwapStatusDetailKind.totalFees,
               value: 'Included',
               help: true,
             ),
@@ -2610,15 +2643,17 @@ void main() {
       VoidCallback? onRetry,
     }) async {
       await tester.pumpWidget(
-        _themeHarness(
-          Center(
-            child: AddressQrScanModalContent(
-              status: status,
-              cameraView: cameraView,
-              canChooseCamera: canChooseCamera,
-              onCameraTap: onCameraTap,
-              onRetry: onRetry,
-              onCancel: () {},
+        LocalizedTestScope(
+          child: _themeHarness(
+            Center(
+              child: AddressQrScanModalContent(
+                status: status,
+                cameraView: cameraView,
+                canChooseCamera: canChooseCamera,
+                onCameraTap: onCameraTap,
+                onRetry: onRetry,
+                onCancel: () {},
+              ),
             ),
           ),
         ),
@@ -3946,6 +3981,35 @@ void main() {
     await tester.pumpAndSettle();
     expect(maxEstimator.requests, ['account-1']);
     expect(_fieldText(tester, 'swap_amount_field'), '1.2339');
+  });
+
+  testWidgets('mobile ZEC swap composer masks the max balance in privacy mode', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(390, 844));
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            // The mobile shell supplies the Material ancestor in the app.
+            GoRoute(
+              path: '/swap',
+              builder: (_, _) => const Material(child: MobileSwapScreen()),
+            ),
+          ],
+        ),
+        bootstrap: _privacyModeBootstrap,
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(),
+        spendableBalance: BigInt.from(123450000),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Max: ****** ZEC'), findsOneWidget);
+    expect(find.textContaining('1.2345'), findsNothing);
   });
 
   testWidgets('ZEC max amount request keeps the max label spinner-free', (
@@ -9072,7 +9136,7 @@ void main() {
     ),
     (
       const ReceiveError(message: 'HTTP 503', kind: ReceiveErrorKind.other),
-      kPrivateSwapAddressUnavailableMessage,
+      testL10n.swapNoticePrivateReceiveAddressUnavailable,
       'a failed round says private swap addresses are unavailable',
     ),
     (
@@ -9143,7 +9207,7 @@ void main() {
     ),
     (
       const ReceiveError(message: 'HTTP 503', kind: ReceiveErrorKind.other),
-      kPrivateSwapAddressUnavailableMessage,
+      testL10n.swapNoticePrivateReceiveAddressUnavailable,
       'a failed round says private swap addresses are unavailable',
     ),
   ]) {
@@ -9494,7 +9558,7 @@ void main() {
     /// a way to fund it.
     Future<void> expectNoInstructions(WidgetTester tester) async {
       await _openActivitySurface(tester);
-      expect(find.text(swapStartingText), findsWidgets);
+      expect(find.text(testL10n.swapStartPending), findsWidgets);
       await _openActivityDetail(tester, '0xlive-deposit');
       expect(
         find.byKey(const ValueKey('swap_activity_start_pending')),
@@ -9614,7 +9678,7 @@ void main() {
     expect(saved.single.startPending, isTrue, reason: 'still hidden');
     await _openActivitySurface(tester);
     await _openActivityDetail(tester, 'left-starting');
-    expect(find.text(swapStartFailedText), findsOneWidget);
+    expect(find.text(testL10n.swapNoticeStartNotFinished), findsOneWidget);
     expect(find.byType(SwapDepositTokensPageContent), findsNothing);
   });
 
@@ -10696,7 +10760,9 @@ void main() {
       expect(sessionStore.savedIntents.single.depositTxHash, 'zec-auto-txid');
       expect(
         sessionStore.savedIntents.single.broadcastNotice,
-        'Broadcast could not start after local creation',
+        const SwapLiteralMessage(
+          'Broadcast could not start after local creation',
+        ),
       );
       await _openSwapStatusDetails(tester, expand: true);
       expect(find.text('zec-auto-txid'), findsWidgets);
@@ -10704,6 +10770,68 @@ void main() {
         find.text('Broadcast could not start after local creation'),
         findsWidgets,
       );
+    },
+  );
+
+  testWidgets(
+    'a deposit broadcast with notices stores them and shows the English Rust wrote',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      const english =
+          'Broadcast failed after 0/1 txs sent (). Error: transport error';
+      final swapProvider = _FakeSwapProvider();
+      final depositSender = _FakeSwapDepositSender(
+        broadcastStatus: SwapDepositBroadcastStatus.pendingBroadcast,
+        broadcastMessage: english,
+        broadcastNotices: const [
+          rust_sync.BroadcastNotice(
+            kind: 'broadcast_failed',
+            index: 0,
+            total: 1,
+            txid: '',
+            detail: 'transport error',
+          ),
+        ],
+      );
+      final sessionStore = _FakeSwapPersistenceStore();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: swapProvider,
+          depositSender: depositSender,
+          sessionStore: sessionStore,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '1.5',
+      );
+      await _enterDestinationText(
+        tester,
+        '0x52908400098527886e0f7030069857d2e4169ee7',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_start_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+      await tester.pumpAndSettle();
+
+      final saved = sessionStore.savedIntents.single.broadcastNotice;
+      expect(saved, isA<SwapBroadcastMessage>());
+      expect(saved!.text(testL10n), english);
+      await _openSwapStatusDetails(tester, expand: true);
+      expect(find.text(english), findsWidgets);
     },
   );
 
@@ -10986,7 +11114,7 @@ void main() {
     expect(depositSender.preflightRequests, isEmpty);
     expect(swapProvider.startedQuotes, isEmpty);
     expect(sessionStore.savedIntents, isEmpty);
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
   });
 
   testWidgets('ZEC deposit preflight failure does not start a swap intent', (
@@ -11715,7 +11843,10 @@ void main() {
         expect(saved.payMode, payMode);
         expect(saved.depositTxHash, 'mined-parent,expired-child');
         expect(saved.broadcastStatus, 'partial_broadcast');
-        expect(saved.broadcastNotice, 'The remaining round expired');
+        expect(
+          saved.broadcastNotice,
+          const SwapLiteralMessage('The remaining round expired'),
+        );
         // Potential funds on the network must still protect account deletion.
         expect(saved.hasConfirmedDepositEvidence, isTrue);
         expect(saved.status, SwapIntentStatus.awaitingDeposit);
@@ -11818,7 +11949,7 @@ void main() {
       );
       expect(
         sessionStore.savedIntents.single.broadcastNotice,
-        'broadcast timed out before confirmation',
+        const SwapLiteralMessage('broadcast timed out before confirmation'),
       );
       await _openSwapStatusDetails(tester, expand: true);
       expect(find.text('hardware- ... st-txid'), findsWidgets);
@@ -12361,6 +12492,7 @@ Widget _routerHarness(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) {
         final media = MediaQuery.maybeOf(context);
@@ -12459,7 +12591,7 @@ Widget _themeHarness(Widget child) {
 Widget _themeHarnessWithTheme(AppThemeData theme, Widget child) {
   return AppTheme(
     data: theme,
-    child: Directionality(textDirection: TextDirection.ltr, child: child),
+    child: LocalizedTestScope(child: child),
   );
 }
 
@@ -12473,10 +12605,7 @@ Widget _themeHarnessWithTheme(AppThemeData theme, Widget child) {
 Widget _themeHarnessWithOverlay(Widget child) {
   return AppTheme(
     data: AppThemeData.light,
-    child: Directionality(
-      textDirection: TextDirection.ltr,
-      child: _OverlayHarness(child: child),
-    ),
+    child: LocalizedTestScope(child: _OverlayHarness(child: child)),
   );
 }
 
@@ -12670,23 +12799,28 @@ Widget _statusTestPage({
           const [
             SwapStatusDetailRowData(
               label: 'USDC refund address',
+              kind: SwapStatusDetailKind.refundAddress,
               value: '0x123kjhc ... 4x98g20',
             ),
             SwapStatusDetailRowData(
               label: 'Deposit USDC to',
+              kind: SwapStatusDetailKind.depositAddress,
               value: '0x123kjhc ... 4x98g20',
             ),
             SwapStatusDetailRowData(
               label: 'Swap fee',
+              kind: SwapStatusDetailKind.swapFee,
               value: 'Included in shown rate',
               help: true,
             ),
             SwapStatusDetailRowData(
               label: 'Slippage tolerance',
+              kind: SwapStatusDetailKind.slippageTolerance,
               value: '0.25 USDC (0.5%)',
             ),
             SwapStatusDetailRowData(
               label: 'Guaranteed minimum',
+              kind: SwapStatusDetailKind.guaranteedMinimum,
               value: '0.249 ZEC',
               help: true,
             ),
@@ -12704,7 +12838,7 @@ SwapIntent _persistedIntent({
   String? nextAction,
   String accountUuid = 'account-1',
 }) {
-  final effectiveNextAction = nextAction ?? status.label;
+  final effectiveNextAction = nextAction ?? status.name;
   return SwapIntent(
     id: id,
     pair: 'ZEC -> USDC',

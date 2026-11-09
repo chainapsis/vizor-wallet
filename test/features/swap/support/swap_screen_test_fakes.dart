@@ -1209,11 +1209,13 @@ class _FakeSwapDepositSender implements SwapDepositSender {
     this.preflightError,
     this.broadcastStatus = SwapDepositBroadcastStatus.broadcasted,
     this.broadcastMessage,
+    this.broadcastNotices = const [],
   });
 
   final Object? preflightError;
   final String broadcastStatus;
   final String? broadcastMessage;
+  final List<rust_sync.BroadcastNotice> broadcastNotices;
   final preflightRequests = <_DepositSendRequest>[];
 
   /// When set, the fee check waits for it.
@@ -1256,6 +1258,7 @@ class _FakeSwapDepositSender implements SwapDepositSender {
       txHash: 'zec-auto-txid',
       status: broadcastStatus,
       message: broadcastMessage,
+      notices: broadcastNotices,
     );
   }
 }
@@ -1377,6 +1380,7 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
       ),
     );
     return rust_sync.ExtractAndBroadcastPcztResult(
+      notices: const [],
       txid: 'hardware-broadcast-txid',
       status: broadcastStatus,
       message: broadcastMessage,

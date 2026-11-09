@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/welcome_video_backdrop.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 class _CountingVideoPlayerPlatform extends VideoPlayerPlatform {
   var createCalls = 0;
@@ -23,6 +24,7 @@ class _CountingVideoPlayerPlatform extends VideoPlayerPlatform {
 
 Widget _app({bool animate = true, bool disableAnimations = false}) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (context, child) => MediaQuery(
       data: MediaQuery.of(
         context,
@@ -131,6 +133,7 @@ void main() {
       final navigatorKey = GlobalKey<NavigatorState>();
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           navigatorKey: navigatorKey,
           home: Scaffold(body: _app()),
         ),

@@ -1,3 +1,4 @@
+import '../../support/test_l10n.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart';
@@ -589,31 +590,54 @@ void main() {
 
     test('uses relative labels within a week', () {
       expect(
-        payRecentTimeLabel(now.subtract(const Duration(seconds: 30)), now: now),
+        payRecentTimeLabel(
+          testL10n,
+          now.subtract(const Duration(seconds: 30)),
+          now: now,
+        ),
         'just now',
       );
       expect(
-        payRecentTimeLabel(now.subtract(const Duration(minutes: 5)), now: now),
+        payRecentTimeLabel(
+          testL10n,
+          now.subtract(const Duration(minutes: 5)),
+          now: now,
+        ),
         '5m ago',
       );
       expect(
-        payRecentTimeLabel(now.subtract(const Duration(hours: 3)), now: now),
+        payRecentTimeLabel(
+          testL10n,
+          now.subtract(const Duration(hours: 3)),
+          now: now,
+        ),
         '3h ago',
       );
       expect(
-        payRecentTimeLabel(now.subtract(const Duration(days: 2)), now: now),
+        payRecentTimeLabel(
+          testL10n,
+          now.subtract(const Duration(days: 2)),
+          now: now,
+        ),
         '2d ago',
       );
     });
 
     test('falls back to month + day beyond a week', () {
-      expect(payRecentTimeLabel(DateTime(2026, 4, 27), now: now), 'April 27');
+      expect(
+        payRecentTimeLabel(testL10n, DateTime(2026, 4, 27), now: now),
+        'April 27',
+      );
     });
 
     test('returns null for missing or future timestamps', () {
-      expect(payRecentTimeLabel(null, now: now), isNull);
+      expect(payRecentTimeLabel(testL10n, null, now: now), isNull);
       expect(
-        payRecentTimeLabel(now.add(const Duration(minutes: 1)), now: now),
+        payRecentTimeLabel(
+          testL10n,
+          now.add(const Duration(minutes: 1)),
+          now: now,
+        ),
         isNull,
       );
     });

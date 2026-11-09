@@ -40,7 +40,7 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
   Future<void> setAutomatic() async {
     final config = defaultRpcEndpointConfig(state.networkName);
     if (!isAutomaticRpcEndpointConfig(config)) {
-      throw const FormatException('Automatic selection is unavailable.');
+      throw RpcEndpointFormatException(RpcEndpointIssue.automaticUnavailable);
     }
     await _persist(config);
   }
@@ -78,8 +78,9 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
   Future<void> _verifyNetwork(String lightwalletdUrl) async {
     final chainName = await getChainName(lightwalletdUrl);
     if (chainName != state.networkName) {
-      throw FormatException(
-        'Endpoint is for $chainName, but this wallet uses ${state.networkName}.',
+      throw RpcEndpointNetworkMismatch(
+        endpointNetwork: chainName,
+        walletNetwork: state.networkName,
       );
     }
   }

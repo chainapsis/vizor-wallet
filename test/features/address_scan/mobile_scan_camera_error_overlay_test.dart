@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/mobile_address_scan_view.dart';
+import '../../support/localized_test_scope.dart';
 
 Widget _app(
   MobileScannerController controller, {
@@ -14,8 +15,7 @@ Widget _app(
 }) {
   return AppTheme(
     data: AppThemeData.dark,
-    child: Directionality(
-      textDirection: TextDirection.ltr,
+    child: LocalizedTestScope(
       child: SizedBox(
         width: 393,
         height: 852,

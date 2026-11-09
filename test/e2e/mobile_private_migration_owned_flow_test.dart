@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../integration_test/support/mobile_regtest_flow.dart';
 
@@ -123,6 +124,7 @@ Future<void> _expectApprovalFailure(WidgetTester tester) =>
     });
 
 Widget _app(Widget child) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   home: AppTheme(
     data: AppThemeData.light,
     child: Scaffold(body: Center(child: child)),

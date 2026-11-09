@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
+import '../../support/test_l10n.dart';
 import '../../fakes/fake_sync_notifier.dart';
 
 const _accountUuid = '550e8400-e29b-41d4-a716-446655440000';
@@ -416,7 +417,7 @@ void main() {
 
       expect(state.mode, IronwoodHomeMigrationCtaMode.start);
       expect(state.visible, isTrue);
-      expect(state.buttonLabel, 'Migrate to Ironwood Pool');
+      expect(state.buttonLabel(testL10n), 'Migrate to Ironwood Pool');
     },
   );
 
@@ -440,7 +441,7 @@ void main() {
 
     expect(state.mode, IronwoodHomeMigrationCtaMode.resume);
     expect(state.visible, isTrue);
-    expect(state.buttonLabel, 'Continue migration');
+    expect(state.buttonLabel(testL10n), 'Continue migration');
   });
 
   test(

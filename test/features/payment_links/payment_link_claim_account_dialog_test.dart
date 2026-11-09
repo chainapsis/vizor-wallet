@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_claim_account_sheet.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -193,6 +194,7 @@ Future<void> _openSheet(
     AppTheme(
       data: AppThemeData.dark,
       child: MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: withSidebar
             ? AppDesktopShell(sidebar: const SizedBox(), pane: pane)
             : Scaffold(body: pane),

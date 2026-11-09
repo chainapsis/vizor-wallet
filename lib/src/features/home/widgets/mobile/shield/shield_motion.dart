@@ -3,7 +3,7 @@ import 'package:flutter/animation.dart';
 import '../../../../../core/theme/app_theme.dart';
 
 abstract final class VText {
-  static const geist = 'Geist';
+  static const geist = 'Geist'; // l10n-ignore: font family
   static final display = AppTypography.displayLarge.copyWith(
     fontFamily: 'Shielding Serif',
   );

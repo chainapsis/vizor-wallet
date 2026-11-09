@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/widgets/app_carousel.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
@@ -41,19 +42,18 @@ class DesktopHomeSetupCarousel extends ConsumerWidget {
       key: ValueKey('desktop_setup_carousel_${account.uuid}'),
       showAdjacentCards: false,
       autoplay: false,
-      semanticLabel: 'Wallet setup',
+      semanticLabel: context.l10n.homeSetupCarouselLabel,
       items: [
         if (backup)
           AppCarouselItem.icon(
-            message: 'Back up your wallet. Keep your secret passphrase safe.',
+            message: context.l10n.homeSetupBackupMessage,
             tileColor: const Color(0xFF00A460),
             icon: AppIcons.key,
             onTap: () => context.push('/setup/backup', extra: account.uuid),
           ),
         if (education)
           AppCarouselItem.icon(
-            message:
-                'Learn how Zcash protects your privacy and which address to use.',
+            message: context.l10n.homeSetupEducationMessage,
             tileColor: const Color(0xFF9667E2),
             icon: AppIcons.zcash,
             onTap: () =>

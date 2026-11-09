@@ -6,6 +6,8 @@ import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
+import '../../../core/l10n/untranslated_text_log.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -130,14 +132,17 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   }
 
   String _cameraLabel(MobileScannerState state) {
-    if (!QrScanner.isAvailable) return 'No camera found';
-    if (_loadingCameras && _cameras.isEmpty) return 'Loading camera...';
+    if (!QrScanner.isAvailable) return context.l10n.commonNoCameraFound;
+    if (_loadingCameras && _cameras.isEmpty) {
+      return context.l10n.commonLoadingCamera;
+    }
 
     final selectedCamera = _cameraById(_selectedCameraId);
     final camera = selectedCamera ?? state.camera ?? _defaultCamera;
-    final name = camera?.name ?? 'Default camera';
+    final name = camera?.name ?? context.l10n.commonDefaultCamera;
     if (camera?.isDefault == true && !name.contains('(Default)')) {
-      return '$name (Default)';
+      // Some platforms already put the marker in the device name.
+      return context.l10n.addressScanCameraDefaultSuffix(name);
     }
     return name;
   }
@@ -160,9 +165,9 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   }
 
   String _cameraUnavailableDescription(MobileScannerState state) {
-    final message = state.error?.errorDetails?.message;
-    if (message != null && message.isNotEmpty) return message;
-    return 'No camera could be opened. Check that a camera is connected and not in use by another app.';
+    // The plugin's message is untranslated, so only the log keeps it.
+    logUntranslatedText(state.error?.errorDetails?.message ?? '');
+    return context.l10n.commonNoCameraCouldBeOpenedCheck;
   }
 
   Future<void> _retryCameraStart({required bool openSettingsOnDenied}) async {
@@ -239,7 +244,7 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
     final normalized = normalizeAddressScanPayload(value);
     if (normalized == null || normalized.isEmpty) {
       setState(() {
-        _error = 'QR code did not include an address.';
+        _error = context.l10n.commonQrNoAddress;
         _scanResetToken++;
       });
       return;
@@ -292,7 +297,8 @@ class AddressQrScanModalContent extends StatelessWidget {
     required this.status,
     required this.onCancel,
     this.cameraView,
-    this.cameraLabel = 'Face Time HD Camera (Default)',
+    this.cameraLabel =
+        'Face Time HD Camera (Default)', // l10n-ignore: sample device name
     this.canChooseCamera = false,
     this.onCameraTap,
     this.onRetry,
@@ -394,7 +400,7 @@ class AddressQrScanModalContent extends StatelessWidget {
             variant: AppButtonVariant.ghost,
             size: AppButtonSize.large,
             minWidth: 196,
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
         ],
       ),
@@ -417,7 +423,7 @@ class _AddressQrScanTitle extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            'Scan the address QR code',
+            context.l10n.addressScanTitle,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
@@ -521,17 +527,16 @@ class _AddressQrCameraViewport extends StatelessWidget {
             ),
             ?cameraView,
             if (status == AddressQrCameraStatus.requesting)
-              const _AddressQrCameraMessage(
+              _AddressQrCameraMessage(
                 iconName: AppIcons.camera,
-                title: 'Grant access to your camera',
-                description:
-                    'Request again, or enable manually\nin the System settings.',
+                title: context.l10n.addressScanGrantAccess,
+                description: context.l10n.commonCameraRequestAgainHint,
               ),
             if (status == AddressQrCameraStatus.denied)
               _AddressQrCameraMessage(
                 iconName: AppIcons.camera,
-                title: _cameraDeniedTitle,
-                description: _cameraDeniedDescription,
+                title: _cameraDeniedTitle(context),
+                description: _cameraDeniedDescription(context),
                 action: AppButton(
                   key: const ValueKey('address_scan_retry_button'),
                   onPressed: onRetry,
@@ -539,16 +544,16 @@ class _AddressQrCameraViewport extends StatelessWidget {
                   size: AppButtonSize.medium,
                   minWidth: 96,
                   leading: const AppIcon(AppIcons.renew, size: 16),
-                  child: const Text('Request again'),
+                  child: Text(context.l10n.commonRequestAgain),
                 ),
               ),
             if (status == AddressQrCameraStatus.unavailable)
               _AddressQrCameraMessage(
                 iconName: AppIcons.cameraDenied,
-                title: 'Camera unavailable',
+                title: context.l10n.commonCameraUnavailable,
                 description:
                     unavailableDescription ??
-                    'Address QR scanning requires a camera on this device.',
+                    context.l10n.addressScanCameraRequired,
                 action: onRetry == null
                     ? null
                     : AppButton(
@@ -558,7 +563,7 @@ class _AddressQrCameraViewport extends StatelessWidget {
                         size: AppButtonSize.medium,
                         minWidth: 96,
                         leading: const AppIcon(AppIcons.renew, size: 16),
-                        child: const Text('Try again'),
+                        child: Text(context.l10n.commonTryAgain),
                       ),
               ),
             if (status == AddressQrCameraStatus.loading)
@@ -584,13 +589,13 @@ class _AddressQrCameraViewport extends StatelessWidget {
     );
   }
 
-  String get _cameraDeniedTitle => Platform.isWindows
-      ? 'Enable Windows camera access'
-      : "You've denied Camera access";
+  String _cameraDeniedTitle(BuildContext context) => Platform.isWindows
+      ? context.l10n.commonEnableWindowsCameraAccess
+      : context.l10n.addressScanDeniedTitle;
 
-  String get _cameraDeniedDescription => Platform.isWindows
-      ? 'Turn on Camera access and Let desktop apps access your camera in Windows Settings.'
-      : 'Request again, or enable manually\nin the System settings.';
+  String _cameraDeniedDescription(BuildContext context) => Platform.isWindows
+      ? context.l10n.commonTurnOnCameraAccessAndLet
+      : context.l10n.commonCameraRequestAgainHint;
 }
 
 class _AddressQrCameraMessage extends StatelessWidget {
@@ -731,7 +736,7 @@ class _AddressQrLoadingOverlay extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.xxs),
                 Text(
-                  'Loading',
+                  context.l10n.commonLoading,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: _foregroundColor,
                   ),

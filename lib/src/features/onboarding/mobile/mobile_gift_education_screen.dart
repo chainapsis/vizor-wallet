@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
@@ -67,7 +68,7 @@ class _MobileGiftEducationScreenState
       setState(() => _finishing = false);
       showAppToast(
         context,
-        'Unable to save your progress. Try again.',
+        context.l10n.onboardingGiftEducationSaveFailed,
         iconName: AppIcons.warning,
         tone: AppToastTone.destructive,
       );
@@ -90,9 +91,7 @@ class _MobileGiftEducationScreenState
       actionsEnabled: !_finishing,
       onContinue: () =>
           context.push('/setup/education/address-types', extra: _accountUuid),
-      closingText:
-          'Your wallet is ready. Learn how Zcash protects your privacy and '
-          'which address to use.',
+      closingText: context.l10n.onboardingGiftEducationClosing,
       onSkip: _finish,
     ),
     GiftEducationPage.addressTypes => MobileAddressTypesScreen(

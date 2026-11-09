@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:zcash_wallet/src/core/navigation/incoming_link_entry_policy.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -23,9 +24,11 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fakes/fake_sync_notifier.dart';
 import 'support/payment_link_navigation_support.dart';
+import 'support/test_l10n.dart';
 import 'support/payment_links_screen_support.dart'
     show loadPaymentLinksTestFonts;
 
@@ -67,19 +70,19 @@ void main() {
       isTrue,
     );
     expect(
-      paymentLinkEntryDeferredMessageAtLocation(
+      paymentLinkEntryDeferredNoticeAtLocation(
         '/home',
         paymentRequestCardPresented: true,
       ),
-      kPaymentLinkDeferredByActiveFlowMessage,
+      IncomingLinkNotice.giftBusy,
     );
     // Setup still wins: its message is the more specific one.
     expect(
-      paymentLinkEntryDeferredMessageAtLocation(
+      paymentLinkEntryDeferredNoticeAtLocation(
         '/welcome',
         paymentRequestCardPresented: true,
       ),
-      kPaymentLinkDeferredByAccountSetupMessage,
+      IncomingLinkNotice.giftSetup,
     );
   });
 
@@ -129,6 +132,7 @@ void main() {
           syncProvider.overrideWith(FakeSyncNotifier.new),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               buildIncomingLinkHostForTest(router: router, child: child!),
@@ -197,8 +201,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump();
 
-    expect(container.read(paymentLinkIntakeProvider).errorMessage, isNull);
-    expect(find.text('Payment link could not be opened.'), findsOneWidget);
+    expect(container.read(paymentLinkIntakeProvider).error, isNull);
+    expect(find.text('Gift card link could not be opened.'), findsOneWidget);
   });
 
   testWidgets('opens Gift onboarding immediately from a walletless Welcome', (
@@ -244,7 +248,10 @@ void main() {
       GoRouterState.of(tester.element(find.byType(GiftClaimScreen))).uri.path,
       '/gift',
     );
-    expect(find.text(kPaymentLinkDeferredByAccountSetupMessage), findsNothing);
+    expect(
+      find.text(IncomingLinkNotice.giftSetup.text(testL10n)),
+      findsNothing,
+    );
     // Intake retains the Card until setup owns its durable handoff.
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
     expect(
@@ -304,7 +311,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byType(SendScreen), findsOneWidget);
-    expect(find.text(kPaymentLinkDeferredByActiveFlowMessage), findsOneWidget);
+    expect(
+      find.text(IncomingLinkNotice.giftBusy.text(testL10n)),
+      findsOneWidget,
+    );
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
 
     GoRouter.of(sendContext).go('/home');

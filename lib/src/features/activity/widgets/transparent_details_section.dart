@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -47,7 +48,8 @@ class TransparentDetailsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final notice = transparentDetailsNotice(detail);
     final outputs = listedTransactionOutputs(detail);
-    final omissions = transparentOmissionPhrases(detail);
+    final l10n = context.l10n;
+    final omissions = transparentOmissionPhrases(l10n, detail);
     if (notice == null &&
         outputs.isEmpty &&
         omissions.isEmpty &&
@@ -59,15 +61,15 @@ class TransparentDetailsSection extends StatelessWidget {
       if (notice == rust_sync.TransparentDetailsState.notCovered)
         ReviewListRow(
           key: const ValueKey('transparent_details_not_covered'),
-          label: 'Details',
-          value: kTransparentDetailsNotCoveredText,
+          label: l10n.activityReceiptDetails,
+          value: l10n.activityDetailsNotCovered,
           valueColor: colors.text.secondary,
         )
       else if (notice != null)
         ReviewListRow(
           key: const ValueKey('transparent_details_unavailable'),
-          label: 'Details',
-          value: kTransparentDetailsUnavailableText,
+          label: l10n.activityReceiptDetails,
+          value: l10n.activityDetailsUnavailable,
           valueColor: colors.text.secondary,
           leadingIconName: AppIcons.loader,
           scaleValueToFit: true,
@@ -79,17 +81,17 @@ class TransparentDetailsSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ReviewListRow(
-              label: kTransactionOutputsText,
-              value: kTransactionOutputsUnattributedText,
+              label: l10n.activityDetailsOutputsLabel,
+              value: l10n.activityDetailsOutputsUnattributed,
               valueColor: colors.text.secondary,
               scaleValueToFit: true,
             ),
             for (final output in outputs)
               ReviewListRow(
                 key: ValueKey('transaction_output_${output.outputIndex}'),
-                label: 'Output',
+                label: l10n.activityReceiptOutput,
                 value:
-                    '${output.address == null ? 'Script' : truncatedAddress(output.address!)}'
+                    '${output.address == null ? 'Script' /* l10n-ignore: protocol term */ : truncatedAddress(output.address!)}'
                     '  ${hideAmountIfPrivacyMode(ZecAmount.fromZatoshi(output.amountZatoshi).activityDetail.toString(), privacyModeEnabled: privacyModeEnabled)}',
                 copyText: output.address,
                 scaleValueToFit: true,
@@ -99,7 +101,7 @@ class TransparentDetailsSection extends StatelessWidget {
       if (omissions.isNotEmpty)
         ReviewListRow(
           key: const ValueKey('transparent_details_omissions'),
-          label: kTransparentDetailsOmittedLabel,
+          label: l10n.activityDetailsOmittedLabel,
           value: omissions.join(', '),
           valueColor: colors.text.secondary,
           scaleValueToFit: true,
@@ -107,8 +109,8 @@ class TransparentDetailsSection extends StatelessWidget {
       if (onLoadPublicly != null)
         ReviewListRow(
           key: const ValueKey('transparent_details_load_publicly'),
-          label: kLoadDetailsPubliclyLabel,
-          value: publicLookupText ?? kLoadDetailsPubliclyText,
+          label: l10n.activityDetailsLoadPubliclyLabel,
+          value: publicLookupText ?? l10n.activityDetailsLoadPublicly,
           trailingIconName: AppIcons.arrowTopRight,
           onPressed: onLoadPublicly,
           scaleValueToFit: true,

@@ -28,7 +28,9 @@ void main() {
           minimumDepositText: '0.0029 ZEC',
           refundFeeText: '0.0001 ZEC',
         ),
-        broadcastNotice: 'local storage failed after broadcast',
+        broadcastNotice: const SwapLiteralMessage(
+          'local storage failed after broadcast',
+        ),
         oneClickRecipient: '0xrecipient',
         oneClickRefundTo: 'u1refund',
       ),
@@ -62,7 +64,7 @@ void main() {
       final activityRecord = resolveSwapRecordForDisplay(record);
 
       expect(intent.status, SwapIntentStatus.refunded);
-      expect(intent.nextAction, 'Refund sent to your refund address');
+      expect(intent.nextAction, SwapNextAction.refundSent.name);
       expect(intent.providerStatusRaw, 'FAILED');
       expect(activityRecord.status, SwapIntentStatus.refunded);
       expect(activityRecord.providerStatusRaw, 'FAILED');
@@ -122,7 +124,7 @@ void main() {
     );
 
     expect(updated.status, SwapIntentStatus.refunded);
-    expect(updated.nextAction, 'Refund sent to your refund address');
+    expect(updated.nextAction, SwapNextAction.refundSent.name);
     expect(updated.providerStatusRaw, 'FAILED');
   });
 
@@ -302,7 +304,7 @@ void main() {
       );
 
       expect(intent.status, SwapIntentStatus.expired);
-      expect(intent.nextAction, 'Start a fresh quote');
+      expect(intent.nextAction, SwapNextAction.startFreshQuote.name);
       expect(intent.completedAt, now);
       expect(intent.userExternalContactId, 'contact-second');
     },
@@ -364,7 +366,7 @@ void main() {
     );
 
     expect(intent.status, SwapIntentStatus.expired);
-    expect(intent.nextAction, 'Start a fresh quote');
+    expect(intent.nextAction, SwapNextAction.startFreshQuote.name);
     expect(intent.completedAt, now);
   });
 
@@ -489,7 +491,9 @@ void main() {
     final checkpointed = swapIntentWithDepositCheckpoint(
       intent,
       txHash: 'deposit-txid',
-      broadcastNotice: 'local storage failed after broadcast',
+      broadcastNotice: const SwapLiteralMessage(
+        'local storage failed after broadcast',
+      ),
       clearStatusError: false,
       clearBroadcastNotice: false,
       updatedAt: checkpointedAt,
@@ -518,15 +522,13 @@ void main() {
     );
 
     expect(checkpointed.depositTxHash, 'deposit-txid');
-    expect(checkpointed.statusError, 'local storage failed after broadcast');
-    expect(
-      checkpointed.broadcastNotice,
-      'local storage failed after broadcast',
-    );
+    const notice = SwapLiteralMessage('local storage failed after broadcast');
+    expect(checkpointed.statusError, notice);
+    expect(checkpointed.broadcastNotice, notice);
     expect(updated.status, SwapIntentStatus.complete);
     expect(updated.depositTxHash, 'deposit-txid');
-    expect(updated.statusError, 'local storage failed after broadcast');
-    expect(updated.broadcastNotice, 'local storage failed after broadcast');
+    expect(updated.statusError, notice);
+    expect(updated.broadcastNotice, notice);
     expect(updated.createdAt, createdAt);
     expect(updated.updatedAt, completedAt);
     expect(updated.completedAt, completedAt);

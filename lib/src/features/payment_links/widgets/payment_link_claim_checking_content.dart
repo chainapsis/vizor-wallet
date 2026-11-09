@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
-import 'payment_link_copy.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// The waiting surface keeps discovery separate from permission to claim.
 /// Flow layout lets the heading and status grow with accessibility text size.
@@ -24,7 +24,7 @@ class PaymentLinkClaimCheckingContent extends StatelessWidget {
       FittedBox(fit: BoxFit.scaleDown, child: card),
       const SizedBox(height: AppSpacing.base),
       Text(
-        kPaymentLinkClaimCheckingHeading,
+        context.l10n.paymentLinkClaimCheckingHeading,
         textAlign: TextAlign.center,
         style: AppTypography.displayLarge.copyWith(
           color: context.colors.text.accent,
@@ -55,7 +55,7 @@ class PaymentLinkClaimCheckingDetails extends StatelessWidget {
     mainAxisSize: MainAxisSize.min,
     children: [
       Text(
-        kPaymentLinkClaimCheckingDescription,
+        context.l10n.paymentLinkClaimCheckingDescription,
         textAlign: TextAlign.center,
         style: AppTypography.bodyMedium.copyWith(
           color: context.colors.text.secondary,
