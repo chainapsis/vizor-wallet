@@ -8,12 +8,13 @@ Korean is the exception: edit `lib/l10n/source/app_ko.arb`, then run
 joins the characters of each word with invisible U+200D so lines break
 between words.
 
-- [Glossary](../../lib/l10n/glossary.yaml): one entry per concept. Use the
-  term for your language whenever the English source contains the English
-  term.
-- Style guides: [Korean](style-ko.md), [Simplified Chinese](style-zh.md).
-- [Adding a language](adding-a-language.md).
-- [Moving strings into ARB files](extracting-strings.md), for developers.
+| To | Read |
+| --- | --- |
+| Add or change text in the app | [Localization for developers](developer-guide.md) |
+| Move hard-coded copy into ARB files | [Moving strings into ARB files](extracting-strings.md) |
+| Show or replace text that comes from Rust | [Rust-originated text](rust-messages.md) |
+| Translate | The [glossary](../../lib/l10n/glossary.yaml) (one entry per concept; use the term for your language whenever the English source contains the English term) and the [Korean](style-ko.md) or [Simplified Chinese](style-zh.md) style guide |
+| Add a language | [Adding a language](adding-a-language.md) |
 
 ## How a string gets translated
 
@@ -81,6 +82,9 @@ translation:
 The same test fails when app code gains a hard-coded English string or
 compares text with English copy (`label == 'Selected'`), which breaks as soon
 as the label is translated.
+
+[The developer guide](developer-guide.md#what-the-gate-tests-fail-on) lists every
+check.
 
 Translations are a security surface in a wallet: the URL and number checks
 exist so that no translation can point users somewhere else or change an
