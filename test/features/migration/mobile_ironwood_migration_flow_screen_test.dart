@@ -3570,7 +3570,7 @@ void main() {
     expect(
       find.text(
         'Private migration is temporarily unavailable on Android. '
-        'Choose immediate to continue.',
+        'Choose Immediate to continue.',
       ),
       findsOneWidget,
     );

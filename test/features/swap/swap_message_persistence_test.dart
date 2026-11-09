@@ -150,7 +150,7 @@ void main() {
         _plain(
           detailValue(_ko, intent, SwapStatusDetailKind.guaranteedMinimum),
         ),
-        '보고되지 않음',
+        '정보 없음',
       );
     },
   );

@@ -2725,7 +2725,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ledgerBtAccessBluetoothRequestable =>
-      'Choose Allow permission to connect to your Ledger. If no prompt appears, open Settings.';
+      'Choose Allow access to connect to your Ledger. If no prompt appears, open Settings.';
 
   @override
   String get ledgerBtAccessBluetoothSettings =>
@@ -2736,7 +2736,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ledgerBtAccessLocationRequestable =>
-      'This Android version needs location permission to find your Ledger. Choose Allow permission, or open Settings if no prompt appears.';
+      'This Android version needs location permission to find your Ledger. Choose Allow access, or open Settings if no prompt appears.';
 
   @override
   String get ledgerBtAccessLocationSettings =>
@@ -4143,10 +4143,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationExpectVpnBody =>
-      'It’s recommended to run the migration behind a trustable VPN/network privacy layer';
+      'We recommend running the migration behind a trusted VPN or network privacy layer.';
 
   @override
-  String get migrationExpectVpnTitle => 'Use VPN for an extra privacy';
+  String get migrationExpectVpnTitle => 'Use a VPN for extra privacy';
 
   @override
   String get migrationFlowTitle => 'Ironwood Migration';
@@ -4707,7 +4707,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationMobileCompleteBody =>
-      'Migration went successfully and you can spend your funds as usual.';
+      'Migration completed successfully and you can spend your funds as usual.';
 
   @override
   String migrationMobileCompleteHeading(String amount) {
@@ -4914,7 +4914,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String migrationMobileNextTimingUntil(String timing) {
-    return '$timing until the next migration step.\nNotifications are on; you can leave Vizor and check back later.';
+    return 'Time until the next migration step: $timing.\nNotifications are on; you can leave Vizor and check back later.';
   }
 
   @override
@@ -4976,11 +4976,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationMobileOptionsSubtitleAndroid =>
-      'Private migration is temporarily unavailable on Android. Choose immediate to continue.';
+      'Private migration is temporarily unavailable on Android. Choose Immediate to continue.';
 
   @override
   String migrationMobileOptionsSubtitleAndroidRest(String amount) {
-    return '$amount ZEC is still in Orchard. Private migration is temporarily unavailable on Android. Choose immediate to continue.';
+    return '$amount ZEC is still in Orchard. Private migration is temporarily unavailable on Android. Choose Immediate to continue.';
   }
 
   @override
@@ -5276,7 +5276,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Syncing the migration progress.';
 
   @override
-  String get migrationMobileTimingUpdating => 'Timing is updating';
+  String get migrationMobileTimingUpdating => 'calculating';
 
   @override
   String get migrationMobileViewSchedule => 'View schedule';
@@ -5516,7 +5516,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationProgressTipClose =>
-      'You can close Vizor anytime. Migration will pause, and you can restart it when you return.';
+      'You can close Vizor anytime. Migration will pause, and you can resume it when you return.';
 
   @override
   String get migrationProgressTipKeepRunning =>
@@ -6754,8 +6754,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingSetPasswordAndFinish => 'Set password & finish';
 
   @override
-  String get onboardingSetPasswordPlaceholder =>
-      'Min. 8 characters and symbols';
+  String get onboardingSetPasswordPlaceholder => 'Min. 8 characters';
 
   @override
   String get onboardingSetPasswordSubtitle =>
@@ -7888,11 +7887,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get paymentLinkIntakeCouldNotOpen =>
-      'Payment link could not be opened.';
+      'Gift card link could not be opened.';
 
   @override
   String get paymentLinkIntakeQueueFull =>
-      'Too many payment links are waiting to open.';
+      'Too many gift card links are waiting to open.';
 
   @override
   String get paymentLinkInterruptedCheckMessage =>
@@ -11028,7 +11027,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get swapNoticeListOfMaintenance => 'List of maintenance';
+  String get swapNoticeListOfMaintenance => 'Networks under maintenance';
 
   @override
   String get swapNoticeMaintenanceIntro => 'NEAR Intents is under maintenance.';

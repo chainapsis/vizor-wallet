@@ -202,7 +202,7 @@ void main() {
     await tester.pump();
 
     expect(container.read(paymentLinkIntakeProvider).error, isNull);
-    expect(find.text('Payment link could not be opened.'), findsOneWidget);
+    expect(find.text('Gift card link could not be opened.'), findsOneWidget);
   });
 
   testWidgets('opens Gift onboarding immediately from a walletless Welcome', (

@@ -211,3 +211,19 @@ terms:
     en: voting
     ko: {term: 투표, status: candidate}
     zh: {term: 投票, status: candidate}
+  - id: activity
+    en: activity
+    ko: {term: 활동, status: candidate}
+    zh: {term: 活动记录, status: candidate, note: "活动 alone reads as a promotion or event."}
+  - id: migration_batch
+    en: batch
+    ko: {term: 묶음, status: candidate, note: "일괄 stays for batch signing."}
+    zh: {term: 批次, status: candidate}
+  - id: request_link
+    en: request link
+    ko: {term: 요청 링크, status: candidate}
+    zh: {term: 收款链接, status: candidate}
+  - id: self_custody
+    en: self-custody
+    ko: {term: 직접 보관, status: candidate}
+    zh: {term: 自主托管, status: candidate}
