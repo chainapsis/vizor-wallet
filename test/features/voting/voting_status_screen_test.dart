@@ -3042,6 +3042,7 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
     Widget voted({required bool privacyModeEnabled}) => MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Scaffold(

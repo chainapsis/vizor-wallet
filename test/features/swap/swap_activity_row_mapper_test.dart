@@ -387,6 +387,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(

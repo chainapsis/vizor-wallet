@@ -151,7 +151,10 @@ void main() {
           container: container,
           child: AppTheme(
             data: AppThemeData.dark,
-            child: const MaterialApp(home: MobileKeystoneShieldScreen()),
+            child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
+              home: const MobileKeystoneShieldScreen(),
+            ),
           ),
         ),
       );

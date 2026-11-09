@@ -337,6 +337,7 @@ void main() {
           child: AppTheme(
             data: AppThemeData.light,
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: LedgerShieldSigningOverlay(
                 mobile: true,
                 onCancel: () {},

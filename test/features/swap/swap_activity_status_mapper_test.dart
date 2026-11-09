@@ -1219,6 +1219,7 @@ void main() {
   test('privacy mode masks incomplete deposit amounts in their own asset', () {
     final deadline = DateTime(2026, 5, 7, 12);
     final presentation = swapActivityStatusPresentationForIntent(
+      testL10n,
       _state(),
       _intent(
         status: SwapIntentStatus.incompleteDeposit,
@@ -1264,6 +1265,7 @@ void main() {
 
   test('privacy mode keeps fixed copy, placeholders, rate and slippage', () {
     final inProgress = swapActivityStatusPresentationForIntent(
+      testL10n,
       _state(),
       _intent(
         status: SwapIntentStatus.processing,
@@ -1286,6 +1288,7 @@ void main() {
     _expectNoRawOrMixedAmounts(inProgress, ['2.0000', '140.00']);
 
     final pay = swapActivityStatusPresentationForIntent(
+      testL10n,
       _state(),
       _intent(
         status: SwapIntentStatus.processing,

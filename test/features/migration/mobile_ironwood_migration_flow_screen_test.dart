@@ -1120,7 +1120,10 @@ Widget _privacyIntroApp() {
     ],
     child: AppTheme(
       data: AppThemeData.light,
-      child: MaterialApp.router(routerConfig: router),
+      child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
+        routerConfig: router,
+      ),
     ),
   );
 }
