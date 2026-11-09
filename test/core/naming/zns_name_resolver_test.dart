@@ -29,11 +29,12 @@ Map<String, Object?> _record({
 List<int> _reply(Object? result) =>
     utf8.encode(jsonEncode({'jsonrpc': '2.0', 'id': 1, 'result': result}));
 
-List<int> _status([String viewingKey = _registryKey]) => _reply({
-  'synced_height': 3533383,
-  'synced': true,
-  'viewing_key': viewingKey,
-});
+List<int> _status([String viewingKey = _registryKey, bool synced = true]) =>
+    _reply({
+      'synced_height': 3533383,
+      'synced': synced,
+      'viewing_key': viewingKey,
+    });
 
 List<int> _page(List<Map<String, Object?>> items, {int? total}) => _reply({
   'items': items,
@@ -172,13 +173,27 @@ void main() {
     });
   });
 
-  test('parseZnsStatusViewingKey reads the registry key', () {
+  test('parseZnsStatus reads the registry key and the sync state', () {
+    expect(parseZnsStatus(statusCode: 200, body: _status()), (
+      viewingKey: _registryKey,
+      synced: true,
+    ));
     expect(
-      parseZnsStatusViewingKey(statusCode: 200, body: _status()),
-      _registryKey,
+      parseZnsStatus(
+        statusCode: 200,
+        body: _status(_registryKey, false),
+      ).synced,
+      isFalse,
     );
     expect(
-      () => parseZnsStatusViewingKey(statusCode: 200, body: _reply({})),
+      parseZnsStatus(
+        statusCode: 200,
+        body: _reply({'viewing_key': _registryKey}),
+      ).synced,
+      isFalse,
+    );
+    expect(
+      () => parseZnsStatus(statusCode: 200, body: _reply({})),
       throwsA(isA<ZnsLookupException>()),
     );
   });
@@ -213,6 +228,7 @@ void main() {
         registryViewingKey: _registryKey,
         networkClient: client,
         clock: () => now,
+        syncWait: Duration.zero,
       );
     }
 
@@ -260,8 +276,77 @@ void main() {
       expect(bridge.calls, [
         (primary, 'status'),
         (primary, 'list_names'),
+        (primary, 'status'),
         (primary, 'list_names'),
       ]);
+    });
+
+    test('downloads the index again after the clock moves back', () async {
+      var address = _address;
+      final bridge = _ScriptedTorBridge({
+        primary: (int offset) => _page([_record(address: address)]),
+      });
+      final resolver = resolverOver(bridge);
+
+      expect((await resolver.resolve('alice'))?.address, _address);
+      address = 'u1moved';
+      now = now.subtract(const Duration(hours: 1));
+
+      expect((await resolver.resolve('alice'))?.address, 'u1moved');
+    });
+
+    test('waits for an unsynced host to catch up', () async {
+      var statusCalls = 0;
+      final bridge = _ScriptedTorBridge(
+        {
+          primary: _page([_record()]),
+        },
+        status: {primary: () => _status(_registryKey, (statusCalls++) >= 1)},
+      );
+
+      expect(await resolverOver(bridge).resolve('alice'), isNotNull);
+      expect(bridge.calls, [
+        (primary, 'status'),
+        (primary, 'status'),
+        (primary, 'list_names'),
+      ]);
+    });
+
+    test('a host that stays unsynced hands the download on', () async {
+      final bridge = _ScriptedTorBridge(
+        {
+          primary: _page([_record(name: 'stale')]),
+          fallback: _page([_record()]),
+        },
+        status: {primary: _status(_registryKey, false)},
+      );
+
+      expect(await resolverOver(bridge).resolve('alice'), isNotNull);
+      expect(bridge.calls.where((c) => c.$1 == primary).toList(), [
+        (primary, 'status'),
+        (primary, 'status'),
+        (primary, 'status'),
+      ]);
+      expect(bridge.calls.last, (fallback, 'list_names'));
+    });
+
+    test('never downloads from a host that stays unsynced', () async {
+      final bridge = _ScriptedTorBridge(
+        {
+          primary: _page([_record()]),
+          fallback: _page([_record()]),
+        },
+        status: {
+          primary: _status(_registryKey, false),
+          fallback: _status(_registryKey, false),
+        },
+      );
+
+      await expectLater(
+        resolverOver(bridge).resolve('alice'),
+        throwsA(isA<ZnsLookupException>()),
+      );
+      expect(bridge.calls.where((c) => c.$2 == 'list_names'), isEmpty);
     });
 
     test('concurrent lookups share one download', () async {
@@ -507,7 +592,10 @@ class _ScriptedTorBridge implements TorHttpBridge {
     }
     final Object? entry;
     if (method == 'status') {
-      entry = status[uri] ?? _status();
+      final scriptedStatus = status[uri];
+      entry = scriptedStatus is List<int> Function()
+          ? scriptedStatus()
+          : scriptedStatus ?? _status();
     } else if (scripted is List<int> Function(int)) {
       entry = scripted((request['params'] as Map)['offset'] as int);
     } else {

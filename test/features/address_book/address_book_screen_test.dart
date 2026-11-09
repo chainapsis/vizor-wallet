@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/contact_address_validator_provider.dart';
 
 import '../../fakes/fake_zns_name_resolver.dart';
 import '../../support/test_l10n.dart';
@@ -933,6 +934,9 @@ Widget _addressBookHarness(
       syncProvider.overrideWith(() => _FakeSyncNotifier(SyncState())),
       if (znsResolver != null)
         znsNameResolverProvider.overrideWithValue(znsResolver),
+      contactResolvedAddressValidatorProvider.overrideWithValue(
+        (_) async => true,
+      ),
     ],
     child: MaterialApp.router(
       localizationsDelegates: appLocalizationsDelegates,

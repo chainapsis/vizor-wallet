@@ -23,9 +23,11 @@ void main() {
       ZnsNameResolver? resolver, {
       String? savedName,
       void Function()? onChanged,
+      Future<bool> Function(String address)? validate,
     }) => ContactZnsLookup(
       savedName: savedName,
       readResolver: () => resolver,
+      validateResolvedAddress: validate ?? (_) async => true,
       onChanged: onChanged ?? () {},
       debounce: Duration.zero,
     );
@@ -84,9 +86,47 @@ void main() {
       expect(lookup.nameToSave('alice.zcash', AddressBookNetwork.near), isNull);
     });
 
+    test('the wallet validator must accept the resolved address', () async {
+      final checked = <String>[];
+      final lookup = lookupWith(
+        FakeZnsNameResolver({'alice': _address}),
+        validate: (address) async {
+          checked.add(address);
+          return false;
+        },
+      );
+
+      lookup.update(address: 'alice.zcash', network: _zcash);
+      await pumpEventQueue();
+
+      expect(checked, [_address]);
+      expect(lookup.canSave('alice.zcash', _zcash), isFalse);
+      expect(
+        lookup.message('alice.zcash')?.localizedText(testL10n),
+        ZnsLookupStatus.unusableAddress.localizedMessage(testL10n),
+      );
+    });
+
+    test('a validator failure reads as a failed lookup', () async {
+      final lookup = lookupWith(
+        FakeZnsNameResolver({'alice': _address}),
+        validate: (_) => Future.error(StateError('rust unavailable')),
+      );
+
+      lookup.update(address: 'alice.zcash', network: _zcash);
+      await pumpEventQueue();
+
+      expect(lookup.canSave('alice.zcash', _zcash), isFalse);
+      expect(
+        lookup.message('alice.zcash')?.localizedText(testL10n),
+        ZnsLookupStatus.failed.localizedMessage(testL10n),
+      );
+    });
+
     test('the resolver is read only when a name needs a lookup', () async {
       var reads = 0;
       final lookup = ContactZnsLookup(
+        validateResolvedAddress: (_) async => true,
         readResolver: () {
           reads++;
           return null;
@@ -118,6 +158,7 @@ void main() {
     test('rapid edits look up only the last name', () async {
       final resolver = FakeZnsNameResolver({'alice': _address});
       final lookup = ContactZnsLookup(
+        validateResolvedAddress: (_) async => true,
         readResolver: () => resolver,
         onChanged: () {},
         debounce: const Duration(milliseconds: 20),
@@ -134,6 +175,7 @@ void main() {
 
     test('a resolver that cannot be read shows the lookup failure', () async {
       final lookup = ContactZnsLookup(
+        validateResolvedAddress: (_) async => true,
         readResolver: () => throw StateError('no network configuration'),
         onChanged: () {},
         debounce: Duration.zero,

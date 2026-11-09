@@ -9,9 +9,9 @@
 /// route whenever the user turned Tor on and fails closed while Tor is
 /// unavailable.
 ///
-/// Before its first download from a host, the client checks that the host
-/// serves the published registry: its `status` viewing key must match. Past
-/// that, the resolver's index is trusted. The resolver publishes no
+/// Before every download, the client checks the host's `status`: its viewing
+/// key must match the published registry, and it must have indexed up to the
+/// chain tip. Past that, the resolver's index is trusted. The resolver publishes no
 /// signature or inclusion proof for a registration, so the send flow keeps
 /// the resolved address visible on review and in the verify-address step.
 ///
@@ -160,6 +160,7 @@ class ZnsIndexNameResolver implements ZnsNameResolver {
     NetworkHttpClient? networkClient,
     this.timeout = const Duration(seconds: 15),
     this.maxAge = const Duration(minutes: 5),
+    this.syncWait = const Duration(seconds: 2),
     DateTime Function()? clock,
   }) : assert(endpoints.isNotEmpty),
        _endpoints = List.unmodifiable(endpoints),
@@ -176,11 +177,11 @@ class ZnsIndexNameResolver implements ZnsNameResolver {
   /// How long a downloaded index answers lookups.
   final Duration maxAge;
 
+  /// The pause before asking an unsynced host for its `status` again.
+  final Duration syncWait;
+
   /// The viewing key every host must report in `status`.
   final String registryViewingKey;
-
-  /// Hosts that already proved they serve [registryViewingKey].
-  final _verifiedEndpoints = <Uri>{};
 
   Map<String, ZnsResolution>? _index;
   DateTime? _indexFetchedAt;
@@ -195,10 +196,11 @@ class ZnsIndexNameResolver implements ZnsNameResolver {
   Future<Map<String, ZnsResolution>> _currentIndex() {
     final index = _index;
     final fetchedAt = _indexFetchedAt;
-    if (index != null &&
-        fetchedAt != null &&
-        _clock().difference(fetchedAt) < maxAge) {
-      return Future.value(index);
+    if (index != null && fetchedAt != null) {
+      final age = _clock().difference(fetchedAt);
+      // A negative age means the wall clock moved back since the download,
+      // so the copy's real age is unknown: download it again.
+      if (!age.isNegative && age < maxAge) return Future.value(index);
     }
     return _download ??= _downloadIndex().whenComplete(() => _download = null);
   }
@@ -206,7 +208,7 @@ class ZnsIndexNameResolver implements ZnsNameResolver {
   Future<Map<String, ZnsResolution>> _downloadIndex() async {
     for (final endpoint in _endpoints) {
       try {
-        await _verifyRegistry(endpoint);
+        await _checkStatus(endpoint);
         final index = await _downloadFrom(endpoint);
         _index = index;
         _indexFetchedAt = _clock();
@@ -292,22 +294,34 @@ class ZnsIndexNameResolver implements ZnsNameResolver {
     return Map.unmodifiable(index);
   }
 
-  /// Checks once per host that it serves the published registry. A host that
-  /// reports another viewing key could map names anywhere, so its answers
-  /// are refused.
-  Future<void> _verifyRegistry(Uri endpoint) async {
-    if (_verifiedEndpoints.contains(endpoint)) return;
-    final response = await _call(endpoint, 'status', const {});
-    final viewingKey = parseZnsStatusViewingKey(
-      statusCode: response.statusCode,
-      body: response.bodyBytes,
-    );
-    if (viewingKey != registryViewingKey) {
-      throw ZnsLookupException(
-        'ZNS resolver ${endpoint.host} serves another registry',
+  /// Checks before every download that the host serves the published
+  /// registry and has indexed up to the chain tip.
+  ///
+  /// A host that reports another viewing key could map names anywhere, so
+  /// its answers are refused. A host that is still syncing, after a restart
+  /// for example, could serve a name's old address after an update or a
+  /// release. A synced resolver also reports `synced: false` for a moment
+  /// after each new block, so an unsynced host is asked again a few times
+  /// before it counts as unavailable.
+  Future<void> _checkStatus(Uri endpoint) async {
+    const attempts = 3;
+    for (var attempt = 1; ; attempt++) {
+      final response = await _call(endpoint, 'status', const {});
+      final status = parseZnsStatus(
+        statusCode: response.statusCode,
+        body: response.bodyBytes,
       );
+      if (status.viewingKey != registryViewingKey) {
+        throw ZnsLookupException(
+          'ZNS resolver ${endpoint.host} serves another registry',
+        );
+      }
+      if (status.synced) return;
+      if (attempt == attempts) {
+        throw const ZnsHostUnavailableException('resolver is still syncing');
+      }
+      await Future<void>.delayed(syncWait);
     }
-    _verifiedEndpoints.add(endpoint);
   }
 
   Future<NetworkHttpResponse> _call(
@@ -378,8 +392,10 @@ Object? _rpcResult(int statusCode, List<int> body) {
   return decoded['result'];
 }
 
-/// Reads the registry viewing key from one `status` reply.
-String parseZnsStatusViewingKey({
+/// Reads one `status` reply: the registry viewing key, and whether the
+/// resolver has indexed up to the chain tip. A missing `synced` reads as not
+/// synced.
+({String viewingKey, bool synced}) parseZnsStatus({
   required int statusCode,
   required List<int> body,
 }) {
@@ -390,7 +406,8 @@ String parseZnsStatusViewingKey({
   if (viewingKey is! String || viewingKey.isEmpty) {
     throw const ZnsHostUnavailableException('status has no viewing key');
   }
-  return viewingKey;
+  final synced = (result as Map<String, dynamic>)['synced'] == true;
+  return (viewingKey: viewingKey, synced: synced);
 }
 
 /// One `list_names` page: the records on it, and the [total] count of

@@ -28,6 +28,7 @@ import '../../send/models/send_prefill_args.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../models/address_book_contact.dart';
 import '../models/contact_zns_lookup.dart';
+import '../providers/contact_address_validator_provider.dart';
 import '../models/address_format_validator.dart';
 import '../providers/address_book_provider.dart';
 import '../widgets/address_book_network_icon.dart';
@@ -71,6 +72,8 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
     return ContactZnsLookup(
       savedName: savedName,
       readResolver: () => ref.read(znsNameResolverProvider),
+      validateResolvedAddress: (address) =>
+          ref.read(contactResolvedAddressValidatorProvider)(address),
       onChanged: () {
         if (mounted) setState(() {});
       },

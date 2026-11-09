@@ -54,12 +54,17 @@ class ContactZnsLookup {
   ContactZnsLookup({
     required this.onChanged,
     required this.readResolver,
+    required this.validateResolvedAddress,
     String? savedName,
     this.debounce = kZnsLookupDebounce,
   }) : _state = ZnsRecipientState(carriedName: savedName);
 
   final void Function() onChanged;
   final ZnsNameResolver? Function() readResolver;
+
+  /// The authoritative check of an address a name resolved to; see
+  /// `contactResolvedAddressValidatorProvider`.
+  final Future<bool> Function(String address) validateResolvedAddress;
 
   /// The pause after the last edit before a lookup starts.
   final Duration debounce;
@@ -100,16 +105,24 @@ class ContactZnsLookup {
       case ZnsRecipientMissing(:final status):
         _state.fail(status);
       case ZnsRecipientFound(:final resolution):
-        _state.settle(
-          address,
-          resolution,
-          addressValid:
+        final bool addressValid;
+        try {
+          addressValid =
               addressFormatIssue(
-                AddressBookNetwork.zcash,
-                resolution.address,
-              ) ==
-              null,
-        );
+                    AddressBookNetwork.zcash,
+                    resolution.address,
+                  ) ==
+                  null &&
+              await validateResolvedAddress(resolution.address);
+        } catch (e) {
+          log('Contacts: resolved address validation failed: $e');
+          if (_disposed || seq != _seq) return;
+          _state.fail(ZnsLookupStatus.failed);
+          onChanged();
+          return;
+        }
+        if (_disposed || seq != _seq) return;
+        _state.settle(address, resolution, addressValid: addressValid);
     }
     onChanged();
   }

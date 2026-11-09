@@ -34,6 +34,7 @@ import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../models/address_book_contact.dart';
 import '../../models/contact_zns_lookup.dart';
+import '../../providers/contact_address_validator_provider.dart';
 import '../../models/address_format_validator.dart';
 import '../../providers/address_book_provider.dart';
 import '../../widgets/address_book_network_icon.dart';
@@ -64,6 +65,8 @@ class MobileAddressBookScreen extends ConsumerWidget {
       builder: (_) => _ContactEditSheet(
         contact: contact,
         readZnsResolver: () => ref.read(znsNameResolverProvider),
+        validateResolvedAddress: (address) =>
+            ref.read(contactResolvedAddressValidatorProvider)(address),
         namesOn: ref.read(znsNamesOnProvider),
       ),
     );
@@ -978,6 +981,7 @@ class _ContactDraft {
 class _ContactEditSheet extends StatefulWidget {
   const _ContactEditSheet({
     required this.readZnsResolver,
+    required this.validateResolvedAddress,
     required this.namesOn,
     this.contact,
   });
@@ -990,6 +994,9 @@ class _ContactEditSheet extends StatefulWidget {
   /// Reads the resolver for a Zcash name typed as the address; it gives null
   /// where the network has no ZNS registry.
   final ZnsNameResolver? Function() readZnsResolver;
+
+  /// The authoritative check of an address a typed name resolved to.
+  final Future<bool> Function(String address) validateResolvedAddress;
 
   @override
   State<_ContactEditSheet> createState() => _ContactEditSheetState();
@@ -1011,6 +1018,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
   late final _zns = ContactZnsLookup(
     savedName: widget.contact?.znsName,
     readResolver: widget.readZnsResolver,
+    validateResolvedAddress: widget.validateResolvedAddress,
     onChanged: _onFieldStateChanged,
   );
   late String _lastAddress;

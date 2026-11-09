@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/address_book/models/address_book_conta
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/address_book/screens/mobile/mobile_address_book_screen.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/contact_address_validator_provider.dart';
 
 import '../../fakes/fake_zns_name_resolver.dart';
 import '../../support/test_l10n.dart';
@@ -395,6 +396,9 @@ Widget _harness(AddressBookRepository repo, {ZnsNameResolver? znsResolver}) {
       addressBookRepositoryProvider.overrideWithValue(repo),
       if (znsResolver != null)
         znsNameResolverProvider.overrideWithValue(znsResolver),
+      contactResolvedAddressValidatorProvider.overrideWithValue(
+        (_) async => true,
+      ),
     ],
     child: MaterialApp.router(
       localizationsDelegates: appLocalizationsDelegates,
