@@ -1,11 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/l10n/l10n.dart';
+import '../../../../core/l10n/untranslated_text_log.dart';
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/untranslated_details.dart';
 import '../../../../providers/voting/voting_config_provider.dart';
 import '../../../../providers/voting/voting_config_source_provider.dart';
 import '../../../../providers/voting/voting_round_visibility_provider.dart';
@@ -13,6 +19,7 @@ import '../../../../providers/voting/voting_rounds_provider.dart';
 import '../../../../providers/voting/voting_service_providers.dart';
 import '../../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../../services/voting/voting_config_loader.dart';
+import '../voting_config_error_text.dart';
 
 Future<void> showMobileVotingConfigSettingsSheet(BuildContext context) {
   return showAppMobileSheet<void>(
@@ -40,7 +47,15 @@ class _MobileVotingConfigSettingsSheetState
   bool _showEditor = false;
   String? _editingSourceId;
   bool _busy = false;
-  String? _error;
+  String? _errorText;
+
+  /// Untranslated text behind [_error]; any new error clears it.
+  String? _errorDetails;
+  String? get _error => _errorText;
+  set _error(String? value) {
+    _errorText = value;
+    _errorDetails = null;
+  }
 
   @override
   void dispose() {
@@ -51,11 +66,18 @@ class _MobileVotingConfigSettingsSheetState
 
   Future<void> _selectSource({required String url, required bool isDefault}) {
     return _runMutation(() async {
+      final previous = ref.read(votingConfigSourceProvider).value;
       if (isDefault) {
         await ref.read(votingConfigSourceProvider.notifier).resetDefault();
       } else {
         await _validateSource(url);
         await ref.read(votingConfigSourceProvider.notifier).setCustom(url);
+      }
+      final next = ref.read(votingConfigSourceProvider).value;
+      if (next != null &&
+          (previous?.sourceUrl != next.sourceUrl ||
+              previous?.isDefault != next.isDefault)) {
+        unawaited(AppHaptics.selection());
       }
       await _refreshVoting();
       if (mounted) Navigator.of(context).pop();
@@ -68,8 +90,8 @@ class _MobileVotingConfigSettingsSheetState
     if (name.isEmpty || name.length > _maxSourceNameLength || url.isEmpty) {
       setState(() {
         _error = name.length > _maxSourceNameLength
-            ? 'Title must be $_maxSourceNameLength characters or less.'
-            : 'Enter a title and source URL.';
+            ? context.l10n.votingConfigTitleTooLong(_maxSourceNameLength)
+            : context.l10n.votingConfigEnterTitleAndUrl;
       });
       return;
     }
@@ -117,6 +139,7 @@ class _MobileVotingConfigSettingsSheetState
       await ref
           .read(showTestVotingRoundsProvider.notifier)
           .setShowTestRounds(!enabled);
+      unawaited(AppHaptics.selection());
       await ref.read(votingRoundsProvider.notifier).reload();
     });
   }
@@ -125,7 +148,7 @@ class _MobileVotingConfigSettingsSheetState
     if (_busy) return;
     final guards = ref.read(votingSubmissionGuardProvider);
     if (guards.isNotEmpty) {
-      setState(() => _error = guards.first.message);
+      setState(() => _error = guards.first.message.text(context.l10n));
       return;
     }
     setState(() {
@@ -136,7 +159,10 @@ class _MobileVotingConfigSettingsSheetState
       await action();
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = _friendlyError(error));
+      setState(() {
+        _error = _friendlyError(error);
+        _errorDetails = votingConfigSourceErrorDetails(error);
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -155,13 +181,11 @@ class _MobileVotingConfigSettingsSheetState
     await ref.read(votingRoundsProvider.notifier).reload();
   }
 
-  String _friendlyError(Object error) {
-    if (error is StaticVotingConfigSourceMalformed ||
-        error is DuplicateVotingConfigSource) {
-      return error.toString();
-    }
-    return "Couldn't update voting config. Check the source and try again.";
-  }
+  String _friendlyError(Object error) => votingConfigSourceErrorText(
+    context.l10n,
+    error,
+    fallback: context.l10n.votingConfigMobileUpdateFailed,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -177,7 +201,7 @@ class _MobileVotingConfigSettingsSheetState
       child: SingleChildScrollView(
         child: MobileModalScaffold(
           key: const ValueKey('mobile_voting_config_sheet'),
-          title: 'Vote config',
+          title: context.l10n.votingConfigMobileTitle,
           bodyGap: AppSpacing.xxs,
           bottomPadding: AppSpacing.base,
           onClose: () => Navigator.of(context).pop(),
@@ -186,13 +210,19 @@ class _MobileVotingConfigSettingsSheetState
               height: 220,
               child: Center(child: AppIcon(AppIcons.loader)),
             ),
-            error: (error, _) => _LoadError(message: error.toString()),
+            error: (error, _) {
+              logUntranslatedText(error.toString());
+              return _LoadError(
+                message: context.l10n.votingConfigSettingsLoadFailed,
+                details: error.toString(),
+              );
+            },
             data: (state) => Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Choose where Vizor gets authenticated voting rounds.',
+                  context.l10n.votingConfigMobileIntro,
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.secondary,
                   ),
@@ -201,7 +231,7 @@ class _MobileVotingConfigSettingsSheetState
                 Padding(
                   padding: const EdgeInsets.all(AppSpacing.xxs),
                   child: Text(
-                    'Sources',
+                    context.l10n.votingConfigSources,
                     style: AppTypography.labelLarge.copyWith(
                       color: context.colors.text.secondary,
                       letterSpacing: -0.04,
@@ -211,8 +241,8 @@ class _MobileVotingConfigSettingsSheetState
                 const SizedBox(height: AppSpacing.s),
                 _MobileSourceRow(
                   key: const ValueKey('mobile_voting_source_default'),
-                  title: 'Token holder voting',
-                  subtitle: 'Default',
+                  title: context.l10n.votingTokenHolderTitle,
+                  subtitle: context.l10n.commonDefault,
                   selected: state.isDefault,
                   onTap: _busy
                       ? null
@@ -245,7 +275,7 @@ class _MobileVotingConfigSettingsSheetState
                     )) ...[
                   const SizedBox(height: AppSpacing.s),
                   _MobileSourceRow(
-                    title: 'Custom source',
+                    title: context.l10n.votingConfigCustomSource,
                     subtitle: _compactUrl(state.sourceUrl),
                     selected: true,
                   ),
@@ -254,7 +284,7 @@ class _MobileVotingConfigSettingsSheetState
                   const SizedBox(height: AppSpacing.s),
                   AppTextField(
                     key: const ValueKey('mobile_voting_source_name'),
-                    label: 'Title',
+                    label: context.l10n.votingConfigFieldTitle,
                     controller: _nameController,
                     enabled: !_busy,
                     onChanged: (_) => setState(() => _error = null),
@@ -262,7 +292,7 @@ class _MobileVotingConfigSettingsSheetState
                   const SizedBox(height: AppSpacing.s),
                   AppTextField(
                     key: const ValueKey('mobile_voting_source_url'),
-                    label: 'Source URL',
+                    label: context.l10n.votingConfigMobileFieldUrl,
                     controller: _urlController,
                     enabled: !_busy,
                     keyboardType: TextInputType.url,
@@ -278,20 +308,28 @@ class _MobileVotingConfigSettingsSheetState
                         color: context.colors.text.destructive,
                       ),
                     ),
+                    ...untranslatedDetailsButton(
+                      _errorDetails,
+                      alignment: AlignmentDirectional.centerStart,
+                    ),
                   ],
                   const SizedBox(height: AppSpacing.xs),
                   AppButton(
                     key: const ValueKey('mobile_voting_source_save'),
                     expand: true,
                     onPressed: _busy ? null : _saveSource,
-                    child: Text(_busy ? 'Saving...' : 'Save source'),
+                    child: Text(
+                      _busy
+                          ? context.l10n.votingConfigSaving
+                          : context.l10n.votingConfigMobileSave,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.s),
                   AppButton(
                     expand: true,
                     variant: AppButtonVariant.ghost,
                     onPressed: _busy ? null : _closeEditor,
-                    child: const Text('Cancel'),
+                    child: Text(context.l10n.commonCancel),
                   ),
                 ] else ...[
                   const SizedBox(height: AppSpacing.s),
@@ -312,6 +350,10 @@ class _MobileVotingConfigSettingsSheetState
                       color: context.colors.text.destructive,
                     ),
                   ),
+                  ...untranslatedDetailsButton(
+                    _errorDetails,
+                    alignment: AlignmentDirectional.centerStart,
+                  ),
                 ],
                 const SizedBox(height: AppSpacing.md),
                 AppButton(
@@ -319,7 +361,7 @@ class _MobileVotingConfigSettingsSheetState
                   expand: true,
                   variant: AppButtonVariant.secondary,
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Close'),
+                  child: Text(context.l10n.commonClose),
                 ),
               ],
             ),
@@ -398,7 +440,7 @@ class _MobileSourceRow extends StatelessWidget {
               ),
               if (onEdit != null)
                 Semantics(
-                  label: 'Edit $title',
+                  label: context.l10n.votingConfigEditNamed(title),
                   button: true,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
@@ -415,7 +457,7 @@ class _MobileSourceRow extends StatelessWidget {
                 ),
               if (onDelete != null)
                 Semantics(
-                  label: 'Delete $title',
+                  label: context.l10n.votingConfigDeleteNamed(title),
                   button: true,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
@@ -484,7 +526,7 @@ class _AddSourceCard extends StatelessWidget {
             vertical: AppSpacing.xs,
           ),
           child: Text(
-            'Add custom source',
+            context.l10n.votingConfigAddCustomSource,
             style: AppTypography.labelLarge.copyWith(
               color: onTap != null
                   ? context.colors.text.accent
@@ -542,7 +584,7 @@ class _TestRoundsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Semantics(
-      label: 'Show test rounds',
+      label: context.l10n.votingConfigShowTestRounds,
       toggled: enabled,
       enabled: !busy,
       onTap: busy ? null : onTap,
@@ -559,7 +601,7 @@ class _TestRoundsRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Show test rounds',
+                    context.l10n.votingConfigShowTestRounds,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.accent,
                       letterSpacing: -0.04,
@@ -567,7 +609,7 @@ class _TestRoundsRow extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    'Include authenticated rounds marked [TEST].',
+                    context.l10n.votingConfigMobileTestRoundsHint,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -611,21 +653,28 @@ class _TestRoundsRow extends StatelessWidget {
 }
 
 class _LoadError extends StatelessWidget {
-  const _LoadError({required this.message});
+  const _LoadError({required this.message, this.details});
 
   final String message;
+  final String? details;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: 180,
       child: Center(
-        child: Text(
-          message,
-          textAlign: TextAlign.center,
-          style: AppTypography.bodyMedium.copyWith(
-            color: context.colors.text.secondary,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.secondary,
+              ),
+            ),
+            ...untranslatedDetailsButton(details),
+          ],
         ),
       ),
     );

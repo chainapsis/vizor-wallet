@@ -20,7 +20,7 @@ import 'ironwood_migration_background_credential_store.dart';
 import 'ironwood_migration_operation_registry.dart';
 
 const _credentialRecoveryRequiredError =
-    'Ironwood migration credential is missing for the active run.';
+    'Ironwood migration credential is missing for the active run.'; // l10n-ignore: matched or logged error text
 
 bool ironwoodMigrationNeedsCredentialRecovery(String? error) {
   return error?.contains(_credentialRecoveryRequiredError) ?? false;
@@ -73,7 +73,7 @@ class IronwoodMigrationOutboxProtocolException extends FormatException {
 class IronwoodMigrationCredentialContextMismatchException extends StateError {
   IronwoodMigrationCredentialContextMismatchException()
     : super(
-        'Ironwood migration credential manifest does not match the active '
+        'Ironwood migration credential manifest does not match the active ' // l10n-ignore: matched or logged error text
         'wallet context.',
       );
 }
@@ -94,7 +94,9 @@ bool _isUnusableMigrationCredentialError(Object error) {
       error is IronwoodMigrationCredentialContextMismatchException) {
     return true;
   }
-  return error.toString().contains('Failed to decrypt secure-storage payload');
+  const undecryptable =
+      'Failed to decrypt secure-storage payload'; // l10n-ignore: storage error text
+  return error.toString().contains(undecryptable);
 }
 
 typedef IronwoodMigrationStatusGetter =
@@ -640,6 +642,7 @@ class IronwoodMigrationService {
     bool Function()? isRequestCurrent,
     IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
     IronwoodMigrationEndpointGetter? getEndpoint,
+    this.resolveEndpoint,
     IronwoodMigrationPasswordGetter? getSessionPassword,
     IronwoodMigrationMnemonicBytesGetter? getMnemonicBytesForAccount,
     IronwoodMigrationPlatformCheck? isMacOS,
@@ -855,6 +858,7 @@ class IronwoodMigrationService {
   final bool Function() isRequestCurrent;
   final IronwoodMigrationBackgroundCredentialStore backgroundCredentialStore;
   final IronwoodMigrationEndpointGetter getEndpoint;
+  final Future<RpcEndpointConfig> Function()? resolveEndpoint;
   final IronwoodMigrationPasswordGetter getSessionPassword;
   final IronwoodMigrationMnemonicBytesGetter getMnemonicBytesForAccount;
   final IronwoodMigrationPlatformCheck isMacOS;
@@ -935,6 +939,9 @@ class IronwoodMigrationService {
   bool get _usesNativePreparation => isIOS() && !isAndroid();
   bool get _usesNativeMigrationLifecycle =>
       _usesNativeMigrationOutbox || _usesNativePreparation;
+
+  Future<RpcEndpointConfig> _readyEndpoint() async =>
+      resolveEndpoint == null ? getEndpoint() : await resolveEndpoint!();
 
   /// Reads durable migration state without credential or outbox reconciliation.
   ///
@@ -1522,7 +1529,7 @@ class IronwoodMigrationService {
   }) async {
     final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -1589,7 +1596,7 @@ class IronwoodMigrationService {
   }) async {
     final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -1640,7 +1647,7 @@ class IronwoodMigrationService {
   }) async {
     final secretGeneration = secureStore.sessionGeneration;
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -1821,7 +1828,7 @@ class IronwoodMigrationService {
     }
 
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2129,7 +2136,7 @@ class IronwoodMigrationService {
     required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     return operationRegistry.run(
       network: endpoint.networkName,
       accountUuid: accountUuid,
@@ -2149,7 +2156,7 @@ class IronwoodMigrationService {
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2176,7 +2183,7 @@ class IronwoodMigrationService {
     required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2209,7 +2216,7 @@ class IronwoodMigrationService {
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2257,7 +2264,7 @@ class IronwoodMigrationService {
     required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
+    final endpoint = await _readyEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -3105,6 +3112,8 @@ final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
     keyringCoordinator: ref.read(linuxKeyringCoordinatorProvider),
     isRequestCurrent: () => ref.mounted,
     getEndpoint: () => ref.read(rpcEndpointFailoverProvider).current,
+    resolveEndpoint: () =>
+        ref.read(rpcEndpointFailoverProvider.notifier).ensureReady(),
     getSessionPassword: () => ref
         .read(appSecurityProvider.notifier)
         .requireSessionPasswordForNativeSecretUse(),

@@ -13,7 +13,7 @@ class WalletLinkApiException implements Exception {
   final String message;
 
   @override
-  String toString() => 'Wallet link API error $statusCode: $message';
+  String toString() => 'Wallet link API error $statusCode: $message'; // l10n-ignore: exception text for logs
 }
 
 class WalletLinkApiClient {
@@ -33,7 +33,7 @@ class WalletLinkApiClient {
     WalletLinkCreatePackageRequest input,
   ) async {
     final response = await _jsonRequest(
-      'POST',
+      'POST', // l10n-ignore: HTTP method
       walletLinkPackagesUri(_baseUri),
       body: input.toJson(),
     );
@@ -50,7 +50,7 @@ class WalletLinkApiClient {
 
   Future<void> revokePackage(String packageId) async {
     final response = await _client.request(
-      'POST',
+      'POST', // l10n-ignore: HTTP method
       walletLinkPackageRevokeUri(_baseUri, packageId: packageId),
       headers: const {HttpHeaders.acceptHeader: 'application/json'},
       timeout: timeout,
@@ -66,7 +66,7 @@ class WalletLinkApiClient {
 
   Future<WalletLinkPackageStatus> getPackageStatus(String packageId) async {
     final response = await _jsonRequest(
-      'GET',
+      'GET', // l10n-ignore: HTTP method
       walletLinkPackageStatusUri(_baseUri, packageId: packageId),
     );
     final body = utf8.decode(response.bodyBytes);
@@ -86,7 +86,7 @@ class WalletLinkApiClient {
     WalletLinkEnvelope? completionEnvelope,
   }) async {
     final response = await _jsonRequest(
-      'POST',
+      'POST', // l10n-ignore: HTTP method
       walletLinkPackageCompleteUri(_baseUri, packageId: packageId),
       body: {
         'completionToken': completionToken,
@@ -107,7 +107,7 @@ class WalletLinkApiClient {
 
   Future<WalletLinkPackageDownload> getPackage(String packageId) async {
     final response = await _jsonRequest(
-      'GET',
+      'GET', // l10n-ignore: HTTP method
       walletLinkPackagesUri(_baseUri, packageId: packageId),
     );
     final body = utf8.decode(response.bodyBytes);

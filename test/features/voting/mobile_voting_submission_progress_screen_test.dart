@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_su
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_submission_progress_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -342,6 +343,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         navigatorKey: navigatorKey,
         home: AppTheme(
           data: AppThemeData.light,
@@ -407,6 +409,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         navigatorKey: navigatorKey,
         home: AppTheme(
           data: AppThemeData.light,
@@ -467,6 +470,7 @@ void main() {
 
 Widget _app(Widget child) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(data: AppThemeData.light, child: child),
   );
 }

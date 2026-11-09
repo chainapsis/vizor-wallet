@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import 'mobile_tor_control.dart';
@@ -33,7 +34,7 @@ class MobileNetworkPrivacyCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              'Privacy',
+              context.l10n.settingsPrivacyTitle,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.secondary,
               ),

@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import '../../support/home_initialization_checks.dart';
 import 'package:zcash_wallet/src/features/home/widgets/home_activity_skeleton.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_items_provider.dart';
 import 'dart:convert';
@@ -53,11 +54,13 @@ import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/app_test_fonts.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 
 /// Skips the secure-storage write so toggling works without a platform
 /// channel in widget tests.
@@ -231,7 +234,7 @@ class _HomeParticipationRecorder extends VotingParticipationCoordinator {
 
 Widget _app(
   SyncState syncState, {
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   ZecMarketData? marketData = const ZecMarketData(
     usdPrice: 70,
     change24hPct: 13.12,
@@ -461,6 +464,7 @@ Widget _app(
         ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: theme, child: child!),
     ),
@@ -720,7 +724,41 @@ class _DeferredVotingStore implements VotingHomeCacheStore {
 }
 
 void main() {
+  registerHomeInitializationChecks(
+    mobile: true,
+    app: (state, notifier, cards) => _app(
+      state,
+      syncNotifier: notifier,
+      giftCardActivityFuture: cards,
+      showVoting: false,
+    ),
+    home: () => find.byType(MobileHomeScreen),
+    importing: () =>
+        find.byKey(const ValueKey('mobile_home_importing_background')),
+  );
+
   setUpAll(loadAppTestFonts);
+
+  List<Object?> recordHaptics(WidgetTester tester) {
+    final feedback = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          feedback.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    return feedback;
+  }
+
   testWidgets('Home displays ETA in place of the pool subtitle', (
     tester,
   ) async {
@@ -749,7 +787,7 @@ void main() {
           orchardBalance: BigInt.from(100000000),
         ).copyWith(recentTransactions: [pending]),
         showVoting: false,
-        etaLabels: const {'pending-receive': 'Est. 1–3 min'},
+        etaLabels: const {'pending-receive': ActivityEta.standard},
       ),
     );
     for (var i = 0; i < 10; i++) {
@@ -1823,6 +1861,7 @@ void main() {
   testWidgets('keeps wallet actions available while migration is required', (
     tester,
   ) async {
+    final feedback = recordHaptics(tester);
     const requiredCta = IronwoodHomeMigrationCtaState.start(
       network: 'main',
       accountUuid: 'account-1',
@@ -1847,6 +1886,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_home_send')));
     await tester.pumpAndSettle();
     expect(find.text('send route'), findsOneWidget);
+    expect(feedback, ['HapticFeedbackType.lightImpact']);
   });
 
   testWidgets('shows total balance and remaining amount while migrating', (
@@ -1957,6 +1997,54 @@ void main() {
     await tester.pump();
 
     expect(find.text('2 ZEC still migrating'), findsOneWidget);
+  });
+
+  testWidgets('privacy mode masks the migrating amount in the banner', (
+    tester,
+  ) async {
+    tester.view.physicalSize =
+        const Size(393, 852) * tester.view.devicePixelRatio;
+    addTearDown(tester.view.resetPhysicalSize);
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(200_000_000),
+          ironwoodBalance: BigInt.from(200_000_000),
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatusForPhase(
+            kIronwoodMigrationBroadcastScheduledPhase,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('2 ZEC still migrating'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp('2 ZEC still migrating')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.bySemanticsLabel('Hide balance'));
+    await tester.pump();
+
+    expect(find.text('****** ZEC still migrating'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp(r'\*{6} ZEC still migrating')),
+      findsOneWidget,
+    );
+    expect(find.text('2 ZEC still migrating'), findsNothing);
+    expect(
+      find.bySemanticsLabel(RegExp('2 ZEC still migrating')),
+      findsNothing,
+    );
+    expect(find.textContaining('ZEC ZEC', findRichText: true), findsNothing);
+    expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+    semantics.dispose();
   });
 
   testWidgets('waits for confirmation after Orchard holdings reach zero', (
@@ -2875,6 +2963,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
         home: Align(
           alignment: Alignment.bottomCenter,
@@ -3197,6 +3286,7 @@ void main() {
   });
 
   testWidgets('zero balance offers the first-receive action', (tester) async {
+    final feedback = recordHaptics(tester);
     await tester.pumpWidget(_app(_syncedState()));
     await tester.pump();
 
@@ -3206,9 +3296,11 @@ void main() {
     await tester.tap(find.text('Receive your first ZEC'));
     await tester.pumpAndSettle();
     expect(find.text('receive route'), findsOneWidget);
+    expect(feedback, ['HapticFeedbackType.lightImpact']);
   });
 
   testWidgets('pay action opens exact-output pay route', (tester) async {
+    final feedback = recordHaptics(tester);
     await tester.pumpWidget(
       _app(_syncedState(orchardBalance: BigInt.from(14312000000))),
     );
@@ -3219,6 +3311,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('pay route zecToExternal exactOutput'), findsOneWidget);
+    expect(feedback, ['HapticFeedbackType.lightImpact']);
   });
 
   testWidgets('hides the pay entry when swap is disabled', (tester) async {

@@ -100,7 +100,7 @@ class BiometricUnlockHandler(private val activity: FragmentActivity) {
             cipher.init(Cipher.ENCRYPT_MODE, key)
 
             authenticate(
-                title = "Enable fingerprint unlock",
+                title = NativeStrings.text(activity, NativeString.nativeBiometricEnableTitle),
                 cipher = cipher,
                 result = result
             ) { authedCipher ->
@@ -218,7 +218,7 @@ class BiometricUnlockHandler(private val activity: FragmentActivity) {
             .setTitle(title)
             .setAllowedAuthenticators(BIOMETRIC_STRONG)
             // The in-app passcode numpad is the fallback path.
-            .setNegativeButtonText("Use passcode")
+            .setNegativeButtonText(NativeStrings.text(activity, NativeString.nativeBiometricUsePasscode))
             .build()
         prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
     }

@@ -1,20 +1,13 @@
 import 'package:url_launcher/url_launcher.dart';
 
 import 'network_config.dart';
+import '../l10n/l10n.dart';
 
 enum ZcashExplorerTxidOrder { protocol, display }
 
 typedef ZcashExplorerLauncher = Future<bool> Function(Uri uri);
 
 const kDefaultZcashExplorerLabel = 'ZecBlock';
-
-const kZcashExplorerPrivacyCopy =
-    'Transaction links open in this explorer. Use ZecBlock or another site '
-    'you prefer. Opening a public explorer after you send can link your IP '
-    'address to that transaction.';
-
-const kZcashExplorerTemplateHint =
-    'Use {txid} or {txHash} in the path, or enter just the origin.';
 
 final _txidHexPattern = RegExp(r'^[0-9a-f]{64}$');
 final _txidHexPathTailPattern = RegExp(r'/[0-9a-fA-F]{64}/?$');
@@ -34,6 +27,7 @@ String defaultZcashExplorerHost(String networkName) {
 
 /// Settings-row label: ZecBlock when unset, otherwise the custom host.
 String explorerSettingsLabel(
+  AppLocalizations l10n,
   String? customTemplate, {
   required String networkName,
 }) {
@@ -42,8 +36,42 @@ String explorerSettingsLabel(
   try {
     return Uri.parse(normalizeExplorerUrlTemplate(template)).host;
   } on FormatException {
-    return 'Custom';
+    return l10n.settingsExplorerCustom;
   }
+}
+
+/// Why an explorer URL was refused. Screens show [message]; the exception
+/// keeps the English [logText].
+enum ExplorerUrlIssue {
+  empty('Enter an explorer URL.'), // l10n-ignore: log text
+  scheme('Enter an http or https URL.'), // l10n-ignore: log text
+  host('Enter a host, like explorer.example.'); // l10n-ignore: log text
+
+  const ExplorerUrlIssue(this.logText);
+
+  final String logText;
+
+  String message(AppLocalizations l10n) => switch (this) {
+    ExplorerUrlIssue.empty => l10n.settingsExplorerErrorEmpty,
+    ExplorerUrlIssue.scheme => l10n.settingsExplorerErrorScheme,
+    ExplorerUrlIssue.host => l10n.settingsExplorerErrorHost,
+  };
+}
+
+/// An explorer URL the user cannot use. A [FormatException], so existing
+/// handlers still catch it.
+class ExplorerUrlFormatException extends FormatException {
+  ExplorerUrlFormatException(this.issue) : super(issue.logText);
+
+  final ExplorerUrlIssue issue;
+}
+
+/// The text a screen shows for an explorer URL error.
+String explorerUrlErrorText(AppLocalizations l10n, FormatException error) {
+  return switch (error) {
+    ExplorerUrlFormatException(:final issue) => issue.message(l10n),
+    _ => ExplorerUrlIssue.host.message(l10n),
+  };
 }
 
 /// Normalize user input into a stored explorer URL template.
@@ -53,7 +81,7 @@ String explorerSettingsLabel(
 String normalizeExplorerUrlTemplate(String input) {
   var raw = input.trim();
   if (raw.isEmpty) {
-    throw const FormatException('Enter an explorer URL.');
+    throw ExplorerUrlFormatException(ExplorerUrlIssue.empty);
   }
 
   final lower = raw.toLowerCase();
@@ -61,7 +89,7 @@ String normalizeExplorerUrlTemplate(String input) {
       lower.startsWith('data:') ||
       lower.startsWith('file:') ||
       lower.startsWith('vbscript:')) {
-    throw const FormatException('Enter an http or https URL.');
+    throw ExplorerUrlFormatException(ExplorerUrlIssue.scheme);
   }
 
   if (!raw.contains('://')) {
@@ -70,10 +98,10 @@ String normalizeExplorerUrlTemplate(String input) {
 
   final parsed = Uri.tryParse(raw);
   if (parsed == null || !parsed.hasScheme || parsed.host.isEmpty) {
-    throw const FormatException('Enter a host, like explorer.example.');
+    throw ExplorerUrlFormatException(ExplorerUrlIssue.host);
   }
   if (parsed.scheme != 'http' && parsed.scheme != 'https') {
-    throw const FormatException('Enter an http or https URL.');
+    throw ExplorerUrlFormatException(ExplorerUrlIssue.scheme);
   }
 
   return _decodeTxidPlaceholders(_ensureTxidPlaceholder(parsed).toString());
@@ -86,7 +114,7 @@ Uri applyExplorerUrlTemplate(String template, String txidHex) {
   ).replaceAllMapped(_txidPlaceholderPattern, (_) => txidHex);
   final uri = Uri.parse(filled);
   if (uri.scheme != 'http' && uri.scheme != 'https') {
-    throw const FormatException('Enter an http or https URL.');
+    throw ExplorerUrlFormatException(ExplorerUrlIssue.scheme);
   }
   return uri;
 }
@@ -138,7 +166,7 @@ String _decodeTxidPlaceholders(String value) {
 
 Uri _ensureTxidPlaceholder(Uri uri) {
   final haystack = _decodeTxidPlaceholders(
-    '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}'
+    '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}' // l10n-ignore: URL composition
     '${uri.hasFragment ? '#${uri.fragment}' : ''}',
   );
   if (_txidPlaceholderPattern.hasMatch(haystack)) {

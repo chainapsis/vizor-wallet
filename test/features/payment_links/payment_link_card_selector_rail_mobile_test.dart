@@ -9,6 +9,8 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   testWidgets('mobile loop exposes one finite artwork cycle to semantics', (
@@ -18,6 +20,7 @@ void main() {
     PaymentLinkCardArtwork? selected;
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.dark,
           child: Scaffold(
@@ -63,7 +66,7 @@ void main() {
       expect(
         announcedDesigns(),
         PaymentLinkCardArtwork.values
-            .map((artwork) => '${artwork.semanticLabel} card design')
+            .map((artwork) => '${artwork.semanticLabel(testL10n)} card design')
             .toList(),
       );
       await tester.drag(
@@ -85,6 +88,7 @@ void main() {
     var selected = PaymentLinkCardArtwork.knight;
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.dark,
           child: Scaffold(
@@ -105,14 +109,13 @@ void main() {
     await tester.pumpAndSettle();
     final scroll = tester.widget<ListView>(find.byType(ListView)).controller!;
     final original = scroll.offset;
-    final gift = find.byWidgetPredicate(
-      (w) =>
-          w is PaymentLinkCardSelector &&
-          w.artwork == PaymentLinkCardArtwork.gift,
+    final lastArtwork = PaymentLinkCardArtwork.values.last;
+    final lastSelector = find.byWidgetPredicate(
+      (w) => w is PaymentLinkCardSelector && w.artwork == lastArtwork,
     );
-    await tester.tap(gift);
+    await tester.tap(lastSelector);
     await tester.pumpAndSettle();
-    expect(selected, PaymentLinkCardArtwork.gift);
+    expect(selected, lastArtwork);
     final knight = find.byWidgetPredicate(
       (w) =>
           w is PaymentLinkCardSelector &&
@@ -138,6 +141,7 @@ void main() {
         final boundaryKey = GlobalKey();
         await tester.pumpWidget(
           MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.dark,
               child: Scaffold(

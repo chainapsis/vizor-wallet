@@ -11,12 +11,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const kZnsNamesEnabledStorageKey = 'vizor_zns_names_enabled';
 
-/// Settings copy that explains what turning names on does.
-const kZnsNamesSettingsCopy =
-    'Send to names like alice.zcash. When on, Vizor downloads the Zcash Name '
-    'Service directory from its servers and looks names up on your device, '
-    'so the servers never learn which name you look up.';
-
 /// Persists whether Zcash names are on.
 abstract interface class ZnsNamesSettingStore {
   Future<bool> readEnabled();

@@ -1,13 +1,15 @@
+import '../../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart' show TextInputAction;
 
+import '../../../../core/layout/mobile/mobile_bottom_scroll_fade.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
-import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../address_book/models/address_book_contact.dart';
-import '../../../address_book/models/address_book_label_lookup.dart';
+import '../../../address_book/models/recipient_suggestions.dart';
+import '../../../address_book/widgets/mobile_recipient_list.dart';
 import '../../../swap/models/swap_address_formatting.dart';
 import '../../../swap/models/swap_models.dart';
 import '../../models/pay_recent_recipients.dart';
@@ -80,24 +82,27 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
     final typed = widget.typedAddress.trim();
     final hasInput = typed.isNotEmpty;
     final valid = hasInput && widget.addressError == null;
-    final contactMatches = valid
-        ? payContactsForAddress(widget.contacts, typed)
-        : const <AddressBookContact>[];
-    final recentMatches = valid
-        ? _recentsForAddress(typed, widget.recents)
-        : const <PayRecentRecipient>[];
-    final unknownAddress =
-        valid && contactMatches.isEmpty && recentMatches.isEmpty;
-    final visibleRecents = !hasInput
-        ? widget.recents
-        : contactMatches.isEmpty
-        ? recentMatches
-        : const <PayRecentRecipient>[];
-    final visibleContacts = !hasInput
-        ? widget.contacts
-        : contactMatches.isNotEmpty
-        ? contactMatches
-        : const <AddressBookContact>[];
+    final network = AddressBookNetwork.tryFromChainTicker(
+      widget.externalAsset.chainTicker,
+    );
+    final suggestions = network == null
+        ? RecipientSuggestions<PayRecentRecipient>(
+            recents: hasInput ? const [] : widget.recents,
+            contacts: hasInput ? const [] : widget.contacts,
+          )
+        : matchRecipientSuggestions(
+            query: typed,
+            network: network,
+            recents: widget.recents,
+            recentAddress: (recent) => recent.address,
+            contacts: widget.contacts,
+          );
+    final unknownAddress = valid && !suggestions.isNotEmpty;
+    final canAddContact =
+        valid && payContactsForAddress(widget.contacts, typed).isEmpty;
+    // Text that matches a contact name is a search, not a malformed address.
+    final showAddressError =
+        widget.addressError != null && !suggestions.isSearch;
 
     Widget buildRecentRow(PayRecentRecipient recent) {
       final selection = payRecipientSelectionForRecent(widget.contacts, recent);
@@ -105,16 +110,19 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
       final identityKey = recent.contactId == null
           ? recent.address
           : '${recent.address}_${recent.contactId}';
-      return _RecipientRow(
+      return MobileRecipientRow(
         key: ValueKey('mobile_pay_recent_$identityKey'),
-        contact: contact,
-        address: recent.address,
-        amountText: recent.amountText,
-        timeLabel: payRecentTimeLabel(recent.lastUsedAt),
+        surfaceKey: contact == null
+            ? null
+            : ValueKey('mobile_pay_contact_row_surface_${contact.id}'),
+        name: contact?.label,
+        profilePictureId: contact?.profilePictureId,
+        addressText: _compactAddress(recent.address),
+        amountText: _outgoingAmountText(recent.amountText),
+        timeLabel: payRecentTimeLabel(context.l10n, recent.lastUsedAt),
         selected:
             selection.contactId != null &&
             selection.contactId == widget.selectedContactId,
-        showSelectionIndicator: false,
         onTap: widget.busy || !widget.enabled
             ? null
             : () => widget.onChooseRecipient(selection),
@@ -128,68 +136,81 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
         Expanded(
           child: unknownAddress
               ? _buildUnknownAddressBody(context)
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
-                    AppSpacing.s,
-                    AppSpacing.sm,
-                    AppSpacing.md,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildRecipientField(context),
-                      const SizedBox(height: AppSpacing.md),
-                      _buildQrRow(context),
-                      if (visibleRecents.isNotEmpty) ...[
+              : MobileBottomScrollFade(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.sm,
+                      AppSpacing.s,
+                      AppSpacing.sm,
+                      AppSpacing.md,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildRecipientField(
+                          context,
+                          showError: showAddressError,
+                        ),
                         const SizedBox(height: AppSpacing.md),
-                        _FlatRecipientSection(
-                          key: const ValueKey(
-                            'mobile_pay_recent_recipients_section',
+                        _buildQrRow(context),
+                        if (suggestions.recents.isNotEmpty) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          MobileRecipientSection(
+                            key: const ValueKey(
+                              'mobile_pay_recent_recipients_section',
+                            ),
+                            title: context.l10n.payRecents,
+                            children: [
+                              for (final recent in suggestions.recents)
+                                buildRecentRow(recent),
+                            ],
                           ),
-                          title: 'Recently sent',
-                          children: [
-                            for (final recent in visibleRecents)
-                              buildRecentRow(recent),
-                          ],
-                        ),
-                      ],
-                      if (visibleContacts.isNotEmpty) ...[
-                        const SizedBox(height: AppSpacing.md),
-                        _FlatRecipientSection(
-                          key: const ValueKey('mobile_pay_contacts_section'),
-                          title:
-                              '${visibleContacts.length} '
-                              'contact${visibleContacts.length == 1 ? '' : 's'}',
-                          children: [
-                            for (final contact in visibleContacts)
-                              _RecipientRow(
-                                key: ValueKey(
-                                  'mobile_pay_contact_${contact.id}',
-                                ),
-                                contact: contact,
-                                address: contact.address,
-                                selected:
-                                    widget.selectedContactId == contact.id,
-                                showSelectionIndicator:
-                                    payContactsForAddress(
-                                      widget.contacts,
-                                      contact.address,
-                                    ).length >
-                                    1,
-                                onTap: widget.busy || !widget.enabled
-                                    ? null
-                                    : () => widget.onChooseRecipient(
-                                        PayRecipientSelection(
-                                          address: contact.address,
-                                          contactId: contact.id,
+                        ],
+                        if (suggestions.contacts.isNotEmpty) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          MobileRecipientSection(
+                            key: const ValueKey('mobile_pay_contacts_section'),
+                            title: context.l10n.commonContacts,
+                            children: [
+                              for (final contact in suggestions.contacts)
+                                MobileRecipientRow(
+                                  key: ValueKey(
+                                    'mobile_pay_contact_${contact.id}',
+                                  ),
+                                  surfaceKey: ValueKey(
+                                    'mobile_pay_contact_row_surface_'
+                                    '${contact.id}',
+                                  ),
+                                  name: contact.label,
+                                  profilePictureId: contact.profilePictureId,
+                                  addressText: _compactAddress(contact.address),
+                                  selected:
+                                      widget.selectedContactId == contact.id,
+                                  selectionSlotKey:
+                                      payContactsForAddress(
+                                            widget.contacts,
+                                            contact.address,
+                                          ).length >
+                                          1
+                                      ? ValueKey(
+                                          'mobile_pay_contact_selection_slot_'
+                                          '${contact.id}',
+                                        )
+                                      : null,
+                                  onTap: widget.busy || !widget.enabled
+                                      ? null
+                                      : () => widget.onChooseRecipient(
+                                          PayRecipientSelection(
+                                            address: contact.address,
+                                            contactId: contact.id,
+                                          ),
                                         ),
-                                      ),
-                              ),
-                          ],
-                        ),
+                                ),
+                            ],
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
         ),
@@ -219,13 +240,13 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                   ),
                   const SizedBox(height: AppSpacing.s),
                 ],
-                if (unknownAddress) ...[
+                if (canAddContact) ...[
                   AppButton(
                     key: const ValueKey('mobile_pay_add_to_contacts_button'),
                     variant: AppButtonVariant.ghost,
                     expand: true,
                     onPressed: widget.busy ? null : widget.onAddToContacts,
-                    child: const Text('Add to contacts'),
+                    child: Text(context.l10n.payAddToContacts),
                   ),
                   const SizedBox(height: AppSpacing.s),
                 ],
@@ -237,7 +258,11 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                   onPressed: widget.busy || !widget.enabled
                       ? null
                       : widget.onSelectRecipient,
-                  child: Text(widget.busy ? 'Fetching quote' : 'Continue'),
+                  child: Text(
+                    widget.busy
+                        ? context.l10n.payFetchingQuote
+                        : context.l10n.commonContinue,
+                  ),
                 ),
               ],
             ),
@@ -258,7 +283,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildRecipientField(context),
+          _buildRecipientField(context, showError: false),
           const SizedBox(height: AppSpacing.md),
           _buildQrRow(context),
           Expanded(
@@ -280,7 +305,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                           ),
                           const SizedBox(height: AppSpacing.xxs),
                           Text(
-                            'New address detected.',
+                            context.l10n.payNewAddressDetected,
                             textAlign: TextAlign.center,
                             style: AppTypography.bodyMediumStrong.copyWith(
                               color: colors.text.primary,
@@ -288,7 +313,7 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                           ),
                           const SizedBox(height: AppSpacing.xxs),
                           Text(
-                            "You haven't interacted with this address before.",
+                            context.l10n.payNewAddressWarning,
                             textAlign: TextAlign.center,
                             style: AppTypography.bodyMedium.copyWith(
                               color: colors.text.secondary,
@@ -307,9 +332,9 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
     );
   }
 
-  Widget _buildRecipientField(BuildContext context) {
+  Widget _buildRecipientField(BuildContext context, {required bool showError}) {
     final colors = context.colors;
-    final hasError = widget.addressError != null;
+    final hasError = showError;
     return SizedBox(
       key: const ValueKey('mobile_pay_recipient_field_group'),
       height: _recipientFieldGroupHeight,
@@ -322,7 +347,9 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
             controller: widget.controller,
             focusNode: _focusNode,
             enabled: !widget.busy,
-            hintText: '${widget.externalAsset.chainLabel} address',
+            hintText: context.l10n.commonAddressForChain(
+              widget.externalAsset.chainLabel,
+            ),
             keyboardType: TextInputType.text,
             textInputAction: TextInputAction.next,
             textStyle: AppTypography.labelLarge.copyWith(
@@ -421,14 +448,14 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Scan a QR code',
+                      context.l10n.payScanQrTitle,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      'Scan an address using camera',
+                      context.l10n.payScanQrSubtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelLarge.copyWith(
@@ -445,250 +472,14 @@ class _MobilePayRecipientStepState extends State<MobilePayRecipientStep> {
       ),
     );
   }
-
-  List<PayRecentRecipient> _recentsForAddress(
-    String address,
-    Iterable<PayRecentRecipient> recents,
-  ) {
-    final needle = _normalizedAddress(address);
-    if (needle.isEmpty) return const [];
-    return [
-      for (final recent in recents)
-        if (_normalizedAddress(recent.address) == needle) recent,
-    ];
-  }
-
-  String _normalizedAddress(String address) {
-    final network = AddressBookNetwork.tryFromChainTicker(
-      widget.externalAsset.chainTicker,
-    );
-    return network == null
-        ? address.trim()
-        : normalizedAddressBookAddress(network, address);
-  }
 }
 
-class _FlatRecipientSection extends StatelessWidget {
-  const _FlatRecipientSection({
-    required this.title,
-    required this.children,
-    super.key,
-  });
-
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            height: 28,
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xxs),
-              child: Row(
-                children: [
-                  AppIcon(AppIcons.users, size: 20, color: colors.icon.muted),
-                  const SizedBox(width: AppSpacing.xxs),
-                  Expanded(
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          for (var index = 0; index < children.length; index++) ...[
-            children[index],
-            if (index != children.length - 1)
-              const SizedBox(height: AppSpacing.sm),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _RecipientRow extends StatelessWidget {
-  const _RecipientRow({
-    required this.address,
-    this.contact,
-    this.amountText,
-    this.timeLabel,
-    this.selected = false,
-    this.showSelectionIndicator = false,
-    this.onTap,
-    super.key,
-  });
-
-  final AddressBookContact? contact;
-  final String address;
-  final String? amountText;
-  final String? timeLabel;
-  final bool selected;
-  final bool showSelectionIndicator;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final compactAddress = compactSwapAddress(
-      address,
-      maxLength: 22,
-      prefixLength: 9,
-      suffixLength: 8,
-    );
-    final amount = _outgoingAmountText(amountText);
-    final row = SizedBox(
-      key: contact == null
-          ? null
-          : ValueKey('mobile_pay_contact_row_surface_${contact!.id}'),
-      height: _recipientRowHeight,
-      child: Row(
-        children: [
-          SizedBox(
-            width: AppAssetSize.size,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: contact != null
-                  ? AppProfilePicture(
-                      profilePictureId: contact!.profilePictureId,
-                      size: AppProfilePictureSize.large,
-                    )
-                  : Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: colors.background.neutralSubtleOpacity,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: AppIcon(
-                          AppIcons.wallet,
-                          size: 16,
-                          color: colors.icon.regular,
-                        ),
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.s),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (contact != null)
-                  Text(
-                    contact!.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                Text(
-                  compactAddress,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(
-                    fontWeight: FontWeight.w400,
-                    color: contact == null
-                        ? colors.text.accent
-                        : colors.text.secondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (amount != null || timeLabel != null) ...[
-            const SizedBox(width: AppSpacing.xs),
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (amount != null)
-                  Text(
-                    amount,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                if (amount != null && timeLabel != null)
-                  const SizedBox(height: AppSpacing.xxs),
-                if (timeLabel != null)
-                  Text(
-                    timeLabel!,
-                    maxLines: 1,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.secondary,
-                    ),
-                  ),
-              ],
-            ),
-          ],
-          if (showSelectionIndicator) ...[
-            const SizedBox(width: AppSpacing.xs),
-            _ContactSelectionSlot(selected: selected, contactId: contact!.id),
-          ],
-        ],
-      ),
-    );
-
-    if (onTap == null) return Semantics(selected: selected, child: row);
-    return Semantics(
-      button: true,
-      selected: selected,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: row,
-      ),
-    );
-  }
-}
-
-class _ContactSelectionSlot extends StatelessWidget {
-  const _ContactSelectionSlot({
-    required this.selected,
-    required this.contactId,
-  });
-
-  final bool selected;
-  final String contactId;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      key: ValueKey('mobile_pay_contact_selection_slot_$contactId'),
-      width: 18,
-      height: 18,
-      child: selected
-          ? Center(
-              child: AppIcon(
-                AppIcons.check,
-                size: 16,
-                color: context.colors.icon.accent,
-                semanticLabel: 'Selected contact',
-              ),
-            )
-          : null,
-    );
-  }
-}
+String _compactAddress(String address) => compactSwapAddress(
+  address,
+  maxLength: 22,
+  prefixLength: 9,
+  suffixLength: 8,
+);
 
 String? _outgoingAmountText(String? value) {
   final trimmed = value?.trim() ?? '';

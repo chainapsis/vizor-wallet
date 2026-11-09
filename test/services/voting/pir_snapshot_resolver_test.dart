@@ -20,9 +20,7 @@ rust_voting.PirSnapshotEndpointDiagnosticView diagnostic({
   return rust_voting.PirSnapshotEndpointDiagnosticView(
     endpoint: endpoint,
     status: status,
-    reportedHeight: reportedHeight == null
-        ? null
-        : BigInt.from(reportedHeight),
+    reportedHeight: reportedHeight == null ? null : BigInt.from(reportedHeight),
     httpStatusCode: httpStatusCode,
     message: message,
   );
@@ -82,7 +80,10 @@ void main() {
     );
 
     final resolution = await resolver.resolve(
-      endpoints: [Uri.parse('https://a.example'), Uri.parse('https://b.example')],
+      endpoints: [
+        Uri.parse('https://a.example'),
+        Uri.parse('https://b.example'),
+      ],
       expectedSnapshotHeight: 100,
     );
 
@@ -124,30 +125,34 @@ void main() {
   test('every bridge status maps to its Dart status', () async {
     // The status screen branches on `behind` specifically, so a silent
     // mismapping here would change what the user is told to do.
-    const pairs = <rust_voting.PirSnapshotEndpointStatusView,
-        PirSnapshotEndpointStatus>{
-      rust_voting.PirSnapshotEndpointStatusView.matched:
-          PirSnapshotEndpointStatus.matched,
-      rust_voting.PirSnapshotEndpointStatusView.behind:
-          PirSnapshotEndpointStatus.behind,
-      rust_voting.PirSnapshotEndpointStatusView.ahead:
-          PirSnapshotEndpointStatus.ahead,
-      rust_voting.PirSnapshotEndpointStatusView.missingHeight:
-          PirSnapshotEndpointStatus.missingHeight,
-      rust_voting.PirSnapshotEndpointStatusView.malformedJson:
-          PirSnapshotEndpointStatus.malformedJson,
-      rust_voting.PirSnapshotEndpointStatusView.nonSuccessStatus:
-          PirSnapshotEndpointStatus.nonSuccessStatus,
-      rust_voting.PirSnapshotEndpointStatusView.timeoutOrNetworkError:
-          PirSnapshotEndpointStatus.timeoutOrNetworkError,
-    };
+    const pairs =
+        <rust_voting.PirSnapshotEndpointStatusView, PirSnapshotEndpointStatus>{
+          rust_voting.PirSnapshotEndpointStatusView.matched:
+              PirSnapshotEndpointStatus.matched,
+          rust_voting.PirSnapshotEndpointStatusView.behind:
+              PirSnapshotEndpointStatus.behind,
+          rust_voting.PirSnapshotEndpointStatusView.ahead:
+              PirSnapshotEndpointStatus.ahead,
+          rust_voting.PirSnapshotEndpointStatusView.missingHeight:
+              PirSnapshotEndpointStatus.missingHeight,
+          rust_voting.PirSnapshotEndpointStatusView.malformedJson:
+              PirSnapshotEndpointStatus.malformedJson,
+          rust_voting.PirSnapshotEndpointStatusView.nonSuccessStatus:
+              PirSnapshotEndpointStatus.nonSuccessStatus,
+          rust_voting.PirSnapshotEndpointStatusView.timeoutOrNetworkError:
+              PirSnapshotEndpointStatus.timeoutOrNetworkError,
+        };
 
     for (final entry in pairs.entries) {
       final resolver = resolverReturning(
         rust_api.ApiPirSnapshotResolution(
           endpoint: 'https://a.example',
           diagnostics: [
-            diagnostic(status: entry.key, reportedHeight: 100, httpStatusCode: 503),
+            diagnostic(
+              status: entry.key,
+              reportedHeight: 100,
+              httpStatusCode: 503,
+            ),
           ],
         ),
       );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -118,7 +119,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
             children: [
               Expanded(
                 child: Text(
-                  'Select asset',
+                  context.l10n.swapAssetSelectorTitle,
                   style: AppTypography.bodyLarge.copyWith(
                     fontWeight: FontWeight.w600,
                     color: colors.text.accent,
@@ -164,7 +165,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                       ),
                       cursorColor: colors.text.accent,
                       decoration: InputDecoration.collapsed(
-                        hintText: 'Search token or chain',
+                        hintText: context.l10n.swapAssetSelectorSearchHint,
                         hintStyle: AppTypography.labelLarge.copyWith(
                           fontWeight: FontWeight.w400,
                           color: colors.text.muted,
@@ -194,7 +195,7 @@ class _SwapAssetSelectorModalState extends State<SwapAssetSelectorModal> {
                     child: SizedBox(
                       width: 112,
                       child: Text(
-                        'No tokens or chains found',
+                        context.l10n.swapAssetSelectorEmpty,
                         textAlign: TextAlign.center,
                         // Spec: Label M Regular (Geist 14/16, weight 400).
                         style: AppTypography.labelLarge.copyWith(

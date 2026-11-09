@@ -11,19 +11,15 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../core/config/network_config.dart'
     show kZcashDefaultCurrencyTicker;
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/zcash/zip321_payment_request_builder.dart';
-
-/// Toast shown after the request link reaches the clipboard.
-const kRequestLinkCopiedToast = 'Request link copied';
 
 /// Header for both the desktop modal and the mobile sheet.
 ///
 /// One title for the whole flow: the mobile result step keeps it and adds a
 /// back chevron, so the two steps read as one task rather than two screens.
-final String kRequestFlowTitle = 'Request $kZcashDefaultCurrencyTicker';
-
-/// The collapsed message prompt, worded as the action it starts.
-const kRequestAddMessageLabel = 'Add a message';
+String requestFlowTitle(AppLocalizations l10n) =>
+    l10n.receiveRequestButton(kZcashDefaultCurrencyTicker);
 
 /// The two steps both form factors present the request flow in.
 ///
@@ -38,28 +34,27 @@ enum RequestModalStep {
   result,
 }
 
-/// Why the message exists and who can read it.
-///
-/// Deliberately *not* the send composer's memo line: there the memo goes on
-/// chain encrypted to the recipient, but a request writes it into the link the
-/// user is about to hand out, where it is only base64url-encoded. Anyone who
-/// sees the link, the QR or the chat it was pasted into can read it.
-const kRequestMessageHelpText =
-    'Shielded addresses only — anyone with this link can read it.';
-
 /// Inline amount errors. All three are phrased as the correction to make, not
 /// as a verdict on what was typed.
-const kRequestAmountDecimalsError = 'Enter up to 8 decimals';
-const kRequestAmountSupplyError = 'Amount exceeds the ZEC supply';
+enum RequestAmountError {
+  decimals,
+  supply,
 
-/// Shown when the field holds something that is not a decimal number at all.
-///
-/// The field's own formatters make this hard to reach by typing, so it is the
-/// backstop for the paths they do not cover — a controller written to
-/// programmatically, or a platform that slips a character past them. Silence
-/// there would be a permanently disabled "Create request" with nothing on
-/// screen explaining it.
-const kRequestAmountFormatError = 'Enter an amount like 0.5';
+  /// Shown when the field holds something that is not a decimal number at all.
+  ///
+  /// The field's own formatters make this hard to reach by typing, so it is the
+  /// backstop for the paths they do not cover — a controller written to
+  /// programmatically, or a platform that slips a character past them. Silence
+  /// there would be a permanently disabled "Create request" with nothing on
+  /// screen explaining it.
+  format;
+
+  String text(AppLocalizations l10n) => switch (this) {
+    decimals => l10n.receiveRequestAmountDecimalsError,
+    supply => l10n.receiveRequestAmountSupplyError,
+    format => l10n.receiveRequestAmountFormatError,
+  };
+}
 
 /// Everything the request widgets draw.
 ///
@@ -101,7 +96,7 @@ class ZecRequestView {
   final String? messageText;
 
   /// Inline error under the amount field, or null.
-  final String? amountError;
+  final RequestAmountError? amountError;
 
   bool get isShielded => !zip321AddressIsTransparent(address);
 

@@ -11,13 +11,14 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_car
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   test('card artwork exposes every exported design', () {
-    expect(PaymentLinkCardArtwork.values, hasLength(11));
+    expect(PaymentLinkCardArtwork.values, hasLength(12));
     expect(
       PaymentLinkCardArtwork.values.map((artwork) => artwork.assetPath).toSet(),
-      hasLength(11),
+      hasLength(12),
     );
   });
 
@@ -911,7 +912,11 @@ void main() {
       expect(
         tester
             .getCenter(
-              find.byKey(const ValueKey('payment_link_card_selector_gift')),
+              find.byKey(
+                ValueKey(
+                  'payment_link_card_selector_${PaymentLinkCardArtwork.values.last.name}',
+                ),
+              ),
             )
             .dx,
         closeTo(tester.getCenter(rail).dx, 0.01),
@@ -933,6 +938,7 @@ void main() {
 Future<void> _pump(WidgetTester tester, Widget child) {
   return tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, appChild) =>
           AppTheme(data: AppThemeData.dark, child: appChild!),
       home: Scaffold(body: Center(child: child)),

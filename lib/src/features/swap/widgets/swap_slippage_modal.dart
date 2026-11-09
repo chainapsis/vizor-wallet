@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
@@ -139,7 +140,7 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Slippage',
+            context.l10n.swapSlippageTitle,
             style: AppTypography.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
               color: colors.text.accent,
@@ -148,8 +149,8 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
           const SizedBox(height: AppSpacing.sm),
           Text(
             widget.paymentMode
-                ? 'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.'
-                : "Sets the maximum rate change you'll accept. Network fees are separate.",
+                ? context.l10n.swapSlippageDescriptionPay
+                : context.l10n.swapSlippageDescriptionSwap,
             style: AppTypography.bodySmall.copyWith(
               color: colors.text.secondary,
             ),
@@ -176,7 +177,7 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
           const SizedBox(height: AppSpacing.sm),
           if (_customValueInvalid) ...[
             Text(
-              'Slippage must be 0.1 - 5%',
+              context.l10n.swapSlippageRangeError,
               key: const ValueKey('swap_slippage_error_message'),
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
@@ -188,7 +189,7 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
           AppModalActions(
             cancelKey: const ValueKey('swap_slippage_cancel_button'),
             actionKey: const ValueKey('swap_slippage_update_button'),
-            actionLabel: 'Update',
+            actionLabel: context.l10n.commonUpdate,
             onAction: canSubmit
                 ? () {
                     final value = _selectedBps;
@@ -324,7 +325,10 @@ class _SlippageCustomRadioCard extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        Text('Custom', style: fixedLabelStyle),
+                        Text(
+                          context.l10n.swapSlippageCustom,
+                          style: fixedLabelStyle,
+                        ),
                         const SizedBox(width: 4),
                         SizedBox(
                           width: inputWidth,

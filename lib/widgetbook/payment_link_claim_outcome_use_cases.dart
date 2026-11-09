@@ -9,7 +9,7 @@ import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/layout/app_form_factor.dart';
 import '../src/features/payment_links/services/payment_link_received_store.dart';
 import '../src/features/payment_links/widgets/payment_link_claim_outcome_view.dart';
-import '../src/features/payment_links/widgets/payment_link_copy.dart';
+import '../src/core/l10n/l10n.dart';
 
 Widget buildClaimNoBalanceUseCase(BuildContext context) =>
     _outcome(PaymentLinkAvailability.noBalance);
@@ -64,13 +64,18 @@ Widget _wrapOutcome(Widget view) => Builder(
   ),
 );
 
-Widget buildClaimOutcomeListUseCase(BuildContext context) => _outcomeList();
+Widget buildClaimOutcomeListUseCase(BuildContext context) =>
+    _outcomeList(context);
 Widget buildClaimArchiveClosedUseCase(BuildContext context) =>
-    _outcomeList(archive: true);
+    _outcomeList(context, archive: true);
 Widget buildClaimArchiveOpenUseCase(BuildContext context) =>
-    _outcomeList(archive: true, expanded: true);
+    _outcomeList(context, archive: true, expanded: true);
 
-Widget _outcomeList({bool archive = false, bool expanded = false}) {
+Widget _outcomeList(
+  BuildContext context, {
+  bool archive = false,
+  bool expanded = false,
+}) {
   Widget row(
     String label,
     String? action, {
@@ -119,7 +124,7 @@ Widget _outcomeList({bool archive = false, bool expanded = false}) {
     // The group names the state, so the row's trailing label is the action.
     if (!archive)
       PaymentLinkCardsSection(
-        label: kPaymentLinkClaimedElsewhereLabel,
+        label: context.l10n.paymentLinkClaimedElsewhereLabel,
         cards: [row('Remove', null, dimmed: true)],
       ),
     if (archive)

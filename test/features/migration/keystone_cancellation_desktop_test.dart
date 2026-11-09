@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
     as rust_keystone_wallet;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
@@ -82,6 +83,7 @@ void main() {
             ironwoodMigrationServiceProvider.overrideWithValue(service),
           ],
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.light, child: child!),

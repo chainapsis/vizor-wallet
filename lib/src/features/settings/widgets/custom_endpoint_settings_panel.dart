@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_button.dart';
@@ -14,6 +15,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_latency_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import 'network_privacy_control.dart';
 import 'enhance_pir_privacy_control.dart';
@@ -47,9 +49,10 @@ class _CustomEndpointSettingsPanelState
   @override
   void initState() {
     super.initState();
-    _controller.text = rpcEndpointInputText(
-      ref.read(rpcEndpointProvider).lightwalletdUrl,
-    );
+    final endpoint = ref.read(rpcEndpointProvider);
+    if (!isAutomaticRpcEndpointConfig(endpoint)) {
+      _controller.text = rpcEndpointInputText(endpoint.lightwalletdUrl);
+    }
   }
 
   @override
@@ -60,7 +63,8 @@ class _CustomEndpointSettingsPanelState
 
   bool _canUpdate(RpcEndpointConfig current) {
     if (_isSubmitting ||
-        ref.read(enhancePirTransitionProvider) == kEnhancePirChangingMessage) {
+        ref.read(enhancePirTransitionProvider) ==
+            EnhancePirTransition.changing) {
       return false;
     }
     try {
@@ -81,7 +85,7 @@ class _CustomEndpointSettingsPanelState
       normalizeRpcEndpointUrl(_controller.text, allowDefaultPort: true);
       return null;
     } on FormatException catch (e) {
-      return e.message;
+      return rpcEndpointErrorText(context.l10n, e);
     }
   }
 
@@ -109,16 +113,43 @@ class _CustomEndpointSettingsPanelState
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() {
-        _submitError = e.message;
+        _submitError = rpcEndpointErrorText(context.l10n, e);
         _isSubmitting = false;
       });
     } catch (e, st) {
       log('CustomEndpointSettingsPanel._submit: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _submitError =
-            "Couldn't connect to that endpoint. Check the host and port.";
+        _submitError = context.l10n.settingsEndpointConnectFailed;
         _isSubmitting = false;
+      });
+    }
+  }
+
+  Future<void> _useAutomatic() async {
+    if (_isSubmitting ||
+        ref.read(enhancePirTransitionProvider) ==
+            EnhancePirTransition.changing) {
+      return;
+    }
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+    });
+    try {
+      await ref.read(rpcEndpointProvider.notifier).setAutomatic();
+      if (widget.restartSyncAfterUpdate) {
+        await ref.read(syncProvider.notifier).restartSync();
+      }
+      if (!mounted) return;
+      _controller.clear();
+      setState(() => _isSubmitting = false);
+      widget.onUpdated?.call();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isSubmitting = false;
+        _submitError = context.l10n.endpointSaveFailed;
       });
     }
   }
@@ -128,11 +159,13 @@ class _CustomEndpointSettingsPanelState
     final colors = context.colors;
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final current = ref.watch(rpcEndpointProvider);
+    final automatic = isAutomaticRpcEndpointConfig(current);
+    final effective = automatic ? ref.watch(rpcEndpointFailoverProvider) : null;
     final latencyState = ref.watch(rpcEndpointLatencyProvider);
     final enabled = ref.watch(privateQueriesControlEnabledProvider);
     final available = ref.watch(enhancePirAvailableProvider) || enabled;
     final transition = ref.watch(enhancePirTransitionProvider);
-    final changingRecovery = transition == kEnhancePirChangingMessage;
+    final changingRecovery = transition == EnhancePirTransition.changing;
 
     return DecoratedBox(
       key: const ValueKey('network_settings_panel_surface'),
@@ -176,8 +209,22 @@ class _CustomEndpointSettingsPanelState
                       const SizedBox(height: AppSpacing.md),
                       CurrentEndpointText(
                         current: current,
+                        effectiveEndpoint: effective?.current,
+                        automaticReady: effective?.automaticReady ?? false,
                         latencyState: latencyState,
                       ),
+                      if (current.network == ZcashNetwork.mainnet &&
+                          !automatic) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        AppButton(
+                          key: const ValueKey('onboarding_endpoint_automatic'),
+                          variant: AppButtonVariant.secondary,
+                          onPressed: _isSubmitting || changingRecovery
+                              ? null
+                              : _useAutomatic,
+                          child: Text(context.l10n.endpointUseAutomatic),
+                        ),
+                      ],
                       const SizedBox(height: AppSpacing.sm),
                       SizedBox(
                         width: 352,
@@ -215,7 +262,9 @@ class _CustomEndpointSettingsPanelState
                 minWidth: 256,
                 trailing: const AppIcon(AppIcons.chevronForward),
                 child: Text(
-                  _isSubmitting ? 'Updating endpoint...' : 'Update endpoint',
+                  _isSubmitting
+                      ? context.l10n.settingsEndpointUpdating
+                      : context.l10n.endpointUpdate,
                 ),
               ),
             ],
@@ -241,7 +290,7 @@ class _PanelHeader extends StatelessWidget {
         children: [
           Center(
             child: Text(
-              'Network settings',
+              context.l10n.networkSettingsTitle,
               style: AppTypography.headlineMedium.copyWith(
                 color: colors.text.accent,
               ),
@@ -252,7 +301,7 @@ class _PanelHeader extends StatelessWidget {
               right: 0,
               child: AppIconHoverButton(
                 icon: AppIcons.cross,
-                semanticLabel: 'Close endpoint settings',
+                semanticLabel: context.l10n.settingsEndpointCloseSettings,
                 onTap: onClose!,
               ),
             ),
@@ -266,33 +315,42 @@ class CurrentEndpointText extends StatelessWidget {
   const CurrentEndpointText({
     required this.current,
     required this.latencyState,
+    this.effectiveEndpoint,
+    this.automaticReady = false,
     super.key,
   });
 
   final RpcEndpointConfig current;
+  final RpcEndpointConfig? effectiveEndpoint;
+  final bool automaticReady;
   final RpcEndpointLatencyState latencyState;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final preset = findRpcEndpointPresetByUrl(
-      current.normalizedLightwalletdUrl,
-      networkName: current.networkName,
-    );
-    final latency = latencyState.sampleForUrl(
-      current.normalizedLightwalletdUrl,
-    );
+    final automatic = isAutomaticRpcEndpointConfig(current);
+    final endpoint = effectiveEndpoint ?? current;
+    final preset = explicitRpcEndpointPresetFor(current);
+    final latency = automatic
+        ? null
+        : latencyState.sampleForUrl(endpoint.normalizedLightwalletdUrl);
     final suffix = [
-      if (latency != null) latency.label,
-      if (preset?.isDefault ?? false) '(Default)',
+      if (latency != null) latency.label(context.l10n),
+      if (!automatic && (preset?.isDefault ?? false))
+        context.l10n.settingsEndpointDefaultMarker,
     ].join(' ');
+    final hostLabel = automatic
+        ? automaticReady && effectiveEndpoint != null
+              ? context.l10n.endpointAutomaticWithHost(endpoint.hostPort)
+              : context.l10n.endpointAutomatic
+        : endpoint.hostPort;
 
     return Text.rich(
       TextSpan(
-        text: 'Current: ',
+        text: context.l10n.settingsEndpointCurrentPrefix,
         children: [
           TextSpan(
-            text: current.hostPort,
+            text: hostLabel,
             style: TextStyle(color: colors.text.brandCrimson),
           ),
           if (suffix.isNotEmpty) TextSpan(text: ' $suffix'),
@@ -329,8 +387,8 @@ class CustomEndpointForm extends StatelessWidget {
           SizedBox(
             height: 86,
             child: AppTextField(
-              label: 'Custom endpoint',
-              hintText: '<hostname>:<port>',
+              label: context.l10n.endpointCustom,
+              hintText: '<hostname>:<port>', // l10n-ignore: address format hint
               controller: controller,
               autofocus: true,
               leading: const AppIcon(AppIcons.endpoint),
@@ -355,15 +413,12 @@ class CustomEndpointForm extends StatelessWidget {
               Expanded(
                 child: Text.rich(
                   TextSpan(
-                    text:
-                        "If the endpoint is configured wrong, your wallet won't "
-                        'be able to sync with the Zcash network.\n',
+                    text: '${context.l10n.settingsEndpointWarningNetwork}\n',
                     children: [
                       TextSpan(
-                        text:
-                            "The wallet will show the balance from the last "
-                            "time it was successfully connected. It won't "
-                            'show any $kZcashDefaultCurrencyTicker you recently received.',
+                        text: context.l10n.settingsEndpointBalanceNote(
+                          kZcashDefaultCurrencyTicker,
+                        ),
                         style: TextStyle(color: colors.text.primary),
                       ),
                     ],

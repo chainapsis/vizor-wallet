@@ -14,6 +14,7 @@ import '../providers/gift_claim_flow_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../onboarding/shared/account_persona_draft.dart';
+import '../../../core/l10n/l10n.dart';
 
 class GiftCustomiseAccountArgs {
   const GiftCustomiseAccountArgs({
@@ -88,6 +89,7 @@ class _GiftCustomiseAccountScreenState
           : OnboardingSetupMode.createPasscode,
     ).at(OnboardingStage.customiseAccount),
     onFinish: (name, profilePictureId) async {
+      final l10n = context.l10n;
       if (!ref.read(appSecurityProvider).isPasswordConfigured &&
           widget.args.passcode == null) {
         ref
@@ -126,7 +128,7 @@ class _GiftCustomiseAccountScreenState
       } on GiftClaimAccountCreatedException catch (error) {
         if (mounted) setState(() => _createdAccountUuid = error.accountUuid);
         log('Gift wallet storage recovery failed: ${error.cause.runtimeType}');
-        throw Exception('Couldn’t finish saving your wallet. Try again.');
+        throw Exception(l10n.paymentLinkWalletSaveRecoveryFailed);
       } on WalletAccountStateUncertainException {
         if (mounted) setState(() => _requiresRestart = true);
         rethrow;

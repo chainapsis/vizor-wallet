@@ -6,54 +6,63 @@ bool _keystoneTwoRoundPlanSupported(
   return plan.signingBatchLimit > 0;
 }
 
-String _mobilePrivateMigrationStartErrorMessage(Object error) {
-  final upgradeHold = networkUpgradeHoldMessage(error);
+String _mobilePrivateMigrationStartErrorMessage(
+  AppLocalizations l10n,
+  Object error,
+) {
+  final upgradeHold = networkUpgradeHoldMessage(l10n, error);
   if (upgradeHold != null) return upgradeHold;
   final message = error.toString().toLowerCase();
   if (message.contains('mnemonic')) {
-    return "Secret Passphrase isn't available for this account.";
+    return l10n.homeShieldErrorSeedUnavailable;
   }
   if (message.contains('secret storage') ||
       message.contains('unlocked session')) {
-    return 'Unlock Vizor before starting migration.';
+    return l10n.migrationErrorUnlockBeforeStart;
   }
   if (message.contains('sync')) {
-    return 'Wait for sync to finish, then try again.';
+    return l10n.migrationErrorWaitForSync;
   }
   if (message.contains('broadcast') || message.contains('sendtransaction')) {
-    return "Couldn't broadcast the migration transaction. Try again.";
+    return l10n.migrationErrorBroadcast;
   }
-  return "Couldn't start migration. Try again.";
+  return l10n.migrationErrorStart;
 }
 
-String _mobileImmediateMigrationStartErrorMessage(Object error) {
+String _mobileImmediateMigrationStartErrorMessage(
+  AppLocalizations l10n,
+  Object error,
+) {
   final message = error.toString().toLowerCase();
   if (message.contains('plan changed')) {
-    return 'The amount or fee changed. Review the updated details.';
+    return l10n.migrationErrorPlanChanged;
   }
-  return _mobilePrivateMigrationStartErrorMessage(error);
+  return _mobilePrivateMigrationStartErrorMessage(l10n, error);
 }
 
 String _mobileImmediateMigratedAmountText(
-  rust_sync.OrchardMigrationImmediatePlan plan,
-) {
+  rust_sync.OrchardMigrationImmediatePlan plan, {
+  required bool privacyModeEnabled,
+}) {
   final amount = ZecAmount.fromZatoshi(
     plan.migratedZatoshi,
   ).pretty(minFractionDigits: 2, maxFractionDigits: 2).amountText;
-  return '$amount ZEC';
+  return '${hideIfPrivacyMode(amount, privacyModeEnabled: privacyModeEnabled)} ZEC'; // l10n-ignore: amount format
 }
 
 String _mobileImmediateFeeText(rust_sync.OrchardMigrationImmediatePlan plan) {
-  return '${ZecAmount.fromZatoshi(plan.feeZatoshi).balance.amountText} ZEC';
+  return '${ZecAmount.fromZatoshi(plan.feeZatoshi).balance.amountText} ZEC'; // l10n-ignore: amount format
 }
 
 class _MobileMigrationFastReview extends ConsumerStatefulWidget {
   const _MobileMigrationFastReview({
     required this.data,
+    required this.privacyModeEnabled,
     required this.previewPlan,
   });
 
   final IronwoodMigrationFlowData data;
+  final bool privacyModeEnabled;
   final rust_sync.OrchardMigrationImmediatePlan? previewPlan;
 
   @override
@@ -66,7 +75,13 @@ class _MobileMigrationFastReviewState
   bool _isBroadcasting = false;
   String? _broadcastError;
   rust_sync.OrchardMigrationImmediatePlan? _submittedPlan;
+
+  /// Rust's English account of a broadcast that did not fully finish, shown
+  /// behind a "Show details" button.
   String? _submittedMessage;
+
+  /// Whether the network may not have received the transaction.
+  bool _submittedUnconfirmed = false;
   String? _ledgerAccountUuid;
   rust_sync.OrchardMigrationImmediatePlan? _ledgerPlan;
 
@@ -114,7 +129,10 @@ class _MobileMigrationFastReviewState
         ref.invalidate(ironwoodMigrationImmediatePlanProvider);
       }
       setState(() {
-        _broadcastError = _mobileImmediateMigrationStartErrorMessage(error);
+        _broadcastError = _mobileImmediateMigrationStartErrorMessage(
+          context.l10n,
+          error,
+        );
       });
     } finally {
       if (mounted) {
@@ -143,12 +161,16 @@ class _MobileMigrationFastReviewState
     await _refreshPrivateMigrationDraftPresentation(ref);
     if (!mounted) return;
 
-    final message = result.message?.trim();
+    // The notice words Rust's English account; the account itself goes to
+    // the log and behind the notice's "Show details" button.
+    final message = result.message?.trim() ?? '';
+    logUntranslatedText(message);
     setState(() {
       _ledgerAccountUuid = null;
       _ledgerPlan = null;
       _submittedPlan = plan;
-      _submittedMessage = message == null || message.isEmpty ? null : message;
+      _submittedMessage = message.isEmpty ? null : message;
+      _submittedUnconfirmed = result.status == 'pending_broadcast';
     });
   }
 
@@ -186,7 +208,7 @@ class _MobileMigrationFastReviewState
       return _MobileIronwoodMigrationBackScope(
         onFallback: _openHome,
         child: _MigrationPreviewPage(
-          navTitle: 'Fast Migration',
+          navTitle: context.l10n.migrationMobileFastTitle,
           showBackButton: false,
           bottom: AppButton(
             key: const ValueKey('mobile_ironwood_immediate_done_button'),
@@ -194,7 +216,7 @@ class _MobileMigrationFastReviewState
             constrainContent: true,
             height: 50,
             onPressed: _openHome,
-            child: const Text('Done'),
+            child: Text(context.l10n.commonDone),
           ),
           child: Center(
             child: SizedBox(
@@ -210,7 +232,7 @@ class _MobileMigrationFastReviewState
                   ),
                   const SizedBox(height: AppSpacing.base),
                   Text(
-                    'Migration submitted',
+                    context.l10n.migrationMobileFastSubmittedTitle,
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineSmall.copyWith(
                       color: colors.text.accent,
@@ -218,8 +240,12 @@ class _MobileMigrationFastReviewState
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    '${_mobileImmediateMigratedAmountText(submittedPlan)} is '
-                    'on its way to Ironwood.',
+                    context.l10n.migrationMobileFastSubmittedBody(
+                      _mobileImmediateMigratedAmountText(
+                        submittedPlan,
+                        privacyModeEnabled: widget.privacyModeEnabled,
+                      ),
+                    ),
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.primary,
@@ -228,7 +254,9 @@ class _MobileMigrationFastReviewState
                   if (_submittedMessage != null) ...[
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      _submittedMessage!,
+                      _submittedUnconfirmed
+                          ? context.l10n.migrationMobileFastSubmittedUnconfirmed
+                          : context.l10n.migrationMobileFastSubmittedNotTracked,
                       key: const ValueKey(
                         'mobile_ironwood_immediate_submitted_notice',
                       ),
@@ -237,6 +265,7 @@ class _MobileMigrationFastReviewState
                         color: colors.text.warning,
                       ),
                     ),
+                    ...untranslatedDetailsButton(_submittedMessage),
                   ],
                 ],
               ),
@@ -255,16 +284,26 @@ class _MobileMigrationFastReviewState
     final planUnavailable = planAsync.asData != null && plan == null;
     final ledgerSigning = ledgerAccountUuid != null && ledgerPlan != null;
     final canBroadcast = plan != null && !_isBroadcasting && !ledgerSigning;
-    final placeholderText = planUnavailable ? 'Unavailable' : 'Calculating…';
+    final l10n = context.l10n;
+    final placeholderText = planUnavailable
+        ? l10n.migrationMobileFastPlanUnavailable
+        : l10n.commonCalculatingEllipsis;
+    final privacyModeEnabled = widget.privacyModeEnabled;
     final migratedText = plan == null
         ? placeholderText
-        : _mobileImmediateMigratedAmountText(plan);
+        : _mobileImmediateMigratedAmountText(
+            plan,
+            privacyModeEnabled: privacyModeEnabled,
+          );
     final feeText = plan == null
         ? placeholderText
         : _mobileImmediateFeeText(plan);
     final privacyAmountText = plan == null
-        ? '${widget.data.amountText} ZEC'
-        : _mobileImmediateMigratedAmountText(plan);
+        ? '${hideIfPrivacyMode(widget.data.amountText, privacyModeEnabled: privacyModeEnabled)} ZEC' // l10n-ignore: amount format
+        : _mobileImmediateMigratedAmountText(
+            plan,
+            privacyModeEnabled: privacyModeEnabled,
+          );
     final leaveReview = _isBroadcasting || ledgerSigning
         ? null
         : () => context.go('/migration/options');
@@ -281,7 +320,11 @@ class _MobileMigrationFastReviewState
               height: 50,
               onPressed: leaveReview,
               leading: const AppIcon(AppIcons.chevronBackward, size: 20),
-              child: Text(isLedgerAccount ? 'Back' : 'Consider another option'),
+              child: Text(
+                isLedgerAccount
+                    ? l10n.commonBack
+                    : l10n.migrationImmediateConsiderOther,
+              ),
             ),
             const SizedBox(height: AppSpacing.s),
             if (_broadcastError != null) ...[
@@ -303,7 +346,7 @@ class _MobileMigrationFastReviewState
                 expand: true,
                 height: 50,
                 onPressed: _isBroadcasting ? null : _retryPlanCalculation,
-                child: const Text('Retry calculation'),
+                child: Text(l10n.migrationImmediateRetryCalculation),
               ),
               const SizedBox(height: AppSpacing.s),
             ],
@@ -322,7 +365,11 @@ class _MobileMigrationFastReviewState
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const AppIcon(AppIcons.warning, size: 20),
-              child: Text(_isBroadcasting ? 'Sending...' : 'Continue anyway'),
+              child: Text(
+                _isBroadcasting
+                    ? l10n.commonSending
+                    : l10n.commonContinueAnyway,
+              ),
             ),
           ],
         ),
@@ -338,20 +385,21 @@ class _MobileMigrationFastReviewState
                 child: Column(
                   children: [
                     _ReviewRow(
-                      label: 'Amount',
+                      label: l10n.commonAmount,
                       value: migratedText,
                       height: 32,
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     _ReviewRow(
-                      label: 'Fees (estimate)',
+                      label: l10n.migrationImmediateFees,
                       value: feeText,
                       height: 32,
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     _ReviewRow(
-                      label: 'Migration complete in',
+                      label: l10n.migrationReviewCompleteIn,
                       value: ironwoodImmediateMigrationCompletionEstimate(
+                        context.l10n,
                         blockTimes,
                       ),
                       height: 32,
@@ -395,7 +443,7 @@ class _MobileMigrationFastReviewState
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Privacy trade-off',
+                              l10n.migrationImmediateTradeoffTitle,
                               style: AppTypography.bodySmall.copyWith(
                                 color: colors.text.homeCard,
                                 fontWeight: FontWeight.w600,
@@ -413,24 +461,19 @@ class _MobileMigrationFastReviewState
                                   letterSpacing: -0.21,
                                 ),
                                 children: [
-                                  TextSpan(
-                                    text:
-                                        'Crosses in one visible step — your '
-                                        '$privacyAmountText and '
-                                        'timing are ',
+                                  ...emphasisSpans(
+                                    l10n.migrationImmediateTradeoffBody(
+                                      privacyAmountText,
+                                      l10n.migrationImmediateTradeoffHighlight,
+                                    ),
+                                    [l10n.migrationImmediateTradeoffHighlight],
+                                    const TextStyle(color: Color(0xFFC06ECE)),
                                   ),
-                                  const TextSpan(
-                                    text:
-                                        'easier to associate with your wallet',
-                                    style: TextStyle(color: Color(0xFFC06ECE)),
-                                  ),
-                                  const TextSpan(text: '. '),
+                                  const TextSpan(text: ' '),
                                   TextSpan(
                                     text: isLedgerAccount
-                                        ? 'Private migration is not available '
-                                              'for Ledger accounts.'
-                                        : 'Consider choosing a Private '
-                                              'Migration option.',
+                                        ? l10n.migrationMobileFastPrivacyLedger
+                                        : l10n.migrationMobileFastPrivacyConsiderPrivate,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w500,
                                     ),
@@ -449,7 +492,7 @@ class _MobileMigrationFastReviewState
             if (planAsync.hasError) ...[
               const SizedBox(height: AppSpacing.s),
               Text(
-                "Couldn't calculate the Immediate migration fee. Sync and try again.",
+                l10n.migrationMobileFastPlanError,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.destructive,
@@ -458,7 +501,7 @@ class _MobileMigrationFastReviewState
             ] else if (planUnavailable) ...[
               const SizedBox(height: AppSpacing.s),
               Text(
-                'No spendable Orchard balance is available for Immediate migration.',
+                l10n.migrationImmediateNoBalance,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.destructive,

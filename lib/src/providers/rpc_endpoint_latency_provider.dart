@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/rpc_endpoint_config.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
+import '../core/l10n/l10n.dart';
 
 typedef RpcEndpointProbeGetter =
     Future<rust_wallet.LightwalletdEndpointProbe> Function(
@@ -28,12 +29,12 @@ class RpcEndpointLatencySample {
   final RpcEndpointLatencyStatus status;
   final Duration? latency;
 
-  String get label {
+  String label(AppLocalizations l10n) {
     return switch (status) {
-      RpcEndpointLatencyStatus.checking => 'Checking...',
+      RpcEndpointLatencyStatus.checking => l10n.commonChecking,
       RpcEndpointLatencyStatus.available => '${latency!.inMilliseconds}ms',
-      RpcEndpointLatencyStatus.unavailable => 'Unavailable',
-      RpcEndpointLatencyStatus.wrongNetwork => 'Wrong network',
+      RpcEndpointLatencyStatus.unavailable => l10n.endpointLatencyUnavailable,
+      RpcEndpointLatencyStatus.wrongNetwork => l10n.endpointLatencyWrongNetwork,
     };
   }
 }
@@ -92,7 +93,11 @@ class RpcEndpointLatencyNotifier extends Notifier<RpcEndpointLatencyState> {
 
   Future<void> refresh(String networkName) async {
     final generation = ++_generation;
-    final presets = rpcEndpointPresetsForNetwork(networkName);
+    // Automatic is a policy row, not a second physical server. Its
+    // compatibility URL is measured by the explicit US preset only.
+    final presets = rpcEndpointPresetsForNetwork(
+      networkName,
+    ).where((preset) => !preset.isAutomatic).toList();
     final getProbe = ref.read(rpcEndpointProbeGetterProvider);
 
     var nextState = state;

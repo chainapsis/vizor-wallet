@@ -60,6 +60,7 @@ void main() {
       api.operations = [
         for (final value in [amount, null])
           rust.LedgerSignedOperation(
+            notices: const [],
             operationId: 'shield-$value',
             accountUuid: 'account',
             kind: 'shield',
@@ -174,6 +175,35 @@ void main() {
     expect(api.urls, [expected]);
   });
 
+  test('endpoint selection stays inside the durable operation lease', () async {
+    final c = container();
+    final lifecycle = c.read(ledgerOperationLifecycleProvider);
+    final selection = Completer<RpcEndpointConfig>();
+    final selected = defaultRpcEndpointConfig('main').copyWith(
+      lightwalletdUrl: 'https://selected.example:443',
+      presetId: kCustomRpcEndpointPresetId,
+    );
+    final service = RustLedgerSignedOperationService(
+      network: 'main',
+      lightwalletdUrl: 'https://unused.example:443',
+      loadWalletDbPath: () async => '/wallet.db',
+      lifecycle: lifecycle,
+      readBroadcastEndpoint: () => selection.future,
+    );
+    final running = service.broadcast(operationId: 'send');
+    await pumpEventQueue();
+    expect(api.urls, isEmpty);
+    var drained = false;
+    final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
+    await pumpEventQueue();
+    expect(drained, isFalse);
+
+    selection.complete(selected);
+    await running;
+    await drain;
+    expect(api.urls, ['https://selected.example:443']);
+  });
+
   test(
     'failure changes route for next attempt without replaying this call',
     () async {
@@ -254,7 +284,9 @@ void main() {
 
 class _Primary extends RpcEndpointNotifier {
   @override
-  RpcEndpointConfig build() => defaultRpcEndpointConfig('main');
+  RpcEndpointConfig build() => defaultRpcEndpointConfig(
+    'main',
+  ).copyWith(presetId: kManualUsRpcEndpointPresetId);
 }
 
 class _Api extends RustLibApi {
@@ -295,6 +327,7 @@ class _Api extends RustLibApi {
     if (gate != null) await gate!.future;
     if (error != null) throw error!;
     return rust.LedgerSignedOperationBroadcastResult(
+      notices: const [],
       operationId: operationId,
       txid: 'txid',
       status: status,

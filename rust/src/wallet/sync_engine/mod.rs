@@ -30,9 +30,12 @@ use crate::wallet::{
     sync, transparent_receive_cache, tree_states,
 };
 
+// Test modules reach it through `use super::*`.
+#[cfg(test)]
+use ::transparent::address::TransparentAddress;
 use {
     ::transparent::{
-        address::{Script, TransparentAddress},
+        address::Script,
         bundle::{OutPoint, TxOut},
         keys::TransparentKeyScope,
     },
@@ -80,9 +83,11 @@ pub(crate) use lwd::{
     transparent_lookup::TransparentLookupGate,
 };
 use lwd::{download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block};
+#[cfg(test)]
+pub(crate) use tip_cache::record_latest_block;
 pub(crate) use tip_cache::{
     get_latest_block_recorded, latest_block_for_transaction,
-    latest_block_for_transaction_with_client,
+    latest_block_for_transaction_with_client, TipRequestScope,
 };
 
 /// What a [`SyncProgressEvent`] reports.
@@ -1443,29 +1448,6 @@ async fn repair_anchor_root_mismatch_if_needed(
     )))
 }
 
-fn transparent_utxo_query_network(network: WalletNetwork) -> WalletNetwork {
-    #[cfg(ironwood_masquerade)]
-    if network == WalletNetwork::Main {
-        return WalletNetwork::Test;
-    }
-
-    network
-}
-
-fn transparent_address_for_query(
-    address: &str,
-    source_network: WalletNetwork,
-    query_network: WalletNetwork,
-) -> Result<String, String> {
-    if source_network == query_network {
-        return Ok(address.to_string());
-    }
-
-    TransparentAddress::decode(&source_network, address)
-        .map(|address| address.encode(&query_network))
-        .map_err(|e| format!("decode transparent address {address}: {e}"))
-}
-
 struct TransparentRefresh {
     addresses: Vec<String>,
     start_height: BlockHeight,
@@ -1611,18 +1593,12 @@ async fn refresh_utxos(
             TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT
         };
 
-        let query_network = transparent_utxo_query_network(network);
-        let mut external_addresses = keys::get_external_transparent_receive_addresses_from_db(
+        let external_addresses = keys::get_external_transparent_receive_addresses_from_db(
             db_data_path,
             network,
             Some(&account_uuid),
         )
         .map_err(|e| SyncError::db(format!("external transparent receive addresses: {e}")))?;
-        for address in &mut external_addresses {
-            address.address =
-                transparent_address_for_query(&address.address, network, query_network)
-                    .map_err(SyncError::parse)?;
-        }
         let external_batches = match transparent_receive_cache::plan_external_utxo_refresh(
             db_data_path,
             network,
@@ -1698,7 +1674,7 @@ async fn refresh_utxos(
                 .filter(|(_, meta)| meta.scope() == Some(TransparentKeyScope::INTERNAL))
                 .map(|(addr, meta)| {
                     meta.address_index()
-                        .map(|index| (index.index(), addr.encode(&query_network)))
+                        .map(|index| (index.index(), addr.encode(&network)))
                         .ok_or_else(|| SyncError::db("Ledger internal address has no child index"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -1739,7 +1715,7 @@ async fn refresh_utxos(
             .into_iter()
             .filter(|(_, metadata)| metadata.scope() != Some(TransparentKeyScope::EXTERNAL))
             .map(|(addr, metadata)| {
-                let query_address = addr.encode(&query_network);
+                let query_address = addr.encode(&network);
                 if metadata.scope() == Some(TransparentKeyScope::INTERNAL) {
                     internal_addresses.insert(query_address.clone());
                 }
@@ -2770,6 +2746,13 @@ pub async fn run_sync_inner(
         {
             Ok(()) => return Ok(()),
             Err(sync_err) => {
+                // A sustained slow body already consumed its transfer budget.
+                // Repeating it here would pin the caller to the same endpoint
+                // for four such budgets before Dart can choose another server.
+                // Custom endpoints still surface the error without switching.
+                if lwd::is_slow_endpoint_error(&sync_err) {
+                    return Err(sync_err.to_string());
+                }
                 // Inspect the typed error's recovery strategy before
                 // flattening to a `String` at the public boundary. Fatal
                 // variants (`Db`, `Parse`) bail out immediately with no
@@ -3089,7 +3072,10 @@ async fn run_payment_link_claim_sync_once(
     }
 }
 
-/// Inner sync implementation. Called by run_sync_inner (with retry wrapper).
+/// Inner sync implementation, called by [`run_sync_inner`] with retries.
+///
+/// Erase only the progress callback so each caller shares this implementation
+/// and its downstream futures instead of monomorphizing the whole sync loop.
 async fn run_sync_impl(
     db_data_path: &str,
     lightwalletd_url: &str,
@@ -3099,7 +3085,7 @@ async fn run_sync_impl(
     desired_mode: &AtomicU8,
     active_account_target: Option<&ActiveSyncAccountTarget>,
     allow_resubmit: bool,
-    progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
+    progress_fn: &(dyn Fn(SyncProgressEvent) + Send + Sync),
     mut checking_cycle: u32,
     main_scan_complete: bool,
 ) -> Result<(), SyncError> {
@@ -3142,6 +3128,7 @@ async fn run_sync_impl(
     // 1. Connect gRPC (plain TLS via tonic + webpki roots). The lanes' public
     // transparent lookups go over the same transport with a dispatch signal,
     // so a policy transition waits only for them to be sent.
+    let tip_scope = TipRequestScope::capture();
     let transport = open_lwd_transport_with_cancel(lightwalletd_url, should_exit).await?;
     let mut client = CompactTxStreamerClient::new(transport.clone());
     let _lookup_transport =
@@ -3159,7 +3146,14 @@ async fn run_sync_impl(
     // authoritative: `WalletDb::update_chain_tip` deliberately ignores a
     // height below the maximum scanned block, so assigning the server height
     // first could later report completion above a lagging endpoint.
-    let tip_result = get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
+    let tip_result = get_latest_block_recorded(
+        &mut client,
+        lightwalletd_url,
+        network,
+        tip_scope,
+        should_exit,
+    )
+    .await;
     let Some(tip_result) = tip_rpc_result_unless_exiting(tip_result, should_exit()) else {
         log::info!("[{}] sync: exiting after initial tip fetch", elapsed());
         return Ok(());
@@ -3557,8 +3551,14 @@ async fn run_sync_impl(
         // empty range from a lagging replica.
         if last_periodic_tip_refresh_attempt.elapsed() >= TIP_REFRESH_INTERVAL {
             last_periodic_tip_refresh_attempt = std::time::Instant::now();
-            let fresh_tip_result =
-                get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
+            let fresh_tip_result = get_latest_block_recorded(
+                &mut client,
+                lightwalletd_url,
+                network,
+                tip_scope,
+                should_exit,
+            )
+            .await;
             let Some(fresh_tip_result) =
                 tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
             else {
@@ -3699,8 +3699,14 @@ async fn run_sync_impl(
                     completion_tip_validation_required,
                     last_completion_tip_validation.elapsed(),
                 ) {
-                    let fresh_tip_result =
-                        get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
+                    let fresh_tip_result = get_latest_block_recorded(
+                        &mut client,
+                        lightwalletd_url,
+                        network,
+                        tip_scope,
+                        should_exit,
+                    )
+                    .await;
                     let Some(fresh_tip_result) =
                         tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
                     else {
@@ -4481,8 +4487,14 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
-        let fresh_tip_result =
-            get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
+        let fresh_tip_result = get_latest_block_recorded(
+            &mut client,
+            lightwalletd_url,
+            network,
+            tip_scope,
+            should_exit,
+        )
+        .await;
         let Some(fresh_tip_result) = tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
         else {
             log::info!("[{}] sync: exiting after post-batch tip fetch", elapsed());
@@ -4826,7 +4838,7 @@ async fn run_sync_impl(
             &transparent_ledger::TransparentPirSource::new(db_data_path, network),
             first,
             &should_exit,
-            progress_fn,
+            &progress_fn,
             (final_scanned_height, final_tip_height),
         )
         .await;
@@ -4843,7 +4855,7 @@ async fn run_sync_impl(
             enhancement.policy(),
             &client,
             &should_exit,
-            progress_fn,
+            &progress_fn,
             (final_scanned_height, final_tip_height),
         )
         .await;
@@ -6178,7 +6190,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn first_batch_of_a_rounded_mainnet_birthday_needs_no_tree_state_request() {
         use zcash_client_backend::proto::compact_formats::{ChainMetadata, CompactBlock};

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_sync_status.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets(
@@ -19,6 +20,7 @@ void main() {
       Future<void> pump(bool reduced, bool leading) async {
         await tester.pumpWidget(
           MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: MediaQuery(

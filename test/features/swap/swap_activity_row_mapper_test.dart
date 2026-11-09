@@ -9,6 +9,8 @@ import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   testWidgets('maps swap records to shared activity feed rows', (tester) async {
@@ -16,6 +18,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -74,6 +77,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -113,6 +117,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -154,6 +159,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -265,6 +271,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -301,6 +308,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -337,6 +345,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -362,14 +371,89 @@ void main() {
       ),
     );
 
-    expect(row!.amountText, isNot(contains('0.0030')));
-    expect(row!.amountText, contains('***'));
+    // Each leg keeps its own symbol: the USDC deposit is not labelled ZEC.
+    expect(row!.amountText, '*** ZEC');
     expect(row!.statusText, 'Completed');
     expect(row!.leadingProgressValue, isNull);
     expect(row!.childRows, hasLength(1));
     expect(row!.childRows.single.stableId, 'swap:swap-private:deposited');
-    expect(row!.childRows.single.amountText, isNot(contains('0.21')));
-    expect(row!.childRows.single.amountText, contains('***'));
+    expect(row!.childRows.single.amountText, '*** USDC');
+  });
+
+  testWidgets('masks external and Pay rows with their own symbol', (
+    tester,
+  ) async {
+    final rows = <ActivityRowData>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              rows
+                ..clear()
+                ..addAll([
+                  buildSwapActivityRow(
+                    context: context,
+                    privacyModeEnabled: true,
+                    item: const SwapActivityRowItem(
+                      intentId: 'swap-usdc-private',
+                      providerLabel: 'NEAR Intents',
+                      sellAmountText: '101.23 USDC',
+                      receiveEstimateText: '4.12 ZEC',
+                      status: SwapIntentStatus.processing,
+                      direction: SwapDirection.externalToZec,
+                      externalAsset: SwapAsset.usdc,
+                      activityTimestamp: null,
+                    ),
+                  ),
+                  buildSwapActivityRow(
+                    context: context,
+                    privacyModeEnabled: true,
+                    item: const SwapActivityRowItem(
+                      intentId: 'pay-usdc-private',
+                      providerLabel: 'NEAR Intents',
+                      sellAmountText: '0.75 ZEC',
+                      receiveEstimateText: '70.00 USDC',
+                      status: SwapIntentStatus.complete,
+                      direction: SwapDirection.zecToExternal,
+                      externalAsset: SwapAsset.usdc,
+                      activityTimestamp: null,
+                      payMode: true,
+                    ),
+                  ),
+                  buildSwapActivityRow(
+                    context: context,
+                    privacyModeEnabled: true,
+                    item: const SwapActivityRowItem(
+                      intentId: 'swap-empty-private',
+                      providerLabel: 'NEAR Intents',
+                      sellAmountText: '',
+                      receiveEstimateText: '',
+                      status: SwapIntentStatus.processing,
+                      direction: SwapDirection.zecToExternal,
+                      externalAsset: SwapAsset.usdc,
+                      activityTimestamp: null,
+                    ),
+                  ),
+                ]);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(rows[0].amountText, '*** USDC');
+    expect(rows[1].amountText, '*** USDC');
+    // No recorded amount: the placeholder carries no value to hide.
+    expect(rows[2].amountText, '--');
+    for (final row in rows) {
+      expect(row.amountText, isNot(contains('ZEC ZEC')));
+      expect(row.amountText, isNot(matches(RegExp(r'\d'))));
+    }
   });
 
   testWidgets('maps failed swaps without refund semantics', (tester) async {
@@ -377,6 +461,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -418,6 +503,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -610,6 +696,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -635,7 +722,7 @@ void main() {
       ),
     );
 
-    expect(row!.timestampText, formatActivityTimestamp(createdAt));
+    expect(row!.timestampText, formatActivityTimestamp(testL10n, createdAt));
     expect(row!.childRows, hasLength(1));
     expect(row!.childRows.single.title, 'Deposited USDC');
     expect(row!.childRows.single.amountText, '+0.21 USDC');
@@ -654,6 +741,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: Builder(
@@ -705,6 +793,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: Builder(
@@ -747,6 +836,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: Builder(
@@ -777,9 +867,8 @@ void main() {
       expect(row!.childRows, hasLength(1));
       final child = row!.childRows.single;
       expect(child.title, 'Received ZEC');
-      expect(child.amountText, isNot(contains('12.13')));
-      expect(child.amountText, isNot(contains('4.12')));
-      expect(child.amountText, contains('***'));
+      expect(child.amountText, '*** ZEC');
+      expect(row!.amountText, '*** USDC');
       // The leg stays tappable so the user can still open the masked receipt.
       expect(child.onTap, isNotNull);
       child.onTap!();
@@ -794,6 +883,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(
@@ -837,6 +927,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Builder(

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -12,10 +13,12 @@ import '../../../core/widgets/mobile_text_field.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../settings/widgets/mobile/mobile_private_queries_control.dart';
 import '../../settings/widgets/mobile/mobile_tor_control.dart';
 import '../../settings/widgets/private_queries_turn_off.dart';
 import '../providers/welcome_network_settings_provider.dart';
+import '../shared/onboarding_error_messages.dart';
 
 Future<void> showMobileWelcomeNetworkSettings(
   BuildContext context,
@@ -28,7 +31,7 @@ Future<void> showMobileWelcomeNetworkSettings(
   presentation.setPresented(true);
   final dismissal = ValueNotifier(
     welcomeNetworkReady(ref.read(networkPrivacyProvider)) &&
-        ref.read(enhancePirTransitionProvider) != kEnhancePirChangingMessage,
+        ref.read(enhancePirTransitionProvider) != EnhancePirTransition.changing,
   );
   try {
     await showAppMobileSheet<void>(
@@ -36,7 +39,7 @@ Future<void> showMobileWelcomeNetworkSettings(
       canDismiss: dismissal,
       builder: (_) => MobileNetworkSettingsSheet(
         dismissal: dismissal,
-        onUpdated: () => showAppToast(context, 'Endpoint updated'),
+        onUpdated: () => showAppToast(context, context.l10n.endpointUpdated),
       ),
     );
   } finally {
@@ -69,14 +72,15 @@ class _MobileNetworkSettingsSheetState
   bool _torRequestPending = false;
   bool _privateQueriesRequestPending = false;
   int _torRequestGeneration = 0;
-  String? _error;
+  OnboardingSubmitError? _error;
 
   @override
   void initState() {
     super.initState();
-    _controller.text = rpcEndpointInputText(
-      ref.read(rpcEndpointProvider).lightwalletdUrl,
-    );
+    final endpoint = ref.read(rpcEndpointProvider);
+    if (!isAutomaticRpcEndpointConfig(endpoint)) {
+      _controller.text = rpcEndpointInputText(endpoint.lightwalletdUrl);
+    }
     _focus.addListener(_revealInput);
     _updateDismissal();
     ref.listenManual(
@@ -109,7 +113,7 @@ class _MobileNetworkSettingsSheetState
   }
 
   bool get _changingPrivateQueries =>
-      ref.read(enhancePirTransitionProvider) == kEnhancePirChangingMessage;
+      ref.read(enhancePirTransitionProvider) == EnhancePirTransition.changing;
 
   Future<void> _requestPrivateQueries() async {
     if (_submitting ||
@@ -157,7 +161,7 @@ class _MobileNetworkSettingsSheetState
       normalizeRpcEndpointUrl(_controller.text, allowDefaultPort: true);
       return null;
     } on FormatException catch (error) {
-      return error.message;
+      return rpcEndpointErrorText(context.l10n, error);
     }
   }
 
@@ -168,7 +172,8 @@ class _MobileNetworkSettingsSheetState
       return false;
     }
     return normalizeRpcEndpointUrl(_controller.text, allowDefaultPort: true) !=
-        current.normalizedLightwalletdUrl;
+            current.normalizedLightwalletdUrl ||
+        current.effectivePresetId != kCustomRpcEndpointPresetId;
   }
 
   Future<void> _submit() async {
@@ -188,17 +193,47 @@ class _MobileNetworkSettingsSheetState
       Navigator.of(context).pop();
       widget.onUpdated?.call();
     } on FormatException catch (error) {
-      _finishWithError(error.message);
+      _finishWithError(
+        OnboardingSubmitError.localized(
+          (l10n) => rpcEndpointErrorText(l10n, error),
+        ),
+      );
     } on RpcEndpointSaveException {
-      _finishWithError("Couldn't save the endpoint. Try again.");
+      _finishWithError(
+        OnboardingSubmitError.localized((l10n) => l10n.endpointSaveFailed),
+      );
     } catch (_) {
       _finishWithError(
-        "Couldn't verify that endpoint. Check the address and try again.",
+        OnboardingSubmitError.localized(
+          (l10n) => l10n.onboardingNetworkVerifyFailed,
+        ),
       );
     }
   }
 
-  void _finishWithError(String message) {
+  Future<void> _useAutomatic() async {
+    if (!widget.dismissal.value) return;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    _updateDismissal();
+    try {
+      await ref.read(rpcEndpointProvider.notifier).setAutomatic();
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      _updateDismissal();
+      if (!widget.dismissal.value) return;
+      Navigator.of(context).pop();
+      widget.onUpdated?.call();
+    } catch (_) {
+      _finishWithError(
+        OnboardingSubmitError.localized((l10n) => l10n.endpointSaveFailed),
+      );
+    }
+  }
+
+  void _finishWithError(OnboardingSubmitError message) {
     if (!mounted) return;
     setState(() {
       _submitting = false;
@@ -219,8 +254,18 @@ class _MobileNetworkSettingsSheetState
   Widget build(BuildContext context) {
     final state = ref.watch(networkPrivacyProvider);
     final current = ref.watch(rpcEndpointProvider);
+    final automatic = isAutomaticRpcEndpointConfig(current);
+    final effective = automatic ? ref.watch(rpcEndpointFailoverProvider) : null;
+    final currentLabel = automatic
+        ? effective!.automaticReady
+              ? context.l10n.endpointAutomaticWithHost(
+                  effective.current.hostPort,
+                )
+              : context.l10n.endpointAutomatic
+        : current.hostPort;
     final changingPrivateQueries =
-        ref.watch(enhancePirTransitionProvider) == kEnhancePirChangingMessage;
+        ref.watch(enhancePirTransitionProvider) ==
+        EnhancePirTransition.changing;
     return ValueListenableBuilder<bool>(
       valueListenable: widget.dismissal,
       builder: (context, canDismiss, _) => MobileNetworkSettingsContent(
@@ -242,6 +287,12 @@ class _MobileNetworkSettingsSheetState
           onRequest: _requestPrivateQueries,
         ),
         current: current,
+        currentEndpointLabel: currentLabel,
+        onUseAutomatic: current.network == ZcashNetwork.mainnet && !automatic
+            ? canDismiss
+                  ? _useAutomatic
+                  : null
+            : null,
         controller: _controller,
         focusNode: _focus,
         fieldRegion: _fieldRegion,
@@ -250,7 +301,7 @@ class _MobileNetworkSettingsSheetState
         onClose: canDismiss ? () => Navigator.of(context).pop() : null,
         canUpdate: _canUpdate(current),
         submitting: _submitting,
-        error: _error ?? _inputError,
+        error: _error?.resolve(context.l10n) ?? _inputError,
       ),
     );
   }
@@ -271,6 +322,8 @@ class MobileNetworkSettingsContent extends StatelessWidget {
     required this.submitting,
     this.fieldRegion,
     this.error,
+    this.currentEndpointLabel,
+    this.onUseAutomatic,
     super.key,
   });
 
@@ -286,12 +339,14 @@ class MobileNetworkSettingsContent extends StatelessWidget {
   final bool canUpdate;
   final bool submitting;
   final String? error;
+  final String? currentEndpointLabel;
+  final VoidCallback? onUseAutomatic;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileModalScaffold(
-      title: 'Network settings',
+      title: context.l10n.networkSettingsTitle,
       onClose: onClose,
       constrainBody: true,
       child: Column(
@@ -313,7 +368,7 @@ class MobileNetworkSettingsContent extends StatelessWidget {
                     child: Divider(height: 1, color: colors.border.regular),
                   ),
                   Text(
-                    'Custom endpoint',
+                    context.l10n.endpointCustom,
                     style: AppTypography.bodyLarge.copyWith(
                       fontWeight: FontWeight.w600,
                       color: colors.text.accent,
@@ -321,11 +376,26 @@ class MobileNetworkSettingsContent extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    'Current: ${current.hostPort}',
+                    context.l10n.endpointCurrent(
+                      currentEndpointLabel ??
+                          (isAutomaticRpcEndpointConfig(current)
+                              ? context.l10n.endpointAutomatic
+                              : current.hostPort),
+                    ),
                     style: AppTypography.bodySmall.copyWith(
                       color: colors.text.secondary,
                     ),
                   ),
+                  if (current.network == ZcashNetwork.mainnet &&
+                      !isAutomaticRpcEndpointConfig(current)) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    AppButton(
+                      key: const ValueKey('welcome_endpoint_automatic'),
+                      variant: AppButtonVariant.secondary,
+                      onPressed: onUseAutomatic,
+                      child: Text(context.l10n.endpointUseAutomatic),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.sm),
                   Column(
                     key: fieldRegion,
@@ -335,7 +405,8 @@ class MobileNetworkSettingsContent extends StatelessWidget {
                         controller: controller,
                         focusNode: focusNode,
                         fieldKey: const ValueKey('welcome_endpoint_input'),
-                        hintText: 'server.example:443',
+                        hintText:
+                            'server.example:443', // l10n-ignore: sample endpoint
                         keyboardType: TextInputType.url,
                         textInputAction: TextInputAction.done,
                         enabled: !submitting,
@@ -344,7 +415,7 @@ class MobileNetworkSettingsContent extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        'Use a lightwalletd server for this wallet’s network.',
+                        context.l10n.onboardingNetworkEndpointHelper,
                         style: AppTypography.bodySmall.copyWith(
                           color: colors.text.secondary,
                         ),
@@ -370,7 +441,11 @@ class MobileNetworkSettingsContent extends StatelessWidget {
             variant: AppButtonVariant.primary,
             expand: true,
             onPressed: canUpdate ? onSubmit : null,
-            child: Text(submitting ? 'Checking endpoint…' : 'Update endpoint'),
+            child: Text(
+              submitting
+                  ? context.l10n.onboardingNetworkCheckingEndpoint
+                  : context.l10n.endpointUpdate,
+            ),
           ),
         ],
       ),

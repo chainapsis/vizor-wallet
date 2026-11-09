@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_su
 import 'package:zcash_wallet/src/features/voting/screens/mobile/mobile_voting_submitted_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_pane_scroll_area.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('places shared mobile voting scrollbars at the right edge', (
@@ -94,6 +95,7 @@ void _expectEdgeScrollbar(WidgetTester tester, Key key) {
 
 Widget _app(Widget child) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(data: AppThemeData.light, child: child),
   );
 }

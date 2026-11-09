@@ -23,7 +23,6 @@ void main() {
     expect(quote.receiveEstimateText, '105.26 USDC');
     expect(quote.rateText, '1 ZEC = 70.17 USDC');
     expect(quote.depositInstruction.asset, SwapAsset.zec);
-    expect(quote.depositInstruction.reuseWarning, 'Do not reuse this address');
   });
 
   test(
@@ -83,7 +82,7 @@ void main() {
 
     expect(intent.id, 'swap-new');
     expect(intent.status, SwapIntentStatus.awaitingExternalDeposit);
-    expect(intent.nextAction, 'Send USDC to the one-time deposit address');
+    expect(intent.nextAction, SwapNextAction.sendDeposit.name);
     expect(intent.pairText, 'USDC -> ZEC');
   });
 }

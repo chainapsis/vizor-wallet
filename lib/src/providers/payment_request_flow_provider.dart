@@ -723,14 +723,14 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
             proposal: proposal,
           ),
         );
-      case PaymentRequestPrecheckInvalidAddress(:final message):
+      case PaymentRequestPrecheckInvalidAddress(:final issue):
         _publish(
           live.copyWith(
             view: live.view.copyWithStatus(
               PaymentRequestStatus.invalidAddress,
               // Null keeps the status's own default copy; the pre-check only
               // supplies one when it can say more than "bad address".
-              statusMessage: message,
+              statusIssue: issue,
             ),
           ),
         );
@@ -753,7 +753,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
             view: live.view.copyWithStatus(PaymentRequestStatus.syncing),
           ),
         );
-      case PaymentRequestPrecheckFailed(:final message):
+      case PaymentRequestPrecheckFailed(:final issue):
         _publish(
           live.copyWith(
             view: live.view.copyWithStatus(
@@ -761,7 +761,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
               // a different condition from a bad recipient. The reason is
               // always stated in its own words through `statusMessage`.
               PaymentRequestStatus.failed,
-              statusMessage: message,
+              statusIssue: issue,
             ),
           ),
         );

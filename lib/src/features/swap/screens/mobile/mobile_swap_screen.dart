@@ -1,19 +1,26 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
+
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../widgets/near_intents_service_notice_host.dart';
+
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/privacy_mode_provider.dart';
 import '../../../address_book/contact_label_generator.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
@@ -97,7 +104,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         context: context,
         useRootNavigator: true,
         barrierDismissible: true,
-        barrierLabel: 'Dismiss',
+        barrierLabel: context.l10n.swapDismissBarrierLabel,
         barrierColor: context.colors.background.neutralScrim,
         transitionDuration: Duration.zero,
         pageBuilder: (_, _, _) => _buildSwapModal(),
@@ -207,8 +214,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 resolve: (raw) async {
                   final address = normalizeAddressScanPayload(raw);
                   if (address == null || address.isEmpty) {
-                    return const MobileScanOutcome.rejected(
-                      'QR code did not include an address.',
+                    return MobileScanOutcome.rejected(
+                      context.l10n.commonQrNoAddress,
                     );
                   }
                   return MobileScanOutcome.accepted(address);
@@ -219,9 +226,12 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 onClose: _openAddressEditor,
               ),
               _SwapModalSurface.contactPicker => AddressBookContactPickerModal(
-                title: swapContactPickerTitle(swapState),
+                title: swapContactPickerTitle(context.l10n, swapState),
                 networks: swapContactPickerNetworks(swapState),
-                emptyTitle: swapContactPickerEmptyTitle(swapState),
+                emptyTitle: swapContactPickerEmptyTitle(
+                  context.l10n,
+                  swapState,
+                ),
                 onSelected: _selectAddressBookContact,
                 onCancel: _openAddressEditor,
               ),
@@ -290,7 +300,10 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
       if (alreadySaved) {
         final toastContext = _toastOverlayContextKey.currentContext;
         if (toastContext != null && toastContext.mounted) {
-          showAppToast(toastContext, 'Already in your address book');
+          showAppToast(
+            toastContext,
+            toastContext.l10n.swapContactAlreadyInAddressBook,
+          );
         }
         return;
       }
@@ -331,9 +344,12 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     final migrationSpendable = ref.watch(
       ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
     );
-    final zecAvailableText = ZecAmount.fromZatoshi(
-      migrationSpendable,
-    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+    final zecAvailableText = hideAmountIfPrivacyMode(
+      ZecAmount.fromZatoshi(
+        migrationSpendable,
+      ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
+      privacyModeEnabled: ref.watch(privacyModeProvider),
+    );
 
     void openReview() {
       final generation = _sidebarExitGeneration;
@@ -350,109 +366,118 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     }
 
     final quoteError =
-        swapState.quoteAmountPrecisionError ??
-        swapState.externalAssetSupportError ??
-        swapState.quoteError;
+        swapState.quoteAmountPrecisionError(context.l10n) ??
+        swapState.externalAssetSupportError(context.l10n) ??
+        swapState.quoteError?.text(context.l10n);
 
-    return SafeArea(
-      bottom: false,
-      child: Stack(
-        children: [
-          Column(
-            children: [
-              MobileTopNav.back(
-                title: 'Swap',
-                trailing: const SwapNearIntentsAttribution(alignEnd: true),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  // The ticket sits flush under the top nav — Figma
-                  // 4686:101436 has no gap above the swap widget.
-                  padding: EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
-                    0,
-                    AppSpacing.sm,
-                    // Clears the floating tab bar.
-                    MobileNavigationScope.bottomClearanceOf(context, 96),
-                  ),
-                  child: Column(
-                    children: [
-                      MobileSwapComposerTicket(
-                        state: swapState,
-                        onAmountChanged: swapNotifier.updateAmount,
-                        onAmountFiatChanged: swapNotifier.updateAmountFiat,
-                        onReceiveAmountChanged:
-                            swapNotifier.updateReceiveAmount,
-                        onReceiveAmountFiatChanged:
-                            swapNotifier.updateReceiveAmountFiat,
-                        onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
-                        onToggleDirection: swapNotifier.toggleDirection,
-                        onOpenExternalAssetPicker: () =>
-                            _openModal(_SwapModalSurface.assetSelector),
-                        onOpenDestinationAddress: _openAddressEditor,
-                        onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
-                        zecAvailableText: zecAvailableText,
-                        destinationContactName: swapDestinationContactFor(
-                          swapState,
-                          ref.watch(addressBookProvider).value?.contacts ??
-                              const [],
-                        )?.label,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Row(
-                        children: [
-                          AppButton(
-                            key: const ValueKey('swap_settings_button'),
-                            variant: AppButtonVariant.secondary,
-                            onPressed: swapState.quoteLoading
-                                ? null
-                                : () => _openModal(
-                                    _SwapModalSurface.slippageSettings,
-                                  ),
-                            trailing: const AppIcon(AppIcons.cog),
-                            child: Text(
-                              formatSwapSlippage(swapState.slippageBps),
+    return NearIntentsServiceNoticeHost(
+      direction: swapState.direction,
+      externalAsset: swapState.externalAsset,
+      blocked: _modalRouteOpen,
+      child: SafeArea(
+        bottom: false,
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                MobileTopNav.back(
+                  title: context.l10n.swapPageTitle,
+                  trailing: const SwapNearIntentsAttribution(alignEnd: true),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    // The ticket sits flush under the top nav — Figma
+                    // 4686:101436 has no gap above the swap widget.
+                    padding: EdgeInsets.fromLTRB(
+                      AppSpacing.sm,
+                      0,
+                      AppSpacing.sm,
+                      // Clears the floating tab bar.
+                      MobileNavigationScope.bottomClearanceOf(context, 96),
+                    ),
+                    child: Column(
+                      children: [
+                        MobileSwapComposerTicket(
+                          state: swapState,
+                          onAmountChanged: swapNotifier.updateAmount,
+                          onAmountFiatChanged: swapNotifier.updateAmountFiat,
+                          onReceiveAmountChanged:
+                              swapNotifier.updateReceiveAmount,
+                          onReceiveAmountFiatChanged:
+                              swapNotifier.updateReceiveAmountFiat,
+                          onToggleFiatInputMode:
+                              swapNotifier.toggleFiatInputMode,
+                          onToggleDirection: () {
+                            unawaited(AppHaptics.selection());
+                            swapNotifier.toggleDirection();
+                          },
+                          onOpenExternalAssetPicker: () =>
+                              _openModal(_SwapModalSurface.assetSelector),
+                          onOpenDestinationAddress: _openAddressEditor,
+                          onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
+                          zecAvailableText: zecAvailableText,
+                          destinationContactName: swapDestinationContactFor(
+                            swapState,
+                            ref.watch(addressBookProvider).value?.contacts ??
+                                const [],
+                          )?.label,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        Row(
+                          children: [
+                            AppButton(
+                              key: const ValueKey('swap_settings_button'),
+                              variant: AppButtonVariant.secondary,
+                              onPressed: swapState.quoteLoading
+                                  ? null
+                                  : () => _openModal(
+                                      _SwapModalSurface.slippageSettings,
+                                    ),
+                              trailing: const AppIcon(AppIcons.cog),
+                              child: Text(
+                                formatSwapSlippage(swapState.slippageBps),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: AppSpacing.s),
-                          Expanded(
-                            child: _MobileSwapReviewButton(
-                              state: swapState,
-                              zecAvailableZatoshi: migrationSpendable,
-                              onOpenDestinationAddress: _openAddressEditor,
-                              onReviewQuote: openReview,
+                            const SizedBox(width: AppSpacing.s),
+                            Expanded(
+                              child: _MobileSwapReviewButton(
+                                state: swapState,
+                                zecAvailableZatoshi: migrationSpendable,
+                                onOpenDestinationAddress: _openAddressEditor,
+                                onReviewQuote: openReview,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (quoteError != null) ...[
+                          const SizedBox(height: AppSpacing.s),
+                          Text(
+                            quoteError,
+                            key: const ValueKey('swap_quote_error_message'),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: AppTypography.bodySmall.copyWith(
+                              color: context.colors.text.destructive,
                             ),
                           ),
                         ],
-                      ),
-                      if (quoteError != null) ...[
-                        const SizedBox(height: AppSpacing.s),
-                        Text(
-                          quoteError,
-                          key: const ValueKey('swap_quote_error_message'),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: AppTypography.bodySmall.copyWith(
-                            color: context.colors.text.destructive,
-                          ),
-                        ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: AppToastHost(
-                key: const ValueKey('mobile_swap_toast_overlay_host'),
-                child: SizedBox.expand(key: _toastOverlayContextKey),
+              ],
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AppToastHost(
+                  key: const ValueKey('mobile_swap_toast_overlay_host'),
+                  child: SizedBox.expand(key: _toastOverlayContextKey),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -483,7 +508,8 @@ class _MobileSwapReviewButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
-    final destinationFormatError = state.destinationAddressFormatError;
+    final destinationFormatError = state.destinationAddressFormatIssue
+        ?.localizedMessage(context.l10n);
     final balanceExceeded = _balanceExceeded;
     final canReview = state.canReviewQuote && !balanceExceeded;
     final onPressed = needsDestinationAddress
@@ -493,14 +519,14 @@ class _MobileSwapReviewButton extends StatelessWidget {
         : null;
     final label = needsDestinationAddress
         ? (state.direction.sendsZec
-              ? 'Add recipient address'
-              : 'Add refund address')
+              ? context.l10n.swapActionAddRecipientAddress
+              : context.l10n.swapActionAddRefundAddress)
         : destinationFormatError ??
               (balanceExceeded
-                  ? 'Not enough ZEC'
+                  ? context.l10n.commonNotEnoughZec
                   : state.quoteLoading
-                  ? 'Getting quote'
-                  : 'Continue to review');
+                  ? context.l10n.swapActionGettingQuote
+                  : context.l10n.commonContinueToReview);
 
     return AppButton(
       key: const ValueKey('mobile_swap_review_button'),

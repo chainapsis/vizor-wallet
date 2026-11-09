@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'account_initialization_provider.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -25,6 +26,7 @@ import '../core/storage/linux_keyring_coordinator.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/payment_links/providers/gift_card_tracking_lifecycle_provider.dart';
 import '../features/swap/providers/swap_activity_store.dart';
+import '../features/send/services/recent_send_recipients.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
 import '../features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
@@ -59,16 +61,24 @@ const _votingSidecarSuffix = '.voting';
 const _receiveCacheSidecarSuffix = '.receive.redb';
 const _sqliteCompanionSuffixes = ['', '-journal', '-wal', '-shm'];
 
-const kWalletCreationCurrentBlockHeightErrorMessage =
-    'We need the current Zcash block height to create your wallet. '
-    'Check your network connection and try again.';
 const _duplicateSoftwareAccountImportMessage =
-    'This account is already in your wallet.';
+    'This account is already in your wallet.'; // l10n-ignore: matched against thrown text
 const _duplicateKeystoneAccountImportMessage =
-    'This Keystone account is already in your wallet.';
+    'This Keystone account is already in your wallet.'; // l10n-ignore: matched against thrown text
 
 const _duplicateLedgerAccountImportMessage =
-    'This Ledger account is already in your wallet.';
+    'This Ledger account is already in your wallet.'; // l10n-ignore: matched against thrown text
+
+/// A wallet link was made on another Zcash network than this app or wallet.
+class WalletLinkNetworkMismatchException implements Exception {
+  const WalletLinkNetworkMismatchException(this.detail);
+
+  /// Which network it disagrees with, for logs.
+  final String detail;
+
+  @override
+  String toString() => detail;
+}
 
 class WalletCreationCurrentBlockHeightException implements Exception {
   const WalletCreationCurrentBlockHeightException(this.cause);
@@ -76,7 +86,7 @@ class WalletCreationCurrentBlockHeightException implements Exception {
   final Object cause;
 
   @override
-  String toString() => kWalletCreationCurrentBlockHeightErrorMessage;
+  String toString() => 'Could not fetch the current Zcash block height.'; // l10n-ignore: exception text; screens show onboardingBlockHeightRequired
 }
 
 /// Account setup may have created a DB account before storage failed. Keep
@@ -89,7 +99,7 @@ class WalletAccountSetupInterruptedException implements Exception {
 
   @override
   String toString() =>
-      'Couldn’t finish saving your wallet. Close and reopen Vizor to finish setup.';
+      'Couldn’t finish saving your wallet. Close and reopen Vizor to finish setup.'; // l10n-ignore: exception text; screens map by type
 }
 
 class GiftClaimAccountCreatedException
@@ -100,9 +110,6 @@ class GiftClaimAccountCreatedException
   String toString() => cause.toString();
 }
 
-const kWalletAccountStateUncertainMessage =
-    "Vizor couldn't verify the existing wallet. Close and reopen Vizor before trying again.";
-
 /// A first-account operation was refused because the wallet DB may already
 /// contain an account that is not represented in Dart state.
 class WalletAccountStateUncertainException implements Exception {
@@ -111,22 +118,9 @@ class WalletAccountStateUncertainException implements Exception {
   final Object cause;
 
   @override
-  String toString() => kWalletAccountStateUncertainMessage;
+  String toString() =>
+      "Vizor couldn't verify the existing wallet. Close and reopen Vizor before trying again."; // l10n-ignore: exception text; screens map by type
 }
-
-/// Kept to one rendered line: the desktop lost-password card is a fixed 520px
-/// box whose status line is 348px wide and single-line, and a second line
-/// overflows the card by 20px. `Wait for it to finish.` carries the remedy
-/// without naming the reset, which every surface that shows this already does.
-const kWalletResetInFlightGiftCardClaimsMessage =
-    'A gift card is still being received. Wait for it to finish.';
-
-/// Shown where the reset is not refused — the locked recovery surfaces,
-/// whose CTA stays enabled because reset is the user's only way back in.
-/// It states the cost instead of asking the user to wait, because waiting is
-/// exactly what cannot help there. Fits the same 348px line.
-const kWalletResetInFlightGiftCardWarningMessage =
-    'A gift card is still being received. Resetting loses it.';
 
 /// A full wallet reset was refused because a Gift Card claim is still in
 /// flight.
@@ -139,7 +133,8 @@ class WalletResetInFlightGiftCardClaimsException implements Exception {
   final int count;
 
   @override
-  String toString() => kWalletResetInFlightGiftCardClaimsMessage;
+  String toString() =>
+      'A gift card is still being received. Wait for it to finish.'; // l10n-ignore: exception text; screens show walletResetGiftCardInFlight
 }
 
 /// Removal was confirmed against [confirmedCount] unshared Gift Cards, but
@@ -156,8 +151,8 @@ class UnsharedGiftCardsChangedException implements Exception {
 
   @override
   String toString() => count == null
-      ? "Couldn't recheck gift card links. Review the warning and confirm again."
-      : 'More gift card links were funded. Review the warning and confirm again.';
+      ? "Couldn't recheck gift card links. Review the warning and confirm again." // l10n-ignore: exception text; dialogs show accountsRemoveGiftCards*
+      : 'More gift card links were funded. Review the warning and confirm again.'; // l10n-ignore: exception text; dialogs show accountsRemoveGiftCards*
 }
 
 class WalletResetException implements Exception {
@@ -241,6 +236,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     return bootstrap.initialAccountState;
   }
 
+  void _registerInitialAccounts(
+    Iterable<String> uuids,
+    AccountInitializationKind kind,
+  ) {
+    final existing = {
+      for (final account in state.value?.accounts ?? const <AccountInfo>[])
+        account.uuid,
+    };
+    final initialization = ref.read(accountInitializationProvider.notifier);
+    for (final uuid in uuids) {
+      if (!existing.contains(uuid)) initialization.register(uuid, kind);
+    }
+  }
+
   /// Create a new wallet with a fresh mnemonic. Returns the mnemonic.
   Future<String> createAccount({String? name}) => ref
       .read(linuxKeyringCoordinatorProvider)
@@ -256,7 +265,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('createAccount: birthday=$birthday');
 
       final accounts = state.value?.accounts ?? [];
-      final accountName = name ?? 'Account ${accounts.length + 1}';
+      final accountName =
+          name ??
+          'Account ${accounts.length + 1}'; // l10n-ignore: log label or persisted default name
 
       String mnemonic;
       String accountUuid;
@@ -304,6 +315,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _saveAccounts(updatedAccounts);
       await _storage.writeString(_activeAccountKey, accountUuid);
 
+      _registerInitialAccounts([
+        accountUuid,
+      ], AccountInitializationKind.created);
       state = AsyncData(
         AccountState(
           accounts: updatedAccounts,
@@ -356,7 +370,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
       final accounts = state.value?.accounts ?? [];
       final accountName = normalizeAccountName(
-        name ?? 'Account ${accounts.length + 1}',
+        name ??
+            'Account ${accounts.length + 1}', // l10n-ignore: log label or persisted default name
       );
       validateAccountName(accountName);
       if (!isKnownProfilePictureId(profilePictureId)) {
@@ -421,6 +436,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _saveAccounts(updatedAccounts);
       await _storage.writeString(_activeAccountKey, accountUuid);
 
+      _registerInitialAccounts([
+        accountUuid,
+      ], AccountInitializationKind.created);
       state = AsyncData(
         AccountState(
           accounts: updatedAccounts,
@@ -674,6 +692,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String name,
     String profilePictureId,
   ) {
+    _registerInitialAccounts([uuid], AccountInitializationKind.created);
     state = AsyncData(
       AccountState(
         accounts: [
@@ -864,7 +883,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           : await _getNetwork();
       final accounts = state.value?.accounts ?? [];
       final accountName = normalizeAccountName(
-        name ?? 'Account ${accounts.length + 1}',
+        name ??
+            'Account ${accounts.length + 1}', // l10n-ignore: log label or persisted default name
       );
       validateAccountName(accountName);
       if (!isKnownProfilePictureId(profilePictureId)) {
@@ -950,6 +970,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         await _storage.writeString(_activeAccountKey, activeAccountUuid);
       }
 
+      _registerInitialAccounts(
+        importedAccounts.map((a) => a.uuid),
+        AccountInitializationKind.restored,
+      );
       state = AsyncData(
         AccountState(
           accounts: updatedAccounts,
@@ -1306,7 +1330,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }) async {
     try {
       final dbPath = await _getDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
       final network = isFirstWalletAccount
@@ -1337,7 +1363,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }) async {
     try {
       final dbPath = await _getDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
       final network = isFirstWalletAccount
@@ -1779,6 +1807,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           .read(swapActivityStoreProvider)
           .deleteForAccount(accountUuid: uuid);
     } catch (_) {}
+    try {
+      await ref
+          .read(sendRecentRecipientStoreProvider)
+          .deleteForAccount(accountUuid: uuid);
+    } catch (e, st) {
+      log('removeAccount: failed to delete send recents for $uuid: $e\n$st');
+    }
     // Only after the Rust delete, which also drops this account's Ledger
     // outbox: a checkpointed draft must never lose its secret while its
     // signed transaction can still be broadcast.
@@ -1839,6 +1874,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _storage.writeString(_activeAccountKey, nextActiveUuid);
     }
 
+    ref.read(accountInitializationProvider.notifier).remove(uuid);
     state = AsyncData(
       AccountState(
         accounts: updated,
@@ -1900,8 +1936,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     var restoreAfterFailure = false;
     var resumeClaimLifecycle = false;
     var resetCompleted = false;
-    final cacheDrained = balanceCache.suspendAndDrain();
+    final automaticEndpoints = ref.read(rpcEndpointFailoverProvider.notifier);
+    automaticEndpoints.pauseAutomaticSelection();
     try {
+      final cacheDrained = balanceCache.suspendAndDrain();
       await cacheDrained;
       await ledgerLifecycle.quiesceAndDrain();
       await publicLoads.quiesceAndDrain();
@@ -1929,6 +1967,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // reuses this registry; stale registrations re-read the now-empty store.
       if (resetCompleted || restoreAfterFailure) giftTracking.resume();
       shareTracking.resume();
+      automaticEndpoints.resumeAutomaticSelection();
       if (restoreAfterFailure) shareTracking.requestRestore();
     }
   }
@@ -1940,7 +1979,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     // record frozen in `receiving` would never clear and the refusal would
     // never lift, trapping a user whose only remaining way into the wallet is
     // this reset. Those surfaces show
-    // [kWalletResetInFlightGiftCardWarningMessage] and let the reset through:
+    // the walletResetGiftCardWarning copy and let the reset through:
     // one in-flight claim is worth less than the whole wallet.
     if (!ref.read(appSecurityProvider).requiresUnlock) {
       // Read after the drain, not before, for the reason spelled out in
@@ -2040,6 +2079,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _resetVotingProcessStateForAccount(account.uuid, dbPath: dbPath);
     }
 
+    // Cancel selection and drain its cache writes before destroying wallet state.
+    await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .clearAutomaticSelectionCache();
+
     var dbDeleted = false;
     try {
       await _deleteExistingDb(dbPath);
@@ -2049,7 +2093,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       }
     } catch (e, st) {
       await rollbackMigrationPreflight();
-      recordError('wallet db deletion', e, st);
+      recordError(
+        'wallet db deletion', // l10n-ignore: log label
+        e,
+        st,
+      ); // l10n-ignore: log label or persisted default name
     }
     // Only wipe secure storage once the DB file is confirmed gone: the wipe
     // destroys the stored DB name, which is the only way a retry can target
@@ -2069,31 +2117,51 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       } catch (e, st) {
         // Finish the remaining safe cleanup, but do not report a complete
         // reset while a privacy-sensitive claim database remains.
-        recordError('payment-link claim db cleanup', e, st);
+        recordError(
+          'payment-link claim db cleanup', // l10n-ignore: log label
+          e,
+          st,
+        ); // l10n-ignore: log label or persisted default name
       }
       try {
         await deleteGiftCardTrackingDirectories();
       } catch (e, st) {
-        recordError('gift-card observer db cleanup', e, st);
+        recordError(
+          'gift-card observer db cleanup', // l10n-ignore: log label
+          e,
+          st,
+        ); // l10n-ignore: log label or persisted default name
       }
       try {
         // The wallet's own companions went with it. No wallet is current
         // now, so any left by an earlier one go too.
         await deleteOrphanCompanionDirectories(null);
       } catch (e, st) {
-        recordError('transparent recovery companion cleanup', e, st);
+        recordError(
+          'transparent recovery companion cleanup', // l10n-ignore: log label
+          e,
+          st,
+        ); // l10n-ignore: log label or persisted default name
       }
       try {
         ref.read(votingHomeCacheProvider.notifier).clearForReset();
         await clearVotingCachesForReset();
       } catch (e, st) {
-        recordError('voting cache wipe', e, st);
+        recordError(
+          'voting cache wipe', // l10n-ignore: log label
+          e,
+          st,
+        ); // l10n-ignore: log label or persisted default name
       }
       await ref.read(appPasswordInputSourceProvider).clear();
       try {
         await _storage.deleteAll();
       } catch (e, st) {
-        recordError('secure storage wipe', e, st);
+        recordError(
+          'secure storage wipe', // l10n-ignore: log label
+          e,
+          st,
+        ); // l10n-ignore: log label or persisted default name
       }
       // The saved Private queries choice is install-scoped and survives this
       // wipe. After the reset succeeds, its runtime is reapplied below and the
@@ -2137,6 +2205,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     // router derives requiresUnlock from hasWallet && !isUnlocked, so the
     // reverse order bounces a locked-start session to /unlock mid-uninstall
     // (the /settings/uninstall exemption only covers the no-wallet branch).
+    ref.read(accountInitializationProvider.notifier).clear();
     state = const AsyncData(AccountState());
     try {
       ref.read(appSecurityProvider.notifier).reset();
@@ -2382,6 +2451,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _saveAccounts(updated);
       await _storage.writeString(_activeAccountKey, accountUuid);
 
+      _registerInitialAccounts([
+        accountUuid,
+      ], AccountInitializationKind.restored);
       state = AsyncData(
         AccountState(
           accounts: updated,
@@ -2529,6 +2601,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _saveAccounts(updated);
       await _storage.writeString(_activeAccountKey, accountUuid);
 
+      _registerInitialAccounts([
+        accountUuid,
+      ], AccountInitializationKind.restored);
       state = AsyncData(
         AccountState(
           accounts: updated,
@@ -2692,6 +2767,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         await _storage.writeString(_activeAccountKey, activeAccountUuid);
       }
 
+      _registerInitialAccounts(
+        importedAccounts.map((a) => a.uuid),
+        AccountInitializationKind.restored,
+      );
       state = AsyncData(
         AccountState(
           accounts: updated,
@@ -2888,7 +2967,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     try {
       return await ref
           .read(rpcEndpointFailoverProvider.notifier)
-          .getLatestBlockHeight();
+          .getCreationBirthdayHeight();
     } catch (e, st) {
       Error.throwWithStackTrace(
         WalletCreationCurrentBlockHeightException(e),
@@ -2913,15 +2992,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ref.read(rpcEndpointProvider).networkName,
       );
       if (currentNetwork != normalizedNetwork) {
-        throw StateError(
-          'Linked wallet network does not match the current app network.',
+        throw const WalletLinkNetworkMismatchException(
+          'Linked wallet network does not match the current app network.', // l10n-ignore: log text; screens show onboardingWalletLinkNetworkMismatch
         );
       }
     } else {
       final storedNetwork = await _getNetwork();
       if (storedNetwork != normalizedNetwork) {
-        throw StateError(
-          'Linked wallet network does not match the current wallet.',
+        throw const WalletLinkNetworkMismatchException(
+          'Linked wallet network does not match the current wallet.', // l10n-ignore: log text; screens show onboardingWalletLinkNetworkMismatch
         );
       }
     }

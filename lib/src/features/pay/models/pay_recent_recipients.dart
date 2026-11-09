@@ -1,3 +1,6 @@
+import 'package:intl/intl.dart' show DateFormat;
+
+import '../../../core/l10n/l10n.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/models/address_book_label_lookup.dart';
 import '../../address_book/models/address_format_validator.dart';
@@ -64,7 +67,9 @@ List<PayRecentRecipient> payRecentRecipients({
     final address = intent.oneClickRecipient?.trim() ?? '';
     if (address.isEmpty) continue;
     if (addressFormatIssue(network, address) != null) continue;
-    final usedAt = intent.completedAt ?? intent.updatedAt ?? intent.createdAt;
+    // Status polling rewrites updatedAt, so it is only a fallback for records
+    // without a creation time.
+    final usedAt = intent.completedAt ?? intent.createdAt ?? intent.updatedAt;
     final normalizedAddress = normalizedAddressBookAddress(network, address);
     final storedContactId = intent.userExternalContactId?.trim();
     final contactId = storedContactId == null || storedContactId.isEmpty
@@ -128,7 +133,7 @@ String _payRecentAmountText(String value) {
   final separator = compact.indexOf(' ');
   final formatted = separator < 0
       ? swapTrimDecimal(compact)
-      : '${swapTrimDecimal(compact.substring(0, separator))}'
+      : '${swapTrimDecimal(compact.substring(0, separator))}' // l10n-ignore: amount format
             '${compact.substring(separator)}';
   // This list represents outgoing payouts. Keep the direction visible while
   // using the final receive asset/amount (for example, `-24 USDC` for a
@@ -269,32 +274,21 @@ bool _payContactHasAddress(AddressBookContact contact, String address) {
       normalizedAddressBookAddress(contact.network, contact.address) == needle;
 }
 
-const _payMonthNames = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
 /// "2d ago" style label for recent recipients; falls back to "April 27" for
 /// anything older than a week, matching the Figma list rows.
-String? payRecentTimeLabel(DateTime? timestamp, {DateTime? now}) {
+String? payRecentTimeLabel(
+  AppLocalizations l10n,
+  DateTime? timestamp, {
+  DateTime? now,
+}) {
   if (timestamp == null) return null;
   final local = timestamp.toLocal();
   final reference = now ?? DateTime.now();
   final elapsed = reference.difference(local);
   if (elapsed.isNegative) return null;
-  if (elapsed.inMinutes < 1) return 'just now';
-  if (elapsed.inHours < 1) return '${elapsed.inMinutes}m ago';
-  if (elapsed.inDays < 1) return '${elapsed.inHours}h ago';
-  if (elapsed.inDays < 7) return '${elapsed.inDays}d ago';
-  return '${_payMonthNames[local.month - 1]} ${local.day}';
+  if (elapsed.inMinutes < 1) return l10n.commonJustNow;
+  if (elapsed.inHours < 1) return l10n.payRecentMinutesAgo(elapsed.inMinutes);
+  if (elapsed.inDays < 1) return l10n.payRecentHoursAgo(elapsed.inHours);
+  if (elapsed.inDays < 7) return l10n.payRecentDaysAgo(elapsed.inDays);
+  return DateFormat.MMMMd(l10n.localeName).format(local);
 }

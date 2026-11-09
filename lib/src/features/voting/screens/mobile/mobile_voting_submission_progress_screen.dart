@@ -3,11 +3,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_transaction_progress_screen.dart';
 import '../voting_status_screen.dart';
+import '../../../../core/l10n/locale_typography.dart';
 
 const _referenceContentHeight = 701.0;
 const _minimumContentHeight = 317.0;
@@ -81,7 +83,7 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
     // while the detail is progress chatter the step list below repeats. The
     // notice height is measured from this string, so the layout adapts.
     final noticeText =
-        warning ?? activeStepDetail ?? 'Don’t leave this window.';
+        warning ?? activeStepDetail ?? context.l10n.votingMobileLeaveWarning;
     return PopScope<void>(
       canPop: false,
       child: Scaffold(
@@ -110,24 +112,24 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
                             constraints.maxWidth - AppSpacing.sm * 2;
                         final noticeHeight = _measureTextHeight(
                           text: noticeText,
-                          style: noticeStyle,
+                          style: withLocaleFontFallback(context, noticeStyle),
                           maxWidth: contentWidth,
                           textDirection: textDirection,
                           textScaler: textScaler,
                         );
                         final titleHeight = _measureTextHeight(
-                          text: 'Submitting votes...',
-                          style: titleStyle,
+                          text: context.l10n.votingMobileSubmittingTitle,
+                          style: withLocaleFontFallback(context, titleStyle),
                           maxWidth: contentWidth,
                           textDirection: textDirection,
                           textScaler: textScaler,
                         );
                         final proofNoticeHeight = _measureTextHeight(
-                          text:
-                              'Generating zero-knowledge proofs can take '
-                              'about 60 seconds, closing now may lose '
-                              'in-flight proof work.',
-                          style: proofNoticeStyle,
+                          text: context.l10n.votingMobileProofNotice,
+                          style: withLocaleFontFallback(
+                            context,
+                            proofNoticeStyle,
+                          ),
                           maxWidth: contentWidth - 66,
                           textDirection: textDirection,
                           textScaler: textScaler,
@@ -211,7 +213,9 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
                                         left: 0,
                                         right: 0,
                                         child: Text(
-                                          'Submitting votes...',
+                                          context
+                                              .l10n
+                                              .votingMobileSubmittingTitle,
                                           key: const ValueKey(
                                             'mobile_voting_submission_title',
                                           ),
@@ -237,9 +241,7 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
                                         left: 33,
                                         right: 33,
                                         child: Text(
-                                          'Generating zero-knowledge proofs can take '
-                                          'about 60 seconds, closing now may lose '
-                                          'in-flight proof work.',
+                                          context.l10n.votingMobileProofNotice,
                                           key: const ValueKey(
                                             'mobile_voting_submission_proof_notice',
                                           ),
@@ -484,11 +486,13 @@ class _VotingSubmissionSteps extends StatelessWidget {
   final VotingSubmissionProgressStep activeStep;
   final double? activeStepProgress;
 
-  static const _labels = <VotingSubmissionProgressStep, String>{
-    VotingSubmissionProgressStep.provingAuthority: 'Proving voting authority',
-    VotingSubmissionProgressStep.castingVotes:
-        'Casting votes and submitting shares',
-    VotingSubmissionProgressStep.finalizing: 'Finalizing submission',
+  static String _label(
+    AppLocalizations l10n,
+    VotingSubmissionProgressStep step,
+  ) => switch (step) {
+    VotingSubmissionProgressStep.provingAuthority => l10n.votingStepProving,
+    VotingSubmissionProgressStep.castingVotes => l10n.votingStepCasting,
+    VotingSubmissionProgressStep.finalizing => l10n.votingStepFinalizing,
   };
 
   @override
@@ -507,7 +511,7 @@ class _VotingSubmissionSteps extends StatelessWidget {
                   ? _VotingSubmissionStepState.active.name
                   : _VotingSubmissionStepState.pending.name}',
             ),
-            label: _labels[steps[index]]!,
+            label: _label(context.l10n, steps[index]),
             state: index < activeStep.index
                 ? _VotingSubmissionStepState.complete
                 : index == activeStep.index
@@ -653,9 +657,9 @@ class _ActiveStepIndicator extends StatelessWidget {
     final disabled = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     final clampedProgress = progress?.clamp(0.0, 1.0).toDouble();
     return Semantics(
-      label: 'Active voting submission step progress',
+      label: context.l10n.votingMobileProgressSemantics,
       value: clampedProgress == null
-          ? 'Unknown'
+          ? context.l10n.commonUnknown
           : '${(clampedProgress * 100).round()}%',
       child: TweenAnimationBuilder<double>(
         tween: Tween<double>(begin: 0, end: clampedProgress ?? 0),

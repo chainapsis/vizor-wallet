@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 
@@ -14,6 +15,7 @@ import '../../../../providers/account_models.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../services/send_flow.dart';
+import '../../../donation/widgets/donation_views.dart';
 import '../../services/zns_contact_offer.dart';
 import '../../widgets/send_recipient_resolver.dart';
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
@@ -25,6 +27,7 @@ const _statusSubtitleWidth = 223.0;
 typedef MobileSendBroadcastRunner =
     Future<SendBroadcastOutcome> Function({
       required WidgetRef ref,
+      required AppLocalizations l10n,
       required SendReviewArgs args,
       KeystoneBroadcastArgs? keystone,
       LedgerBroadcastArgs? ledger,
@@ -55,6 +58,7 @@ class MobileSendStatusScreen extends ConsumerStatefulWidget {
 
 class _MobileSendStatusScreenState
     extends ConsumerState<MobileSendStatusScreen> {
+  bool get _isDonation => widget.args.flowKind == SendFlowKind.donation;
   var _phase = _MobileSendStatusPhase.sending;
   var _proposalConsumed = false;
 
@@ -71,6 +75,7 @@ class _MobileSendStatusScreenState
   KeystoneBroadcastArgs? _keystoneRecovery;
   String? _statusMessage;
   String? _error;
+  NetworkUpgradeHold? _errorHold;
 
   /// Captured in [initState] so [dispose] can release the flag without reading
   /// from `ref` after the element is gone.
@@ -160,6 +165,7 @@ class _MobileSendStatusScreenState
     final runner = widget.broadcastRunner ?? runSendBroadcast;
     final broadcast = runner(
       ref: ref,
+      l10n: context.l10n,
       args: widget.args,
       keystone: _keystoneRecovery ?? widget.keystone,
       ledger: widget.ledger,
@@ -182,6 +188,7 @@ class _MobileSendStatusScreenState
       };
       _statusMessage = outcome.statusMessage;
       _error = outcome.error;
+      _errorHold = outcome.errorHold;
     });
     // Success and failure use custom native haptic patterns without system
     // notification sounds.
@@ -224,6 +231,10 @@ class _MobileSendStatusScreenState
 
   void _handleBack() {
     if (_phase == _MobileSendStatusPhase.sending) return;
+    if (_isDonation) {
+      context.go('/settings');
+      return;
+    }
     if (context.canPop()) {
       context.pop();
       return;
@@ -246,34 +257,45 @@ class _MobileSendStatusScreenState
   }
 
   String get _title {
+    if (_isDonation) {
+      return switch (_phase) {
+        _MobileSendStatusPhase.sending =>
+          context.l10n.sendStatusMobileSendingDonation,
+        _MobileSendStatusPhase.pendingBroadcast =>
+          context.l10n.sendStatusMobileDonationQueued,
+        _MobileSendStatusPhase.succeeded =>
+          context.l10n.sendStatusMobileDonationThanks,
+        _MobileSendStatusPhase.failed => context.l10n.sendStatusDonationFailed,
+      };
+    }
     return switch (_phase) {
-      _MobileSendStatusPhase.sending => 'Sending...',
-      _MobileSendStatusPhase.pendingBroadcast => 'Queued to send',
-      _MobileSendStatusPhase.succeeded => 'Sent!',
-      _MobileSendStatusPhase.failed => 'Send failed',
+      _MobileSendStatusPhase.sending => context.l10n.commonSending,
+      _MobileSendStatusPhase.pendingBroadcast =>
+        context.l10n.sendStatusMobileQueued,
+      _MobileSendStatusPhase.succeeded => context.l10n.sendStatusMobileSent,
+      _MobileSendStatusPhase.failed => context.l10n.commonSendFailed,
     };
   }
 
   String get _subtitle {
+    if (_isDonation && _phase == _MobileSendStatusPhase.succeeded) {
+      return context.l10n.sendStatusMobileDonationSupport;
+    }
     final statusMessage = _statusMessage?.trim();
     return switch (_phase) {
-      _MobileSendStatusPhase.sending =>
-        'Submitting your transaction to the network...',
+      _MobileSendStatusPhase.sending => context.l10n.sendStatusMobileSubmitting,
       _MobileSendStatusPhase.pendingBroadcast =>
         statusMessage == null || statusMessage.isEmpty
-            ? 'Your transaction was created and will be submitted '
-                  'automatically. Check the Activity page before sending '
-                  'again.'
+            ? context.l10n.sendStatusMobilePendingDefault
             : statusMessage,
       _MobileSendStatusPhase.succeeded =>
-        'It will confirm on-chain shortly. Track it in Activity.',
+        context.l10n.sendStatusMobileConfirmSoon,
       _MobileSendStatusPhase.failed =>
         _canRetryBroadcast
-            ? (_error ??
-                  'Wait for wallet sync, then retry this signed transaction.')
-            : _error == kNetworkUpgradeHoldMessage
-            ? kNetworkUpgradeHoldMessage
-            : "Nothing was sent, your funds haven't moved. Try again.",
+            ? (_error ?? context.l10n.sendStatusRetryAfterSync)
+            : _errorHold == NetworkUpgradeHold.hold
+            ? networkUpgradeHoldText(context.l10n)
+            : context.l10n.sendStatusMobileNothingSent,
     };
   }
 
@@ -281,9 +303,13 @@ class _MobileSendStatusScreenState
     return switch (_phase) {
       _MobileSendStatusPhase.sending => null,
       _MobileSendStatusPhase.pendingBroadcast ||
-      _MobileSendStatusPhase.succeeded => 'Done',
+      _MobileSendStatusPhase.succeeded => context.l10n.commonDone,
       _MobileSendStatusPhase.failed =>
-        _canRetryBroadcast ? 'Retry' : 'Return home',
+        _canRetryBroadcast
+            ? context.l10n.commonRetry
+            : _isDonation
+            ? context.l10n.sendStatusMobileReturnToSettings
+            : context.l10n.commonReturnHome,
     };
   }
 
@@ -326,14 +352,17 @@ class _MobileSendStatusScreenState
         body: _subtitle,
         bodyMaxWidth: _phase == _MobileSendStatusPhase.pendingBroadcast
             ? null
+            : _isDonation && _phase == _MobileSendStatusPhase.succeeded
+            ? 260
             : _statusSubtitleWidth,
-        canPop: _routePopAllowed,
+        canPop: _routePopAllowed && !_isDonation,
         onPopBlocked: _handleBack,
         titleKey: ValueKey('mobile_send_status_${_phase.name}'),
         progressIconKey: const ValueKey('mobile_send_status_icon_loader'),
         successIconKey: const ValueKey('mobile_send_status_icon_success'),
         failureIconKey: const ValueKey('mobile_send_status_icon_failed'),
         successRippleKey: const ValueKey('mobile_send_status_success_ripple'),
+        successBadge: _isDonation ? const DonationHeartBadge(size: 112) : null,
         primaryActionKey: const ValueKey('mobile_send_status_button'),
         primaryActionLabel: _buttonLabel,
         onPrimaryAction: _buttonLabel == null
@@ -342,9 +371,11 @@ class _MobileSendStatusScreenState
             ? () => unawaited(_startBroadcast())
             : _handleBack,
         secondaryActionLabel: _canRetryBroadcast
-            ? 'Return home'
+            ? (_isDonation
+                  ? context.l10n.sendStatusMobileReturnToSettings
+                  : context.l10n.commonReturnHome)
             : offerZnsContact
-            ? 'Add to contacts'
+            ? context.l10n.payAddToContacts
             : null,
         onSecondaryAction: _canRetryBroadcast
             ? _handleBack

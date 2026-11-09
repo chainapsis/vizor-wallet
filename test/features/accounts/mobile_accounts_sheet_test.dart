@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -124,6 +125,7 @@ Widget _app({
       receiveAddressServiceProvider.overrideWithValue(addressService),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
       home: AppToastHost(
         child: Builder(
@@ -290,8 +292,8 @@ void main() {
     expect(row2Rect.height, 48);
     expect(row3Rect.top - row2Rect.bottom, 8);
     expect((gutter.padding as EdgeInsets).right, 18);
-    expect(rowLabel.style?.fontSize, 14);
-    expect(rowLabel.style?.height, 16 / 14);
+    expect(rowLabel.style?.fontSize, AppTypography.labelLarge.fontSize);
+    expect(rowLabel.style?.height, AppTypography.labelLarge.height);
     expect(rowLabel.style?.fontWeight, FontWeight.w500);
 
     await tester.dragFrom(
@@ -309,6 +311,22 @@ void main() {
   testWidgets('tapping another account switches and closes the sheet', (
     tester,
   ) async {
+    final feedback = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          feedback.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
     final notifier = _FakeAccountNotifier();
     await tester.pumpWidget(
       _app(
@@ -322,16 +340,55 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(notifier.switched, ['account-2']);
+    expect(feedback, ['HapticFeedbackType.selectionClick']);
     expect(find.text('Other accounts'), findsNothing);
+  });
+
+  testWidgets('the active account does not switch or emit feedback', (
+    tester,
+  ) async {
+    final feedback = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          feedback.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final notifier = _FakeAccountNotifier();
+    await tester.pumpWidget(
+      _app(
+        accountNotifier: notifier,
+        addressService: _FakeReceiveAddressService('u1other'),
+      ),
+    );
+    await _openSheet(tester);
+    await tester.tap(find.text('Account 1'));
+    await tester.pumpAndSettle();
+    expect(notifier.switched, isEmpty);
+    expect(feedback, isEmpty);
+    expect(find.text('Other accounts'), findsOneWidget);
   });
 
   testWidgets('copy loads the shielded address and confirms with a toast', (
     tester,
   ) async {
     final copied = <String>[];
+    final feedback = <Object?>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
       (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          feedback.add(call.arguments);
+        }
         if (call.method == 'Clipboard.setData') {
           copied.add((call.arguments as Map)['text'] as String);
         }
@@ -357,6 +414,7 @@ void main() {
 
     expect(service.requested, ['account-2']);
     expect(copied, ['u1otheraddress']);
+    expect(feedback, ['HapticFeedbackType.lightImpact']);
     expect(find.text('Address copied'), findsOneWidget);
     final widgets = tester.allWidgets.toList(growable: false);
     final toastIndex = widgets.indexWhere(

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -66,7 +67,7 @@ class SwapModalButtons extends StatelessWidget {
     required this.cancelKey,
     required this.onPrimary,
     required this.onCancel,
-    this.primaryLabel = 'Update',
+    this.primaryLabel,
     this.primaryEnabled = true,
     super.key,
   });
@@ -75,7 +76,7 @@ class SwapModalButtons extends StatelessWidget {
   final Key cancelKey;
   final VoidCallback onPrimary;
   final VoidCallback onCancel;
-  final String primaryLabel;
+  final String? primaryLabel;
   final bool primaryEnabled;
 
   @override
@@ -91,7 +92,10 @@ class SwapModalButtons extends StatelessWidget {
           minWidth: 280,
           child: SizedBox(
             width: 220,
-            child: FittedBox(fit: BoxFit.scaleDown, child: Text(primaryLabel)),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(primaryLabel ?? context.l10n.commonUpdate),
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -101,7 +105,7 @@ class SwapModalButtons extends StatelessWidget {
           variant: AppButtonVariant.ghost,
           size: AppButtonSize.large,
           minWidth: 280,
-          child: const Text('Cancel'),
+          child: Text(context.l10n.commonCancel),
         ),
       ],
     );

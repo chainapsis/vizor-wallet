@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/automatic_rpc_endpoint_selection.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
@@ -35,6 +36,7 @@ void main() {
     late PaymentLinkService service;
     late Directory supportDirectory;
     late _MemoryReceivedStorage receivedStorage;
+    late String automaticSelectedUrl;
     const pathChannel = MethodChannel('plugins.flutter.io/path_provider');
     setUpAll(() => RustLib.initMock(api: api));
     tearDownAll(RustLib.dispose);
@@ -50,6 +52,7 @@ void main() {
             (_) async => supportDirectory.path,
           );
       api.reset();
+      automaticSelectedUrl = 'https://eu.zec.stardust.rest:443';
       receivedStorage = _MemoryReceivedStorage();
       accounts = _InspectAccountNotifier();
       container = ProviderContainer(
@@ -63,6 +66,30 @@ void main() {
           ),
           appSecurityProvider.overrideWith(_SetupSecurityNotifier.new),
           rpcEndpointProvider.overrideWith(_RpcNotifier.new),
+          rpcEndpointSelectionCancelProvider.overrideWithValue((_) {}),
+          rpcEndpointCandidatesProbeProvider.overrideWithValue(
+            ({
+              required urls,
+              required network,
+              required selectionId,
+              required probeTimeout,
+              required totalTimeout,
+              required maxConcurrency,
+            }) async => [
+              for (final url in [
+                automaticSelectedUrl,
+                'https://kr.zec.stardust.rest:443',
+              ])
+                if (urls.contains(url))
+                  RpcEndpointCandidateSample(
+                    url: url,
+                    height: BigInt.from(api.tipHeight),
+                    latency: Duration(
+                      milliseconds: url == automaticSelectedUrl ? 10 : 100,
+                    ),
+                  ),
+            ],
+          ),
           rpcEndpointFailoverChainNameGetterProvider.overrideWithValue(
             (_) async => 'main',
           ),
@@ -223,7 +250,9 @@ void main() {
     test(
       'a failed configured endpoint resumes checking on an existing fallback',
       () async {
-        final primary = defaultRpcEndpointConfig('main');
+        final primary = defaultRpcEndpointConfig(
+          'main',
+        ).copyWith(presetId: kManualUsRpcEndpointPresetId);
         (container.read(rpcEndpointProvider.notifier) as _RpcNotifier)
             .setEndpointForTest(primary);
         api.failCheckOnce = true;
@@ -234,6 +263,62 @@ void main() {
         expect(api.importCalls, 1);
       },
     );
+
+    for (final selected in [
+      'https://eu.zec.stardust.rest:443',
+      'https://us.zec.stardust.rest:443',
+    ]) {
+      test(
+        'Automatic claim check uses only public-pool fallbacks after selecting $selected',
+        () async {
+          automaticSelectedUrl = selected;
+          final primary = defaultRpcEndpointConfig('main');
+          (container.read(rpcEndpointProvider.notifier) as _RpcNotifier)
+              .setEndpointForTest(primary);
+          await service.inspectClaim(_link());
+          expect(api.checkUrls.single, selected);
+          final urls = api.checkFallbackUrls.single;
+          expect(urls, hasLength(7));
+          expect(urls.toSet(), hasLength(7));
+          expect(urls, isNot(contains(selected)));
+          expect(
+            urls.toSet(),
+            automaticRpcEndpointCandidatesFor(primary)
+                .map((e) => e.normalizedLightwalletdUrl)
+                .where((url) => url != selected)
+                .toSet(),
+          );
+          expect(
+            urls.any((url) => Uri.parse(url).host == 'zprivacy.online'),
+            isFalse,
+          );
+          if (selected != 'https://us.zec.stardust.rest:443') {
+            expect(urls, contains('https://us.zec.stardust.rest:443'));
+          }
+        },
+      );
+    }
+
+    for (final manual in [false, true]) {
+      test(
+        '${manual ? 'manual' : 'custom'} claim check retains Community capability fallbacks',
+        () async {
+          if (manual) {
+            (container.read(rpcEndpointProvider.notifier) as _RpcNotifier)
+                .setEndpointForTest(
+                  defaultRpcEndpointConfig(
+                    'main',
+                  ).copyWith(presetId: kManualUsRpcEndpointPresetId),
+                );
+          }
+          await service.inspectClaim(_link());
+          final urls = api.checkFallbackUrls.single;
+          expect(urls, contains('https://zprivacy.online:443'));
+          expect(urls, isNot(contains(api.checkUrls.single)));
+          expect(urls.toSet(), hasLength(urls.length));
+        },
+      );
+    }
 
     test(
       'inspection needs no wallet, passcode, or receiving account',
@@ -825,6 +910,7 @@ class _InspectRustApi implements RustLibApi {
   bool failSync = false;
   bool failCheckOnce = false;
   final checkUrls = <String>[];
+  final checkFallbackUrls = <List<String>>[];
   Completer<void>? checkGate;
   Completer<void> checkStarted = Completer<void>();
   Completer<void>? tipGate;
@@ -850,6 +936,7 @@ class _InspectRustApi implements RustLibApi {
     failSync = false;
     failCheckOnce = false;
     checkUrls.clear();
+    checkFallbackUrls.clear();
     checkGate = null;
     checkStarted = Completer<void>();
     tipGate = null;
@@ -902,6 +989,7 @@ class _InspectRustApi implements RustLibApi {
   }) async* {
     syncCalls++;
     checkUrls.add(lightwalletdUrl);
+    checkFallbackUrls.add(List.of(fallbackUrls));
     if (!checkStarted.isCompleted) checkStarted.complete();
     await checkGate?.future;
     if (failCheckOnce) {

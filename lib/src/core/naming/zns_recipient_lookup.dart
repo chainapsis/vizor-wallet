@@ -1,4 +1,5 @@
 import '../../../main.dart' show log;
+import '../l10n/l10n.dart';
 import 'zns_name_resolver.dart';
 
 /// Why a Zcash name in the send recipient field has no usable address yet.
@@ -7,26 +8,33 @@ import 'zns_name_resolver.dart';
 /// message fits one line beside the status icon at phone width.
 enum ZnsLookupStatus {
   /// The lookup is in flight.
-  resolving('Looking up name'),
+  resolving,
 
   /// The resolver has no live registration for the name.
-  notRegistered('This name is not registered'),
+  notRegistered,
 
   /// The wallet's network has no ZNS registry (regtest).
-  unsupportedNetwork("Names aren't available on this network"),
+  unsupportedNetwork,
 
   /// The user has not turned Zcash names on in Settings.
-  namesOff('Turn on Zcash names in Settings'),
+  namesOff,
 
   /// No resolver answered, or its reply could not be read.
-  failed("Couldn't reach the name service"),
+  failed,
 
   /// The name points to an address this wallet cannot pay.
-  unusableAddress('This name points to an invalid address');
+  unusableAddress;
 
-  const ZnsLookupStatus(this.message);
-
-  final String message;
+  /// The line desktop and mobile show under the field. Each message fits one
+  /// line beside the status icon at phone width.
+  String localizedMessage(AppLocalizations l10n) => switch (this) {
+    resolving => l10n.znsLookupResolving,
+    notRegistered => l10n.znsLookupNotRegistered,
+    unsupportedNetwork => l10n.znsLookupUnsupportedNetwork,
+    namesOff => l10n.znsLookupNamesOff,
+    failed => l10n.znsLookupFailed,
+    unusableAddress => l10n.znsLookupUnusableAddress,
+  };
 
   /// True for every state that blocks review.
   bool get isError => this != resolving;

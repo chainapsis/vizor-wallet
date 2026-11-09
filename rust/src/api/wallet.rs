@@ -155,19 +155,12 @@ pub struct NetworkUpgradeWindow {
 }
 
 /// Catches panics and converts them to Result<T, String>.
-pub(super) fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
+pub(super) fn catch<T>(
+    f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe,
+) -> Result<T, String> {
     match panic::catch_unwind(f) {
         Ok(result) => result,
-        Err(e) => {
-            let msg = if let Some(s) = e.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = e.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic".to_string()
-            };
-            Err(format!("Rust panic: {msg}"))
-        }
+        Err(e) => Err(super::panic_message(e.as_ref())),
     }
 }
 
@@ -207,6 +200,7 @@ pub fn get_latest_block_height(lightwalletd_url: String, network: String) -> Res
         let network = keys::parse_network(&network)?;
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
+            let tip_scope = crate::wallet::sync_engine::TipRequestScope::capture();
             let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -214,6 +208,8 @@ pub fn get_latest_block_height(lightwalletd_url: String, network: String) -> Res
                 &mut client,
                 &lightwalletd_url,
                 network,
+                tip_scope,
+                || false,
             )
             .await
             .map_err(|e| e.to_string())?;
@@ -272,6 +268,102 @@ pub fn probe_lightwalletd_endpoint(
     })
 }
 
+/// A healthy public candidate measured on one routed connection. No wallet
+/// address, transaction identifier or birthday is sent by the measurement.
+pub struct LightwalletdCandidateProbe {
+    pub url: String,
+    pub height: u64,
+    pub latency_ms: u32,
+    pub connect_ms: u32,
+    pub rpc_ms: u32,
+    /// Local GetLatestBlock receipt time, in UNIX epoch milliseconds.
+    pub observed_at_ms: u64,
+}
+
+/// Probe a bounded set of public candidates. Initial selection may stop after
+/// a short comparison window; `wait_for_all` collects the full bounded batch.
+/// Each selection ID must first be reserved with [begin_lightwalletd_selection].
+/// The caller waits for route readiness before starting; route failures are
+/// returned separately from server health.
+pub fn probe_lightwalletd_candidates(
+    lightwalletd_urls: Vec<String>,
+    expected_network: String,
+    selection_id: String,
+    probe_timeout_ms: u32,
+    total_timeout_ms: u32,
+    max_concurrency: u32,
+    wait_for_all: bool,
+) -> Result<Vec<LightwalletdCandidateProbe>, String> {
+    catch(|| {
+        crate::wallet::endpoint_selection::probe_candidates(
+            lightwalletd_urls,
+            &expected_network,
+            &selection_id,
+            probe_timeout_ms,
+            total_timeout_ms,
+            max_concurrency,
+            wait_for_all,
+        )
+        .map(|probes| {
+            probes
+                .into_iter()
+                .map(|probe| LightwalletdCandidateProbe {
+                    url: probe.url,
+                    height: probe.height,
+                    latency_ms: probe.latency_ms,
+                    connect_ms: probe.connect_ms,
+                    rpc_ms: probe.rpc_ms,
+                    observed_at_ms: probe.observed_at_ms,
+                })
+                .collect()
+        })
+    })
+}
+
+/// Read one live tip from a recently chain-verified endpoint on the selected
+/// route. The caller must reserve a unique selection ID before dispatch and
+/// must only use this fast path while its endpoint verification is fresh.
+/// Unlike a full candidate probe, this sends only GetLatestBlock.
+pub fn read_lightwalletd_tip(
+    lightwalletd_url: String,
+    expected_network: String,
+    selection_id: String,
+    timeout_ms: u32,
+) -> Result<LightwalletdCandidateProbe, String> {
+    catch(|| {
+        crate::wallet::endpoint_selection::read_tip(
+            lightwalletd_url,
+            &expected_network,
+            &selection_id,
+            timeout_ms,
+        )
+        .map(|probe| LightwalletdCandidateProbe {
+            url: probe.url,
+            height: probe.height,
+            latency_ms: probe.latency_ms,
+            connect_ms: probe.connect_ms,
+            rpc_ms: probe.rpc_ms,
+            observed_at_ms: probe.observed_at_ms,
+        })
+    })
+}
+
+/// Reserves one bounded selection slot before its async FRB dispatch. IDs
+/// must be unique. A cancelled queued call keeps this slot until its worker
+/// consumes it, so queue delays can never make cancelled work live again.
+#[flutter_rust_bridge::frb(sync)]
+pub fn begin_lightwalletd_selection(selection_id: String) -> Result<(), String> {
+    crate::wallet::endpoint_selection::begin_selection(&selection_id)
+}
+
+/// Cancels only the selection with this ID, including a call whose FRB worker
+/// has not started yet. Kept synchronous so busy workers cannot delay a lock
+/// or route change behind a slow probe.
+#[flutter_rust_bridge::frb(sync)]
+pub fn cancel_lightwalletd_selection(selection_id: String) {
+    crate::wallet::endpoint_selection::cancel_selection(&selection_id);
+}
+
 /// Get the connected chain upgrade state used to decide whether Ironwood is active.
 pub fn get_chain_upgrade_status(
     lightwalletd_url: String,
@@ -283,6 +375,7 @@ pub fn get_chain_upgrade_status(
         rt.block_on(async {
             use zcash_client_backend::proto::service::Empty;
 
+            let tip_scope = crate::wallet::sync_engine::TipRequestScope::capture();
             let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -290,6 +383,8 @@ pub fn get_chain_upgrade_status(
                 &mut client,
                 &lightwalletd_url,
                 network,
+                tip_scope,
+                || false,
             )
             .await
             .map_err(|e| e.to_string())?;
@@ -972,6 +1067,7 @@ pub(crate) async fn discover_used_software_accounts(
         return discover_privately(network, seed, birthday_height, private, &[]).await;
     }
     let start_height = discovery_start_height(network, birthday_height);
+    let tip_scope = crate::wallet::sync_engine::TipRequestScope::capture();
     let transport = match crate::wallet::sync_engine::open_lwd_transport(lightwalletd_url).await {
         Ok(transport) => transport,
         Err(e) => {
@@ -985,6 +1081,8 @@ pub(crate) async fn discover_used_software_accounts(
         &mut client,
         lightwalletd_url,
         network,
+        tip_scope,
+        || false,
     )
     .await
     {
@@ -1612,7 +1710,6 @@ mod tests {
         });
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn discovery_reads_history_from_the_rounded_birthday() {
         assert_eq!(
@@ -1638,7 +1735,6 @@ mod tests {
         dir.path().join(name).to_str().unwrap().to_string()
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn mainnet_created_accounts_and_claims_keep_their_birthday() {
         let dir = tempfile::tempdir().unwrap();
@@ -1678,7 +1774,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn mainnet_software_restores_round_their_birthday() {
         let dir = tempfile::tempdir().unwrap();
@@ -1730,7 +1825,6 @@ mod tests {
         assert_eq!(birthdays[&linked.account_uuid], 2_340_001);
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn mainnet_hardware_imports_round_their_birthday() {
         use secrecy::ExposeSecret;

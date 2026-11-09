@@ -7,9 +7,10 @@ import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
-import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_keystone_signing_overlay.dart';
 import 'package:zcash_wallet/src/features/send/screens/keystone_send_scan_screen.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   testWidgets('Keystone signs one PCZT for a two-card batch', (tester) async {
@@ -55,6 +56,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -129,6 +131,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -207,6 +210,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -236,11 +240,11 @@ void main() {
     (
       "Transactions can't be sent this close to the network upgrade. "
           'Try again after it activates.',
-      kNetworkUpgradeHoldMessage,
+      networkUpgradeHoldText(testL10n),
     ),
     (
       'Hardware signing request expired before broadcast: txid=ab',
-      LedgerGiftFundingTerminalException.message,
+      testL10n.paymentLinkLedgerFundingExpired,
     ),
   ]) {
     testWidgets('shows terminal copy for funding refused as expired: $copy', (
@@ -283,6 +287,7 @@ void main() {
             ),
           ],
           child: MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (_, child) =>
                 AppTheme(data: AppThemeData.dark, child: child!),
@@ -345,6 +350,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -409,6 +415,7 @@ void main() {
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),

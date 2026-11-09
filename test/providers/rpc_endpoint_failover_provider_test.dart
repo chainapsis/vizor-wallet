@@ -41,10 +41,29 @@ void main() {
     );
   });
 
+  test('native tip route-control errors do not trigger endpoint failover', () {
+    for (final detail in [
+      'tip request route changed',
+      'tip request cancelled',
+      'Tor is still connecting',
+      'Tor connection failed',
+      'Tor is enabled but unavailable',
+    ]) {
+      expect(
+        shouldFallbackFromLightwalletdError(
+          'Read submission expiry tip: network: '
+          'network privacy blocked lightwalletd: $detail',
+        ),
+        isFalse,
+        reason: detail,
+      );
+    }
+  });
+
   test('checkRpcEndpointHealth rejects wrong-network endpoints', () async {
     await expectLater(
       checkRpcEndpointHealth(
-        endpoint: defaultRpcEndpointConfig('main'),
+        endpoint: _manualMainnet(),
         getChainName: (_) async => 'test',
         getLatestBlockHeight: (_, _) async => BigInt.from(10),
       ),
@@ -55,7 +74,7 @@ void main() {
   test(
     'checkRpcEndpointHealth scopes the height read to the network',
     () async {
-      final endpoint = defaultRpcEndpointConfig('main');
+      final endpoint = _manualMainnet();
       String? requestedNetwork;
 
       final health = await checkRpcEndpointHealth(
@@ -73,7 +92,7 @@ void main() {
   );
 
   test('runWithEndpointFallback switches to a healthy fallback', () async {
-    final primary = defaultRpcEndpointConfig('main');
+    final primary = _manualMainnet();
     final container = _container(
       primary: primary,
       chainNameByUrl: {'https://eu.zec.stardust.rest:443': 'main'},
@@ -134,7 +153,7 @@ void main() {
   });
 
   test('tries fallback candidates in configured order', () async {
-    final primary = defaultRpcEndpointConfig('main');
+    final primary = _manualMainnet();
     final container = _container(
       primary: primary,
       chainNameByUrl: {'https://zec.rocks:443': 'main'},
@@ -161,7 +180,7 @@ void main() {
   });
 
   test('rotates from a failed fallback to the next healthy preset', () async {
-    final primary = defaultRpcEndpointConfig('main');
+    final primary = _manualMainnet();
     final container = _container(
       primary: primary,
       chainNameByUrl: {
@@ -204,7 +223,7 @@ void main() {
   test(
     'runWithEndpointFallback retries after current fallback fails',
     () async {
-      final primary = defaultRpcEndpointConfig('main');
+      final primary = _manualMainnet();
       final container = _container(
         primary: primary,
         chainNameByUrl: {
@@ -247,7 +266,7 @@ void main() {
   );
 
   test('does not rotate from fallback back to primary outside probe', () async {
-    final primary = defaultRpcEndpointConfig('main');
+    final primary = _manualMainnet();
     final primaryUrl = primary.normalizedLightwalletdUrl;
     final chainNameByUrl = <String, String>{
       'https://eu.zec.stardust.rest:443': 'main',
@@ -292,7 +311,7 @@ void main() {
   });
 
   test('does not fallback when all candidates fail health checks', () async {
-    final primary = defaultRpcEndpointConfig('main');
+    final primary = _manualMainnet();
     final container = _container(
       primary: primary,
       chainNameByUrl: const {},
@@ -318,7 +337,7 @@ void main() {
   });
 
   test('does not fallback for wallet-state errors', () async {
-    final primary = defaultRpcEndpointConfig('main');
+    final primary = _manualMainnet();
     final container = _container(
       primary: primary,
       chainNameByUrl: {'https://eu.zec.stardust.rest:443': 'main'},
@@ -345,7 +364,7 @@ void main() {
 
   test('periodic primary probe switches back after recovery', () async {
     var now = DateTime(2026);
-    final primary = defaultRpcEndpointConfig('main');
+    final primary = _manualMainnet();
     final primaryUrl = primary.normalizedLightwalletdUrl;
     final container = _container(
       primary: primary,
@@ -394,7 +413,7 @@ void main() {
 
   test('switches when current endpoint height progresses too slowly', () async {
     var now = DateTime(2026);
-    final primary = defaultRpcEndpointConfig('main');
+    final primary = _manualMainnet();
     final primaryUrl = primary.normalizedLightwalletdUrl;
     final heightByUrl = <String, BigInt>{
       primaryUrl: BigInt.from(100),
@@ -428,7 +447,7 @@ void main() {
     'keeps current slow endpoint when no candidate is far enough ahead',
     () async {
       var now = DateTime(2026);
-      final primary = defaultRpcEndpointConfig('main');
+      final primary = _manualMainnet();
       final primaryUrl = primary.normalizedLightwalletdUrl;
       final heightByUrl = <String, BigInt>{
         primaryUrl: BigInt.from(100),
@@ -459,7 +478,7 @@ void main() {
 
   test('skips slow fallback candidates and checks the next preset', () async {
     var now = DateTime(2026);
-    final primary = defaultRpcEndpointConfig('main');
+    final primary = _manualMainnet();
     final primaryUrl = primary.normalizedLightwalletdUrl;
     final heightByUrl = <String, BigInt>{
       primaryUrl: BigInt.from(100),
@@ -493,7 +512,7 @@ void main() {
     'primary probe waits when primary is still behind current fallback',
     () async {
       var now = DateTime(2026);
-      final primary = defaultRpcEndpointConfig('main');
+      final primary = _manualMainnet();
       final primaryUrl = primary.normalizedLightwalletdUrl;
       final heightByUrl = <String, BigInt>{
         'https://eu.zec.stardust.rest:443': BigInt.from(110),
@@ -539,7 +558,7 @@ void main() {
     'primary probe compares against fresh current fallback height',
     () async {
       var now = DateTime(2026);
-      final primary = defaultRpcEndpointConfig('main');
+      final primary = _manualMainnet();
       final primaryUrl = primary.normalizedLightwalletdUrl;
       const fallbackUrl = 'https://eu.zec.stardust.rest:443';
       final heightByUrl = <String, BigInt>{
@@ -581,7 +600,7 @@ void main() {
   test(
     'ignores stale fallback when endpoint changes to custom during health check',
     () async {
-      final primary = defaultRpcEndpointConfig('main');
+      final primary = _manualMainnet();
       final customSameUrl = primary.copyWith(
         presetId: kCustomRpcEndpointPresetId,
       );
@@ -630,7 +649,7 @@ void main() {
     'ignores stale slow-height fallback after endpoint changes to custom',
     () async {
       var now = DateTime(2026);
-      final primary = defaultRpcEndpointConfig('main');
+      final primary = _manualMainnet();
       final primaryUrl = primary.normalizedLightwalletdUrl;
       final customSameUrl = primary.copyWith(
         presetId: kCustomRpcEndpointPresetId,
@@ -685,7 +704,7 @@ void main() {
     () async {
       var now = DateTime(2026);
       var blockPrimaryProbe = false;
-      final primary = defaultRpcEndpointConfig('main');
+      final primary = _manualMainnet();
       final primaryUrl = primary.normalizedLightwalletdUrl;
       final customSameUrl = primary.copyWith(
         presetId: kCustomRpcEndpointPresetId,
@@ -843,3 +862,11 @@ AppBootstrapState _bootstrap(RpcEndpointConfig endpoint) {
     passwordRotationRecoveryFailed: false,
   );
 }
+
+// These tests cover manual-preset failover; automatic selection has a separate
+// suite with controlled concurrent probes and no production network access.
+RpcEndpointConfig _manualMainnet() => const RpcEndpointConfig(
+  networkName: 'main',
+  lightwalletdUrl: 'https://us.zec.stardust.rest:443',
+  presetId: kManualUsRpcEndpointPresetId,
+);

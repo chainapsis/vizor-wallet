@@ -9,8 +9,10 @@ import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_trac
 import 'package:zcash_wallet/src/features/payment_links/widgets/gift_card_usage_status.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../support/test_l10n.dart';
 
 void _noop() {}
 
@@ -56,6 +58,7 @@ void main() {
           UncontrolledProviderScope(
             container: container,
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.dark,
                 child: Scaffold(
@@ -121,7 +124,7 @@ void main() {
           container.invalidate(giftCardUsageProvider('card'));
           await tester.pumpAndSettle();
           final paragraph = tester.renderObject<RenderParagraph>(
-            find.text(usage.label),
+            find.text(usage.label(testL10n)),
           );
           expect(paragraph.didExceedMaxLines, isFalse);
           expect(
@@ -158,6 +161,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.dark,
               child: const Scaffold(
@@ -206,6 +210,7 @@ void main() {
             UncontrolledProviderScope(
               container: container,
               child: MaterialApp(
+                localizationsDelegates: appLocalizationsDelegates,
                 home: AppTheme(
                   data: AppThemeData.dark,
                   child: Scaffold(
@@ -282,6 +287,7 @@ void main() {
               ),
             ],
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: AppTheme(
                 data: AppThemeData.dark,
                 child: MediaQuery(

@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -7,6 +8,7 @@ import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/recipient_suggestions.dart';
 import '../../swap/models/swap_address_formatting.dart';
 import '../models/pay_recent_recipients.dart';
 import 'pay_wizard_page.dart';
@@ -18,6 +20,7 @@ class PayRecipientStep extends StatelessWidget {
     required this.controller,
     required this.typedAddress,
     required this.addressError,
+    required this.network,
     required this.contacts,
     required this.recents,
     required this.busy,
@@ -34,6 +37,10 @@ class PayRecipientStep extends StatelessWidget {
 
   /// Address-format issue for the pay chain, null when the address parses.
   final String? addressError;
+
+  /// The pay chain's address network; null when it has no address book
+  /// support, which leaves nothing to suggest for typed text.
+  final AddressBookNetwork? network;
 
   /// Saved contacts already filtered to networks compatible with the pay
   /// chain (see [payCompatibleContacts]).
@@ -58,23 +65,24 @@ class PayRecipientStep extends StatelessWidget {
     final typed = typedAddress.trim();
     final hasInput = typed.isNotEmpty;
     final validDestination = hasInput && addressError == null;
-    final matchedContacts = !hasInput
-        ? contacts
-        : [
-            for (final contact in contacts)
-              if (_payContactMatchesQuery(contact, typed)) contact,
-          ];
-    final matchedRecents = !hasInput
-        ? recents
-        : matchedContacts.isEmpty
-        ? [
-            for (final recent in recents)
-              if (_payRecentMatchesQuery(recent, typed)) recent,
-          ]
-        : const <PayRecentRecipient>[];
-    final hasMatches = matchedRecents.isNotEmpty || matchedContacts.isNotEmpty;
-    final unknownAddress = validDestination && !hasMatches;
-    final showAddressError = hasInput && addressError != null && !hasMatches;
+    final payNetwork = network;
+    final suggestions = payNetwork == null
+        ? RecipientSuggestions<PayRecentRecipient>(
+            recents: hasInput ? const [] : recents,
+            contacts: hasInput ? const [] : contacts,
+          )
+        : matchRecipientSuggestions(
+            query: typed,
+            network: payNetwork,
+            recents: recents,
+            recentAddress: (recent) => recent.address,
+            contacts: contacts,
+          );
+    final matchedContacts = suggestions.contacts;
+    final matchedRecents = suggestions.recents;
+    final unknownAddress = validDestination && !suggestions.isNotEmpty;
+    final showAddressError =
+        hasInput && addressError != null && !suggestions.isSearch;
 
     Widget buildRecentRow(PayRecentRecipient recent) {
       final selection = payRecipientSelectionForRecent(contacts, recent);
@@ -87,7 +95,7 @@ class PayRecipientStep extends StatelessWidget {
         contact: contact,
         address: recent.address,
         amountText: recent.amountText,
-        timeLabel: payRecentTimeLabel(recent.lastUsedAt),
+        timeLabel: payRecentTimeLabel(context.l10n, recent.lastUsedAt),
         selected:
             selection.contactId != null &&
             selection.contactId == selectedContactId,
@@ -102,16 +110,16 @@ class PayRecipientStep extends StatelessWidget {
       children: [
         AppTextField(
           key: const ValueKey('pay_recipient_search_field'),
-          label: 'Recipient address',
+          label: context.l10n.payRecipientAddressLabel,
           showLabel: false,
           controller: controller,
-          hintText: 'Paste an address or scan QR code',
+          hintText: context.l10n.payRecipientAddressHint,
           leading: AppIcon(AppIcons.user, size: 20, color: colors.icon.regular),
           leadingSlotWidth: 32,
           trailing: AppIconHoverButton(
             key: const ValueKey('pay_recipient_scan_button'),
             icon: AppIcons.qr,
-            semanticLabel: 'Scan QR code',
+            semanticLabel: context.l10n.commonScanQrCodeSentenceCase,
             iconSize: 20,
             iconColor: colors.icon.regular,
             onTap: onOpenScanner,
@@ -141,14 +149,14 @@ class PayRecipientStep extends StatelessWidget {
                     AppIcon(AppIcons.users, size: 20, color: colors.icon.muted),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      'New address detected.',
+                      context.l10n.payNewAddressDetected,
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.primary,
                       ),
                     ),
                     Text(
-                      "You haven't interacted with this address before.",
+                      context.l10n.payNewAddressWarning,
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
@@ -163,7 +171,7 @@ class PayRecipientStep extends StatelessWidget {
           if (matchedRecents.isNotEmpty) ...[
             _PayRecipientListCard(
               key: const ValueKey('pay_recent_recipients_card'),
-              title: 'Recently sent',
+              title: context.l10n.payRecentlySent,
               children: [
                 for (final recent in matchedRecents) buildRecentRow(recent),
               ],
@@ -173,7 +181,7 @@ class PayRecipientStep extends StatelessWidget {
           if (matchedContacts.isNotEmpty)
             _PayRecipientListCard(
               key: const ValueKey('pay_contacts_card'),
-              title: 'Contacts',
+              title: context.l10n.commonContacts,
               children: [
                 for (final contact in matchedContacts)
                   _PayRecipientRow(
@@ -204,19 +212,6 @@ class PayRecipientStep extends StatelessWidget {
       ],
     );
   }
-}
-
-bool _payContactMatchesQuery(AddressBookContact contact, String query) {
-  final needle = query.trim().toLowerCase();
-  if (needle.isEmpty) return true;
-  return contact.address.trim().toLowerCase().contains(needle) ||
-      contact.label.trim().toLowerCase().contains(needle);
-}
-
-bool _payRecentMatchesQuery(PayRecentRecipient recent, String query) {
-  final needle = query.trim().toLowerCase();
-  if (needle.isEmpty) return true;
-  return recent.address.trim().toLowerCase().contains(needle);
 }
 
 /// Bottom-pinned actions for a valid Recipient selection.
@@ -282,7 +277,7 @@ class PayRecipientActions extends StatelessWidget {
             size: AppButtonSize.large,
             minWidth: PayWizardActionMetrics.width,
             onPressed: busy ? null : onAddToContacts,
-            child: const Text('Add to contacts'),
+            child: Text(context.l10n.payAddToContacts),
           ),
           const SizedBox(height: AppSpacing.s),
         ],
@@ -294,7 +289,11 @@ class PayRecipientActions extends StatelessWidget {
           trailing: busy ? const AppIcon(AppIcons.loader) : null,
           iconGap: AppSpacing.xxs,
           onPressed: busy || !enabled ? null : onSelectRecipient,
-          child: Text(busy ? 'Fetching quote' : 'Select recipient'),
+          child: Text(
+            busy
+                ? context.l10n.payFetchingQuote
+                : context.l10n.paySelectRecipient,
+          ),
         ),
       ],
     );
@@ -505,7 +504,7 @@ class _ContactSelectionSlot extends StatelessWidget {
                 AppIcons.check,
                 size: 16,
                 color: context.colors.icon.accent,
-                semanticLabel: 'Selected contact',
+                semanticLabel: context.l10n.commonSelectedContact,
               ),
             )
           : null,

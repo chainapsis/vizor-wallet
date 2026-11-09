@@ -290,7 +290,7 @@ class AddressBookNotifier extends AsyncNotifier<AddressBookState> {
   }
 
   static String _contactKey(AddressBookContact contact) {
-    return '${contact.network.id}:'
+    return '${contact.network.id}:' // l10n-ignore: dedupe key
         '${normalizedAddressBookAddress(contact.network, contact.address)}';
   }
 }

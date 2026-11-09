@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_serv
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_bluetooth_recovery.dart';
 import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_desktop_ble_probe_dialog.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/ledger_access_fake.dart';
 
@@ -30,6 +31,7 @@ Widget _harness(Widget child, LedgerAccessFake service) => ProviderScope(
     ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
   ],
   child: MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
       data: AppThemeData.light,
       child: Stack(children: [child]),

@@ -8,6 +8,7 @@ import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import 'send_review_layout.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Display phase of a submitted send on the redesigned status screens.
 enum SendStatusPhase { inProgress, completed, failed }
@@ -34,8 +35,8 @@ class SendStatusContentView extends StatelessWidget {
     this.isShieldedRecipient = true,
     this.recipientAddressType,
     this.fiatText,
-    this.feeLabel = 'Tx fee',
-    this.feeHelpText = kTxFeeHelpTooltip,
+    this.feeLabel,
+    this.feeHelpText,
     this.memoText,
     this.memoExpanded = false,
     this.memoLoading = false,
@@ -78,8 +79,8 @@ class SendStatusContentView extends StatelessWidget {
   final String? fiatText;
 
   /// Optional memo; the Message row is omitted when null.
-  final String feeLabel;
-  final String feeHelpText;
+  final String? feeLabel;
+  final String? feeHelpText;
   final String? memoText;
 
   /// Whether the Message row shows the full memo (see [ReviewMemoRows]).
@@ -118,9 +119,10 @@ class SendStatusContentView extends StatelessWidget {
       title:
           titleOverride ??
           switch (phase) {
-            SendStatusPhase.inProgress => 'Send in progress...',
-            SendStatusPhase.completed => 'Sent successfully',
-            SendStatusPhase.failed => 'Send failed',
+            SendStatusPhase.inProgress =>
+              context.l10n.sendStatusTitleInProgress,
+            SendStatusPhase.completed => context.l10n.commonSentSuccessfully,
+            SendStatusPhase.failed => context.l10n.commonSendFailed,
           },
       children: [
         SendReviewInfoSection(
@@ -150,7 +152,10 @@ class SendStatusContentView extends StatelessWidget {
           ),
         if (onRetry != null)
           Center(
-            child: AppButton(onPressed: onRetry, child: const Text('Retry')),
+            child: AppButton(
+              onPressed: onRetry,
+              child: Text(context.l10n.commonRetry),
+            ),
           ),
         ?footer,
       ],
@@ -163,17 +168,17 @@ class SendStatusContentView extends StatelessWidget {
         final colors = context.colors;
         final (statusValue, statusIconName, statusColor) = switch (phase) {
           SendStatusPhase.inProgress => (
-            'In progress',
+            context.l10n.commonInProgress,
             AppIcons.loader,
             colors.text.secondary,
           ),
           SendStatusPhase.completed => (
-            'Completed',
+            context.l10n.commonCompleted,
             AppIcons.checkCircle,
             colors.text.positiveStrong,
           ),
           SendStatusPhase.failed => (
-            'Failed',
+            context.l10n.commonFailed,
             AppIcons.cancel,
             colors.text.destructive,
           ),
@@ -183,7 +188,7 @@ class SendStatusContentView extends StatelessWidget {
           surfaceColor: _failed ? Primitives.p50Dark : null,
           children: [
             ReviewListRow(
-              label: 'Status',
+              label: context.l10n.sendStatusRowStatus,
               value: statusValue,
               labelColor: _failed ? colors.text.destructive : null,
               valueColor: statusColor,
@@ -202,10 +207,13 @@ class SendStatusContentView extends StatelessWidget {
                     expanded: memoExpanded,
                     onToggle: onExpandMemo,
                   ),
-                ReviewListRow(label: 'Timestamp', value: timestampText),
+                ReviewListRow(
+                  label: context.l10n.commonTimestamp,
+                  value: timestampText,
+                ),
                 if (txIdText != null)
                   ReviewListRow(
-                    label: 'Tx ID',
+                    label: context.l10n.commonTxId,
                     value: txIdText!,
                     trailingIconName: AppIcons.arrowTopRight,
                     onPressed: onOpenExplorer,
@@ -214,11 +222,11 @@ class SendStatusContentView extends StatelessWidget {
             ),
             const ReviewWrapDivider(),
             ReviewListRow(
-              label: feeLabel,
+              label: feeLabel ?? context.l10n.txFeeInfoTitle,
               value: feeText,
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.text.secondary,
-              trailingIconTooltip: feeHelpText,
+              trailingIconTooltip: feeHelpText ?? context.l10n.txFeeHelpTooltip,
               onPressed: onFeeHelp,
             ),
           ],

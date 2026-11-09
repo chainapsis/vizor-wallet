@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/core/naming/zns_name_resolver.dart';
 import 'package:zcash_wallet/src/core/naming/zns_names_setting.dart';
 import 'package:zcash_wallet/src/core/naming/zns_recipient_lookup.dart';
+import '../../support/test_l10n.dart';
 
 class _MemoryStore implements ZnsNamesSettingStore {
   _MemoryStore({this.enabled = false, this.failWrites = false});
@@ -112,7 +113,7 @@ void main() {
       expect(ZnsLookupStatus.namesOff.isError, isTrue);
       expect(ZnsLookupStatus.namesOff.addressType, 'invalid');
       expect(
-        ZnsLookupStatus.namesOff.message,
+        ZnsLookupStatus.namesOff.localizedMessage(testL10n),
         'Turn on Zcash names in Settings',
       );
     });

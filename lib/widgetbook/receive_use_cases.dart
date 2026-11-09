@@ -3,22 +3,84 @@
 
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter/material.dart' show MaterialApp, ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../src/app_bootstrap.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
+import '../src/core/l10n/app_language.dart';
+import '../src/core/l10n/locale_typography.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/receive/screens/mobile/mobile_receive_screen.dart';
+import '../src/features/receive/screens/receive_screen.dart';
 import '../src/features/receive/widgets/mobile/receive_address_info_sheet.dart';
 import '../src/features/receive/widgets/receive_desktop_preview.dart';
 import '../src/features/receive/widgets/receive_address_widgets.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/receive_address_provider.dart';
 import '../src/providers/sync_provider.dart';
+import '../src/providers/zec_price_change_provider.dart';
+
+/// The production desktop pane, for locale captures rather than the static
+/// Figma mockup below. All wallet state and addresses are deterministic.
+Widget buildReceiveDesktopLiveShieldedUseCase(BuildContext context) =>
+    const _ReceiveDesktopLiveHarness(type: ReceiveAddressType.shielded);
+
+Widget buildReceiveDesktopLiveTransparentUseCase(BuildContext context) =>
+    const _ReceiveDesktopLiveHarness(type: ReceiveAddressType.transparent);
+
+class _ReceiveDesktopLiveHarness extends StatefulWidget {
+  const _ReceiveDesktopLiveHarness({required this.type});
+
+  final ReceiveAddressType type;
+
+  @override
+  State<_ReceiveDesktopLiveHarness> createState() =>
+      _ReceiveDesktopLiveHarnessState();
+}
+
+class _ReceiveDesktopLiveHarnessState
+    extends State<_ReceiveDesktopLiveHarness> {
+  late final _router = GoRouter(
+    initialLocation: '/receive',
+    routes: [
+      GoRoute(
+        path: '/receive',
+        builder: (_, _) => ReceiveScreen(initialType: widget.type),
+      ),
+    ],
+  );
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_mobileReceiveBootstrap),
+      syncProvider.overrideWith(() => _WidgetbookSyncNotifier()),
+      receiveAddressServiceProvider.overrideWithValue(
+        const _WidgetbookReceiveAddressService(),
+      ),
+      zecLiveUsdUnitPriceProvider.overrideWithValue(70),
+    ],
+    child: MaterialApp.router(
+      debugShowCheckedModeBanner: false,
+      locale: Localizations.localeOf(context),
+      supportedLocales: appSupportedLocales(preview: true),
+      localizationsDelegates: appLocalizationsDelegates,
+      routerConfig: _router,
+      builder: (_, child) => LocaleTypography(child: child!),
+    ),
+  );
+}
 
 Widget buildReceiveDesktopShieldedUseCase(BuildContext context) {
   return const _ReceiveDesktopHarness(
@@ -50,6 +112,12 @@ Widget buildReceiveDesktopTransparentModalUseCase(BuildContext context) {
 Widget buildReceiveDesktopRequestEntryUseCase(BuildContext context) {
   return const _ReceiveDesktopHarness(
     state: ReceiveDesktopPreviewState.shieldedRequestEntry,
+  );
+}
+
+Widget buildReceiveDesktopTransparentRequestEntryUseCase(BuildContext context) {
+  return const _ReceiveDesktopHarness(
+    state: ReceiveDesktopPreviewState.transparentRequestEntry,
   );
 }
 
@@ -208,6 +276,10 @@ class _WidgetbookSyncNotifier extends SyncNotifier {
 
 class _WidgetbookReceiveAddressService implements ReceiveAddressService {
   const _WidgetbookReceiveAddressService();
+
+  @override
+  String? getCachedTransparentAddress(String accountUuid) =>
+      _mobileTransparentAddress;
 
   @override
   Future<String> loadShieldedAddress({

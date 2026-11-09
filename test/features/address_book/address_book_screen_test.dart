@@ -21,8 +21,10 @@ import 'package:zcash_wallet/src/features/address_book/screens/address_book_scre
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_zns_name_resolver.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   testWidgets('does not show a loading spinner while contacts load', (
@@ -818,7 +820,10 @@ void main() {
       await tester.tap(submit);
       await tester.pumpAndSettle();
 
-      expect(find.text(ZnsLookupStatus.notRegistered.message), findsOneWidget);
+      expect(
+        find.text(ZnsLookupStatus.notRegistered.localizedMessage(testL10n)),
+        findsOneWidget,
+      );
       expect(repo.contacts, isEmpty);
     });
 
@@ -930,6 +935,7 @@ Widget _addressBookHarness(
         znsNameResolverProvider.overrideWithValue(znsResolver),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

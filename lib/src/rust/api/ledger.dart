@@ -4,11 +4,8 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
-
 import '../wallet/ledger.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-
 import 'sync.dart';
 
 // These functions are ignored because they are not marked as `pub`: `expected_ledger_account`, `ledger_account_fingerprint`, `parse_ledger_db_network`, `require_mainnet`, `to_action_sigs`, `to_apdu_command`, `to_device_app`, `to_signed_operation`
@@ -70,6 +67,18 @@ Future<LedgerAccountExport> ledgerParseMobileUfvkResponses({
   accountIndex: accountIndex,
   network: network,
   responses: responses,
+);
+
+/// Verify a Ledger export against a stored account, allowing only a stored-only
+/// Sapling component. Does not access the device or change either viewing key.
+Future<bool> ledgerAccountViewingKeysMatch({
+  required String expectedUfvk,
+  required String exportedUfvk,
+  required String network,
+}) => RustLib.instance.api.crateApiLedgerLedgerAccountViewingKeysMatch(
+  expectedUfvk: expectedUfvk,
+  exportedUfvk: exportedUfvk,
+  network: network,
 );
 
 /// Build the transport-neutral compact shielded PCZT signing exchange.
@@ -427,6 +436,10 @@ class LedgerSignedOperation {
   final String? txid;
   final String? status;
   final String? message;
+
+  /// `message` as sentences; empty for rows earlier builds wrote and for
+  /// retryable errors. See [`crate::api::sync::BroadcastNotice`].
+  final List<BroadcastNotice> notices;
   final PlatformInt64 createdAtMs;
   final PlatformInt64 updatedAtMs;
 
@@ -441,6 +454,7 @@ class LedgerSignedOperation {
     this.txid,
     this.status,
     this.message,
+    required this.notices,
     required this.createdAtMs,
     required this.updatedAtMs,
   });
@@ -457,6 +471,7 @@ class LedgerSignedOperation {
       txid.hashCode ^
       status.hashCode ^
       message.hashCode ^
+      notices.hashCode ^
       createdAtMs.hashCode ^
       updatedAtMs.hashCode;
 
@@ -475,6 +490,7 @@ class LedgerSignedOperation {
           txid == other.txid &&
           status == other.status &&
           message == other.message &&
+          notices == other.notices &&
           createdAtMs == other.createdAtMs &&
           updatedAtMs == other.updatedAtMs;
 }
@@ -485,6 +501,9 @@ class LedgerSignedOperationBroadcastResult {
   final String txid;
   final String status;
   final String? message;
+
+  /// `message` as sentences; see [`crate::api::sync::BroadcastNotice`].
+  final List<BroadcastNotice> notices;
   final bool requiresAck;
 
   const LedgerSignedOperationBroadcastResult({
@@ -492,6 +511,7 @@ class LedgerSignedOperationBroadcastResult {
     required this.txid,
     required this.status,
     this.message,
+    required this.notices,
     required this.requiresAck,
   });
 
@@ -501,6 +521,7 @@ class LedgerSignedOperationBroadcastResult {
       txid.hashCode ^
       status.hashCode ^
       message.hashCode ^
+      notices.hashCode ^
       requiresAck.hashCode;
 
   @override
@@ -512,6 +533,7 @@ class LedgerSignedOperationBroadcastResult {
           txid == other.txid &&
           status == other.status &&
           message == other.message &&
+          notices == other.notices &&
           requiresAck == other.requiresAck;
 }
 

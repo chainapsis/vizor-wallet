@@ -28,5 +28,3 @@ const kVizorUpdateCheckEnabledEnvKey = 'VIZOR_UPDATE_CHECK_ENABLED';
 const kVizorUpdateCheckEnabled = bool.fromEnvironment(
   kVizorUpdateCheckEnabledEnvKey,
 );
-
-const kVizorAboutVersionLabel = 'Version: $kVizorReleaseVersion Public Beta';

@@ -81,20 +81,20 @@ void main() {
         status: 'broadcasted',
         txids: ['txid-1'],
       );
-      String? label() => container
+      ActivityEta? label() => container
           .read(pendingActivityEvidenceProvider)
-          .labelFor('account-1', 'txid-1', 100);
+          .etaFor('account-1', 'txid-1', 100);
       final evidence = container.read(pendingActivityEvidenceProvider.notifier);
       observe();
       expect(label(), isNull);
       evidence.networkChecked(100);
-      expect(label(), 'Est. 1–3 min');
+      expect(label(), ActivityEta.standard);
       now = now.add(const Duration(minutes: 5));
       observe();
       evidence.networkChecked(100);
       expect(
         label(),
-        'Taking longer',
+        ActivityEta.takingLonger,
         reason: 'retries retain the first observation',
       );
       evidence.invalidateNetwork(connectionFailed: true);

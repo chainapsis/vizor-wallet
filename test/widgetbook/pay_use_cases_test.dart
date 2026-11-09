@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mappe
 import 'package:zcash_wallet/src/features/swap/widgets/pay_activity_status_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_asset_selector_modal.dart';
 import 'package:zcash_wallet/widgetbook/pay_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -152,14 +153,16 @@ void main() {
       find.byType(PayActivityStatusContent),
     );
     expect(content.status.phase, PayActivityStatusPhase.inProgress);
-    expect(
-      tester.getSize(find.byKey(const ValueKey('pay_activity_status_content'))),
-      PayActivityStatusContent.contentSize,
-    );
     expect(find.text('Pay in progress...'), findsOneWidget);
     expect(find.text('990 USDC'), findsOneWidget);
     expect(find.text(r'$990.12'), findsOneWidget);
     expect(find.text('New address'), findsOneWidget);
+    expect(find.text('Payment progress'), findsOneWidget);
+    expect(find.text('View on NEAR Intents'), findsOneWidget);
+    expect(find.text('ZEC spent'), findsOneWidget);
+    await tester.tap(find.text('Transaction details'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('In progress'), findsOneWidget);
     _expectPayStatusDetails();
   });
@@ -218,6 +221,7 @@ Future<void> _pumpPayUseCase(WidgetTester tester, WidgetBuilder builder) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Builder(builder: builder),

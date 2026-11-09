@@ -125,7 +125,7 @@ class ZnsLookupException implements Exception {
   final String message;
 
   @override
-  String toString() => 'ZnsLookupException: $message';
+  String toString() => 'ZnsLookupException: $message'; // l10n-ignore: log text
 }
 
 /// A host that failed rather than answered: an HTTP error, a reply that is
@@ -316,7 +316,7 @@ class ZnsIndexNameResolver implements ZnsNameResolver {
     Map<String, Object?> params,
   ) {
     return _client.request(
-      'POST',
+      'POST', // l10n-ignore: HTTP method
       endpoint,
       headers: {
         HttpHeaders.acceptHeader: 'application/json',
@@ -450,7 +450,7 @@ class ZnsNamesOffException implements Exception {
   const ZnsNamesOffException();
 
   @override
-  String toString() => 'ZnsNamesOffException: Zcash names are off';
+  String toString() => 'ZnsNamesOffException: Zcash names are off'; // l10n-ignore: log text
 }
 
 /// The resolver while the user has names off. It makes no request.

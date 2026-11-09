@@ -7,16 +7,7 @@ use crate::wallet::secret_payload;
 fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
     match panic::catch_unwind(f) {
         Ok(result) => result,
-        Err(e) => {
-            let msg = if let Some(s) = e.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = e.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic".to_string()
-            };
-            Err(format!("Rust panic: {msg}"))
-        }
+        Err(e) => Err(super::panic_message(e.as_ref())),
     }
 }
 

@@ -11,7 +11,10 @@ import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
+import '../../../core/zcash/wallet_error_code.dart';
+import '../../ledger/ledger_capability.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -276,30 +279,57 @@ class PaymentLinkBatchQuoteChanged implements Exception {
 }
 
 class PaymentLinkBatchPreSubmissionFailure implements Exception {
-  const PaymentLinkBatchPreSubmissionFailure([this.message]);
+  const PaymentLinkBatchPreSubmissionFailure([this.hold]);
 
-  /// User copy when a later attempt can pass, such as the network upgrade
-  /// hold; null for the generic retry copy.
-  final String? message;
+  /// Set when a later attempt can pass because of the network upgrade hold;
+  /// null for the generic retry copy.
+  final NetworkUpgradeHold? hold;
 }
 
 /// A batch the wallet cannot fund as asked (a signer limit or the
-/// one-transaction rule). [message] is written for the user; retrying the same
-/// batch will not help.
+/// one-transaction rule). Retrying the same batch will not help.
 class PaymentLinkBatchRejected implements Exception {
-  const PaymentLinkBatchRejected(this.message);
+  const PaymentLinkBatchRejected(this.code, this.message);
 
+  final rust_sync.ApiWalletErrorCode code;
+
+  /// Rust's English wording, for logs.
   final String message;
 
-  /// Rust prefixes every user-facing batch rejection with this.
-  static const _prefix = 'This group ';
+  static const _codes = {
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchNotOneTransaction,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchKeystoneSapling,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchKeystoneSignatureLimit,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchLedgerRecipientLimit,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchLedgerSapling,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchLedgerTooLarge,
+  };
 
   static PaymentLinkBatchRejected? from(Object error) {
-    final text = error.toString();
-    final start = text.indexOf(_prefix);
-    if (start < 0) return null;
-    return PaymentLinkBatchRejected(text.substring(start).split('\n').first);
+    final code = walletErrorCode(error);
+    if (code == null || !_codes.contains(code)) return null;
+    return PaymentLinkBatchRejected(code, error.toString());
   }
+
+  /// What to tell the user.
+  String text(AppLocalizations l10n) => switch (code) {
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchKeystoneSapling =>
+      l10n.paymentLinkBatchRejectedKeystoneSapling,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchKeystoneSignatureLimit =>
+      l10n.paymentLinkBatchRejectedKeystoneSignatureLimit,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchLedgerRecipientLimit =>
+      l10n.paymentLinkBatchRejectedLedgerRecipientLimit(
+        kLedgerMaxExternalShieldedOutputs.toString(),
+      ),
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchLedgerSapling =>
+      l10n.paymentLinkBatchRejectedLedgerSapling,
+    rust_sync.ApiWalletErrorCode.paymentLinkBatchLedgerTooLarge =>
+      l10n.paymentLinkBatchRejectedLedgerTooLarge,
+    _ => l10n.paymentLinkBatchRejectedNotOneTransaction,
+  };
+
+  @override
+  String toString() => message;
 }
 
 /// Whether [error] ends a group's funding before any signing: the fee moved
@@ -576,14 +606,14 @@ class PaymentLinkClaimDestinationChangedException implements Exception {
 
   @override
   String toString() =>
-      'The gift card receiving account or address changed before claim.';
+      'The gift card receiving account or address changed before claim.'; // l10n-ignore: exception text, UI branches on the type
 }
 
 class PaymentLinkClaimInFlightException implements Exception {
   const PaymentLinkClaimInFlightException();
 
   @override
-  String toString() => 'This gift card is already being received.';
+  String toString() => 'This gift card is already being received.'; // l10n-ignore: exception text, UI branches on the type
 }
 
 /// A pasted Gift Card belongs to a different Zcash network than the wallet.
@@ -600,7 +630,7 @@ class PaymentLinkNetworkMismatchException implements Exception {
   final String walletNetwork;
 
   @override
-  String toString() => 'This gift card is for a different Zcash network.';
+  String toString() => 'This gift card is for a different Zcash network.'; // l10n-ignore: exception text, UI branches on the type
 }
 
 @visibleForTesting
@@ -957,9 +987,7 @@ class PaymentLinkService
       final error = failure.error;
       if (error is PaymentLinkBatchQuoteChanged) throw error;
       throw PaymentLinkBatchRejected.from(error) ??
-          PaymentLinkBatchPreSubmissionFailure(
-            networkUpgradeHoldMessage(error),
-          );
+          PaymentLinkBatchPreSubmissionFailure(networkUpgradeHoldKind(error));
     }
     if (isPaymentLinkFundingBroadcastAccepted(result.status)) {
       observeActivityBroadcast(accountUuid: accountUuid, txids: result.txids);
@@ -1229,7 +1257,7 @@ class PaymentLinkService
       amountZatoshi: amountZatoshi,
       mnemonic: paymentAccount.mnemonic,
       birthdayHeight: linkBirthdayHeight,
-      label: 'Payment link',
+      label: 'Payment link', // l10n-ignore: stored link label, data
       createdAt: DateTime.now(),
       presentation: presentation,
     );
@@ -2251,7 +2279,7 @@ class PaymentLinkService
     } catch (error) {
       // Rust raises the upgrade hold before it builds the claim, so the card
       // is still ready even after the submission marker.
-      if (!submissionStarted || networkUpgradeHoldMessage(error) != null) {
+      if (!submissionStarted || networkUpgradeHoldKind(error) != null) {
         await _receivedStore.markReadyToClaim(
           address: session.link.address,
           expected: startedRecord,
@@ -2571,7 +2599,9 @@ class PaymentLinkService
     Future<void> Function()? beforeExecute,
     FutureOr<void> Function()? onSubmissionStarted,
   }) async {
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final endpoint = await _ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .ensureReady();
     final sendFlowId = _newSendFlowId();
     Future<({String dbPath, rust_sync.ProposalResult proposal})> createProposal(
       String proposalDbPath,

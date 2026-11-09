@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_floating_bar.dart';
@@ -13,8 +14,10 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/rpc_endpoint_latency_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../widgets/automatic_endpoint_detail.dart';
 
 class SettingsEndpointScreen extends ConsumerStatefulWidget {
   const SettingsEndpointScreen({super.key});
@@ -113,7 +116,7 @@ class _SettingsEndpointScreenState
       normalizeRpcEndpointUrl(_customController.text, allowDefaultPort: true);
       return null;
     } on FormatException catch (e) {
-      return e.message;
+      return rpcEndpointErrorText(context.l10n, e);
     }
   }
 
@@ -134,7 +137,7 @@ class _SettingsEndpointScreenState
           _selectedPresetId!,
         );
         if (preset == null) {
-          throw const FormatException('Select an endpoint.');
+          throw RpcEndpointFormatException(RpcEndpointIssue.noSelection);
         }
         await notifier.setPreset(preset);
       } else {
@@ -154,15 +157,14 @@ class _SettingsEndpointScreenState
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() {
-        _submitError = e.message;
+        _submitError = rpcEndpointErrorText(context.l10n, e);
         _isSubmitting = false;
       });
     } catch (e, st) {
       log('SettingsEndpointScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _submitError =
-            "Couldn't connect to that endpoint. Check the host and port.";
+        _submitError = context.l10n.settingsEndpointConnectFailed;
         _isSubmitting = false;
       });
     }
@@ -273,17 +275,20 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Endpoint',
+                    context.l10n.settingsEndpointTitle,
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineLarge.copyWith(
                       color: colors.text.accent,
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.s),
-                  _CurrentEndpointSubtitle(
-                    current: widget.current,
-                    latencyState: widget.latencyState,
-                  ),
+                  if (!isAutomaticRpcEndpointConfig(widget.current) ||
+                      widget.activeTab == _EndpointTab.custom) ...[
+                    const SizedBox(height: AppSpacing.s),
+                    _CurrentEndpointSubtitle(
+                      current: widget.current,
+                      latencyState: widget.latencyState,
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.base),
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -328,7 +333,7 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
   }
 }
 
-class _CurrentEndpointSubtitle extends StatelessWidget {
+class _CurrentEndpointSubtitle extends ConsumerWidget {
   const _CurrentEndpointSubtitle({
     required this.current,
     required this.latencyState,
@@ -338,18 +343,21 @@ class _CurrentEndpointSubtitle extends StatelessWidget {
   final RpcEndpointLatencyState latencyState;
 
   @override
-  Widget build(BuildContext context) {
-    final preset = findRpcEndpointPresetByUrl(
-      current.normalizedLightwalletdUrl,
-      networkName: current.networkName,
-    );
-    final latency = latencyState.sampleForUrl(
-      current.normalizedLightwalletdUrl,
-    );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final automatic = isAutomaticRpcEndpointConfig(current);
+    final effective = ref.watch(rpcEndpointFailoverProvider);
+    final selected = effective.current;
+    final latency = automatic && !effective.automaticReady
+        ? null
+        : latencyState.sampleForUrl(selected.normalizedLightwalletdUrl);
     final text = [
-      'Current: ${current.hostPort}',
-      if (latency != null) latency.label,
-      if (preset?.isDefault ?? false) '(Default)',
+      if (automatic)
+        effective.automaticReady
+            ? context.l10n.endpointAutomaticWithHost(selected.hostPort)
+            : context.l10n.endpointAutomaticSelecting
+      else
+        context.l10n.endpointCurrent(selected.hostPort),
+      if (latency != null) latency.label(context.l10n),
     ].join(' ');
 
     return Text(
@@ -381,14 +389,14 @@ class _EndpointTabs extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _EndpointTabButton(
-              label: 'Select from the list',
+              label: context.l10n.settingsEndpointSelectFromList,
               icon: AppIcons.endpoint,
               selected: activeTab == _EndpointTab.list,
               onTap: () => onSelect(_EndpointTab.list),
             ),
             const SizedBox(width: AppSpacing.xs),
             _EndpointTabButton(
-              label: 'Custom endpoint',
+              label: context.l10n.endpointCustom,
               icon: AppIcons.edit,
               selected: activeTab == _EndpointTab.custom,
               onTap: () => onSelect(_EndpointTab.custom),
@@ -452,7 +460,7 @@ class _EndpointTabButton extends StatelessWidget {
   }
 }
 
-class _PresetList extends StatelessWidget {
+class _PresetList extends ConsumerWidget {
   const _PresetList({
     required this.networkName,
     required this.latencyState,
@@ -468,8 +476,15 @@ class _PresetList extends StatelessWidget {
   final ValueChanged<String> onSelect;
 
   @override
-  Widget build(BuildContext context) {
-    final groups = <String, List<RpcEndpointPreset>>{};
+  Widget build(BuildContext context, WidgetRef ref) {
+    final automaticDetail = currentPresetId == kDefaultRpcEndpointPresetId
+        ? automaticEndpointDetailLabel(
+            context.l10n,
+            ref.watch(rpcEndpointFailoverProvider),
+            latencyState,
+          )
+        : null;
+    final groups = <RpcEndpointRegion, List<RpcEndpointPreset>>{};
     for (final preset in rpcEndpointPresetsForNetwork(networkName)) {
       groups.putIfAbsent(preset.region, () => []).add(preset);
     }
@@ -480,9 +495,10 @@ class _PresetList extends StatelessWidget {
       children: [
         for (var i = 0; i < entries.length; i++) ...[
           _PresetRegionSegment(
-            label: entries[i].key,
+            label: entries[i].key.label(context.l10n),
             presets: entries[i].value,
             latencyState: latencyState,
+            automaticDetail: automaticDetail,
             currentPresetId: currentPresetId,
             pendingPresetId: pendingPresetId,
             onSelect: onSelect,
@@ -499,6 +515,7 @@ class _PresetRegionSegment extends StatelessWidget {
     required this.label,
     required this.presets,
     required this.latencyState,
+    required this.automaticDetail,
     required this.currentPresetId,
     required this.pendingPresetId,
     required this.onSelect,
@@ -507,6 +524,7 @@ class _PresetRegionSegment extends StatelessWidget {
   final String label;
   final List<RpcEndpointPreset> presets;
   final RpcEndpointLatencyState latencyState;
+  final String? automaticDetail;
   final String currentPresetId;
   final String? pendingPresetId;
   final ValueChanged<String> onSelect;
@@ -529,8 +547,13 @@ class _PresetRegionSegment extends StatelessWidget {
         const SizedBox(height: AppSpacing.s),
         for (var i = 0; i < presets.length; i++) ...[
           _PresetCard(
+            key: ValueKey('endpoint_preset_${presets[i].id}'),
             preset: presets[i],
-            latency: latencyState.sampleForUrl(presets[i].url),
+            detailLabel: presets[i].isAutomatic
+                ? automaticDetail
+                : latencyState
+                      .sampleForUrl(presets[i].url)
+                      ?.label(context.l10n),
             isCurrent: presets[i].id == currentPresetId,
             isSelected: presets[i].id == pendingPresetId,
             onTap: () => onSelect(presets[i].id),
@@ -545,14 +568,15 @@ class _PresetRegionSegment extends StatelessWidget {
 class _PresetCard extends StatelessWidget {
   const _PresetCard({
     required this.preset,
-    required this.latency,
+    required this.detailLabel,
     required this.isCurrent,
     required this.isSelected,
     required this.onTap,
+    super.key,
   });
 
   final RpcEndpointPreset preset;
-  final RpcEndpointLatencySample? latency;
+  final String? detailLabel;
 
   /// Currently applied endpoint (`current.effectivePresetId`).
   final bool isCurrent;
@@ -614,7 +638,7 @@ class _PresetCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        preset.hostPort,
+                        preset.displayLabel(context.l10n),
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelMedium.copyWith(
                           color: colors.text.accent,
@@ -623,10 +647,11 @@ class _PresetCard extends StatelessWidget {
                               : FontWeight.w500,
                         ),
                       ),
-                      if (latency != null) ...[
+                      if (detailLabel != null) ...[
                         const SizedBox(height: 2),
                         Text(
-                          latency!.label,
+                          detailLabel!,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelMedium.copyWith(
                             color: isCurrent
@@ -754,7 +779,11 @@ class _FloatingUpdateBar extends StatelessWidget {
             onPressed: canUpdate ? onSubmit : null,
             variant: AppButtonVariant.primary,
             minWidth: 196,
-            child: Text(isSubmitting ? 'Updating...' : 'Update endpoint'),
+            child: Text(
+              isSubmitting
+                  ? context.l10n.commonUpdating
+                  : context.l10n.endpointUpdate,
+            ),
           ),
       ],
     );
@@ -811,7 +840,11 @@ class _CustomEndpointTab extends StatelessWidget {
             onPressed: canUpdate ? onSubmit : null,
             variant: AppButtonVariant.primary,
             minWidth: 196,
-            child: Text(isSubmitting ? 'Updating...' : 'Customize endpoint'),
+            child: Text(
+              isSubmitting
+                  ? context.l10n.commonUpdating
+                  : context.l10n.settingsEndpointCustomize,
+            ),
           ),
         ),
       ],
@@ -884,7 +917,7 @@ class _CustomEndpointHeroCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Custom endpoint',
+                    context.l10n.endpointCustom,
                     style: AppTypography.headlineLarge.copyWith(
                       color: colors.text.homeCard,
                     ),
@@ -929,9 +962,9 @@ class _CustomEndpointField extends StatelessWidget {
     return SizedBox(
       height: _height,
       child: AppTextField(
-        label: 'Custom endpoint',
+        label: context.l10n.endpointCustom,
         showLabel: false,
-        hintText: '<hostname>:<port>',
+        hintText: '<hostname>:<port>', // l10n-ignore: address format hint
         hintStyle: AppTypography.labelMedium.copyWith(
           fontWeight: FontWeight.w400,
           color: colors.text.muted,
@@ -971,17 +1004,16 @@ class _CustomEndpointInfo extends StatelessWidget {
           AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            "If the endpoint is configured wrong, your wallet won't be able "
-            'to sync with the Zcash network.',
+            context.l10n.settingsEndpointWarningNetwork,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.accent,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'The wallet will show the balance from the last time it was '
-            "successfully connected. It won't show any "
-            '$kZcashDefaultCurrencyTicker you recently received.',
+            context.l10n.settingsEndpointBalanceNote(
+              kZcashDefaultCurrencyTicker,
+            ),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.primary,
             ),

@@ -19,6 +19,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/amount_price_loading_bar.dart';
@@ -170,8 +171,8 @@ class RequestAmountCard extends StatelessWidget {
           // The same label the mobile sheet uses: one commitment should not
           // have two names, and this press is the moment the address in the
           // link is fixed — worth naming rather than pointing at.
-          child: const Text(
-            'Create request',
+          child: Text(
+            context.l10n.receiveRequestCreate,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -244,8 +245,8 @@ class RequestResultCard extends StatelessWidget {
           constrainContent: true,
           leading: const AppIcon(AppIcons.copy),
           onPressed: request.isReady ? (onCopyLink ?? _noop) : null,
-          child: const Text(
-            'Copy request link',
+          child: Text(
+            context.l10n.receiveRequestCopyRequestLink,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -257,7 +258,7 @@ class RequestResultCard extends StatelessWidget {
         RequestQrExportButton(
           key: const ValueKey('request_save_qr_button'),
           uri: uri,
-          label: 'Save QR image',
+          label: context.l10n.receiveRequestSaveQr,
           icon: AppIcons.arrowDownCircle,
           variant: AppButtonVariant.secondary,
           onBytes: onSaveQrImage,
@@ -291,7 +292,7 @@ class RequestModalHeader extends StatelessWidget {
           AppIconHoverButton(
             key: const ValueKey('request_modal_back'),
             icon: AppIcons.chevronBackward,
-            semanticLabel: 'Back',
+            semanticLabel: context.l10n.commonBack,
             onTap: onBack,
             iconColor: colors.icon.accent,
           ),
@@ -301,7 +302,7 @@ class RequestModalHeader extends StatelessWidget {
           child: Semantics(
             header: true,
             child: Text(
-              kRequestFlowTitle,
+              requestFlowTitle(context.l10n),
               key: const ValueKey('request_modal_title'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -315,7 +316,7 @@ class RequestModalHeader extends StatelessWidget {
         AppIconHoverButton(
           key: const ValueKey('request_modal_close'),
           icon: AppIcons.cross,
-          semanticLabel: 'Close request',
+          semanticLabel: context.l10n.receiveRequestCloseRequest,
           onTap: onClose ?? RequestAmountCard._noop,
           iconColor: colors.icon.regular,
         ),
@@ -350,7 +351,7 @@ class RequestAmountField extends StatelessWidget {
     final colors = context.colors;
     final text = request.fieldText;
     final hasText = text.isNotEmpty;
-    final error = _trimmedOrNull(request.amountError);
+    final error = _trimmedOrNull(request.amountError?.text(context.l10n));
     final isError = error != null;
     final valueColor = isError
         ? colors.text.destructive
@@ -370,7 +371,7 @@ class RequestAmountField extends StatelessWidget {
       children: [
         AppTextField(
           key: const ValueKey('request_amount_field'),
-          label: 'Amount',
+          label: context.l10n.commonAmount,
           labelStyle: AppTypography.labelLarge.copyWith(
             color: colors.text.secondary,
           ),
@@ -395,7 +396,9 @@ class RequestAmountField extends StatelessWidget {
           ),
           inlinePrefixText: request.amountInputIsUsd ? r'$' : null,
           inlinePrefixStyle: affixStyle,
-          inlineSuffixText: request.amountInputIsUsd ? null : 'ZEC',
+          inlineSuffixText: request.amountInputIsUsd
+              ? null
+              : 'ZEC', // l10n-ignore: currency code
           inlineSuffixStyle: affixStyle,
           showClearButton: true,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -479,7 +482,9 @@ class _RequestAmountConversionRow extends StatelessWidget {
       child: Semantics(
         button: true,
         enabled: enabled,
-        label: enterUsdMode ? 'Enter amount in USD' : 'Enter amount in ZEC',
+        label: enterUsdMode
+            ? context.l10n.commonEnterAmountInUsd
+            : context.l10n.receiveRequestEnterZec,
         child: GestureDetector(
           key: const ValueKey('request_amount_mode_toggle'),
           behavior: HitTestBehavior.opaque,
@@ -554,7 +559,7 @@ class RequestAddMessageCard extends StatelessWidget {
               const SizedBox(width: AppSpacing.xxs),
               Flexible(
                 child: Text(
-                  kRequestAddMessageLabel,
+                  context.l10n.commonAddAMessage,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
@@ -567,7 +572,7 @@ class RequestAddMessageCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            kRequestMessageHelpText,
+            context.l10n.receiveRequestMessageHelp,
             textAlign: TextAlign.center,
             style: AppTypography.labelLarge.copyWith(
               fontWeight: FontWeight.w400,
@@ -581,7 +586,7 @@ class RequestAddMessageCard extends StatelessWidget {
     if (onTap == null) return card;
     return Semantics(
       button: true,
-      label: kRequestAddMessageLabel,
+      label: context.l10n.commonAddAMessage,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
@@ -633,7 +638,7 @@ class RequestMessageField extends StatelessWidget {
 
     final field = AppTextField(
       key: const ValueKey('request_message_field'),
-      label: 'Message',
+      label: context.l10n.commonMessage,
       labelStyle: AppTypography.labelLarge.copyWith(
         color: colors.text.secondary,
       ),
@@ -646,12 +651,12 @@ class RequestMessageField extends StatelessWidget {
       ),
       controller: controller,
       initialValue: controller == null ? text : null,
-      hintText: 'Anyone you send the link to can read this',
+      hintText: context.l10n.receiveRequestMessageHint,
       tone: overLimit ? AppTextFieldTone.destructive : AppTextFieldTone.neutral,
       borderColor: overLimit ? colors.border.utilityDestructive : null,
       leading: AppIcon(AppIcons.scroll, size: 20, color: colors.icon.regular),
       messageText: overLimit && !inlineValidationMessage
-          ? 'Message is too long'
+          ? context.l10n.commonMessageIsTooLong
           : null,
       minLines: visibleLines ?? 3,
       maxLines: visibleLines ?? 3,
@@ -659,7 +664,7 @@ class RequestMessageField extends StatelessWidget {
       textStyle: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
       showClearButton: true,
       clearButtonRequiresText: false,
-      clearButtonSemanticLabel: 'Close message',
+      clearButtonSemanticLabel: context.l10n.commonCloseMessage,
       onClear: onClose,
       onChanged: onChanged,
     );
@@ -686,7 +691,7 @@ class RequestMessageField extends StatelessWidget {
               const SizedBox(width: AppSpacing.xxs),
               Expanded(
                 child: Text(
-                  'Message is too long',
+                  context.l10n.commonMessageIsTooLong,
                   style: AppTypography.labelMedium.copyWith(
                     color: colors.text.destructive,
                   ),

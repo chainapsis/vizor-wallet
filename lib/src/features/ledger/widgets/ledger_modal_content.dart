@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart' show Scrollbar;
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -16,7 +17,7 @@ class LedgerModalContent extends StatefulWidget {
     this.identity,
     this.identityIcon = AppIcons.ledger,
     this.onBack,
-    this.backLabel = 'Choose connection',
+    this.backLabel,
     this.footer,
     super.key,
   });
@@ -25,7 +26,7 @@ class LedgerModalContent extends StatefulWidget {
   final String? identity;
   final String identityIcon;
   final VoidCallback? onBack;
-  final String backLabel;
+  final String? backLabel;
   final Widget? footer;
 
   @override
@@ -105,7 +106,9 @@ class _LedgerModalContentState extends State<LedgerModalContent> {
                               child: AppIcon(
                                 AppIcons.chevronBackward,
                                 size: 16,
-                                semanticLabel: widget.backLabel,
+                                semanticLabel:
+                                    widget.backLabel ??
+                                    context.l10n.ledgerChooseConnection,
                               ),
                             ),
                             const SizedBox(width: AppSpacing.xs),

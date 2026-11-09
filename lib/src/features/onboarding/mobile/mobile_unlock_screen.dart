@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/navigation/payment_uri_unlock_claim.dart';
 import '../../../core/feedback/app_haptics.dart';
@@ -19,12 +20,12 @@ import '../../payment_links/providers/payment_link_intake_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
-import '../../../providers/device_owner_auth_provider.dart';
 import '../../../providers/payment_request_flow_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../services/biometric_unlock.dart';
 import '../../../services/device_owner_auth.dart';
+import '../shared/onboarding_error_messages.dart';
 import 'forgot_passcode_sheet.dart';
 import 'mobile_passcode_screen.dart' show kMobilePasscodeLength;
 import 'passcode_widgets.dart';
@@ -68,7 +69,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
   // numpad while the Face ID sheet dismisses.
   var _biometricUnlocking = false;
   var _didPrecacheBackdrop = false;
-  String? _error;
+  OnboardingSubmitError? _error;
 
   @override
   void didChangeDependencies() {
@@ -140,7 +141,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     final wasEnabled = biometric.enabled;
     final passcode = await ref
         .read(biometricUnlockProvider.notifier)
-        .readPasscode(reason: 'Unlock your wallet');
+        .readPasscode(reason: context.l10n.onboardingUnlockBiometricReason);
     if (!mounted) return;
     if (passcode == null) {
       final now = ref.read(biometricUnlockProvider).value;
@@ -148,7 +149,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       if (wasEnabled && now != null && !now.enabled) {
         // The escrow was invalidated (biometric data changed) — explain
         // why the prompt stopped appearing.
-        nextError = biometric.availability.kind.changedMessage;
+        nextError = OnboardingSubmitError.text(
+          biometric.availability.kind.changedMessage(context.l10n),
+        );
       }
       setState(() {
         _biometricFallback = true;
@@ -264,6 +267,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         final claimed = claimParkedPaymentUriAfterUnlock(ref);
         final hasPendingPaymentLink =
             ref.read(paymentLinkIntakeProvider).pendingLink != null;
+        unawaited(AppHaptics.accessGranted());
         context.go(hasPendingPaymentLink ? '/payment-links' : '/home');
         syncNotifier.refreshHomeInBackground();
         final pendingPrefill = claimed.prefill;
@@ -283,7 +287,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
           // which outlives the navigation.
           showAppToast(
             context,
-            notice,
+            notice.text(context.l10n),
             duration: const Duration(seconds: 4),
             iconName: AppIcons.warning,
           );
@@ -298,7 +302,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         // A biometric-initiated submit that fails drops to the numpad + retry.
         if (fromBiometric) _biometricFallback = true;
         _entry = '';
-        _error = "Couldn't open your wallet. Please try again.";
+        _error = OnboardingSubmitError.localized(
+          (l10n) => l10n.onboardingUnlockOpenFailed,
+        );
       });
       return;
     }
@@ -310,7 +316,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         _biometricUnlocking = false;
         if (fromBiometric) _biometricFallback = true;
         _entry = '';
-        _error = 'Incorrect Passcode';
+        _error = OnboardingSubmitError.localized(
+          (l10n) => l10n.passcodeIncorrect,
+        );
       });
     }
   }
@@ -339,8 +347,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       if (!mounted || !ref.read(appSecurityProvider).isUnlocked) return;
       showAppToast(
         context,
-        "Couldn't enable ${biometric.availability.kind.inlineLabel}. "
-        'You can try again in settings.',
+        context.l10n.onboardingBiometricEnableFailed(
+          biometric.availability.kind.inlineLabel(context.l10n),
+        ),
       );
     }
   }
@@ -364,7 +373,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     setState(() => _submitting = true);
     final router = GoRouter.of(context);
     try {
-      final didReset = await resetWalletForForgottenPasscode(ref);
+      final didReset = await resetWalletForForgottenPasscode(ref, context.l10n);
       if (!mounted) return;
       if (!didReset) {
         setState(() {
@@ -378,9 +387,11 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = e.kind == DeviceOwnerAuthErrorKind.unavailable
-            ? kWalletResetDeviceAuthRequiredMessage
-            : kWalletResetDeviceAuthFailedMessage;
+        _error = OnboardingSubmitError.text(
+          e.kind == DeviceOwnerAuthErrorKind.unavailable
+              ? context.l10n.walletResetDeviceAuthRequired
+              : context.l10n.walletResetDeviceAuthFailed,
+        );
       });
       return;
     } on WalletResetInFlightGiftCardClaimsException catch (e, st) {
@@ -389,7 +400,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = kWalletResetInFlightGiftCardClaimsMessage;
+        _error = OnboardingSubmitError.localized(
+          (l10n) => l10n.walletResetGiftCardInFlight,
+        );
       });
       return;
     } catch (e, st) {
@@ -397,7 +410,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = "Couldn't reset the app. Please try again.";
+        _error = OnboardingSubmitError.localized(
+          (l10n) => l10n.onboardingResetAppFailed,
+        );
       });
       return;
     }
@@ -408,7 +423,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     if (biometric.availability.usable && !biometric.enabled) {
       return PasscodeBiometricOptIn(
         key: const ValueKey('mobile_unlock_biometric_opt_in'),
-        label: biometric.availability.kind.useNextTimeLabel,
+        label: biometric.availability.kind.useNextTimeLabel(context.l10n),
         selected: _enableBiometricOnUnlock,
         onChanged: _submitting
             ? null
@@ -419,7 +434,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     return SizedBox(
       height: 36,
       child: PasscodeBiometricButton(
-        label: biometric.availability.kind.signInLabel,
+        label: biometric.availability.kind.signInLabel(context.l10n),
         icon: Center(
           child: BiometricIcon(
             kind: biometric.availability.kind,
@@ -461,14 +476,14 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
           ? const MobileBiometricSignInView()
           : SafeArea(
               child: AdaptivePasscodeLayout(
-                title: 'Welcome Back',
+                title: context.l10n.commonWelcomeBack,
                 subtitle: _submitting
-                    ? 'Opening your wallet...'
-                    : 'Enter your passcode to open Vizor',
+                    ? context.l10n.onboardingUnlockOpening
+                    : context.l10n.onboardingUnlockEnterPasscode,
                 prompt: PasscodePromptField(
                   length: kMobilePasscodeLength,
                   filled: _entry.length,
-                  error: _error,
+                  error: _error?.resolve(context.l10n),
                   minGap: 0,
                 ),
                 keypad: PasscodeNumpad(
@@ -512,7 +527,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Text(
-                                          'Welcome Back',
+                                          context.l10n.commonWelcomeBack,
                                           textAlign: TextAlign.center,
                                           style: AppTypography.displayLarge
                                               .copyWith(
@@ -522,8 +537,12 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                                         const SizedBox(height: AppSpacing.s),
                                         Text(
                                           _submitting
-                                              ? 'Opening your wallet...'
-                                              : 'Enter your passcode to open Vizor',
+                                              ? context
+                                                    .l10n
+                                                    .onboardingUnlockOpening
+                                              : context
+                                                    .l10n
+                                                    .onboardingUnlockEnterPasscode,
                                           textAlign: TextAlign.center,
                                           style: AppTypography.bodyMediumStrong
                                               .copyWith(
@@ -536,7 +555,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
                                           child: PasscodePromptField(
                                             length: kMobilePasscodeLength,
                                             filled: _entry.length,
-                                            error: _error,
+                                            error: _error?.resolve(
+                                              context.l10n,
+                                            ),
                                             minGap: 0,
                                           ),
                                         ),

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 // while preparing the shield PCZT.
 // ignore_for_file: depend_on_referenced_packages
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -30,6 +31,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   final rustApi = _RustApiFake();
@@ -84,7 +86,7 @@ void main() {
         ),
       );
       final accessRecovery =
-          ledgerFailureGuidance(error)?.bluetoothRecovery == true;
+          ledgerFailureGuidance(testL10n, error)?.bluetoothRecovery == true;
       final operations = _FakeLedgerSignedOperationService();
       await tester.pumpWidget(
         _harness(
@@ -98,7 +100,7 @@ void main() {
         tester,
         () => find
             .text(
-              ledgerFailureGuidance(error)?.pairingRecovery == true
+              ledgerFailureGuidance(testL10n, error)?.pairingRecovery == true
                   ? 'Try again'
                   : accessRecovery
                   ? 'Reconnect'
@@ -109,13 +111,13 @@ void main() {
       );
       expect(
         find.text(
-          ledgerFailureGuidance(error)?.pairingInvalid == true
+          ledgerFailureGuidance(testL10n, error)?.pairingInvalid == true
               ? 'Pair your Ledger again'
-              : ledgerFailureGuidance(error)?.pairingRecovery == true
+              : ledgerFailureGuidance(testL10n, error)?.pairingRecovery == true
               ? 'Request failed'
               : accessRecovery
               ? 'Ready to reconnect'
-              : ledgerFailureGuidance(error)?.message ??
+              : ledgerFailureGuidance(testL10n, error)?.message ??
                     'Ledger shielding could not be completed.',
         ),
         findsOneWidget,
@@ -150,10 +152,10 @@ void main() {
     );
     await _pumpUntil(
       tester,
-      () => find.text(kNetworkUpgradeHoldMessage).evaluate().isNotEmpty,
+      () => find.text(networkUpgradeHoldText(testL10n)).evaluate().isNotEmpty,
     );
 
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
     expect(find.text('Paused for network upgrade'), findsOneWidget);
     expect(find.text('Ledger signing failed'), findsNothing);
     expect(find.text('Change connection'), findsNothing);
@@ -184,7 +186,7 @@ void main() {
     );
     await _pumpUntil(
       tester,
-      () => find.text(kNetworkUpgradeHoldMessage).evaluate().isNotEmpty,
+      () => find.text(networkUpgradeHoldText(testL10n)).evaluate().isNotEmpty,
     );
 
     expect(operations.broadcasts, hasLength(1));
@@ -446,7 +448,10 @@ void main() {
     );
     await _pumpUntil(
       tester,
-      () => find.text(kLedgerHostRequestRejectedMessage).evaluate().isNotEmpty,
+      () => find
+          .text(testL10n.ledgerFailureMsgRejectedNewRequest)
+          .evaluate()
+          .isNotEmpty,
     );
 
     expect(find.text('Ledger signing failed'), findsOneWidget);
@@ -503,7 +508,10 @@ void main() {
 
       expect(signatures, 2);
       expect(operations.broadcasts, hasLength(1));
-      expect(find.text(kLedgerHostRequestRejectedMessage), findsNothing);
+      expect(
+        find.text(testL10n.ledgerFailureMsgRejectedNewRequest),
+        findsNothing,
+      );
       expect(find.textContaining('Nothing was sent'), findsNothing);
       expect(find.text('Try again'), findsNothing);
 
@@ -647,6 +655,7 @@ Widget _harness({
       ledgerSignedOperationServiceProvider.overrideWithValue(operationService),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
       home: LedgerShieldSigningOverlay(
         onCancel: onCancel ?? () {},
@@ -674,7 +683,9 @@ AppBootstrapState _bootstrap() {
     ),
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: 'main',
-    rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+    rpcEndpointConfig: defaultRpcEndpointConfig(
+      'main',
+    ).copyWith(presetId: kManualUsRpcEndpointPresetId),
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
     isPasswordConfigured: true,

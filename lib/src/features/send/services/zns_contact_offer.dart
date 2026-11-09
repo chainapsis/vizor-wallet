@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/naming/zns_name_resolver.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -71,13 +72,15 @@ Future<bool> addZnsRecipientToContacts(
     if (context.mounted) {
       showAppToast(
         context,
-        "Couldn't save the contact. Try again.",
+        context.l10n.sendStatusZnsContactSaveFailed,
         iconName: AppIcons.warning,
         tone: AppToastTone.destructive,
       );
     }
     return false;
   }
-  if (context.mounted) showAppToast(context, 'Added $znsName to contacts');
+  if (context.mounted) {
+    showAppToast(context, context.l10n.sendStatusZnsContactAdded(znsName));
+  }
   return true;
 }

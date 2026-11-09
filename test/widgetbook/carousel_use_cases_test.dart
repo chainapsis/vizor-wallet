@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/widgetbook/carousel_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('preparation fixed pages render the supplied Figma copy', (
@@ -45,6 +46,7 @@ void main() {
 
 Widget _harness(WidgetBuilder builder) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
       data: AppThemeData.dark,
       child: Builder(builder: builder),

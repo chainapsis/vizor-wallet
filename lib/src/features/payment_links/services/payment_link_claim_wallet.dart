@@ -77,7 +77,8 @@ class PaymentLinkClaimWallet {
     return _ref
         .read(rpcEndpointFailoverProvider.notifier)
         .runWithEndpointFallback<rust_sync.ApiGiftCardCheckProgress>(
-          operation: 'Gift Card check',
+          operation:
+              'Gift Card check', // l10n-ignore: endpoint failover operation, logged only
           action: (endpoint) async {
             coordinator.requirePreparation(generation);
             if (epoch != _checkCancellationEpoch ||
@@ -94,25 +95,32 @@ class PaymentLinkClaimWallet {
             }
             try {
               final failover = _ref.read(rpcEndpointFailoverProvider);
+              final fallbackCandidates =
+                  isAutomaticRpcEndpointConfig(failover.primary)
+                  ? automaticRpcEndpointCandidatesFor(failover.primary)
+                  : [
+                      ...failover.fallbackCandidates,
+                      for (final preset in rpcEndpointPresetsForNetwork(
+                        link.network,
+                      ))
+                        RpcEndpointConfig(
+                          networkName: link.network,
+                          lightwalletdUrl: preset.url,
+                        ),
+                    ];
               rust_sync.ApiGiftCardCheckProgress? last;
               var paused = false;
               await for (final event in rust_sync.runPaymentLinkClaimCheck(
                 claimId: paymentLinkClaimWalletDirectoryName(link),
                 dbPath: dbPath,
                 lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-                // Capability fallback also works for custom endpoints. Preserve
-                // configured transport routing; these are public chain queries.
+                // Automatic stays in its public pool. Manual/custom retain
+                // their existing capability fallbacks and transport routing.
                 fallbackUrls:
                     {
-                          ...failover.fallbackCandidates
-                              .where((e) => e.networkName == link.network)
-                              .map((e) => e.normalizedLightwalletdUrl),
-                          ...rpcEndpointPresetsForNetwork(link.network).map(
-                            (e) => RpcEndpointConfig(
-                              networkName: link.network,
-                              lightwalletdUrl: e.url,
-                            ).normalizedLightwalletdUrl,
-                          ),
+                          for (final candidate in fallbackCandidates)
+                            if (candidate.networkName == link.network)
+                              candidate.normalizedLightwalletdUrl,
                         }
                         .where(
                           (url) => url != endpoint.normalizedLightwalletdUrl,
@@ -254,7 +262,8 @@ class PaymentLinkClaimWallet {
     return _ref
         .read(rpcEndpointFailoverProvider.notifier)
         .runWithEndpointFallback<void>(
-          operation: 'Gift Card claim sync',
+          operation:
+              'Gift Card claim sync', // l10n-ignore: endpoint failover operation, logged only
           action: (endpoint) {
             ensureActive?.call();
             if (endpoint.networkName != network) {
@@ -480,7 +489,7 @@ class PaymentLinkClaimWallet {
     if (legacyAddress != null) {
       final legacyIdentity = sha256.convert(
         utf8.encode(
-          '${link.network}:$legacyAddress:${link.mnemonic}:'
+          '${link.network}:$legacyAddress:${link.mnemonic}:' // l10n-ignore: storage key
           '${link.birthdayHeight}',
         ),
       );
@@ -530,7 +539,8 @@ class PaymentLinkClaimWallet {
       birthdayHeight: BigInt.from(birthdayHeight),
       network: network,
       dbPath: dbPath,
-      accountName: 'Payment link claim',
+      accountName:
+          'Payment link claim', // l10n-ignore: persisted temporary wallet account name
     );
     return (
       address: imported.unifiedAddress,

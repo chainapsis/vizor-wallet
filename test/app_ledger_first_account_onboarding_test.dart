@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.da
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets(
@@ -183,6 +184,7 @@ class _LedgerRouteHarnessState extends ConsumerState<_LedgerRouteHarness> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: _router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     );

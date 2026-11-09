@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 
@@ -95,7 +96,9 @@ class _MobileViewingKeyRevealPreviewState
         child: Column(
           children: [
             _ViewingKeyMobileHeader(
-              title: _selectedType?.title ?? 'Viewing key',
+              title:
+                  _selectedType?.title(context.l10n) ??
+                  context.l10n.settingsViewingKeyTitle,
               onBack: () => setState(() => _selectedType = null),
             ),
             Expanded(
@@ -175,7 +178,7 @@ class _MobileViewingKeyScreenState
     try {
       readResult = await ref
           .read(biometricUnlockProvider.notifier)
-          .readPasscode(reason: 'Confirm access to your viewing key');
+          .readPasscode(reason: context.l10n.settingsViewingKeyBiometricReason);
     } finally {
       _privacyController.endAuthPrompt();
     }
@@ -192,7 +195,7 @@ class _MobileViewingKeyScreenState
         _entry = '';
         _checking = false;
         if (wasEnabled && now != null && !now.enabled) {
-          _gateError = biometric.availability.kind.changedMessage;
+          _gateError = biometric.availability.kind.changedMessage(context.l10n);
         }
       });
       return;
@@ -236,7 +239,7 @@ class _MobileViewingKeyScreenState
         setState(() {
           _entry = '';
           _checking = false;
-          _gateError = 'Incorrect passcode';
+          _gateError = context.l10n.settingsIncorrectPasscode;
         });
         return;
       }
@@ -252,7 +255,7 @@ class _MobileViewingKeyScreenState
       setState(() {
         _entry = '';
         _checking = false;
-        _gateError = "Couldn't verify the passcode. Try again.";
+        _gateError = context.l10n.settingsPasscodeVerifyFailed;
       });
     }
   }
@@ -290,13 +293,14 @@ class _MobileViewingKeyScreenState
       _selectedType = null;
       _entry = '';
       _checking = false;
-      _gateError = 'Selected account changed. Enter your passcode again.';
+      _gateError = context.l10n.settingsAccountChangedPasscode;
       _viewingKeys = null;
       _revealError = null;
     });
   }
 
   Future<void> _reveal(String? expectedAccountUuid) async {
+    final l10n = context.l10n;
     final accountState = ref.read(accountProvider).value;
     final account = _targetAccount(accountState);
     if (account?.uuid != expectedAccountUuid) {
@@ -307,8 +311,8 @@ class _MobileViewingKeyScreenState
     rust_wallet.AccountViewingKeys? viewingKeys;
     if (account == null) {
       revealError = widget.accountUuid == null
-          ? 'No active account is selected.'
-          : 'The selected account is no longer available.';
+          ? l10n.settingsNoActiveAccount
+          : l10n.settingsAccountUnavailable;
     } else {
       try {
         final loader = widget.viewingKeysLoader;
@@ -325,13 +329,16 @@ class _MobileViewingKeyScreenState
         }
       } catch (e, st) {
         log('MobileViewingKey: getAccountViewingKeys failed: $e\n$st');
-        revealError = 'Confirm access again to try loading this key.';
+        revealError = l10n.settingsViewingKeyConfirmAgain;
       }
     }
     if (!mounted) return;
     if (_targetAccountChanged(expectedAccountUuid)) {
       _handleTargetAccountChanged();
       return;
+    }
+    if (viewingKeys != null && revealError == null) {
+      unawaited(AppHaptics.accessGranted());
     }
     setState(() {
       _viewingKeys = viewingKeys;
@@ -394,7 +401,8 @@ class _MobileViewingKeyScreenState
                     _ViewingKeyMobileHeader(
                       title: _stage == _ViewingKeyStage.confirmAccess
                           ? ''
-                          : _selectedType?.title ?? 'Viewing key',
+                          : _selectedType?.title(context.l10n) ??
+                                context.l10n.settingsViewingKeyTitle,
                       onBack: () {
                         if (_selectedType != null) {
                           setState(() => _selectedType = null);
@@ -439,8 +447,8 @@ class _MobileViewingKeyScreenState
         BiometricUnlockState.initial;
     final showBiometric = !_checking && biometric.usable;
     return AdaptivePasscodeLayout(
-      title: 'Enter Passcode',
-      subtitle: 'Confirm your access',
+      title: context.l10n.settingsEnterPasscodeTitle,
+      subtitle: context.l10n.settingsConfirmAccessSubtitle,
       prompt: PasscodePromptField(
         length: kMobilePasscodeLength,
         filled: _entry.length,
@@ -459,7 +467,7 @@ class _MobileViewingKeyScreenState
               height: 36,
               child: Center(
                 child: PasscodeBiometricButton(
-                  label: biometric.availability.kind.signInLabel,
+                  label: biometric.availability.kind.signInLabel(context.l10n),
                   icon: Center(
                     child: BiometricIcon(
                       kind: biometric.availability.kind,
@@ -481,7 +489,7 @@ class _MobileViewingKeyScreenState
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Enter Passcode',
+                    context.l10n.settingsEnterPasscodeTitle,
                     textAlign: TextAlign.center,
                     style: AppTypography.displayLarge.copyWith(
                       color: colors.text.accent,
@@ -489,7 +497,7 @@ class _MobileViewingKeyScreenState
                   ),
                   const SizedBox(height: AppSpacing.s),
                   Text(
-                    'Confirm your access',
+                    context.l10n.settingsConfirmAccessSubtitle,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMediumStrong.copyWith(
                       color: colors.text.primary,
@@ -522,7 +530,7 @@ class _MobileViewingKeyScreenState
               height: 36,
               child: Center(
                 child: PasscodeBiometricButton(
-                  label: biometric.availability.kind.signInLabel,
+                  label: biometric.availability.kind.signInLabel(context.l10n),
                   icon: Center(
                     child: BiometricIcon(
                       kind: biometric.availability.kind,
@@ -654,7 +662,7 @@ class _ViewingKeyMobileHeader extends StatelessWidget {
               child: Semantics(
                 container: true,
                 button: true,
-                label: 'Back',
+                label: context.l10n.commonBack,
                 child: AppButton(
                   onPressed: onBack,
                   variant: AppButtonVariant.ghost,

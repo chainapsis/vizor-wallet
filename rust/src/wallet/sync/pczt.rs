@@ -88,7 +88,9 @@ use zcash_protocol::consensus::{NetworkConstants, Parameters};
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::failure::{FailureCode, WalletFailure};
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::sync_engine::TipRequestScope;
 
+use super::broadcast_notice::{self, BroadcastNotice};
 use super::hardware_authority::DispatchRefusal;
 use super::{
     consume_stored_proposal, discard_stored_proposal, finish_stored_proposal, open_wallet_db,
@@ -114,7 +116,9 @@ fn reject_discard_ovk_proposal(stored: &StoredProposal) -> Result<(), String> {
 pub struct ExtractAndBroadcastPcztResult {
     pub txid: String,
     pub status: String,
+    /// [`broadcast_notice::english`] of [`Self::notices`].
     pub message: Option<String>,
+    pub notices: Vec<BroadcastNotice>,
 }
 
 pub struct TexPcztPair {
@@ -133,7 +137,9 @@ pub struct StoreAndBroadcastPcztsResult {
     pub status: String,
     pub broadcasted_count: u32,
     pub total_count: u32,
+    /// [`broadcast_notice::english`] of [`Self::notices`].
     pub message: Option<String>,
+    pub notices: Vec<BroadcastNotice>,
 }
 
 impl StoreAndBroadcastPcztsResult {
@@ -283,28 +289,25 @@ impl ExtractAndBroadcastPcztResult {
     const BROADCAST_UNKNOWN: &'static str = "broadcast_unknown";
     const BROADCASTED_STORAGE_FAILED: &'static str = "broadcasted_storage_failed";
 
+    fn new(txid: String, status: &str, notices: Vec<BroadcastNotice>) -> Self {
+        Self {
+            txid,
+            status: status.to_string(),
+            message: broadcast_notice::english(&notices),
+            notices,
+        }
+    }
+
     fn broadcasted(txid: String) -> Self {
-        Self {
-            txid,
-            status: Self::BROADCASTED.to_string(),
-            message: None,
-        }
+        Self::new(txid, Self::BROADCASTED, Vec::new())
     }
 
-    fn broadcast_unknown(txid: String, message: String) -> Self {
-        Self {
-            txid,
-            status: Self::BROADCAST_UNKNOWN.to_string(),
-            message: Some(message),
-        }
+    fn broadcast_unknown(txid: String, notices: Vec<BroadcastNotice>) -> Self {
+        Self::new(txid, Self::BROADCAST_UNKNOWN, notices)
     }
 
-    fn broadcasted_storage_failed(txid: String, message: String) -> Self {
-        Self {
-            txid,
-            status: Self::BROADCASTED_STORAGE_FAILED.to_string(),
-            message: Some(message),
-        }
+    fn broadcasted_storage_failed(txid: String, notice: BroadcastNotice) -> Self {
+        Self::new(txid, Self::BROADCASTED_STORAGE_FAILED, vec![notice])
     }
 }
 
@@ -957,18 +960,21 @@ pub fn redact_pczt_for_batch_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String
 }
 
 /// Enforce Keystone's per-round signature cap before displaying the request QR.
-fn checked_keystone_batch_signature_count(count: usize) -> Result<u32, String> {
+fn checked_keystone_batch_signature_count(count: usize) -> Result<u32, WalletFailure> {
     if count == 0 {
-        return Err("PCZT has no Orchard or Ironwood spends for Keystone to sign".to_string());
+        return Err("PCZT has no Orchard or Ironwood spends for Keystone to sign".into());
     }
     if count > crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES {
-        return Err(format!(
-            "Keystone batch signing supports at most {} spend signatures per transaction; \
-             this transaction requires {count}",
-            crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES,
+        return Err(WalletFailure::coded(
+            FailureCode::KeystoneBatchSignatureLimit,
+            format!(
+                "Keystone batch signing supports at most {} spend signatures per transaction; \
+                 this transaction requires {count}",
+                crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES,
+            ),
         ));
     }
-    u32::try_from(count).map_err(|_| "Keystone signature count exceeds u32".to_string())
+    u32::try_from(count).map_err(|_| "Keystone signature count exceeds u32".into())
 }
 
 /// Prepare one PCZT for Keystone's signatures-only batch protocol.
@@ -977,18 +983,22 @@ fn checked_keystone_batch_signature_count(count: usize) -> Result<u32, String> {
 /// authorization signatures and at most 96 signatures for one transaction.
 /// Reject unsupported inputs and oversized signing sets before the QR is
 /// displayed so callers cannot start a round the device cannot complete.
-pub fn prepare_pczt_for_keystone_batch(pczt_bytes: &[u8]) -> Result<KeystoneBatchPczt, String> {
+pub fn prepare_pczt_for_keystone_batch(
+    pczt_bytes: &[u8],
+) -> Result<KeystoneBatchPczt, WalletFailure> {
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| format!("Parse PCZT for Keystone batch signing: {e:?}"))?;
     if !pczt.transparent().inputs().is_empty() {
-        return Err(
-            "Keystone batch signing does not support transparent transaction inputs".to_string(),
-        );
+        return Err(WalletFailure::coded(
+            FailureCode::KeystoneBatchUnsupportedInput,
+            "Keystone batch signing does not support transparent transaction inputs",
+        ));
     }
     if !pczt.sapling().spends().is_empty() {
-        return Err(
-            "Keystone batch signing does not support Sapling transaction inputs".to_string(),
-        );
+        return Err(WalletFailure::coded(
+            FailureCode::KeystoneBatchUnsupportedInput,
+            "Keystone batch signing does not support Sapling transaction inputs",
+        ));
     }
 
     let expected_signature_count =
@@ -1389,7 +1399,7 @@ struct PcztBroadcastPlan {
     persisted_prefix_len: usize,
     broadcasted_count: u32,
     status: &'static str,
-    message: Option<String>,
+    notice: Option<BroadcastNotice>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1412,7 +1422,7 @@ fn pczt_broadcast_step(
             persisted_prefix_len: index + 1,
             broadcasted_count: (index + 1) as u32,
             status: StoreAndBroadcastPcztsResult::BROADCASTED,
-            message: None,
+            notice: None,
         }),
         PcztBroadcastAttempt::TransportUnknown(error) => {
             PcztBroadcastStep::Stop(PcztBroadcastPlan {
@@ -1425,9 +1435,10 @@ fn pczt_broadcast_step(
                 } else {
                     StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST
                 },
-                message: Some(format!(
-                    "Transaction {} of {total_count} has an unknown broadcast result: {error}",
-                    index + 1
+                notice: Some(BroadcastNotice::transaction_unknown(
+                    index as u32 + 1,
+                    total_count as u32,
+                    error,
                 )),
             })
         }
@@ -1441,9 +1452,10 @@ fn pczt_broadcast_step(
                 persisted_prefix_len: index,
                 broadcasted_count: index as u32,
                 status: StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST,
-                message: Some(format!(
-                    "Transaction {} of {total_count} was rejected and was not stored: {error}",
-                    index + 1
+                notice: Some(BroadcastNotice::transaction_rejected(
+                    index as u32 + 1,
+                    total_count as u32,
+                    error,
                 )),
             })
         }
@@ -1455,9 +1467,10 @@ fn pczt_broadcast_step(
                 persisted_prefix_len: index,
                 broadcasted_count: index as u32,
                 status: StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST,
-                message: Some(format!(
-                    "Failed to open the broadcast route for transaction {} of {total_count}; it was not stored: {error}",
-                    index + 1
+                notice: Some(BroadcastNotice::route_unavailable(
+                    index as u32 + 1,
+                    total_count as u32,
+                    error.to_string(),
                 )),
             })
         }
@@ -1779,6 +1792,7 @@ async fn store_and_broadcast_pczts_inner(
             broadcasted_count: total_count,
             total_count,
             message: None,
+            notices: Vec::new(),
         });
     }
 
@@ -1795,6 +1809,7 @@ async fn store_and_broadcast_pczts_inner(
 
     // Only unmined rounds need a live tip and expiry checks. Mined evidence is
     // already a completed submission, even after the original expiry height.
+    let expiry_scope = TipRequestScope::capture();
     let expiry_transport =
         match crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url).await {
             Ok(transport) => transport,
@@ -1806,6 +1821,7 @@ async fn store_and_broadcast_pczts_inner(
         &mut CompactTxStreamerClient::new(expiry_transport.clone()),
         lightwalletd_url,
         network,
+        expiry_scope,
     )
     .await
     {
@@ -1817,7 +1833,8 @@ async fn store_and_broadcast_pczts_inner(
         }
     };
     // Ends a batch whose unsent rounds nodes would reject as expiring soon.
-    let refuse_expired = |error: String| {
+    let refuse_expired = |notice: BroadcastNotice| {
+        let error = notice.sentence();
         let result = StoreAndBroadcastPcztsResult {
             txids: txids_joined.clone(),
             // Preserve a mined round's result metadata through the Ledger
@@ -1831,6 +1848,7 @@ async fn store_and_broadcast_pczts_inner(
             broadcasted_count: mined.iter().filter(|mined| **mined).count() as u32,
             total_count,
             message: Some(error.clone()),
+            notices: vec![notice],
         };
         match proposal {
             Some((proposal_id, send_flow_id)) => {
@@ -1858,7 +1876,7 @@ async fn store_and_broadcast_pczts_inner(
     }) {
         return refuse_expired(error);
     }
-    let mut first_transport = Some(expiry_transport);
+    let mut first_transport = Some((expiry_transport, expiry_scope));
     let mut newly_broadcasted = 0;
     let broadcast_plan = 'broadcast: loop {
         for (index, item) in prepared.iter().enumerate() {
@@ -1875,9 +1893,12 @@ async fn store_and_broadcast_pczts_inner(
             let transport = if let Some(transport) = first_transport.take() {
                 Ok(transport)
             } else {
-                crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url).await
+                let scope = TipRequestScope::capture();
+                crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url)
+                    .await
+                    .map(|transport| (transport, scope))
             };
-            let transport = match transport {
+            let (transport, tip_scope) = match transport {
                 Ok(transport) => transport,
                 Err(error) => {
                     match pczt_broadcast_step(
@@ -1895,7 +1916,7 @@ async fn store_and_broadcast_pczts_inner(
                                 persisted_prefix_len: index,
                                 broadcasted_count: mined_count + newly_broadcasted,
                                 status: StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST,
-                                message: Some(error.message),
+                                notice: Some(BroadcastNotice::text(error.message)),
                             };
                         }
                         PcztBroadcastStep::Fail(error) => {
@@ -1954,6 +1975,7 @@ async fn store_and_broadcast_pczts_inner(
                             &transport,
                             lightwalletd_url,
                             network,
+                            tip_scope,
                             &item.extracted.tx,
                         )
                         .await?;
@@ -2013,7 +2035,7 @@ async fn store_and_broadcast_pczts_inner(
                         persisted_prefix_len: index,
                         broadcasted_count: mined_count + newly_broadcasted,
                         status: StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST,
-                        message: Some(error.message),
+                        notice: Some(BroadcastNotice::text(error.message)),
                     };
                 }
                 PcztBroadcastStep::Fail(error) => {
@@ -2099,17 +2121,15 @@ async fn store_and_broadcast_pczts_inner(
     );
 
     if let Err(storage_error) = store_result {
-        let retain_error = proposal
-            .and_then(|(proposal_id, send_flow_id)| {
-                retain_stored_proposal_lock_until_expiry(proposal_id, send_flow_id).err()
-            })
-            .map(|error| format!(" Proposal input-lock retention also failed: {error}."))
-            .unwrap_or_default();
-        let network_message = broadcast_plan
-            .message
-            .as_deref()
-            .map(|message| format!("{message} "))
-            .unwrap_or_default();
+        let retain_error = proposal.and_then(|(proposal_id, send_flow_id)| {
+            retain_stored_proposal_lock_until_expiry(proposal_id, send_flow_id).err()
+        });
+        let notices = broadcast_plan
+            .notice
+            .into_iter()
+            .chain([BroadcastNotice::storage_failed(storage_error)])
+            .chain(retain_error.map(BroadcastNotice::retention_failed))
+            .collect::<Vec<_>>();
         return Ok(StoreAndBroadcastPcztsResult {
             txids: txids_joined,
             status: if broadcast_plan.broadcasted_count == total_count {
@@ -2119,9 +2139,8 @@ async fn store_and_broadcast_pczts_inner(
             },
             broadcasted_count: broadcast_plan.broadcasted_count,
             total_count,
-            message: Some(format!(
-                "{network_message}A transaction may already be on the network, but local storage failed: {storage_error}. Do not send again until sync or an explorer confirms the result.{retain_error}"
-            )),
+            message: broadcast_notice::english(&notices),
+            notices,
         });
     }
 
@@ -2135,17 +2154,17 @@ async fn store_and_broadcast_pczts_inner(
         }
     }
 
-    let message = broadcast_plan.message.map(|message| {
-        format!(
-            "{message} The accepted-or-ambiguous transaction prefix was stored locally for recovery."
-        )
-    });
+    let notices = broadcast_plan
+        .notice
+        .map(|notice| vec![notice, BroadcastNotice::stored_locally()])
+        .unwrap_or_default();
     Ok(StoreAndBroadcastPcztsResult {
         txids: txids_joined,
         status: broadcast_plan.status.to_string(),
         broadcasted_count: broadcast_plan.broadcasted_count,
         total_count,
-        message,
+        message: broadcast_notice::english(&notices),
+        notices,
     })
 }
 
@@ -2510,6 +2529,7 @@ pub async fn extract_and_broadcast_pczt(
     // but a response deadline is ambiguous: lightwalletd may already
     // have relayed the transaction, so we store locally and let the
     // normal pending/resubmit path reconcile it.
+    let tip_scope = TipRequestScope::capture();
     let transport = crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
@@ -2517,16 +2537,17 @@ pub async fn extract_and_broadcast_pczt(
         &mut CompactTxStreamerClient::new(transport.clone()),
         lightwalletd_url,
         network,
+        tip_scope,
     )
     .await
     .map_err(|e| e.to_string())?;
-    if let Some(error) = pczt_broadcast_expiry_error(
+    if let Some(notice) = pczt_broadcast_expiry_error(
         &network,
         &txid,
         u32::from(tx.expiry_height()),
         latest.height,
     ) {
-        return Err(error.into());
+        return Err(notice.sentence().into());
     }
     // Nothing is retained before submission here; a refusal while private
     // recovery catches up keeps only the caller's signed payload for a retry.
@@ -2543,7 +2564,8 @@ pub async fn extract_and_broadcast_pczt(
         &[],
         latest.height,
         |dispatched| async {
-            ensure_pczt_submission_unexpired(&transport, lightwalletd_url, network, &tx).await?;
+            ensure_pczt_submission_unexpired(&transport, lightwalletd_url, network, tip_scope, &tx)
+                .await?;
             crate::wallet::sync_engine::send_transaction_signalling(
                 transport, &tx_bytes, dispatched,
             )
@@ -2555,9 +2577,8 @@ pub async fn extract_and_broadcast_pczt(
     .map_err(retryable_refusal)?
     {
         Ok(resp) => resp,
-        Err(PcztSubmissionError::Expired(error) | PcztSubmissionError::TipUnavailable(error)) => {
-            return Err(error.into());
-        }
+        Err(PcztSubmissionError::Expired(notice)) => return Err(notice.sentence().into()),
+        Err(PcztSubmissionError::TipUnavailable(error)) => return Err(error.into()),
         // Once SendTransaction has started, a gRPC status is not proof that
         // the server rejected the transaction. The server may have accepted
         // and relayed it before the response or connection was lost. Treat
@@ -2582,7 +2603,7 @@ pub async fn extract_and_broadcast_pczt(
 /// Why a dispatched PCZT broadcast did not return a send response.
 enum PcztSubmissionError {
     /// Inside the expiring-soon margin at the fresh tip; nothing was sent.
-    Expired(String),
+    Expired(BroadcastNotice),
     /// The fresh tip could not be read; nothing was sent.
     TipUnavailable(String),
     /// `SendTransaction` began, so the outcome is unknown.
@@ -2596,12 +2617,15 @@ async fn ensure_pczt_submission_unexpired(
     transport: &tonic::transport::Channel,
     lightwalletd_url: &str,
     network: WalletNetwork,
+    tip_scope: TipRequestScope,
     tx: &Transaction,
 ) -> Result<(), PcztSubmissionError> {
     let latest = crate::wallet::sync_engine::get_latest_block_recorded(
         &mut CompactTxStreamerClient::new(transport.clone()),
         lightwalletd_url,
         network,
+        tip_scope,
+        || false,
     )
     .await
     .map_err(|error| {
@@ -2627,7 +2651,7 @@ fn pczt_broadcast_expiry_error<P: Parameters>(
     txid: &TxId,
     expiry_height: u32,
     current_height: u64,
-) -> Option<String> {
+) -> Option<BroadcastNotice> {
     use crate::wallet::network_upgrade;
 
     let next_height = current_height.saturating_add(1);
@@ -2641,12 +2665,12 @@ fn pczt_broadcast_expiry_error<P: Parameters>(
     {
         // Capped at the last block before an upgrade, which has not activated
         // yet. From then on it is plainly expired and can be rebuilt at once.
-        Some(network_upgrade::SEND_HOLD_MESSAGE.to_string())
+        Some(BroadcastNotice::text(network_upgrade::SEND_HOLD_MESSAGE))
     } else {
-        Some(format!(
-            "Hardware signing request expired before broadcast: txid={txid}, \
-             expiry height {expiry_height}, current chain height {current_height}. \
-             Start the signing flow again so Vizor can build a fresh transaction."
+        Some(BroadcastNotice::expired(
+            txid.to_string(),
+            expiry_height,
+            current_height,
         ))
     }
 }
@@ -2676,11 +2700,7 @@ where
         );
         return Ok(ExtractAndBroadcastPcztResult::broadcasted_storage_failed(
             txid.to_string(),
-            format!(
-                "Broadcast succeeded (txid={txid}) but local storage failed. {storage_err}. \
-                 The transaction is on the network; check an explorer to confirm, and do not \
-                 attempt to send again until the next sync reconciles your balance."
-            ),
+            BroadcastNotice::broadcast_storage_failed(txid, storage_err),
         ));
     }
 
@@ -2695,30 +2715,18 @@ fn handle_pczt_transport_failure<F>(
 where
     F: FnOnce() -> Result<(), String>,
 {
-    let mut message = format!(
-        "Broadcast response was unavailable for txid={txid} ({status}). The transaction may \
-         already be on the network. Do not send again until sync or an explorer confirms \
-         whether this transaction was accepted."
-    );
-    match store_locally() {
-        Ok(()) => {
-            message.push_str(
-                " It was stored locally and will retry automatically during sync until it is \
-                 confirmed or expires.",
-            );
-        }
+    let unavailable = BroadcastNotice::response_unavailable(txid, status.to_string());
+    let storage = match store_locally() {
+        Ok(()) => BroadcastNotice::retrying_locally(),
         Err(storage_err) => {
             log::error!(
                 "keystone: failed to store tx after ambiguous broadcast transport failure \
                  (txid={txid}): {storage_err}"
             );
-            message.push_str(&format!(
-                " Local tracking also failed: {storage_err}. Check an explorer before retrying \
-                 this send."
-            ));
+            BroadcastNotice::tracking_failed(storage_err)
         }
-    }
-    ExtractAndBroadcastPcztResult::broadcast_unknown(txid.to_string(), message)
+    };
+    ExtractAndBroadcastPcztResult::broadcast_unknown(txid.to_string(), vec![unavailable, storage])
 }
 
 #[cfg(test)]
@@ -2730,11 +2738,82 @@ mod tests {
     use zcash_client_backend::proto::service::SendResponse;
     use zcash_protocol::consensus::BlockHeight;
 
+    fn expiry_message<P: Parameters>(
+        network: &P,
+        txid: &TxId,
+        expiry_height: u32,
+        current_height: u64,
+    ) -> Option<String> {
+        pczt_broadcast_expiry_error(network, txid, expiry_height, current_height)
+            .map(|notice| notice.sentence())
+    }
+
     fn send_response(error_code: i32, error_message: &str) -> SendResponse {
         SendResponse {
             error_code,
             error_message: error_message.to_string(),
         }
+    }
+
+    #[tokio::test]
+    async fn pczt_submission_rejects_pre_authority_transport_after_route_change() {
+        use crate::network_privacy;
+        use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion};
+        use zcash_protocol::consensus::BranchId;
+
+        let _route = network_privacy::test_route_policy::lock_route_policy();
+        let server = crate::wallet::sync_engine::test_lwd::CapturingLwd::start_with(
+            Vec::new(),
+            3_000_000,
+            |_| {},
+        )
+        .await;
+        let scope = TipRequestScope::capture();
+        let transport = crate::wallet::sync_engine::open_isolated_lwd_transport(&server.url)
+            .await
+            .unwrap();
+        crate::wallet::sync_engine::latest_block_for_transaction_with_client(
+            &mut CompactTxStreamerClient::new(transport.clone()),
+            &server.url,
+            WalletNetwork::Main,
+            scope,
+        )
+        .await
+        .unwrap();
+        let tx = TransactionData::<Authorized>::from_parts(
+            TxVersion::V5,
+            BranchId::Nu5,
+            0,
+            BlockHeight::from_u32(3_001_000),
+            None,
+            None,
+            None,
+            None,
+        )
+        .freeze()
+        .unwrap();
+
+        // Authority/device approval may yield while the route changes. The
+        // final check must use the scope captured before opening the channel.
+        network_privacy::begin_tor_enable();
+        network_privacy::disable_tor();
+        let error = ensure_pczt_submission_unexpired(
+            &transport,
+            &server.url,
+            WalletNetwork::Main,
+            scope,
+            &tx,
+        )
+        .await
+        .unwrap_err();
+        match error {
+            PcztSubmissionError::TipUnavailable(message) => {
+                assert!(message.contains("tip request route changed"), "{message}");
+            }
+            _ => panic!("old transport must fail as a route error before submission"),
+        }
+        assert_eq!(server.count("/GetLatestBlock"), 1);
+        assert_eq!(server.count("/SendTransaction"), 0);
     }
 
     #[test]
@@ -3188,7 +3267,7 @@ mod tests {
     fn pczt_broadcast_expiry_allows_no_expiry() {
         let txid = TxId::from_bytes([0; 32]);
 
-        assert!(pczt_broadcast_expiry_error(&WalletNetwork::Test, &txid, 0, 500).is_none());
+        assert!(expiry_message(&WalletNetwork::Test, &txid, 0, 500).is_none());
     }
 
     #[test]
@@ -3196,14 +3275,14 @@ mod tests {
         let txid = TxId::from_bytes([0; 32]);
 
         // The next block is 501; nodes take a transaction expiring at 504.
-        assert!(pczt_broadcast_expiry_error(&WalletNetwork::Test, &txid, 504, 500).is_none());
+        assert!(expiry_message(&WalletNetwork::Test, &txid, 504, 500).is_none());
     }
 
     #[test]
     fn pczt_broadcast_expiry_rejects_expired_tx() {
         let txid = TxId::from_bytes([0; 32]);
 
-        let err = pczt_broadcast_expiry_error(&WalletNetwork::Test, &txid, 500, 500).unwrap();
+        let err = expiry_message(&WalletNetwork::Test, &txid, 500, 500).unwrap();
 
         assert!(err.contains("expired before broadcast"));
         assert!(err.contains("expiry height 500"));
@@ -3214,7 +3293,7 @@ mod tests {
     fn pczt_broadcast_expiry_rejects_tx_expiring_soon() {
         let txid = TxId::from_bytes([0; 32]);
 
-        let err = pczt_broadcast_expiry_error(&WalletNetwork::Test, &txid, 503, 500).unwrap();
+        let err = expiry_message(&WalletNetwork::Test, &txid, 503, 500).unwrap();
 
         assert!(err.contains("expired before broadcast"));
     }
@@ -3238,7 +3317,7 @@ mod tests {
             (a - 1, Some("expired before broadcast")),
             (a, Some("expired before broadcast")),
         ] {
-            let error = pczt_broadcast_expiry_error(&network, &txid, a - 1, u64::from(tip));
+            let error = expiry_message(&network, &txid, a - 1, u64::from(tip));
             match expected {
                 None => assert!(error.is_none(), "tip A-{}: {error:?}", a - tip),
                 Some(text) => assert!(
@@ -3259,7 +3338,7 @@ mod tests {
         let capped_expiry = activation - 1;
 
         // Built at A - 5, the last tip a capped expiry still clears.
-        assert!(pczt_broadcast_expiry_error(
+        assert!(expiry_message(
             &network,
             &txid,
             capped_expiry,
@@ -3268,11 +3347,11 @@ mod tests {
         .is_none());
         // One block arrived during device approval.
         assert_eq!(
-            pczt_broadcast_expiry_error(&network, &txid, capped_expiry, u64::from(activation - 4)),
+            expiry_message(&network, &txid, capped_expiry, u64::from(activation - 4)),
             Some(crate::wallet::network_upgrade::SEND_HOLD_MESSAGE.to_string())
         );
         // Once its last block is the tip, a new transaction can target NU7.
-        assert!(pczt_broadcast_expiry_error(
+        assert!(expiry_message(
             &network,
             &txid,
             capped_expiry,
@@ -3289,8 +3368,11 @@ mod tests {
         assert_eq!(checked_keystone_batch_signature_count(limit), Ok(96));
         assert_eq!(
             checked_keystone_batch_signature_count(limit + 1).unwrap_err(),
-            "Keystone batch signing supports at most 96 spend signatures per transaction; \
-             this transaction requires 97"
+            WalletFailure::coded(
+                FailureCode::KeystoneBatchSignatureLimit,
+                "Keystone batch signing supports at most 96 spend signatures per transaction; \
+                 this transaction requires 97"
+            )
         );
     }
 
@@ -3328,11 +3410,10 @@ mod tests {
         };
         use shardtree::{store::memory::MemoryShardStore, ShardTree};
         use voting_crypto_deps::rand::rngs::OsRng;
-        use zcash_note_encryption::try_note_decryption;
         use zcash_primitives::transaction::{builder::PcztResult, fees::zip317};
         use zcash_protocol::{
             consensus::{BlockHeight, NetworkType, NetworkUpgrade, Parameters},
-            memo::{Memo, MemoBytes},
+            memo::MemoBytes,
             value::Zatoshis,
         };
 
@@ -3366,8 +3447,6 @@ mod tests {
             Vec<u32>,
             [u8; 96],
         ) {
-            let mut rng = OsRng;
-
             let seed = [7u8; 32];
             let seed_fingerprint = [8u8; 32];
             let account_index = zip32::AccountId::ZERO;
@@ -3375,34 +3454,26 @@ mod tests {
                 .expect("valid Orchard ZIP 32 spending key");
             let orchard_ask = orchard::keys::SpendAuthorizingKey::from(&orchard_sk);
             let orchard_fvk = orchard::keys::FullViewingKey::from(&orchard_sk);
-            let orchard_ivk = orchard_fvk.to_ivk(orchard::keys::Scope::Internal);
             let orchard_ovk = orchard_fvk.to_ovk(orchard::keys::Scope::Internal);
             let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
 
-            // Pretend we already received an Orchard (V2) note.
+            // Model an already-received V2 note without proving a historical
+            // output, which the current builder deliberately rejects.
             let value = orchard::value::NoteValue::from_raw(1_000_000);
-            let note = {
-                let orchard_bundle_version = orchard::bundle::BundleVersion::orchard_v2();
-                let mut orchard_builder = orchard::builder::Builder::new(
-                    orchard::builder::BundleType::DEFAULT,
-                    orchard_bundle_version,
-                    orchard_bundle_version.default_flags(),
-                    orchard::Anchor::empty_tree(),
-                )
+            let rho = orchard::note::Rho::from_bytes(&[1; 32]).unwrap();
+            let rseed = (0u8..=255)
+                .find_map(|byte| {
+                    orchard::note::RandomSeed::from_bytes([byte; 32], &rho).into_option()
+                })
                 .unwrap();
-                orchard_builder
-                    .add_output(None, recipient, value, Memo::Empty.encode().into_bytes())
-                    .unwrap();
-                let (bundle, meta) = orchard_builder.build::<i64>(&mut rng).unwrap().unwrap();
-                let action = bundle
-                    .actions()
-                    .get(meta.output_action_index(0).unwrap())
-                    .unwrap();
-                let domain = orchard::note_encryption::OrchardDomain::for_action(action);
-                let (note, _, _) =
-                    try_note_decryption(&domain, &orchard_ivk.prepare(), action).unwrap();
-                note
-            };
+            let note = orchard::Note::from_parts(
+                recipient,
+                value,
+                rho,
+                rseed,
+                orchard::note::NoteVersion::V2,
+            )
+            .unwrap();
 
             // Single-leaf Orchard tree for the spend witness/anchor.
             let (anchor, merkle_path) = {
@@ -3775,7 +3846,13 @@ mod tests {
 
             let error = prepare_pczt_for_keystone_batch(&unsigned)
                 .expect_err("the compact response cannot carry transparent signatures");
-            assert!(error.contains("does not support transparent transaction inputs"));
+            assert_eq!(
+                error.code,
+                Some(crate::wallet::failure::FailureCode::KeystoneBatchUnsupportedInput)
+            );
+            assert!(error
+                .message
+                .contains("does not support transparent transaction inputs"));
         }
 
         #[test]
@@ -4278,7 +4355,10 @@ mod tests {
             None,
             BlockHeight::from_u32(1),
             TransactionBalance::new(vec![], Zatoshis::const_from_u64(10_000)).unwrap(),
-            super::super::send::ConservativeZip317FeeRule::for_target(&crate::wallet::network::WalletNetwork::Regtest, zcash_protocol::consensus::BlockHeight::from_u32(120)),
+            super::super::send::ConservativeZip317FeeRule::for_target(
+                &crate::wallet::network::WalletNetwork::Regtest,
+                zcash_protocol::consensus::BlockHeight::from_u32(120),
+            ),
             BlockHeight::from_u32(2).into(),
             ConfirmationsPolicy::default(),
             false,

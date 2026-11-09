@@ -12,7 +12,6 @@ import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -23,6 +22,7 @@ import '../test/support/legacy_payment_link.dart';
 import 'support/desktop_regtest_flow.dart';
 import 'support/gift_card_amount_regtest.dart';
 import 'support/payment_link_regtest_flow.dart' as payment_link_flow;
+import '../test/support/test_l10n.dart';
 
 const _network = 'regtest';
 const _lightwalletdUrl = String.fromEnvironment(
@@ -209,7 +209,8 @@ void main() {
       await _tapText(tester, 'Paste card link');
       await pumpUntil(
         tester,
-        () => tester.any(find.text(kPaymentLinkClaimWaitingDescription)),
+        () =>
+            tester.any(find.text(testL10n.paymentLinkClaimWaitingDescription)),
         description: 'received payment-link confirmation wait to render',
         timeout: const Duration(minutes: 1),
       );

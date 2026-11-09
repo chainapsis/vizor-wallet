@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fakes/fake_sync_notifier.dart';
 
@@ -85,6 +86,7 @@ void main() {
               // `WidgetRef` call the two unlock screens share.
               unlockScreenRef = ref;
               return MaterialApp.router(
+                localizationsDelegates: appLocalizationsDelegates,
                 routerConfig: router,
                 builder: (context, child) => AppTheme(
                   data: AppThemeData.dark,

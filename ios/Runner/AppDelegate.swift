@@ -7,7 +7,7 @@ import UIKit
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var mobileNavigationGeometryHandler: MobileNavigationGeometryHandler?
-  private var numericKeyboardHandler: NumericKeyboardHandler?
+  private var keyboardToolbarHandler: KeyboardToolbarHandler?
   private var customHapticEngine: CHHapticEngine?
   private var ledgerMobileHandler: LedgerMobileHandler?
 
@@ -66,11 +66,29 @@ import UIKit
     }
     FlutterMethodChannel(name: "com.zcash.wallet/app_review", binaryMessenger: messenger)
       .setMethodCallHandler { call, result in appReviewHandler.handle(call, result: result) }
-    numericKeyboardHandler = NumericKeyboardHandler(messenger: messenger)
+    keyboardToolbarHandler = KeyboardToolbarHandler(messenger: messenger)
 
     let modalCorners = ModalCornerHandler()
     FlutterMethodChannel(name: "com.zcash.wallet/modal_corners", binaryMessenger: messenger)
       .setMethodCallHandler { call, result in modalCorners.handle(call, result: result) }
+
+    // Background work posts notifications after Dart is gone, so the app
+    // language is stored for it rather than passed per call.
+    FlutterMethodChannel(name: "com.zcash.wallet/native_strings", binaryMessenger: messenger)
+      .setMethodCallHandler { call, result in
+        guard call.method == "setLanguage" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        guard let arguments = call.arguments as? [String: Any],
+          let tag = arguments["tag"] as? String, !tag.isEmpty
+        else {
+          result(FlutterError(code: "invalid_arguments", message: "Expected tag argument.", details: nil))
+          return
+        }
+        NativeStrings.setLanguage(tag)
+        result(nil)
+      }
 
     ledgerMobileHandler?.close()
     let ledgerMobileHandler = LedgerMobileHandler()
@@ -489,6 +507,10 @@ import UIKit
     )
     hapticsChannel.setMethodCallHandler { (call, result) in
       switch call.method {
+      case "success":
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+        result(true)
       case "error":
         // The system's error notification haptic — the triple knock
         // users know from failed Face ID / wrong system passcode.

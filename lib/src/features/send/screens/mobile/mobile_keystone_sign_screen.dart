@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 import 'dart:typed_data';
@@ -10,7 +11,7 @@ import '../../../../../main.dart' show log;
 import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/storage/wallet_paths.dart';
-import '../../../../providers/rpc_endpoint_provider.dart';
+import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../../rust/api/sync.dart' as rust_sync;
@@ -49,9 +50,9 @@ class MobileKeystoneSigningRounds {
   final List<List<int>> proofs = [];
   final List<List<int>> signatures = [];
 
-  String get title => count == 2
-      ? 'Confirm transaction ${index + 1} of 2'
-      : 'Confirm transaction';
+  String title(AppLocalizations l10n) => count == 2
+      ? l10n.sendSignConfirmTransactionOfTwo(index + 1)
+      : l10n.sendSignConfirmTransaction;
 
   bool add(List<int> proof, List<int> signature) {
     proofs.add(proof);
@@ -121,11 +122,12 @@ class _MobileKeystoneSignScreenState
           absorbing: _cancelRequested,
           child: MobileKeystonePcztSigningFlow(
             key: ValueKey('mobile_keystone_sign_round_${_rounds.index}'),
-            title: _cancelRequested ? 'Cancelling…' : _rounds.title,
+            title: _cancelRequested
+                ? context.l10n.commonCancelling
+                : _rounds.title(context.l10n),
             description: widget.args.addressType == 'tex'
-                ? 'This TEX send requires two Keystone approvals. Scan transaction ${_rounds.index + 1} of 2.'
-                : 'Use your Keystone wallet to scan this transaction QR code. '
-                      'Follow the steps on your device.',
+                ? context.l10n.sendKeystoneTexTwoApprovals(_rounds.index + 1)
+                : context.l10n.commonKeystoneScanTransaction,
             preparePczt: _preparePczt,
             onSigned: _handleSignedPczt,
             signedPcztDecoder: _decodeKeystoneResponse,
@@ -134,7 +136,7 @@ class _MobileKeystoneSignScreenState
                 : 'zcash-batch-sig-result',
             friendlyError: _friendlyError,
             keyPrefix: 'mobile_keystone_sign',
-            scanCaption: 'Scan the QR code on your Keystone to finish sending',
+            scanCaption: context.l10n.sendKeystoneScanToFinish,
             logTag: 'MobileKeystoneSign',
             onCancel: _cancelSigning,
           ),
@@ -190,7 +192,6 @@ class _MobileKeystoneSignScreenState
     if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
       throw const MobileKeystonePcztSigningAborted();
     }
-    final endpoint = ref.read(rpcEndpointProvider);
     var saplingParams = await loadSaplingParamsStatus();
     if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
       throw const MobileKeystonePcztSigningAborted();
@@ -211,6 +212,12 @@ class _MobileKeystoneSignScreenState
       saplingParams = await loadSaplingParamsStatus();
     }
 
+    if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
+      throw const MobileKeystonePcztSigningAborted();
+    }
+    final endpoint = await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .ensureReady();
     if (!mounted || _cancelRequested || _proposalOwnershipTransferred) {
       throw const MobileKeystonePcztSigningAborted();
     }
@@ -330,18 +337,18 @@ class _MobileKeystoneSignScreenState
   }
 
   String _friendlyError(Object error) {
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
-      return 'Transaction expired before it could be signed.';
+      return context.l10n.commonSigningExpired;
     }
-    final batchError = keystoneBatchSigningFriendlyError(error);
+    final batchError = keystoneBatchSigningFriendlyError(context.l10n, error);
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return context.l10n.commonProvingParamsFailed;
     }
-    return 'Keystone signing could not be prepared. Go back and try again.';
+    return context.l10n.sendKeystonePrepareFailedGoBack;
   }
 }

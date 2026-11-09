@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../import/desktop_import_navigation.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -21,8 +22,8 @@ class KeystoneHowToConnectScreen extends ConsumerWidget {
     return KeystoneOnboardingTrailingPane(
       backTarget:
           backTarget ??
-          const OnboardingBackTarget.route(
-            label: 'Welcome',
+          OnboardingBackTarget.route(
+            label: context.l10n.onboardingWelcome,
             routePath: '/welcome',
           ),
       bodyPadding: EdgeInsets.zero,
@@ -108,7 +109,7 @@ class _ButtonStack extends StatelessWidget {
       variant: AppButtonVariant.primary,
       minWidth: _buttonMinWidth,
       trailing: const AppIcon(AppIcons.chevronForward),
-      child: const Text("I'm ready now"),
+      child: Text(context.l10n.keystoneImReadyNow),
     );
   }
 }
@@ -125,7 +126,7 @@ class _TitleBlock extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Connect Keystone',
+            context.l10n.onboardingConnectKeystone,
             style: AppTypography.displayLarge.copyWith(
               fontFamily: 'Young Serif',
               fontWeight: FontWeight.w400,
@@ -139,7 +140,7 @@ class _TitleBlock extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Prepare your Keystone wallet',
+          context.l10n.commonPrepareYourKeystoneWallet,
           style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
           textAlign: TextAlign.center,
         ),
@@ -185,24 +186,24 @@ class _KeystoneInstructionsPanel extends StatelessWidget {
           BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
         ],
       ),
-      child: const Column(
+      child: Column(
         children: [
           _InstructionSection(
             iconName: AppIcons.importWallet,
             stepNumber: 1,
-            title: 'Check Keystone firmware',
+            title: context.l10n.keystoneFirmwareTitle,
             body: null,
-            action: _FirmwareBodyWithLink(),
+            action: const _FirmwareBodyWithLink(),
           ),
-          SizedBox(height: AppSpacing.md),
-          _Divider(),
-          SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.md),
+          const _Divider(),
+          const SizedBox(height: AppSpacing.md),
           _InstructionSection(
             iconName: AppIcons.qr,
             stepNumber: 2,
-            title: 'Prepare to connect',
+            title: context.l10n.keystonePrepareToConnectTitle,
             body: null,
-            action: _ConnectionSteps(),
+            action: const _ConnectionSteps(),
           ),
         ],
       ),
@@ -315,12 +316,9 @@ class _FirmwareBodyWithLink extends StatelessWidget {
     return Text.rich(
       TextSpan(
         style: bodyStyle,
-        children: const [
-          TextSpan(
-            text:
-                'Make sure your Keystone is on the latest Cypherpunk firmware. ',
-          ),
-          WidgetSpan(
+        children: [
+          TextSpan(text: context.l10n.keystoneFirmwareBody),
+          const WidgetSpan(
             alignment: PlaceholderAlignment.middle,
             child: _FirmwareInlineLink(),
           ),
@@ -338,7 +336,7 @@ class _FirmwareInlineLink extends StatelessWidget {
     return Semantics(
       button: true,
       link: true,
-      label: 'Download Keystone firmware',
+      label: context.l10n.keystoneFirmwareDownloadSemantics,
       child: AppButton(
         onPressed: _openKeystoneFirmware,
         variant: AppButtonVariant.ghost,
@@ -347,7 +345,7 @@ class _FirmwareInlineLink extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
         iconGap: AppSpacing.xxs,
         leading: const AppIcon(AppIcons.link),
-        child: const Text('link'),
+        child: Text(context.l10n.keystoneFirmwareLinkLabel),
       ),
     );
   }
@@ -356,30 +354,28 @@ class _FirmwareInlineLink extends StatelessWidget {
 class _ConnectionSteps extends StatelessWidget {
   const _ConnectionSteps();
 
-  static const _keystoneSteps = [
-    'Tap ••• (top right), then Connect software wallet.',
-    'Select Vizor (or ZODL)',
-  ];
-  static const _vizorSteps = ['Scan the dynamic QR code on your Keystone.'];
-
   static const _markerWidth = 15.0;
   static const _markerGap = 6.0;
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    final l10n = context.l10n;
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _ConnectionStepGroup(
-          title: 'On your Keystone',
+          title: l10n.keystoneOnYourKeystone,
           startIndex: 1,
-          steps: _keystoneSteps,
+          steps: [
+            l10n.keystoneStepOpenSoftwareWallet,
+            l10n.keystoneStepSelectVizor,
+          ],
         ),
-        SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AppSpacing.sm),
         _ConnectionStepGroup(
-          title: 'On Vizor',
+          title: l10n.keystoneOnVizor,
           startIndex: 3,
-          steps: _vizorSteps,
+          steps: [l10n.keystoneStepScanDynamicQr],
         ),
       ],
     );

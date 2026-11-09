@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_scroll_fade.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Widget _app(Widget home) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
     home: home,
   );

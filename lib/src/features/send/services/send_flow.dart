@@ -15,9 +15,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/l10n/l10n.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/zcash/broadcast_notice_text.dart';
 import '../../../core/zcash/transparent_ledger_errors.dart';
 import '../../../core/zcash/wallet_error_code.dart';
 import '../../../core/zcash/zip321_payment_request.dart'
@@ -31,8 +34,10 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
+import 'recent_send_recipients.dart';
 import 'sapling_params.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
+import '../models/payment_request_check_issue.dart';
 
 /// Longest requester label the review screens will render.
 ///
@@ -99,8 +104,8 @@ class SendReviewArgs {
   final SendFlowKind flowKind;
 
   /// This send answers a ZIP-321 payment request rather than being composed
-  /// from scratch. Only the review framing reads it — the proposal, the
-  /// broadcast and the receipt are identical either way.
+  /// from scratch. The review framing reads it, and a completed broadcast
+  /// skips Recents for it; the proposal and the receipt are identical.
   final bool isPaymentRequest;
 
   /// Sanitised requester label from the request, when it carried one.
@@ -540,104 +545,95 @@ Future<void> retainSendProposalLockUntilExpiry({
   }
 }
 
-/// Shown wherever a recipient address is well-formed but belongs to another
-/// Zcash network — a `utest1…` pasted into a mainnet wallet, say.
-///
-/// It has its own sentence because "Invalid address" reads as a typo, and this
-/// is not one: the address is real, it just is not payable from this build.
-/// Before validation was network-aware the wallet accepted these and only
-/// refused them at proposal time, as an opaque "Bad address: IncorrectNetwork".
-const kWrongNetworkAddressMessage =
-    'This address is for a different Zcash network';
-
-/// Propose-time failures as the payment-request card states them.
-///
-/// The card is a pre-send consent surface: nothing has been broadcast, it
-/// holds an unconsumed proposal, and offers Check again or Edit.
-/// [friendlyProposeSendError] is written for a screen that actually
-/// sent, so its wording ("Send failed", "Some parts of this transaction were
-/// sent") would assert an event that never happened here.
-///
-/// Follows the card's status-line convention: one line, no trailing period.
-String friendlyPaymentRequestCheckError(String raw) {
-  final upgradeHold = networkUpgradeHoldMessage(raw);
-  if (upgradeHold != null) return upgradeHold;
+/// Classifies a propose-time failure for the payment-request card.
+PaymentRequestCheckIssue paymentRequestCheckIssueFor(String raw) {
+  switch (networkUpgradeHoldKind(raw)) {
+    case NetworkUpgradeHold.hold:
+      return PaymentRequestCheckIssue.networkUpgradeHold;
+    case NetworkUpgradeHold.scheduleChanged:
+      return PaymentRequestCheckIssue.networkUpgradeScheduleChanged;
+    case null:
+      break;
+  }
   final lower = raw.toLowerCase();
   if (lower.contains('grpc connect failed') ||
       lower.contains('connection refused') ||
       lower.contains('dns error') ||
       lower.contains('tls error')) {
-    return "Couldn't reach the network — check your connection and try again";
+    return PaymentRequestCheckIssue.network;
   }
-  return "Couldn't check this request — try again or edit the details";
+  return PaymentRequestCheckIssue.generic;
 }
 
-String friendlyProposeSendError(String raw) {
-  final upgradeHold = networkUpgradeHoldMessage(raw);
+String friendlyProposeSendError(
+  AppLocalizations l10n,
+  String raw, {
+  SendFlowKind flowKind = SendFlowKind.send,
+}) {
+  final upgradeHold = networkUpgradeHoldMessage(l10n, raw);
   if (upgradeHold != null) return upgradeHold;
   if (isTransparentLedgerNeedsNewerBuildError(raw)) {
-    return transparentLedgerNeedsNewerBuildMessage;
+    return transparentLedgerNeedsNewerBuildMessage(l10n);
   }
   if (isTransparentRecoveryIncompleteError(raw)) {
-    return transparentRecoveryIncompleteMessage;
+    return transparentRecoveryIncompleteMessage(l10n);
   }
   final lower = raw.toLowerCase();
   if (lower.contains('wallet sync is still finishing') ||
       lower.contains('wallet sync failed before balance refresh') ||
       // Rust's own wording when the wallet has no scanned tip yet.
       lower.contains('wallet must sync')) {
-    return 'Finishing wallet sync. Try again shortly.';
+    return l10n.sendErrorSyncFinishing;
   }
   if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
-    return 'Insufficient shielded balance to cover amount and fee.';
+    return l10n.sendErrorInsufficientShielded;
   }
   if (lower.contains('grpc connect failed') ||
       lower.contains('connection refused') ||
       lower.contains('dns error') ||
       lower.contains('tls error')) {
-    return 'Network error. Check your connection and try again.';
+    return l10n.sendErrorNetwork;
   }
   // Partial broadcast must be checked before generic "broadcast rejected"
   if (lower.contains('broadcast failed after') && lower.contains('txs sent')) {
-    return 'Some parts of this transaction were sent. Open Activity to see '
-        'what went through before you try again.';
+    return l10n.sendErrorPartiallySent;
   }
   if (lower.contains('broadcast rejected')) {
-    return 'The network rejected this transaction. Try again.';
+    return l10n.sendErrorRejectedTryAgain;
   }
   if (lower.contains('proposal not found') ||
       lower.contains('send flow mismatch')) {
-    return 'Transaction expired before it could be sent. Try again.';
+    return l10n.sendErrorExpiredTryAgain;
   }
-  return 'Send failed. Try again.';
+  return flowKind == SendFlowKind.donation
+      ? l10n.sendErrorDonationFailed
+      : l10n.sendErrorSendFailed;
 }
 
-String friendlyBroadcastError(String raw) {
-  final upgradeHold = networkUpgradeHoldMessage(raw);
+String friendlyBroadcastError(AppLocalizations l10n, String raw) {
+  final upgradeHold = networkUpgradeHoldMessage(l10n, raw);
   if (upgradeHold != null) return upgradeHold;
   final lower = raw.toLowerCase();
   if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
-    return 'Insufficient shielded balance to cover amount and fee.';
+    return l10n.sendErrorInsufficientShielded;
   }
   if (lower.contains('grpc connect failed') ||
       lower.contains('connection refused') ||
       lower.contains('dns error') ||
       lower.contains('tls error')) {
-    return 'Network error. Check your connection and try again.';
+    return l10n.sendErrorNetwork;
   }
   if (lower.contains('broadcast failed after') && lower.contains('txs sent')) {
-    return 'Some parts of this transaction were sent. Open Activity to see '
-        'what went through before you try again.';
+    return l10n.sendErrorPartiallySent;
   }
   if (lower.contains('broadcast rejected')) {
-    return 'The network rejected this transaction. Try again later.';
+    return l10n.sendErrorRejectedTryLater;
   }
   if (lower.contains('proposal not found') ||
       lower.contains('send flow mismatch')) {
-    return 'Transaction expired before it could be sent.';
+    return l10n.sendErrorExpiredBeforeSent;
   }
-  return "Transaction couldn't be sent. Go back to your wallet and check "
-      'the latest status.';
+  return l10n.sendErrorCouldNotBeSent;
 }
 
 enum SendBroadcastPhase { succeeded, pendingBroadcast, failed, aborted }
@@ -649,6 +645,7 @@ class SendBroadcastOutcome {
     this.txid,
     this.statusMessage,
     this.error,
+    this.errorHold,
     this.canRetryBroadcast = false,
   });
 
@@ -667,6 +664,9 @@ class SendBroadcastOutcome {
   final String? txid;
   final String? statusMessage;
   final String? error;
+
+  /// The upgrade hold [error] explains, so screens need not compare its text.
+  final NetworkUpgradeHold? errorHold;
 }
 
 String? _firstTxid(String txids) {
@@ -685,59 +685,63 @@ String? _lastTxid(String txids) {
   return null;
 }
 
-String _broadcastStatusMessage(rust_sync.ExecuteProposalResult result) {
+String _broadcastStatusMessage(
+  AppLocalizations l10n,
+  rust_sync.ExecuteProposalResult result,
+) {
   if (result.status == 'partial_broadcast') {
-    return 'Some transactions were broadcast and the rest will retry automatically. Check activity before sending again.';
+    return l10n.sendBroadcastPartial;
   }
-  final rawMessage = result.message?.toLowerCase() ?? '';
-  if (rawMessage.contains('broadcast rejected')) {
-    return "Transaction was created locally but didn't reach the network. "
-        'The wallet will keep retrying until it expires. '
-        "Don't send again unless this one expires.";
+  // Rust sets this when the server answered with a rejection; the message
+  // text stays for logs.
+  if (result.broadcastFailureKind == 'rejected') {
+    return l10n.sendBroadcastRejectedLocal;
   }
-  return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
+  return l10n.sendBroadcastLocalRetry;
 }
 
 String _pcztBroadcastStatusMessage(
+  AppLocalizations l10n,
   rust_sync.StoreAndBroadcastPcztsResult result,
 ) {
+  final detail = broadcastResultText(
+    l10n,
+    notices: result.notices,
+    message: result.message,
+  );
   if (result.status == 'broadcast_unknown') {
-    return result.message ??
-        'The first transaction is stored locally and may have reached the network, but confirmation timed out. Check Activity before sending again.';
+    return detail ?? l10n.sendBroadcastFirstUnknown;
   }
   if (result.status == 'partial_broadcast') {
-    return result.message ??
-        'The first transaction was accepted, but the dependent transaction did not complete. Check Activity before sending again.';
+    return detail ?? l10n.sendBroadcastDependentIncomplete;
   }
   if (result.status == 'broadcasted_storage_failed') {
-    return result.message ??
-        'The transaction reached the network, but local tracking failed. Check Activity or an explorer before sending again.';
+    return detail ?? l10n.sendBroadcastTrackingFailed;
   }
-  return result.message ??
-      'The transaction broadcast did not complete. Check Activity before sending again.';
+  return detail ?? l10n.sendBroadcastIncomplete;
 }
 
-String _ledgerBroadcastStatusMessage({
+String _ledgerBroadcastStatusMessage(
+  AppLocalizations l10n, {
   required String status,
   required String? message,
+  required List<rust_sync.BroadcastNotice> notices,
 }) {
+  final detail = broadcastResultText(l10n, notices: notices, message: message);
   if (status == 'broadcast_unknown') {
-    return message ??
-        'The first transaction may have reached the network, but confirmation timed out. Check Activity before sending again.';
+    return detail ?? l10n.sendBroadcastLedgerFirstUnknown;
   }
   if (status == 'partial_broadcast') {
-    return message ??
-        'The first transaction was accepted, but the dependent transaction did not complete. Check Activity before sending again.';
+    return detail ?? l10n.sendBroadcastDependentIncomplete;
   }
   if (status == 'broadcasted_storage_failed') {
-    return message ??
-        'The transaction reached the network, but Vizor could not store it locally. Do not send again until sync or an explorer confirms the latest status.';
+    return detail ?? l10n.sendBroadcastLedgerNotStored;
   }
   final rawMessage = message?.toLowerCase() ?? '';
   if (rawMessage.contains('broadcast rejected')) {
-    return 'Transaction was rejected by the network. Please try again later.';
+    return l10n.sendBroadcastLedgerRejected;
   }
-  return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
+  return l10n.sendBroadcastLocalRetry;
 }
 
 /// Runs the full broadcast leg for a proposed send — Sapling params
@@ -751,6 +755,7 @@ String _ledgerBroadcastStatusMessage({
 /// retained owner-scoped input lock are released here.
 Future<SendBroadcastOutcome> runSendBroadcast({
   required WidgetRef ref,
+  required AppLocalizations l10n,
   required SendReviewArgs args,
   KeystoneBroadcastArgs? keystone,
   LedgerBroadcastArgs? ledger,
@@ -759,6 +764,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
 }) async {
   Future<SendBroadcastOutcome> execute() => _runSendBroadcast(
     ref: ref,
+    l10n: l10n,
     args: args,
     keystone: keystone,
     ledger: ledger,
@@ -772,13 +778,14 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     return SendBroadcastOutcome(
       phase: SendBroadcastPhase.failed,
       proposalConsumed: true,
-      error: friendlyBroadcastError(error.toString()),
+      error: friendlyBroadcastError(l10n, error.toString()),
     );
   }
 }
 
 Future<SendBroadcastOutcome> _runSendBroadcast({
   required WidgetRef ref,
+  required AppLocalizations l10n,
   required SendReviewArgs args,
   KeystoneBroadcastArgs? keystone,
   LedgerBroadcastArgs? ledger,
@@ -848,7 +855,11 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
     );
     final dbPath = await getWalletDbPath();
     secretGuard.check();
-    final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+    final endpoint = await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .ensureReady();
+    secretGuard.check();
+    if (await abortRequested()) return aborted();
     var saplingParams = await loadSaplingParamsStatus();
 
     if (args.needsSaplingParams) {
@@ -858,7 +869,7 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
         if (!downloadConfirmed) {
           if (keystone?.isRecoveryRetry ?? false) {
             return await retainedForRetry(
-              'Proof parameters are required to retry this signed transaction.',
+              l10n.sendBroadcastProofParamsRequired,
             );
           }
           if (await abortRequested()) return aborted();
@@ -883,8 +894,7 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
           return SendBroadcastOutcome(
             phase: SendBroadcastPhase.failed,
             proposalConsumed: proposalConsumed,
-            error:
-                'Sending was cancelled before proving parameters were downloaded.',
+            error: l10n.sendBroadcastCancelledBeforeParams,
           );
         }
 
@@ -976,8 +986,10 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
         pendingStatusMessage = broadcastComplete
             ? null
             : _ledgerBroadcastStatusMessage(
+                l10n,
                 status: result.status,
                 message: result.message,
+                notices: result.notices,
               );
         broadcastMessageForFallback = result.message;
       } else {
@@ -1045,7 +1057,7 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
             : _firstTxid(txids);
         pendingStatusMessage = broadcastComplete || broadcastExpired
             ? null
-            : _pcztBroadcastStatusMessage(result);
+            : _pcztBroadcastStatusMessage(l10n, result);
         broadcastMessageForFallback = result.message;
       }
     } else {
@@ -1082,7 +1094,7 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
             return SendBroadcastOutcome(
               phase: SendBroadcastPhase.failed,
               proposalConsumed: proposalConsumed,
-              error: 'Mnemonic not found for the proposal account.',
+              error: l10n.sendBroadcastMnemonicMissing,
             );
           }
           resultFuture = rust_sync.executeProposal(
@@ -1110,7 +1122,7 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
       receiptTxid = _firstTxid(txids);
       pendingStatusMessage = broadcastComplete
           ? null
-          : _broadcastStatusMessage(result);
+          : _broadcastStatusMessage(l10n, result);
       broadcastMessageForFallback = result.message;
     }
 
@@ -1126,8 +1138,8 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
             broadcastMessageForFallback,
             endpoint: endpoint,
             operation: isHardware
-                ? 'hardware send broadcast'
-                : 'send broadcast',
+                ? 'hardware send broadcast' // l10n-ignore: log label
+                : 'send broadcast', // l10n-ignore: log label
           );
       if (switched) {
         unawaited(ref.read(syncProvider.notifier).restartSync());
@@ -1149,6 +1161,31 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
               accountUuid: args.proposalAccountUuid,
               txids: txids.split(','),
             );
+        // Only mobile shows Recents; donations and payment requests (often
+        // one-time invoice addresses) are not suggested. Awaited so a reset
+        // cannot outrun the write.
+        if (kAppFormFactor == AppFormFactor.mobile &&
+            args.flowKind == SendFlowKind.send &&
+            !args.isPaymentRequest) {
+          final store = ref.read(sendRecentRecipientStoreProvider);
+          final revision = ref.read(
+            sendRecentRecipientsRevisionProvider.notifier,
+          );
+          try {
+            await store.record(
+              accountUuid: args.proposalAccountUuid,
+              recipient: SendRecentRecipient(
+                address: args.address,
+                isShielded: args.isShielded,
+              ),
+            );
+            revision.bump();
+          } catch (e) {
+            log(
+              'SendBroadcast: recording the recipient failed (non-critical): $e',
+            );
+          }
+        }
       }
       try {
         await ref.read(syncProvider.notifier).refreshAfterSend();
@@ -1158,6 +1195,9 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
     }
 
     if (!secretGuard.enabled && await abortRequested()) return aborted();
+    final expiredHold = networkUpgradeHoldKind(
+      broadcastMessageForFallback ?? '',
+    );
     return SendBroadcastOutcome(
       phase: broadcastExpired
           ? SendBroadcastPhase.failed
@@ -1168,9 +1208,9 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
       txid: receiptTxid,
       statusMessage: pendingStatusMessage,
       error: broadcastExpired
-          ? networkUpgradeHoldMessage(broadcastMessageForFallback ?? '') ??
-                'The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.'
+          ? expiredHold?.message(l10n) ?? l10n.sendBroadcastHardwareExpired
           : null,
+      errorHold: broadcastExpired ? expiredHold : null,
     );
   } catch (e) {
     log('SendBroadcast: ERROR: $e');
@@ -1182,8 +1222,8 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
             walletErrorCode(e) ==
                 rust_sync.ApiWalletErrorCode.retryAfterRecovery);
     final message = canRetryBroadcast
-        ? 'Wait for wallet sync, then retry this signed transaction.'
-        : friendlyBroadcastError(e.toString());
+        ? l10n.sendStatusRetryAfterSync
+        : friendlyBroadcastError(l10n, e.toString());
     if (canRetryBroadcast) return await retainedForRetry(message);
     if (await abortRequested()) return aborted();
     if (!proposalReleased) {
@@ -1201,6 +1241,7 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
       proposalConsumed: proposalConsumed,
       canRetryBroadcast: canRetryBroadcast,
       error: message,
+      errorHold: networkUpgradeHoldKind(e),
     );
   }
 }

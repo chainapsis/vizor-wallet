@@ -2,24 +2,28 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/l10n/l10n.dart';
+
 const kActivityEtaFreshness = Duration(seconds: 30);
 const kActivityLongWait = Duration(minutes: 5);
 const kActivityFundingLongWait = Duration(minutes: 8);
 
-const kActivityEtaLabel = 'Est. 1–3 min';
-const kActivityFundingEtaLabel = 'Est. 2–6 min';
-const kActivityNu7EtaLabel = 'Est. under 1 min';
-const kActivityNu7FundingEtaLabel = 'Est. 1–2 min';
-const kActivityTakingLongerLabel = 'Taking longer';
+/// An estimate a pending row shows beside its clock icon.
+enum ActivityEta {
+  standard,
+  funding,
+  nu7,
+  nu7Funding,
+  takingLonger;
 
-/// Every estimate a pending row can show beside its clock icon.
-const kActivityEtaLabels = {
-  kActivityEtaLabel,
-  kActivityFundingEtaLabel,
-  kActivityNu7EtaLabel,
-  kActivityNu7FundingEtaLabel,
-  kActivityTakingLongerLabel,
-};
+  String label(AppLocalizations l10n) => switch (this) {
+    standard => l10n.activityEtaStandard,
+    funding => l10n.activityEtaFunding,
+    nu7 => l10n.activityEtaNu7,
+    nu7Funding => l10n.activityEtaNu7Funding,
+    takingLonger => l10n.activityEtaTakingLonger,
+  };
+}
 
 /// Broadcast responses and wallet history can use opposite txid byte orders.
 /// Use one local identity; never use the canonical form for network queries.
@@ -59,7 +63,7 @@ class PendingActivityEvidence {
   final Map<(String, String), DateTime> observedAt;
   final Set<String> unavailableHistoryAccounts;
 
-  String? labelFor(
+  ActivityEta? etaFor(
     String accountUuid,
     String txid,
     int scannedHeight, {
@@ -87,14 +91,12 @@ class PendingActivityEvidence {
     final longWait =
         (waitingForFunding ? kActivityFundingLongWait : kActivityLongWait) ~/
         blocksPerReferenceBlock;
-    if (elapsed >= longWait) return kActivityTakingLongerLabel;
+    if (elapsed >= longWait) return ActivityEta.takingLonger;
     final fasterBlocks = blocksPerReferenceBlock > 1;
     if (waitingForFunding) {
-      return fasterBlocks
-          ? kActivityNu7FundingEtaLabel
-          : kActivityFundingEtaLabel;
+      return fasterBlocks ? ActivityEta.nu7Funding : ActivityEta.funding;
     }
-    return fasterBlocks ? kActivityNu7EtaLabel : kActivityEtaLabel;
+    return fasterBlocks ? ActivityEta.nu7 : ActivityEta.standard;
   }
 }
 

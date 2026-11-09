@@ -7,6 +7,7 @@ import '../layout/app_form_factor.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_tooltip.dart';
 import 'caps_lock_monitor.dart';
+import '../l10n/l10n.dart';
 
 /// Enables warnings only for app-password fields, including revealed passwords.
 /// The text field places the warning around its input shell, below its label.
@@ -101,7 +102,7 @@ class _CapsLockWarningState extends ConsumerState<CapsLockWarning> {
                         ),
                       ),
                       child: Text(
-                        'Caps Lock is on',
+                        context.l10n.capsLockWarning,
                         style: useLightSurface
                             ? AppTooltip.textStyleOf(
                                 context,

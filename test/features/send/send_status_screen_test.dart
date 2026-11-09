@@ -34,8 +34,11 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../../tool/l10n/korean_arb.dart' show wordJoiner;
 import '../../fakes/fake_zec_market_data_cache.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   final rustApi = _RustApiFake();
@@ -252,6 +255,7 @@ void main() {
     rustApi.executeResult = _executeResult(
       status: 'created',
       message: 'broadcast rejected: mempool full',
+      broadcastFailureKind: 'rejected',
     );
 
     await _setDesktopViewport(tester);
@@ -312,6 +316,7 @@ void main() {
           broadcastRunner:
               ({
                 required ref,
+                required l10n,
                 required args,
                 keystone,
                 ledger,
@@ -358,6 +363,7 @@ void main() {
         broadcastRunner:
             ({
               required ref,
+              required l10n,
               required args,
               keystone,
               ledger,
@@ -416,6 +422,7 @@ void main() {
           broadcastRunner:
               ({
                 required ref,
+                required l10n,
                 required args,
                 keystone,
                 ledger,
@@ -488,6 +495,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: _txid,
       status: 'broadcasted',
       broadcastedCount: 1,
@@ -537,6 +545,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: '$_txid,second-txid',
       status: 'broadcast_unknown',
       broadcastedCount: 0,
@@ -577,6 +586,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: '$_txid,second-txid',
       status: 'partial_broadcast',
       broadcastedCount: 1,
@@ -613,10 +623,73 @@ void main() {
     expect(find.textContaining('was not stored'), findsOneWidget);
   });
 
+  for (final (locale, sentence) in [
+    (const Locale('ko'), '전체 2건 중 2번째 거래가 거부되어 저장하지 않았어요: bad-txns-spent'),
+    (const Locale('zh'), '第 2 笔交易（共 2 笔）被拒绝，未保存：bad-txns-spent'),
+  ]) {
+    testWidgets('Keystone broadcast notices read in ${locale.languageCode}', (
+      tester,
+    ) async {
+      const english =
+          'Transaction 2 of 2 was rejected and was not stored: bad-txns-spent '
+          'The accepted-or-ambiguous transaction prefix was stored locally for '
+          'recovery.';
+      rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+        txids: '$_txid,second-txid',
+        status: 'partial_broadcast',
+        broadcastedCount: 1,
+        totalCount: 2,
+        message: english,
+        notices: [
+          BroadcastNotice(
+            kind: 'transaction_rejected',
+            index: 2,
+            total: 2,
+            detail: 'bad-txns-spent',
+          ),
+          BroadcastNotice(kind: 'stored_locally'),
+        ],
+      );
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(address: _texAddress, addressType: 'tex'),
+          keystone: KeystoneBroadcastArgs(
+            reviewArgs: _reviewArgs(address: _texAddress, addressType: 'tex'),
+            pcztWithProofs: const [
+              [1],
+              [2],
+            ],
+            pcztWithSignatures: const [
+              [3],
+              [4],
+            ],
+          ),
+          isHardware: true,
+          locale: locale,
+        ),
+      );
+      await tester.pump();
+      await _flushBroadcast(tester);
+
+      expect(find.textContaining('was rejected'), findsNothing);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Text &&
+              (widget.data ?? '').replaceAll(wordJoiner, '').contains(sentence),
+        ),
+        findsOneWidget,
+      );
+    });
+  }
+
   testWidgets('TEX broadcasts both validated steps in dependency order', (
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: '$_txid,$_secondTxid',
       status: 'broadcasted',
       broadcastedCount: 2,
@@ -819,6 +892,7 @@ void main() {
               syncProvider.overrideWith(_FakeSyncNotifier.new),
             ],
             child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
               home: Consumer(
                 builder: (_, ref, _) {
                   widgetRef = ref;
@@ -832,6 +906,7 @@ void main() {
         final outcome = await tester.runAsync(
           () => runSendBroadcast(
             ref: widgetRef,
+            l10n: testL10n,
             args: args,
             keystone: KeystoneBroadcastArgs(
               reviewArgs: args,
@@ -885,6 +960,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: _txid,
       status: 'broadcast_unknown',
       broadcastedCount: 0,
@@ -994,6 +1070,7 @@ void main() {
         expect(_sendStatusTerminal(tester), isFalse);
         gate.complete(
           StoreAndBroadcastPcztsResult(
+            notices: const [],
             txids: addressType == 'tex' ? '$_txid,$_secondTxid' : _txid,
             status: 'broadcasted',
             broadcastedCount: payload.pcztWithProofs.length,
@@ -1086,6 +1163,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: _txid,
       status: 'broadcasted_storage_failed',
       broadcastedCount: 1,
@@ -1121,6 +1199,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: _txid,
       status: 'expired',
       broadcastedCount: 0,
@@ -1164,6 +1243,7 @@ void main() {
     tester,
   ) async {
     rustApi.storeResult = const StoreAndBroadcastPcztsResult(
+      notices: [],
       txids: _txid,
       status: 'expired',
       broadcastedCount: 0,
@@ -1193,7 +1273,7 @@ void main() {
     await _flushBroadcast(tester);
 
     expect(find.text('Send failed'), findsOneWidget);
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
     expect(find.textContaining('expired before broadcast'), findsNothing);
   });
 }
@@ -1264,13 +1344,16 @@ void _mockUrlLauncher(WidgetTester tester, List<String> launchedUrls) {
 ExecuteProposalResult _executeResult({
   required String status,
   String? message,
+  String? broadcastFailureKind,
 }) {
   return ExecuteProposalResult(
+    notices: const [],
     txids: _txid,
     status: status,
     broadcastedCount: status == 'broadcasted' ? 1 : 0,
     totalCount: 1,
     message: message,
+    broadcastFailureKind: broadcastFailureKind,
   );
 }
 
@@ -1282,6 +1365,7 @@ Widget _harness(
   SendStatusBroadcastRunner? broadcastRunner,
   LedgerSignedOperationService? ledgerOperationService,
   _FakeAddressBookRepository? addressBook,
+  Locale? locale,
 }) {
   final router = GoRouter(
     initialLocation: '/send/status',
@@ -1318,6 +1402,9 @@ Widget _harness(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
+      supportedLocales: appSupportedLocales(preview: true),
+      locale: locale,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
@@ -1381,7 +1468,7 @@ AppBootstrapState _bootstrap(bool isHardware) {
     ),
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: kZcashDefaultNetworkName,
-    rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+    rpcEndpointConfig: _fixedRpcEndpoint(kZcashDefaultNetworkName),
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
     isPasswordConfigured: true,
@@ -1680,4 +1767,13 @@ class _RustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => Future<void>.value();
+}
+
+// Signing/broadcast fixtures exercise one fixed server; endpoint selection is
+// covered separately and must not replace the intended mocked Rust boundary.
+RpcEndpointConfig _fixedRpcEndpoint(String networkName) {
+  final endpoint = defaultRpcEndpointConfig(networkName);
+  return endpoint.network == ZcashNetwork.mainnet
+      ? endpoint.copyWith(presetId: kManualUsRpcEndpointPresetId)
+      : endpoint;
 }

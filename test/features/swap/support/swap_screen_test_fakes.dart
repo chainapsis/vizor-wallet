@@ -832,11 +832,13 @@ class _FakeSwapDepositSender implements SwapDepositSender {
     this.preflightError,
     this.broadcastStatus = SwapDepositBroadcastStatus.broadcasted,
     this.broadcastMessage,
+    this.broadcastNotices = const [],
   });
 
   final Object? preflightError;
   final String broadcastStatus;
   final String? broadcastMessage;
+  final List<rust_sync.BroadcastNotice> broadcastNotices;
   final preflightRequests = <_DepositSendRequest>[];
   final requests = <_DepositSendRequest>[];
 
@@ -875,6 +877,7 @@ class _FakeSwapDepositSender implements SwapDepositSender {
       txHash: 'zec-auto-txid',
       status: broadcastStatus,
       message: broadcastMessage,
+      notices: broadcastNotices,
     );
   }
 }
@@ -996,6 +999,7 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
       ),
     );
     return rust_sync.ExtractAndBroadcastPcztResult(
+      notices: const [],
       txid: 'hardware-broadcast-txid',
       status: broadcastStatus,
       message: broadcastMessage,
@@ -1151,6 +1155,10 @@ class _FakeSwapPersistenceStore
   final _preferencesByAccount = <String, SwapComposerPreferences>{};
   final _payAssetByAccount = <String, SwapAsset>{};
 
+  /// The swaps saved under `accountUuid`.
+  List<SwapIntent> intentsFor(String accountUuid) =>
+      _intentsByAccount[accountUuid] ?? const [];
+
   @override
   Future<List<SwapIntentRecord>> loadRecords({
     required String accountUuid,
@@ -1236,6 +1244,19 @@ class _DelayedComposerPreferencesStore extends _FakeSwapPersistenceStore {
     final preferences = await super.loadPreferences(accountUuid: accountUuid);
     await _preferencesGate.future;
     return preferences;
+  }
+}
+
+class _FailingSaveSwapPersistenceStore extends _FakeSwapPersistenceStore {
+  final failedSaves = <String>[];
+
+  @override
+  Future<void> saveRecords({
+    required String accountUuid,
+    required List<SwapIntentRecord> records,
+  }) async {
+    failedSaves.add(accountUuid);
+    throw StateError('secure storage unavailable');
   }
 }
 

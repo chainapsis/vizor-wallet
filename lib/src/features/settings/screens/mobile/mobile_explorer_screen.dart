@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show Scaffold, TextInputType;
 import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter/widgets.dart';
@@ -5,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/zcash_explorer.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -76,7 +80,7 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
       normalizeExplorerUrlTemplate(_customController.text);
       return null;
     } on FormatException catch (e) {
-      return e.message;
+      return explorerUrlErrorText(context.l10n, e);
     }
   }
 
@@ -105,14 +109,14 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() {
-        _submitError = e.message;
+        _submitError = explorerUrlErrorText(context.l10n, e);
         _isSubmitting = false;
       });
     } catch (e, st) {
       log('MobileExplorerScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _submitError = "Couldn't save that explorer URL.";
+        _submitError = context.l10n.settingsExplorerSaveFailed;
         _isSubmitting = false;
       });
     }
@@ -131,7 +135,7 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
         child: Column(
           children: [
             MobileTopNav.back(
-              title: 'Explorer',
+              title: context.l10n.settingsExplorerTitle,
               onBack: _isSubmitting ? null : () => context.pop(),
             ),
             Expanded(
@@ -145,8 +149,16 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                 children: [
                   Text(
                     current.trim().isEmpty
-                        ? 'Current: ${defaultZcashExplorerHost(networkName)} (default)'
-                        : 'Current: ${explorerSettingsLabel(current, networkName: networkName)}',
+                        ? context.l10n.settingsExplorerCurrentDefault(
+                            defaultZcashExplorerHost(networkName),
+                          )
+                        : context.l10n.settingsExplorerCurrent(
+                            explorerSettingsLabel(
+                              context.l10n,
+                              current,
+                              networkName: networkName,
+                            ),
+                          ),
                     textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -172,8 +184,8 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                   _ExplorerOptionCard(
                     key: const ValueKey('mobile_explorer_option_custom'),
                     iconName: AppIcons.edit,
-                    label: 'Custom',
-                    subtitle: 'Any explorer you prefer',
+                    label: context.l10n.settingsExplorerCustom,
+                    subtitle: context.l10n.settingsExplorerCustomSubtitle,
                     selected: _choice == _ExplorerChoice.custom,
                     onTap: _isSubmitting
                         ? null
@@ -191,7 +203,8 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                     MobileTextField(
                       key: const ValueKey('mobile_explorer_custom_field_shell'),
                       fieldKey: const ValueKey('mobile_explorer_custom_field'),
-                      hintText: 'https://explorer.example/tx/{txid}',
+                      hintText:
+                          'https://explorer.example/tx/{txid}', // l10n-ignore: URL template
                       controller: _customController,
                       focusNode: _customFocusNode,
                       keyboardType: TextInputType.url,
@@ -210,7 +223,10 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                     ],
                     const SizedBox(height: AppSpacing.xs),
                     Text(
-                      kZcashExplorerTemplateHint,
+                      context.l10n.settingsExplorerTemplateHint(
+                        '{txid}', // l10n-ignore: URL placeholder token
+                        '{txHash}', // l10n-ignore: URL placeholder token
+                      ),
                       style: AppTypography.bodySmall.copyWith(
                         color: colors.text.secondary,
                       ),
@@ -220,7 +236,7 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                   AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    kZcashExplorerPrivacyCopy,
+                    context.l10n.settingsExplorerPrivacyCopy,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -242,7 +258,9 @@ class _MobileExplorerScreenState extends ConsumerState<MobileExplorerScreen> {
                       minWidth: 226,
                       onPressed: _canUpdate(current) ? _submit : null,
                       child: Text(
-                        _isSubmitting ? 'Updating...' : 'Update explorer',
+                        _isSubmitting
+                            ? context.l10n.commonUpdating
+                            : context.l10n.settingsExplorerUpdate,
                       ),
                     ),
                   ),
@@ -282,7 +300,12 @@ class _ExplorerOptionCard extends StatelessWidget {
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTap: onTap == null
+            ? null
+            : () {
+                if (!selected) unawaited(AppHaptics.selection());
+                onTap!();
+              },
         child: Container(
           height: 64,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),

@@ -153,7 +153,7 @@ After changing Rust API files in `rust/src/api/`, regenerate bindings from the
 repo root:
 
 ```bash
-flutter_rust_bridge_codegen generate
+scripts/generate-rust-bridge.sh
 ```
 
 ## Support Vizor

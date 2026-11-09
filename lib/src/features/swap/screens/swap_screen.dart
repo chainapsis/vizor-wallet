@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Material, MaterialType;
@@ -33,6 +34,7 @@ import '../widgets/swap_asset_selector_modal.dart';
 import '../widgets/swap_composer_panel.dart';
 import '../widgets/swap_near_intents_attribution.dart';
 import '../widgets/swap_slippage_modal.dart';
+import '../widgets/near_intents_service_notice_host.dart';
 
 class SwapScreen extends ConsumerStatefulWidget {
   const SwapScreen({super.key});
@@ -137,7 +139,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         // otherwise the chosen label/avatar would vanish with no feedback.
         final toastContext = _toastOverlayContextKey.currentContext;
         if (toastContext != null && toastContext.mounted) {
-          showAppToast(toastContext, 'Already in your contacts');
+          showAppToast(toastContext, toastContext.l10n.swapContactAlreadySaved);
         }
         return;
       }
@@ -237,151 +239,164 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         sidebar: const AppMainSidebar(),
         pane: AppDesktopPane(
           padding: EdgeInsets.zero,
-          child: Stack(
-            children: [
-              AppPaneScrollScaffold(
-                controller: _scrollController,
-                toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final panel = SwapComposerPanel(
-                      state: swapState,
-                      onAmountChanged: swapNotifier.updateAmount,
-                      onAmountFiatChanged: swapNotifier.updateAmountFiat,
-                      onReceiveAmountChanged: swapNotifier.updateReceiveAmount,
-                      onReceiveAmountFiatChanged:
-                          swapNotifier.updateReceiveAmountFiat,
-                      onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
-                      onToggleDirection: swapNotifier.toggleDirection,
-                      onOpenExternalAssetPicker: _openAssetSelector,
-                      onOpenDestinationAddress: _openAddressEditor,
-                      assetSelectorOpen:
-                          _swapModal == _SwapModalSurface.assetSelector,
-                      onOpenSlippageSettings: _openSlippageSettings,
-                      slippageSettingsOpen:
-                          _swapModal == _SwapModalSurface.slippageSettings,
-                      onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
-                      zecAvailableText: zecAvailableText,
-                      zecAvailableZatoshi: migrationSpendable,
-                      destinationContactName: swapDestinationContactFor(
-                        swapState,
-                        ref.watch(addressBookProvider).value?.contacts ??
-                            const [],
-                      )?.label,
-                    );
-                    // Figma container (420×656, 16px vertical padding): the
-                    // title is pinned under the toolbar, the attribution and
-                    // CTA are pinned at the bottom, and the swap section
-                    // flexes to center the widget between them. Pinning only
-                    // engages when the pane offers the design height;
-                    // shorter panes pack the column and scroll instead.
-                    final pinned =
-                        constraints.minHeight >= _swapBodyPinnedMinHeight;
-                    final column = Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const _SwapPageTitle(),
-                        const SizedBox(height: AppSpacing.md),
-                        if (pinned)
-                          Expanded(child: Center(child: panel))
-                        else
-                          panel,
-                        const SizedBox(height: AppSpacing.md),
-                        const _SwapAttributionSlot(),
-                        const SizedBox(height: AppSpacing.md),
-                        _SwapReviewFooter(
-                          state: swapState,
-                          zecAvailableZatoshi: migrationSpendable,
-                          onOpenDestinationAddress: _openAddressEditor,
-                          onReviewQuote: openReview,
-                        ),
-                      ],
-                    );
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 420),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.s,
-                          ),
-                          child: pinned
-                              ? SizedBox(
-                                  height: constraints.minHeight,
-                                  child: column,
-                                )
-                              : column,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              if (_swapModal != null)
-                AppPaneModalOverlay(
-                  onDismiss: _closeSwapModal,
-                  child: Material(
-                    type: MaterialType.transparency,
-                    child: switch (_swapModal!) {
-                      _SwapModalSurface.assetSelector => SwapAssetSelectorModal(
-                        assets: swapState.supportedExternalAssets,
-                        selected: swapState.externalAsset,
-                        onSelected: (asset) {
-                          swapNotifier.selectExternalAsset(asset);
-                          _closeSwapModal();
-                        },
-                      ),
-                      _SwapModalSurface.addressEditor => SwapAddressEditModal(
+          child: NearIntentsServiceNoticeHost(
+            direction: swapState.direction,
+            externalAsset: swapState.externalAsset,
+            blocked: _swapModal != null,
+            child: Stack(
+              children: [
+                AppPaneScrollScaffold(
+                  controller: _scrollController,
+                  toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final panel = SwapComposerPanel(
                         state: swapState,
-                        contacts:
-                            ref.watch(addressBookProvider).value?.contacts ??
-                            const [],
-                        onSubmitted: (value, remember) {
-                          if (remember) {
-                            unawaited(_rememberSwapAddress(value, swapState));
-                          }
-                          swapNotifier.updateDestination(value);
-                          _closeSwapModal();
-                        },
-                        onScan: _openAddressScanner,
-                        onOpenContacts: _openAddressContactPicker,
-                        onCancel: _closeSwapModal,
-                      ),
-                      _SwapModalSurface.addressScanner => AddressQrScanModal(
-                        onAddressScanned: (value) {
-                          swapNotifier.updateDestination(value);
-                          _closeSwapModal();
-                        },
-                        onCancel: _closeSwapModal,
-                      ),
-                      _SwapModalSurface.contactPicker =>
-                        AddressBookContactPickerModal(
-                          title: swapContactPickerTitle(swapState),
-                          networks: swapContactPickerNetworks(swapState),
-                          emptyTitle: swapContactPickerEmptyTitle(swapState),
-                          onSelected: _selectAddressBookContact,
-                          onCancel: _openAddressEditor,
+                        onAmountChanged: swapNotifier.updateAmount,
+                        onAmountFiatChanged: swapNotifier.updateAmountFiat,
+                        onReceiveAmountChanged:
+                            swapNotifier.updateReceiveAmount,
+                        onReceiveAmountFiatChanged:
+                            swapNotifier.updateReceiveAmountFiat,
+                        onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
+                        onToggleDirection: swapNotifier.toggleDirection,
+                        onOpenExternalAssetPicker: _openAssetSelector,
+                        onOpenDestinationAddress: _openAddressEditor,
+                        assetSelectorOpen:
+                            _swapModal == _SwapModalSurface.assetSelector,
+                        onOpenSlippageSettings: _openSlippageSettings,
+                        slippageSettingsOpen:
+                            _swapModal == _SwapModalSurface.slippageSettings,
+                        onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
+                        zecAvailableText: zecAvailableText,
+                        zecAvailableZatoshi: migrationSpendable,
+                        destinationContactName: swapDestinationContactFor(
+                          swapState,
+                          ref.watch(addressBookProvider).value?.contacts ??
+                              const [],
+                        )?.label,
+                      );
+                      // Figma container (420×656, 16px vertical padding): the
+                      // title is pinned under the toolbar, the attribution and
+                      // CTA are pinned at the bottom, and the swap section
+                      // flexes to center the widget between them. Pinning only
+                      // engages when the pane offers the design height;
+                      // shorter panes pack the column and scroll instead.
+                      final pinned =
+                          constraints.minHeight >= _swapBodyPinnedMinHeight;
+                      final column = Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const _SwapPageTitle(),
+                          const SizedBox(height: AppSpacing.md),
+                          if (pinned)
+                            Expanded(child: Center(child: panel))
+                          else
+                            panel,
+                          const SizedBox(height: AppSpacing.md),
+                          const _SwapAttributionSlot(),
+                          const SizedBox(height: AppSpacing.md),
+                          _SwapReviewFooter(
+                            state: swapState,
+                            zecAvailableZatoshi: migrationSpendable,
+                            onOpenDestinationAddress: _openAddressEditor,
+                            onReviewQuote: openReview,
+                          ),
+                        ],
+                      );
+                      return Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 420),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.s,
+                            ),
+                            child: pinned
+                                ? SizedBox(
+                                    height: constraints.minHeight,
+                                    child: column,
+                                  )
+                                : column,
+                          ),
                         ),
-                      _SwapModalSurface.slippageSettings => SwapSlippageModal(
-                        slippageBps: swapState.slippageBps,
-                        onSubmitted: (value) {
-                          swapNotifier.updateSlippageBps(value);
-                          _closeSwapModal();
-                        },
-                        onCancel: _closeSwapModal,
-                      ),
+                      );
                     },
                   ),
                 ),
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: AppToastHost(
-                    key: const ValueKey('swap_toast_overlay_host'),
-                    child: SizedBox.expand(key: _toastOverlayContextKey),
+                if (_swapModal != null)
+                  AppPaneModalOverlay(
+                    onDismiss: _closeSwapModal,
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: switch (_swapModal!) {
+                        _SwapModalSurface.assetSelector =>
+                          SwapAssetSelectorModal(
+                            assets: swapState.supportedExternalAssets,
+                            selected: swapState.externalAsset,
+                            onSelected: (asset) {
+                              swapNotifier.selectExternalAsset(asset);
+                              _closeSwapModal();
+                            },
+                          ),
+                        _SwapModalSurface.addressEditor => SwapAddressEditModal(
+                          state: swapState,
+                          contacts:
+                              ref.watch(addressBookProvider).value?.contacts ??
+                              const [],
+                          onSubmitted: (value, remember) {
+                            if (remember) {
+                              unawaited(_rememberSwapAddress(value, swapState));
+                            }
+                            swapNotifier.updateDestination(value);
+                            _closeSwapModal();
+                          },
+                          onScan: _openAddressScanner,
+                          onOpenContacts: _openAddressContactPicker,
+                          onCancel: _closeSwapModal,
+                        ),
+                        _SwapModalSurface.addressScanner => AddressQrScanModal(
+                          onAddressScanned: (value) {
+                            swapNotifier.updateDestination(value);
+                            _closeSwapModal();
+                          },
+                          onCancel: _closeSwapModal,
+                        ),
+                        _SwapModalSurface.contactPicker =>
+                          AddressBookContactPickerModal(
+                            title: swapContactPickerTitle(
+                              context.l10n,
+                              swapState,
+                            ),
+                            networks: swapContactPickerNetworks(swapState),
+                            emptyTitle: swapContactPickerEmptyTitle(
+                              context.l10n,
+                              swapState,
+                            ),
+                            onSelected: _selectAddressBookContact,
+                            onCancel: _openAddressEditor,
+                          ),
+                        _SwapModalSurface.slippageSettings => SwapSlippageModal(
+                          slippageBps: swapState.slippageBps,
+                          onSubmitted: (value) {
+                            swapNotifier.updateSlippageBps(value);
+                            _closeSwapModal();
+                          },
+                          onCancel: _closeSwapModal,
+                        ),
+                      },
+                    ),
+                  ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: AppToastHost(
+                      key: const ValueKey('swap_toast_overlay_host'),
+                      child: SizedBox.expand(key: _toastOverlayContextKey),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -413,7 +428,7 @@ class _SwapPageTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Text(
-      'Swap',
+      context.l10n.swapPageTitle,
       key: const ValueKey('swap_page_title'),
       textAlign: TextAlign.center,
       style: appSerifDisplayStyle(color: colors.text.accent),
@@ -441,7 +456,8 @@ class _SwapReviewFooter extends StatelessWidget {
       zecAvailableZatoshi,
     );
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
-    final destinationFormatError = state.destinationAddressFormatError;
+    final destinationFormatError = state.destinationAddressFormatIssue
+        ?.localizedMessage(context.l10n);
     final canReview = state.canReviewQuote && !balanceExceeded;
     final onPressed = needsDestinationAddress
         ? onOpenDestinationAddress
@@ -450,13 +466,13 @@ class _SwapReviewFooter extends StatelessWidget {
         : null;
     final loading = state.quoteLoading && !needsDestinationAddress;
     final label = needsDestinationAddress
-        ? _destinationAddressActionLabel(state)
+        ? _destinationAddressActionLabel(context.l10n, state)
         : destinationFormatError ??
               (balanceExceeded
-                  ? 'Not enough ZEC'
+                  ? context.l10n.commonNotEnoughZec
                   : state.quoteLoading
-                  ? 'Getting quote'
-                  : 'Review swap');
+                  ? context.l10n.swapActionGettingQuote
+                  : context.l10n.commonReviewSwap);
     final reviewReady =
         !needsDestinationAddress &&
         destinationFormatError == null &&
@@ -518,10 +534,10 @@ class _SwapReviewButtonLabel extends StatelessWidget {
   }
 }
 
-String _destinationAddressActionLabel(SwapState state) {
+String _destinationAddressActionLabel(AppLocalizations l10n, SwapState state) {
   return state.direction.sendsZec
-      ? 'Add recipient address'
-      : 'Add refund address';
+      ? l10n.swapActionAddRecipientAddress
+      : l10n.swapActionAddRefundAddress;
 }
 
 bool _reviewAmountExceedsAvailableZec(

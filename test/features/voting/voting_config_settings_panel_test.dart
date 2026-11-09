@@ -18,6 +18,8 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart'
+    show appLocalizationsDelegates;
 
 void main() {
   testWidgets('test round visibility setting persists both states', (
@@ -269,6 +271,7 @@ Future<void> _pumpPanel(
       ],
       child: WidgetsApp(
         color: const Color(0xFFFFFFFF),
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, _) {
           return AppTheme(
             data: AppThemeData.light,

@@ -267,6 +267,12 @@ pub(crate) fn with_wallet_db_write_lock<T>(
     operation: &'static str,
     write: impl FnOnce() -> T,
 ) -> T {
+    let guard = acquire_wallet_db_write_lock(operation);
+    run_wallet_db_write(operation, guard, write)
+}
+
+/// Acquire the shared lock without specializing its wait path per callback.
+fn acquire_wallet_db_write_lock(operation: &'static str) -> MutexGuard<'static, ()> {
     // Serializes wallet-DB writes across FRB foreground calls, C-FFI
     // background sync calls, and Rust sync tasks inside this process. This
     // does not coordinate with a separate OS process that opens the same DB.
@@ -287,15 +293,19 @@ pub(crate) fn with_wallet_db_write_lock<T>(
     };
     drop(waiting);
 
-    let waited = wait_start.elapsed();
+    report_wallet_db_write_wait(operation, wait_start.elapsed());
+
+    guard
+}
+
+/// Report contention after acquisition, before entering the write epoch.
+fn report_wallet_db_write_wait(operation: &'static str, waited: Duration) {
     if waited >= Duration::from_millis(50) {
         log::info!(
             "wallet DB write lock waited {:.3}s for {operation}",
             waited.as_secs_f64()
         );
     }
-
-    run_wallet_db_write(operation, guard, write)
 }
 
 /// Best-effort exit cleanup must not queue indefinitely behind a scan. Taking
@@ -373,13 +383,7 @@ pub(crate) async fn with_wallet_db_write_lock_unless<T>(
                     return None;
                 }
                 drop(waiting);
-                let waited = wait_start.elapsed();
-                if waited >= Duration::from_millis(50) {
-                    log::info!(
-                        "wallet DB write lock waited {:.3}s for {operation}",
-                        waited.as_secs_f64()
-                    );
-                }
+                report_wallet_db_write_wait(operation, wait_start.elapsed());
                 return Some(run_wallet_db_write(operation, guard, write));
             }
         }
@@ -444,17 +448,21 @@ fn run_wallet_db_write<T>(
 
     let hold_start = Instant::now();
     let result = write();
-    let held = hold_start.elapsed();
+    report_wallet_db_write_hold(operation, hold_start.elapsed());
+
+    drop(_epoch_guard);
+    drop(guard);
+    result
+}
+
+/// Report the completed closure while its epoch and write lock remain held.
+fn report_wallet_db_write_hold(operation: &'static str, held: Duration) {
     if held >= Duration::from_secs(1) {
         log::info!(
             "wallet DB write lock held {:.3}s by {operation}",
             held.as_secs_f64()
         );
     }
-
-    drop(_epoch_guard);
-    drop(guard);
-    result
 }
 
 pub(crate) fn open_readonly_conn_with_timeout(

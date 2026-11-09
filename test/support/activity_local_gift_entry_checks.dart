@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../fakes/fake_sync_notifier.dart';
 
@@ -311,6 +312,7 @@ class _Fixture {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.dark, child: child!),
@@ -386,7 +388,12 @@ final _bootstrap = AppBootstrapState(
   initialAccountState: _accountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  // This suite exercises local activity/recovery ordering, not server discovery.
+  rpcEndpointConfig: const RpcEndpointConfig(
+    networkName: 'main',
+    lightwalletdUrl: 'https://us.zec.stardust.rest:443',
+    presetId: kManualUsRpcEndpointPresetId,
+  ),
   themeMode: ThemeMode.dark,
   privacyModeEnabled: false,
   isPasswordConfigured: true,

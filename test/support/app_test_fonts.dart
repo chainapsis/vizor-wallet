@@ -1,8 +1,16 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+bool _fontsLoaded = false;
+
 Future<void> loadAppTestFonts() async {
+  // Cache completion, not a Future from another widget test's FakeAsync zone.
+  if (_fontsLoaded) return;
   const fonts = <String, List<String>>{
+    // Load the actual shipped subsets, never alias a system family to a
+    // different test font: capture metrics must match the app's UI fonts.
+    'Vizor Korean UI': ['assets/fonts/VizorKoreanUI-VF.ttf'],
+    'Vizor Chinese UI': ['assets/fonts/VizorChineseUI-VF.ttf'],
     'Inter': [
       'assets/fonts/Inter-Regular.ttf',
       'assets/fonts/Inter-Medium.ttf',
@@ -34,4 +42,5 @@ Future<void> loadAppTestFonts() async {
     }
     await loader.load();
   }
+  _fontsLoaded = true;
 }

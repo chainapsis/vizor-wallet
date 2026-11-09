@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/naming/zns_names_setting.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -45,7 +46,7 @@ class ZnsNamesControl extends ConsumerWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Zcash names',
+                        context.l10n.settingsZnsNamesLabel,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelLarge.copyWith(
@@ -54,7 +55,9 @@ class ZnsNamesControl extends ConsumerWidget {
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        enabled ? 'On' : 'Off',
+                        enabled
+                            ? context.l10n.settingsStatusOn
+                            : context.l10n.settingsStatusOff,
                         key: const ValueKey('settings_zns_names_status'),
                         style: AppTypography.labelLarge.copyWith(
                           color: enabled
@@ -71,7 +74,7 @@ class ZnsNamesControl extends ConsumerWidget {
                   key: const ValueKey('settings_zns_names_toggle'),
                   trackKey: const ValueKey('settings_zns_names_toggle_track'),
                   enabled: enabled,
-                  semanticsLabel: 'Zcash names',
+                  semanticsLabel: context.l10n.settingsZnsNamesLabel,
                   onToggle: loaded
                       ? () => toggleZnsNames(context, ref, !enabled)
                       : null,
@@ -84,7 +87,7 @@ class ZnsNamesControl extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            kZnsNamesSettingsCopy,
+            context.l10n.settingsZnsNamesCopy,
             key: const ValueKey('settings_zns_names_description'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -108,7 +111,7 @@ Future<void> toggleZnsNames(
   } catch (error) {
     debugPrint('[zcash] ZNS: failed to save the names setting: $error');
     if (context.mounted) {
-      showAppToast(context, "Couldn't save the Zcash names setting");
+      showAppToast(context, context.l10n.settingsZnsNamesSaveFailed);
     }
   }
 }

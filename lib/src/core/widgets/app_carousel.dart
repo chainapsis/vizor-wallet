@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../l10n/l10n.dart';
 import '../layout/app_form_factor.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
@@ -51,7 +52,7 @@ class AppCarousel extends StatefulWidget {
     this.autoplay = true,
     this.autoplayInterval = const Duration(seconds: 5),
     this.transitionDuration = const Duration(milliseconds: 400),
-    this.semanticLabel = 'Information',
+    this.semanticLabel,
     this.onPageChanged,
     super.key,
   }) : assert(items.length > 0, 'AppCarousel requires at least one item.'),
@@ -66,7 +67,7 @@ class AppCarousel extends StatefulWidget {
   final bool autoplay;
   final Duration autoplayInterval;
   final Duration transitionDuration;
-  final String semanticLabel;
+  final String? semanticLabel;
   final ValueChanged<int>? onPageChanged;
 
   @override
@@ -283,6 +284,9 @@ class _AppCarouselState extends State<AppCarousel> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  String _semanticLabel(BuildContext context) =>
+      widget.semanticLabel ?? context.l10n.commonInformation;
+
   @override
   Widget build(BuildContext context) {
     assert(
@@ -327,11 +331,12 @@ class _AppCarouselState extends State<AppCarousel> with WidgetsBindingObserver {
               button: item.onTap != null,
               onTap: item.onTap,
               container: true,
-              label:
-                  '${widget.semanticLabel} '
-                  '${logicalPage + 1} of '
-                  '${widget.items.length}. '
-                  '${item.message}',
+              label: context.l10n.carouselPageSemantics(
+                _semanticLabel(context),
+                logicalPage + 1,
+                widget.items.length,
+                item.message,
+              ),
               child: ExcludeSemantics(child: card),
             );
           },
@@ -395,9 +400,11 @@ class _AppCarouselState extends State<AppCarousel> with WidgetsBindingObserver {
                               ? MouseCursor.defer
                               : SystemMouseCursors.click,
                           child: Semantics(
-                            label:
-                                'Show ${widget.semanticLabel.toLowerCase()} '
-                                '${index + 1} of ${widget.items.length}',
+                            label: context.l10n.carouselShowPage(
+                              _semanticLabel(context).toLowerCase(),
+                              index + 1,
+                              widget.items.length,
+                            ),
                             selected: index == _activeLogicalPage,
                             child: AnimatedContainer(
                               key: ValueKey('app_carousel_indicator_$index'),

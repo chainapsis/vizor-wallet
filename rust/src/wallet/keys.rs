@@ -299,21 +299,29 @@ fn ensure_db_initialized_with_seed(
     })
 }
 
-fn make_birthday(network: WalletNetwork, birthday_height: Option<u64>) -> AccountBirthday {
-    match birthday_height {
+fn make_birthday(
+    network: WalletNetwork,
+    birthday_height: Option<u64>,
+) -> Result<AccountBirthday, String> {
+    let height = match birthday_height {
         Some(h) => {
-            let height = BlockHeight::from_u32(h as u32);
-            let chain_state = ChainState::empty(height - 1, BlockHash([0u8; 32]));
-            AccountBirthday::from_parts(chain_state, None)
+            let height = u32::try_from(h)
+                .ok()
+                .filter(|height| *height > 0)
+                .ok_or_else(|| {
+                    format!(
+                        "Invalid birthday height: expected 1..={}, got {h}",
+                        u32::MAX
+                    )
+                })?;
+            BlockHeight::from_u32(height)
         }
-        None => {
-            let sapling_height = network
-                .activation_height(NetworkUpgrade::Sapling)
-                .expect("Sapling activation height must be known");
-            let chain_state = ChainState::empty(sapling_height - 1, BlockHash([0u8; 32]));
-            AccountBirthday::from_parts(chain_state, None)
-        }
-    }
+        None => network
+            .activation_height(NetworkUpgrade::Sapling)
+            .expect("Sapling activation height must be known"),
+    };
+    let chain_state = ChainState::empty(height - 1, BlockHash([0u8; 32]));
+    Ok(AccountBirthday::from_parts(chain_state, None))
 }
 
 fn zip32_account_id(account_index: u32) -> Result<zip32::AccountId, String> {
@@ -479,7 +487,7 @@ fn import_ufvk_account(
     birthday_height: Option<u64>,
     account_index: u32,
 ) -> Result<(String, String), String> {
-    let birthday = make_birthday(network, birthday_height);
+    let birthday = make_birthday(network, birthday_height)?;
     let seed_fp = SeedFingerprint::from_seed(seed.expose_secret())
         .ok_or("Invalid seed length for fingerprint")?;
     let account_id = zip32_account_id(account_index)?;
@@ -540,7 +548,7 @@ pub(crate) fn register_gift_card_observer(
         .import_account_ufvk(
             "Gift Card observer",
             &ufvk,
-            &make_birthday(network, Some(birthday_height)),
+            &make_birthday(network, Some(birthday_height))?,
             AccountPurpose::ViewOnly,
             None,
         )
@@ -592,10 +600,10 @@ pub fn import_hardware_account(
     birthday_height: Option<u64>,
     hardware_signer_kind: HardwareSignerKind,
 ) -> Result<(String, String), String> {
+    let birthday = make_birthday(network, birthday_height)?;
+
     // Ensure DB is initialized (without seed — hardware wallet has no local seed)
     ensure_db_migrated_once(db_path, network)?;
-
-    let birthday = make_birthday(network, birthday_height);
 
     // Parse UFVK from string
     let ufvk = zcash_keys::keys::UnifiedFullViewingKey::decode(&network, ufvk_string)
@@ -663,9 +671,9 @@ pub fn init_db_and_create_account(
     birthday_height: Option<u64>,
     name: &str,
 ) -> Result<(String, String), String> {
-    ensure_db_initialized_with_seed(db_path, network, seed)?;
+    let birthday = make_birthday(network, birthday_height)?;
 
-    let birthday = make_birthday(network, birthday_height);
+    ensure_db_initialized_with_seed(db_path, network, seed)?;
 
     let (account_id, address) = with_wallet_db_write_lock("keys.create_account", || {
         addresses::ensure_receive_table(db_path)?;
@@ -698,7 +706,7 @@ pub fn import_derived_account_at_index(
     name: &str,
     account_index: u32,
 ) -> Result<(String, String), String> {
-    let birthday = make_birthday(network, birthday_height);
+    let birthday = make_birthday(network, birthday_height)?;
     let account_id = zip32_account_id(account_index)?;
 
     let ufvk = software_account_ufvk(network, seed, account_index)?;
@@ -1533,6 +1541,63 @@ pub fn wallet_exists(db_path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn birthday_height_rejects_zero_and_overflow_without_truncation() {
+        for network in [
+            WalletNetwork::Main,
+            WalletNetwork::Test,
+            WalletNetwork::Regtest,
+        ] {
+            for height in [0, u64::from(u32::MAX) + 1, u64::MAX] {
+                let error = make_birthday(network, Some(height)).unwrap_err();
+                assert!(error.contains("Invalid birthday height"));
+                assert!(error.contains(&height.to_string()));
+            }
+        }
+    }
+
+    #[test]
+    fn birthday_height_preserves_none_and_valid_inclusive_boundaries() {
+        for network in [
+            WalletNetwork::Main,
+            WalletNetwork::Test,
+            WalletNetwork::Regtest,
+        ] {
+            let default = make_birthday(network, None).unwrap();
+            assert_eq!(
+                default.height(),
+                network.activation_height(NetworkUpgrade::Sapling).unwrap()
+            );
+            for height in [1, 2_500_000, u32::MAX] {
+                assert_eq!(
+                    make_birthday(network, Some(u64::from(height)))
+                        .unwrap()
+                        .height(),
+                    BlockHeight::from_u32(height)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_birthday_is_rejected_before_creating_a_wallet_database() {
+        let temp = tempfile::tempdir().unwrap();
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        for height in [0, u64::from(u32::MAX) + 1, u64::MAX] {
+            let path = temp.path().join(format!("invalid-{height}.db"));
+            let error = init_db_and_create_account(
+                path.to_str().unwrap(),
+                WalletNetwork::Main,
+                &seed,
+                Some(height),
+                "test",
+            )
+            .unwrap_err();
+            assert!(error.contains("Invalid birthday height"));
+            assert!(!path.exists());
+        }
+    }
 
     fn hardware_style_ufvk(seed: &SecretVec<u8>, account_index: zip32::AccountId) -> String {
         use zcash_address::unified::{Encoding, Fvk, Ufvk};
@@ -2622,16 +2687,14 @@ mod tests {
         let other_account_uuid = uuid::Uuid::new_v4().to_string();
         {
             let conn = rusqlite::Connection::open(db_path_str).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE vizor_ledger_signed_operations (
-                    network TEXT NOT NULL,
-                    account_uuid TEXT NOT NULL
-                );",
-            )
-            .unwrap();
             conn.execute(
-                "INSERT INTO vizor_ledger_signed_operations (network, account_uuid)
-                 VALUES ('main', ?1), ('main', ?2), ('test', ?1)",
+                "INSERT INTO vizor_ledger_signed_operations
+                     (network, operation_id, account_uuid, kind, proof_pczt, signature_pczt,
+                      state, created_at_ms, updated_at_ms)
+                 VALUES
+                     ('main', 'op-1', ?1, 'send', x'00', x'00', 'signed_pending_broadcast', 0, 0),
+                     ('main', 'op-2', ?2, 'send', x'00', x'00', 'signed_pending_broadcast', 0, 0),
+                     ('test', 'op-3', ?1, 'send', x'00', x'00', 'signed_pending_broadcast', 0, 0)",
                 rusqlite::params![ledger_uuid, other_account_uuid],
             )
             .unwrap();

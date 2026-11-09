@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import 'desktop_import_navigation.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
@@ -23,6 +24,7 @@ import 'import_birthday_estimator.dart';
 import 'import_birthday_calendar_overlay.dart';
 import 'import_birthday_unknown_height_modal.dart';
 import 'import_split_view.dart';
+import '../../../core/formatting/date_format.dart';
 
 enum ImportBirthdayTab { date, blockHeight }
 
@@ -59,8 +61,6 @@ class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
 
 class _ImportWalletBirthdayScreenState
     extends ConsumerState<ImportWalletBirthdayScreen> {
-  static const _manualHeightErrorText =
-      "Doesn't seem like a legit block height";
   static const _titleWidth = 396.0;
   static const _subtitleWidth = 226.0;
   static const _widgetWidth = 304.0;
@@ -83,8 +83,8 @@ class _ImportWalletBirthdayScreenState
   _accountDiscoveryCandidates;
   Completer<List<int>?>? _accountDiscoveryCompleter;
   bool _accountDiscoveryAllowsEmptySelection = true;
-  String? _metadataError;
-  String? _submitError;
+  bool _metadataFailed = false;
+  OnboardingSubmitError? _submitError;
   DateTime? _calendarInitialDate;
   int _estimateSeq = 0;
 
@@ -123,14 +123,15 @@ class _ImportWalletBirthdayScreenState
 
   Future<void> _loadMetadata() async {
     setState(() {
-      _metadataError = null;
+      _metadataFailed = false;
     });
 
     try {
       final metadata = await ref
           .read(rpcEndpointFailoverProvider.notifier)
           .runWithEndpointFallback(
-            operation: 'import birthday metadata',
+            operation:
+                'import birthday metadata', // l10n-ignore: operation label
             action: (endpoint) =>
                 ImportBirthdayEstimator.loadMetadata(endpoint: endpoint),
           );
@@ -146,7 +147,7 @@ class _ImportWalletBirthdayScreenState
       log('ImportWalletBirthdayScreen._loadMetadata: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _metadataError = 'Could not load wallet birthday metadata.';
+        _metadataFailed = true;
       });
     }
   }
@@ -161,15 +162,17 @@ class _ImportWalletBirthdayScreenState
     });
 
     try {
-      final estimatedHeight = await ref
-          .read(rpcEndpointFailoverProvider.notifier)
-          .runWithEndpointFallback(
-            operation: 'import birthday estimate',
-            action: (endpoint) =>
-                ImportBirthdayEstimator.estimateBirthdayHeight(
-                  endpoint: endpoint,
-                  selectedDate: date,
-                  metadata: _metadata,
+      final estimatedHeight =
+          await ImportBirthdayEstimator.estimateBirthdayHeight(
+            endpoint: ref.read(rpcEndpointProvider),
+            selectedDate: date,
+            metadata: _metadata,
+            runWithEndpoint: (action) => ref
+                .read(rpcEndpointFailoverProvider.notifier)
+                .runWithEndpointFallback(
+                  operation:
+                      'import birthday estimate', // l10n-ignore: operation label
+                  action: action,
                 ),
           );
       if (!mounted || seq != _estimateSeq) return;
@@ -183,7 +186,9 @@ class _ImportWalletBirthdayScreenState
       if (!mounted || seq != _estimateSeq) return;
       setState(() {
         _isEstimating = false;
-        _submitError = 'Could not estimate the wallet birthday height.';
+        _submitError = OnboardingSubmitError.localized(
+          (l10n) => l10n.onboardingBirthdayEstimateFailed,
+        );
       });
     }
   }
@@ -363,7 +368,9 @@ class _ImportWalletBirthdayScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _ImportWalletSubmitPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
+        _submitError = OnboardingSubmitError.text(
+          onboardingSubmitErrorMessage(context.l10n, e),
+        );
       });
       return;
     }
@@ -421,23 +428,24 @@ class _ImportWalletBirthdayScreenState
   }
 
   String? get _manualHeightError {
+    final manualHeightErrorText = context.l10n.onboardingBirthdayInvalidHeight;
     final text = _manualHeightController.text.trim();
     if (text.isEmpty) return null;
     final parsed = int.tryParse(text);
-    if (parsed == null) return _manualHeightErrorText;
+    if (parsed == null) return manualHeightErrorText;
     if (parsed < _minimumBirthdayHeight) {
-      return _manualHeightErrorText;
+      return manualHeightErrorText;
     }
     final maximumHeight = _metadata?.tipHeight;
     if (maximumHeight != null && parsed > maximumHeight) {
-      return _manualHeightErrorText;
+      return manualHeightErrorText;
     }
-    if (_metadataError != null) return _metadataError;
+    if (_metadataFailed) return context.l10n.onboardingBirthdayMetadataFailed;
     return null;
   }
 
   String? get _dateMessage {
-    if (_metadataError != null) return _metadataError;
+    if (_metadataFailed) return context.l10n.onboardingBirthdayMetadataFailed;
     return null;
   }
 
@@ -455,7 +463,7 @@ class _ImportWalletBirthdayScreenState
       return LedgerOnboardingShell(
         activeStep: LedgerOnboardingStep.birthday,
         backTarget: OnboardingBackTarget.route(
-          label: 'Connect Ledger',
+          label: context.l10n.commonConnectLedger,
           routePath: desktopImportLocation(context, '/onboarding/ledger'),
         ),
         overlay: overlay,
@@ -466,7 +474,7 @@ class _ImportWalletBirthdayScreenState
     final args = widget.args!;
     return ImportOnboardingTrailingPane(
       backTarget: OnboardingBackTarget.callback(
-        label: ImportOnboardingStep.secretPassphrase.label,
+        label: ImportOnboardingStep.secretPassphrase.label(context.l10n),
         onTap: () => context.go(
           desktopImportLocation(context, '/import'),
           extra: ImportSecretPassphraseArgs(
@@ -485,14 +493,16 @@ class _ImportWalletBirthdayScreenState
     final activeTab = _activeTab;
     final calendarFirstDate = _calendarFirstDate;
     final calendarLastDate = _calendarLastDate;
+    final l10n = context.l10n;
     final buttonLabel = switch (_submitPhase) {
-      _ImportWalletSubmitPhase.discoveringAccounts => 'Checking accounts...',
-      _ImportWalletSubmitPhase.stoppingSync => 'Stop syncing...',
-      _ImportWalletSubmitPhase.importing => 'Importing...',
+      _ImportWalletSubmitPhase.discoveringAccounts =>
+        l10n.onboardingCheckingAccounts,
+      _ImportWalletSubmitPhase.stoppingSync => l10n.onboardingStopSyncing,
+      _ImportWalletSubmitPhase.importing => l10n.commonImporting,
       _ImportWalletSubmitPhase.idle =>
         activeTab == ImportBirthdayTab.date && _isEstimating
-            ? 'Estimating...'
-            : 'Continue',
+            ? l10n.onboardingEstimating
+            : l10n.commonContinue,
     };
 
     return _buildPresentation(
@@ -537,7 +547,7 @@ class _ImportWalletBirthdayScreenState
                           SizedBox(
                             width: _titleWidth,
                             child: Text(
-                              'Around when did you create your wallet?',
+                              context.l10n.onboardingBirthdayTitle,
                               style: AppTypography.displayLarge.copyWith(
                                 color: context.colors.text.accent,
                               ),
@@ -548,8 +558,7 @@ class _ImportWalletBirthdayScreenState
                           SizedBox(
                             width: _subtitleWidth,
                             child: Text(
-                              'Zcash (ZEC) built around financial privacy '
-                              '& self-custody.',
+                              context.l10n.onboardingIntroSubtitle,
                               style: AppTypography.bodyMedium.copyWith(
                                 color: context.colors.text.primary,
                               ),
@@ -573,7 +582,10 @@ class _ImportWalletBirthdayScreenState
                                     width: _fieldWidth,
                                     valueText: _selectedDate == null
                                         ? null
-                                        : _formatDate(_selectedDate!),
+                                        : formatNumericDate(
+                                            _selectedDate!,
+                                            context.l10n.localeName,
+                                          ),
                                     enabled: !_isSubmitting,
                                     onTap: _pickDate,
                                   )
@@ -613,9 +625,12 @@ class _ImportWalletBirthdayScreenState
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (_submitError != null &&
-                          _submitError!.trim().isNotEmpty) ...[
-                        _InlineMessage(text: _submitError, centered: true),
+                      if (_submitError?.resolve(l10n).trim().isNotEmpty ??
+                          false) ...[
+                        _InlineMessage(
+                          text: _submitError!.resolve(l10n),
+                          centered: true,
+                        ),
                         const SizedBox(height: AppSpacing.s),
                       ],
                       AppButton(
@@ -635,7 +650,9 @@ class _ImportWalletBirthdayScreenState
                         variant: AppButtonVariant.ghost,
                         minWidth: _buttonWidth,
                         trailing: const AppIcon(AppIcons.skip),
-                        child: const Text('I can’t remember'),
+                        child: Text(
+                          context.l10n.onboardingBirthdayCantRemember,
+                        ),
                       ),
                     ],
                   ),
@@ -677,7 +694,7 @@ class _BirthdayTabRow extends StatelessWidget {
         children: [
           _TabLabel(
             iconName: AppIcons.calendar,
-            label: 'Enter the date',
+            label: context.l10n.onboardingBirthdayEnterDate,
             active: activeTab == ImportBirthdayTab.date,
             onTap: () => onTabSelected(ImportBirthdayTab.date),
             color: colors.text.accent,
@@ -685,7 +702,7 @@ class _BirthdayTabRow extends StatelessWidget {
           const SizedBox(width: AppSpacing.xs),
           _TabLabel(
             iconName: AppIcons.block,
-            label: 'Enter the block height',
+            label: context.l10n.onboardingBirthdayEnterBlockHeight,
             active: activeTab == ImportBirthdayTab.blockHeight,
             onTap: () => onTabSelected(ImportBirthdayTab.blockHeight),
             color: colors.text.accent,
@@ -791,7 +808,7 @@ class _DatePickerField extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    valueText ?? 'mm/dd/yyyy',
+                    valueText ?? context.l10n.onboardingBirthdayDateHint,
                     style: AppTypography.labelLarge.copyWith(
                       color: valueColor,
                       fontWeight: FontWeight.w400,
@@ -878,7 +895,7 @@ class _BlockHeightField extends StatelessWidget {
               ),
               cursorColor: colors.text.accent,
               decoration: material.InputDecoration.collapsed(
-                hintText: 'Block height',
+                hintText: context.l10n.onboardingBlockHeight,
                 hintStyle: AppTypography.labelLarge.copyWith(
                   color: colors.text.muted,
                   fontWeight: FontWeight.w400,
@@ -959,10 +976,4 @@ DateTime _clampDate(DateTime value, DateTime min, DateTime max) {
 
 DateTime _dateOnly(DateTime value) {
   return DateTime(value.year, value.month, value.day);
-}
-
-String _formatDate(DateTime date) {
-  final month = date.month.toString().padLeft(2, '0');
-  final day = date.day.toString().padLeft(2, '0');
-  return '$month/$day/${date.year}';
 }

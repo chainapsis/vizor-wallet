@@ -23,6 +23,7 @@ class _MobileMigrationPreparing extends StatelessWidget {
     final confirmationCount = status?.denominationConfirmationCount ?? 0;
     final confirmationTarget = status?.denominationConfirmationTarget ?? 0;
     final parts = _mobilePreparingPartPresentations(
+      context.l10n,
       status: status,
       previewPlan: previewPlan,
     );
@@ -51,7 +52,7 @@ class _MobileMigrationPreparing extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    'Ironwood Migration',
+                    context.l10n.migrationFlowTitle,
                     key: const ValueKey(
                       'mobile_ironwood_migration_preparing_title',
                     ),
@@ -65,8 +66,7 @@ class _MobileMigrationPreparing extends StatelessWidget {
                   SizedBox(
                     width: 300,
                     child: Text(
-                      'Preparing your balance for migration. This step usually '
-                      'takes 10-20 mins.',
+                      context.l10n.migrationMobilePreparingBody,
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.secondary,
@@ -83,20 +83,18 @@ class _MobileMigrationPreparing extends StatelessWidget {
                               color: colors.text.accent,
                               fontWeight: FontWeight.w600,
                             ),
-                            children: [
-                              const TextSpan(text: 'Migration '),
-                              TextSpan(
-                                text: '$partCount notes',
-                                style: TextStyle(color: colors.text.secondary),
-                              ),
-                            ],
+                            children: _notesHeadingSpans(
+                              context,
+                              partCount,
+                              colors.text.secondary,
+                            ),
                           ),
                         ),
                       ),
                       Padding(
                         padding: const EdgeInsets.only(right: AppSpacing.xxs),
                         child: Text(
-                          '$totalAmount ZEC',
+                          '$totalAmount ZEC', // l10n-ignore: amount format
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.accent,
                           ),
@@ -119,7 +117,7 @@ class _MobileMigrationPreparing extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           _MobileStatusBackHomeButton(
-            label: 'Go home',
+            label: context.l10n.commonGoHome,
             onPressed: () => context.go('/home'),
           ),
         ],
@@ -175,6 +173,7 @@ class _MobileMigrationMigratingState
     final etaHeight = _mobileMigrationEtaHeight(syncState);
     final blockTimes = ref.watch(blockSpacingProvider).fromTip(etaHeight);
     final parts = _mobileMigrationPartPresentations(
+      context.l10n,
       status: status,
       previewPlan: widget.previewPlan,
       explicitParts: widget.previewParts,
@@ -194,9 +193,14 @@ class _MobileMigrationMigratingState
         status!.nextActionHeight! > etaHeight;
     final completion = status == null
         ? widget.previewPlan == null
-              ? 'Schedule pending'
-              : _migrationArrivalLabel(widget.previewPlan!, blockTimes)
+              ? context.l10n.migrationSchedulePending
+              : _migrationArrivalLabel(
+                  context.l10n,
+                  widget.previewPlan!,
+                  blockTimes,
+                )
         : migrationApproximateCompletionTimingLabel(
+            context.l10n,
             status,
             blockTimes: blockTimes,
             currentHeight: etaHeight,
@@ -211,7 +215,7 @@ class _MobileMigrationMigratingState
     final partsContent = parts.isEmpty
         ? Center(
             child: Text(
-              'Migration parts will appear as transactions are prepared.',
+              context.l10n.migrationMobilePartsPlaceholder,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
@@ -229,7 +233,7 @@ class _MobileMigrationMigratingState
       children: [
         SizedBox(height: compact ? 20 : 46),
         Text(
-          'Ironwood Migration',
+          context.l10n.migrationFlowTitle,
           textAlign: TextAlign.center,
           style: AppTypography.headlineLarge.copyWith(
             color: colors.text.accent,
@@ -246,20 +250,18 @@ class _MobileMigrationMigratingState
                     color: colors.text.accent,
                     fontWeight: FontWeight.w600,
                   ),
-                  children: [
-                    const TextSpan(text: 'Migration '),
-                    TextSpan(
-                      text: '$partCount notes',
-                      style: TextStyle(color: colors.text.secondary),
-                    ),
-                  ],
+                  children: _notesHeadingSpans(
+                    context,
+                    partCount,
+                    colors.text.secondary,
+                  ),
                 ),
               ),
             ),
             Padding(
               padding: const EdgeInsets.only(right: AppSpacing.xxs),
               child: Text(
-                '$totalAmount ZEC',
+                '$totalAmount ZEC', // l10n-ignore: amount format
                 style: AppTypography.labelLarge.copyWith(
                   color: colors.text.accent,
                 ),
@@ -276,29 +278,34 @@ class _MobileMigrationMigratingState
         else
           SizedBox(height: 304, child: partsContent),
         SizedBox(height: compact ? AppSpacing.s : 52),
-        _ReviewRow(label: 'Est. completion', value: completion),
+        _ReviewRow(
+          label: context.l10n.migrationSummaryEstCompletion,
+          value: completion,
+        ),
         const SizedBox(height: AppSpacing.xs),
         _ReviewRow(
-          label: 'Currently spendable balance',
-          value: spendable == '-' ? spendable : '$spendable ZEC',
+          label: context.l10n.migrationMobileSpendableBalance,
+          value: spendable == '-'
+              ? spendable
+              : '$spendable ZEC', // l10n-ignore: amount format
         ),
         const SizedBox(height: AppSpacing.md),
         _MigrationCanLeaveMessage(
           primary: needsCredentialRecovery
-              ? 'Migration recovery required.'
+              ? context.l10n.migrationMobileRecoveryRequired
               : coordinatorError != null
-              ? "Couldn't continue migration. Try again."
+              ? context.l10n.migrationErrorContinue
               : needsAttention
-              ? 'Keep Vizor open & unlocked.'
+              ? context.l10n.migrationMobileKeepOpenUnlocked
               : waitingForSafeBlock
-              ? 'Waiting for a safe block to continue.'
+              ? context.l10n.migrationMobileWaitSafeBlock
               : null,
           secondary: needsCredentialRecovery
-              ? "Two saved transactions couldn't be reopened."
+              ? context.l10n.migrationMobileSavedTxError
               : coordinatorError != null || needsAttention
-              ? 'Vizor will retry automatically.'
+              ? context.l10n.migrationMobileRetryAutomatically
               : waitingForSafeBlock
-              ? 'You can leave this screen.'
+              ? context.l10n.migrationMobileCanLeave
               : null,
         ),
         const SizedBox(height: AppSpacing.md),
@@ -314,13 +321,17 @@ class _MobileMigrationMigratingState
             onPressed: recoveryInProgress
                 ? null
                 : () => unawaited(_confirmRecovery(accountUuid)),
-            child: Text(recoveryInProgress ? 'Recovering...' : 'Recover'),
+            child: Text(
+              recoveryInProgress
+                  ? context.l10n.migrationMobileRecovering
+                  : context.l10n.migrationMobileRecover,
+            ),
           ),
           const SizedBox(height: AppSpacing.xs),
         ],
         _MobileStatusBackHomeButton(
           key: const ValueKey('mobile_ironwood_status_back_home_button'),
-          label: 'Go home',
+          label: context.l10n.commonGoHome,
           onPressed: () => context.go('/home'),
         ),
       ],
@@ -400,7 +411,7 @@ class _MobileMigrationRecoveryDialog extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Rebuild migration?',
+                  context.l10n.migrationMobileRebuildTitle,
                   style: AppTypography.bodyLarge.copyWith(
                     color: colors.text.accent,
                     fontWeight: FontWeight.w600,
@@ -408,10 +419,7 @@ class _MobileMigrationRecoveryDialog extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  'Vizor will first check that the pending transactions were '
-                  'not sent. It will then rebuild the migration for only your '
-                  'remaining balance. Any confirmed transfers will stay '
-                  'unchanged.',
+                  context.l10n.migrationMobileRebuildBody,
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.secondary,
                   ),
@@ -423,14 +431,14 @@ class _MobileMigrationRecoveryDialog extends StatelessWidget {
                   ),
                   expand: true,
                   onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Rebuild'),
+                  child: Text(context.l10n.migrationMobileRebuildAction),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 AppButton(
                   expand: true,
                   variant: AppButtonVariant.ghost,
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
+                  child: Text(context.l10n.commonCancel),
                 ),
               ],
             ),
@@ -445,4 +453,17 @@ int _mobileMigrationEtaHeight(SyncState? syncState) {
   if (syncState == null) return 0;
   if (syncState.chainTipHeight > 0) return syncState.chainTipHeight;
   return syncState.scannedHeight;
+}
+
+/// "Migration 3 notes" with the count in a muted colour; the count's position
+/// is the translator's.
+List<InlineSpan> _notesHeadingSpans(
+  BuildContext context,
+  int partCount,
+  Color mutedColor,
+) {
+  final notes = context.l10n.migrationMobileStatusNotesCount(partCount);
+  return emphasisSpans(context.l10n.migrationMobileStatusNotesTitle(notes), [
+    notes,
+  ], TextStyle(color: mutedColor));
 }

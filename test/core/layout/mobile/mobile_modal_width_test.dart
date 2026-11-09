@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_window_policy.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/services/native_modal_corners.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _content = ValueKey('modal_width_content');
 
@@ -174,6 +175,7 @@ Widget _app({
   var underlyingTapped = false;
   const content = SizedBox(key: _content, height: 140, child: TextField());
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     theme: ThemeData(
       useMaterial3: true,
       bottomSheetTheme: BottomSheetThemeData(constraints: sheetConstraints),

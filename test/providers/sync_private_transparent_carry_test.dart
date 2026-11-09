@@ -743,7 +743,9 @@ void main() {
           overrides: [
             appBootstrapProvider.overrideWithValue(
               _bootstrapWith(
-                _stoppedSnapshot(rust_sync.TransparentStopReason.optOutUnfinished),
+                _stoppedSnapshot(
+                  rust_sync.TransparentStopReason.optOutUnfinished,
+                ),
               ),
             ),
             accountProvider.overrideWith(_Accounts.new),
@@ -786,7 +788,9 @@ void main() {
           overrides: [
             appBootstrapProvider.overrideWithValue(
               _bootstrapWith(
-                _stoppedSnapshot(rust_sync.TransparentStopReason.optOutUnfinished),
+                _stoppedSnapshot(
+                  rust_sync.TransparentStopReason.optOutUnfinished,
+                ),
               ),
             ),
             accountProvider.overrideWith(_Accounts.new),

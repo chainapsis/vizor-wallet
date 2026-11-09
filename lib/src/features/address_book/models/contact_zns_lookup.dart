@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/address_display.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/naming/zns_name_resolver.dart';
 import '../../../core/naming/zns_recipient_lookup.dart';
 import 'address_book_contact.dart';
@@ -24,10 +25,17 @@ enum ContactZnsMessageKind {
 
 /// The line a contact form shows under its address field for a Zcash name.
 class ContactZnsMessage {
-  const ContactZnsMessage(this.text, this.kind);
+  const ContactZnsMessage(this._text, this.kind);
 
-  final String text;
+  /// A line whose text the caller already localized, such as a format
+  /// error.
+  ContactZnsMessage.text(String text, this.kind) : _text = ((_) => text);
+
+  final String Function(AppLocalizations l10n) _text;
   final ContactZnsMessageKind kind;
+
+  /// The line in the shown language.
+  String localizedText(AppLocalizations l10n) => _text(l10n);
 
   bool get isError => kind == ContactZnsMessageKind.error;
 }
@@ -130,7 +138,7 @@ class ContactZnsLookup {
     final status = _state.status;
     if (status != null) {
       return ContactZnsMessage(
-        status.message,
+        status.localizedMessage,
         status.isError
             ? ContactZnsMessageKind.error
             : ContactZnsMessageKind.pending,
@@ -139,14 +147,14 @@ class ContactZnsLookup {
     final resolution = _state.resolutionFor(address);
     if (resolution != null) {
       return ContactZnsMessage(
-        'Resolves to ${truncatedAddress(resolution.address)}',
+        (l10n) => l10n.znsResolvesTo(truncatedAddress(resolution.address)),
         ContactZnsMessageKind.resolved,
       );
     }
     final savedName = _state.displayName(address);
     if (savedName != null) {
       return ContactZnsMessage(
-        'Saved from $savedName',
+        (l10n) => l10n.addressBookZnsSavedFrom(savedName),
         ContactZnsMessageKind.saved,
       );
     }

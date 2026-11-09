@@ -17,6 +17,8 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
@@ -31,6 +33,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fakes/fake_gift_link_rust_api.dart';
 import 'fakes/fake_sync_notifier.dart';
@@ -155,10 +158,12 @@ void main() {
           ProviderScope(
             overrides: [
               appBootstrapProvider.overrideWithValue(paymentLinksBootstrap),
+              rpcEndpointProvider.overrideWith(_FixedRpcEndpoint.new),
               incomingUriServiceProvider.overrideWithValue(incoming),
               syncProvider.overrideWith(FakeSyncNotifier.new),
             ],
             child: MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
               routerConfig: router,
               builder: (_, child) => AppTheme(
                 data: AppThemeData.dark,
@@ -328,4 +333,12 @@ class _ProbeApi extends FakeGiftLinkRustApi {
     required List<int> pcztBytes,
     required BigInt maxFragmentLen,
   }) async => ['ur:zcash-pczt/test-fixture'];
+}
+
+// These incoming-link tests keep the signer/scanner transport deterministic.
+class _FixedRpcEndpoint extends RpcEndpointNotifier {
+  @override
+  RpcEndpointConfig build() => defaultRpcEndpointConfig(
+    'main',
+  ).copyWith(presetId: kManualUsRpcEndpointPresetId);
 }

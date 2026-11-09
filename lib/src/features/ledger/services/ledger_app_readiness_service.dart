@@ -5,7 +5,6 @@ import '../../../rust/api/ledger.dart' as rust_ledger;
 import '../ledger_capability.dart';
 import '../ledger_error_codes.dart';
 import 'ledger_device_request.dart';
-import 'ledger_failure_guidance.dart';
 import 'ledger_mobile_ble_service.dart';
 
 enum LedgerDeviceAppStatus { open, dashboard, locked, disconnected, other }
@@ -44,7 +43,7 @@ class LedgerAppReadinessState {
   const LedgerAppReadinessState._({
     required this.phase,
     this.failure,
-    this.message,
+    this.error,
     this.version,
   });
 
@@ -58,7 +57,7 @@ class LedgerAppReadinessState {
             phase != LedgerAppReadinessPhase.failed,
       ),
       failure = null,
-      message = null,
+      error = null,
       version = null;
 
   const LedgerAppReadinessState.ready(String version)
@@ -66,18 +65,23 @@ class LedgerAppReadinessState {
 
   const LedgerAppReadinessState.failed({
     required LedgerAppReadinessFailure failure,
-    required String message,
+    required LedgerAppReadinessException error,
   }) : this._(
          phase: LedgerAppReadinessPhase.failed,
          failure: failure,
-         message: message,
+         error: error,
        );
 
   final LedgerAppReadinessPhase phase;
   final LedgerAppReadinessFailure? failure;
-  final String? message;
+
+  /// What failed; screens word it with `ledgerFailureGuidance`.
+  final LedgerAppReadinessException? error;
   final String? version;
 }
+
+/// What a readiness check found, for display when there is no [cause].
+enum LedgerAppReadinessReason { appNotVerified, openZcashApp, updateRequired }
 
 class LedgerAppReadinessException implements Exception {
   const LedgerAppReadinessException(
@@ -85,10 +89,18 @@ class LedgerAppReadinessException implements Exception {
     this.message, {
     this.canReconnect = false,
     this.cause,
+    this.reason,
+    this.requiredVersion,
   });
 
   final LedgerAppReadinessFailure failure;
   final String message;
+
+  /// Set by the checks that throw without a [cause].
+  final LedgerAppReadinessReason? reason;
+
+  /// The minimum app version, when [reason] is `updateRequired`.
+  final String? requiredVersion;
   final bool canReconnect;
 
   /// The transport or device error this failure was classified from.
@@ -195,7 +207,7 @@ class LedgerAppReadinessService {
       _onState(
         LedgerAppReadinessState.failed(
           failure: failure.failure,
-          message: failure.message,
+          error: failure,
         ),
       );
       throw failure;
@@ -209,7 +221,8 @@ class LedgerAppReadinessService {
         if (version == null) {
           throw const LedgerAppReadinessException(
             LedgerAppReadinessFailure.unavailable,
-            'Vizor could not verify the Ledger Zcash app. Try again.',
+            'Vizor could not verify the Ledger Zcash app. Try again.', // l10n-ignore: exception text
+            reason: LedgerAppReadinessReason.appNotVerified,
           );
         }
         try {
@@ -217,8 +230,10 @@ class LedgerAppReadinessService {
         } on UnsupportedError {
           throw const LedgerAppReadinessException(
             LedgerAppReadinessFailure.unsupportedVersion,
-            'Update the Ledger Zcash app to version '
+            'Update the Ledger Zcash app to version ' // l10n-ignore: exception text
             '$kMinimumLedgerZcashAppVersion or newer.',
+            reason: LedgerAppReadinessReason.updateRequired,
+            requiredVersion: kMinimumLedgerZcashAppVersion,
           );
         }
         return version;
@@ -226,17 +241,18 @@ class LedgerAppReadinessService {
       case LedgerDeviceAppStatus.other:
         throw const LedgerAppReadinessException(
           LedgerAppReadinessFailure.unavailable,
-          'Open the Zcash app on your Ledger, then try again.',
+          'Open the Zcash app on your Ledger, then try again.', // l10n-ignore: exception text
+          reason: LedgerAppReadinessReason.openZcashApp,
         );
       case LedgerDeviceAppStatus.locked:
         throw const LedgerAppReadinessException(
           LedgerAppReadinessFailure.locked,
-          'Unlock your Ledger, then try again.',
+          'Unlock your Ledger, then try again.', // l10n-ignore: exception text
         );
       case LedgerDeviceAppStatus.disconnected:
         throw const LedgerAppReadinessException(
           LedgerAppReadinessFailure.disconnected,
-          'Reconnect and unlock your Ledger, then try again.',
+          'Reconnect and unlock your Ledger, then try again.', // l10n-ignore: exception text
           canReconnect: true,
         );
     }
@@ -269,19 +285,21 @@ class LedgerAppReadinessService {
       );
     }
     final kind = classifyLedgerError(error);
+    // Exception text for logs; the screens show `ledgerFailureGuidance`.
     final message = switch (kind) {
       LedgerFailureKind.usbPermission =>
-        'Connect and unlock your Ledger over USB. If it is connected, install '
+        'Connect and unlock your Ledger over USB. If it is connected, install ' // l10n-ignore: exception text
             'the Ledger udev rules on Linux, then unplug and reconnect it.',
       LedgerFailureKind.userRejected =>
-        'The request was rejected on your Ledger. Try again when ready.',
-      LedgerFailureKind.cancelled => 'Ledger operation was cancelled.',
-      LedgerFailureKind.deviceLocked => 'Unlock your Ledger, then try again.',
+        'The request was rejected on your Ledger. Try again when ready.', // l10n-ignore: exception text
+      LedgerFailureKind.cancelled =>
+        'Ledger operation was cancelled.', // l10n-ignore: exception text
+      LedgerFailureKind.deviceLocked =>
+        'Unlock your Ledger, then try again.', // l10n-ignore: exception text
       LedgerFailureKind.transportLost =>
-        'Reconnect and unlock your Ledger, then try again.',
+        'Reconnect and unlock your Ledger, then try again.', // l10n-ignore: exception text
       _ =>
-        ledgerFailureGuidance(error)?.message ??
-            'Vizor could not prepare the Ledger Zcash app. Try again.',
+        'Vizor could not prepare the Ledger Zcash app. Try again.', // l10n-ignore: exception text
     };
     return LedgerAppReadinessException(
       ledgerReadinessFailureFor(kind),

@@ -30,8 +30,10 @@ import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 
 const _passcode = '123456';
 const _wrongPasscode = '999999';
@@ -213,6 +215,7 @@ Future<ProviderContainer> _pumpUnlock(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: _router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
@@ -275,7 +278,7 @@ void main() {
     expect(flow!.prefill.id, _parkedRequest.id);
     expect(flow.view.source, PaymentRequestSource.link);
     expect(container.read(paymentUriPrefillProvider), isNull);
-    expect(find.text(kPaymentUriExpiredMessage), findsNothing);
+    expect(find.text(PaymentUriNotice.expired.text(testL10n)), findsNothing);
   });
 
   testWidgets('a scanned request retains its provenance after unlock', (
@@ -306,7 +309,7 @@ void main() {
     expect(_location(), '/home');
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(container.read(paymentUriPrefillProvider), isNull);
-    expect(find.text(kPaymentUriExpiredMessage), findsOneWidget);
+    expect(find.text(PaymentUriNotice.expired.text(testL10n)), findsOneWidget);
   });
 
   testWidgets('a migration send gate that closed while locked drops the link', (
@@ -324,7 +327,10 @@ void main() {
     expect(_location(), '/home');
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(container.read(paymentUriPrefillProvider), isNull);
-    expect(find.text(kPaymentUriMigrationSendGateMessage), findsOneWidget);
+    expect(
+      find.text(PaymentUriNotice.migrationSendGate.text(testL10n)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a failed unlock leaves the link parked', (tester) async {

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart'
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_icon.dart';
@@ -47,6 +48,9 @@ Future<T?> showAppMobileSheet<T>({
   bool enableDrag = true,
   bool transparentBackground = false,
   ValueListenable<bool>? canDismiss,
+  // Screen-owned sheets may need to dismiss this exact route after a data
+  // change or navigation, without popping another screen above it.
+  void Function(ModalRoute<T> route)? onRouteCreated,
 }) {
   final appTheme = context.appTheme;
   final colors = context.colors;
@@ -84,11 +88,12 @@ Future<T?> showAppMobileSheet<T>({
         Builder(builder: (context) => MobileModalCard(child: builder(context))),
       ),
     );
+    onRouteCreated?.call(route);
     final popped = navigator.push(route);
     return canDismiss == null ? popped : popped.then((_) => route.completed);
   }
 
-  if (canDismiss != null) {
+  if (canDismiss != null || onRouteCreated != null) {
     final navigator = Navigator.of(context, rootNavigator: true);
     final route = ControlledModalSheetRoute<T>(
       canDismiss: canDismiss,
@@ -111,6 +116,7 @@ Future<T?> showAppMobileSheet<T>({
         ),
       ),
     );
+    onRouteCreated?.call(route);
     return navigator.push(route).then((_) => route.completed);
   }
 
@@ -271,7 +277,7 @@ class MobileModalCard extends StatelessWidget {
                     container: true,
                     button: true,
                     enabled: backEnabled,
-                    label: 'Back',
+                    label: context.l10n.commonBack,
                     child: AppButton(
                       key: const ValueKey('mobile_modal_back_button'),
                       variant: AppButtonVariant.secondary,
@@ -515,7 +521,7 @@ class _ModalCloseButtonState extends State<_ModalCloseButton> {
         ? secondary.bgHover
         : secondary.bg;
     return Semantics(
-      label: 'Close',
+      label: context.l10n.commonClose,
       button: true,
       enabled: widget.onTap != null,
       child: MouseRegion(

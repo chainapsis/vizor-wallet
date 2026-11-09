@@ -30,6 +30,8 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 import 'package:zcash_wallet/src/providers/device_owner_auth_provider.dart';
 import 'package:zcash_wallet/src/services/device_owner_auth.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 /// Just enough of the Rust secret API for password verifier checks.
 class _RustSecretApiFake implements RustLibApi {
@@ -199,6 +201,7 @@ Widget _app({
       ...extraOverrides,
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
       home: MobileUnlockScreen(autoPromptBiometric: autoPromptBiometric),
     ),
@@ -256,6 +259,7 @@ Widget _app({
         biometricUnlockServiceProvider.overrideWithValue(biometric),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
@@ -378,7 +382,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Forgot Passcode?'), findsOneWidget);
-    expect(find.text(kForgotPasscodeUnbackedAccountWarning), findsOneWidget);
+    expect(
+      find.text(
+        'If you haven’t backed up an account’s secret passphrase, '
+        'you can’t recover its funds after resetting Vizor.',
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
     expect(find.text('Continue to reset Vizor'), findsOneWidget);
 
@@ -404,10 +414,7 @@ void main() {
 
     // Warned, never blocked: the claim cannot finish while the wallet stays
     // locked, and this reset is the only way back in.
-    expect(
-      find.text(kWalletResetInFlightGiftCardWarningMessage),
-      findsOneWidget,
-    );
+    expect(find.text(testL10n.walletResetGiftCardWarning), findsOneWidget);
     expect(find.text('Continue to reset Vizor'), findsOneWidget);
   });
 
@@ -454,6 +461,7 @@ void main() {
           paymentLinkClaimsInFlightProvider.overrideWith((ref) async => 0),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -474,10 +482,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(accountNotifier.resets, 1);
-    expect(
-      find.text(kWalletResetInFlightGiftCardClaimsMessage),
-      findsOneWidget,
-    );
+    expect(find.text(testL10n.walletResetGiftCardInFlight), findsOneWidget);
     expect(
       find.text("Couldn't reset the app. Please try again."),
       findsNothing,
@@ -544,6 +549,20 @@ void main() {
     testWidgets('passcode unlock without a pending Gift Card opens home', (
       tester,
     ) async {
+      const channel = MethodChannel('com.zcash.wallet/haptics');
+      final confirmations = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        confirmations.add(call.method);
+        return true;
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        ),
+      );
       final routed = _routedUnlockApp();
       addTearDown(routed.router.dispose);
       await tester.pumpWidget(routed.app);
@@ -556,6 +575,7 @@ void main() {
 
       expect(routed.router.state.uri.path, '/home');
       expect(find.text('Home destination'), findsOneWidget);
+      expect(confirmations, ['success']);
       expect(find.text('Payment link destination'), findsNothing);
     });
 
@@ -622,7 +642,7 @@ void main() {
       BiometricKind.touchId,
       BiometricKind.fingerprint,
     ]) {
-      testWidgets('offers ${kind.inlineLabel} only as an unchecked option', (
+      testWidgets('offers ${kind.name} only as an unchecked option', (
         tester,
       ) async {
         final biometric = FakeBiometricUnlock(
@@ -638,7 +658,10 @@ void main() {
         final option = find.byType(PasscodeBiometricOptIn);
         expect(option, findsOneWidget);
         expect(tester.widget<PasscodeBiometricOptIn>(option).selected, isFalse);
-        expect(find.bySemanticsLabel(kind.useNextTimeLabel), findsOneWidget);
+        expect(
+          find.bySemanticsLabel(kind.useNextTimeLabel(testL10n)),
+          findsOneWidget,
+        );
         expect(find.byType(PasscodeBiometricButton), findsNothing);
         expect(biometric.enables, 0);
         expect(biometric.reads, 0);

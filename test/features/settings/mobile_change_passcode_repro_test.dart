@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_change_
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 class _FakeSecurityNotifier extends AppSecurityNotifier {
   @override
@@ -48,7 +49,7 @@ void main() {
   });
 
   testWidgets('settings → change passcode → back to settings keeps the '
-      'Password row reachable for a second round', (tester) async {
+      'Change passcode row reachable for a second round', (tester) async {
     final router = GoRouter(
       initialLocation: '/settings',
       routes: [
@@ -76,6 +77,7 @@ void main() {
           appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: router,
           builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
         ),
@@ -92,7 +94,7 @@ void main() {
     }
 
     Future<void> changePasscode(String current, String next) async {
-      await tester.tap(find.text('Password'));
+      await tester.tap(find.text('Change passcode'));
       await tester.pumpAndSettle();
       expect(find.text('Enter Passcode'), findsOneWidget);
       await enterPasscode(current);

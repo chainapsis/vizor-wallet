@@ -60,6 +60,9 @@ pub struct LedgerSignedOperation {
     pub txid: Option<String>,
     pub status: Option<String>,
     pub message: Option<String>,
+    /// `message` as sentences; empty for rows earlier builds wrote and for
+    /// retryable errors. See [`crate::api::sync::BroadcastNotice`].
+    pub notices: Vec<crate::api::sync::BroadcastNotice>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
 }
@@ -70,6 +73,8 @@ pub struct LedgerSignedOperationBroadcastResult {
     pub txid: String,
     pub status: String,
     pub message: Option<String>,
+    /// `message` as sentences; see [`crate::api::sync::BroadcastNotice`].
+    pub notices: Vec<crate::api::sync::BroadcastNotice>,
     pub requires_ack: bool,
 }
 
@@ -145,6 +150,17 @@ pub fn ledger_parse_mobile_ufvk_responses(
         ufvk,
         account_index,
     })
+}
+
+/// Verify a Ledger export against a stored account, allowing only a stored-only
+/// Sapling component. Does not access the device or change either viewing key.
+pub fn ledger_account_viewing_keys_match(
+    expected_ufvk: String,
+    exported_ufvk: String,
+    network: String,
+) -> Result<bool, String> {
+    require_mainnet(&network)?;
+    ledger::account_identity::viewing_keys_match(&expected_ufvk, &exported_ufvk)
 }
 
 /// Build the transport-neutral compact shielded PCZT signing exchange.
@@ -405,6 +421,7 @@ pub async fn ledger_broadcast_signed_operation(
         txid: result.txid,
         status: result.status,
         message: result.message,
+        notices: crate::api::sync::api_broadcast_notices(result.notices),
         requires_ack: result.requires_ack,
     })
     .map_err(Into::into)
@@ -432,6 +449,7 @@ fn to_signed_operation(operation: ledger::SignedOperationMetadata) -> LedgerSign
         txid: operation.txid,
         status: operation.status,
         message: operation.message,
+        notices: crate::api::sync::api_broadcast_notices(operation.notices),
         created_at_ms: operation.created_at_ms,
         updated_at_ms: operation.updated_at_ms,
     }
@@ -480,7 +498,7 @@ fn require_mainnet(network: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ledger_account_fingerprint, require_mainnet};
+    use super::{ledger_account_fingerprint, ledger_account_viewing_keys_match, require_mainnet};
 
     #[test]
     fn account_fingerprint_is_stable_and_account_scoped() {
@@ -495,6 +513,15 @@ mod tests {
         assert!(require_mainnet("main").is_ok());
         assert!(require_mainnet("test").unwrap_err().contains("mainnet"));
         assert!(require_mainnet("regtest").unwrap_err().contains("mainnet"));
+        for network in ["test", "regtest"] {
+            assert!(ledger_account_viewing_keys_match(
+                String::new(),
+                String::new(),
+                network.into()
+            )
+            .unwrap_err()
+            .contains("mainnet"));
+        }
     }
 }
 

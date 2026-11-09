@@ -2,6 +2,7 @@
 // flow (wallet DB path + Sapling params status).
 // ignore_for_file: depend_on_referenced_packages
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -69,6 +70,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart'
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
     show ZcashBatchMessageInput;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_zec_market_data_cache.dart';
 
@@ -1009,9 +1011,11 @@ void main() {
   testWidgets('Keystone signature limit fails before showing a QR', (
     tester,
   ) async {
-    rustApi.prepareBatchError = StateError(
-      'Keystone batch signing supports at most 96 spend signatures per '
-      'transaction; this transaction requires 97',
+    rustApi.prepareBatchError = const ApiWalletError(
+      code: ApiWalletErrorCode.keystoneBatchSignatureLimit,
+      message:
+          'Keystone batch signing supports at most 96 spend signatures per '
+          'transaction; this transaction requires 97',
     );
 
     await _setDesktopViewport(tester);
@@ -1219,6 +1223,7 @@ void main() {
           ),
         );
         final accessRecovery = ledgerFailureGuidance(
+          testL10n,
           original,
         )!.bluetoothRecovery;
         var attempts = 0;
@@ -1235,6 +1240,7 @@ void main() {
               if (attempts == 1) {
                 throw LedgerConnectionRequiredException(
                   'connection failed',
+                  reason: LedgerConnectionRequiredReason.usb,
                   cause: original,
                 );
               }
@@ -1245,7 +1251,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('Confirm with Ledger'));
         await _flushRealAsync(tester);
-        if (ledgerFailureGuidance(original)!.pairingRecovery) {
+        if (ledgerFailureGuidance(testL10n, original)!.pairingRecovery) {
           final pairingInvalid = failure == LedgerMobileFailure.pairingInvalid;
           expect(
             find.text(
@@ -1262,7 +1268,7 @@ void main() {
             find.text(
               accessRecovery
                   ? 'Ready to reconnect'
-                  : ledgerFailureGuidance(original)!.message,
+                  : ledgerFailureGuidance(testL10n, original)!.message,
             ),
             findsOneWidget,
           );
@@ -1429,7 +1435,10 @@ void main() {
       await _flushRealAsync(tester);
 
       expect(find.text('Request not accepted'), findsOneWidget);
-      expect(find.text(kLedgerHostRequestRejectedMessage), findsOneWidget);
+      expect(
+        find.text(testL10n.ledgerFailureMsgRejectedNewRequest),
+        findsOneWidget,
+      );
       expect(find.textContaining('rejected on your Ledger'), findsNothing);
       expect(
         find.byKey(const ValueKey('ledger_device_app_prompt_mainnet')),
@@ -2284,47 +2293,46 @@ void main() {
     expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
   });
 
-  testWidgets(
-    'Ledger upgrade hold shows the hold copy, not the device',
-    (tester) async {
-      final operationService = _FakeLedgerSignedOperationService();
-      var signerCalls = 0;
-      rustApi.createPcztError = StateError(
-        "Transactions can't be sent this close to the network upgrade. "
-        'Try again after it activates.',
-      );
+  testWidgets('Ledger upgrade hold shows the hold copy, not the device', (
+    tester,
+  ) async {
+    final operationService = _FakeLedgerSignedOperationService();
+    var signerCalls = 0;
+    rustApi.createPcztError = StateError(
+      "Transactions can't be sent this close to the network upgrade. "
+      'Try again after it activates.',
+    );
 
-      await _setDesktopViewport(tester);
-      await tester.pumpWidget(
-        _harness(
-          _reviewArgs(addressType: 'unified'),
-          bootstrap: _bootstrap(
-            isHardware: true,
-            hardwareSignerKind: HardwareSignerKind.ledger,
-          ),
-          ledgerOperationService: operationService,
-          ledgerSigner: (_) async {
-            signerCalls++;
-            return _fakeSignatureBytes;
-          },
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(
+          isHardware: true,
+          hardwareSignerKind: HardwareSignerKind.ledger,
         ),
-      );
-      await tester.pumpAndSettle();
+        ledgerOperationService: operationService,
+        ledgerSigner: (_) async {
+          signerCalls++;
+          return _fakeSignatureBytes;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Confirm with Ledger'));
-      await _flushRealAsync(tester);
+    await tester.tap(find.text('Confirm with Ledger'));
+    await _flushRealAsync(tester);
 
-      expect(find.text('Paused for network upgrade'), findsOneWidget);
-      expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
-      expect(find.textContaining('Check your device'), findsNothing);
-      expect(find.text('Ledger signing failed'), findsNothing);
-      expect(find.text('Create new transaction'), findsNothing);
-      expect(find.text('New transaction required'), findsNothing);
-      expect(find.text('Try again'), findsNothing);
-      expect(signerCalls, 0);
-      expect(operationService.checkpoints, isEmpty);
-    },
-  );
+    expect(find.text('Paused for network upgrade'), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
+    expect(find.textContaining('Check your device'), findsNothing);
+    expect(find.text('Ledger signing failed'), findsNothing);
+    expect(find.text('Create new transaction'), findsNothing);
+    expect(find.text('New transaction required'), findsNothing);
+    expect(find.text('Try again'), findsNothing);
+    expect(signerCalls, 0);
+    expect(operationService.checkpoints, isEmpty);
+  });
 
   testWidgets('Ledger checkpoint retry preserves bytes without re-signing', (
     tester,
@@ -2771,7 +2779,10 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: MaterialApp.router(routerConfig: router),
+        child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
+          routerConfig: router,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -3003,6 +3014,7 @@ List<Override> _harnessOverrides({
 Widget _routerHarness(GoRouter router) => ProviderScope(
   overrides: _harnessOverrides(),
   child: MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
   ),
@@ -3115,6 +3127,7 @@ Widget _harness(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
@@ -3253,7 +3266,7 @@ AppBootstrapState _bootstrap({
     ),
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: kZcashDefaultNetworkName,
-    rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+    rpcEndpointConfig: _fixedRpcEndpoint(kZcashDefaultNetworkName),
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
     isPasswordConfigured: true,
@@ -3673,7 +3686,7 @@ class _RustApiFake implements RustLibApi {
 class _FallbackRoute extends RpcEndpointFailoverNotifier {
   @override
   RpcEndpointFailoverState build() => RpcEndpointFailoverState(
-    primary: defaultRpcEndpointConfig('main'),
+    primary: _fixedRpcEndpoint('main'),
     current: const RpcEndpointConfig(
       networkName: 'main',
       lightwalletdUrl: 'https://fallback.example:443',
@@ -3684,3 +3697,12 @@ class _FallbackRoute extends RpcEndpointFailoverNotifier {
 
 const _deviceRejected =
     'ledger_status_6985: Ledger request was rejected or the PCZT was not finalized';
+
+// Signing/broadcast fixtures exercise one fixed server; endpoint selection is
+// covered separately and must not replace the intended mocked Rust boundary.
+RpcEndpointConfig _fixedRpcEndpoint(String networkName) {
+  final endpoint = defaultRpcEndpointConfig(networkName);
+  return endpoint.network == ZcashNetwork.mainnet
+      ? endpoint.copyWith(presetId: kManualUsRpcEndpointPresetId)
+      : endpoint;
+}

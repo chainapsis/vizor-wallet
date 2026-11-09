@@ -39,13 +39,29 @@ provider, including operations in non-membership neighbors.
 
 This is a reader anchored to a bundled consensus committee, not a full rotating
 light client. The bundled public keys and original voting powers live in
-`rust/src/wallet/voting/trust/`. Their hashes must match the original pins below,
-which were captured from the official RPCs on 2026-09-10:
+`rust/src/wallet/voting/trust/`. Their hashes must match the pins in `trust/anchors.json`, shown below,
+captured from the official RPCs on the listed dates:
 
-| Network | Chain | RPC | Validator-set hash |
-| --- | --- | --- | --- |
-| main | zvote-1 | https://vote-rpc-primary.valargroup.org | 621A1E2C532170C3C0BC2E951D26C1CCA7A0EFB009AA15820D648D336C64F6BD |
-| test | svote-1 | https://stage.vote-rpc-primary.valargroup.org | 6E81F631CB63A527AB5A659529BA8942C46CCF78BA87D1B3AD4CF8AE5BDC2E8B |
+<!-- voting-validator-anchors:start -->
+| Network | Chain | RPC | Captured | Validator-set hash |
+| --- | --- | --- | --- | --- |
+| main | zvote-1 | https://vote-rpc-primary.valargroup.org | 2026-11-02 | E2E8170C807DAB936C75A02E092E9EE81C9F4776B03BA672FCD3DFF7AB2FD8C1 |
+| test | svote-1 | https://stage.vote-rpc-primary.valargroup.org | 2026-09-10 | 6E81F631CB63A527AB5A659529BA8942C46CCF78BA87D1B3AD4CF8AE5BDC2E8B |
+<!-- voting-validator-anchors:end -->
+
+The main anchor was refreshed on 2026-11-02 from ten validators with total
+power 100 to thirteen with total power 130: four additions, one removal,
+and no key or power changes for the nine retained validators. The signed header
+at height 10033311 authenticates the refreshed set under both the previous
+anchor (`621A1E2C532170C3C0BC2E951D26C1CCA7A0EFB009AA15820D648D336C64F6BD`)
+and current quorums. The previous set and this header are retained in
+`rust/tests/fixtures/voting-participation/main-anchor-refresh.json`.
+The fixed `main-20261102.json` contains real membership/absence proofs and a latest
+commit at height 10033812 with signing power 90/130 under the refreshed set
+but only 60/100 under the previous anchor. Such latest commits were rejected
+before the refresh even though the chain's current quorum was satisfied.
+A later height-specific canonical commit can contain more signatures, so
+historical full commits alone do not reproduce the intermittent failure.
 
 The initial trust anchor relies on that official HTTPS bootstrap. The current
 validator set must hash to the signed header, but need not hash to the bundled
@@ -61,6 +77,54 @@ anchor update. The original committee remains a long-lived trust assumption;
 this does not provide automatic protection against compromise of its retired
 keys. Custom sources remain unsupported. Regtest retains its explicit disposable
 exact-set anchor. Failed checks preserve the last confirmed display decision.
+
+## Automated trust-anchor refresh
+
+`.github/workflows/update-voting-validators.yml` checks the official production
+and stage RPCs every other Monday, starting with the week of 2026-11-02. The
+weekly cron uses a fixed-date week calculation, so ISO week 53 and month changes
+do not shift the fortnight. `workflow_dispatch` bypasses the date gate.
+
+The offline verifier in `tools/voting-validators` imports the wallet's exact
+`participation_evidence.rs` implementation. The updater checks recent canonical
+commits against both the checked-in and current powers, then verifies public
+membership/absence fixture keys against the same header. It checks response
+heights and completeness and refuses sets exceeding the wallet's 100-validator
+limit. Failed authentication, unavailable RPCs, or invalid proofs stop the run
+before any update files are written. It never bootstraps a replacement anchor
+from unauthenticated RPC data, and it does not implement multi-hop rotation.
+
+Only validator-set hash changes produce updates. Validator order and proposer
+priority do not produce PRs; generated priorities are normalized to zero. Both
+networks are checked by default. Changes update the validator JSON, the pin/date/
+height in `trust/anchors.json`, the generated table above, active state-proof
+fixtures, and `trust/<network>-transition.json`. The transition preserves the
+previous anchor, its validators, and the signed header authenticating the new set.
+Fixed historical regression fixtures are never regenerated.
+
+After offline and network verification, the workflow opens or refreshes one PR
+on `automation/voting-validators`. A successful check that matches `main` closes
+any obsolete proposal on that branch; it never edits a fork's PR. Its body lists changed keys/powers, hashes,
+the evidence height and timestamp, and verified signing power under both sets.
+It does not merge the PR. A merged update reaches installed apps in a release.
+If too much of the old committee has rotated to authenticate a recent header,
+the workflow fails and a person must review the trust-anchor recovery.
+
+To reproduce locally:
+
+```bash
+cargo build --manifest-path tools/voting-validators/Cargo.toml --locked
+cargo test --manifest-path tools/voting-validators/Cargo.toml --locked
+python3 scripts/test_voting_validators.py
+python3 scripts/update-voting-validators.py --check
+python3 scripts/update-voting-validators.py --summary-file /tmp/voting-validator-update.md
+```
+
+`--check` makes no network requests and uses fixture header times for replay.
+Online verification always uses the current clock. `--network main` or
+`--network test` scopes a manual update; selected updates are prepared together
+and validated before publication. The tool only reads public committed fixture
+keys and never opens wallet files or derives governance identifiers.
 
 ## Persistence and recovery
 

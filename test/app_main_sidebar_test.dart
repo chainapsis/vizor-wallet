@@ -1,3 +1,5 @@
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
+import 'package:zcash_wallet/src/providers/account_initialization_provider.dart';
 import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
@@ -12,7 +14,6 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
-import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
@@ -28,6 +29,8 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   setUpAll(() async {
@@ -93,7 +96,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(kSyncStatusConnectingToTorLabel), findsOneWidget);
+    expect(find.text(testL10n.syncConnectingToTor), findsOneWidget);
     expect(find.text('Vizor is synced'), findsNothing);
   });
 
@@ -257,7 +260,6 @@ void main() {
         failure: const SyncFailure(
           kind: SyncFailureKind.endpoint,
           rawMessage: 'offline',
-          userMessage: 'Endpoint unavailable.',
         ),
       ),
       '— ZEC',
@@ -278,7 +280,7 @@ void main() {
         );
         expect(
           item.onTap,
-          importing ? isNull : isNotNull,
+          importing && key != 'home' ? isNull : isNotNull,
           reason: '$name: $key',
         );
       }
@@ -563,6 +565,104 @@ void main() {
     expect(find.text('Needs input'), findsOneWidget);
     expect(find.text('Migrating...'), findsNothing);
   });
+
+  for (final (route, waitingForReads) in [
+    ('/settings', false),
+    ('/settings/endpoint', false),
+    ('/settings/endpoint', true),
+  ]) {
+    testWidgets(
+      'importing Home remains reachable from $route: waitingForReads=$waitingForReads',
+      (tester) async {
+        final sync = SyncState(
+          accountUuid: 'account-1',
+          isSyncing: !waitingForReads,
+          remainingScanBlocks: waitingForReads ? 0 : 100,
+        );
+        await tester.pumpWidget(_sidebarHarness(sync, initialLocation: route));
+        await tester.pump();
+        final c = ProviderScope.containerOf(
+          tester.element(find.byType(AppMainSidebar)),
+        );
+        if (waitingForReads) {
+          final initialization = c.read(accountInitializationProvider.notifier);
+          initialization.register(
+            'account-1',
+            AccountInitializationKind.restored,
+          );
+          initialization.observeScan(
+            initialization.pendingTokens(),
+            completed: true,
+          );
+          await tester.pump();
+        }
+        final home = find.byKey(const ValueKey('sidebar_home_button'));
+        expect(tester.widget<AppSidebarItem>(home).label, 'Importing...');
+        expect(tester.widget<AppSidebarItem>(home).onTap, isNotNull);
+        for (final key in ['swap', 'pay', 'voting', 'activity']) {
+          expect(
+            tester
+                .widget<AppSidebarItem>(
+                  find.byKey(ValueKey('sidebar_${key}_button')),
+                )
+                .onTap,
+            isNull,
+          );
+        }
+        await tester.tap(home);
+        await tester.pumpAndSettle();
+        expect(find.text('home route'), findsOneWidget);
+        expect(
+          GoRouter.of(
+            tester.element(home),
+          ).routeInformationProvider.value.uri.path,
+          '/home',
+        );
+        expect(c.read(syncProvider).requireValue, same(sync));
+        // Tapping the active importing item stays on Home without restarting sync.
+        await tester.tap(home);
+        await tester.pumpAndSettle();
+        expect(find.text('home route'), findsOneWidget);
+        expect(c.read(syncProvider).requireValue, same(sync));
+      },
+    );
+  }
+
+  for (final explicitRouteBlock in [false, true]) {
+    testWidgets(
+      'importing Home respects explicit navigation block: route=$explicitRouteBlock',
+      (tester) async {
+        await tester.pumpWidget(
+          _sidebarHarness(
+            SyncState(
+              accountUuid: 'account-1',
+              isSyncing: true,
+              remainingScanBlocks: 100,
+            ),
+            initialLocation: '/settings',
+            disabledRoutePaths: explicitRouteBlock ? const {'/home'} : const {},
+          ),
+        );
+        await tester.pump();
+        final home = find.byKey(const ValueKey('sidebar_home_button'));
+        final c = ProviderScope.containerOf(tester.element(home));
+        final lease = explicitRouteBlock
+            ? null
+            : c
+                  .read(externalActionGuardProvider.notifier)
+                  .acquire(blocks: const {ExternalAction.navigation});
+        addTearDown(() => lease?.release());
+        expect(tester.widget<AppSidebarItem>(home).onTap, isNotNull);
+        await tester.tap(home);
+        await tester.pumpAndSettle();
+        expect(find.text('settings'), findsOneWidget);
+        expect(find.text('home route'), findsNothing);
+        lease?.release();
+        await tester.pumpAndSettle();
+        expect(find.text('settings'), findsOneWidget);
+      },
+    );
+  }
 
   testWidgets('sidebar keeps Home active and clickable on send routes', (
     tester,
@@ -1233,7 +1333,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
       ),
@@ -1346,7 +1445,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
         themeData: AppThemeData.dark,
@@ -1362,11 +1460,7 @@ void main() {
       await tester.pumpWidget(
         _sidebarHarness(
           SyncState(
-            failure: SyncFailure(
-              kind: entry.key,
-              rawMessage: 'failure',
-              userMessage: 'Sync failed.',
-            ),
+            failure: SyncFailure(kind: entry.key, rawMessage: 'failure'),
           ),
         ),
       );
@@ -1454,6 +1548,7 @@ Widget _sidebarHarness(
   NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
   bool suppressActiveSelection = false,
   LinuxKeyringCoordinator? keyringCoordinator,
+  Set<String> disabledRoutePaths = const {},
 }) {
   final bootstrap = _bootstrapFor(
     accountState ?? _singleAccountState,
@@ -1535,9 +1630,9 @@ Widget _sidebarHarness(
       ),
       GoRoute(
         path: '/settings',
-        builder: (_, _) => const AppDesktopShell(
-          sidebar: AppMainSidebar(),
-          pane: AppDesktopPane(child: Text('settings')),
+        builder: (_, _) => AppDesktopShell(
+          sidebar: AppMainSidebar(disabledRoutePaths: disabledRoutePaths),
+          pane: const AppDesktopPane(child: Text('settings')),
         ),
       ),
       GoRoute(
@@ -1582,6 +1677,7 @@ Widget _sidebarHarness(
         linuxKeyringCoordinatorProvider.overrideWithValue(keyringCoordinator),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         // The syncing sidebar's shimmer and glow animate forever. Tests default
@@ -1616,7 +1712,6 @@ SyncState _networkFailureSyncState() {
     failure: const SyncFailure(
       kind: SyncFailureKind.network,
       rawMessage: 'network failed',
-      userMessage: 'Network connection lost.',
     ),
   );
 }

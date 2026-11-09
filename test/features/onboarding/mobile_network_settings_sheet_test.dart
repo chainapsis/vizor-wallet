@@ -23,9 +23,11 @@ import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 import '../../support/payment_link_navigation_support.dart';
+import '../../support/test_l10n.dart';
 
 class _QueriesApi extends RustLibApi {
   final enabled = <bool>[];
@@ -95,10 +97,14 @@ class _Privacy extends NetworkPrivacyNotifier {
 }
 
 class _Endpoint extends RpcEndpointNotifier {
+  _Endpoint({this.initial});
+  final RpcEndpointConfig? initial;
   final pending = Completer<void>();
   int submissions = 0;
   @override
-  RpcEndpointConfig build() => defaultRpcEndpointConfig('main');
+  RpcEndpointConfig build() => initial ?? defaultRpcEndpointConfig('main');
+  @override
+  Future<void> setAutomatic() async => state = defaultRpcEndpointConfig('main');
   @override
   Future<void> setCustom(String input) async {
     submissions++;
@@ -174,6 +180,7 @@ Future<(ProviderContainer, GoRouter)> _pump(
         builder: (context, ref, _) {
           container = ProviderScope.containerOf(context);
           return MaterialApp.router(
+            localizationsDelegates: appLocalizationsDelegates,
             routerConfig: router,
             builder: (context, child) => AppTheme(
               data: AppThemeData.dark,
@@ -227,6 +234,45 @@ void main() {
   });
   tearDownAll(RustLib.dispose);
   setUp(() => api.enabled.clear());
+
+  testWidgets('automatic selection does not present its seed URL as current', (
+    tester,
+  ) async {
+    await _pump(tester, _Privacy(), _Endpoint());
+    await _open(tester);
+    expect(find.text('Current: Automatic'), findsOneWidget);
+    final field = tester.widget<EditableText>(
+      find.descendant(
+        of: find.byKey(const ValueKey('welcome_endpoint_input')),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(field.controller.text, isEmpty);
+  });
+
+  testWidgets('custom endpoint can return to automatic without verification', (
+    tester,
+  ) async {
+    final endpoint = _Endpoint(
+      initial: const RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://custom.example:443',
+        presetId: kCustomRpcEndpointPresetId,
+      ),
+    );
+    final (container, _) = await _pump(tester, _Privacy(), endpoint);
+    await _open(tester);
+    final automatic = find.byKey(const ValueKey('welcome_endpoint_automatic'));
+    await tester.ensureVisible(automatic);
+    await tester.tap(automatic);
+    await tester.pumpAndSettle();
+    expect(
+      isAutomaticRpcEndpointConfig(container.read(rpcEndpointProvider)),
+      isTrue,
+    );
+    expect(endpoint.submissions, 0);
+    expect(find.byType(MobileNetworkSettingsSheet), findsNothing);
+  });
 
   testWidgets('private queries save immediately without an account and survive '
       'reopening the sheet', (tester) async {
@@ -295,7 +341,7 @@ void main() {
       await tester.ensureVisible(row);
       await tester.tap(row);
       await tester.pumpAndSettle();
-      expect(find.text(kEnhancePirChangingMessage), findsOneWidget);
+      expect(find.text(testL10n.enhancePirChanging), findsOneWidget);
       await _tryDismiss(tester);
       expect(find.byType(MobileNetworkSettingsSheet), findsOneWidget);
       expect(container.read(welcomeNetworkSettingsPresentedProvider), isTrue);
@@ -337,7 +383,7 @@ void main() {
     await tester.ensureVisible(row);
     await tester.tap(row);
     await tester.pumpAndSettle();
-    expect(find.text(kEnhancePirUnchangedMessage), findsOneWidget);
+    expect(find.text(testL10n.enhancePirUnchanged), findsOneWidget);
     expect(store.value, isFalse);
     expect(api.enabled, isEmpty);
     store.fail = false;
@@ -345,7 +391,7 @@ void main() {
     await tester.tap(row);
     await tester.pumpAndSettle();
     expect(store.value, isTrue);
-    expect(find.text(kEnhancePirUnchangedMessage), findsNothing);
+    expect(find.text(testL10n.enhancePirUnchanged), findsNothing);
     await tester.tap(find.bySemanticsLabel('Close'));
     await tester.pumpAndSettle();
     expect(find.byType(MobileNetworkSettingsSheet), findsNothing);
@@ -438,7 +484,7 @@ void main() {
   });
 
   for (final error in [
-    const FormatException('Endpoint is for test, but this wallet uses main.'),
+    RpcEndpointNetworkMismatch(endpointNetwork: 'test', walletNetwork: 'main'),
     const RpcEndpointSaveException('storage unavailable'),
   ]) {
     testWidgets('RPC error keeps draft and distinguishes $error', (

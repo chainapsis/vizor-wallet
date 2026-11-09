@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -11,17 +12,19 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
 import 'package:zcash_wallet/src/features/receive/services/request_qr_export.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
-import 'package:zcash_wallet/src/features/receive/widgets/request/request_amount_model.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/request/request_qr_surface.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../fixtures/orchard_receive_address.dart';
@@ -139,6 +142,7 @@ Widget _app(
       ...extraOverrides,
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
       home: const MobileReceiveScreen(),
     ),
@@ -167,7 +171,7 @@ void main() {
     expect(find.text('Receive ZEC'), findsOneWidget);
     expect(find.text('Account Name'), findsOneWidget);
     expect(find.text('Request ZEC'), findsOneWidget);
-    expect(find.text('Copy shielded address'), findsOneWidget);
+    expect(find.bySemanticsLabel('Copy shielded address'), findsOneWidget);
     // Compact address line: leading 13 chars visible.
     expect(
       find.textContaining(_shielded.substring(0, 13), findRichText: true),
@@ -228,7 +232,7 @@ void main() {
     await _settle(tester);
 
     expect(find.text('Request ZEC'), findsOneWidget);
-    expect(find.text('Copy transparent address'), findsOneWidget);
+    expect(find.bySemanticsLabel('Copy transparent address'), findsOneWidget);
     expect(
       find.textContaining(_transparent.substring(0, 13), findRichText: true),
       findsOneWidget,
@@ -255,10 +259,43 @@ void main() {
       ),
     );
     expect(copyIcon.size, 20);
-    final copyLabel = tester.widget<Text>(
-      find.text('Copy transparent address'),
+    for (final label in ['Copy address', 'Request ZEC']) {
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(of: find.text(label), matching: find.byType(RichText)),
+      );
+      expect(paragraph.text.style?.fontSize, AppTypography.labelLarge.fontSize);
+    }
+  });
+
+  testWidgets('slides the codes apart and out past the content edge', (
+    tester,
+  ) async {
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+
+    expect(
+      tester.widget<PageView>(find.byType(PageView)).clipBehavior,
+      Clip.none,
     );
-    expect(copyLabel.style?.fontSize, AppTypography.labelMedium.fontSize);
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+
+    Rect card(String pool) => tester.getRect(
+      find.descendant(
+        of: find.byKey(
+          ValueKey('mobile_receive_qr_$pool'),
+          skipOffstage: false,
+        ),
+        matching: find.byType(ReceiveQrSurface, skipOffstage: false),
+      ),
+    );
+    final shielded = card('shielded');
+    final transparent = card('transparent');
+    expect(shielded.right, lessThan(transparent.left));
+    expect(transparent.left - shielded.right, greaterThan(AppSpacing.md));
+
+    await _settle(tester);
+    expect(card('transparent').center.dx, moreOrLessEquals(260, epsilon: 1));
   });
 
   testWidgets('updates hidden transparent address after sync completes', (
@@ -302,7 +339,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Copy transparent address'), findsOneWidget);
+    expect(find.bySemanticsLabel('Copy transparent address'), findsOneWidget);
   });
 
   testWidgets('updates hidden transparent address after sync fails', (
@@ -412,7 +449,7 @@ void main() {
     await _settle(tester);
 
     expect(find.text('Request ZEC'), findsOneWidget);
-    expect(find.text('Copy transparent address'), findsOneWidget);
+    expect(find.bySemanticsLabel('Copy transparent address'), findsOneWidget);
 
     await tester.drag(
       find.byKey(const ValueKey('mobile_receive_qr_pager')),
@@ -421,7 +458,40 @@ void main() {
     await _settle(tester);
 
     expect(find.text('Request ZEC'), findsOneWidget);
-    expect(find.text('Copy shielded address'), findsOneWidget);
+    expect(find.bySemanticsLabel('Copy shielded address'), findsOneWidget);
+  });
+
+  testWidgets('the pool chip follows the pager mid-swipe', (tester) async {
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+    final chip = find.byKey(
+      const ValueKey('receive_address_type_tabs_indicator'),
+    );
+    final start = tester.getRect(chip).left;
+    // Labels are recoloured by the chip's position rather than per tab.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('receive_address_type_tabs')),
+        matching: find.byType(ShaderMask),
+      ),
+      findsOneWidget,
+    );
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('mobile_receive_qr_pager'))),
+    );
+    await gesture.moveBy(const Offset(-40, 0));
+    await gesture.moveBy(const Offset(-80, 0));
+    await tester.pump();
+    final midway = tester.getRect(chip).left;
+
+    await gesture.moveBy(const Offset(-200, 0));
+    await gesture.up();
+    await _settle(tester);
+    final end = tester.getRect(chip).left;
+
+    expect(midway, greaterThan(start + 1));
+    expect(midway, lessThan(end - 1));
+    expect(find.bySemanticsLabel('Copy transparent address'), findsOneWidget);
   });
 
   testWidgets('draws a scan-first QR for Keystone accounts', (tester) async {
@@ -490,7 +560,7 @@ void main() {
 
     await _pumpReceive(tester, _FakeReceiveAddressService());
 
-    await tester.tap(find.text('Copy shielded address'));
+    await tester.tap(find.bySemanticsLabel('Copy shielded address'));
     await _settle(tester);
 
     expect(copied, [_shielded]);
@@ -600,7 +670,7 @@ void main() {
     );
   });
 
-  testWidgets('puts copy beside share with a labelled request below', (
+  testWidgets('groups copy with share above a separate text-only request', (
     tester,
   ) async {
     await _pumpReceive(tester, _FakeReceiveAddressService());
@@ -615,7 +685,30 @@ void main() {
     expect(tester.getSize(copy), const Size(242, 50));
     expect(tester.getSize(share), const Size(50, 50));
     expect(tester.getSize(request), const Size(300, 50));
+    final requestButton = tester.widget<AppButton>(
+      find.descendant(of: request, matching: find.byType(AppButton)),
+    );
+    expect(requestButton.variant, AppButtonVariant.ghost);
+    expect(requestButton.leading, isNull);
+    Color? requestFill() =>
+        (tester
+                    .widget<AnimatedContainer>(
+                      find.descendant(
+                        of: request,
+                        matching: find.byType(AnimatedContainer),
+                      ),
+                    )
+                    .decoration
+                as ShapeDecoration)
+            .color;
+    expect(requestFill()?.a, 0);
+    final press = await tester.startGesture(tester.getCenter(request));
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(requestFill()?.a, 0);
+    await press.cancel();
+    await tester.pump();
     expect(find.bySemanticsLabel('Share shielded address'), findsOneWidget);
+    // Copy and share have an 8px gap; request sits 12px below them.
     expect(
       tester.getTopLeft(copy).dy,
       moreOrLessEquals(tester.getTopLeft(share).dy, epsilon: 0.1),
@@ -625,9 +718,22 @@ void main() {
       moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
     );
     expect(
-      tester.getTopLeft(request).dy,
-      greaterThan(tester.getBottomLeft(copy).dy),
+      tester.getTopLeft(request).dy - tester.getBottomLeft(copy).dy,
+      moreOrLessEquals(AppSpacing.s, epsilon: 0.1),
     );
+    expect(tester.getTopLeft(request).dx, tester.getTopLeft(copy).dx);
+    expect(tester.getTopRight(share).dx, tester.getTopRight(request).dx);
+  });
+
+  testWidgets('the text-only request can be opened with a keyboard', (
+    tester,
+  ) async {
+    await _pumpReceive(tester, _FakeReceiveAddressService());
+    Focus.of(tester.element(find.text('Request ZEC'))).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('request_amount_input')), findsOneWidget);
   });
 
   testWidgets('composes a request and shares it with its QR image', (
@@ -923,7 +1029,7 @@ void main() {
     );
     expect(toast.tone, AppToastTone.destructive);
     expect(toast.iconName, AppIcons.cancel);
-    expect(find.text(kRequestLinkCopiedToast), findsNothing);
+    expect(find.text(testL10n.receiveRequestLinkCopied), findsNothing);
   });
 
   testWidgets('a USD request keeps the ZEC it was created with when the price '

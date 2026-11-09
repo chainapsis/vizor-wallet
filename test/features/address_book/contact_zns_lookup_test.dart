@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/features/address_book/models/address_book_conta
 import 'package:zcash_wallet/src/features/address_book/models/contact_zns_lookup.dart';
 
 import '../../fakes/fake_zns_name_resolver.dart';
+import '../../support/test_l10n.dart';
 
 const _address =
     'u14lms6q2sg984hhng068lqesatnak86mlg297x0qkqsvkqgk2m7dyj5x2grlku3adg2tq6t'
@@ -35,15 +36,18 @@ void main() {
       lookup.update(address: 'Alice.zcash', network: _zcash);
       expect(lookup.canSave('Alice.zcash', _zcash), isFalse);
       expect(
-        lookup.message('Alice.zcash')?.text,
-        ZnsLookupStatus.resolving.message,
+        lookup.message('Alice.zcash')?.localizedText(testL10n),
+        ZnsLookupStatus.resolving.localizedMessage(testL10n),
       );
       await pumpEventQueue();
 
       expect(lookup.canSave('Alice.zcash', _zcash), isTrue);
       expect(lookup.addressToSave('Alice.zcash'), _address);
       expect(lookup.nameToSave('Alice.zcash', _zcash), 'alice.zcash');
-      expect(lookup.message('Alice.zcash')?.text, startsWith('Resolves to '));
+      expect(
+        lookup.message('Alice.zcash')?.localizedText(testL10n),
+        startsWith('Resolves to '),
+      );
       expect(lookup.message('Alice.zcash')?.isError, isFalse);
     });
 
@@ -63,8 +67,8 @@ void main() {
         await pumpEventQueue();
         expect(unusable.canSave('bob.zcash', _zcash), isFalse);
         expect(
-          unusable.message('bob.zcash')?.text,
-          ZnsLookupStatus.unusableAddress.message,
+          unusable.message('bob.zcash')?.localizedText(testL10n),
+          ZnsLookupStatus.unusableAddress.localizedMessage(testL10n),
         );
       },
     );
@@ -102,7 +106,10 @@ void main() {
     test('a saved name stays until the address is edited', () {
       final lookup = lookupWith(null, savedName: 'alice.zcash');
       expect(lookup.nameToSave(_address, _zcash), 'alice.zcash');
-      expect(lookup.message(_address)?.text, 'Saved from alice.zcash');
+      expect(
+        lookup.message(_address)?.localizedText(testL10n),
+        'Saved from alice.zcash',
+      );
 
       lookup.update(address: '${_address}x', network: _zcash);
       expect(lookup.nameToSave('${_address}x', _zcash), isNull);
@@ -136,8 +143,8 @@ void main() {
       await pumpEventQueue();
 
       expect(
-        lookup.message('alice.zcash')?.text,
-        ZnsLookupStatus.failed.message,
+        lookup.message('alice.zcash')?.localizedText(testL10n),
+        ZnsLookupStatus.failed.localizedMessage(testL10n),
       );
       expect(lookup.canSave('alice.zcash', _zcash), isFalse);
     });

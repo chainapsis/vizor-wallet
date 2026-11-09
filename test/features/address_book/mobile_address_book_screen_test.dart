@@ -13,8 +13,10 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/address_book/screens/mobile/mobile_address_book_screen.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_zns_name_resolver.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   setUp(() async {
@@ -354,7 +356,10 @@ void main() {
 
       await enterContact(tester, 'nobody.zcash');
 
-      expect(find.text(ZnsLookupStatus.notRegistered.message), findsOneWidget);
+      expect(
+        find.text(ZnsLookupStatus.notRegistered.localizedMessage(testL10n)),
+        findsOneWidget,
+      );
       expect(save(tester).onPressed, isNull);
     });
   });
@@ -392,6 +397,7 @@ Widget _harness(AddressBookRepository repo, {ZnsNameResolver? znsResolver}) {
         znsNameResolverProvider.overrideWithValue(znsResolver),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

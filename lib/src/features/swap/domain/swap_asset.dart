@@ -1,3 +1,4 @@
+// l10n-ignore-file: token and chain names and symbols are data
 class SwapAsset {
   const SwapAsset._({
     required this.name,
@@ -29,7 +30,7 @@ class SwapAsset {
       symbol: displaySymbol,
       displayName: _tokenDisplayName(displaySymbol),
       chainTicker: chainTicker,
-      chainLabel: _chainDisplayName(chainTicker),
+      chainLabel: swapChainDisplayName(chainTicker),
       decimals: decimals,
       assetId: assetId,
       fallbackExternalPerZec: _fallbackRateFor(displaySymbol),
@@ -321,7 +322,7 @@ class SwapAsset {
       chainTicker: _normalizeKey(chainTicker),
       chainLabel: value['chainLabel'] is String
           ? value['chainLabel'] as String
-          : _chainDisplayName(chainTicker),
+          : swapChainDisplayName(chainTicker),
       decimals: decimals,
       assetId: value['assetId'] is String ? value['assetId'] as String : null,
       railLabel: value['railLabel'] is String
@@ -622,7 +623,7 @@ String _tokenDisplayName(String symbol) {
   };
 }
 
-String _chainDisplayName(String ticker) {
+String swapChainDisplayName(String ticker) {
   return switch (ticker.toLowerCase()) {
     'abs' => 'Abstract',
     'adi' => 'Adi',

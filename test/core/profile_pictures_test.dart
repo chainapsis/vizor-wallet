@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import '../support/test_l10n.dart';
 
 void main() {
   test(
@@ -23,7 +24,7 @@ void main() {
         'pfp-14',
         'pfp-15',
       ]);
-      expect(kProfilePictureOptions.map((option) => option.label), [
+      expect(kProfilePictureOptions.map((option) => option.label(testL10n)), [
         'Knight',
         'Viking',
         'Samurai',
@@ -52,7 +53,7 @@ void main() {
 
     expect(option, isNotNull);
     expect(option!.id, 'pfp-02');
-    expect(option.label, 'Viking');
+    expect(option.label(testL10n), 'Viking');
     expect(option.assetPath, 'assets/profile_pictures/profile_picture_02.png');
   });
 

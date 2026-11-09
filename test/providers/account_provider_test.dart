@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/features/send/services/recent_send_recipients.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -772,9 +773,9 @@ void main() {
               ],
             ),
         throwsA(
-          isA<StateError>().having(
-            (error) => error.message,
-            'message',
+          isA<WalletLinkNetworkMismatchException>().having(
+            (error) => error.detail,
+            'detail',
             'Linked wallet network does not match the current app network.',
           ),
         ),
@@ -955,6 +956,50 @@ void main() {
           .map((account) => account.uuid),
       ['account-1'],
     );
+  });
+
+  test('account removal deletes only that account\'s send recents', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final supportDirectory = Directory.systemTemp.createTempSync(
+      'vizor-account-removal',
+    );
+    addTearDown(() {
+      if (supportDirectory.existsSync()) {
+        supportDirectory.deleteSync(recursive: true);
+      }
+    });
+    const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, (call) async {
+          if (call.method == 'getApplicationSupportDirectory') {
+            return supportDirectory.path;
+          }
+          throw MissingPluginException('Unexpected path provider call.');
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, null);
+    });
+
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+    final recents = container.read(sendRecentRecipientStoreProvider);
+    const recipient = SendRecentRecipient(
+      address: 'u1recipient',
+      isShielded: true,
+    );
+    await recents.record(accountUuid: 'account-1', recipient: recipient);
+    await recents.record(accountUuid: 'account-2', recipient: recipient);
+
+    await container.read(accountProvider.notifier).removeAccount('account-2');
+
+    expect(await recents.load(accountUuid: 'account-2'), isEmpty);
+    expect(await recents.load(accountUuid: 'account-1'), hasLength(1));
   });
 
   test('note cleanup still runs when Home cache persistence fails', () async {

@@ -7,9 +7,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_asset.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_asset_selector_modal.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Widget _harness(Widget child) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     builder: (_, navigator) =>
         AppTheme(data: AppThemeData.dark, child: navigator!),
     home: Material(

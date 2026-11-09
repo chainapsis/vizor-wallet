@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gif
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_wizard_chrome.dart';
 import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 import '../../support/payment_links_screen_support.dart';
@@ -54,6 +55,7 @@ void main() {
             Future<void> pump(PaymentLinkClaimDesktopState state) async {
               await tester.pumpWidget(
                 MaterialApp(
+                  localizationsDelegates: appLocalizationsDelegates,
                   builder: (context, child) => AppTheme(
                     data: theme,
                     child: MediaQuery(

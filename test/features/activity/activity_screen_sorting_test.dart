@@ -3,6 +3,7 @@ import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart'
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_intent_status.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import '../../support/test_l10n.dart';
 
 void main() {
   test(
@@ -29,7 +30,7 @@ void main() {
       final sorted = [confirmed, pending]..sort(compareActivityEntrySortKeys);
 
       expect(sorted.first, same(pending));
-      expect(activitySectionTitleForSortKey(pending), 'This week');
+      expect(activitySectionTitleForSortKey(testL10n, pending), 'This week');
     },
   );
 
@@ -59,6 +60,7 @@ void main() {
     expect(sorted.first, same(newerConfirmed));
     expect(
       activitySectionTitleForSortKey(
+        testL10n,
         olderPending,
         now: DateTime.utc(2026, 6, 16),
       ),
@@ -90,7 +92,7 @@ void main() {
 
     expect(expired.isPendingTransaction, isFalse);
     expect(sorted.first, same(confirmed));
-    expect(activitySectionTitleForSortKey(expired), 'Earlier');
+    expect(activitySectionTitleForSortKey(testL10n, expired), 'Earlier');
   });
 
   test(

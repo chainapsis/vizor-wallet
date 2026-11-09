@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_
 import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_desktop_ble_probe_dialog.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/ledger_discovery_channel.dart';
 import 'ledger_pairing_recovery_test.dart' as fixture;
@@ -68,6 +69,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: Stack(
@@ -190,6 +192,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: Stack(
@@ -296,6 +299,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: AppTheme(
             data: AppThemeData.light,
             child: Center(

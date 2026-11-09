@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_selection.dart';
@@ -30,6 +31,7 @@ import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 final _args = SendReviewArgs(
   proposalId: BigInt.one,
@@ -85,10 +87,12 @@ void main() {
         final Object error = switch (stage) {
           'connect' => LedgerConnectionRequiredException(
             'connect wrapper',
+            reason: LedgerConnectionRequiredReason.usb,
             cause: original,
           ),
           'readiness' => LedgerConnectionRequiredException(
             'connect wrapper',
+            reason: LedgerConnectionRequiredReason.usb,
             cause: LedgerAppReadinessException(
               LedgerAppReadinessFailure.unavailable,
               'readiness wrapper',
@@ -110,6 +114,7 @@ void main() {
           ),
         );
         final accessRecovery = ledgerFailureGuidance(
+          testL10n,
           original,
         )!.bluetoothRecovery;
         var attempts = 0;
@@ -125,10 +130,10 @@ void main() {
         );
         await tester.tap(find.text('Open signing'));
         await tester.pumpAndSettle();
-        if (ledgerFailureGuidance(original)!.pairingRecovery) {
+        if (ledgerFailureGuidance(testL10n, original)!.pairingRecovery) {
           expect(
             find.text(
-              ledgerFailureGuidance(original)!.pairingInvalid
+              ledgerFailureGuidance(testL10n, original)!.pairingInvalid
                   ? 'Pair your Ledger again'
                   : 'Couldn’t connect to your Ledger',
             ),
@@ -142,7 +147,7 @@ void main() {
           find.text(
             accessRecovery
                 ? 'Reconnect Ledger'
-                : ledgerFailureGuidance(original)!.message,
+                : ledgerFailureGuidance(testL10n, original)!.message,
           ),
           findsOneWidget,
         );
@@ -160,7 +165,7 @@ void main() {
           find.text(
             accessRecovery
                 ? 'Reconnect Ledger'
-                : ledgerFailureGuidance(original)!.message,
+                : ledgerFailureGuidance(testL10n, original)!.message,
           ),
           findsNothing,
         );
@@ -991,7 +996,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Request not accepted'), findsOneWidget);
-      expect(find.text(kLedgerHostRequestRejectedMessage), findsOneWidget);
+      expect(
+        find.text(testL10n.ledgerFailureMsgRejectedNewRequest),
+        findsOneWidget,
+      );
       expect(find.textContaining('rejected on your Ledger'), findsNothing);
       expect(
         find.byKey(const ValueKey('ledger_device_app_prompt_mainnet')),
@@ -1484,6 +1492,7 @@ Widget _app({
       ledgerSignedOperationServiceProvider.overrideWithValue(operationService),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
@@ -1507,7 +1516,9 @@ final _bootstrap = AppBootstrapState(
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  rpcEndpointConfig: defaultRpcEndpointConfig(
+    'main',
+  ).copyWith(presetId: kManualUsRpcEndpointPresetId),
   themeMode: ThemeMode.light,
   privacyModeEnabled: false,
   isPasswordConfigured: true,
@@ -1586,7 +1597,9 @@ class _FakeOperationService
 class _Route extends RpcEndpointFailoverNotifier {
   @override
   RpcEndpointFailoverState build() => RpcEndpointFailoverState(
-    primary: defaultRpcEndpointConfig('main'),
+    primary: defaultRpcEndpointConfig(
+      'main',
+    ).copyWith(presetId: kManualUsRpcEndpointPresetId),
     current: defaultRpcEndpointConfig('main'),
     fallbackCandidates: const [],
   );

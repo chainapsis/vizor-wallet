@@ -186,6 +186,27 @@ Android and Dart: `--dart-define=VIZOR_DEEPLINK_BASE_URL` (default
   Dart's `classifyIncomingLink`, which drops unknown paths on the origin
   silently.
 
+## Localization (VIZOR_I18N_PREVIEW)
+
+Read [docs/i18n/developer-guide.md](docs/i18n/developer-guide.md) before adding
+or changing user-facing text, ARB files, language selection, or copy that native
+code draws. [docs/i18n/README.md](docs/i18n/README.md) indexes the translation
+rules, adding a language, and Rust-originated text.
+
+- **After editing translations or updating `intl`, run
+  `fvm dart run tool/l10n/generate.dart`. `flutter gen-l10n` alone does not
+  regenerate the bundled font subsets.** `--watch` is optional for translation
+  work; do not auto-start it with normal app runs or builds.
+- Korean bundles Pretendard's 11,172 modern Hangul syllables and supported
+  jamo; Chinese bundles Noto Sans SC's 8,105 TGH 2013 characters. New UI and
+  date/number-formatting characters are included automatically. Unsupported
+  characters retain system fallback.
+- Commit the generated `assets/fonts/Vizor*UI-VF.ttf`,
+  `tool/l10n/ui_fonts.manifest.json`, and `tool/l10n/ui_font_characters.json`
+  with translation changes; never edit these generated files by hand.
+- Check freshness with `python3 tool/l10n/ui_fonts.py --check`. Screenshot
+  tests must load the shipped subsets, not substitute external/system fonts.
+
 ## Mainnet Block-Time Table
 
 On mainnet, wallet birthday conversions (import date to height, seed-phrase
@@ -306,13 +327,17 @@ Ledger accounts keep the decorative dot style.
 - **Exception**: sidebar entries and screen titles may use Title Case (e.g.
   onboarding step labels `Secret Passphrase`, `Wallet Birthday Height`) — do
   not sentence-case them in copy sweeps.
-- Existing rationale and full audit are in `qa-copy-review.csv` and
-  `copy-review-20260528-1554.csv` at the repo root. Reference these before
-  introducing new copy in this project.
+- English copy lives in `lib/l10n/app_en.arb`, where each key's description
+  says where it appears. Check `lib/l10n/glossary.yaml` for the shared terms
+  before introducing new copy.
 - When editing existing copy, also update widgetbook fixtures
   (`lib/widgetbook/*.dart`) and tests (`test/`) that assert on the literal
   string — `find.text(...)` matchers, `expectedNextAction` fields, and
   `_tooltipWithMessage(...)` helpers will break otherwise.
+
+## Privacy Mode
+
+Before adding or changing UI that shows an amount, read `docs/privacy-mode.md` (the hide-balance toggle).
 
 ## Release Notes
 
@@ -840,8 +865,11 @@ A hardware TEX request's ZIP 320 ephemeral address follows the same boundary:
 releasing the request before that boundary returns the address, so cancelled
 approvals cannot exhaust the ephemeral gap limit; after it the address stays
 reserved.
-Normal app exit closes the proposal gate, requests sync cancellation, and hides
-its desktop window before awaiting reservation cleanup. Rust allows 250ms to
+Normal app exit closes the proposal gate and requests sync cancellation.
+Desktop exits hide the window before awaiting reservation cleanup, except on
+Linux. Linux keeps the window visible during the same bounded cleanup, then
+calls `exit(0)` instead of GTK hide/destroy teardown to avoid the compositor
+shutdown crash. Rust allows 250ms to
 acquire the wallet write lock and drain accepted DB creators, then releases only
 unsubmitted reservations without waiting on SQLite contention. Once the budget
 expires, it starts no further cleanup; unfinished work is left for startup
@@ -1014,7 +1042,7 @@ Restores are the discovery import
 (`import_hardware_account`). Newly created accounts (`create_wallet`,
 `add_account`, and `import_wallet` from onboarding's reveal-then-confirm
 flow), payment-link claims (`import_wallet`), and Gift Card observers keep the
-exact height; testnet, regtest, and masquerade builds are unchanged. Code that queries lightwalletd from a restored birthday must use the
+exact height; testnet and regtest are unchanged. Code that queries lightwalletd from a restored birthday must use the
 rounded value, never the exact requested height. The weekly
 `update-mainnet-chain-tables.yml` workflow appends checkpoints.
 

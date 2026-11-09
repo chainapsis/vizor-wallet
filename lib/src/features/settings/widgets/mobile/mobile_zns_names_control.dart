@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/naming/zns_names_setting.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -30,7 +31,7 @@ class MobileZnsNamesControl extends ConsumerWidget {
           button: true,
           enabled: interactive,
           toggled: enabled,
-          label: 'Zcash names',
+          label: context.l10n.settingsZnsNamesLabel,
           onTap: interactive ? onToggle : null,
           excludeSemantics: true,
           child: GestureDetector(
@@ -58,7 +59,7 @@ class MobileZnsNamesControl extends ConsumerWidget {
                     const SizedBox(width: AppSpacing.s),
                     Expanded(
                       child: Text(
-                        'Zcash names',
+                        context.l10n.settingsZnsNamesLabel,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelLarge.copyWith(
@@ -68,7 +69,9 @@ class MobileZnsNamesControl extends ConsumerWidget {
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     Text(
-                      enabled ? 'On' : 'Off',
+                      enabled
+                          ? context.l10n.settingsStatusOn
+                          : context.l10n.settingsStatusOff,
                       key: const ValueKey('mobile_settings_zns_names_status'),
                       style: AppTypography.labelLarge.copyWith(
                         color: enabled
@@ -93,7 +96,7 @@ class MobileZnsNamesControl extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          kZnsNamesSettingsCopy,
+          context.l10n.settingsZnsNamesCopy,
           key: const ValueKey('mobile_settings_zns_names_description'),
           style: AppTypography.bodyMedium.copyWith(
             color: colors.text.secondary,

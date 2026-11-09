@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -11,10 +12,10 @@ import '../../../core/widgets/app_tooltip.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../address_book/widgets/address_book_network_icon.dart';
-import '../models/swap_detail_tooltips.dart';
 import '../models/swap_models.dart';
 import '../models/swap_status_presentation.dart';
 import 'swap_review_info.dart';
+import 'swap_progress_explorer_footer.dart';
 
 export '../models/swap_status_presentation.dart';
 
@@ -34,8 +35,8 @@ class SwapStatusPageContent extends StatefulWidget {
     required this.receiveAsset,
     required this.payAmountText,
     required this.receiveAmountText,
-    this.payLabel = "You're paying",
-    this.receiveLabel = "You're receiving",
+    this.payLabel,
+    this.receiveLabel,
     required this.payDetailText,
     required this.receiveDetailText,
     required this.statusLabel,
@@ -47,11 +48,12 @@ class SwapStatusPageContent extends StatefulWidget {
     this.activeTab = SwapStatusTab.progress,
     this.steps = const [],
     this.details = const [],
-    this.progressTabLabel = 'Swap progress',
+    this.progressTabLabel,
     this.paymentMode = false,
     this.showTabs = true,
     this.onTabChanged,
     this.onCopy,
+    this.explorerUri,
     super.key,
   });
 
@@ -60,8 +62,8 @@ class SwapStatusPageContent extends StatefulWidget {
   final SwapAsset receiveAsset;
   final String payAmountText;
   final String receiveAmountText;
-  final String payLabel;
-  final String receiveLabel;
+  final String? payLabel;
+  final String? receiveLabel;
 
   /// Bottom line of the pay summary row: fiat value, or the refund address
   /// line for external→ZEC swaps.
@@ -84,13 +86,14 @@ class SwapStatusPageContent extends StatefulWidget {
   final SwapStatusTab activeTab;
   final List<SwapStatusStepData> steps;
   final List<SwapStatusDetailRowData> details;
-  final String progressTabLabel;
+  final String? progressTabLabel;
   final bool paymentMode;
   final bool showTabs;
   final ValueChanged<SwapStatusTab>? onTabChanged;
 
   /// Copy callback for the [SwapReviewInfo] address lines (clipboard + toast).
   final ValueChanged<String>? onCopy;
+  final Uri? explorerUri;
 
   @override
   State<SwapStatusPageContent> createState() => _SwapStatusPageContentState();
@@ -211,6 +214,9 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final payLabel = widget.payLabel ?? context.l10n.commonYourePaying;
+    final receiveLabel =
+        widget.receiveLabel ?? context.l10n.commonYoureReceiving;
     return SizedBox(
       key: const ValueKey('swap_status_page_content'),
       width: 400,
@@ -233,10 +239,10 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
           const SizedBox(height: AppSpacing.base),
           if (widget.paymentMode)
             _PaymentStatusSummary(
-              payLabel: widget.payLabel,
+              payLabel: payLabel,
               payAmountText: widget.payAmountText,
               payDetailText: widget.payDetailText,
-              receiveLabel: widget.receiveLabel,
+              receiveLabel: receiveLabel,
               receiveAmountText: widget.receiveAmountText,
               receiveDetailText: widget.receiveDetailText,
               receiveDetailCopyText: widget.receiveDetailCopyText,
@@ -246,14 +252,14 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             SwapReviewInfo(
               pay: SwapReviewInfoSideData(
                 asset: widget.payAsset,
-                label: widget.payLabel,
+                label: payLabel,
                 amountText: widget.payAmountText,
                 detailText: widget.payDetailText,
                 detailCopyText: widget.payDetailCopyText,
               ),
               receive: SwapReviewInfoSideData(
                 asset: widget.receiveAsset,
-                label: widget.receiveLabel,
+                label: receiveLabel,
                 amountText: widget.receiveAmountText,
                 detailText: widget.receiveDetailText,
                 detailCopyText: widget.receiveDetailCopyText,
@@ -268,15 +274,25 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             // tab scroll at the reference window height. The page must fit
             // without a scrollbar (all status frames hide the Scrollbar
             // instance), so the inset is intentionally dropped.
-            _StatusTabs(
+            SwapStatusTabs(
               activeTab: widget.activeTab,
-              progressLabel: widget.progressTabLabel,
+              progressLabel:
+                  widget.progressTabLabel ?? context.l10n.commonSwapProgress,
               onChanged: widget.onTabChanged,
             ),
             const SizedBox(height: AppSpacing.sm),
             if (widget.activeTab == SwapStatusTab.progress)
               _SwapDetailCard(
-                child: _SwapProgressRoute(steps: _displayedSteps()),
+                hasExplorerFooter: widget.explorerUri != null,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _SwapProgressRoute(steps: _displayedSteps()),
+                    if (widget.explorerUri case final uri?)
+                      SwapProgressExplorerFooter(uri: uri),
+                  ],
+                ),
               )
             else
               _SwapDetailCard(child: _SwapDetailRows(rows: widget.details)),
@@ -426,24 +442,29 @@ class _PaymentStatusSummary extends StatelessWidget {
 /// Figma 'Review Wrap': the raised, rounded detail card that wraps the
 /// progress route and the detail rows. Built on the core [ReviewWrapCard].
 class _SwapDetailCard extends StatelessWidget {
-  const _SwapDetailCard({required this.child});
+  const _SwapDetailCard({required this.child, this.hasExplorerFooter = false});
 
   final Widget child;
+  final bool hasExplorerFooter;
 
   @override
   Widget build(BuildContext context) {
     return ReviewWrapCard(
       key: const ValueKey('swap_status_detail_card'),
+      padding: hasExplorerFooter
+          ? kReviewWrapCardPadding.copyWith(bottom: AppSpacing.sm)
+          : kReviewWrapCardPadding,
       children: [child],
     );
   }
 }
 
-class _StatusTabs extends StatelessWidget {
-  const _StatusTabs({
+class SwapStatusTabs extends StatelessWidget {
+  const SwapStatusTabs({
     required this.activeTab,
     required this.progressLabel,
     required this.onChanged,
+    super.key,
   });
 
   final SwapStatusTab activeTab;
@@ -461,12 +482,14 @@ class _StatusTabs extends StatelessWidget {
           children: [
             _StatusTabLabel(
               label: progressLabel,
+              details: false,
               active: activeTab == SwapStatusTab.progress,
               onTap: () => onChanged?.call(SwapStatusTab.progress),
             ),
             const SizedBox(width: AppSpacing.xs),
             _StatusTabLabel(
-              label: 'Transaction details',
+              label: context.l10n.swapStatusDetailsTab,
+              details: true,
               active: activeTab == SwapStatusTab.details,
               onTap: () => onChanged?.call(SwapStatusTab.details),
             ),
@@ -480,11 +503,13 @@ class _StatusTabs extends StatelessWidget {
 class _StatusTabLabel extends StatelessWidget {
   const _StatusTabLabel({
     required this.label,
+    required this.details,
     required this.active,
     required this.onTap,
   });
 
   final String label;
+  final bool details;
   final bool active;
   final VoidCallback? onTap;
 
@@ -500,9 +525,7 @@ class _StatusTabLabel extends StatelessWidget {
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         key: ValueKey(
-          label == 'Transaction details'
-              ? 'swap_status_tab_details'
-              : 'swap_status_tab_progress',
+          details ? 'swap_status_tab_details' : 'swap_status_tab_progress',
         ),
         behavior: HitTestBehavior.opaque,
         onTap: active ? null : onTap,
@@ -579,20 +602,17 @@ class _ProgressStep extends StatelessWidget {
     final pending = step.state == SwapStatusStepState.pending;
     final isLast = index == count - 1;
     const isMobile = kAppFormFactor == AppFormFactor.mobile;
-    // Fixed per-step heights reproduce the Figma connector lengths: the active
+    // Minimum step heights reproduce the Figma connector lengths: the active
     // step reserves room for its 2-line description (24 title + 8 gap + 58
     // padded description), pending/complete steps a single title row, and the
     // last step has no trailing connector.
     final height = active ? (isMobile ? 112.0 : 90.0) : (isLast ? 24.0 : 37.0);
     final title = step.titleForState(step.state);
     final content = Row(
-      crossAxisAlignment: isMobile
-          ? CrossAxisAlignment.stretch
-          : CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
           width: 24,
-          height: isMobile ? null : height,
           child: Stack(
             alignment: Alignment.topCenter,
             children: [
@@ -627,9 +647,9 @@ class _ProgressStep extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
+              ConstrainedBox(
                 key: ValueKey('swap_activity_route_step_${index}_title_row'),
-                height: 24,
+                constraints: const BoxConstraints(minHeight: 24),
                 child: Row(
                   children: [
                     Expanded(
@@ -710,18 +730,15 @@ class _ProgressStep extends StatelessWidget {
     final key = ValueKey(
       'swap_activity_route_step_${index}_${step.state.name}',
     );
-    if (isMobile) {
-      // Keep the reference connector length while allowing wrapped descriptions
-      // and larger text to extend the step and its connector together.
-      return IntrinsicHeight(
-        child: ConstrainedBox(
-          key: key,
-          constraints: BoxConstraints(minHeight: height),
-          child: content,
-        ),
-      );
-    }
-    return SizedBox(key: key, height: height, child: content);
+    // Let larger text extend the step and its connector together on both
+    // form factors, retaining the reference geometry at the default scale.
+    return IntrinsicHeight(
+      child: ConstrainedBox(
+        key: key,
+        constraints: BoxConstraints(minHeight: height),
+        child: content,
+      ),
+    );
   }
 }
 
@@ -775,10 +792,11 @@ class _ProgressStepIcon extends StatelessWidget {
 }
 
 String _pendingProgressIcon(SwapStatusStepData step) {
-  final title = step.title.toLowerCase();
-  if (title.contains('swap')) return AppIcons.swapArrows;
-  if (title.contains('send')) return AppIcons.arrowDownCircle;
-  return AppIcons.check;
+  return switch (step.kind) {
+    SwapStatusStepKind.swap => AppIcons.swapArrows,
+    SwapStatusStepKind.walletDelivery => AppIcons.arrowDownCircle,
+    SwapStatusStepKind.other => AppIcons.check,
+  };
 }
 
 /// Detail-rows column for the non-terminal Transaction details tab. The fee
@@ -825,8 +843,8 @@ class _SwapTerminalDetails extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         ..._detailRowsWithFeeDivider(
           rows,
-          dividerBeforeLabel: badgeKind == SwapStatusBadgeKind.refunded
-              ? 'Refunded amount'
+          dividerBeforeKind: badgeKind == SwapStatusBadgeKind.refunded
+              ? SwapStatusDetailKind.refundedAmount
               : null,
         ),
       ],
@@ -838,16 +856,16 @@ class _SwapTerminalDetails extends StatelessWidget {
 /// other detail lists retain the divider before their final fee row.
 List<Widget> _detailRowsWithFeeDivider(
   List<SwapStatusDetailRowData> rows, {
-  String? dividerBeforeLabel,
+  SwapStatusDetailKind? dividerBeforeKind,
 }) {
   if (rows.isEmpty) return const [];
   final lastIndex = rows.length - 1;
-  final outcomeIndex = dividerBeforeLabel == null
+  final outcomeIndex = dividerBeforeKind == null
       ? -1
-      : rows.indexWhere((row) => row.label == dividerBeforeLabel);
+      : rows.indexWhere((row) => row.kind == dividerBeforeKind);
   final dividerIndex = outcomeIndex >= 0
       ? (outcomeIndex > 0 ? outcomeIndex : -1)
-      : rows.length > 1 && _isFeeRow(rows[lastIndex].label)
+      : rows.length > 1 && rows[lastIndex].kind.isFee
       ? lastIndex
       : -1;
   return [
@@ -856,13 +874,6 @@ List<Widget> _detailRowsWithFeeDivider(
       _DetailRow(row: rows[index]),
     ],
   ];
-}
-
-bool _isFeeRow(String label) {
-  return label == 'Swap fee' ||
-      label == 'Total fees' ||
-      label == 'Tx fee' ||
-      label == 'Refund fee';
 }
 
 class _DetailDivider extends StatelessWidget {
@@ -900,7 +911,7 @@ class _StatusRow extends StatelessWidget {
         : colors.text.positiveStrong;
     return ReviewListRow(
       key: const ValueKey('swap_status_summary_row'),
-      label: 'Status',
+      label: context.l10n.swapStatusRowLabel,
       value: label,
       valueColor: signalColor,
       leadingIconName: failed
@@ -930,7 +941,7 @@ class _DetailRow extends StatelessWidget {
           onTap: () => copyTextWithToast(
             context,
             text: row.copyText ?? row.value,
-            toastMessage: 'Copied',
+            toastMessage: context.l10n.commonCopied,
           ),
           child: cell,
         ),
@@ -961,7 +972,7 @@ class _DetailRow extends StatelessWidget {
         trailingIconName: AppIcons.help,
         trailingIconColor: colors.icon.muted,
         trailingIconTooltip:
-            row.helpTooltip ?? _swapStatusHelpTooltip(row.label),
+            row.helpTooltip ?? row.kind.helpTooltipFor(context.l10n),
       );
     }
 
@@ -1081,13 +1092,7 @@ bool _shouldScaleDetailValue(SwapStatusDetailRowData row) {
   final source = row.copyText?.trim();
   if (source == null || source.isEmpty || source.length <= 18) return false;
 
-  final label = row.label.toLowerCase();
-  return label.contains('address') ||
-      label.contains('recipient') ||
-      label.contains('refund') ||
-      label == 'tx id' ||
-      label.contains(' tx') ||
-      (label.startsWith('deposit ') && label.endsWith(' to'));
+  return row.kind.compactsValue;
 }
 
 class _StatusDetailActionIcon extends StatelessWidget {
@@ -1120,15 +1125,6 @@ class _StatusDetailActionIcon extends StatelessWidget {
     }
     return AppTooltip(message: message, child: child);
   }
-}
-
-String _swapStatusHelpTooltip(String label) {
-  return switch (label) {
-    'Swap fee' => swapFeeTooltip,
-    'Guaranteed minimum' => swapGenericMinimumReceiveTooltip,
-    'Total fees' => swapTotalFeesTooltip,
-    _ => swapStatusDetailTooltip,
-  };
 }
 
 /// Animated wrapper around [SwapProgressRoute]: walks the displayed active

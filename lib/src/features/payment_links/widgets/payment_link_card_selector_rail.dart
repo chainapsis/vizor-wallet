@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/theme/app_theme.dart';
 import 'payment_link_card_selector.dart';
 import 'payment_link_gift_card.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// Controlled, horizontally scrollable gift-card artwork selector.
 ///
@@ -342,8 +343,10 @@ class _PaymentLinkCardSelectorRailState
                                       container: true,
                                       button: true,
                                       selected: artwork == widget.selected,
-                                      label:
-                                          '${artwork.semanticLabel} card design',
+                                      label: context.l10n
+                                          .paymentLinkCardDesignSemantic(
+                                            artwork.semanticLabel(context.l10n),
+                                          ),
                                       onTap: () => _selectArtwork(
                                         artwork,
                                         target: _scrollOffsetFor(artwork),
