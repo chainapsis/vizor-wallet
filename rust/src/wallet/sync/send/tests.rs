@@ -2956,7 +2956,7 @@ fn estimate_send_max_stays_at_v6_ceiling_for_v2_only_spends() {
 }
 
 #[test]
-fn keystone_transparent_shielding_pczt_targets_orchard_before_nu6_3() {
+fn keystone_transparent_shielding_pczt_is_refused_before_nu6_3() {
     crate::wallet::network::configure_regtest_nu6_3_activation_height(200).unwrap();
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
@@ -3012,25 +3012,21 @@ fn keystone_transparent_shielding_pczt_targets_orchard_before_nu6_3() {
     db.put_received_transparent_utxo(&utxo).unwrap();
     drop(db);
 
-    let result = create_shield_transparent_pczt_for_live_tip(
+    // The wallet libraries no longer build Orchard bundles before NU6.3.
+    let error = create_shield_transparent_pczt_for_live_tip(
         db_path,
         network,
         &account_uuid,
         "shield-test",
         None,
     )
+    .err()
     .unwrap();
-    let pczt = pczt::Pczt::parse(&result.pczt_bytes).unwrap();
-
-    assert_eq!(
-        *pczt.global().tx_version(),
-        zcash_protocol::constants::V5_TX_VERSION
+    assert!(
+        error.message.contains("Create shielding PCZT failed"),
+        "{}",
+        error.message
     );
-    assert!(!pczt.orchard().actions().is_empty());
-    assert!(pczt.ironwood().actions().is_empty());
-    assert!(!result.needs_sapling_params);
-    assert!(result.fee_zatoshi > 0);
-    assert!(result.shielded_zatoshi > 0);
 }
 
 #[test]
@@ -4228,6 +4224,7 @@ fn batch_signer_redaction_compacts_and_preserves_signable_spends() {
 #[test]
 #[ignore = "slow librustzcash transaction-construction regression (~100s); run explicitly when touching shielding transaction construction"]
 fn many_utxo_shielding_builds_with_conservative_zip317_fee() {
+    crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_str().unwrap();
@@ -4243,8 +4240,10 @@ fn many_utxo_shielding_builds_with_conservative_zip317_fee() {
     let tip = BlockHeight::from_u32(1_000);
     db.update_chain_tip(tip).unwrap();
     // Shielding derives target/anchor heights from scan progress, so record
-    // empty-tree checkpoints at the synthetic tip before inserting UTXOs.
+    // empty-tree checkpoints one block behind the synthetic tip before
+    // inserting UTXOs.
     {
+        let anchor = tip - 1;
         type CheckpointError = WalletError<
             (),
             commitment_tree::Error,
@@ -4254,13 +4253,13 @@ fn many_utxo_shielding_builds_with_conservative_zip317_fee() {
             ReceivedNoteId,
         >;
         let result: Result<_, CheckpointError> =
-            db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+            db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(anchor)?));
         assert!(result.unwrap(), "checkpointing the empty Sapling tree");
         let result: Result<_, CheckpointError> =
-            db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+            db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(anchor)?));
         assert!(result.unwrap(), "checkpointing the empty Orchard tree");
         let result: Result<_, CheckpointError> =
-            db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+            db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(anchor)?));
         result.unwrap();
     }
 
@@ -4444,7 +4443,8 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
     .unwrap();
     let id = parse_account_uuid(&uuid).unwrap();
     let mut db = open_wallet_db(path, network).unwrap();
-    let tip = BlockHeight::from_u32(2_600_000);
+    // After NU6.3: the wallet libraries no longer build shielding before it.
+    let tip = BlockHeight::from_u32(3_430_000);
     db.update_chain_tip(tip).unwrap();
     type CheckpointError = WalletError<
         (),
@@ -4454,9 +4454,14 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
         (),
         ReceivedNoteId,
     >;
-    let _: Result<_, CheckpointError> = db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
-    let _: Result<_, CheckpointError> = db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
-    let _: Result<_, CheckpointError> = db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+    // Anchors sit at least one block behind the chain tip.
+    let anchor = tip - 1;
+    let _: Result<_, CheckpointError> =
+        db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(anchor)?));
+    let _: Result<_, CheckpointError> =
+        db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(anchor)?));
+    let _: Result<_, CheckpointError> =
+        db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(anchor)?));
     let external = ufvk.transparent().unwrap().derive_external_ivk().unwrap();
     let internal = ufvk.transparent().unwrap().derive_internal_ivk().unwrap();
     for i in 0..35u32 {
@@ -4642,9 +4647,14 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
         (),
         ReceivedNoteId,
     >;
-    let _: Result<_, CheckpointError> = db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
-    let _: Result<_, CheckpointError> = db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
-    let _: Result<_, CheckpointError> = db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+    // Anchors sit at least one block behind the chain tip.
+    let anchor = tip - 1;
+    let _: Result<_, CheckpointError> =
+        db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(anchor)?));
+    let _: Result<_, CheckpointError> =
+        db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(anchor)?));
+    let _: Result<_, CheckpointError> =
+        db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(anchor)?));
     let external = ufvk.transparent().unwrap().derive_external_ivk().unwrap();
     for i in 0..3u32 {
         let address = external
