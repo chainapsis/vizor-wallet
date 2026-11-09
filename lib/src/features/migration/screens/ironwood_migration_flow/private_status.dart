@@ -60,6 +60,7 @@ class _IronwoodMigrationPrivateStatusContentState
     final canUseAction = widget.accountUuid != null;
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
     final syncState = ref.watch(syncProvider).asData?.value;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final isAdvancing =
         widget.accountUuid != null &&
         coordinator.advancingAccounts.contains(widget.accountUuid);
@@ -91,6 +92,7 @@ class _IronwoodMigrationPrivateStatusContentState
     if (status.phase == kIronwoodMigrationStoppedByUpgradePhase) {
       return _MigrationUpgradeStoppedStatusContent(
         status: status,
+        privacyModeEnabled: privacyModeEnabled,
         orchardBalanceZatoshi: ref
             .watch(ironwoodMigrationFlowDataProvider)
             ?.amountZatoshi,
@@ -110,6 +112,7 @@ class _IronwoodMigrationPrivateStatusContentState
         }.contains(status.phase)) {
       return _MigrationStatusContent(
         status: status,
+        privacyModeEnabled: privacyModeEnabled,
         currentHeight: _currentMigrationHeight(syncState),
         action: action,
         isAdvancing: isAdvancing,

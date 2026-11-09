@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/providers/account_initialization_provider.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -97,6 +98,80 @@ void main() {
     kPendingAccountMnemonicStorageKey,
     requireUnlockedSession: true,
   );
+
+  for (final flow in ['create', 'software', 'keystone', 'ledger', 'linked']) {
+    test(
+      'initial Home origin is registered before $flow account publication',
+      () async {
+        await container
+            .read(appSecurityProvider.notifier)
+            .preparePasswordSetup(_passcode);
+        final expected = flow == 'create'
+            ? AccountInitializationKind.created
+            : AccountInitializationKind.restored;
+        final published = <AccountInitializationKind?>[];
+        container.listen(accountProvider, (_, next) {
+          for (final account in next.value?.accounts ?? const <AccountInfo>[]) {
+            published.add(
+              container.read(accountInitializationProvider)[account.uuid]?.kind,
+            );
+          }
+        });
+        switch (flow) {
+          case 'create':
+            await accounts().createAccountFromMnemonic(
+              mnemonic: _mnemonic,
+              name: _name,
+            );
+          case 'software':
+            await accounts().importAccount(
+              mnemonic: _mnemonic,
+              name: _name,
+              birthdayHeight: 1000000,
+              additionalAccountIndices: const [1],
+            );
+          case 'keystone':
+            await accounts().importKeystoneAccount(
+              name: _name,
+              ufvk: 'fixture',
+              seedFingerprint: List.filled(32, 1),
+              zip32Index: 0,
+              birthdayHeight: 1000000,
+            );
+          case 'ledger':
+            await accounts().importLedgerAccount(
+              name: _name,
+              ufvk: 'fixture',
+              seedFingerprint: List.filled(32, 1),
+              zip32Index: 0,
+              birthdayHeight: 1000000,
+            );
+          case 'linked':
+            await accounts().importLinkedWalletAccounts(
+              network: kZcashDefaultNetworkName,
+              accountsToImport: const [
+                LinkedWalletAccountImport(
+                  name: _name,
+                  birthdayHeight: 1000000,
+                  zip32AccountIndex: 0,
+                  isHardware: false,
+                  isSeedAnchor: true,
+                  mnemonic: _mnemonic,
+                ),
+              ],
+            );
+        }
+        expect(published, isNotEmpty);
+        expect(published.every((kind) => kind == expected), isTrue);
+        final persisted =
+            jsonDecode((await store.readString('zcash_accounts'))!) as List;
+        expect(
+          persisted.every((row) => !row.containsKey('initialization')),
+          isTrue,
+        );
+      },
+    );
+  }
 
   for (final key in ['zcash_account_mnemonic_uuid-1', 'zcash_accounts']) {
     test(
@@ -1562,12 +1637,21 @@ rust_wallet.AccountInfo _listed(String uuid) => rust_wallet.AccountInfo(
   isHardware: false,
 );
 
+// Setup recovery fixtures pin a server so they exercise account and storage
+// failures independently of the automatic selection transport.
+RpcEndpointConfig _fixedEndpoint() {
+  final endpoint = defaultRpcEndpointConfig(kZcashDefaultNetworkName);
+  return endpoint.network == ZcashNetwork.mainnet
+      ? endpoint.copyWith(presetId: kManualUsRpcEndpointPresetId)
+      : endpoint;
+}
+
 final _noWalletBootstrap = AppBootstrapState(
   initialLocation: '/welcome',
   initialAccountState: const AccountState(),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: kZcashDefaultNetworkName,
-  rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+  rpcEndpointConfig: _fixedEndpoint(),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
   isPasswordConfigured: false,
@@ -1597,7 +1681,7 @@ AppBootstrapState _bootstrappedGiftAccount({
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: kZcashDefaultNetworkName,
-  rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+  rpcEndpointConfig: _fixedEndpoint(),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
   isPasswordConfigured: true,

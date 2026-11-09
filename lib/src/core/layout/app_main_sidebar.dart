@@ -1,3 +1,4 @@
+import '../../features/home/providers/home_initialization_provider.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -464,8 +465,12 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final sync = ref.watch(syncProvider).value ?? SyncState();
     final networkPrivacy = ref.watch(networkPrivacyProvider);
     final accountSync = sync.scopedToAccount(activeAccountUuid);
+    final showImporting = ref
+        .watch(homeInitializationPresentationProvider)
+        .showImporting;
     final isImporting =
-        activeAccountUuid != null && accountSync.isImportingAccount;
+        showImporting ||
+        (activeAccountUuid != null && accountSync.isImportingAccount);
     final balanceText =
         '${accountSync.hasDisplayBalance ? _formatSidebarBalance(accountSync.displayTotalBalance) : '—'} '
         '$kZcashDefaultCurrencyTicker';
@@ -567,11 +572,13 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     else
                       AppSidebarItem(
                         key: const ValueKey('sidebar_home_button'),
-                        label: isImporting ? 'Importing...' : 'Home',
-                        iconName: isImporting ? AppIcons.loader : AppIcons.home,
-                        iconAnimated: !isImporting,
+                        label: showImporting ? 'Importing...' : 'Home',
+                        iconName: showImporting
+                            ? AppIcons.loader
+                            : AppIcons.home,
+                        iconAnimated: !showImporting,
                         active: _homeShouldBeActive,
-                        onTap: isImporting ? null : () => _navigateTo('/home'),
+                        onTap: () => _navigateTo('/home'),
                       ),
                     if (swapFeatureEnabled) ...[
                       const SizedBox(height: AppSpacing.xs),

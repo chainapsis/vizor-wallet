@@ -386,7 +386,12 @@ final _bootstrap = AppBootstrapState(
   initialAccountState: _accountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  // This suite exercises local activity/recovery ordering, not server discovery.
+  rpcEndpointConfig: const RpcEndpointConfig(
+    networkName: 'main',
+    lightwalletdUrl: 'https://us.zec.stardust.rest:443',
+    presetId: kManualUsRpcEndpointPresetId,
+  ),
   themeMode: ThemeMode.dark,
   privacyModeEnabled: false,
   isPasswordConfigured: true,

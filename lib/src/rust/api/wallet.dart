@@ -4,7 +4,6 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `accounts_within_used_batches`, `block_height_from_u64`, `catch`, `discover_privately`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_error`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_gate`, `is_ironwood_active_at_height`, `network_name`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`, `restored_birthday`
@@ -31,6 +30,61 @@ Future<LightwalletdEndpointProbe> probeLightwalletdEndpoint({
 }) => RustLib.instance.api.crateApiWalletProbeLightwalletdEndpoint(
   lightwalletdUrl: lightwalletdUrl,
 );
+
+/// Probe a bounded set of public candidates. Initial selection may stop after
+/// a short comparison window; `wait_for_all` collects the full bounded batch.
+/// Each selection ID must first be reserved with [begin_lightwalletd_selection].
+/// The caller waits for route readiness before starting; route failures are
+/// returned separately from server health.
+Future<List<LightwalletdCandidateProbe>> probeLightwalletdCandidates({
+  required List<String> lightwalletdUrls,
+  required String expectedNetwork,
+  required String selectionId,
+  required int probeTimeoutMs,
+  required int totalTimeoutMs,
+  required int maxConcurrency,
+  required bool waitForAll,
+}) => RustLib.instance.api.crateApiWalletProbeLightwalletdCandidates(
+  lightwalletdUrls: lightwalletdUrls,
+  expectedNetwork: expectedNetwork,
+  selectionId: selectionId,
+  probeTimeoutMs: probeTimeoutMs,
+  totalTimeoutMs: totalTimeoutMs,
+  maxConcurrency: maxConcurrency,
+  waitForAll: waitForAll,
+);
+
+/// Read one live tip from a recently chain-verified endpoint on the selected
+/// route. The caller must reserve a unique selection ID before dispatch and
+/// must only use this fast path while its endpoint verification is fresh.
+/// Unlike a full candidate probe, this sends only GetLatestBlock.
+Future<LightwalletdCandidateProbe> readLightwalletdTip({
+  required String lightwalletdUrl,
+  required String expectedNetwork,
+  required String selectionId,
+  required int timeoutMs,
+}) => RustLib.instance.api.crateApiWalletReadLightwalletdTip(
+  lightwalletdUrl: lightwalletdUrl,
+  expectedNetwork: expectedNetwork,
+  selectionId: selectionId,
+  timeoutMs: timeoutMs,
+);
+
+/// Reserves one bounded selection slot before its async FRB dispatch. IDs
+/// must be unique. A cancelled queued call keeps this slot until its worker
+/// consumes it, so queue delays can never make cancelled work live again.
+void beginLightwalletdSelection({required String selectionId}) => RustLib
+    .instance
+    .api
+    .crateApiWalletBeginLightwalletdSelection(selectionId: selectionId);
+
+/// Cancels only the selection with this ID, including a call whose FRB worker
+/// has not started yet. Kept synchronous so busy workers cannot delay a lock
+/// or route change behind a slow probe.
+void cancelLightwalletdSelection({required String selectionId}) => RustLib
+    .instance
+    .api
+    .crateApiWalletCancelLightwalletdSelection(selectionId: selectionId);
 
 /// Get the connected chain upgrade state used to decide whether Ironwood is active.
 Future<ChainUpgradeStatus> getChainUpgradeStatus({
@@ -707,6 +761,49 @@ class LegacyHardwareAccount {
           runtimeType == other.runtimeType &&
           accountUuid == other.accountUuid &&
           hardwareSignerKind == other.hardwareSignerKind;
+}
+
+/// A healthy public candidate measured on one routed connection. No wallet
+/// address, transaction identifier or birthday is sent by the measurement.
+class LightwalletdCandidateProbe {
+  final String url;
+  final BigInt height;
+  final int latencyMs;
+  final int connectMs;
+  final int rpcMs;
+
+  /// Local GetLatestBlock receipt time, in UNIX epoch milliseconds.
+  final BigInt observedAtMs;
+
+  const LightwalletdCandidateProbe({
+    required this.url,
+    required this.height,
+    required this.latencyMs,
+    required this.connectMs,
+    required this.rpcMs,
+    required this.observedAtMs,
+  });
+
+  @override
+  int get hashCode =>
+      url.hashCode ^
+      height.hashCode ^
+      latencyMs.hashCode ^
+      connectMs.hashCode ^
+      rpcMs.hashCode ^
+      observedAtMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LightwalletdCandidateProbe &&
+          runtimeType == other.runtimeType &&
+          url == other.url &&
+          height == other.height &&
+          latencyMs == other.latencyMs &&
+          connectMs == other.connectMs &&
+          rpcMs == other.rpcMs &&
+          observedAtMs == other.observedAtMs;
 }
 
 /// A chain-info response timed inside Rust, excluding bridge execution queues.

@@ -37,7 +37,6 @@ Future<void> loadTransactionDetailsPublicly(
   Future<String?> Function() existingWalletDbPath = getExistingWalletDbPath,
   PublicTransactionEnhancer enhance = rust_sync.enhanceTransactionPublicly,
 }) async {
-  final endpoint = read(rpcEndpointFailoverProvider).current;
   if (read(appSecurityProvider).requiresUnlock) {
     throw StateError('The wallet is locked.');
   }
@@ -49,6 +48,10 @@ Future<void> loadTransactionDetailsPublicly(
     ticket.ensureNotCancelled();
     if (dbPath == null) throw StateError('The wallet is unavailable.');
     if (accountUuid == null) throw StateError('No account is active.');
+    final endpoint = await read(
+      rpcEndpointFailoverProvider.notifier,
+    ).ensureReady();
+    ticket.ensureNotCancelled();
     await enhance(
       dbPath: dbPath,
       network: endpoint.networkName,

@@ -63,6 +63,20 @@ void main() {
       linkDifferences: differences,
     );
 
+    test('masking the spendable balance keeps the link check', () {
+      const differences = {PaymentRequestLinkDifference.amount};
+      final view = PaymentRequestView(
+        source: PaymentRequestSource.qrCode,
+        address: _address,
+        amountZecText: '0.5 ZEC',
+        spendableText: '0.21 ZEC',
+        linkDifferences: differences,
+      ).withSpendableText('****** ZEC');
+
+      expect(view.spendableText, '****** ZEC');
+      expect(view.linkDifferences, differences);
+    });
+
     testWidgets('a matching QR says so', (tester) async {
       await _pump(tester, scanned(const {}));
 

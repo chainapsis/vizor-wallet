@@ -384,7 +384,10 @@ class VotingParticipationCoordinator {
                 nullifierImtRoot: details.nullifierImtRoot,
               );
           if (!current()) return;
-          final endpoint = ref.read(votingRpcEndpointConfigProvider);
+          final endpoint = reconcileLocalOnly
+              ? ref.read(votingRpcEndpointConfigProvider)
+              : await ref.read(votingReadyRpcEndpointProvider)();
+          if (!current() || endpoint.networkName != network) return;
           final context = rust.ApiVotingRoundContext(
             dbPath: dbPath,
             accountUuid: account,

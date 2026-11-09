@@ -58,6 +58,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final ledgerAccount =
         ref.watch(accountProvider).value?.activeAccount?.isLedger ?? false;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     // A stopped run's remainder starts from the options; say so and lead
     // back to its status.
     final movingRest = ref.watch(
@@ -71,6 +72,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
       ),
       IronwoodMigrationFlowStep.intro => _IronwoodMigrationIntroContent(
         data: data,
+        privacyModeEnabled: privacyModeEnabled,
         onOpenReleaseNotes: () =>
             _openReleaseNotes(context, override: onOpenReleaseNotesOverride),
       ),
@@ -81,6 +83,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
       IronwoodMigrationFlowStep.options => _IronwoodMigrationOptionsContent(
         data: data,
         privateEnabled: !ledgerAccount,
+        privacyModeEnabled: privacyModeEnabled,
         movingRest: movingRest,
       ),
       IronwoodMigrationFlowStep.review =>
@@ -213,16 +216,21 @@ class _IronwoodMigrationFrame extends StatelessWidget {
 class _IronwoodMigrationIntroContent extends StatelessWidget {
   const _IronwoodMigrationIntroContent({
     required this.data,
+    required this.privacyModeEnabled,
     required this.onOpenReleaseNotes,
   });
 
   final IronwoodMigrationFlowData data;
+  final bool privacyModeEnabled;
   final VoidCallback onOpenReleaseNotes;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final amount = data.amountText;
+    final amount = hideIfPrivacyMode(
+      data.amountText,
+      privacyModeEnabled: privacyModeEnabled,
+    );
     final isDark = colors.background.window == AppColors.dark.background.window;
 
     return SizedBox(
@@ -235,7 +243,10 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
             top: 26,
             width: 420,
             height: 200,
-            child: _PoolMigrationHero(data: data),
+            child: _PoolMigrationHero(
+              data: data,
+              privacyModeEnabled: privacyModeEnabled,
+            ),
           ),
           Positioned(
             left: 0,
@@ -1042,11 +1053,13 @@ class _IronwoodMigrationOptionsContent extends StatefulWidget {
   const _IronwoodMigrationOptionsContent({
     required this.data,
     required this.privateEnabled,
+    required this.privacyModeEnabled,
     this.movingRest = false,
   });
 
   final IronwoodMigrationFlowData data;
   final bool privateEnabled;
+  final bool privacyModeEnabled;
   final bool movingRest;
 
   @override
@@ -1103,7 +1116,7 @@ class _IronwoodMigrationOptionsContentState
                   width: 322,
                   child: Text(
                     widget.movingRest
-                        ? '${_formatZecAmountCompact(widget.data.amountZatoshi)}'
+                        ? '${_displayZecAmountCompact(widget.data.amountZatoshi, privacyModeEnabled: widget.privacyModeEnabled)}'
                               ' ZEC is still in Orchard. Choose between more '
                               'privacy over time or a faster migration.'
                         : 'Choose between more privacy over time or a faster '

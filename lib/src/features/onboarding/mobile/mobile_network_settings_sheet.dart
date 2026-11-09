@@ -12,6 +12,7 @@ import '../../../core/widgets/mobile_text_field.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../settings/widgets/mobile/mobile_private_queries_control.dart';
 import '../../settings/widgets/mobile/mobile_tor_control.dart';
 import '../../settings/widgets/private_queries_turn_off.dart';
@@ -74,9 +75,10 @@ class _MobileNetworkSettingsSheetState
   @override
   void initState() {
     super.initState();
-    _controller.text = rpcEndpointInputText(
-      ref.read(rpcEndpointProvider).lightwalletdUrl,
-    );
+    final endpoint = ref.read(rpcEndpointProvider);
+    if (!isAutomaticRpcEndpointConfig(endpoint)) {
+      _controller.text = rpcEndpointInputText(endpoint.lightwalletdUrl);
+    }
     _focus.addListener(_revealInput);
     _updateDismissal();
     ref.listenManual(
@@ -168,7 +170,8 @@ class _MobileNetworkSettingsSheetState
       return false;
     }
     return normalizeRpcEndpointUrl(_controller.text, allowDefaultPort: true) !=
-        current.normalizedLightwalletdUrl;
+            current.normalizedLightwalletdUrl ||
+        current.effectivePresetId != kCustomRpcEndpointPresetId;
   }
 
   Future<void> _submit() async {
@@ -198,6 +201,26 @@ class _MobileNetworkSettingsSheetState
     }
   }
 
+  Future<void> _useAutomatic() async {
+    if (!widget.dismissal.value) return;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    _updateDismissal();
+    try {
+      await ref.read(rpcEndpointProvider.notifier).setAutomatic();
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      _updateDismissal();
+      if (!widget.dismissal.value) return;
+      Navigator.of(context).pop();
+      widget.onUpdated?.call();
+    } catch (_) {
+      _finishWithError("Couldn't save the endpoint. Try again.");
+    }
+  }
+
   void _finishWithError(String message) {
     if (!mounted) return;
     setState(() {
@@ -219,6 +242,13 @@ class _MobileNetworkSettingsSheetState
   Widget build(BuildContext context) {
     final state = ref.watch(networkPrivacyProvider);
     final current = ref.watch(rpcEndpointProvider);
+    final automatic = isAutomaticRpcEndpointConfig(current);
+    final effective = automatic ? ref.watch(rpcEndpointFailoverProvider) : null;
+    final currentLabel = automatic
+        ? effective!.automaticReady
+              ? 'Automatic · ${effective.current.hostPort}'
+              : 'Automatic'
+        : current.hostPort;
     final changingPrivateQueries =
         ref.watch(enhancePirTransitionProvider) == kEnhancePirChangingMessage;
     return ValueListenableBuilder<bool>(
@@ -242,6 +272,12 @@ class _MobileNetworkSettingsSheetState
           onRequest: _requestPrivateQueries,
         ),
         current: current,
+        currentEndpointLabel: currentLabel,
+        onUseAutomatic: current.network == ZcashNetwork.mainnet && !automatic
+            ? canDismiss
+                  ? _useAutomatic
+                  : null
+            : null,
         controller: _controller,
         focusNode: _focus,
         fieldRegion: _fieldRegion,
@@ -271,6 +307,8 @@ class MobileNetworkSettingsContent extends StatelessWidget {
     required this.submitting,
     this.fieldRegion,
     this.error,
+    this.currentEndpointLabel,
+    this.onUseAutomatic,
     super.key,
   });
 
@@ -286,6 +324,8 @@ class MobileNetworkSettingsContent extends StatelessWidget {
   final bool canUpdate;
   final bool submitting;
   final String? error;
+  final String? currentEndpointLabel;
+  final VoidCallback? onUseAutomatic;
 
   @override
   Widget build(BuildContext context) {
@@ -321,11 +361,21 @@ class MobileNetworkSettingsContent extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    'Current: ${current.hostPort}',
+                    'Current: ${currentEndpointLabel ?? (isAutomaticRpcEndpointConfig(current) ? 'Automatic' : current.hostPort)}',
                     style: AppTypography.bodySmall.copyWith(
                       color: colors.text.secondary,
                     ),
                   ),
+                  if (current.network == ZcashNetwork.mainnet &&
+                      !isAutomaticRpcEndpointConfig(current)) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    AppButton(
+                      key: const ValueKey('welcome_endpoint_automatic'),
+                      variant: AppButtonVariant.secondary,
+                      onPressed: onUseAutomatic,
+                      child: const Text('Use automatic selection'),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.sm),
                   Column(
                     key: fieldRegion,

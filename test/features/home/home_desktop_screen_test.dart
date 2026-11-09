@@ -1,3 +1,4 @@
+import '../../support/home_initialization_checks.dart';
 import 'package:zcash_wallet/src/features/home/widgets/home_activity_skeleton.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_items_provider.dart';
 import 'dart:async';
@@ -40,6 +41,7 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 
@@ -48,6 +50,18 @@ import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 
 void main() {
+  registerHomeInitializationChecks(
+    mobile: false,
+    app: (state, notifier, cards) => _appHarness(
+      '/home',
+      syncState: state,
+      syncNotifier: notifier,
+      giftCardActivityFuture: cards,
+    ),
+    home: () => find.byType(HomeScreen),
+    importing: () => find.textContaining('Importing'),
+  );
+
   // Render with the real app fonts instead of the square-glyph test font.
   // The test font is much wider than Geist/Young Serif, which overflows the
   // balance row in ways the running app does not.
@@ -96,6 +110,40 @@ void main() {
       expect(find.text('****** ZEC ZEC'), findsNothing);
     },
   );
+
+  for (final privacyModeEnabled in [false, true]) {
+    testWidgets(
+      'home desktop zero balance with privacy mode $privacyModeEnabled',
+      (tester) async {
+        final semantics = tester.ensureSemantics();
+        await tester.pumpWidget(
+          _appHarness(
+            '/home',
+            privacyModeEnabled: privacyModeEnabled,
+            syncState: SyncState(
+              accountUuid: 'account-1',
+              hasAccountScopedData: true,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final amount = find.byKey(
+          const ValueKey('home_desktop_balance_amount_text'),
+        );
+        final expected = privacyModeEnabled ? '******' : '0';
+        expect(tester.widget<Text>(amount).data, expected);
+        expect(tester.getSemantics(amount).label, expected);
+        expect(
+          find.text('0'),
+          privacyModeEnabled ? findsNothing : findsOneWidget,
+        );
+        expect(find.textContaining('ZEC ZEC'), findsNothing);
+        expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+        semantics.dispose();
+      },
+    );
+  }
 
   testWidgets('home desktop shows fiat balance when pricing is available', (
     tester,
@@ -1596,6 +1644,55 @@ void main() {
     expect(privacy.retryCalls, 1);
   });
 
+  testWidgets(
+    'home desktop retries Tor for the actual automatic endpoint readiness failure',
+    (tester) async {
+      final privacy = _FakeNetworkPrivacyNotifier();
+      await tester.pumpWidget(_appHarness('/home', networkPrivacy: privacy));
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(HomeScreen)),
+      );
+      final endpoints = container.read(rpcEndpointFailoverProvider.notifier);
+      expect(
+        isAutomaticRpcEndpointConfig(
+          container.read(rpcEndpointFailoverProvider).primary,
+        ),
+        isTrue,
+      );
+      Object? readinessError;
+      try {
+        await endpoints.ensureReady();
+      } catch (error) {
+        readinessError = error;
+      }
+      expect(readinessError, isA<StateError>());
+      final failure = classifySyncFailure(readinessError!);
+      expect(failure.kind, SyncFailureKind.torUnavailable);
+
+      final sync = container.read(syncProvider.notifier) as FakeSyncNotifier;
+      sync.emit(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          failure: failure,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text("Tor couldn't connect. Retry, or turn Tor off in Settings."),
+        findsOneWidget,
+      );
+      expect(sync.startSyncs, 0);
+
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+
+      expect(privacy.retryCalls, 1);
+      expect(sync.startSyncs, 0);
+    },
+  );
+
   testWidgets('home desktop does not re-run a pending Tor disable from Retry', (
     tester,
   ) async {
@@ -1861,6 +1958,7 @@ Widget _appHarness(
   bool passwordRotationRecoveryFailed = false,
   double? priceChange24hPct,
   SyncState? syncState,
+  FakeSyncNotifier? syncNotifier,
   SwapActivityStore? swapActivityStore,
   GiftCardActivityIndex? giftCardActivityIndex,
   Future<GiftCardActivityIndex>? giftCardActivityFuture,
@@ -1905,7 +2003,7 @@ Widget _appHarness(
         ),
       ),
       syncProvider.overrideWith(
-        () => FakeSyncNotifier(syncState ?? _syncedSyncState),
+        () => syncNotifier ?? FakeSyncNotifier(syncState ?? _syncedSyncState),
       ),
       ledgerSignedOperationServiceProvider.overrideWithValue(
         const _EmptyLedgerSignedOperationService(),

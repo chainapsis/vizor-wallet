@@ -180,6 +180,13 @@ final votingRpcEndpointConfigProvider = Provider<RpcEndpointConfig>((ref) {
   return ref.watch(rpcEndpointFailoverProvider).current;
 });
 
+/// Resolves the current route before a voting operation needs lightwalletd.
+/// Kept injectable alongside the synchronous projection for deterministic fixtures.
+final votingReadyRpcEndpointProvider =
+    Provider<Future<RpcEndpointConfig> Function()>((ref) {
+      return () => ref.read(rpcEndpointFailoverProvider.notifier).ensureReady();
+    });
+
 /// Starts foreground wallet sync when voting needs the wallet to catch up.
 final votingWalletSyncStarterProvider = Provider<void Function()>((ref) {
   return () => ref.read(syncProvider.notifier).startSync();
