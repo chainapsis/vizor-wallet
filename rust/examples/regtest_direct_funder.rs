@@ -282,13 +282,12 @@ fn migration_network() -> DirectRegtest {
 }
 
 fn funding_secret_key() -> SecretKey {
-    SecretKey::from_slice(&[1; 32]).expect("the public regtest funding key is valid")
+    SecretKey::from_secret_bytes([1; 32]).expect("the public regtest funding key is valid")
 }
 
 fn funding_identity() -> (SecretKey, secp256k1::PublicKey, TransparentAddress) {
     let secret = funding_secret_key();
-    let secp = secp256k1::Secp256k1::signing_only();
-    let public = secp256k1::PublicKey::from_secret_key(&secp, &secret);
+    let public = secp256k1::PublicKey::from_secret_key(&secret);
     let address = TransparentAddress::from_pubkey(&public);
     (secret, public, address)
 }
@@ -307,7 +306,8 @@ fn checked_height(value: u64, field: &str) -> Result<u32, String> {
 fn checked_target_height(value: u64) -> Result<u32, String> {
     let height = checked_height(value, "target_height")?;
     if height == 0
-        || height > u32::MAX - zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA
+        || height
+            > u32::MAX - zcash_primitives::transaction::builder::PRE_NU7_DEFAULT_TX_EXPIRY_DELTA
     {
         return Err("target_height cannot represent the SDK expiry delta".into());
     }
@@ -1098,7 +1098,8 @@ mod tests {
         assert!(checked_height(u64::from(u32::MAX) + 1, "height").is_err());
         assert!(checked_target_height(0).is_err());
         assert!(checked_target_height(u64::from(u32::MAX)).is_err());
-        let maximum = u32::MAX - zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
+        let maximum =
+            u32::MAX - zcash_primitives::transaction::builder::PRE_NU7_DEFAULT_TX_EXPIRY_DELTA;
         assert_eq!(checked_target_height(u64::from(maximum)).unwrap(), maximum);
     }
 

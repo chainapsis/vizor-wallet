@@ -145,7 +145,15 @@ fn historical_bip39_passphrase_import_recovers_exact_ironwood_funding_from_direc
     assert_eq!(accounts[0].zip32_account_index, Some(0));
     assert!(accounts[0].is_seed_anchor);
     assert_eq!(accounts[0].name, "Historical BIP39 vector");
-    assert_eq!(accounts[0].unified_address, BIP39_VECTOR_REGTEST_ORCHARD_UA);
+    assert_eq!(
+        wallet_api::get_unified_address(
+            db.clone(),
+            NETWORK.into(),
+            Some(account.account_uuid.clone()),
+        )
+        .expect("read restored unified address"),
+        BIP39_VECTOR_REGTEST_ORCHARD_UA
+    );
     assert_eq!(
         wallet_api::get_transparent_receive_address(
             db.clone(),
