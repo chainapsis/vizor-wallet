@@ -7,7 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
 /// First-run Welcome control showing the current language in its own script.
-/// Opens the language picker; the globe lets people who cannot read the
+/// Opens the language picker; the language icon lets people who cannot read the
 /// current language find it.
 class WelcomeLanguageButton extends StatefulWidget {
   const WelcomeLanguageButton({
@@ -58,7 +58,7 @@ class _WelcomeLanguageButtonState extends State<WelcomeLanguageButton> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const AppIcon(AppIcons.globe, size: 16, color: foreground),
+                const AppIcon(AppIcons.language, size: 16, color: foreground),
                 const SizedBox(width: AppSpacing.xxs + 2),
                 Text(
                   language.nativeName,

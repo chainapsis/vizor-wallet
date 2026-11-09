@@ -6,6 +6,7 @@ import 'mobile_passcode_capture.dart';
 import 'mobile_receive_capture.dart';
 import '../src/features/ledger/services/ledger_failure_guidance.dart';
 import 'desktop_welcome_capture.dart';
+import 'language_settings_capture.dart';
 import '../widgetbook/desktop_gift_onboarding_use_cases.dart';
 import '../widgetbook/desktop_gift_import_use_cases.dart';
 import 'desktop_onboarding_intro_capture.dart';
@@ -106,6 +107,38 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'desktop-language-welcome',
+    description: 'Desktop Welcome language entry and interactive picker',
+    builder: buildDesktopWelcomeCapture,
+    allowPointer: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-language-settings',
+    description: 'Desktop settings language entry and interactive picker',
+    builder: buildSettingsMainUseCase,
+    allowPointer: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-language-welcome',
+    description: 'Mobile Welcome language entry and interactive sheet',
+    builder: buildMobileLanguageWelcomeCapture,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    renderShadows: true,
+    outsideScaffold: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-language-settings',
+    description: 'Mobile settings language entry and interactive sheet',
+    builder: buildMobileLanguageSettingsCapture,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    outsideScaffold: true,
+  ),
   FigmaCompareScenario(
     id: 'desktop-endpoint-selection',
     description: 'Desktop endpoint list with Automatic selected',

@@ -794,7 +794,10 @@ Widget buildSettingsMainUseCase(BuildContext context) {
 }
 
 /// Real mobile settings pinned to the top of the Account group.
-Widget buildMobileSettingsMainUseCase(BuildContext context) {
+Widget buildMobileSettingsMainUseCase(
+  BuildContext context, {
+  bool interactive = false,
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -810,9 +813,12 @@ Widget buildMobileSettingsMainUseCase(BuildContext context) {
         () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
       ),
     ],
-    child: const _MobilePreviewFrame(
+    child: _MobilePreviewFrame(
       constrainToDesignSize: false,
-      child: IgnorePointer(child: _MobileSettingsMainPreview()),
+      child: IgnorePointer(
+        ignoring: !interactive,
+        child: const _MobileSettingsMainPreview(),
+      ),
     ),
   );
 }
