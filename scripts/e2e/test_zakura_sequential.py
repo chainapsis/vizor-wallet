@@ -325,6 +325,18 @@ class FlutterCommandTests(unittest.TestCase):
                 flutter.flutter_command(scenario, scenario.phases[0], flutter=Path("/model/flutter"),
                     device="DEVICE", source_root=Path("/model/root"), ports=ports)
 
+    def test_only_macos_phases_that_touch_the_clipboard_need_the_host_clipboard(self):
+        flutter = SEQUENTIAL.flutter_cases
+        root = Path(__file__).resolve().parents[2]
+        expected = {"flutter.macos.payment-link-round-trip": True,  # through a support helper
+                    "flutter.macos.payment-uri-send": True,
+                    "flutter.macos.import-sync": False,
+                    "flutter.macos.ironwood-migration": False,
+                    "flutter.ios.payment-link-round-trip": False}  # the simulator has its own
+        for name, needed in expected.items():
+            with self.subTest(name=name):
+                self.assertEqual(flutter.uses_host_clipboard(SEQUENTIAL.SCENARIOS[name], root), needed)
+
     def test_only_a_reported_pass_counts(self):
         verify = SEQUENTIAL.flutter_cases.verify_flutter_output
         verify(["00:24 +1: All tests passed!\n"])

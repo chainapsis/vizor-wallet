@@ -456,6 +456,29 @@ def leasable(scenario):
             and all(value == LIGHTWALLETD_OVERRIDE[1] for value in overrides))
 
 
+_RELATIVE_IMPORT = re.compile(r"^import '((?!package:|dart:)[^']+)'", re.MULTILINE)
+
+
+def _reads_clipboard(path, seen):
+    path = path.resolve()
+    if path in seen or not path.is_file():
+        return False
+    seen.add(path)
+    text = path.read_text(encoding="utf-8")
+    return "Clipboard." in text or any(_reads_clipboard(path.parent / name, seen)
+                                       for name in _RELATIVE_IMPORT.findall(text))
+
+
+def uses_host_clipboard(scenario, source_root):
+    """Whether a macOS phase's test, or a helper it imports, touches the clipboard.
+
+    macOS apps share one pasteboard whatever their bundle identifier, so two
+    runs must not copy and paste at the same time.
+    """
+    return any(phase_platform(scenario, phase) == "macos"
+               and _reads_clipboard(Path(source_root) / phase.test, set()) for phase in scenario.phases)
+
+
 def phase_platform(scenario, phase):
     return phase.platform or scenario.platform
 

@@ -53,6 +53,8 @@ MIGRATION_ACTIVATION = 500
 # Coinbase spends need 100 confirmations, so every chain starts mature.
 INITIAL_BLOCKS = 100
 # The Gift Card tracking tests print each capture they save in the app sandbox.
+# A macOS case waits this long for another run to finish with the host clipboard.
+CLIPBOARD_WAIT_SECONDS = 1800
 CAPTURE_MARKER = "[gift-card-tracking-screenshot] "
 CAPTURE_DIRECTORY = "gift_card_tracking_e2e_screenshots"
 
@@ -274,6 +276,10 @@ class SequentialCase:
         """Run each phase's `flutter test`, with `dart_defines` added, while serving its control requests."""
         if self.control is None:
             raise runtime.RunnerError("a Flutter case needs a started control")
+        if flutter_cases.uses_host_clipboard(scenario, source_root):
+            # Another run's macOS case may hold it for as long as its own deadline.
+            self.control.hold_clipboard(deadline=time.monotonic() + CLIPBOARD_WAIT_SECONDS,
+                cancel_event=cancel_event)
         deadline = time.monotonic() + scenario.timeout_seconds
         env = {**os.environ, **dict(scenario.env)}
         if scenario.screenshots:

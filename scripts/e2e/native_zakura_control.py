@@ -394,6 +394,12 @@ class OwnedNativeZakuraControl:
                 raise NativeZakuraControlError("original control listener closure is unproven")
         self._closed = True
 
+    def hold_clipboard(self, *, deadline, cancel_event):
+        """Hold the host clipboard for the whole case; closing the case releases it."""
+        self._require_owner()
+        if not self._clipboard.held:
+            self._clipboard.acquire(deadline=deadline, cancel_event=cancel_event)
+
     def release_clipboard_after_writers(self):
         """Abandoned copy actions release only after the original writers join."""
         self._require_owner()
