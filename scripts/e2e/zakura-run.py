@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 import shutil
 import signal
-import subprocess
 import sys
 import threading
 
@@ -21,19 +20,6 @@ if sys.version_info < (3, 11):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import zakura_sequential as sequential  # noqa: E402
-
-
-def pinned_flutter(root):
-    """The checkout's fvm-pinned Flutter executable, or None."""
-    fvm = shutil.which("fvm")
-    if fvm is None:
-        return None
-    completed = subprocess.run([fvm, "flutter", "--version", "--machine"], cwd=root,
-        capture_output=True, text=True, timeout=300)
-    if completed.returncode or "{" not in completed.stdout:
-        return None
-    info = json.loads(completed.stdout[completed.stdout.index("{"):])
-    return Path(info["flutterRoot"]) / "bin" / "flutter"
 
 
 def _console(text):
@@ -85,7 +71,7 @@ def main(argv=None):
     grpcurl = args.grpcurl or (Path(found) if (found := shutil.which("grpcurl")) else None)
     if grpcurl is None:
         parser.error("grpcurl was not found; install it or pass --grpcurl")
-    flutter = args.flutter or pinned_flutter(root)
+    flutter = args.flutter or sequential.flutter_cases.pinned_flutter(root)
     if flutter is None:
         parser.error("the Flutter SDK could not be resolved through fvm; pass --flutter")
 

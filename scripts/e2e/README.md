@@ -67,6 +67,19 @@ python3 scripts/e2e/zakura-run.py rust.import rust.send.basic
 python3 scripts/e2e/zakura-run.py flutter.ios
 ```
 
+`scripts/e2e/zakura-lanes.py` runs the same scenarios as up to three
+`zakura-run.py` processes side by side: the default-port scenarios in this
+checkout, the other macOS scenarios in a second checkout whose app has its own
+bundle identifier, and the Rust and other iOS scenarios on leased ports. It
+needs a clean working tree, because the second checkout
+(`.regtest-logs/lanes/checkout`, kept between runs) is a clone of HEAD.
+`--single-macos` keeps every macOS scenario in one app. The merged report is
+`.regtest-logs/lanes-<run id>/report.json`.
+
+```bash
+python3 scripts/e2e/zakura-lanes.py rust flutter
+```
+
 Each run writes `.regtest-logs/zakura-<run id>/report.json` with every
 scenario's status, phase durations and evidence directory, which holds its
 process logs and the chain's records. The run's build output (several GB) is

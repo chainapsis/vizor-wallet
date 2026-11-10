@@ -13,8 +13,12 @@ it get it; the endpoint tests configure their presets themselves.
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
+from pathlib import Path
 import re
+import shutil
+import subprocess
 import sys
 
 import e2e_runtime as runtime
@@ -409,6 +413,19 @@ FLUTTER_SCENARIOS = (
 # Python moves into the checkout before `flutter test` replaces it, so the
 # case keeps owning the process while Flutter finds the project's pubspec.
 _IN_CHECKOUT = "import os, sys; os.chdir(sys.argv[1]); os.execvp(sys.argv[2], sys.argv[2:])"
+
+
+def pinned_flutter(root):
+    """The checkout's fvm-pinned Flutter executable, or None."""
+    fvm = shutil.which("fvm")
+    if fvm is None:
+        return None
+    completed = subprocess.run([fvm, "flutter", "--version", "--machine"], cwd=root,
+        capture_output=True, text=True, timeout=300)
+    if completed.returncode or "{" not in completed.stdout:
+        return None
+    info = json.loads(completed.stdout[completed.stdout.index("{"):])
+    return Path(info["flutterRoot"]) / "bin" / "flutter"
 
 
 def derived_addresses(scenario):
