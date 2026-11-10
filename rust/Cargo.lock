@@ -2121,9 +2121,9 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "lwd-uri-util"
-version = "0.1.0"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "129be19ca4d1d997d168af561e5cea12b0a401716a05720daf48072e470d7db5"
+checksum = "6d35f023e3d87f8d4bc91a3bc670ae4681e9d85937146b9b0683d0f33eb0f55a"
 
 [[package]]
 name = "matchit"
