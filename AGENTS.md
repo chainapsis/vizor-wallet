@@ -954,9 +954,11 @@ development; breaking them is a correctness or data-loss regression):
    Storing first would mark notes spent by a transaction no server holds.
    Once the server has the whole transaction, a nonzero `SendResponse` is no
    proof it was dropped: Zebra and Zakura re-queue rejected transactions for
-   later blocks. A rejected first submission is stored like an unknown
+   later blocks. A rejected single transaction is stored like an unknown
    result (`broadcast_unknown`), so its inputs stay spent until its expiry
-   height. Only a transaction without an expiry height still fails outright.
+   height. A transaction without an expiry height still fails outright, and
+   so does a rejected TEX first round: it pays only the wallet's ephemeral
+   address, and keeping it would drop the signed payment round.
 
 2. **Local storage failure after a successful broadcast must not surface
    as a send failure.** The primary store path is

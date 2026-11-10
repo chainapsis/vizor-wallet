@@ -1663,3 +1663,37 @@ async fn rejection_after_full_submission_keeps_the_spend_until_expiry() {
         handle.abort();
     }
 }
+
+/// A TEX pair's first round pays only the wallet's ephemeral address. Keeping
+/// it after a rejection would drop the signed payment round, so the pair still
+/// fails, stores nothing, and releases its inputs for a retry.
+#[tokio::test]
+async fn rejected_first_round_of_a_pair_still_fails() {
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    let wallet = Wallet::funded(true);
+    let proposal = SignedProposal::new(&wallet);
+    let (url, service, handle) = server(205, 18).await;
+    let Err(error) = proposal.recover_batch(&wallet, &url).await else {
+        panic!("a rejected first round must fail the pair");
+    };
+    assert!(error.message.contains("code 18"), "{error}");
+    assert_eq!(
+        *service.submitted.lock().unwrap(),
+        [wallet.signed[0].raw.clone()]
+    );
+    let stored: u32 = rusqlite::Connection::open(&wallet.path)
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE txid IN (?1, ?2)",
+            params![
+                wallet.signed[0].tx.txid().as_ref(),
+                wallet.signed[1].tx.txid().as_ref()
+            ],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, 0);
+    proposal.assert_retained(&wallet, false);
+    handle.abort();
+}

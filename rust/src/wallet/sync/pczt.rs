@@ -39,10 +39,10 @@
 //! 2. **Authority is checked before broadcast; broadcast precedes persistence.**
 //!    Transparent input authorization holds a SQLite writer reservation until
 //!    each request has been handed to the transport, so recovery cannot revoke
-//!    it between check and send. A rejected first round is kept like an
-//!    ambiguous one, because nodes re-queue rejected transactions; a rejected
-//!    later round, or one without an expiry height, stays out of the wallet
-//!    DB. After each ordered broadcast
+//!    it between check and send. A rejected single transaction is kept like
+//!    an ambiguous one, because nodes re-queue rejected transactions; a
+//!    rejected TEX round, or one without an expiry height, stays out of the
+//!    wallet DB. After each ordered broadcast
 //!    attempt stops, the accepted-or-ambiguous prefix is persisted atomically;
 //!    a later store failure rolls back every earlier write in that prefix.
 //!
@@ -1418,14 +1418,20 @@ fn pczt_broadcast_step(
                 )),
             })
         }
-        // Keep a rejected first submission like an unknown result, so its
-        // inputs stay spent until it expires.
-        PcztBroadcastAttempt::Rejected(error) if index == 0 => pczt_broadcast_step(
-            index,
-            total_count,
-            PcztBroadcastAttempt::TransportUnknown(error),
-        ),
-        PcztBroadcastAttempt::DefiniteRejection(error) if index == 0 => {
+        // Keep a rejected single transaction like an unknown result, so its
+        // inputs stay spent until it expires. A TEX first round still fails:
+        // it pays only the wallet's ephemeral address, and keeping it would
+        // drop the signed payment round.
+        PcztBroadcastAttempt::Rejected(error) if index == 0 && total_count == 1 => {
+            pczt_broadcast_step(
+                index,
+                total_count,
+                PcztBroadcastAttempt::TransportUnknown(error),
+            )
+        }
+        PcztBroadcastAttempt::Rejected(error) | PcztBroadcastAttempt::DefiniteRejection(error)
+            if index == 0 =>
+        {
             PcztBroadcastStep::Fail(error.into())
         }
         PcztBroadcastAttempt::Rejected(error) | PcztBroadcastAttempt::DefiniteRejection(error) => {
@@ -2756,20 +2762,20 @@ mod tests {
     }
 
     #[test]
-    fn pczt_set_first_rejection_is_kept_like_an_unknown_result() {
+    fn pczt_single_rejection_is_kept_like_an_unknown_result() {
         let step =
-            pczt_broadcast_step(0, 2, PcztBroadcastAttempt::Rejected("rejected".to_string()));
+            pczt_broadcast_step(0, 1, PcztBroadcastAttempt::Rejected("rejected".to_string()));
 
         assert_eq!(
             step,
             pczt_broadcast_step(
                 0,
-                2,
+                1,
                 PcztBroadcastAttempt::TransportUnknown("rejected".to_string()),
             )
         );
         let PcztBroadcastStep::Stop(plan) = step else {
-            panic!("a rejected first submission must be kept");
+            panic!("a rejected single transaction must be kept");
         };
         assert_eq!(plan.persisted_prefix_len, 1);
         assert_eq!(plan.broadcasted_count, 0);
@@ -2777,10 +2783,19 @@ mod tests {
     }
 
     #[test]
-    fn pczt_set_first_rejection_without_expiry_never_persists() {
+    fn pczt_set_first_rejection_never_persists() {
+        // Keeping a TEX first round would drop the signed payment round.
+        let step =
+            pczt_broadcast_step(0, 2, PcztBroadcastAttempt::Rejected("rejected".to_string()));
+
+        assert_eq!(step, PcztBroadcastStep::Fail("rejected".into()));
+    }
+
+    #[test]
+    fn pczt_single_rejection_without_expiry_never_persists() {
         let step = pczt_broadcast_step(
             0,
-            2,
+            1,
             PcztBroadcastAttempt::DefiniteRejection("rejected".to_string()),
         );
 
