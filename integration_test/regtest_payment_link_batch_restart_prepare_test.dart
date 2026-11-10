@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 
+import 'support/desktop_activity_flow.dart';
 import 'support/desktop_regtest_flow.dart';
 import 'support/payment_link_regtest_flow.dart';
 import 'support/regtest_control.dart';
@@ -101,6 +102,7 @@ void main() {
         'batch restart prepared: 50 cards, lost broadcast response, '
         'txid=${result.txids}',
       );
+      await settleDeferredGiftCardRecovery(tester);
     },
     timeout: const Timeout(Duration(minutes: 15)),
   );
