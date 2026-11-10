@@ -447,7 +447,7 @@ def _require_unbound(port):
 
 def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, proto_dir, dart,
              source_root, keep_failed, cancel_event, flutter=None, device=None, dart_defines=(),
-             lease_ios_ports=False):
+             lease_ports=False):
     """Run one scenario on its own chain and return its report entry."""
     started = time.monotonic()
     is_flutter = isinstance(scenario, flutter_cases.FlutterScenario)
@@ -474,7 +474,7 @@ def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, pro
             scenario_id=scenario.id, platform=scenario.platform if is_flutter else "rust",
             activation_height=scenario.activation_height,
             ports=flutter_cases.fixed_ports(scenario)
-                if is_flutter and not (lease_ios_ports and flutter_cases.leasable(scenario)) else None)
+                if is_flutter and not (lease_ports and flutter_cases.leasable(scenario)) else None)
         result["evidence"] = str(session.case.workspace.root)
         begin("chain")
         session.start(grpcurl=grpcurl, proto_dir=proto_dir, dart=dart, source_root=source_root,
@@ -549,7 +549,7 @@ def resolve_dart(flutter, source_root):
 
 def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_jobs=4,
                  keep_failed=False, cancel_event=None, out=print, ios_runtime=None, dart_defines=(),
-                 lease_ios_ports=False):
+                 lease_ports=False):
     """Build once, then run each scenario on its own chain; return the report.
 
     iOS scenarios run on a simulator the run creates after the build and
@@ -629,7 +629,7 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
                 result = run_case(cases, run_id, index, scenario, artifact=artifact, grpcurl=grpcurl,
                     proto_dir=proto_dir, dart=dart, source_root=root, keep_failed=keep_failed,
                     cancel_event=cancel, flutter=flutter, dart_defines=dart_defines,
-                    lease_ios_ports=lease_ios_ports,
+                    lease_ports=lease_ports,
                     device=simulator.udid if getattr(scenario, "platform", None) == "ios" else "macos")
                 if is_flutter and result["status"] != "passed" and diagnostics.session_locked():
                     result["error"] = f"{result['error']} (the macOS session was locked)"

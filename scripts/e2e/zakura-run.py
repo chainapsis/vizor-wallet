@@ -56,9 +56,9 @@ def main(argv=None):
     parser.add_argument("--ios-runtime",
         help="simulator runtime for iOS scenarios, such as com.apple.CoreSimulator.SimRuntime.iOS-26-3 "
              "(default: the newest installed)")
-    parser.add_argument("--lease-ios-ports", action="store_true",
-        help="run iOS scenarios that reach the chain only through the lightwalletd define on leased "
-             "ports, so they can run beside a macOS run on the default ports")
+    parser.add_argument("--lease-ports", action="store_true",
+        help="run scenarios that reach the chain only through the lightwalletd define on leased "
+             "ports, so they can run beside another run on the default ports")
     parser.add_argument("--dart-define", action="append", default=[], metavar="NAME=VALUE",
         help="add a define to every Flutter phase, such as GIFT_CARD_E2E_AMOUNT_MODE=usd")
     args = parser.parse_args(argv)
@@ -100,7 +100,7 @@ def main(argv=None):
         report, path = sequential.run_sequence(root, scenarios, flutter=flutter, grpcurl=grpcurl,
             proto_dir=args.proto_dir, build_jobs=args.build_jobs, keep_failed=args.keep_failed,
             cancel_event=cancel, out=_console, ios_runtime=args.ios_runtime, dart_defines=tuple(defines),
-            lease_ios_ports=args.lease_ios_ports)
+            lease_ports=args.lease_ports)
     except ValueError as error:
         _console(f"zakura-run: {error}")
         return 2

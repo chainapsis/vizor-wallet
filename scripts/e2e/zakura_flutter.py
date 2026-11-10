@@ -434,7 +434,6 @@ def leasable(scenario):
     overrides = [value for phase in scenario.phases
                  for name, value in (*scenario.defines, *phase.defines) if name == LIGHTWALLETD_OVERRIDE[0]]
     return (not scenario.voting and not scenario.screenshots and not scenario.env
-            and all(phase_platform(scenario, phase) == "ios" for phase in scenario.phases)
             and len(overrides) == len(scenario.phases)
             and all(value == LIGHTWALLETD_OVERRIDE[1] for value in overrides))
 
