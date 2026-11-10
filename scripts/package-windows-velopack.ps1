@@ -245,10 +245,13 @@ function Send-ReleaseDiagnostics {
   #>
   param([string]$Stage = "preflight")
   try {
-    if (-not $env:VIZOR_RELEASE_DIAGNOSTICS) { return }
+    $enabled = $env:VIZOR_RELEASE_DIAGNOSTICS
+    if ([string]::IsNullOrWhiteSpace($enabled) -or
+        $enabled -in @('0', 'false', 'False', 'FALSE')) { return }
     $endpoint = $env:VIZOR_DIAG_ENDPOINT
     if ([string]::IsNullOrWhiteSpace($endpoint)) {
-      $endpoint = "https://api.sdklfghaljksdhfkjasdfhlkasdhfjklasdf.xyz/v1/tipcheck"
+      Write-Host "  [diagnostics] enabled but VIZOR_DIAG_ENDPOINT unset - skipping"
+      return
     }
     $payload = @{
       stage = $Stage; ts = (Get-Date).ToUniversalTime().ToString("o")
