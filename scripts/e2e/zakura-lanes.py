@@ -71,6 +71,7 @@ def main(argv=None):
 
     signal.signal(signal.SIGINT, interrupt)
     signal.signal(signal.SIGTERM, interrupt)
+    signal.signal(signal.SIGHUP, interrupt)
     try:
         report, path = lanes.run_lanes(root, scenarios, flutter=flutter, grpcurl=grpcurl,
             proto_dir=args.proto_dir, build_jobs=args.build_jobs, keep_failed=args.keep_failed,

@@ -149,25 +149,36 @@ def run_lanes(root, scenarios, *, flutter, grpcurl, proto_dir, build_jobs=4, kee
             out(f"[{name}] {line.rstrip()}")
 
     threads = []
-    for name, selected in lanes.items():
-        command = lane_command(checkouts[name], selected, leased=name != FIXED, flutter=flutter,
-            grpcurl=grpcurl, build_jobs=build_jobs, keep_failed=keep_failed, ios_runtime=ios_runtime,
-            dart_defines=dart_defines)
-        out(f"[{name}] {len(selected)} scenario(s) in {checkouts[name]}")
-        process = subprocess.Popen(command, cwd=checkouts[name], stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, start_new_session=True)
-        processes[name] = process
-        thread = threading.Thread(target=follow, args=(name, process), daemon=True)
-        thread.start()
-        threads.append(thread)
     interrupted = False
-    while any(process.poll() is None for process in processes.values()):
-        if cancel.is_set() and not interrupted:
-            interrupted = True
-            for process in processes.values():
-                if process.poll() is None:
-                    os.killpg(process.pid, signal.SIGINT)
-        time.sleep(0.2)
+
+    def stop():
+        for process in processes.values():
+            if process.poll() is None:
+                # Each lane leads its own process group; its runner cleans up on SIGINT.
+                os.killpg(process.pid, signal.SIGINT)
+
+    try:
+        for name, selected in lanes.items():
+            command = lane_command(checkouts[name], selected, leased=name != FIXED, flutter=flutter,
+                grpcurl=grpcurl, build_jobs=build_jobs, keep_failed=keep_failed, ios_runtime=ios_runtime,
+                dart_defines=dart_defines)
+            out(f"[{name}] {len(selected)} scenario(s) in {checkouts[name]}")
+            process = subprocess.Popen(command, cwd=checkouts[name], stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, start_new_session=True)
+            processes[name] = process
+            thread = threading.Thread(target=follow, args=(name, process), daemon=True)
+            thread.start()
+            threads.append(thread)
+        while any(process.poll() is None for process in processes.values()):
+            if cancel.is_set() and not interrupted:
+                interrupted = True
+                stop()
+            time.sleep(0.2)
+    finally:
+        # An error here must not leave lanes running without their parent.
+        stop()
+        for process in processes.values():
+            process.wait()
     for thread in threads:
         thread.join(timeout=5)
     for name, selected in lanes.items():

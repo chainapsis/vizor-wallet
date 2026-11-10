@@ -1,6 +1,7 @@
 """Flutter E2E scenarios on Zakura regtest chains: catalog and commands.
 
-A Flutter case serves its chain on the app's default regtest ports, so the
+Unless it runs on leased ports (see `leasable`), a Flutter case serves its
+chain on the app's default regtest ports, so the
 app's endpoint presets and the tests' defaults need no override: the
 lightwalletd shim on 9067, the HTTP control on 18232 and the in-test
 lightwalletd proxy on 19068. Nothing may listen on 19067, the Unavailable

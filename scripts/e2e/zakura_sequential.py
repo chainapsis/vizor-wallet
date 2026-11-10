@@ -5,7 +5,7 @@ shim in front of them and an HTTP control. The offline signer and the Rust test
 executables are built once per run from the committed `rust/` tree and shared
 read-only. Cases never share chain state, wallets or evidence. Rust cases lease
 free ports; Flutter cases use the app's default regtest ports, one case at a
-time.
+time, unless the run leases ports for the scenarios that can take them.
 """
 from __future__ import annotations
 

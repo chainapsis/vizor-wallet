@@ -73,7 +73,11 @@ checkout, the other macOS scenarios in a second checkout whose app has its own
 bundle identifier, and the Rust and other iOS scenarios on leased ports. It
 needs a clean working tree, because the second checkout
 (`.regtest-logs/lanes/checkout`, kept between runs) is a clone of HEAD.
-`--single-macos` keeps every macOS scenario in one app. The merged report is
+`--single-macos` keeps every macOS scenario in one app; use it where the second
+bundle identifier (`com.keplr.vizor.e2eb`) cannot be signed, which needs a
+wildcard development profile. The second checkout holds its own build outputs
+(about 20 GB); its build cache is read-only, so remove it with
+`chmod -R u+w .regtest-logs/lanes && rm -rf .regtest-logs/lanes`. The merged report is
 `.regtest-logs/lanes-<run id>/report.json`.
 
 ```bash

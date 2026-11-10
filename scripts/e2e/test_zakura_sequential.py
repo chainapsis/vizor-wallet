@@ -307,6 +307,24 @@ class FlutterCommandTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.command(scenario)
 
+    def test_leased_ports_replace_the_control_and_lightwalletd_defines(self):
+        flutter = SEQUENTIAL.flutter_cases
+        ports = {"rpc": 41001, "lwd": 41002, "proxy": 41003}
+        for name in ("flutter.macos.import-sync", "flutter.ios.import-sync"):
+            scenario = SEQUENTIAL.SCENARIOS[name]
+            command = flutter.flutter_command(scenario, scenario.phases[0], flutter=Path("/model/flutter"),
+                device="DEVICE", source_root=Path("/model/root"), ports=ports)
+            self.assertIn("--dart-define=ZCASH_E2E_DRIVER_URL=http://127.0.0.1:41001", command)
+            self.assertIn("--dart-define=ZCASH_E2E_LIGHTWALLETD_URL=http://127.0.0.1:41002", command)
+            self.assertFalse(any(":9067" in part or ":18232" in part for part in command))
+        for name in ("flutter.macos.fallback-endpoint", "flutter.macos.payment-link-batch-restart",
+                     "flutter.ios.screenshot-tour", "flutter.macos.voting", "flutter.ios.voting"):
+            scenario = SEQUENTIAL.SCENARIOS[name]
+            self.assertFalse(flutter.leasable(scenario))
+            with self.assertRaises(ValueError):
+                flutter.flutter_command(scenario, scenario.phases[0], flutter=Path("/model/flutter"),
+                    device="DEVICE", source_root=Path("/model/root"), ports=ports)
+
     def test_only_a_reported_pass_counts(self):
         verify = SEQUENTIAL.flutter_cases.verify_flutter_output
         verify(["00:24 +1: All tests passed!\n"])
