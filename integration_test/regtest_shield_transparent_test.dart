@@ -95,7 +95,7 @@ void main() {
       await _expectAnyActivityRow(
         tester,
         rowKeyPrefix: 'home_desktop_activity',
-        title: 'Shielded',
+        title: 'Shielding',
         amount: _formatActivity(expectedShielded),
         status: 'In progress',
         timeout: const Duration(minutes: 2),
@@ -134,6 +134,7 @@ void main() {
         status: 'Completed',
         timeout: const Duration(minutes: 2),
       );
+      await settleDeferredGiftCardRecovery(tester);
     },
     timeout: const Timeout(Duration(minutes: 15)),
   );

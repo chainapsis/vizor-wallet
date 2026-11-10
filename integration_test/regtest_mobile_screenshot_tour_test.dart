@@ -437,7 +437,7 @@ void main() {
       await tapUntilVisible(
         tester,
         trigger: find.bySemanticsLabel('Settings'),
-        outcome: find.text('Password'),
+        outcome: find.text('Change passcode'),
         description: 'settings tab',
       );
       await shot('27_settings');
@@ -455,7 +455,7 @@ void main() {
       await scrollTo(seedRow, -300);
       await tapUntilVisible(
         tester,
-        trigger: find.text('Password'),
+        trigger: find.text('Change passcode'),
         outcome: find.text('Enter Passcode'),
         description: 'change passcode verify',
       );

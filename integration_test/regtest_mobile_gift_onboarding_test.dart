@@ -373,6 +373,15 @@ Future<void> _createGiftWallet(
   );
   await enterPasscode(tester, mobileE2ePasscode);
   await enterPasscode(tester, mobileE2ePasscode);
+  // The slide transition can still hold the button off screen.
+  await pumpUntil(
+    tester,
+    () => tester.any(
+      find.byKey(const ValueKey('mobile_biometrics_not_now')).hitTestable(),
+    ),
+    description: 'biometrics prompt to settle',
+    timeout: const Duration(minutes: 2),
+  );
   await tapWidget(
     tester,
     const ValueKey('mobile_biometrics_not_now'),

@@ -190,6 +190,7 @@ void main() {
         timeout: const Duration(minutes: 4),
       );
       _log('returned TEX funds detected and shielded');
+      await settleDeferredGiftCardRecovery(tester);
     },
     timeout: const Timeout(Duration(minutes: 20)),
   );

@@ -184,7 +184,7 @@ void main() {
         logE2e('changing passcode');
         await tapUntilVisible(
           tester,
-          trigger: find.text('Password'),
+          trigger: find.text('Change passcode'),
           outcome: find.byKey(const ValueKey('mobile_change_passcode_verify')),
           description: 'change-passcode screen',
         );
@@ -223,7 +223,7 @@ void main() {
       await tapUntilVisible(
         tester,
         trigger: find.bySemanticsLabel('Settings'),
-        outcome: find.text('Password'),
+        outcome: find.text('Change passcode'),
         description: 'settings tab',
       );
       await changePasscode(mobileE2ePasscode, '222222');

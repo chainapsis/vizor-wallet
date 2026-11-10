@@ -177,6 +177,7 @@ void main() {
         status: 'In progress',
       );
       _log('first account sent activity matched');
+      await settleDeferredGiftCardRecovery(tester);
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );

@@ -125,6 +125,7 @@ void main() {
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
         );
+        await settleDeferredGiftCardRecovery(tester);
       },
       timeout: const Timeout(Duration(minutes: 10)),
     );
@@ -198,6 +199,7 @@ void main() {
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
         );
+        await settleDeferredGiftCardRecovery(tester);
       },
       timeout: const Timeout(Duration(minutes: 12)),
     );
@@ -300,6 +302,7 @@ void main() {
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
         );
+        await settleDeferredGiftCardRecovery(tester);
       },
       timeout: const Timeout(Duration(minutes: 12)),
     );

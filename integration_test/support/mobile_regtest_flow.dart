@@ -576,6 +576,11 @@ Future<void> openMobileMigrationOptions(WidgetTester tester) async {
   final intro = find.byKey(
     const ValueKey('mobile_ironwood_intro_continue_button'),
   );
+  // The post-activation sync can raise the keep-awake prompt on the root
+  // navigator, where it stays above the migration routes.
+  final keepAwakeLater = find.byKey(
+    const ValueKey('mobile_sync_keep_awake_prompt_later'),
+  );
   final deadline = DateTime.now().add(const Duration(minutes: 5));
   var lastTap = DateTime.fromMillisecondsSinceEpoch(0);
   while (tester.any(announcementSheet) || !tester.any(intro.hitTestable())) {
@@ -583,9 +588,14 @@ Future<void> openMobileMigrationOptions(WidgetTester tester) async {
       fail('Timed out entering the mobile Ironwood migration flow.');
     }
     if (DateTime.now().difference(lastTap) > const Duration(seconds: 1)) {
+      final tappableKeepAwakeLater = keepAwakeLater.hitTestable();
       final tappableAnnouncementStart = announcementStart.hitTestable();
       final tappableHomeCta = homeCta.hitTestable();
-      if (tester.any(tappableAnnouncementStart)) {
+      if (tester.any(tappableKeepAwakeLater)) {
+        lastTap = DateTime.now();
+        await tester.tap(tappableKeepAwakeLater);
+        logE2e('dismissed the sync keep-awake prompt');
+      } else if (tester.any(tappableAnnouncementStart)) {
         lastTap = DateTime.now();
         await tester.tap(tappableAnnouncementStart);
       } else if (!tester.any(announcementSheet) &&
