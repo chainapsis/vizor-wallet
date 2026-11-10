@@ -951,9 +951,12 @@ development; breaking them is a correctness or data-loss regression):
 1. **The hardware completion path must broadcast before it persists.**
    The function order is: `TransactionExtractor::extract()` (in-memory, no
    DB) → `send_transaction` gRPC → *only then* `extract_and_store_transaction_from_pczt`.
-   Store-then-broadcast leaves the wallet in an unrecoverable state if
-   lightwalletd rejects the tx: DB thinks the notes are spent, network
-   has no record of the tx, user has to manually rescue the wallet.
+   Storing first would mark notes spent by a transaction no server holds.
+   Once the server has the whole transaction, a nonzero `SendResponse` is no
+   proof it was dropped: Zebra and Zakura re-queue rejected transactions for
+   later blocks. A rejected first submission is stored like an unknown
+   result (`broadcast_unknown`), so its inputs stay spent until its expiry
+   height. Only a transaction without an expiry height still fails outright.
 
 2. **Local storage failure after a successful broadcast must not surface
    as a send failure.** The primary store path is
