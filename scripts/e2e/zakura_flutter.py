@@ -424,6 +424,21 @@ def fixed_ports(scenario):
             **(VOTING_PORTS if scenario.voting else {})}
 
 
+def leasable(scenario):
+    """Whether the scenario runs on leased ports instead of the default ones.
+
+    It must reach the chain only through the lightwalletd define: the app's
+    regtest preset, the in-test proxy, the screenshot driver and the voting
+    services all listen on fixed ports.
+    """
+    overrides = [value for phase in scenario.phases
+                 for name, value in (*scenario.defines, *phase.defines) if name == LIGHTWALLETD_OVERRIDE[0]]
+    return (not scenario.voting and not scenario.screenshots and not scenario.env
+            and all(phase_platform(scenario, phase) == "ios" for phase in scenario.phases)
+            and len(overrides) == len(scenario.phases)
+            and all(value == LIGHTWALLETD_OVERRIDE[1] for value in overrides))
+
+
 def phase_platform(scenario, phase):
     return phase.platform or scenario.platform
 
@@ -444,16 +459,20 @@ def funding_source_height(scenario, phase):
     return first + sum(earlier.fundings for earlier in scenario.phases[:scenario.phases.index(phase)])
 
 
-def flutter_command(scenario, phase, *, flutter, device, source_root, derived=None, extra_defines=()):
+def flutter_command(scenario, phase, *, flutter, device, source_root, derived=None, extra_defines=(),
+                    ports=None):
     """The phase's `flutter test` command line, run from the checkout root.
 
     `derived` maps each Derived define to the address the run derived, and
-    `extra_defines` are values the run learned while the case ran.
+    `extra_defines` are values the run learned while the case ran. `ports`
+    are the leased ports of a leasable scenario.
     """
+    if ports is not None and not leasable(scenario):
+        raise ValueError(f"{scenario.id} needs the default ports")
     defines = {
         "ZCASH_DEFAULT_NETWORK": "regtest",
         "ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT": str(scenario.activation_height),
-        "ZCASH_E2E_DRIVER_URL": f"http://127.0.0.1:{CONTROL_PORT}",
+        "ZCASH_E2E_DRIVER_URL": f"http://127.0.0.1:{ports['rpc'] if ports else CONTROL_PORT}",
         "ZCASH_E2E_FUNDING_SOURCE_HEIGHT": str(funding_source_height(scenario, phase)),
     }
     if phase_platform(scenario, phase) == "macos":
@@ -468,6 +487,8 @@ def flutter_command(scenario, phase, *, flutter, device, source_root, derived=No
             if value not in (derived or {}):
                 raise ValueError(f"{scenario.id} needs {name} derived before it runs")
             value = derived[value]
+        if ports is not None and name == LIGHTWALLETD_OVERRIDE[0]:
+            value = f"http://127.0.0.1:{ports['lwd']}"
         defines[name] = value
     return [sys.executable, "-c", _IN_CHECKOUT, str(source_root), str(flutter), "test", phase.test,
             "-d", device, *phase.args, *(f"--dart-define={name}={value}" for name, value in defines.items())]
