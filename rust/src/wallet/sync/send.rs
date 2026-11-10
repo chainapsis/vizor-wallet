@@ -2143,7 +2143,7 @@ fn build_orchard_migration_immediate_pczt(
         let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
         let internal_ovk = Some(orchard_fvk.to_ovk(orchard::keys::Scope::Internal));
         let (target_height, anchor_height) = db
-            .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+            .get_target_and_anchor_heights(super::migration::trusted_anchor_confirmations())
             .map_err(|e| format!("Failed to read anchor height: {e}"))?
             .ok_or("Wallet must sync before migrating")?;
         let signed_target_height = u32::from(BlockHeight::from(target_height));
@@ -3782,7 +3782,7 @@ pub(crate) fn retain_prepared_note_anchor_checkpoints_after_scan(
         return Ok(0);
     }
     let Some((_, anchor_height)) = db
-        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .get_target_and_anchor_heights(super::migration::trusted_anchor_confirmations())
         .map_err(|e| format!("Read migration anchor retention height: {e}"))?
     else {
         return Ok(0);
@@ -5182,7 +5182,7 @@ fn orchard_anchor_and_witnesses_for_denomination_inputs(
         .and_then(|ufvk| ufvk.orchard().cloned())
         .ok_or("Orchard viewing key not available")?;
     let (_, anchor_height) = db
-        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .get_target_and_anchor_heights(super::migration::trusted_anchor_confirmations())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before finalizing a denomination stage")?;
     // Select at the trusted anchor rather than through `get_spendable_note`.
@@ -5271,7 +5271,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
         .ok_or("Account not found")?;
 
     let (_, anchor_height) = db
-        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .get_target_and_anchor_heights(super::migration::trusted_anchor_confirmations())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before finalizing migration")?;
     let available_notes = select_spendable_orchard_v2_notes(&db, account_id, anchor_height)?;
@@ -5393,7 +5393,7 @@ fn orchard_witness_is_available_for_prepared_note(
         .ok_or("Account not found")?;
 
     let Some((_, anchor_height)) = db
-        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .get_target_and_anchor_heights(super::migration::trusted_anchor_confirmations())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
     else {
         return Ok(false);
