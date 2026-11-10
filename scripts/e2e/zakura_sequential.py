@@ -161,6 +161,9 @@ class SequentialCase:
     wallet files of a failed case for inspection.
     """
 
+    # Whether the case runs on leased ports instead of the default ones.
+    leased = False
+
     def __init__(self, run_root, *, run_id, case_index, scenario_id, platform, activation_height,
                  ports=None):
         self.leased = ports is None
