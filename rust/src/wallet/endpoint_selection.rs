@@ -292,8 +292,12 @@ pub(crate) fn probe_candidates(
         return Err("automatic endpoint selection: invalid budget".to_string());
     }
     let mut seen = HashSet::new();
-    let urls = urls
+    // Canonicalize before dedup so `"zec.rocks"`, `"https://zec.rocks"` and
+    // `"https://zec.rocks:443"` collapse to a single probe instead of
+    // racing the same host three times.
+    let urls: Vec<String> = urls
         .into_iter()
+        .map(|url| lwd_uri_util::canonicalize_endpoint(&url))
         .filter(|url| seen.insert(url.clone()))
         .collect();
     let route_revision = ready_route_revision()?;
