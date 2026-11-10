@@ -1419,8 +1419,9 @@ fn pczt_broadcast_step(
             })
         }
         // A TEX first round pays only the wallet's ephemeral address; keeping
-        // it after a rejection would drop the signed payment round.
-        PcztBroadcastAttempt::Rejected(error) if index == 0 && total_count > 1 => {
+        // it after a rejection would drop the signed payment round. Only a
+        // validated TEX pair has exactly two rounds.
+        PcztBroadcastAttempt::Rejected(error) if index == 0 && total_count == 2 => {
             PcztBroadcastStep::Fail(error.into())
         }
         // Any other rejected transaction may still be mined, so keep it like
@@ -2788,6 +2789,19 @@ mod tests {
             pczt_broadcast_step(0, 2, PcztBroadcastAttempt::Rejected("rejected".to_string()));
 
         assert_eq!(step, PcztBroadcastStep::Fail("rejected".into()));
+    }
+
+    #[test]
+    fn pczt_longer_set_first_rejection_is_kept_like_an_unknown_result() {
+        // Only a two-round set is a validated TEX pair.
+        let step =
+            pczt_broadcast_step(0, 3, PcztBroadcastAttempt::Rejected("rejected".to_string()));
+
+        let PcztBroadcastStep::Stop(plan) = step else {
+            panic!("a rejected first submission outside a TEX pair must be kept");
+        };
+        assert_eq!(plan.persisted_prefix_len, 1);
+        assert_eq!(plan.status, StoreAndBroadcastPcztsResult::BROADCAST_UNKNOWN);
     }
 
     #[test]
