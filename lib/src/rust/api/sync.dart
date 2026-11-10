@@ -1369,35 +1369,6 @@ String getPcztTxid({required List<int> pcztBytes}) =>
 int getPcztExpiryHeight({required List<int> pcztBytes}) =>
     RustLib.instance.api.crateApiSyncGetPcztExpiryHeight(pcztBytes: pcztBytes);
 
-/// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
-/// transaction, store it in the wallet DB, and broadcast it to lightwalletd.
-/// Returns the txid.
-///
-/// `spend_params_path` / `output_params_path` are required whenever the
-/// combined PCZT has a non-empty Sapling bundle (e.g. the original proposal
-/// had `needsSaplingParams == true`). They are used both to verify the
-/// extracted transaction in-memory before broadcast and by
-/// `extract_and_store_transaction_from_pczt` after broadcast. Orchard-only
-/// sends can pass `None` for both. Mirrors the `add_proofs_to_pczt`
-/// contract: if you needed to supply params there, you need them here too.
-Future<ExtractAndBroadcastPcztResult> extractAndBroadcastPczt({
-  required String dbPath,
-  required String lightwalletdUrl,
-  required String network,
-  required List<int> pcztWithProofsBytes,
-  required List<int> pcztWithSignaturesBytes,
-  String? spendParamsPath,
-  String? outputParamsPath,
-}) => RustLib.instance.api.crateApiSyncExtractAndBroadcastPczt(
-  dbPath: dbPath,
-  lightwalletdUrl: lightwalletdUrl,
-  network: network,
-  pcztWithProofsBytes: pcztWithProofsBytes,
-  pcztWithSignaturesBytes: pcztWithSignaturesBytes,
-  spendParamsPath: spendParamsPath,
-  outputParamsPath: outputParamsPath,
-);
-
 Future<PaymentLinkSpendEvidence> getPaymentLinkSpendEvidence({
   required String dbPath,
   required String accountUuid,
@@ -2049,6 +2020,8 @@ class ExecuteProposalResult {
           broadcastFailureKind == other.broadcastFailureKind;
 }
 
+/// One hardware broadcast's result. No API returns it; Dart builds it from a
+/// [`StoreAndBroadcastPcztsResult`] for single-transaction flows.
 class ExtractAndBroadcastPcztResult {
   final String txid;
   final String status;
