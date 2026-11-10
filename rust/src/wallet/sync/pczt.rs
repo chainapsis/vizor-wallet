@@ -39,9 +39,9 @@
 //! 2. **Authority is checked before broadcast; broadcast precedes persistence.**
 //!    Transparent input authorization holds a SQLite writer reservation until
 //!    each request has been handed to the transport, so recovery cannot revoke
-//!    it between check and send. A rejected single transaction is kept like
-//!    an ambiguous one, because nodes re-queue rejected transactions; a
-//!    rejected TEX round, or one without an expiry height, stays out of the
+//!    it between check and send. A rejected transaction is kept like an
+//!    ambiguous one, because nodes re-queue rejected transactions; a rejected
+//!    TEX first round, or one without an expiry height, stays out of the
 //!    wallet DB. After each ordered broadcast
 //!    attempt stops, the accepted-or-ambiguous prefix is persisted atomically;
 //!    a later store failure rolls back every earlier write in that prefix.
@@ -1418,26 +1418,25 @@ fn pczt_broadcast_step(
                 )),
             })
         }
-        // Keep a rejected single transaction like an unknown result, so its
-        // inputs stay spent until it expires. A TEX first round still fails:
-        // it pays only the wallet's ephemeral address, and keeping it would
-        // drop the signed payment round.
-        PcztBroadcastAttempt::Rejected(error) if index == 0 && total_count == 1 => {
-            pczt_broadcast_step(
-                index,
-                total_count,
-                PcztBroadcastAttempt::TransportUnknown(error),
-            )
-        }
-        PcztBroadcastAttempt::Rejected(error) | PcztBroadcastAttempt::DefiniteRejection(error)
-            if index == 0 =>
-        {
+        // A TEX first round pays only the wallet's ephemeral address; keeping
+        // it after a rejection would drop the signed payment round.
+        PcztBroadcastAttempt::Rejected(error) if index == 0 && total_count > 1 => {
             PcztBroadcastStep::Fail(error.into())
         }
-        PcztBroadcastAttempt::Rejected(error) | PcztBroadcastAttempt::DefiniteRejection(error) => {
+        // Any other rejected transaction may still be mined, so keep it like
+        // an unknown result: its inputs stay spent until it expires.
+        PcztBroadcastAttempt::Rejected(error) => pczt_broadcast_step(
+            index,
+            total_count,
+            PcztBroadcastAttempt::TransportUnknown(error),
+        ),
+        PcztBroadcastAttempt::DefiniteRejection(error) if index == 0 => {
+            PcztBroadcastStep::Fail(error.into())
+        }
+        PcztBroadcastAttempt::DefiniteRejection(error) => {
             PcztBroadcastStep::Stop(PcztBroadcastPlan {
-                // The rejected PCZT itself must not be persisted. Only the
-                // already-accepted dependency prefix is safe to store.
+                // Without an expiry height the rejected PCZT would hold its
+                // inputs forever. Only the accepted dependency prefix is stored.
                 persisted_prefix_len: index,
                 broadcasted_count: index as u32,
                 status: StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST,
@@ -2803,9 +2802,33 @@ mod tests {
     }
 
     #[test]
-    fn pczt_set_child_rejection_persists_only_accepted_parent() {
+    fn pczt_set_child_rejection_is_kept_like_an_unknown_result() {
         let step =
             pczt_broadcast_step(1, 2, PcztBroadcastAttempt::Rejected("rejected".to_string()));
+
+        assert_eq!(
+            step,
+            pczt_broadcast_step(
+                1,
+                2,
+                PcztBroadcastAttempt::TransportUnknown("rejected".to_string()),
+            )
+        );
+        let PcztBroadcastStep::Stop(plan) = step else {
+            panic!("child rejection must stop with a partial-broadcast plan");
+        };
+        assert_eq!(plan.persisted_prefix_len, 2);
+        assert_eq!(plan.broadcasted_count, 1);
+        assert_eq!(plan.status, StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST);
+    }
+
+    #[test]
+    fn pczt_set_child_rejection_without_expiry_persists_only_accepted_parent() {
+        let step = pczt_broadcast_step(
+            1,
+            2,
+            PcztBroadcastAttempt::DefiniteRejection("rejected".to_string()),
+        );
 
         let PcztBroadcastStep::Stop(plan) = step else {
             panic!("child rejection must stop with a partial-broadcast plan");

@@ -1697,3 +1697,39 @@ async fn rejected_first_round_of_a_pair_still_fails() {
     proposal.assert_retained(&wallet, false);
     handle.abort();
 }
+
+/// A rejected TEX payment round can still be mined, like any rejected
+/// transaction. It is stored with its funding round, so sync resubmits it
+/// until it expires instead of dropping the payment.
+#[tokio::test]
+async fn rejected_payment_round_is_kept_with_its_funding_round() {
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    let wallet = Wallet::funded(true);
+    let proposal = SignedProposal::new(&wallet);
+    let (url, service, handle) = server(205, 0).await;
+    *service.responses.lock().unwrap() = vec![0, 18];
+    let result = proposal.recover_batch(&wallet, &url).await.unwrap();
+    assert_eq!(result.status, "partial_broadcast");
+    assert_eq!((result.broadcasted_count, result.total_count), (1, 2));
+    let message = result.message.as_deref().unwrap_or_default();
+    assert!(message.contains("code 18"), "{message}");
+    assert_eq!(
+        *service.submitted.lock().unwrap(),
+        [wallet.signed[0].raw.clone(), wallet.signed[1].raw.clone()]
+    );
+    let unmined: u32 = rusqlite::Connection::open(&wallet.path)
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE txid IN (?1, ?2) AND raw IS NOT NULL AND mined_height IS NULL",
+            params![
+                wallet.signed[0].tx.txid().as_ref(),
+                wallet.signed[1].tx.txid().as_ref()
+            ],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(unmined, 2, "both rounds are stored for resubmission");
+    proposal.assert_retained(&wallet, false);
+    handle.abort();
+}

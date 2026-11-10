@@ -618,8 +618,8 @@ without granting funds. Tests use the trusted fixture, not the library's
   leaving keeps the reservation through the bounded RPC attempt, and holds of
   250 ms or more are logged. Chained TEX inputs
   must name an existing output of an earlier finalized transaction in the batch.
-  A rejected single transaction is stored like an ambiguous one, because the
-  server already holds it; a rejected TEX round, or a transaction without an
+  A rejected transaction is stored like an ambiguous one, because the server
+  already holds it; a rejected TEX first round, or a transaction without an
   expiry height, persists nothing. Accepted or ambiguous prefixes retain existing
   storage and recovery behavior. Cancellation drops the reservation.
   After PCZT validation, exact stored mined rounds complete without an RPC or
