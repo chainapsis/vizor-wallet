@@ -98,6 +98,7 @@ hex = "0.4"
 ur = { git = "https://github.com/KeystoneHQ/ur-rs", tag = "0.3.3" }
 serde_json = "1"
 url = "2.5.8"
+lwd-uri-util = "0.1"
 # Vote-store proofs use SHA-256 through our existing sha2 dependency.
 # ICS23 defaults add unrelated hashes and protobuf JSON support.
 ics23 = { version = "0.12", default-features = false }
