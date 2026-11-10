@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import '../test/support/legacy_payment_link.dart';
 
+import 'support/desktop_activity_flow.dart';
 import 'support/desktop_regtest_flow.dart';
 import 'support/gift_card_amount_regtest.dart';
 import 'support/payment_link_regtest_flow.dart' as payment_link_flow;
@@ -313,6 +314,7 @@ void main() {
         ).balance.amountText,
       );
       e2eLog('payment-link round trip completed with two distinct txids');
+      await settleDeferredGiftCardRecovery(tester);
     },
     timeout: const Timeout(Duration(minutes: 12)),
   );
