@@ -1162,6 +1162,13 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   Future<void> removeIntent(String intentId) async {
+    // A removal from a list that is still loading would be undone by the load.
+    final accountUuid = _activeAccountUuidOrNull;
+    if (accountUuid != null && !_intentsLoaded) {
+      final scope = _accountScopeGeneration;
+      final loaded = await _ensureIntentsLoaded(accountUuid);
+      if (!loaded || scope != _accountScopeGeneration) return;
+    }
     final remaining = [
       for (final intent in state.intents)
         if (intent.id != intentId) intent,
@@ -2092,29 +2099,28 @@ class SwapNotifier extends Notifier<SwapState> {
     }
     // The screen does not hold this account's saved swaps yet, so its swaps
     // are added to the saved ones instead of replacing them.
-    _unloadedSaveCount++;
-    final save = _unloadedSaves.then(
-      (_) => _addOnScreenIntentsToSaved(activeAccountUuid),
-    );
-    _unloadedSaves = save.catchError((Object _) {});
-    await save;
-  }
-
-  Future<void> _addOnScreenIntentsToSaved(String accountUuid) async {
-    final tracker = ref.read(swapActivityTrackerProvider);
     final scopedAccountUuid = SwapActivityTracker.normalizeAccountUuid(
-      accountUuid,
+      activeAccountUuid,
     );
+    // Taken now: the screen may show another account by the time a queued
+    // save runs.
     final onScreen = [
       for (final intent in state.intents)
         if (intent.accountUuid == scopedAccountUuid) intent,
     ];
-    final saved = await tracker.loadIntents(accountUuid: scopedAccountUuid);
-    await _persistIntentsForAccount(scopedAccountUuid, [
-      ...onScreen,
-      for (final intent in saved)
-        if (onScreen.swapIntentById(intent.id) == null) intent,
-    ]);
+    _unloadedSaveCount++;
+    final save = _unloadedSaves.then((_) async {
+      final saved = await ref
+          .read(swapActivityTrackerProvider)
+          .loadIntents(accountUuid: scopedAccountUuid);
+      await _persistIntentsForAccount(scopedAccountUuid, [
+        ...onScreen,
+        for (final intent in saved)
+          if (onScreen.swapIntentById(intent.id) == null) intent,
+      ]);
+    });
+    _unloadedSaves = save.catchError((Object _) {});
+    await save;
   }
 
   Future<void> _persistIntentsForAccount(

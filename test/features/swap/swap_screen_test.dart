@@ -10962,6 +10962,47 @@ void main() {
     },
   );
 
+  List<SwapIntent> twoSwapsForAccountOne() => [
+    ...savedSwapPerAccount(),
+    _persistedIntent(
+      id: 'account-one-other-swap',
+      txHash: 'account-one-other-txid',
+      accountUuid: 'account-1',
+    ),
+  ];
+
+  testWidgets('a swap removed while saved swaps load stays removed', (
+    tester,
+  ) async {
+    final sessionStore = _HeldRestoreSwapPersistenceStore(
+      initialIntents: twoSwapsForAccountOne(),
+    );
+    final container = await pumpTwoAccountSwap(tester, sessionStore);
+    final accounts = container.read(accountProvider.notifier);
+    // Away and back before either load finishes: account-1's earlier list
+    // stays on screen while its saved swaps load again.
+    sessionStore.heldAccounts.addAll(['account-1', 'account-2']);
+    await accounts.switchAccount('account-2');
+    await tester.pump();
+    await accounts.switchAccount('account-1');
+    await tester.pump();
+    expect(container.read(swapStateProvider).intents, hasLength(2));
+
+    unawaited(
+      container
+          .read(swapStateProvider.notifier)
+          .removeIntent('account-one-other-swap'),
+    );
+    await tester.pump();
+    sessionStore.completeLoad('account-1');
+    await tester.pumpAndSettle();
+
+    expect(ids(sessionStore.intentsFor('account-1')), ['account-one-swap']);
+    expect(ids(container.read(swapStateProvider).intents), [
+      'account-one-swap',
+    ]);
+  });
+
   testWidgets('a failed swap load does not erase saved swaps', (tester) async {
     final sessionStore = _FailingLoadSwapPersistenceStore(
       initialIntents: savedSwapPerAccount(),

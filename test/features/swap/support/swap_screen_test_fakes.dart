@@ -1296,9 +1296,14 @@ class _HeldRestoreSwapPersistenceStore extends _FakeSwapPersistenceStore {
   _HeldRestoreSwapPersistenceStore({super.initialIntents});
 
   final heldAccounts = <String>{};
-  final _gates = <String, Completer<void>>{};
+  final _gates = <String, List<Completer<void>>>{};
 
-  void completeLoad(String accountUuid) => _gates[accountUuid]?.complete();
+  void completeLoad(String accountUuid) {
+    for (final gate
+        in _gates.remove(accountUuid) ?? const <Completer<void>>[]) {
+      gate.complete();
+    }
+  }
 
   @override
   Future<List<SwapIntentRecord>> loadRecords({
@@ -1306,7 +1311,9 @@ class _HeldRestoreSwapPersistenceStore extends _FakeSwapPersistenceStore {
   }) async {
     final records = await super.loadRecords(accountUuid: accountUuid);
     if (!heldAccounts.remove(accountUuid)) return records;
-    await (_gates[accountUuid] = Completer<void>()).future;
+    final gate = Completer<void>();
+    _gates.putIfAbsent(accountUuid, () => []).add(gate);
+    await gate.future;
     return records;
   }
 }
