@@ -14,7 +14,6 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/storage/enhance_pir_preference_store.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
@@ -603,42 +602,6 @@ void main() {
     );
 
     expect(torDirectory.existsSync(), isFalse);
-  });
-
-  test('wallet reset removes preferences that name an account', () async {
-    const accountUuid = '550e8400-e29b-41d4-a716-446655440000';
-    final accountScoped = [
-      ironwoodMigrationAnnouncementSeenStorageKey(
-        network: 'mainnet',
-        accountUuid: accountUuid,
-      ),
-      ironwoodMigrationCompletionSeenStorageKey(
-        network: 'mainnet',
-        accountUuid: accountUuid,
-        completionId: 'abc',
-      ),
-      ironwoodMigrationPreparationCompleteSeenStorageKey(
-        '$accountUuid-1700000000000-1',
-      ),
-    ];
-    const installScoped = [
-      kEnhancePirEnabledPreferenceKey,
-      'zcash_ironwood_active_seen_mainnet',
-    ];
-    SharedPreferences.setMockInitialValues({
-      for (final key in [...accountScoped, ...installScoped]) key: true,
-    });
-
-    await clearAccountScopedPreferencesForReset();
-
-    final preferences = await SharedPreferences.getInstance();
-    expect(preferences.getKeys(), unorderedEquals(installScoped));
-  });
-
-  test('wallet reset survives account-scoped preference failures', () async {
-    await clearAccountScopedPreferencesForReset(
-      openPreferences: () async => throw StateError('preferences unavailable'),
-    );
   });
 
   test('wallet link duplicate import errors are recognized', () {

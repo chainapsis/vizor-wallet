@@ -27,7 +27,6 @@ import '../core/storage/wallet_paths.dart';
 import '../features/payment_links/providers/gift_card_tracking_lifecycle_provider.dart';
 import '../features/swap/providers/swap_activity_store.dart';
 import '../features/send/services/recent_send_recipients.dart';
-import '../features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
 import '../features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
@@ -2164,7 +2163,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           st,
         ); // l10n-ignore: log label or persisted default name
       }
-      await clearAccountScopedPreferencesForReset();
       // The saved Private queries choice is install-scoped and survives this
       // wipe. After the reset succeeds, its runtime is reapplied below and the
       // deleted wallet's pending transition is cleared. The
@@ -3152,27 +3150,6 @@ Future<void> clearTorPrivacyStateForReset({
     await preferences.remove(kTorEnabledPreferenceKey);
   } catch (e, st) {
     log('resetWallet: tor route preference cleanup failed: $e\n$st');
-  }
-}
-
-/// Removes the preferences whose key names an account of the wallet being
-/// reset. Install-scoped preferences stay.
-///
-/// Best-effort by contract, like [clearTorPrivacyStateForReset].
-@visibleForTesting
-Future<void> clearAccountScopedPreferencesForReset({
-  Future<SharedPreferences> Function() openPreferences =
-      SharedPreferences.getInstance,
-}) async {
-  try {
-    final preferences = await openPreferences();
-    for (final key in preferences.getKeys().toList()) {
-      if (kIronwoodMigrationAccountScopedKeyPrefixes.any(key.startsWith)) {
-        await preferences.remove(key);
-      }
-    }
-  } catch (e, st) {
-    log('resetWallet: account-scoped preference cleanup failed: $e\n$st');
   }
 }
 

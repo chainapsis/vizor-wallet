@@ -47,30 +47,11 @@ bool isIronwoodMigrationWaitingForConfirmation(
       status.phase == kIronwoodMigrationWaitingConfirmationsPhase;
 }
 
-const _announcementSeenKeyPrefix =
-    'zcash_ironwood_migration_announcement_seen_'; // l10n-ignore: storage key
-const _completionSeenKeyPrefix =
-    'zcash_ironwood_migration_completion_seen_'; // l10n-ignore: storage key
-const _preparationCompleteSeenKeyPrefix =
-    'zcash_ironwood_migration_preparation_complete_seen_'; // l10n-ignore: storage key
-
-/// Preference keys that name an account: the rest of each key is an account
-/// UUID or a run id that starts with one. A wallet reset removes them.
-const kIronwoodMigrationAccountScopedKeyPrefixes = [
-  _announcementSeenKeyPrefix,
-  _completionSeenKeyPrefix,
-  _preparationCompleteSeenKeyPrefix,
-];
-
 String ironwoodMigrationAnnouncementSeenStorageKey({
   required String network,
   required String accountUuid,
 }) {
-  return '$_announcementSeenKeyPrefix${network}_$accountUuid';
-}
-
-String ironwoodMigrationPreparationCompleteSeenStorageKey(String runId) {
-  return '$_preparationCompleteSeenKeyPrefix$runId';
+  return 'zcash_ironwood_migration_announcement_seen_${network}_$accountUuid';
 }
 
 String ironwoodMigrationCompletionSeenStorageKey({
@@ -78,7 +59,8 @@ String ironwoodMigrationCompletionSeenStorageKey({
   required String accountUuid,
   required String completionId,
 }) {
-  return '$_completionSeenKeyPrefix${network}_${accountUuid}_$completionId';
+  return 'zcash_ironwood_migration_completion_seen_' // l10n-ignore: storage key
+      '${network}_${accountUuid}_$completionId';
 }
 
 /// Remembers that a finished migration has already been presented, so the

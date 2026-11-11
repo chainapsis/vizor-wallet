@@ -546,7 +546,7 @@ class _MobileMigrationRedesignedStatusState
       return;
     }
     final prefs = await SharedPreferences.getInstance();
-    final key = ironwoodMigrationPreparationCompleteSeenStorageKey(runId);
+    final key = 'zcash_ironwood_migration_preparation_complete_seen_$runId';
     if (prefs.getBool(key) ?? false) return;
     if (!mounted) return;
     setState(() => _showPreparationComplete = true);
@@ -560,7 +560,7 @@ class _MobileMigrationRedesignedStatusState
     if (runId != null) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(
-        ironwoodMigrationPreparationCompleteSeenStorageKey(runId),
+        'zcash_ironwood_migration_preparation_complete_seen_$runId',
         true,
       );
     }
