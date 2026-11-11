@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/widgetbook/voting_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -124,6 +125,7 @@ Widget _app({
       receiveAddressServiceProvider.overrideWithValue(addressService),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
       home: AppToastHost(
         child: Builder(

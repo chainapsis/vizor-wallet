@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.da
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_birthday_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _account = LedgerDeviceAccount(
   ufvk: 'uview-ledger',
@@ -89,6 +90,7 @@ void main() {
 Widget _harness(GoRouter router) => ProviderScope(
   overrides: [appBootstrapProvider.overrideWithValue(_bootstrap())],
   child: MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(
       data: AppThemeData.light,

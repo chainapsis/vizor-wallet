@@ -3,16 +3,18 @@ import 'package:path_provider/path_provider.dart';
 
 /// Asks the platform's own save panel where a PNG the user is exporting
 /// should go, and returns the chosen absolute path (null when cancelled).
-Future<String?> pickPngSaveLocation({required String suggestedName}) =>
-    pickSaveLocation(
-      suggestedName: suggestedName,
-      type: const XTypeGroup(
-        label: 'PNG image',
-        extensions: ['png'],
-        mimeTypes: ['image/png'],
-        uniformTypeIdentifiers: ['public.png'],
-      ),
-    );
+Future<String?> pickPngSaveLocation({
+  required String suggestedName,
+}) => pickSaveLocation(
+  suggestedName: suggestedName,
+  type: const XTypeGroup(
+    label:
+        'PNG image', // l10n-ignore: file-type name in the OS save dialog; the filter keys on extensions and MIME types
+    extensions: ['png'],
+    mimeTypes: ['image/png'],
+    uniformTypeIdentifiers: ['public.png'],
+  ),
+);
 
 /// Asks the platform's own save panel where an exported file should go, and
 /// returns the chosen absolute path (null when cancelled).

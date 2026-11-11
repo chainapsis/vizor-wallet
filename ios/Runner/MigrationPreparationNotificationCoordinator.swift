@@ -154,22 +154,21 @@ struct MigrationPreparationNotificationBatchState: Codable, Equatable {
     if accountCount == 1 {
       switch highestPriority {
       case .confirmedWaveReady:
-        title = "Preparation transactions confirmed"
-        body = "Open Vizor to start the next step."
+        title = NativeStrings.text(.nativePrepConfirmedTitle)
+        body = NativeStrings.text(.nativePrepOpenToStartNextStepBody)
       case .needsForegroundRecovery, .terminalFailure:
-        title = "Migration needs attention"
-        body = "Open Vizor to continue."
+        title = NativeStrings.text(.nativeMigrationNeedsAttentionTitle)
+        body = NativeStrings.text(.nativeOpenToContinue)
       }
     } else {
+      let count = ["count": "\(accountCount)"]
       switch highestPriority {
       case .confirmedWaveReady:
-        title = "Migration preparation updates"
-        body =
-          "\(accountCount) accounts are ready for the next step. Open Vizor to continue."
+        title = NativeStrings.text(.nativePrepUpdatesTitle)
+        body = NativeStrings.text(.nativePrepAccountsReadyBody, count)
       case .needsForegroundRecovery, .terminalFailure:
-        title = "Migration updates"
-        body =
-          "\(accountCount) accounts need attention. Open Vizor to continue."
+        title = NativeStrings.text(.nativeMigrationUpdatesTitle)
+        body = NativeStrings.text(.nativeMigrationAccountsNeedAttentionBody, count)
       }
     }
     return MigrationPreparationNotificationSummary(

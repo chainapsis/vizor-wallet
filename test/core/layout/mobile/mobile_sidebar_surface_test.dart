@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/mobile_sync_status.dart';
 import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/services/native_modal_corners.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   final calls = <MethodCall>[];
@@ -45,6 +46,7 @@ void main() {
     tester.view.physicalSize = const Size(982, 654);
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
         home: Stack(

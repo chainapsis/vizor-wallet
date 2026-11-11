@@ -85,6 +85,7 @@ Widget _status(SendBroadcastPhase? phase) => _data(
     broadcastRunner:
         ({
           required ref,
+          required l10n,
           required args,
           keystone,
           ledger,

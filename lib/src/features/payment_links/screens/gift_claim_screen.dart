@@ -35,12 +35,12 @@ import '../widgets/desktop_gift_entry_view.dart';
 import '../widgets/payment_link_card_motion.dart';
 import '../widgets/payment_link_claim_outcome_view.dart';
 import '../widgets/payment_link_confetti.dart';
-import '../widgets/payment_link_copy.dart';
 import '../widgets/payment_link_dashed_border_painter.dart';
 import '../widgets/payment_link_gift_card.dart';
 import '../widgets/payment_link_long_sync_warning.dart';
 import '../../onboarding/mobile/mobile_onboarding_progress.dart';
 import '../../onboarding/mobile/mobile_onboarding_progress_scope.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// `/gift`: a Gift Card opened from Welcome or Add account. The card is
 /// checked without an account; the recipient then creates or brings a wallet
@@ -113,7 +113,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
       if (mounted) {
         showAppToast(
           context,
-          'Couldn’t close the card. Try again.',
+          context.l10n.commonCouldnTCloseTheCardTry,
           iconName: AppIcons.warning,
         );
       }
@@ -153,7 +153,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
       if (!saved) {
         showAppToast(
           context,
-          'Too many gift cards are waiting. Finish another card first.',
+          context.l10n.paymentLinkClaimQueueFull,
           iconName: AppIcons.warning,
           tone: AppToastTone.destructive,
         );
@@ -164,7 +164,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
       if (mounted) {
         showAppToast(
           context,
-          'Couldn’t save the card. Try again.',
+          context.l10n.paymentLinkClaimSaveFailed,
           iconName: AppIcons.warning,
         );
       }
@@ -187,7 +187,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
       if (mounted) {
         showAppToast(
           context,
-          'Couldn’t save the card. Try again.',
+          context.l10n.paymentLinkClaimSaveFailed,
           iconName: AppIcons.warning,
         );
       }
@@ -326,19 +326,20 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                       Stack(
                         alignment: Alignment.topCenter,
                         children: [
-                          const Visibility(
+                          Visibility(
                             visible: false,
                             maintainSize: true,
                             maintainAnimation: true,
                             maintainState: true,
                             child: PaymentLinkMobileCheckingDetails(
-                              label: 'Checking the gift… 100%',
+                              label: context.l10n.paymentLinkCheckingGiftFull,
                             ),
                           ),
                           if (waitingForCheck)
                             PaymentLinkMobileCheckingDetails(
                               label:
-                                  checkProgress?.label ?? 'Checking the gift…',
+                                  checkProgress?.label(context.l10n) ??
+                                  context.l10n.paymentLinkCheckingGiftEllipsis,
                             )
                           else
                             _GiftClaimStatus(
@@ -463,7 +464,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
               top: AppSpacing.md,
               child: AppBackLink(
                 key: const ValueKey('gift_claim_close_button'),
-                label: 'Go back',
+                label: context.l10n.commonGoBack,
                 onTap: _close,
               ),
             ),
@@ -536,7 +537,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
       onTap: message.isEmpty ? null : () => setState(() => _showsBack = true),
       semanticLabel: message.isEmpty
           ? null
-          : kPaymentLinkRevealMessageSemanticLabel,
+          : context.l10n.paymentLinkRevealMessageSemanticLabel,
     );
     final card = message.isEmpty
         ? front
@@ -550,9 +551,9 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
               showBack: true,
               message: message,
               onTap: () => setState(() => _showsBack = false),
-              semanticLabel:
-                  'Sender message: $message; '
-                  'Show gift card front',
+              semanticLabel: context.l10n.paymentLinkSenderMessageSemantic(
+                message,
+              ),
             ),
           );
     return Column(
@@ -594,8 +595,8 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
             maintainState: true,
             child: Text(
               kAppFormFactor == AppFormFactor.mobile
-                  ? 'Tap on the card to reveal the message.'
-                  : 'Click on the card to reveal the message.',
+                  ? context.l10n.paymentLinkTapToRevealMessage
+                  : context.l10n.paymentLinkClickToRevealMessage,
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
                 color: context.colors.text.secondary,
@@ -657,8 +658,8 @@ class MobileGiftCardEntryView extends StatelessWidget {
               children: [
                 Text(
                   addingAccount
-                      ? 'Create account by redeeming Vizor Gift Card'
-                      : 'Create wallet by redeeming Vizor Gift Card',
+                      ? context.l10n.paymentLinkEntryTitleAccount
+                      : context.l10n.paymentLinkEntryTitleWallet,
                   key: const ValueKey('gift_walletless_entry_title'),
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
@@ -669,7 +670,7 @@ class MobileGiftCardEntryView extends StatelessWidget {
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 260),
                   child: Text(
-                    'Copy the card link you’ve\nreceived, and paste it below.',
+                    context.l10n.paymentLinkEntrySubtitle,
                     key: const ValueKey('gift_walletless_entry_subtitle'),
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMediumStrong.copyWith(
@@ -701,8 +702,8 @@ class MobileGiftCardEntryView extends StatelessWidget {
                   constraints: const BoxConstraints(maxWidth: 233),
                   child: Text(
                     addingAccount
-                        ? 'Create a new account to receive the card’s balance.'
-                        : 'Create a new Vizor wallet to receive the card’s balance.',
+                        ? context.l10n.paymentLinkEntryExplanationAccount
+                        : context.l10n.paymentLinkEntryExplanationWallet,
                     key: const ValueKey('gift_walletless_entry_explanation'),
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMediumStrong.copyWith(
@@ -720,7 +721,7 @@ class MobileGiftCardEntryView extends StatelessWidget {
 
   Widget _cardContent(BuildContext context) {
     return switch (state) {
-      PaymentLinkRedeemMobileState.paste => _actions(),
+      PaymentLinkRedeemMobileState.paste => _actions(context),
       PaymentLinkRedeemMobileState.loading => const FittedBox(
         fit: BoxFit.scaleDown,
         child: PaymentLinkLoadingMobileCard(),
@@ -733,7 +734,7 @@ class MobileGiftCardEntryView extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                kPaymentLinkInvalidTitle,
+                context.l10n.paymentLinkInvalidTitle,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: context.colors.text.destructive,
@@ -741,14 +742,14 @@ class MobileGiftCardEntryView extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.xxs),
               Text(
-                kPaymentLinkInvalidSubtitle,
+                context.l10n.paymentLinkInvalidSubtitle,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.secondary,
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
-              _actions(),
+              _actions(context),
             ],
           ),
         ),
@@ -756,7 +757,7 @@ class MobileGiftCardEntryView extends StatelessWidget {
     };
   }
 
-  Widget _actions() {
+  Widget _actions(BuildContext context) {
     return SizedBox(
       width: 170,
       child: Column(
@@ -772,7 +773,7 @@ class MobileGiftCardEntryView extends StatelessWidget {
             constrainContent: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 10),
             leading: const AppIcon(AppIcons.paste, size: 20),
-            child: const Text('Paste card link'),
+            child: Text(context.l10n.paymentLinkPasteLabel),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -785,7 +786,7 @@ class MobileGiftCardEntryView extends StatelessWidget {
             constrainContent: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 10),
             leading: const AppIcon(AppIcons.qr, size: 20),
-            child: const Text('Scan QR code'),
+            child: Text(context.l10n.commonScanQrCodeSentenceCase),
           ),
         ],
       ),
@@ -815,7 +816,7 @@ class _GiftClaimStageHeading extends StatelessWidget {
             textAlign: TextAlign.center,
             textScaler: MediaQuery.textScalerOf(context),
             text: TextSpan(
-              text: kPaymentLinkClaimCheckingHeading,
+              text: context.l10n.paymentLinkClaimCheckingHeading,
               style: AppTypography.displayLarge,
             ),
           ),
@@ -823,7 +824,7 @@ class _GiftClaimStageHeading extends StatelessWidget {
       ),
       if (checking)
         Text(
-          kPaymentLinkClaimCheckingHeading,
+          context.l10n.paymentLinkClaimCheckingHeading,
           textAlign: TextAlign.center,
           style: AppTypography.displayLarge.copyWith(
             color: context.colors.text.accent,
@@ -841,7 +842,7 @@ class _GiftArrivalHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final heading = Text(
-      'You’ve received a gift!',
+      context.l10n.paymentLinkReceivedGiftHeading,
       textAlign: TextAlign.center,
       style: AppTypography.headlineLarge.copyWith(
         color: context.colors.text.accent,
@@ -875,7 +876,11 @@ class _GiftClaimStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (title, detail, tone) = _describe(flow, addingAccount: addingAccount);
+    final (title, detail, tone) = _describe(
+      context.l10n,
+      flow,
+      addingAccount: addingAccount,
+    );
     final colors = context.colors;
     return Semantics(
       liveRegion: true,
@@ -908,6 +913,7 @@ class _GiftClaimStatus extends StatelessWidget {
   }
 
   static (String, String?, _Tone) _describe(
+    AppLocalizations l10n,
     GiftClaimFlowState flow, {
     required bool addingAccount,
   }) {
@@ -915,30 +921,30 @@ class _GiftClaimStatus extends StatelessWidget {
       case GiftClaimPhase.checking:
       case GiftClaimPhase.longSyncConfirmation:
         return (
-          'Checking the gift…',
-          kPaymentLinkWaitingDescription,
+          l10n.paymentLinkCheckingGiftEllipsis,
+          l10n.paymentLinkWaitingDescription,
           _Tone.neutral,
         );
       case GiftClaimPhase.failed:
         return switch (flow.failure) {
           GiftClaimFailure.interrupted => (
-            kPaymentLinkInterruptedCheckMessage,
+            l10n.paymentLinkInterruptedCheckMessage,
             null,
             _Tone.problem,
           ),
           GiftClaimFailure.otherNetwork => (
-            'This gift card is for a different network.',
+            l10n.paymentLinkClaimStatusOtherNetwork,
             null,
             _Tone.problem,
           ),
           GiftClaimFailure.invalid => (
-            kPaymentLinkInvalidTitle,
-            kPaymentLinkInvalidSubtitle,
+            l10n.paymentLinkInvalidTitle,
+            l10n.paymentLinkInvalidSubtitle,
             _Tone.problem,
           ),
           _ => (
-            'We couldn’t reach the network.',
-            'Check your connection and try again.',
+            l10n.paymentLinkClaimStatusNetworkUnreachable,
+            l10n.paymentLinkClaimStatusCheckConnection,
             _Tone.problem,
           ),
         };
@@ -947,35 +953,36 @@ class _GiftClaimStatus extends StatelessWidget {
         if ((inspection.claimableZatoshi > BigInt.zero &&
             !inspection.waitingForFundingConfirmations)) {
           return (
-            'Gift found',
+            l10n.paymentLinkClaimStatusGiftFound,
             addingAccount
-                ? 'Create an account or use one you have to claim it.'
-                : 'Create a wallet or use one you have to claim it.',
+                ? l10n.paymentLinkClaimStatusCreateAccountOrUseOne
+                : l10n.paymentLinkClaimStatusCreateWalletOrUseOne,
             _Tone.neutral,
           );
         }
         if (inspection.waitingForFundingConfirmations) {
           return (
-            'Waiting for the deposit to confirm · '
-                '${inspection.fundingConfirmationCount} of '
-                '$kPaymentLinkClaimConfirmationTarget',
+            l10n.paymentLinkClaimStatusWaitingDeposit(
+              inspection.fundingConfirmationCount,
+              kPaymentLinkClaimConfirmationTarget,
+            ),
             addingAccount
-                ? 'You can create your account now.'
-                : 'You can create your wallet now.',
+                ? l10n.paymentLinkClaimStatusCreateAccountNow
+                : l10n.paymentLinkClaimStatusCreateWalletNow,
             _Tone.neutral,
           );
         }
         if (inspection.availability ==
             PaymentLinkAvailability.claimedElsewhere) {
           return (
-            'This gift has already been claimed.',
-            'Ask the sender for a new one.',
+            l10n.paymentLinkClaimStatusAlreadyClaimed,
+            l10n.paymentLinkClaimStatusAskSender,
             _Tone.problem,
           );
         }
         return (
-          PaymentLinkAvailability.noBalance.description,
-          'The sender may not have funded it yet.',
+          PaymentLinkAvailability.noBalance.description(l10n),
+          l10n.paymentLinkClaimStatusMayNotBeFunded,
           _Tone.problem,
         );
     }
@@ -1018,32 +1025,62 @@ class _GiftClaimActions extends ConsumerWidget {
             ? [
                 _primary(
                   addingAccount
-                      ? 'Create an account to claim'
-                      : 'Create a wallet to claim',
+                      ? 'gift_claim_create_an_account_to_claim'
+                      : 'gift_claim_create_a_wallet_to_claim',
+                  addingAccount
+                      ? context.l10n.paymentLinkClaimActionCreateAccount
+                      : context.l10n.paymentLinkClaimActionCreateWallet,
                   null,
                 ),
-                _secondary('Claim with an existing wallet', null),
+                _secondary(
+                  'gift_claim_claim_with_an_existing_wallet',
+                  context.l10n.paymentLinkClaimActionExistingWallet,
+                  null,
+                ),
               ]
             : [],
       GiftClaimPhase.failed =>
         flow.failure == GiftClaimFailure.network ||
                 flow.failure == GiftClaimFailure.interrupted
-            ? [_primary('Try again', notifier.recheck)]
-            : [_secondary('Go back', onClose)],
+            ? [
+                _primary(
+                  'gift_claim_try_again',
+                  context.l10n.commonTryAgain,
+                  notifier.recheck,
+                ),
+              ]
+            : [
+                _secondary(
+                  'gift_claim_go_back',
+                  context.l10n.commonGoBack,
+                  onClose,
+                ),
+              ],
       GiftClaimPhase.inspected when canClaimLater => [
         _primary(
           addingAccount
-              ? 'Create an account to claim'
-              : 'Create a wallet to claim',
+              ? 'gift_claim_create_an_account_to_claim'
+              : 'gift_claim_create_a_wallet_to_claim',
+          addingAccount
+              ? context.l10n.paymentLinkClaimActionCreateAccount
+              : context.l10n.paymentLinkClaimActionCreateWallet,
           onCreate,
         ),
-        _secondary('Claim with an existing wallet', onExisting),
+        _secondary(
+          'gift_claim_claim_with_an_existing_wallet',
+          context.l10n.paymentLinkClaimActionExistingWallet,
+          onExisting,
+        ),
       ],
       GiftClaimPhase.inspected => [
         // An empty scan is not proof the Card will never be funded.
         if (inspection!.availability == PaymentLinkAvailability.noBalance)
-          _primary('Check again', notifier.recheck),
-        _secondary('Go back', onClose),
+          _primary(
+            'gift_claim_check_again',
+            context.l10n.commonCheckAgain,
+            notifier.recheck,
+          ),
+        _secondary('gift_claim_go_back', context.l10n.commonGoBack, onClose),
       ],
     };
     return Column(
@@ -1059,32 +1096,34 @@ class _GiftClaimActions extends ConsumerWidget {
   }
 
   // Labels wrap instead of clipping under large text.
-  Widget _primary(String label, VoidCallback? onPressed) => Semantics(
-    key: ValueKey('gift_claim_${label.toLowerCase().replaceAll(' ', '_')}'),
-    button: true,
-    enabled: onPressed != null,
-    child: AppButton(
-      onPressed: onPressed,
-      size: AppButtonSize.large,
-      expand: true,
-      constrainContent: true,
-      growWithContent: true,
-      child: Text(label, textAlign: TextAlign.center),
-    ),
-  );
+  Widget _primary(String key, String label, VoidCallback? onPressed) =>
+      Semantics(
+        key: ValueKey(key),
+        button: true,
+        enabled: onPressed != null,
+        child: AppButton(
+          onPressed: onPressed,
+          size: AppButtonSize.large,
+          expand: true,
+          constrainContent: true,
+          growWithContent: true,
+          child: Text(label, textAlign: TextAlign.center),
+        ),
+      );
 
-  Widget _secondary(String label, VoidCallback? onPressed) => Semantics(
-    key: ValueKey('gift_claim_${label.toLowerCase().replaceAll(' ', '_')}'),
-    button: true,
-    enabled: onPressed != null,
-    child: AppButton(
-      onPressed: onPressed,
-      variant: AppButtonVariant.ghost,
-      size: AppButtonSize.large,
-      expand: true,
-      constrainContent: true,
-      growWithContent: true,
-      child: Text(label, textAlign: TextAlign.center),
-    ),
-  );
+  Widget _secondary(String key, String label, VoidCallback? onPressed) =>
+      Semantics(
+        key: ValueKey(key),
+        button: true,
+        enabled: onPressed != null,
+        child: AppButton(
+          onPressed: onPressed,
+          variant: AppButtonVariant.ghost,
+          size: AppButtonSize.large,
+          expand: true,
+          constrainContent: true,
+          growWithContent: true,
+          child: Text(label, textAlign: TextAlign.center),
+        ),
+      );
 }

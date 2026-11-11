@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/desktop_hardware_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/desktop_import_method_selection_screen.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   for (final screen in [
@@ -266,6 +267,7 @@ Widget _harness({
   return ProviderScope(
     overrides: [ledgerStaticCapabilityProvider.overrideWithValue(capability)],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

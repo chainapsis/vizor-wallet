@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/models/send_scan_result.dart';
+import '../../support/test_l10n.dart';
 
 const _address =
     'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
@@ -184,33 +185,37 @@ void main() {
   group('sendScanDowngradeMessage', () {
     test('names what was left behind, per reason', () {
       expect(
-        sendScanDowngradeMessage(SendScanDowngrade.multipleRecipients),
+        sendScanDowngradeMessage(
+          testL10n,
+          SendScanDowngrade.multipleRecipients,
+        ),
         'Scanned the first recipient only — this request asks for more than '
         'one',
       );
       expect(
-        sendScanDowngradeMessage(SendScanDowngrade.unsupportedMemo),
+        sendScanDowngradeMessage(testL10n, SendScanDowngrade.unsupportedMemo),
         "Scanned the address only — the request's message couldn't be read",
       );
       expect(
-        sendScanDowngradeMessage(SendScanDowngrade.malformedRequest),
+        sendScanDowngradeMessage(testL10n, SendScanDowngrade.malformedRequest),
         "Scanned the address only — the payment request couldn't be read",
       );
     });
 
     test('a plain address QR says nothing', () {
-      expect(sendScanDowngradeMessage(null), isNull);
+      expect(sendScanDowngradeMessage(testL10n, null), isNull);
     });
 
     test('every reason has a line', () {
       for (final downgrade in SendScanDowngrade.values) {
-        expect(sendScanDowngradeMessage(downgrade), isNotNull);
+        expect(sendScanDowngradeMessage(testL10n, downgrade), isNotNull);
       }
     });
 
     test('a pasted link says it was pasted', () {
       expect(
         sendScanDowngradeMessage(
+          testL10n,
           SendScanDowngrade.malformedRequest,
           pasted: true,
         ),

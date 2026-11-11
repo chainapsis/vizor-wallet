@@ -5,6 +5,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../ledger/ledger_capability.dart';
 import 'payment_link_action.dart';
 import 'payment_link_gift_card.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// A compact entry beside the Gift Cards content that opens the desktop group
 /// flow directly. [fullWidth] lays it out as a row for narrow panes.
@@ -30,8 +31,10 @@ class PaymentLinkGroupEntry extends StatelessWidget {
     return PaymentLinkAction(
       key: const ValueKey('payment_link_create_batch_button'),
       semanticLabel: isLedger
-          ? 'Create multiple cards, up to $kLedgerMaxExternalShieldedOutputs with Ledger'
-          : 'Create cards for a group',
+          ? context.l10n.paymentLinkGroupEntryLedgerSemantic(
+              kLedgerMaxExternalShieldedOutputs,
+            )
+          : context.l10n.paymentLinkGroupEntryGroupSemantic,
       onPressed: onPressed,
       builder: (context, hovered, focused) => TweenAnimationBuilder<double>(
         tween: Tween(end: hovered ? 1 : 0),
@@ -43,7 +46,9 @@ class PaymentLinkGroupEntry extends StatelessWidget {
           // Reduced motion keeps the colour change and drops the movement.
           final motion = reducedMotion ? 0.0 : hover;
           final title = Text(
-            isLedger ? 'Multiple cards' : 'For a group',
+            isLedger
+                ? context.l10n.paymentLinkGroupEntryMultipleCards
+                : context.l10n.paymentLinkGroupEntryForGroup,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.accent,
             ),
@@ -56,7 +61,9 @@ class PaymentLinkGroupEntry extends StatelessWidget {
                     title,
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      'Up to $kLedgerMaxExternalShieldedOutputs with Ledger',
+                      context.l10n.paymentLinkGroupEntryUpToWithLedger(
+                        kLedgerMaxExternalShieldedOutputs,
+                      ),
                       style: AppTypography.bodySmall.copyWith(
                         color: colors.text.secondary,
                       ),

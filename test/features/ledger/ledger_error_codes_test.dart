@@ -157,7 +157,11 @@ void main() {
     expect(ledgerStatusWord(readiness), 0x6807);
     expect(
       classifyLedgerError(
-        const LedgerConnectionRequiredException('Reconnect.', cause: readiness),
+        const LedgerConnectionRequiredException(
+          'Reconnect.',
+          reason: LedgerConnectionRequiredReason.bluetooth,
+          cause: readiness,
+        ),
       ),
       LedgerFailureKind.appNotInstalled,
     );
@@ -175,13 +179,19 @@ void main() {
       LedgerFailureKind.cancelled,
     );
     expect(
-      classifyLedgerError(const LedgerConnectionRequiredException('Connect.')),
+      classifyLedgerError(
+        const LedgerConnectionRequiredException(
+          'Connect.',
+          reason: LedgerConnectionRequiredReason.bluetooth,
+        ),
+      ),
       LedgerFailureKind.transportLost,
     );
     expect(
       classifyLedgerError(
         const LedgerConnectionRequiredException(
           'Connect.',
+          reason: LedgerConnectionRequiredReason.usb,
           cause: LedgerAppReadinessException(
             LedgerAppReadinessFailure.unavailable,
             'Open the Zcash app on your Ledger, then try again.',

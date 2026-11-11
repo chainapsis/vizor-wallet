@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../import/desktop_import_navigation.dart';
 import '../../../core/input/app_password_input_source.dart';
 import '../../../../main.dart' show log;
@@ -76,7 +77,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
   _SetPasswordSubmitPhase _submitPhase = _SetPasswordSubmitPhase.idle;
-  String? _submitError;
+  OnboardingSubmitError? _submitError;
   final _submission = AccountSetupSubmission();
 
   @override
@@ -87,7 +88,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   }
 
   String? get _passwordPolicyError =>
-      validateWalletPassword(_passwordController.text);
+      validateWalletPassword(context.l10n, _passwordController.text);
   bool get _matches =>
       _confirmController.text.isNotEmpty &&
       _confirmController.text == _passwordController.text;
@@ -102,7 +103,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   String? get _confirmMessage {
     final value = _confirmController.text;
     if (value.isEmpty || _passwordPolicyError != null || _matches) return null;
-    return 'Passwords do not match.';
+    return context.l10n.passwordsDoNotMatch;
   }
 
   Future<void> _submit() async {
@@ -110,9 +111,13 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       await ref
           .read(linuxKeyringCoordinatorProvider)
           .runMutation(_submitWithOwnership);
-    } on WalletMutationBusyException catch (error) {
+    } on WalletMutationBusyException {
       if (!mounted) return;
-      setState(() => _submitError = error.toString());
+      setState(
+        () => _submitError = OnboardingSubmitError.localized(
+          (l10n) => l10n.walletMutationBusy,
+        ),
+      );
     }
   }
 
@@ -125,7 +130,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         if (mounted) {
           setState(() {
             _submitPhase = _SetPasswordSubmitPhase.idle;
-            _submitError = "Couldn't resume setup. Please try again.";
+            _submitError = OnboardingSubmitError.resumeFailed();
           });
         }
       }
@@ -159,9 +164,10 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         if (!mounted) return;
         setState(() {
           _submitPhase = _SetPasswordSubmitPhase.idle;
-          _submitError = _submission.requiresRecovery
-              ? 'Setup interrupted. Retry to recover your wallet.'
-              : onboardingSubmitErrorMessage(e);
+          _submitError = OnboardingSubmitError.fromError(
+            e,
+            requiresRecovery: _submission.requiresRecovery,
+          );
         });
       }
       return;
@@ -199,9 +205,10 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         if (mounted) {
           setState(() {
             _submitPhase = _SetPasswordSubmitPhase.idle;
-            _submitError = _submission.requiresRecovery
-                ? 'Setup interrupted. Retry to recover your wallet.'
-                : onboardingSubmitErrorMessage(error);
+            _submitError = OnboardingSubmitError.fromError(
+              error,
+              requiresRecovery: _submission.requiresRecovery,
+            );
           });
         }
       }
@@ -317,9 +324,10 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _submitPhase = _SetPasswordSubmitPhase.idle;
-        _submitError = _submission.requiresRecovery
-            ? 'Setup interrupted. Retry to recover your wallet.'
-            : onboardingSubmitErrorMessage(e);
+        _submitError = OnboardingSubmitError.fromError(
+          e,
+          requiresRecovery: _submission.requiresRecovery,
+        );
       });
       return;
     }
@@ -335,14 +343,14 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       canSubmit: _canSubmit,
       passwordMessage: _passwordMessage,
       confirmMessage: _confirmMessage,
-      submitError: _submitError,
+      submitError: _submitError?.resolve(context.l10n),
       onChanged: () => setState(() {
         _submitError = null;
       }),
       onSubmit: _submit,
       idleSubmitLabel: _submission.requiresRecovery
-          ? 'Retry setup'
-          : 'Set password & finish',
+          ? context.l10n.onboardingRetrySetup
+          : context.l10n.onboardingSetPasswordAndFinish,
     );
     if (widget.giftPresentation) {
       return DesktopGiftSetupShell(
@@ -371,7 +379,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         ? null
         : standardArgs.persona != null
         ? onboarding_chrome.OnboardingBackTarget.route(
-            label: 'Customise Account',
+            label: context.l10n.commonCustomiseAccount,
             routePath: desktopImportLocation(
               context,
               standardArgs.desktopCustomiseRoutePath,
@@ -385,7 +393,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                 : CustomiseAccountArgs(setupArgs: standardArgs),
           )
         : onboarding_chrome.OnboardingBackTarget.route(
-            label: _backLabel(standardArgs.flow),
+            label: _backLabel(context.l10n, standardArgs.flow),
             routePath: desktopImportLocation(
               context,
               standardArgs.backRoutePath,
@@ -418,17 +426,18 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     };
   }
 
-  String _backLabel(SetPasswordFlow flow) => switch (flow) {
-    SetPasswordFlow.importLedger => throw StateError(
-      'Desktop Ledger uses its dedicated setup routes.',
-    ),
-    SetPasswordFlow.create => OnboardingStep.secretPassphrase.label,
-    SetPasswordFlow.importWallet =>
-      ImportOnboardingStep.walletBirthdayHeight.label,
-    SetPasswordFlow.importKeystone =>
-      KeystoneOnboardingStep.walletBirthdayHeight.label,
-    SetPasswordFlow.importWalletLink => 'Import contacts',
-  };
+  String _backLabel(AppLocalizations l10n, SetPasswordFlow flow) =>
+      switch (flow) {
+        SetPasswordFlow.importLedger => throw StateError(
+          'Desktop Ledger uses its dedicated setup routes.',
+        ),
+        SetPasswordFlow.create => OnboardingStep.secretPassphrase.label(l10n),
+        SetPasswordFlow.importWallet =>
+          ImportOnboardingStep.walletBirthdayHeight.label(l10n),
+        SetPasswordFlow.importKeystone =>
+          KeystoneOnboardingStep.walletBirthdayHeight.label(l10n),
+        SetPasswordFlow.importWalletLink => l10n.onboardingStepImportContacts,
+      };
 }
 
 class _SetPasswordContent extends StatelessWidget {
@@ -530,9 +539,12 @@ class _SetPasswordOnPageContent extends StatelessWidget {
         children: [
           const _SetPasswordTitle(),
           const SizedBox(height: _SetPasswordContent._sectionGap),
-          SizedBox(
-            width: double.infinity,
-            height: _SetPasswordContent._mainHeight,
+          // Minimum height: CJK labels and messages run slightly taller.
+          ConstrainedBox(
+            constraints: const BoxConstraints(
+              minWidth: double.infinity,
+              minHeight: _SetPasswordContent._mainHeight,
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.sm,
@@ -550,9 +562,10 @@ class _SetPasswordOnPageContent extends StatelessWidget {
                         child: AppPasswordInput(
                           child: PasswordTextField(
                             key: const ValueKey('set_password_password_field'),
-                            label: 'Password',
+                            label: context.l10n.passwordLabel,
                             labelStyle: fieldLabelStyle,
-                            hintText: 'Min. 8 characters and symbols',
+                            hintText:
+                                context.l10n.onboardingSetPasswordPlaceholder,
                             controller: passwordController,
                             messageText: passwordMessage,
                             tone: passwordMessage == null
@@ -576,9 +589,9 @@ class _SetPasswordOnPageContent extends StatelessWidget {
                         child: AppPasswordInput(
                           child: PasswordTextField(
                             key: const ValueKey('set_password_confirm_field'),
-                            label: 'Confirm password',
+                            label: context.l10n.passwordConfirmLabel,
                             labelStyle: fieldLabelStyle,
-                            hintText: 'Confirm password',
+                            hintText: context.l10n.passwordConfirmLabel,
                             controller: confirmController,
                             messageText: confirmMessage,
                             tone: confirmMessage == null
@@ -616,7 +629,7 @@ class _SetPasswordTitle extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.center,
           child: Text(
-            'Set Password',
+            context.l10n.onboardingStepSetPassword,
             style: AppTypography.displayLarge.copyWith(
               color: colors.text.accent,
             ),
@@ -625,7 +638,7 @@ class _SetPasswordTitle extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Set password for signing in to Vizor wallet.',
+          context.l10n.onboardingSetPasswordSubtitle,
           style: AppTypography.bodyMediumStrong.copyWith(
             color: colors.text.accent,
           ),
@@ -676,8 +689,10 @@ class _SetPasswordBottomActions extends StatelessWidget {
           minWidth: _SetPasswordContent._buttonMinWidth,
           trailing: const AppIcon(AppIcons.chevronForward),
           child: Text(switch (submitPhase) {
-            _SetPasswordSubmitPhase.stoppingSync => 'Stop syncing...',
-            _SetPasswordSubmitPhase.settingPassword => 'Setting password...',
+            _SetPasswordSubmitPhase.stoppingSync =>
+              context.l10n.onboardingStopSyncing,
+            _SetPasswordSubmitPhase.settingPassword =>
+              context.l10n.onboardingSettingPassword,
             _SetPasswordSubmitPhase.idle => idleSubmitLabel,
           }),
         ),

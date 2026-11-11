@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -57,7 +58,7 @@ class ImportBirthdayUnknownHeightModal extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
-                    'Import from the earliest height?',
+                    context.l10n.onboardingUnknownHeightTitle,
                     style: AppTypography.bodyLarge.copyWith(
                       color: colors.text.accent,
                       fontWeight: FontWeight.w500,
@@ -73,16 +74,14 @@ class ImportBirthdayUnknownHeightModal extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'If you continue without a wallet birthday, Vizor will '
-                    'scan from the earliest supported shielded height. This '
-                    'is safe, but the first sync can take a very long time.',
+                    context.l10n.onboardingUnknownHeightBody,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.accent,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    'Choosing even an approximate date will be much faster.',
+                    context.l10n.onboardingUnknownHeightHint,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -95,7 +94,7 @@ class ImportBirthdayUnknownHeightModal extends StatelessWidget {
               key: const ValueKey('unknown_birthday_confirm_button'),
               onPressed: onConfirm,
               minWidth: 280,
-              child: const Text('Continue Anyway'),
+              child: Text(context.l10n.onboardingContinueAnywayDesktop),
             ),
             const SizedBox(height: AppSpacing.s),
             AppButton(
@@ -103,7 +102,7 @@ class ImportBirthdayUnknownHeightModal extends StatelessWidget {
               onPressed: onCancel,
               variant: AppButtonVariant.ghost,
               minWidth: 280,
-              child: const Text('Go Back'),
+              child: Text(context.l10n.onboardingGoBackDesktop),
             ),
           ],
         ),

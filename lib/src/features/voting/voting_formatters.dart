@@ -1,4 +1,5 @@
 import '../../core/formatting/number_format.dart';
+import '../../core/l10n/l10n.dart' show AppLocalizations;
 import '../../core/formatting/zec_amount.dart';
 import '../../services/voting/pir_snapshot_resolver.dart';
 
@@ -7,9 +8,10 @@ import '../../services/voting/pir_snapshot_resolver.dart';
 /// Delegates to [ZecAmount] for the decimal formatting. The denomination is
 /// kept as the literal `ZEC` to preserve existing output across networks.
 String formatVotingPower(BigInt zatoshi) {
-  return ZecAmount.fromZatoshi(
-    zatoshi,
-  ).pretty(denomStyle: ZecDenomStyle.upper, denomination: 'ZEC').toString();
+  const denomination = 'ZEC'; // l10n-ignore: currency code
+  return ZecAmount.fromZatoshi(zatoshi)
+      .pretty(denomStyle: ZecDenomStyle.upper, denomination: denomination)
+      .toString();
 }
 
 String formatBlockHeight(int height) => formatGroupedInteger(height);
@@ -24,7 +26,8 @@ String formatBlockHeight(int height) => formatGroupedInteger(height);
 /// Set [includeDiagnostics] for the provider's log-facing copy; the screen
 /// leaves it off, because a per-endpoint dump is not something a user can act
 /// on.
-String pirSnapshotMismatchMessage({
+String pirSnapshotMismatchMessage(
+  AppLocalizations l10n, {
   required int expectedSnapshotHeight,
   required List<PirSnapshotEndpointDiagnostic> diagnostics,
   bool includeDiagnostics = false,
@@ -44,9 +47,7 @@ String pirSnapshotMismatchMessage({
     final highest = formatBlockHeight(
       reportedHeights.reduce((left, right) => left > right ? left : right),
     );
-    return 'Voting PIR data is not ready for this voting round yet. Expected '
-        'snapshot block $expected; PIR endpoints report $highest. Retry '
-        'once the PIR service catches up.';
+    return l10n.votingPirBehind(expected, highest);
   }
 
   if (everyStatusIs(PirSnapshotEndpointStatus.ahead) &&
@@ -54,27 +55,25 @@ String pirSnapshotMismatchMessage({
     final lowest = formatBlockHeight(
       reportedHeights.reduce((left, right) => left < right ? left : right),
     );
-    return 'Configured PIR endpoints are ahead of this voting round snapshot. '
-        'Expected snapshot block $expected; endpoints report $lowest.';
+    return l10n.votingPirAhead(expected, lowest);
   }
 
   if (everyStatusIs(PirSnapshotEndpointStatus.timeoutOrNetworkError)) {
-    return "Couldn't reach any configured PIR endpoint. Check your network "
-        'connection and retry.';
+    return l10n.votingPirUnreachable;
   }
 
-  final base =
-      'No PIR endpoint matched this voting round snapshot. Expected snapshot '
-      'block $expected';
-  if (!includeDiagnostics) return '$base.';
-  return '$base. Diagnostics: ${pirSnapshotDiagnosticsLog(diagnostics)}.';
+  if (!includeDiagnostics) return l10n.votingPirNoMatch(expected);
+  return l10n.votingPirNoMatchDiagnostics(
+    expected,
+    pirSnapshotDiagnosticsLog(diagnostics),
+  );
 }
 
 /// One-line per-endpoint dump for logs and the provider's error detail.
 String pirSnapshotDiagnosticsLog(
   List<PirSnapshotEndpointDiagnostic> diagnostics,
 ) {
-  if (diagnostics.isEmpty) return 'none';
+  if (diagnostics.isEmpty) return 'none'; // l10n-ignore: log text
   return diagnostics.map(_pirSnapshotDiagnosticLog).join('; ');
 }
 
@@ -88,6 +87,6 @@ String _pirSnapshotDiagnosticLog(PirSnapshotEndpointDiagnostic diagnostic) {
   final message = diagnostic.message == null || diagnostic.message!.isEmpty
       ? ''
       : ' message=${diagnostic.message}';
-  return '${diagnostic.endpoint} status=${diagnostic.status.name}'
+  return '${diagnostic.endpoint} status=${diagnostic.status.name}' // l10n-ignore: log text
       '$height$statusCode$message';
 }

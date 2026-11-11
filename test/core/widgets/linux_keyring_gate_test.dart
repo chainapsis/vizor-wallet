@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/linux_keyring_gate.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -20,6 +21,7 @@ Widget _app(
   Widget child = const Text('Wallet screen'),
   AppThemeData theme = AppThemeData.light,
 }) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   debugShowCheckedModeBanner: false,
   builder: (context, child) => AppTheme(
     data: theme,
@@ -189,6 +191,7 @@ void main() {
     addTearDown(router.dispose);
     await tester.pumpWidget(
       MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) => AppTheme(
           data: AppThemeData.light,

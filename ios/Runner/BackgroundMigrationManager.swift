@@ -1124,8 +1124,8 @@ final class BackgroundMigrationManager {
       )
     else { return }
     let content = UNMutableNotificationContent()
-    content.title = "Migration stopped by network upgrade"
-    content.body = "Open Vizor to move the rest of your balance."
+    content.title = NativeStrings.text(.nativeMigrationStoppedByUpgradeTitle)
+    content.body = NativeStrings.text(.nativeMigrationStoppedByUpgradeBody)
     content.sound = .default
     addNotificationIfEnabled(
       UNNotificationRequest(
@@ -1143,8 +1143,8 @@ final class BackgroundMigrationManager {
   private func postNeedsUserActionNotification() {
     guard !isNotificationWorkDisabled else { return }
     let content = UNMutableNotificationContent()
-    content.title = "Ironwood migration needs attention"
-    content.body = "Open Vizor to review and continue your migration."
+    content.title = NativeStrings.text(.nativeIronwoodNeedsAttentionTitle)
+    content.body = NativeStrings.text(.nativeIronwoodNeedsAttentionBody)
     content.sound = .default
     addNotificationIfEnabled(
       UNNotificationRequest(
@@ -1257,9 +1257,8 @@ final class BackgroundMigrationManager {
     completion: @escaping (Bool) -> Void
   ) {
     let content = UNMutableNotificationContent()
-    content.title = "Migration transfers sent"
-    content.body =
-      "All scheduled transfers were submitted. Open Vizor to check the status."
+    content.title = NativeStrings.text(.nativeMigrationTransfersSentTitle)
+    content.body = NativeStrings.text(.nativeMigrationTransfersSentBody)
     content.sound = .default
     addNotificationIfEnabled(
       UNNotificationRequest(
@@ -1278,8 +1277,8 @@ final class BackgroundMigrationManager {
     completion: @escaping (Bool) -> Void
   ) {
     let content = UNMutableNotificationContent()
-    content.title = "Continue your Ironwood migration"
-    content.body = "Open Vizor to prepare the next migration transfer."
+    content.title = NativeStrings.text(.nativeIronwoodContinueTitle)
+    content.body = NativeStrings.text(.nativeIronwoodContinueBody)
     content.sound = .default
     addNotificationIfEnabled(
       UNNotificationRequest(

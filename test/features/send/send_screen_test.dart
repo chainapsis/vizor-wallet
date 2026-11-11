@@ -24,7 +24,6 @@ import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
-import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
@@ -32,8 +31,10 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/leading_decimal_input.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -152,6 +153,7 @@ void main() {
       expect(
         find.text(
           sendScanDowngradeMessage(
+            testL10n,
             SendScanDowngrade.multipleRecipients,
             pasted: true,
           )!,
@@ -1367,7 +1369,7 @@ void main() {
       kZcashDefaultNetworkName,
       reason: 'validation has to be asked about the network we actually pay on',
     );
-    expect(find.text(kWrongNetworkAddressMessage), findsOneWidget);
+    expect(find.text(testL10n.sendRecipientWrongNetwork), findsOneWidget);
     expect(
       find.text('Invalid address'),
       findsNothing,
@@ -1401,7 +1403,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Invalid address'), findsOneWidget);
-    expect(find.text(kWrongNetworkAddressMessage), findsNothing);
+    expect(find.text(testL10n.sendRecipientWrongNetwork), findsNothing);
   });
 
   testWidgets('fee-specific balance error copy is preserved', (tester) async {
@@ -1894,6 +1896,7 @@ Widget _sendHarness({
         paymentRequestPrecheckProvider.overrideWithValue(precheck),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

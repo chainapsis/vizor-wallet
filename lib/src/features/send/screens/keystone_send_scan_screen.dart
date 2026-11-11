@@ -5,12 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
+import '../../../core/zcash/wallet_error_code.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/qr_scanner.dart';
 import '../../keystone/widgets/keystone_qr_scanner_card.dart';
@@ -18,20 +20,23 @@ import '../../keystone/widgets/keystone_qr_scanner_card.dart';
 class KeystoneSendScanArgs {
   const KeystoneSendScanArgs({
     this.expectedUrType = 'zcash-pczt',
-    this.unexpectedUrMessage =
-        'Open the signed transaction QR on Keystone, then scan again.',
     this.decodePcztResponse = true,
     this.suppressSidebarSelection = false,
   });
 
   const KeystoneSendScanArgs.batch({this.suppressSidebarSelection = false})
     : expectedUrType = 'zcash-batch-sig-result',
-      unexpectedUrMessage =
-          'Open the signature result QR on Keystone, then scan again.',
       decodePcztResponse = false;
 
   final String expectedUrType;
-  final String unexpectedUrMessage;
+
+  /// The hint shown when the camera sees a QR of another UR type: it names the
+  /// QR the device should display for [expectedUrType].
+  String unexpectedUrMessage(AppLocalizations l10n) =>
+      expectedUrType == 'zcash-batch-sig-result'
+      ? l10n.commonKeystoneScanSignatureResult
+      : l10n.commonOpenTheSignedTransactionQROn;
+
   final bool decodePcztResponse;
   final bool suppressSidebarSelection;
 }
@@ -87,17 +92,16 @@ class _KeystoneSendScanScreenState extends ConsumerState<KeystoneSendScanScreen>
       if (!mounted) return;
       setState(() {
         _decoding = false;
-        _error =
-            'This QR code could not be decoded as a Keystone transaction signature.';
+        _error = context.l10n.sendKeystoneScanDecodeFailed;
       });
     }
   }
 
   void _handleDecodeError(Object error) {
     if (!mounted || _decoding) return;
-    final message = error.toString().contains('Unexpected UR type')
-        ? widget.args.unexpectedUrMessage
-        : 'Keep the QR code steady and fully visible.';
+    final message = isUnexpectedUrTypeError(error)
+        ? widget.args.unexpectedUrMessage(context.l10n)
+        : context.l10n.commonKeepQrSteady;
     if (_error == message) return;
     setState(() {
       _error = message;
@@ -130,7 +134,10 @@ class _KeystoneSendScanScreenState extends ConsumerState<KeystoneSendScanScreen>
           children: [
             Align(
               alignment: Alignment.centerLeft,
-              child: AppBackLink(label: 'Back', onTap: _goBack),
+              child: AppBackLink(
+                label: context.l10n.commonBack,
+                onTap: _goBack,
+              ),
             ),
             const SizedBox(height: AppSpacing.xs),
             Expanded(
@@ -141,7 +148,7 @@ class _KeystoneSendScanScreenState extends ConsumerState<KeystoneSendScanScreen>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Scan QR Code',
+                        context.l10n.commonScanQrCode,
                         style: AppTypography.displaySmall.copyWith(
                           color: colors.text.accent,
                         ),
@@ -149,7 +156,7 @@ class _KeystoneSendScanScreenState extends ConsumerState<KeystoneSendScanScreen>
                       ),
                       const SizedBox(height: AppSpacing.sm),
                       Text(
-                        'Hold the QR code steady in front of your camera',
+                        context.l10n.sendKeystoneScanHoldSteady,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: colors.text.accent,
                         ),
@@ -169,9 +176,9 @@ class _KeystoneSendScanScreenState extends ConsumerState<KeystoneSendScanScreen>
                         onDecodeError: _handleDecodeError,
                         onComplete: (result) =>
                             unawaited(_handleScanComplete(result)),
-                        decodingLabel: 'Reading signature...',
+                        decodingLabel: context.l10n.commonReadingSignature,
                         unavailableMessage:
-                            'Keystone signing uses camera QR scanning only. Connect a camera and try again.',
+                            context.l10n.sendKeystoneScanCameraOnly,
                       ),
                     ],
                   ),

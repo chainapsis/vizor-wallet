@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/features/home/providers/backup_reminder_provide
 import 'package:zcash_wallet/src/features/home/widgets/desktop_home_setup_carousel.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _pending = AccountInfo(
   uuid: 'a',
@@ -43,6 +44,7 @@ Widget _app(_Accounts accounts, {bool locked = false}) => ProviderScope(
     ),
   ],
   child: MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: AppTheme(
       data: AppThemeData.light,
       child: const Center(child: DesktopHomeSetupCarousel()),

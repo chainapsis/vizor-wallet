@@ -33,6 +33,7 @@ import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' hide ScanResult;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
@@ -150,7 +151,10 @@ void main() {
           container: container,
           child: AppTheme(
             data: AppThemeData.dark,
-            child: const MaterialApp(home: MobileKeystoneShieldScreen()),
+            child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
+              home: const MobileKeystoneShieldScreen(),
+            ),
           ),
         ),
       );
@@ -473,6 +477,7 @@ void main() {
     expect(api.discards, isEmpty);
     api.pendingBroadcast!.complete(
       const StoreAndBroadcastPcztsResult(
+        notices: [],
         broadcastedCount: 1,
         totalCount: 1,
         txids: 'ab',
@@ -637,6 +642,7 @@ Future<GoRouter> _startScanner(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
       ),
@@ -744,6 +750,7 @@ class _Api extends RustLibApi {
     broadcasts++;
     return pendingBroadcast?.future ??
         const StoreAndBroadcastPcztsResult(
+          notices: [],
           broadcastedCount: 1,
           totalCount: 1,
           txids: 'ab',

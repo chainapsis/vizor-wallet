@@ -1981,7 +1981,7 @@ fn wire__crate__api__keystone__decode_ur_part_impl(
             let api_expected_ur_type = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::sync::ApiWalletError>((move || {
                     let output_ok =
                         crate::api::keystone::decode_ur_part(api_part, api_expected_ur_type)?;
                     Ok(output_ok)
@@ -2899,7 +2899,7 @@ fn wire__crate__api__sync__estimate_payment_link_batch_fee_impl(
             let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::sync::ApiWalletError>((move || {
                     let output_ok = crate::api::sync::estimate_payment_link_batch_fee(
                         api_db_path,
                         api_network,
@@ -7440,7 +7440,7 @@ fn wire__crate__api__sync__prepare_pczt_for_keystone_batch_impl(
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::sync::ApiWalletError>((move || {
                     let output_ok =
                         crate::api::sync::prepare_pczt_for_keystone_batch(api_pczt_bytes)?;
                     Ok(output_ok)
@@ -7674,7 +7674,7 @@ fn wire__crate__api__sync__propose_payment_link_batch_impl(
             let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::sync::ApiWalletError>((move || {
                     let output_ok = crate::api::sync::propose_payment_link_batch(
                         api_db_path,
                         api_network,
@@ -11805,6 +11805,17 @@ impl SseDecode for crate::api::sync::ApiWalletErrorCode {
             3 => crate::api::sync::ApiWalletErrorCode::LedgerOperationTerminal,
             4 => crate::api::sync::ApiWalletErrorCode::RecoveryIncomplete,
             5 => crate::api::sync::ApiWalletErrorCode::OptOutUnfinished,
+            6 => crate::api::sync::ApiWalletErrorCode::InvalidUr,
+            7 => crate::api::sync::ApiWalletErrorCode::UnexpectedUrType,
+            8 => crate::api::sync::ApiWalletErrorCode::UrSessionReset,
+            9 => crate::api::sync::ApiWalletErrorCode::KeystoneBatchSignatureLimit,
+            10 => crate::api::sync::ApiWalletErrorCode::KeystoneBatchUnsupportedInput,
+            11 => crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchNotOneTransaction,
+            12 => crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchKeystoneSapling,
+            13 => crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchKeystoneSignatureLimit,
+            14 => crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchLedgerRecipientLimit,
+            15 => crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchLedgerSapling,
+            16 => crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchLedgerTooLarge,
             _ => unreachable!("Invalid variant for ApiWalletErrorCode: {}", inner),
         };
     }
@@ -11938,6 +11949,28 @@ impl SseDecode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_u8().unwrap() != 0
+    }
+}
+
+impl SseDecode for crate::api::sync::BroadcastNotice {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_index = <Option<u32>>::sse_decode(deserializer);
+        let mut var_total = <Option<u32>>::sse_decode(deserializer);
+        let mut var_txid = <Option<String>>::sse_decode(deserializer);
+        let mut var_detail = <Option<String>>::sse_decode(deserializer);
+        let mut var_expiryHeight = <Option<u32>>::sse_decode(deserializer);
+        let mut var_chainHeight = <Option<u64>>::sse_decode(deserializer);
+        return crate::api::sync::BroadcastNotice {
+            kind: var_kind,
+            index: var_index,
+            total: var_total,
+            txid: var_txid,
+            detail: var_detail,
+            expiry_height: var_expiryHeight,
+            chain_height: var_chainHeight,
+        };
     }
 }
 
@@ -12309,6 +12342,7 @@ impl SseDecode for crate::api::sync::ExecuteProposalResult {
         let mut var_broadcastedCount = <u32>::sse_decode(deserializer);
         let mut var_totalCount = <u32>::sse_decode(deserializer);
         let mut var_message = <Option<String>>::sse_decode(deserializer);
+        let mut var_notices = <Vec<crate::api::sync::BroadcastNotice>>::sse_decode(deserializer);
         let mut var_broadcastFailureKind = <Option<String>>::sse_decode(deserializer);
         return crate::api::sync::ExecuteProposalResult {
             txids: var_txids,
@@ -12316,6 +12350,7 @@ impl SseDecode for crate::api::sync::ExecuteProposalResult {
             broadcasted_count: var_broadcastedCount,
             total_count: var_totalCount,
             message: var_message,
+            notices: var_notices,
             broadcast_failure_kind: var_broadcastFailureKind,
         };
     }
@@ -12327,10 +12362,12 @@ impl SseDecode for crate::api::sync::ExtractAndBroadcastPcztResult {
         let mut var_txid = <String>::sse_decode(deserializer);
         let mut var_status = <String>::sse_decode(deserializer);
         let mut var_message = <Option<String>>::sse_decode(deserializer);
+        let mut var_notices = <Vec<crate::api::sync::BroadcastNotice>>::sse_decode(deserializer);
         return crate::api::sync::ExtractAndBroadcastPcztResult {
             txid: var_txid,
             status: var_status,
             message: var_message,
+            notices: var_notices,
         };
     }
 }
@@ -12726,6 +12763,7 @@ impl SseDecode for crate::api::ledger::LedgerSignedOperation {
         let mut var_txid = <Option<String>>::sse_decode(deserializer);
         let mut var_status = <Option<String>>::sse_decode(deserializer);
         let mut var_message = <Option<String>>::sse_decode(deserializer);
+        let mut var_notices = <Vec<crate::api::sync::BroadcastNotice>>::sse_decode(deserializer);
         let mut var_createdAtMs = <i64>::sse_decode(deserializer);
         let mut var_updatedAtMs = <i64>::sse_decode(deserializer);
         return crate::api::ledger::LedgerSignedOperation {
@@ -12739,6 +12777,7 @@ impl SseDecode for crate::api::ledger::LedgerSignedOperation {
             txid: var_txid,
             status: var_status,
             message: var_message,
+            notices: var_notices,
             created_at_ms: var_createdAtMs,
             updated_at_ms: var_updatedAtMs,
         };
@@ -12752,12 +12791,14 @@ impl SseDecode for crate::api::ledger::LedgerSignedOperationBroadcastResult {
         let mut var_txid = <String>::sse_decode(deserializer);
         let mut var_status = <String>::sse_decode(deserializer);
         let mut var_message = <Option<String>>::sse_decode(deserializer);
+        let mut var_notices = <Vec<crate::api::sync::BroadcastNotice>>::sse_decode(deserializer);
         let mut var_requiresAck = <bool>::sse_decode(deserializer);
         return crate::api::ledger::LedgerSignedOperationBroadcastResult {
             operation_id: var_operationId,
             txid: var_txid,
             status: var_status,
             message: var_message,
+            notices: var_notices,
             requires_ack: var_requiresAck,
         };
     }
@@ -13022,6 +13063,20 @@ impl SseDecode for Vec<crate::api::sync::BlockMetaInfo> {
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
             ans_.push(<crate::api::sync::BlockMetaInfo>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::sync::BroadcastNotice> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::sync::BroadcastNotice>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -15625,12 +15680,14 @@ impl SseDecode for crate::api::sync::StoreAndBroadcastPcztsResult {
         let mut var_broadcastedCount = <u32>::sse_decode(deserializer);
         let mut var_totalCount = <u32>::sse_decode(deserializer);
         let mut var_message = <Option<String>>::sse_decode(deserializer);
+        let mut var_notices = <Vec<crate::api::sync::BroadcastNotice>>::sse_decode(deserializer);
         return crate::api::sync::StoreAndBroadcastPcztsResult {
             txids: var_txids,
             status: var_status,
             broadcasted_count: var_broadcastedCount,
             total_count: var_totalCount,
             message: var_message,
+            notices: var_notices,
         };
     }
 }
@@ -17704,6 +17761,17 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiWalletErrorCode {
             Self::LedgerOperationTerminal => 3.into_dart(),
             Self::RecoveryIncomplete => 4.into_dart(),
             Self::OptOutUnfinished => 5.into_dart(),
+            Self::InvalidUr => 6.into_dart(),
+            Self::UnexpectedUrType => 7.into_dart(),
+            Self::UrSessionReset => 8.into_dart(),
+            Self::KeystoneBatchSignatureLimit => 9.into_dart(),
+            Self::KeystoneBatchUnsupportedInput => 10.into_dart(),
+            Self::PaymentLinkBatchNotOneTransaction => 11.into_dart(),
+            Self::PaymentLinkBatchKeystoneSapling => 12.into_dart(),
+            Self::PaymentLinkBatchKeystoneSignatureLimit => 13.into_dart(),
+            Self::PaymentLinkBatchLedgerRecipientLimit => 14.into_dart(),
+            Self::PaymentLinkBatchLedgerSapling => 15.into_dart(),
+            Self::PaymentLinkBatchLedgerTooLarge => 16.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -17898,6 +17966,32 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::wallet::BlockSpacingSchedule>
     for crate::api::wallet::BlockSpacingSchedule
 {
     fn into_into_dart(self) -> crate::api::wallet::BlockSpacingSchedule {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::BroadcastNotice {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.kind.into_into_dart().into_dart(),
+            self.index.into_into_dart().into_dart(),
+            self.total.into_into_dart().into_dart(),
+            self.txid.into_into_dart().into_dart(),
+            self.detail.into_into_dart().into_dart(),
+            self.expiry_height.into_into_dart().into_dart(),
+            self.chain_height.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::BroadcastNotice
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::BroadcastNotice>
+    for crate::api::sync::BroadcastNotice
+{
+    fn into_into_dart(self) -> crate::api::sync::BroadcastNotice {
         self
     }
 }
@@ -18454,6 +18548,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ExecuteProposalResult {
             self.broadcasted_count.into_into_dart().into_dart(),
             self.total_count.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
+            self.notices.into_into_dart().into_dart(),
             self.broadcast_failure_kind.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -18477,6 +18572,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ExtractAndBroadcastPczt
             self.txid.into_into_dart().into_dart(),
             self.status.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
+            self.notices.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -19028,6 +19124,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ledger::LedgerSignedOperation
             self.txid.into_into_dart().into_dart(),
             self.status.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
+            self.notices.into_into_dart().into_dart(),
             self.created_at_ms.into_into_dart().into_dart(),
             self.updated_at_ms.into_into_dart().into_dart(),
         ]
@@ -19053,6 +19150,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ledger::LedgerSignedOperation
             self.txid.into_into_dart().into_dart(),
             self.status.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
+            self.notices.into_into_dart().into_dart(),
             self.requires_ack.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -20874,6 +20972,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::StoreAndBroadcastPcztsR
             self.broadcasted_count.into_into_dart().into_dart(),
             self.total_count.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
+            self.notices.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -22322,6 +22421,17 @@ impl SseEncode for crate::api::sync::ApiWalletErrorCode {
                 crate::api::sync::ApiWalletErrorCode::LedgerOperationTerminal => 3,
                 crate::api::sync::ApiWalletErrorCode::RecoveryIncomplete => 4,
                 crate::api::sync::ApiWalletErrorCode::OptOutUnfinished => 5,
+                crate::api::sync::ApiWalletErrorCode::InvalidUr => 6,
+                crate::api::sync::ApiWalletErrorCode::UnexpectedUrType => 7,
+                crate::api::sync::ApiWalletErrorCode::UrSessionReset => 8,
+                crate::api::sync::ApiWalletErrorCode::KeystoneBatchSignatureLimit => 9,
+                crate::api::sync::ApiWalletErrorCode::KeystoneBatchUnsupportedInput => 10,
+                crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchNotOneTransaction => 11,
+                crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchKeystoneSapling => 12,
+                crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchKeystoneSignatureLimit => 13,
+                crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchLedgerRecipientLimit => 14,
+                crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchLedgerSapling => 15,
+                crate::api::sync::ApiWalletErrorCode::PaymentLinkBatchLedgerTooLarge => 16,
                 _ => {
                     unimplemented!("");
                 }
@@ -22424,6 +22534,19 @@ impl SseEncode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_u8(self as _).unwrap();
+    }
+}
+
+impl SseEncode for crate::api::sync::BroadcastNotice {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.kind, serializer);
+        <Option<u32>>::sse_encode(self.index, serializer);
+        <Option<u32>>::sse_encode(self.total, serializer);
+        <Option<String>>::sse_encode(self.txid, serializer);
+        <Option<String>>::sse_encode(self.detail, serializer);
+        <Option<u32>>::sse_encode(self.expiry_height, serializer);
+        <Option<u64>>::sse_encode(self.chain_height, serializer);
     }
 }
 
@@ -22758,6 +22881,7 @@ impl SseEncode for crate::api::sync::ExecuteProposalResult {
         <u32>::sse_encode(self.broadcasted_count, serializer);
         <u32>::sse_encode(self.total_count, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
+        <Vec<crate::api::sync::BroadcastNotice>>::sse_encode(self.notices, serializer);
         <Option<String>>::sse_encode(self.broadcast_failure_kind, serializer);
     }
 }
@@ -22768,6 +22892,7 @@ impl SseEncode for crate::api::sync::ExtractAndBroadcastPcztResult {
         <String>::sse_encode(self.txid, serializer);
         <String>::sse_encode(self.status, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
+        <Vec<crate::api::sync::BroadcastNotice>>::sse_encode(self.notices, serializer);
     }
 }
 
@@ -23031,6 +23156,7 @@ impl SseEncode for crate::api::ledger::LedgerSignedOperation {
         <Option<String>>::sse_encode(self.txid, serializer);
         <Option<String>>::sse_encode(self.status, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
+        <Vec<crate::api::sync::BroadcastNotice>>::sse_encode(self.notices, serializer);
         <i64>::sse_encode(self.created_at_ms, serializer);
         <i64>::sse_encode(self.updated_at_ms, serializer);
     }
@@ -23043,6 +23169,7 @@ impl SseEncode for crate::api::ledger::LedgerSignedOperationBroadcastResult {
         <String>::sse_encode(self.txid, serializer);
         <String>::sse_encode(self.status, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
+        <Vec<crate::api::sync::BroadcastNotice>>::sse_encode(self.notices, serializer);
         <bool>::sse_encode(self.requires_ack, serializer);
     }
 }
@@ -23230,6 +23357,16 @@ impl SseEncode for Vec<crate::api::sync::BlockMetaInfo> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::sync::BlockMetaInfo>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::sync::BroadcastNotice> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::sync::BroadcastNotice>::sse_encode(item, serializer);
         }
     }
 }
@@ -25225,6 +25362,7 @@ impl SseEncode for crate::api::sync::StoreAndBroadcastPcztsResult {
         <u32>::sse_encode(self.broadcasted_count, serializer);
         <u32>::sse_encode(self.total_count, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
+        <Vec<crate::api::sync::BroadcastNotice>>::sse_encode(self.notices, serializer);
     }
 }
 

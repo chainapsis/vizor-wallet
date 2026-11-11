@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -55,7 +56,7 @@ class _WalletLinkDesktopScreenState
   String? _passwordError;
 
   String? get _passwordPolicyMessage =>
-      validateWalletPassword(_passwordController.text);
+      validateWalletPassword(context.l10n, _passwordController.text);
 
   bool get _canSubmitPassword =>
       !_isSubmittingPassword && isWalletPasswordValid(_passwordController.text);
@@ -109,7 +110,7 @@ class _WalletLinkDesktopScreenState
       if (!mounted) return;
       if (!isValid) {
         setState(() {
-          _passwordError = 'Incorrect password. Please try again.';
+          _passwordError = context.l10n.passwordIncorrect;
           _isSubmittingPassword = false;
         });
         return;
@@ -123,7 +124,7 @@ class _WalletLinkDesktopScreenState
       log('WalletLinkDesktopScreen._submitPassword: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _passwordError = "Couldn't check your password. Please try again.";
+        _passwordError = context.l10n.passwordCheckFailed;
         _isSubmittingPassword = false;
       });
     }
@@ -176,7 +177,7 @@ class _WalletLinkDesktopScreenState
         child: AppPaneScrollScaffold(
           toolbar: AppPaneToolbar(
             leading: AppBackLink(
-              label: 'Settings',
+              label: context.l10n.navSettings,
               minWidth: 60,
               onTap: () => context.go('/settings'),
             ),
@@ -221,7 +222,7 @@ class _WalletLinkConfirmAccessScreen extends StatelessWidget {
         onBack: onBack,
         child: Center(
           child: ConfirmAccessCard(
-            subtitle: 'To link Vizor Mobile.',
+            subtitle: context.l10n.walletLinkDesktopConfirmSubtitle,
             controller: controller,
             errorText: errorText,
             isSubmitting: isSubmitting,
@@ -252,7 +253,7 @@ class _WalletLinkConfirmAccessPane extends StatelessWidget {
         children: [
           AppPaneToolbar(
             leading: AppBackLink(
-              label: 'Settings',
+              label: context.l10n.navSettings,
               minWidth: 60,
               onTap: onBack,
             ),
@@ -301,7 +302,9 @@ class _WalletLinkPane extends StatelessWidget {
       ),
       WalletLinkPhase.expired => _ExpiredContent(onRegenerate: onRegenerate),
       WalletLinkPhase.error => _ErrorContent(
-        message: state.errorMessage ?? 'Could not prepare the mobile link.',
+        message: state.errorKind == null
+            ? context.l10n.walletLinkDesktopErrorFallback
+            : state.errorKind!.message(context.l10n),
         onRetry: onRegenerate ?? onStart,
       ),
       WalletLinkPhase.preparing || WalletLinkPhase.idle => _InitialContent(
@@ -348,9 +351,8 @@ class _InitialContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _ContentColumn(
-      title: 'Link Vizor Mobile',
-      body:
-          'Connect this wallet to your Vizor mobile app by scanning a one-time QR code.',
+      title: context.l10n.walletLinkDesktopTitle,
+      body: context.l10n.walletLinkDesktopInitialBody,
       visual: const _EncryptedPlaceholder(),
       action: AppButton(
         onPressed: preparing ? null : onStart,
@@ -361,7 +363,11 @@ class _InitialContent extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 1.5),
               )
             : null,
-        child: Text(preparing ? 'Preparing' : 'Start linking'),
+        child: Text(
+          preparing
+              ? context.l10n.commonPreparing
+              : context.l10n.walletLinkDesktopStartLinking,
+        ),
       ),
     );
   }
@@ -376,8 +382,8 @@ class _ReadyContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _ContentColumn(
-      title: 'Scan with Vizor mobile',
-      body: 'Open Vizor on your phone → Add a wallet → Link Vizor Desktop',
+      title: context.l10n.walletLinkDesktopScanTitle,
+      body: context.l10n.walletLinkDesktopScanBody,
       visual: _QrTransferCard(
         qrPayload: state.qrPayload ?? '',
         remaining: state.remaining,
@@ -389,11 +395,13 @@ class _ReadyContent extends StatelessWidget {
             onPressed: onRegenerate,
             size: AppButtonSize.mediumLarge,
             leading: const AppIcon(AppIcons.renew),
-            child: const Text('Regenerate'),
+            child: Text(context.l10n.walletLinkDesktopRegenerate),
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'Expires in ${_formatRemaining(state.remaining)}',
+            context.l10n.walletLinkDesktopExpiresIn(
+              _formatRemaining(state.remaining),
+            ),
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.primary,
             ),
@@ -413,8 +421,8 @@ class _LinkedContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _ResultContentColumn(
-      title: 'Vizor Mobile linked successfully',
-      body: _linkedBody(state),
+      title: context.l10n.walletLinkDesktopLinkedTitle,
+      body: _linkedBody(context.l10n, state),
       titleMaxWidth: 264,
       bodyMaxWidth: 212,
       visual: const SizedBox(
@@ -430,19 +438,19 @@ class _LinkedContent extends StatelessWidget {
         onPressed: onContinue,
         size: AppButtonSize.mediumLarge,
         variant: AppButtonVariant.secondary,
-        child: const Text('Continue'),
+        child: Text(context.l10n.commonContinue),
       ),
     );
   }
 
-  String _linkedBody(WalletLinkState state) {
+  String _linkedBody(AppLocalizations l10n, WalletLinkState state) {
     if (!state.actualImportCounts) {
-      return 'Vizor Mobile was linked to this wallet.';
+      return l10n.walletLinkDesktopLinkedBody;
     }
-    final accountLabel = state.accountCount == 1 ? 'account' : 'accounts';
-    final contactLabel = state.contactCount == 1 ? 'contact' : 'contacts';
-    return '${state.accountCount} $accountLabel and '
-        '${state.contactCount} $contactLabel were imported on mobile.';
+    return l10n.walletLinkDesktopLinkedCounts(
+      state.accountCount,
+      state.contactCount,
+    );
   }
 }
 
@@ -454,9 +462,8 @@ class _ExpiredContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _ResultContentColumn(
-      title: 'Time’s up',
-      body:
-          'For your security the link is only valid for a minute. Generate a fresh code and scan it again.',
+      title: context.l10n.commonTimeSUp,
+      body: context.l10n.walletLinkDesktopExpiredBody,
       bodyMaxWidth: _walletLinkExpiredBodyWidth,
       visual: const SizedBox(
         width: 300,
@@ -471,7 +478,7 @@ class _ExpiredContent extends StatelessWidget {
         onPressed: onRegenerate,
         size: AppButtonSize.mediumLarge,
         leading: const AppIcon(AppIcons.renew),
-        child: const Text('Generate new code'),
+        child: Text(context.l10n.walletLinkDesktopGenerateNewCode),
       ),
     );
   }
@@ -486,13 +493,13 @@ class _ErrorContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _ContentColumn(
-      title: 'Link unavailable',
+      title: context.l10n.walletLinkDesktopUnavailableTitle,
       body: message,
       visual: const _StatusIcon(iconName: AppIcons.warning),
       action: AppButton(
         onPressed: onRetry,
         size: AppButtonSize.mediumLarge,
-        child: const Text('Try again'),
+        child: Text(context.l10n.commonTryAgain),
       ),
     );
   }
@@ -637,11 +644,10 @@ class _EncryptedPlaceholder extends StatelessWidget {
                 const SizedBox(height: AppSpacing.md),
                 Text.rich(
                   TextSpan(
-                    text:
-                        'The code is encrypted with a one-time key and expires after a minute. ',
+                    text: '${context.l10n.walletLinkDesktopEncryptedNotice} ',
                     children: [
                       TextSpan(
-                        text: 'Only your phone can decode it.',
+                        text: context.l10n.walletLinkDesktopEncryptedStrong,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: colors.text.primary,
                         ),
@@ -692,7 +698,7 @@ class _QrTransferCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           Text(
-            '1/1 Ready to scan...',
+            context.l10n.walletLinkDesktopReadyToScan,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.accent.withValues(alpha: 0.82),
             ),

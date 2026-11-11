@@ -14,7 +14,6 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
-import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
@@ -30,6 +29,8 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   setUpAll(() async {
@@ -95,7 +96,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(kSyncStatusConnectingToTorLabel), findsOneWidget);
+    expect(find.text(testL10n.syncConnectingToTor), findsOneWidget);
     expect(find.text('Vizor is synced'), findsNothing);
   });
 
@@ -259,7 +260,6 @@ void main() {
         failure: const SyncFailure(
           kind: SyncFailureKind.endpoint,
           rawMessage: 'offline',
-          userMessage: 'Endpoint unavailable.',
         ),
       ),
       '— ZEC',
@@ -1333,7 +1333,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
       ),
@@ -1446,7 +1445,6 @@ void main() {
           failure: const SyncFailure(
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
-            userMessage: 'Network connection lost.',
           ),
         ),
         themeData: AppThemeData.dark,
@@ -1462,11 +1460,7 @@ void main() {
       await tester.pumpWidget(
         _sidebarHarness(
           SyncState(
-            failure: SyncFailure(
-              kind: entry.key,
-              rawMessage: 'failure',
-              userMessage: 'Sync failed.',
-            ),
+            failure: SyncFailure(kind: entry.key, rawMessage: 'failure'),
           ),
         ),
       );
@@ -1683,6 +1677,7 @@ Widget _sidebarHarness(
         linuxKeyringCoordinatorProvider.overrideWithValue(keyringCoordinator),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         // The syncing sidebar's shimmer and glow animate forever. Tests default
@@ -1717,7 +1712,6 @@ SyncState _networkFailureSyncState() {
     failure: const SyncFailure(
       kind: SyncFailureKind.network,
       rawMessage: 'network failed',
-      userMessage: 'Network connection lost.',
     ),
   );
 }

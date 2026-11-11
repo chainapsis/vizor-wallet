@@ -24,7 +24,9 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
+import '../../support/test_l10n.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../fixtures/orchard_receive_address.dart';
 import 'receive_qr_bitmap_cases.dart';
@@ -909,12 +911,48 @@ void main() {
     );
 
     // The error slot still sits below the action row.
-    final error = find.textContaining('shielded address is unavailable');
+    final error = find.text(testL10n.receiveShieldedAddressLoadFailed);
     expect(error, findsOneWidget);
     expect(
       tester.getTopLeft(error).dy,
       greaterThan(tester.getBottomLeft(request).dy),
     );
+  });
+
+  testWidgets('keeps the error details reachable with larger text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(() async {
+      tester.platformDispatcher.clearTextScaleFactorTestValue();
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    // The sidebar's account header overflows at this text size, a separate
+    // problem; this test checks only the receive pane.
+    final onError = FlutterError.onError;
+    FlutterError.onError = (details) {
+      if (details.toString().contains('app_main_sidebar.dart')) return;
+      onError?.call(details);
+    };
+    try {
+      await tester.pumpWidget(
+        _receiveHarness(
+          receiveAddressService: _FailingReceiveAddressService.new,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // The error sits in flow, so the pane scrolls far enough to reach it.
+      final details = find.text(testL10n.commonShowDetails);
+      await tester.drag(find.byType(Scrollable).last, const Offset(0, -2000));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.getRect(details).bottom, lessThanOrEqualTo(720));
+    } finally {
+      FlutterError.onError = onError;
+    }
   });
 
   for (final pool in ['Shielded', 'Transparent']) {
@@ -1546,6 +1584,7 @@ Widget _receiveHarness({
       ...extraOverrides,
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: themeData, child: child!),
     ),
@@ -1581,6 +1620,7 @@ Widget _receiveRaceHarness({
       accountProvider.overrideWith(accountNotifier),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

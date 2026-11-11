@@ -29,6 +29,7 @@ import '../config/network_config.dart';
 import '../config/swap_feature_config.dart';
 import '../formatting/number_format.dart';
 import '../formatting/zec_amount.dart';
+import '../l10n/l10n.dart';
 import '../privacy/privacy_mask.dart';
 import '../profile_pictures.dart';
 import '../storage/linux_keyring_coordinator.dart';
@@ -42,6 +43,7 @@ import '../widgets/app_tooltip.dart';
 import '../widgets/app_toast.dart';
 import 'app_desktop_shell.dart';
 import 'desktop_sidebar_spacing.dart';
+import '../l10n/locale_typography.dart';
 
 final _sidebarThousandZatoshi = zatoshiPerZec * BigInt.from(1000);
 final _sidebarMillionZatoshi = zatoshiPerZec * BigInt.from(1000000);
@@ -143,7 +145,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   bool _blockIfVotingSubmissionInProgress() {
     final guards = ref.read(votingSubmissionGuardProvider);
     if (guards.isEmpty) return false;
-    showAppToast(context, guards.first.message);
+    showAppToast(context, guards.first.message.text(context.l10n));
     return true;
   }
 
@@ -312,10 +314,10 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     await _trackPendingNavigation(() async {
       try {
         await accountNotifier.switchAccount(uuid);
-      } on WalletMutationBusyException catch (error) {
+      } on WalletMutationBusyException {
         // Another wallet mutation, such as the private queries toggle, holds
         // the wallet: stay on this screen and say why nothing happened.
-        if (mounted) showAppToast(context, error.toString());
+        if (mounted) showAppToast(context, context.l10n.walletMutationBusy);
         return;
       }
       if (mounted) {
@@ -339,7 +341,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final accountState = ref.read(accountProvider).value;
     final accountUuid = accountState?.activeAccountUuid;
     if (accountUuid == null) {
-      showAppToast(context, "Address couldn't be copied");
+      showAppToast(context, context.l10n.sidebarAddressCopyFailed);
       return;
     }
 
@@ -359,16 +361,20 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         return;
       }
       if (address.trim().isEmpty) {
-        showAppToast(context, "Address couldn't be copied");
+        showAppToast(context, context.l10n.sidebarAddressCopyFailed);
         return;
       }
 
       if (!mounted) return;
-      copyTextWithToast(context, text: address, toastMessage: 'Address copied');
+      copyTextWithToast(
+        context,
+        text: address,
+        toastMessage: context.l10n.commonAddressCopied,
+      );
     } catch (e) {
       log('AppMainSidebar: ERROR copying shielded address: $e');
       if (!mounted) return;
-      showAppToast(context, "Address couldn't be copied");
+      showAppToast(context, context.l10n.sidebarAddressCopyFailed);
     } finally {
       if (mounted) {
         setState(() {
@@ -396,7 +402,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
           );
       if (!mounted) return;
       if (address.trim().isEmpty) {
-        showAppToast(context, "Address couldn't be copied");
+        showAppToast(context, context.l10n.sidebarAddressCopyFailed);
         return;
       }
 
@@ -404,12 +410,12 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       copyTextWithToast(
         context,
         text: address,
-        toastMessage: 'Shielded address copied',
+        toastMessage: context.l10n.sidebarShieldedAddressCopied,
       );
     } catch (e) {
       log('AppMainSidebar: ERROR copying account shielded address: $e');
       if (!mounted) return;
-      showAppToast(context, "Address couldn't be copied");
+      showAppToast(context, context.l10n.sidebarAddressCopyFailed);
     } finally {
       if (mounted) {
         setState(() => _isCopyingAddress = false);
@@ -461,7 +467,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         }
       }
     }
-    final accountName = activeAccount?.name ?? 'Username';
+    final accountName =
+        activeAccount?.name ?? context.l10n.sidebarAccountNameFallback;
     final sync = ref.watch(syncProvider).value ?? SyncState();
     final networkPrivacy = ref.watch(networkPrivacyProvider);
     final accountSync = sync.scopedToAccount(activeAccountUuid);
@@ -472,7 +479,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         showImporting ||
         (activeAccountUuid != null && accountSync.isImportingAccount);
     final balanceText =
-        '${accountSync.hasDisplayBalance ? _formatSidebarBalance(accountSync.displayTotalBalance) : '—'} '
+        '${accountSync.hasDisplayBalance ? _formatSidebarBalance(accountSync.displayTotalBalance) : '—'} ' // l10n-ignore: amount format
         '$kZcashDefaultCurrencyTicker';
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final balanceLabel = hideAmountIfPrivacyMode(
@@ -572,7 +579,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     else
                       AppSidebarItem(
                         key: const ValueKey('sidebar_home_button'),
-                        label: showImporting ? 'Importing...' : 'Home',
+                        label: showImporting
+                            ? context.l10n.commonImporting
+                            : context.l10n.navHome,
                         iconName: showImporting
                             ? AppIcons.loader
                             : AppIcons.home,
@@ -584,7 +593,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       const SizedBox(height: AppSpacing.xs),
                       AppSidebarItem(
                         key: const ValueKey('sidebar_swap_button'),
-                        label: 'Swap',
+                        label: context.l10n.navSwap,
                         iconName: AppIcons.swapArrows,
                         active: _routeShouldBeActive('/swap'),
                         onTap:
@@ -596,7 +605,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       const SizedBox(height: AppSpacing.xs),
                       AppSidebarItem(
                         key: const ValueKey('sidebar_pay_button'),
-                        label: 'Pay',
+                        label: context.l10n.navPay,
                         iconName: AppIcons.paid,
                         active: _routeShouldBeActive('/pay'),
                         onTap:
@@ -610,7 +619,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
                       key: const ValueKey('sidebar_voting_button'),
-                      label: 'Vote',
+                      label: context.l10n.navVote,
                       iconName: AppIcons.vote,
                       active: _routeShouldBeActive('/voting'),
                       // Stays tappable while active: _navigateTo requests a
@@ -626,7 +635,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
                       key: const ValueKey('sidebar_activity_button'),
-                      label: 'Activity',
+                      label: context.l10n.navActivity,
                       iconName: AppIcons.history,
                       active: _routeShouldBeActive('/activity'),
                       // Stays tappable on detail subroutes (tx/swap status)
@@ -636,7 +645,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     const Spacer(),
                     AppSidebarItem(
                       key: const ValueKey('sidebar_settings_button'),
-                      label: 'Settings',
+                      label: context.l10n.navSettings,
                       iconName: AppIcons.cog,
                       active: _settingsShouldBeActive,
                       onTap: _openSettings,
@@ -644,7 +653,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
                       key: const ValueKey('sidebar_sign_out_button'),
-                      label: 'Sign out',
+                      label: context.l10n.navSignOut,
                       iconName: AppIcons.logOut,
                       onTap: _isSigningOut ? null : _handleSignOut,
                     ),
@@ -702,11 +711,11 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
     final stopped = status.phase == kIronwoodMigrationStoppedByUpgradePhase;
     final attention = needsInput || stopped;
     final orchardLabel = hideAmountIfPrivacyMode(
-      '${balanceIsAvailable ? _formatSidebarBalance(orchardBalance) : '—'} ZEC',
+      '${balanceIsAvailable ? _formatSidebarBalance(orchardBalance) : '—'} ZEC', // l10n-ignore: amount format
       privacyModeEnabled: privacyModeEnabled,
     );
     final ironwoodLabel = hideAmountIfPrivacyMode(
-      '${balanceIsAvailable ? _formatSidebarBalance(ironwoodBalance) : '—'} ZEC',
+      '${balanceIsAvailable ? _formatSidebarBalance(ironwoodBalance) : '—'} ZEC', // l10n-ignore: amount format
       privacyModeEnabled: privacyModeEnabled,
     );
 
@@ -721,7 +730,7 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
             top: 0,
             child: AppSidebarItem(
               key: ValueKey('sidebar_orchard_home_row'),
-              label: 'Home',
+              label: context.l10n.navHome,
               iconName: AppIcons.home,
               onTap: onHome,
               // A stopped run released its notes, so Orchard is no longer held.
@@ -762,10 +771,10 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
             child: AppSidebarItem(
               key: ValueKey('sidebar_migration_progress_button'),
               label: stopped
-                  ? 'Migration stopped'
+                  ? context.l10n.commonMigrationStopped
                   : needsInput
-                  ? 'Needs input'
-                  : 'Migrating...',
+                  ? context.l10n.sidebarMigrationNeedsInput
+                  : context.l10n.commonMigrating,
               leading: SizedBox(
                 width: _SidebarMigrationGlow.visualWidth,
                 height: _SidebarMigrationGlow.visualHeight,
@@ -786,7 +795,7 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
             top: 80,
             child: AppSidebarItem(
               key: ValueKey('sidebar_home_button'),
-              label: 'Ironwood',
+              label: 'Ironwood', // l10n-ignore: pool name
               iconName: AppIcons.home,
               active: active,
               onTap: onHome,
@@ -1177,7 +1186,9 @@ class _SidebarHideBalanceButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: privacyModeEnabled ? 'Show balance' : 'Hide balance',
+      label: privacyModeEnabled
+          ? context.l10n.sidebarShowBalance
+          : context.l10n.sidebarHideBalance,
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
         child: GestureDetector(
@@ -1218,7 +1229,7 @@ class _SidebarCopyAddressButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: 'Copy shielded address',
+      label: context.l10n.commonCopyShieldedAddress,
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
         child: GestureDetector(
@@ -1318,7 +1329,7 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                 Padding(
                   padding: const EdgeInsets.all(AppSpacing.xxs),
                   child: Text(
-                    'My accounts',
+                    context.l10n.sidebarMyAccounts,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.muted,
                       fontWeight: FontWeight.w400,
@@ -1394,7 +1405,7 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                             borderRadius: BorderRadius.circular(AppRadii.full),
                           ),
                           child: Text(
-                            'Manage',
+                            context.l10n.commonManage,
                             style: AppTypography.labelLarge.copyWith(
                               color: colors.button.secondary.label,
                             ),
@@ -1592,6 +1603,7 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
 
   bool get _isSyncing =>
       SyncStatusLabel.from(
+        context.l10n,
         widget.sync,
         networkPrivacy: widget.networkPrivacy,
       ).kind ==
@@ -1641,6 +1653,7 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
   Widget build(BuildContext context) {
     final colors = context.colors;
     final status = SyncStatusLabel.from(
+      context.l10n,
       widget.sync,
       displayWholePercentage: ref.watch(syncDisplayWholePercentageProvider),
       networkPrivacy: widget.networkPrivacy,
@@ -1652,13 +1665,13 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
         ? widget.sync.scannedHeight
         : null;
     final label = status.kind == SyncStatusKind.synced
-        ? 'Synced'
+        ? context.l10n.syncSynced
         : status.label;
     final semanticsLabel = syncedHeight == null
         ? (status.kind == SyncStatusKind.synced
-              ? 'Synced'
+              ? context.l10n.syncSynced
               : status.semanticsLabel)
-        : 'Synced at block ${formatGroupedInteger(syncedHeight)}';
+        : context.l10n.syncSyncedAtBlock(formatGroupedInteger(syncedHeight));
     final textColor = switch (status.kind) {
       SyncStatusKind.syncing => colors.sync.textSyncing,
       SyncStatusKind.failed => colors.sync.textError,
@@ -1809,7 +1822,10 @@ class _SidebarSyncStaticLabel extends StatelessWidget {
         if (!constraints.maxWidth.isFinite) return labelText();
 
         final painter = TextPainter(
-          text: TextSpan(text: label, style: style),
+          text: TextSpan(
+            text: label,
+            style: withLocaleFontFallback(context, style),
+          ),
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
           ellipsis: '...',

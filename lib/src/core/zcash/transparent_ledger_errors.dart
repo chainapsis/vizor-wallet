@@ -1,6 +1,8 @@
+import '../l10n/l10n.dart';
+
 /// User copy for a wallet whose transparent funds this build cannot use.
-const transparentLedgerNeedsNewerBuildMessage =
-    'This wallet needs a newer version of Vizor to use its transparent funds.';
+String transparentLedgerNeedsNewerBuildMessage(AppLocalizations l10n) =>
+    l10n.transparentLedgerNeedsNewerBuild;
 
 /// Whether [raw] is the wallet library's refusal to operate on transparent
 /// funds under a stricter or newer policy than this build supports.
@@ -14,8 +16,8 @@ bool isTransparentLedgerNeedsNewerBuildError(String raw) => raw
     .contains("this build cannot operate on this wallet's transparent funds");
 
 /// User copy for transparent funds that private recovery does not yet cover.
-const transparentRecoveryIncompleteMessage =
-    'Transparent funds are unavailable until private recovery completes.';
+String transparentRecoveryIncompleteMessage(AppLocalizations l10n) =>
+    l10n.transparentRecoveryIncomplete;
 
 /// Whether [raw] is the wallet library's refusal to use transparent funds
 /// because the wallet's private transparent ledger holds no current authority
@@ -29,6 +31,5 @@ bool isTransparentRecoveryIncompleteError(String raw) =>
 
 /// User copy for a wallet that still requires private recovery while Private
 /// queries is off: turning it off did not finish lowering the wallet's policy.
-const privateQueriesOptOutUnfinishedMessage =
-    "Turning off Private queries didn't finish. Turn it off again in "
-    'Settings to use transparent funds.';
+String privateQueriesOptOutUnfinishedMessage(AppLocalizations l10n) =>
+    l10n.privateQueriesOptOutUnfinished;

@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_gift_education_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_scaffold.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/payment_link_navigation_support.dart';
 
@@ -68,6 +69,7 @@ Widget _app(_EducationAccounts accounts, GoRouter router) => ProviderScope(
     accountProvider.overrideWith(() => accounts),
   ],
   child: MaterialApp.router(
+    localizationsDelegates: appLocalizationsDelegates,
     routerConfig: router,
     builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
   ),

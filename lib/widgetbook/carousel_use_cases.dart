@@ -41,7 +41,7 @@ const _migrationItems = [
   AppCarouselItem.icon(
     message:
         'You can close Vizor anytime. Migration will pause, and you can '
-        'restart it when you return.',
+        'resume it when you return.',
     tileColor: _historyTile,
     icon: AppIcons.pause,
   ),

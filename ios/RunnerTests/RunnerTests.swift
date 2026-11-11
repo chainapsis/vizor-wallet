@@ -12,6 +12,13 @@ private final class TextFieldWithoutSecureCanvas: UITextField {
 }
 
 class RunnerTests: XCTestCase {
+  // Native copy follows the app language Dart last sent; these tests assert
+  // the English copy, so a language left on the simulator must not leak in.
+  override func setUp() {
+    super.setUp()
+    UserDefaults.standard.removeObject(forKey: NativeStrings.languageKey)
+  }
+
   func testScreenshotShieldRetriesOnActivationAndCanDisableBeforeRetry() {
     let done = expectation(description: "lifecycle")
     DispatchQueue.main.async {

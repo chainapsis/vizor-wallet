@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_s
     show MobileSheetCancel;
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/mobile/mobile_pay_add_contact_card.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _address = '0x1111111111111111111111111111111111111111';
 
@@ -33,6 +34,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.dark,
           child: Scaffold(

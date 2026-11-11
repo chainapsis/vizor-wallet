@@ -27,6 +27,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_asset_
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -84,6 +85,7 @@ Widget _app({
       ),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.dark,
         child: MobilePayScreen(
@@ -145,7 +147,9 @@ class _DelayedPayReviewNotifier extends SwapNotifier {
       state = state.copyWith(
         reviewVisible: false,
         quoteLoading: false,
-        quoteError: 'Unable to fetch a quote. Try again.',
+        quoteError: const SwapLiteralMessage(
+          'Unable to fetch a quote. Try again.',
+        ),
         clearReview: true,
       );
       return;
@@ -241,7 +245,9 @@ class _RefreshFailPayReviewNotifier extends SwapNotifier {
     state = state.copyWith(
       reviewVisible: false,
       quoteLoading: false,
-      quoteError: 'Unable to fetch a quote. Try again.',
+      quoteError: const SwapLiteralMessage(
+        'Unable to fetch a quote. Try again.',
+      ),
       clearReview: true,
     );
   }
@@ -266,7 +272,13 @@ class _TorBlockablePayNotifier extends SwapNotifier {
   );
 
   void blockTokenListOverTor() {
-    state = state.copyWith(supportedAssetsError: _torBlockedPayMessage);
+    state = state.copyWith(
+      supportedAssetsError: const SwapFailureMessage(
+        SwapFailureOperation.tokenList,
+        SwapFailureCategory.torBlocked,
+        surface: SwapFailureSurface.pay,
+      ),
+    );
   }
 }
 
@@ -296,6 +308,7 @@ Widget _routedPayApp(
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => AppTheme(
         data: AppThemeData.dark,

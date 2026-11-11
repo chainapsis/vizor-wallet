@@ -44,6 +44,7 @@ Future<void> main() async {
       scenario: scenario,
       themeMode: configuration.themeMode,
       captureBoundaryKey: captureBoundaryKey,
+      locale: configuration.language?.locale,
     ),
   );
 

@@ -104,12 +104,11 @@ class _IronwoodMigrationPrivateReviewContentState
       }
       if (!mounted) return;
       // A schedule drawn before the upgrade can never start; draw a new one.
-      if (networkUpgradeHoldMessage(e) ==
-          kNetworkUpgradeScheduleChangedMessage) {
+      if (networkUpgradeHoldKind(e) == NetworkUpgradeHold.scheduleChanged) {
         ref.invalidate(ironwoodMigrationPrivatePlanProvider);
       }
       setState(() {
-        _startError = _privateMigrationStartErrorMessage(e);
+        _startError = _privateMigrationStartErrorMessage(context.l10n, e);
       });
     } finally {
       if (mounted) {
@@ -176,13 +175,13 @@ class _IronwoodMigrationPrivateReviewContentState
           return const _MigrationAnalyzingContent();
         }
         if (planAsync.hasError || plan == null) {
-          return const SizedBox(
+          return SizedBox(
             width: 420,
             height: 656,
             child: Center(
               child: _PrivateReviewUnavailable(
-                title: "Couldn't analyze this balance",
-                body: 'Wait for sync to finish, then try again.',
+                title: context.l10n.migrationReviewAnalyzeErrorTitle,
+                body: context.l10n.migrationErrorWaitForSync,
               ),
             ),
           );
@@ -226,10 +225,12 @@ class _MigrationAnalyzingContent extends StatefulWidget {
 
 class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
     with TickerProviderStateMixin {
-  static const _messages = [
-    'Analyzing your balance...',
-    'Finding private batches...',
-    'Preparing your migration plan...',
+  static const _messageCount = 3;
+
+  List<String> _messages(AppLocalizations l10n) => [
+    l10n.migrationAnalyzingBalance,
+    l10n.migrationAnalyzingFindingBatches,
+    l10n.migrationAnalyzingPreparingPlan,
   ];
   static const _switchDuration = Duration(milliseconds: 240);
 
@@ -347,7 +348,7 @@ class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
   void _advanceMessage() {
     if (!mounted) return;
     setState(() {
-      _messageIndex = (_messageIndex + 1) % _messages.length;
+      _messageIndex = (_messageIndex + 1) % _messageCount;
     });
   }
 
@@ -366,7 +367,7 @@ class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final title = _messages[_messageIndex];
+    final title = _messages(context.l10n)[_messageIndex];
     return SizedBox(
       key: const ValueKey('ironwood_migration_analyzing_screen'),
       width: 420,
@@ -412,8 +413,7 @@ class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
             top: 424,
             width: 300,
             child: Text(
-              'Vizor is working hard to find a perfect balance\n'
-              'of safety, privacy, and speed for your migration',
+              context.l10n.migrationAnalyzingCaption,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.accent,
@@ -441,7 +441,7 @@ class _MigrationAnalyzingDonut extends StatelessWidget {
       child: AnimatedBuilder(
         animation: progress,
         builder: (context, child) => Semantics(
-          label: 'Preparing private migration plan',
+          label: context.l10n.migrationAnalyzingSemanticsLabel,
           value: '${(progress.value * 100).round()}%',
           child: CustomPaint(
             painter: _MigrationAnalyzingDonutPainter(
@@ -631,6 +631,7 @@ class _MigrationReviewContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final completionEstimate = migrationPlanCompletionDurationLabel(
+      context.l10n,
       plan,
       blockTimes: blockTimes,
     );
@@ -646,7 +647,7 @@ class _MigrationReviewContent extends StatelessWidget {
             width: 396,
             child: Text(
               key: const ValueKey('ironwood_migration_review_title'),
-              'Ironwood Migration',
+              context.l10n.migrationFlowTitle,
               textAlign: TextAlign.center,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.text.accent,
@@ -677,14 +678,14 @@ class _MigrationReviewContent extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Amount to migrate',
+                      context.l10n.migrationReviewAmountToMigrate,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '${_displayZecAmountCompact(plan.totalMigratableZatoshi, privacyModeEnabled: privacyModeEnabled)}\nZEC',
+                      '${_displayZecAmountCompact(plan.totalMigratableZatoshi, privacyModeEnabled: privacyModeEnabled)}\nZEC', // l10n-ignore: amount format
                       textAlign: TextAlign.center,
                       style: AppTypography.headlineLarge.copyWith(
                         color: colors.text.accent,
@@ -701,7 +702,7 @@ class _MigrationReviewContent extends StatelessWidget {
             width: 396,
             child: _ImmediateReviewRow(
               key: const ValueKey('ironwood_migration_review_completion_row'),
-              label: 'Migration complete in',
+              label: context.l10n.migrationReviewCompleteIn,
               value: completionEstimate,
             ),
           ),
@@ -738,7 +739,7 @@ class _MigrationReviewContent extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Keep Vizor running',
+                        context.l10n.migrationReviewKeepRunningTitle,
                         style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.accent,
                           fontWeight: FontWeight.w500,
@@ -746,8 +747,7 @@ class _MigrationReviewContent extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Preparation continues while the app is minimized, '
-                        'then migration starts automatically.',
+                        context.l10n.migrationReviewKeepRunningBody,
                         style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.secondary,
                         ),
@@ -786,7 +786,11 @@ class _MigrationReviewContent extends StatelessWidget {
                 height: 44,
                 minWidth: 230,
                 expand: true,
-                child: Text(isStarting ? 'Starting…' : 'Start migration'),
+                child: Text(
+                  isStarting
+                      ? context.l10n.migrationReviewStarting
+                      : context.l10n.migrationReviewStart,
+                ),
               ),
             ),
           ),

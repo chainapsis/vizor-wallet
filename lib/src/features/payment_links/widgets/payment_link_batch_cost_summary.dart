@@ -9,9 +9,9 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../send/widgets/send_review_layout.dart';
 import '../services/payment_link_service.dart';
-import 'payment_link_copy.dart';
 import 'payment_link_skeleton.dart';
 import 'payment_link_wizard_chrome.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// What a group costs: **You will spend** while configuring, and the rows
 /// and **Total** of the one-card review while reviewing.
@@ -98,7 +98,7 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
             onPressed: onRetry,
             variant: AppButtonVariant.secondary,
             size: AppButtonSize.medium,
-            child: const Text('Try again'),
+            child: Text(context.l10n.commonTryAgain),
           ),
         ),
       ],
@@ -128,8 +128,9 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
         : cards != null && cards > spendable!
         ? cards - spendable!
         : null;
-    String money(BigInt? value) =>
-        value == null ? '—' : '${formatZecAmount(value)} ZEC';
+    String money(BigInt? value) => value == null
+        ? '—'
+        : '${formatZecAmount(value)} ZEC'; // l10n-ignore: amount format
     Widget caption(String text) => Text(
       text,
       style: AppTypography.bodySmall.copyWith(color: colors.text.secondary),
@@ -141,7 +142,10 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
       child: Stack(
         alignment: AlignmentDirectional.centerStart,
         children: [
-          Opacity(opacity: 0, child: Text('0 ZEC', style: style)),
+          Opacity(
+            opacity: 0,
+            child: Text('0 ZEC', style: style), // l10n-ignore: amount format
+          ),
           skeleton,
         ],
       ),
@@ -158,8 +162,10 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
         ? null
         : _line(
             context,
-            'Additional ZEC needed',
-            total == null ? 'At least $shortfallText' : shortfallText,
+            context.l10n.paymentLinkCostAdditionalZecNeeded,
+            total == null
+                ? context.l10n.paymentLinkCostAtLeast(shortfallText)
+                : shortfallText,
             error: true,
           );
     final message = messageText.trim();
@@ -168,13 +174,13 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
         : waitingForSync
         // Sync can take a while, so say why instead of animating.
         ? Text(
-            'Waiting for sync',
+            context.l10n.paymentLinkCostWaitingForSync,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.muted,
             ),
           )
         : Semantics(
-            label: 'Calculating network fee',
+            label: context.l10n.paymentLinkCostCalculatingFee,
             child: sized(
               _quoteSkeleton(
                 context,
@@ -188,17 +194,23 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
     final rows = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _line(context, 'Per card', money(perCard)),
+        _line(context, context.l10n.paymentLinkCostPerCard, money(perCard)),
         caption(
-          '${formatZecAmount(amount ?? BigInt.zero)} ZEC + '
-          '${redeemFee == null ? '—' : formatZecAmount(redeemFee)} ZEC redeem fee',
+          context.l10n.paymentLinkCostPerCardBreakdown(
+            formatZecAmount(amount ?? BigInt.zero),
+            redeemFee == null ? '—' : formatZecAmount(redeemFee),
+          ),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        _line(context, '× $count cards', money(cards)),
         const SizedBox(height: AppSpacing.xs),
         _line(
           context,
-          'Network fee',
+          context.l10n.paymentLinkCostCardsMultiplier(count),
+          money(cards),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        _line(
+          context,
+          context.l10n.commonNetworkFee,
           money(quote?.fundingFeeZatoshi),
           loading: feeLoading,
         ),
@@ -217,10 +229,10 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
         const ReviewWrapDivider(),
         Semantics(
           liveRegion: true,
-          label: feePending ? 'Calculating total' : null,
+          label: feePending ? context.l10n.commonCalculatingTotal : null,
           child: _line(
             context,
-            kPaymentLinkTotalDeductedLabel,
+            context.l10n.paymentLinkTotalDeductedLabel,
             money(total),
             emphasis: true,
             loading: feePending
@@ -243,11 +255,14 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
     final heading = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('You will spend', style: _labelStyle(context)),
+        Text(
+          context.l10n.paymentLinkCostYouWillSpend,
+          style: _labelStyle(context),
+        ),
         const SizedBox(height: AppSpacing.xxs),
         Semantics(
           liveRegion: true,
-          label: feePending ? 'Calculating total' : null,
+          label: feePending ? context.l10n.commonCalculatingTotal : null,
           child: feePending
               ? sized(
                   _quoteSkeleton(
@@ -366,7 +381,7 @@ class _BatchMessageRowsState extends State<_BatchMessageRows> {
       minWidth: constraints.maxWidth + 2 * AppSpacing.xxs,
       maxWidth: constraints.maxWidth + 2 * AppSpacing.xxs,
       child: ReviewMemoRows(
-        label: 'Message on every card',
+        label: context.l10n.paymentLinkCostMessageOnEveryCard,
         memoText: widget.message,
         expanded: _expanded,
         onToggle: () => setState(() => _expanded = !_expanded),

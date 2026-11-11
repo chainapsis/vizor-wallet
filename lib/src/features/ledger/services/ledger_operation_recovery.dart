@@ -80,6 +80,7 @@ final ledgerDepositRecoveryProvider = Provider<LedgerDepositRecovery>((ref) {
             txHash: result.txid,
             status: result.status,
             message: result.message,
+            notices: result.notices,
           ),
         );
   };
@@ -205,6 +206,7 @@ class LedgerOperationRecoveryCoordinator {
             txid: txid,
             status: status,
             message: operation.message,
+            notices: operation.notices,
             requiresAck: true,
           );
         }
@@ -313,7 +315,7 @@ class _LedgerOperationRecoveryHostState
                 .map((transaction) => transaction.txidHex)
                 .toList()
               ..sort();
-        return '${sync.accountUuid}|'
+        return '${sync.accountUuid}|' // l10n-ignore: state key
             '${sync.lastSyncCompletedAt?.microsecondsSinceEpoch}|'
             '${txids.join(',')}';
       }),

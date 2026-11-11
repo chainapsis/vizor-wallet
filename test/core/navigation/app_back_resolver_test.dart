@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('a captured back callback checks protection before navigation', (
@@ -257,6 +258,7 @@ Widget _backResolverHarness({
 
   return ProviderScope(
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),

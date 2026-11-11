@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
 
@@ -511,7 +512,7 @@ class _SensitivePrivacyShield extends StatelessWidget {
                   AppIcons.lock,
                   size: 50,
                   color: iconColor,
-                  semanticLabel: 'Sensitive content hidden',
+                  semanticLabel: context.l10n.commonSensitiveContentHidden,
                 ),
               ),
             ),

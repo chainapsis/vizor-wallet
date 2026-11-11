@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
 import 'dart:async';
 import 'dart:math' as math;
@@ -30,13 +31,17 @@ import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/zcash_explorer_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
+import '../../../../core/l10n/app_language.dart';
+import '../../../../providers/app_language_provider.dart';
 import '../../../../providers/theme_mode_provider.dart';
 import '../../../../services/biometric_unlock.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart';
 import '../../../onboarding/shared/onboarding_welcome_art.dart'
     show VizorWordmark;
 import '../../widgets/mobile/mobile_network_privacy_card.dart';
+import '../../widgets/language_picker.dart';
 import '../../widgets/settings_new_badge.dart';
+import '../../widgets/settings_option_card.dart';
 import '../../../donation/donation_config.dart';
 
 /// Mobile settings tab — Figma `SETTINGS` root frame (4494:65997).
@@ -51,16 +56,22 @@ class MobileSettingsScreen extends ConsumerWidget {
     final account = ref.watch(accountProvider).value?.activeAccount;
     final endpointConfig = ref.watch(rpcEndpointProvider);
     final endpoint = isAutomaticRpcEndpointConfig(endpointConfig)
-        ? 'Automatic'
+        ? context.l10n.endpointAutomatic
         : endpointConfig.hostPort;
     final explorer = explorerSettingsLabel(
+      context.l10n,
       ref.watch(zcashExplorerProvider),
       networkName: endpointConfig.networkName,
     );
     final themeMode = ref.watch(themeModeProvider);
+    final appLanguage = ref.watch(appLanguageProvider);
+    final languages = ref.watch(availableAppLanguagesProvider);
     final profilePictureId =
         account?.profilePictureId ?? kDefaultProfilePictureId;
-    final profilePictureLabel = _profilePictureDisplayLabel(profilePictureId);
+    final profilePictureLabel = _profilePictureDisplayLabel(
+      context.l10n,
+      profilePictureId,
+    );
     final biometric =
         ref.watch(biometricUnlockProvider).value ??
         BiometricUnlockState.initial;
@@ -75,7 +86,7 @@ class MobileSettingsScreen extends ConsumerWidget {
       bottom: false,
       child: Column(
         children: [
-          MobileTopNav.back(title: 'Settings'),
+          MobileTopNav.back(title: context.l10n.navSettings),
           Expanded(
             child: ListView(
               padding: EdgeInsets.fromLTRB(
@@ -94,14 +105,14 @@ class MobileSettingsScreen extends ConsumerWidget {
               ),
               children: [
                 _SettingsGroup(
-                  title: 'Personal',
+                  title: context.l10n.settingsSectionPersonal,
                   rows: [
                     MobileListRow(
                       key: const ValueKey(
                         'mobile_settings_coinholder_voting_row',
                       ),
                       leading: _RowIcon(AppIcons.vote),
-                      label: 'Coinholder voting',
+                      label: context.l10n.commonCoinholderVoting,
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
@@ -115,7 +126,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                     MobileListRow(
                       key: const ValueKey('mobile_settings_address_book_row'),
                       leading: _RowIcon(AppIcons.users),
-                      label: 'Address book',
+                      label: context.l10n.settingsRowAddressBook,
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
@@ -126,12 +137,12 @@ class MobileSettingsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 _SettingsGroup(
-                  title: 'Account',
+                  title: context.l10n.settingsSectionAccount,
                   rows: [
                     MobileListRow(
                       key: const ValueKey('mobile_settings_seed_row'),
                       leading: _RowIcon(AppIcons.key),
-                      label: 'Secret Passphrase',
+                      label: context.l10n.secretPassphraseTitle,
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
@@ -144,7 +155,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                     MobileListRow(
                       key: const ValueKey('mobile_settings_viewing_key_row'),
                       leading: _RowIcon(AppIcons.eye),
-                      label: 'Viewing Key',
+                      label: context.l10n.settingsRowViewingKeyMobile,
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
@@ -156,7 +167,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                     ),
                     MobileListRow(
                       leading: _RowIcon(AppIcons.lock),
-                      label: 'Change passcode',
+                      label: context.l10n.settingsRowChangePasscode,
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
@@ -166,7 +177,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                     MobileListRow(
                       key: const ValueKey('mobile_settings_pfp_row'),
                       leading: _RowIcon(AppIcons.user),
-                      label: 'Profile Picture',
+                      label: context.l10n.settingsRowProfilePictureMobile,
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       trailing: Row(
@@ -208,7 +219,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                     MobileListRow(
                       key: const ValueKey('mobile_settings_account_name_row'),
                       leading: _RowIcon(AppIcons.scroll),
-                      label: 'Account Name',
+                      label: context.l10n.settingsRowAccountNameMobile,
                       value: account?.name ?? '',
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
@@ -238,12 +249,12 @@ class MobileSettingsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 _SettingsGroup(
-                  title: 'System',
+                  title: context.l10n.settingsSectionSystem,
                   rows: [
                     MobileListRow(
                       key: const ValueKey('mobile_settings_endpoint_row'),
                       leading: _RowIcon(AppIcons.endpoint),
-                      label: 'Endpoint',
+                      label: context.l10n.settingsEndpointTitle,
                       value: endpoint,
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
@@ -256,7 +267,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                     MobileListRow(
                       key: const ValueKey('mobile_settings_explorer_row'),
                       leading: _RowIcon(AppIcons.globe),
-                      label: 'Explorer',
+                      label: context.l10n.settingsExplorerTitle,
                       value: explorer,
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
@@ -269,8 +280,8 @@ class MobileSettingsScreen extends ConsumerWidget {
                     MobileListRow(
                       key: const ValueKey('mobile_settings_theme_row'),
                       leading: _RowIcon(AppIcons.theme),
-                      label: 'Theme',
-                      value: _themeLabel(themeMode),
+                      label: context.l10n.settingsThemeTitle,
+                      value: _themeLabel(context.l10n, themeMode),
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       valueTextStyle: settingsRowStyle,
@@ -279,6 +290,28 @@ class MobileSettingsScreen extends ConsumerWidget {
                       showChevron: true,
                       onTap: () => _showThemeSheet(context, ref, themeMode),
                     ),
+                    // With English alone there is nothing to choose.
+                    if (languages.length > 1)
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_language_row'),
+                        leading: _RowIcon(AppIcons.language),
+                        label: context.l10n.settingsLanguageLabel,
+                        value: appLanguage.nativeName,
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        valueTextStyle: settingsRowStyle,
+                        valueColor: settingsValueColor,
+                        chevronColor: settingsChevronColor,
+                        showChevron: true,
+                        onTap: () => unawaited(
+                          _showLanguageSheet(
+                            context,
+                            ref,
+                            appLanguage,
+                            languages,
+                          ),
+                        ),
+                      ),
                     // No Figma frame for this row yet — listed in
                     // design_suggestion. Hidden on devices without
                     // biometric hardware.
@@ -286,8 +319,12 @@ class MobileSettingsScreen extends ConsumerWidget {
                       MobileListRow(
                         key: const ValueKey('mobile_settings_biometric_row'),
                         leading: _RowIcon(AppIcons.lock),
-                        label: biometric.availability.kind.standaloneLabel,
-                        value: biometric.enabled ? 'On' : 'Off',
+                        label: biometric.availability.kind.standaloneLabel(
+                          context.l10n,
+                        ),
+                        value: biometric.enabled
+                            ? context.l10n.settingsStatusOn
+                            : context.l10n.settingsStatusOff,
                         minRowHeight: _settingsRowHeight,
                         textStyle: settingsRowStyle,
                         valueTextStyle: settingsRowStyle,
@@ -305,12 +342,12 @@ class MobileSettingsScreen extends ConsumerWidget {
                 )) ...[
                   const SizedBox(height: AppSpacing.md),
                   _SettingsGroup(
-                    title: 'Misc',
+                    title: context.l10n.settingsSectionMisc,
                     rows: [
                       MobileListRow(
                         key: const ValueKey('mobile_settings_donation_row'),
                         leading: _RowIcon(AppIcons.donation, glyphSize: 16.5),
-                        label: 'Support Vizor',
+                        label: context.l10n.commonSupportVizor,
                         minRowHeight: _settingsRowHeight,
                         textStyle: settingsRowStyle,
                         chevronColor: settingsChevronColor,
@@ -338,7 +375,7 @@ class MobileSettingsScreen extends ConsumerWidget {
   Future<void> _openChangePasscode(BuildContext context) async {
     final changed = await context.push<bool>('/settings/change-password');
     if (changed == true && context.mounted) {
-      showAppToast(context, 'Passcode updated');
+      showAppToast(context, context.l10n.settingsPasscodeUpdatedToast);
     }
   }
 
@@ -353,7 +390,7 @@ class MobileSettingsScreen extends ConsumerWidget {
     if (!saved && context.mounted) {
       showAppToast(
         context,
-        "Couldn't save the account changes",
+        context.l10n.accountsSaveFailed,
         iconName: AppIcons.cross,
       );
     }
@@ -381,26 +418,27 @@ class MobileSettingsScreen extends ConsumerWidget {
     if (!saved && context.mounted) {
       showAppToast(
         context,
-        "Couldn't save the account changes",
+        context.l10n.accountsSaveFailed,
         iconName: AppIcons.cross,
       );
     }
   }
 
-  static String _themeLabel(ThemeMode mode) => switch (mode) {
-    ThemeMode.system => 'System',
-    ThemeMode.light => 'Light',
-    ThemeMode.dark => 'Dark',
-  };
+  static String _themeLabel(AppLocalizations l10n, ThemeMode mode) =>
+      switch (mode) {
+        ThemeMode.system => l10n.settingsThemeSystem,
+        ThemeMode.light => l10n.settingsThemeLight,
+        ThemeMode.dark => l10n.settingsThemeDark,
+      };
 
-  static String _profilePictureDisplayLabel(String id) {
+  static String _profilePictureDisplayLabel(AppLocalizations l10n, String id) {
     final option = resolveProfilePictureOption(id);
     return switch (option.id) {
-      'pfp-01' => 'Knight',
-      'pfp-02' => 'Viking',
-      'pfp-03' => 'Samurai',
-      'pfp-11' => 'Wizard',
-      _ => option.label,
+      'pfp-01' => l10n.commonKnight,
+      'pfp-02' => l10n.settingsPfpViking,
+      'pfp-03' => l10n.settingsPfpSamurai,
+      'pfp-11' => l10n.commonWizard,
+      _ => option.label(l10n),
     };
   }
 
@@ -420,7 +458,9 @@ class MobileSettingsScreen extends ConsumerWidget {
         if (context.mounted) {
           showAppToast(
             context,
-            '${state.availability.kind.unlockFeatureLabel} off',
+            context.l10n.settingsBiometricOffToast(
+              state.availability.kind.unlockFeatureLabel(context.l10n),
+            ),
           );
         }
         return;
@@ -428,8 +468,9 @@ class MobileSettingsScreen extends ConsumerWidget {
       if (!state.availability.usable) {
         showAppToast(
           context,
-          'Set up ${state.availability.kind.inlineLabel} '
-          'in your device settings first.',
+          context.l10n.settingsBiometricSetupFirst(
+            state.availability.kind.inlineLabel(context.l10n),
+          ),
         );
         return;
       }
@@ -441,14 +482,18 @@ class MobileSettingsScreen extends ConsumerWidget {
       if (context.mounted) {
         showAppToast(
           context,
-          '${state.availability.kind.unlockFeatureLabel} on',
+          context.l10n.settingsBiometricOnToast(
+            state.availability.kind.unlockFeatureLabel(context.l10n),
+          ),
         );
       }
     } catch (e) {
       if (!context.mounted) return;
       showAppToast(
         context,
-        "Couldn't update ${state.availability.kind.inlineUnlockFeatureLabel}.",
+        context.l10n.settingsBiometricUpdateFailed(
+          state.availability.kind.inlineUnlockFeatureLabel(context.l10n),
+        ),
       );
     }
   }
@@ -467,6 +512,27 @@ class MobileSettingsScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _showLanguageSheet(
+    BuildContext context,
+    WidgetRef ref,
+    AppLanguage current,
+    List<AppLanguage> languages,
+  ) async {
+    final choice = await showMobileLanguageSheet(
+      context,
+      current: current,
+      available: languages,
+    );
+    if (choice == null || choice == current) return;
+    try {
+      await ref.read(appLanguageProvider.notifier).set(choice);
+    } catch (_) {
+      if (context.mounted) {
+        showAppToast(context, context.l10n.settingsLanguageUpdateFailed);
+      }
+    }
+  }
+
   Future<void> _toggleSyncKeepAwake(
     BuildContext context,
     WidgetRef ref, {
@@ -480,7 +546,7 @@ class MobileSettingsScreen extends ConsumerWidget {
       }
     } catch (_) {
       if (!context.mounted) return;
-      showAppToast(context, "Couldn't update screen awake setting.");
+      showAppToast(context, context.l10n.settingsKeepAwakeUpdateFailed);
     }
   }
 }
@@ -511,7 +577,9 @@ class _DisableBiometricSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return MobileModalScaffold(
-      title: 'Turn off ${kind.inlineUnlockFeatureLabel}?',
+      title: context.l10n.settingsBiometricTurnOffTitle(
+        kind.inlineUnlockFeatureLabel(context.l10n),
+      ),
       onClose: () => Navigator.of(context).pop(false),
       leading: AppIcon(AppIcons.lock, size: 20, color: colors.icon.accent),
       titleStyle: _titleStyle.copyWith(color: colors.text.accent),
@@ -520,8 +588,9 @@ class _DisableBiometricSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'You will use your passcode to unlock Vizor. You can turn '
-            '${kind.inlineUnlockFeatureLabel} back on in settings anytime.',
+            context.l10n.settingsBiometricTurnOffBody(
+              kind.inlineUnlockFeatureLabel(context.l10n),
+            ),
             style: _bodyStyle.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -531,7 +600,7 @@ class _DisableBiometricSheet extends StatelessWidget {
             expand: true,
             onPressed: () => Navigator.of(context).pop(true),
             child: Text(
-              'Turn off',
+              context.l10n.settingsTurnOffConfirm,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.button.destructive.label,
               ),
@@ -558,7 +627,7 @@ class _SettingsVersionFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Vizor, version $kVizorReleaseVersion',
+      label: context.l10n.settingsVersionFooterLabel(kVizorReleaseVersion),
       excludeSemantics: true,
       child: Center(
         child: Row(
@@ -638,10 +707,6 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
   final bool enabled;
   final VoidCallback onToggle;
 
-  static const _description =
-      'Prevents your phone from sleeping so sync can finish faster. The app '
-      'still locks after 1 minute of inactivity.';
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -659,7 +724,7 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              'Syncing',
+              context.l10n.commonSyncing,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.secondary,
               ),
@@ -669,7 +734,7 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
           Semantics(
             button: true,
             toggled: enabled,
-            label: 'Keep screen awake',
+            label: context.l10n.commonKeepScreenAwake,
             excludeSemantics: true,
             child: GestureDetector(
               key: const ValueKey('mobile_settings_sync_keep_awake_row'),
@@ -690,7 +755,7 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
                       const SizedBox(width: AppSpacing.s),
                       Expanded(
                         child: Text(
-                          'Keep screen awake',
+                          context.l10n.commonKeepScreenAwake,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.accent,
@@ -711,7 +776,7 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            _description,
+            context.l10n.settingsKeepAwakeDescription,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -798,16 +863,19 @@ class _ThemeSheet extends StatefulWidget {
 class _ThemeSheetState extends State<_ThemeSheet> {
   late ThemeMode _selected = widget.current;
 
-  static const _options = [
-    (ThemeMode.system, AppIcons.monitor, 'System (Auto)'),
-    (ThemeMode.light, AppIcons.day, 'Light'),
-    (ThemeMode.dark, AppIcons.night, 'Dark'),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final options = [
+      (
+        ThemeMode.system,
+        AppIcons.monitor,
+        context.l10n.settingsThemeSystemAuto,
+      ),
+      (ThemeMode.light, AppIcons.day, context.l10n.settingsThemeLight),
+      (ThemeMode.dark, AppIcons.night, context.l10n.settingsThemeDark),
+    ];
     return MobileModalScaffold(
-      title: 'Theme',
+      title: context.l10n.settingsThemeTitle,
       onClose: () => Navigator.of(context).pop(),
       bodyGap: AppSpacing.md,
       bottomPadding: AppSpacing.base,
@@ -815,8 +883,8 @@ class _ThemeSheetState extends State<_ThemeSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final (mode, iconName, label) in _options) ...[
-            _ThemeOptionCard(
+          for (final (mode, iconName, label) in options) ...[
+            MobileSettingsOptionCard(
               key: ValueKey('mobile_theme_option_${mode.name}'),
               iconName: iconName,
               label: label,
@@ -830,98 +898,11 @@ class _ThemeSheetState extends State<_ThemeSheet> {
             key: const ValueKey('mobile_theme_update'),
             expand: true,
             onPressed: () => Navigator.of(context).pop(_selected),
-            child: const Text('Update'),
+            child: Text(context.l10n.commonUpdate),
           ),
           const SizedBox(height: AppSpacing.xs),
           MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
         ],
-      ),
-    );
-  }
-}
-
-class _ThemeOptionCard extends StatelessWidget {
-  const _ThemeOptionCard({
-    required this.iconName,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    super.key,
-  });
-
-  final String iconName;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          if (!selected) unawaited(AppHaptics.selection());
-          onTap();
-        },
-        child: Container(
-          height: 64,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(
-              color: selected ? colors.border.strong : colors.border.subtle,
-              width: selected ? 1.5 : 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              Opacity(
-                opacity: selected ? 1 : 0.5,
-                child: AppIcon(iconName, size: 20, color: colors.icon.accent),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              Expanded(
-                child: Text(
-                  label,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ),
-              if (selected)
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: colors.background.inverse,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: AppIcon(
-                      AppIcons.check,
-                      size: 14,
-                      color: colors.text.inverse,
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colors.background.raised,
-                  ),
-                ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -950,7 +931,7 @@ class _GiftCardsRowState extends ConsumerState<_GiftCardsRow> {
     return MobileListRow(
       key: const ValueKey('mobile_settings_gift_cards_row'),
       leading: _RowIcon(AppIcons.giftCard),
-      label: 'My gift cards',
+      label: context.l10n.settingsRowMyGiftCards,
       labelBadge: const SettingsNewBadge(),
       minRowHeight: _settingsRowHeight,
       textStyle: widget.textStyle,

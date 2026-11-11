@@ -313,9 +313,14 @@ Future<void> _removeAccountThroughMobileUi(
     description: 'active migration account removal warning',
   );
   await tapAppButton(tester, const ValueKey('mobile_account_remove_confirm'));
+  await enterPasscode(tester, mobileE2ePasscode);
   await pumpUntil(
     tester,
-    () => !tester.any(find.byKey(ValueKey('mobile_accounts_row_$accountUuid'))),
+    () =>
+        !tester.any(
+          find.byKey(const ValueKey('mobile_account_removal_passcode')),
+        ) &&
+        !tester.any(find.byKey(ValueKey('mobile_accounts_row_$accountUuid'))),
     description: 'migrating account removal',
     timeout: const Duration(minutes: 2),
   );

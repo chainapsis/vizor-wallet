@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/theme/legacy_material_theme.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -28,6 +29,7 @@ void main() {
             var submittedBps = 0;
             await tester.pumpWidget(
               MaterialApp(
+                localizationsDelegates: appLocalizationsDelegates,
                 theme: buildLegacyLightTheme(),
                 builder: (context, child) => AppTheme(
                   data: AppThemeData.light,

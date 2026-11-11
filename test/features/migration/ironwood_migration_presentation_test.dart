@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:zcash_wallet/src/features/migration/models/ironwood_migration_presentation.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import '../../support/test_l10n.dart';
 
 void main() {
   test('formats a private plan as an estimated duration, not block count', () {
@@ -41,6 +42,7 @@ void main() {
     expect(migrationPlanPreparationDelayBlocks(plan), 150);
     expect(
       migrationPlanCompletionDurationLabel(
+        testL10n,
         plan,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
       ),
@@ -48,6 +50,7 @@ void main() {
     );
     expect(
       migrationBlockOffsetDurationLabel(
+        testL10n,
         148,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
       ),
@@ -55,6 +58,7 @@ void main() {
     );
     expect(
       migrationPlanCompletionTimingLabel(
+        testL10n,
         plan,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
         now: DateTime(2026, 7, 17, 12),
@@ -91,6 +95,7 @@ void main() {
 
     expect(
       migrationPlanCompletionDurationLabel(
+        testL10n,
         plan,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
       ),
@@ -98,6 +103,7 @@ void main() {
     );
     expect(
       migrationPlanCompletionTimingLabel(
+        testL10n,
         plan,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
         now: DateTime(2026, 7, 17, 12),
@@ -135,6 +141,7 @@ void main() {
     expect(migrationPlanPreparationDelayBlocks(plan), 144);
     expect(
       migrationPlanCompletionDurationLabel(
+        testL10n,
         plan,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
       ),
@@ -173,6 +180,7 @@ void main() {
 
       expect(
         migrationScheduledBroadcastLabel(
+          testL10n,
           _broadcast('confirmed', now.subtract(const Duration(hours: 1))),
           now: now,
         ),
@@ -180,6 +188,7 @@ void main() {
       );
       expect(
         migrationScheduledBroadcastLabel(
+          testL10n,
           _broadcast('broadcasted', now.subtract(const Duration(minutes: 1))),
           now: now,
         ),
@@ -195,6 +204,7 @@ void main() {
 
       expect(
         migrationScheduledBroadcastLabel(
+          testL10n,
           _broadcast('scheduled', now.add(const Duration(minutes: 3))),
           now: now,
         ),
@@ -202,6 +212,7 @@ void main() {
       );
       expect(
         migrationScheduledBroadcastLabel(
+          testL10n,
           _broadcast('scheduled', now.add(const Duration(hours: 2))),
           now: now,
           approximate: true,
@@ -210,6 +221,7 @@ void main() {
       );
       expect(
         migrationScheduledBroadcastLabel(
+          testL10n,
           _broadcast('scheduled', now.subtract(const Duration(seconds: 1))),
           now: now,
         ),
@@ -231,10 +243,17 @@ void main() {
       ],
     );
 
-    expect(migrationDispatchTimingLabel(confirming, now: now), 'Confirming');
-    expect(migrationDispatchTimingLabel(scheduled, now: now), 'Jul 17, 12:03');
+    expect(
+      migrationDispatchTimingLabel(testL10n, confirming, now: now),
+      'Confirming',
+    );
+    expect(
+      migrationDispatchTimingLabel(testL10n, scheduled, now: now),
+      'Jul 17, 12:03',
+    );
     expect(
       migrationCompletionTimingLabel(
+        testL10n,
         scheduled,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
         abbreviateMonth: false,
@@ -243,6 +262,7 @@ void main() {
     );
     expect(
       migrationCompletionTimingLabel(
+        testL10n,
         confirming,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
       ),
@@ -260,6 +280,7 @@ void main() {
 
     expect(
       migrationCompletionTimingLabel(
+        testL10n,
         status,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
         now: now,
@@ -288,6 +309,7 @@ void main() {
 
     expect(
       migrationCompletionTimingLabel(
+        testL10n,
         status,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
         now: now,
@@ -307,6 +329,7 @@ void main() {
 
     expect(
       migrationCompletionTimingLabel(
+        testL10n,
         status,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
         now: now,
@@ -329,6 +352,7 @@ void main() {
 
       expect(
         migrationCompletionTimingLabel(
+          testL10n,
           status,
           blockTimes: BlockTimeEstimate.nu7Unscheduled,
           now: now,
@@ -349,6 +373,7 @@ void main() {
 
     expect(
       migrationNextActionTimingLabel(
+        testL10n,
         status,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
         currentHeight: 1_000,
@@ -368,6 +393,7 @@ void main() {
 
     expect(
       migrationCompletionTimingLabel(
+        testL10n,
         status,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
         now: now,
@@ -392,6 +418,7 @@ void main() {
 
       expect(
         migrationApproximateCompletionTimingLabel(
+          testL10n,
           status,
           blockTimes: BlockTimeEstimate.nu7Unscheduled,
           now: now,
@@ -407,6 +434,7 @@ void main() {
 
     expect(
       migrationHeightTimingLabel(
+        testL10n,
         1_060,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
         currentHeight: 1_000,
@@ -419,6 +447,7 @@ void main() {
   test('formats remaining migration delay as a duration', () {
     expect(
       migrationHeightRemainingDurationLabel(
+        testL10n,
         1_060,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
         currentHeight: 1_000,
@@ -427,6 +456,7 @@ void main() {
     );
     expect(
       migrationHeightRemainingDurationLabel(
+        testL10n,
         1_000,
         blockTimes: BlockTimeEstimate.nu7Unscheduled,
         currentHeight: 1_000,
@@ -444,6 +474,7 @@ void main() {
     // 20 blocks at 25 seconds, including the nine before activation.
     expect(
       migrationHeightRemainingDurationLabel(
+        testL10n,
         1_020,
         blockTimes: spacing.fromTip(1_000),
         currentHeight: 1_000,
@@ -452,6 +483,7 @@ void main() {
     );
     expect(
       migrationBlockOffsetDurationLabel(
+        testL10n,
         100,
         blockTimes: spacing.fromTip(2_000),
       ),
@@ -509,6 +541,7 @@ void main() {
     );
 
     final presentation = migrationNextActionPresentation(
+      testL10n,
       status: status,
       currentHeight: 3_400_000,
     );
@@ -535,6 +568,7 @@ void main() {
     );
 
     final presentation = migrationNextActionPresentation(
+      testL10n,
       status: status,
       currentHeight: 3_435_400,
     );
@@ -577,6 +611,7 @@ void main() {
     );
 
     final presentation = migrationNextActionPresentation(
+      testL10n,
       status: status,
       currentHeight: 1_071,
     );
@@ -610,6 +645,7 @@ void main() {
     );
 
     final presentation = migrationNextActionPresentation(
+      testL10n,
       status: status,
       currentHeight: 3_400_000,
       requiresInput: true,

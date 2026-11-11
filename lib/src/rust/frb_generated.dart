@@ -3559,7 +3559,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_ur_decode_result,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_api_wallet_error,
         ),
         constMeta: kCrateApiKeystoneDecodeUrPartConstMeta,
         argValues: [part_, expectedUrType],
@@ -4497,7 +4497,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_64,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_api_wallet_error,
         ),
         constMeta: kCrateApiSyncEstimatePaymentLinkBatchFeeConstMeta,
         argValues: [dbPath, network, accountUuid, addresses, amountZatoshi],
@@ -9205,7 +9205,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_keystone_batch_pczt,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_api_wallet_error,
         ),
         constMeta: kCrateApiSyncPreparePcztForKeystoneBatchConstMeta,
         argValues: [pcztBytes],
@@ -9473,7 +9473,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_proposal_result,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_api_wallet_error,
         ),
         constMeta: kCrateApiSyncProposePaymentLinkBatchConstMeta,
         argValues: [
@@ -13623,6 +13623,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BroadcastNotice dco_decode_broadcast_notice(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return BroadcastNotice(
+      kind: dco_decode_String(arr[0]),
+      index: dco_decode_opt_box_autoadd_u_32(arr[1]),
+      total: dco_decode_opt_box_autoadd_u_32(arr[2]),
+      txid: dco_decode_opt_String(arr[3]),
+      detail: dco_decode_opt_String(arr[4]),
+      expiryHeight: dco_decode_opt_box_autoadd_u_32(arr[5]),
+      chainHeight: dco_decode_opt_box_autoadd_u_64(arr[6]),
+    );
+  }
+
+  @protected
   ChainConfirmationSourceView dco_decode_chain_confirmation_source_view(
     dynamic raw,
   ) {
@@ -13870,15 +13887,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ExecuteProposalResult dco_decode_execute_proposal_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return ExecuteProposalResult(
       txids: dco_decode_String(arr[0]),
       status: dco_decode_String(arr[1]),
       broadcastedCount: dco_decode_u_32(arr[2]),
       totalCount: dco_decode_u_32(arr[3]),
       message: dco_decode_opt_String(arr[4]),
-      broadcastFailureKind: dco_decode_opt_String(arr[5]),
+      notices: dco_decode_list_broadcast_notice(arr[5]),
+      broadcastFailureKind: dco_decode_opt_String(arr[6]),
     );
   }
 
@@ -13888,12 +13906,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return ExtractAndBroadcastPcztResult(
       txid: dco_decode_String(arr[0]),
       status: dco_decode_String(arr[1]),
       message: dco_decode_opt_String(arr[2]),
+      notices: dco_decode_list_broadcast_notice(arr[3]),
     );
   }
 
@@ -14240,8 +14259,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   LedgerSignedOperation dco_decode_ledger_signed_operation(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 12)
-      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+    if (arr.length != 13)
+      throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
     return LedgerSignedOperation(
       operationId: dco_decode_String(arr[0]),
       accountUuid: dco_decode_String(arr[1]),
@@ -14253,8 +14272,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       txid: dco_decode_opt_String(arr[7]),
       status: dco_decode_opt_String(arr[8]),
       message: dco_decode_opt_String(arr[9]),
-      createdAtMs: dco_decode_i_64(arr[10]),
-      updatedAtMs: dco_decode_i_64(arr[11]),
+      notices: dco_decode_list_broadcast_notice(arr[10]),
+      createdAtMs: dco_decode_i_64(arr[11]),
+      updatedAtMs: dco_decode_i_64(arr[12]),
     );
   }
 
@@ -14263,14 +14283,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   dco_decode_ledger_signed_operation_broadcast_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return LedgerSignedOperationBroadcastResult(
       operationId: dco_decode_String(arr[0]),
       txid: dco_decode_String(arr[1]),
       status: dco_decode_String(arr[2]),
       message: dco_decode_opt_String(arr[3]),
-      requiresAck: dco_decode_bool(arr[4]),
+      notices: dco_decode_list_broadcast_notice(arr[4]),
+      requiresAck: dco_decode_bool(arr[5]),
     );
   }
 
@@ -14459,6 +14480,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<BlockMetaInfo> dco_decode_list_block_meta_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_block_meta_info).toList();
+  }
+
+  @protected
+  List<BroadcastNotice> dco_decode_list_broadcast_notice(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_broadcast_notice).toList();
   }
 
   @protected
@@ -16272,14 +16299,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return StoreAndBroadcastPcztsResult(
       txids: dco_decode_String(arr[0]),
       status: dco_decode_String(arr[1]),
       broadcastedCount: dco_decode_u_32(arr[2]),
       totalCount: dco_decode_u_32(arr[3]),
       message: dco_decode_opt_String(arr[4]),
+      notices: dco_decode_list_broadcast_notice(arr[5]),
     );
   }
 
@@ -18117,6 +18145,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BroadcastNotice sse_decode_broadcast_notice(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_String(deserializer);
+    var var_index = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_total = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_txid = sse_decode_opt_String(deserializer);
+    var var_detail = sse_decode_opt_String(deserializer);
+    var var_expiryHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_chainHeight = sse_decode_opt_box_autoadd_u_64(deserializer);
+    return BroadcastNotice(
+      kind: var_kind,
+      index: var_index,
+      total: var_total,
+      txid: var_txid,
+      detail: var_detail,
+      expiryHeight: var_expiryHeight,
+      chainHeight: var_chainHeight,
+    );
+  }
+
+  @protected
   ChainConfirmationSourceView sse_decode_chain_confirmation_source_view(
     SseDeserializer deserializer,
   ) {
@@ -18418,6 +18467,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_broadcastedCount = sse_decode_u_32(deserializer);
     var var_totalCount = sse_decode_u_32(deserializer);
     var var_message = sse_decode_opt_String(deserializer);
+    var var_notices = sse_decode_list_broadcast_notice(deserializer);
     var var_broadcastFailureKind = sse_decode_opt_String(deserializer);
     return ExecuteProposalResult(
       txids: var_txids,
@@ -18425,6 +18475,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       broadcastedCount: var_broadcastedCount,
       totalCount: var_totalCount,
       message: var_message,
+      notices: var_notices,
       broadcastFailureKind: var_broadcastFailureKind,
     );
   }
@@ -18437,10 +18488,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_txid = sse_decode_String(deserializer);
     var var_status = sse_decode_String(deserializer);
     var var_message = sse_decode_opt_String(deserializer);
+    var var_notices = sse_decode_list_broadcast_notice(deserializer);
     return ExtractAndBroadcastPcztResult(
       txid: var_txid,
       status: var_status,
       message: var_message,
+      notices: var_notices,
     );
   }
 
@@ -18841,6 +18894,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_txid = sse_decode_opt_String(deserializer);
     var var_status = sse_decode_opt_String(deserializer);
     var var_message = sse_decode_opt_String(deserializer);
+    var var_notices = sse_decode_list_broadcast_notice(deserializer);
     var var_createdAtMs = sse_decode_i_64(deserializer);
     var var_updatedAtMs = sse_decode_i_64(deserializer);
     return LedgerSignedOperation(
@@ -18854,6 +18908,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       txid: var_txid,
       status: var_status,
       message: var_message,
+      notices: var_notices,
       createdAtMs: var_createdAtMs,
       updatedAtMs: var_updatedAtMs,
     );
@@ -18869,12 +18924,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_txid = sse_decode_String(deserializer);
     var var_status = sse_decode_String(deserializer);
     var var_message = sse_decode_opt_String(deserializer);
+    var var_notices = sse_decode_list_broadcast_notice(deserializer);
     var var_requiresAck = sse_decode_bool(deserializer);
     return LedgerSignedOperationBroadcastResult(
       operationId: var_operationId,
       txid: var_txid,
       status: var_status,
       message: var_message,
+      notices: var_notices,
       requiresAck: var_requiresAck,
     );
   }
@@ -19143,6 +19200,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <BlockMetaInfo>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_block_meta_info(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<BroadcastNotice> sse_decode_list_broadcast_notice(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <BroadcastNotice>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_broadcast_notice(deserializer));
     }
     return ans_;
   }
@@ -21773,12 +21844,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_broadcastedCount = sse_decode_u_32(deserializer);
     var var_totalCount = sse_decode_u_32(deserializer);
     var var_message = sse_decode_opt_String(deserializer);
+    var var_notices = sse_decode_list_broadcast_notice(deserializer);
     return StoreAndBroadcastPcztsResult(
       txids: var_txids,
       status: var_status,
       broadcastedCount: var_broadcastedCount,
       totalCount: var_totalCount,
       message: var_message,
+      notices: var_notices,
     );
   }
 
@@ -23612,6 +23685,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_broadcast_notice(
+    BroadcastNotice self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.kind, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.index, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.total, serializer);
+    sse_encode_opt_String(self.txid, serializer);
+    sse_encode_opt_String(self.detail, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.expiryHeight, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.chainHeight, serializer);
+  }
+
+  @protected
   void sse_encode_chain_confirmation_source_view(
     ChainConfirmationSourceView self,
     SseSerializer serializer,
@@ -23865,6 +23953,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.broadcastedCount, serializer);
     sse_encode_u_32(self.totalCount, serializer);
     sse_encode_opt_String(self.message, serializer);
+    sse_encode_list_broadcast_notice(self.notices, serializer);
     sse_encode_opt_String(self.broadcastFailureKind, serializer);
   }
 
@@ -23877,6 +23966,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.txid, serializer);
     sse_encode_String(self.status, serializer);
     sse_encode_opt_String(self.message, serializer);
+    sse_encode_list_broadcast_notice(self.notices, serializer);
   }
 
   @protected
@@ -24182,6 +24272,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.txid, serializer);
     sse_encode_opt_String(self.status, serializer);
     sse_encode_opt_String(self.message, serializer);
+    sse_encode_list_broadcast_notice(self.notices, serializer);
     sse_encode_i_64(self.createdAtMs, serializer);
     sse_encode_i_64(self.updatedAtMs, serializer);
   }
@@ -24196,6 +24287,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.txid, serializer);
     sse_encode_String(self.status, serializer);
     sse_encode_opt_String(self.message, serializer);
+    sse_encode_list_broadcast_notice(self.notices, serializer);
     sse_encode_bool(self.requiresAck, serializer);
   }
 
@@ -24418,6 +24510,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_block_meta_info(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_broadcast_notice(
+    List<BroadcastNotice> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_broadcast_notice(item, serializer);
     }
   }
 
@@ -26576,6 +26680,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.broadcastedCount, serializer);
     sse_encode_u_32(self.totalCount, serializer);
     sse_encode_opt_String(self.message, serializer);
+    sse_encode_list_broadcast_notice(self.notices, serializer);
   }
 
   @protected

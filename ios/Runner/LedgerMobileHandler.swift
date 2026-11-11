@@ -302,14 +302,14 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     case .unsupported:
       failDiscovery(
         code: "unavailable",
-        message: "This device does not support Bluetooth LE."
+        message: NativeStrings.text(.nativeLedgerBleUnsupported)
       )
     case .unknown, .resetting:
       break
     @unknown default:
       failDiscovery(
         code: "unavailable",
-        message: "Bluetooth is unavailable."
+        message: NativeStrings.text(.nativeLedgerBluetoothUnavailable)
       )
     }
   }
@@ -426,7 +426,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       result(
         flutterError(
           code: "unavailable",
-          message: "This device does not support Bluetooth LE."
+          message: NativeStrings.text(.nativeLedgerBleUnsupported)
         )
       )
     case .unknown, .resetting:
@@ -436,7 +436,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
     @unknown default:
       discoveryRequested = false
       result(
-        flutterError(code: "unavailable", message: "Bluetooth is unavailable.")
+        flutterError(code: "unavailable", message: NativeStrings.text(.nativeLedgerBluetoothUnavailable))
       )
     }
   }
@@ -792,7 +792,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       result(
         flutterError(
           code: "unavailable",
-          message: "Ledger signing APDU list is empty or invalid."
+          message: NativeStrings.text(.nativeLedgerApduListInvalid)
         )
       )
       return
@@ -1011,7 +1011,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       case .status(0x6807):
         return flutterError(
           code: "unavailable",
-          message: "The Zcash app is not installed on this Ledger."
+          message: NativeStrings.text(.nativeLedgerZcashAppNotInstalled)
         )
       case .status(0x6985), .status(0x5501):
         return flutterError(
@@ -1021,12 +1021,12 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       case .appSwitchTimedOut:
         return flutterError(
           code: "unavailable",
-          message: "Vizor could not resume after opening the Zcash app. Try again."
+          message: NativeStrings.text(.nativeLedgerAppSwitchTimedOut)
         )
       case .invalidArguments, .invalidHex, .invalidAppInfo, .status:
         return flutterError(
           code: "unavailable",
-          message: "Ledger returned an invalid response."
+          message: NativeStrings.text(.nativeLedgerInvalidResponse)
         )
       }
     }
@@ -1041,7 +1041,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
       case .appNotAvailableInDevice:
         return flutterError(
           code: "unavailable",
-          message: "The Zcash app is not installed on this Ledger."
+          message: NativeStrings.text(.nativeLedgerZcashAppNotInstalled)
         )
       case .formatNotSupported, .couldNotParseResponseData, .unknown, .noStatus:
         return flutterError(
@@ -1108,7 +1108,7 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
   }
 
   private func invalidApduError() -> FlutterError {
-    flutterError(code: "unavailable", message: "Ledger APDU arguments are invalid.")
+    flutterError(code: "unavailable", message: NativeStrings.text(.nativeLedgerApduArgumentsInvalid))
   }
 
   private func flutterError(code: String, message: String) -> FlutterError {

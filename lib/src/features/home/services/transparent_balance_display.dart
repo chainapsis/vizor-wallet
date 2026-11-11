@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 
@@ -54,37 +55,31 @@ class TransparentBalanceDisplay {
   };
 
   /// Row text, with [format] rendering a known amount.
-  String text(String Function(BigInt) format) => switch (authority) {
-    rust_sync.TransparentBalanceAuthority.current => format(amount!),
-    rust_sync.TransparentBalanceAuthority.lastKnown =>
-      '${format(amount ?? BigInt.zero)} (last known)',
-    rust_sync.TransparentBalanceAuthority.unavailable => 'Unavailable',
-    rust_sync.TransparentBalanceAuthority.stopped => switch (amount) {
-      final amount? => '${format(amount)} (last known, recovery stopped)',
-      null => 'Recovery stopped',
-    },
-  };
+  String text(AppLocalizations l10n, String Function(BigInt) format) =>
+      switch (authority) {
+        rust_sync.TransparentBalanceAuthority.current => format(amount!),
+        rust_sync.TransparentBalanceAuthority.lastKnown =>
+          l10n.homeTransparentLastKnown(format(amount ?? BigInt.zero)),
+        rust_sync.TransparentBalanceAuthority.unavailable =>
+          l10n.homeTransparentUnavailable,
+        rust_sync.TransparentBalanceAuthority.stopped => switch (amount) {
+          final amount? => l10n.homeTransparentLastKnownStopped(format(amount)),
+          null => l10n.homeTransparentRecoveryStopped,
+        },
+      };
 
   /// Why recovery stopped and what the user can do about it, or null when it
   /// has not stopped.
-  String? get hint => switch (stop) {
+  String? hint(AppLocalizations l10n) => switch (stop) {
     null => null,
     rust_sync.TransparentStopReason.quarantined =>
-      'Private recovery found conflicting records for this account. Turning '
-          'off Private queries discards privately recovered records and looks '
-          'up transparent funds publicly.',
+      l10n.homeTransparentStopQuarantined,
     rust_sync.TransparentStopReason.legacyDiscrepancy =>
-      "Earlier public records don't match private recovery. Turning off "
-          'Private queries discards privately recovered records and looks up '
-          'transparent funds publicly.',
+      l10n.homeTransparentStopLegacyDiscrepancy,
     rust_sync.TransparentStopReason.withdrawn =>
-      'The private recovery service withdrew data for this account. Vizor '
-          'will try again later.',
-    rust_sync.TransparentStopReason.stalled =>
-      "Private recovery can't make progress for this account. Vizor will try "
-          'again later.',
+      l10n.homeTransparentStopWithdrawn,
+    rust_sync.TransparentStopReason.stalled => l10n.homeTransparentStopStalled,
     rust_sync.TransparentStopReason.optOutUnfinished =>
-      "Turning off Private queries didn't finish. Turn it off again in "
-          'Settings to look up transparent funds publicly.',
+      l10n.homeTransparentStopOptOutUnfinished,
   };
 }

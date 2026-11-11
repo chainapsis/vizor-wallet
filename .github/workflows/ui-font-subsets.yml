@@ -1,0 +1,46 @@
+name: UI font subsets
+
+on:
+  pull_request:
+    paths:
+      - 'lib/l10n/**'
+      - 'lib/src/core/l10n/app_language.dart'
+      - 'assets/fonts/**'
+      - 'tool/l10n/ui_fonts*'
+      - 'tool/l10n/ui_font_characters*'
+      - 'tool/l10n/character_sets/**'
+      - 'pubspec.lock'
+      - 'test/tool/ui_fonts_test.py'
+      - '.github/workflows/ui-font-subsets.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/l10n/**'
+      - 'lib/src/core/l10n/app_language.dart'
+      - 'assets/fonts/**'
+      - 'tool/l10n/ui_fonts*'
+      - 'tool/l10n/ui_font_characters*'
+      - 'tool/l10n/character_sets/**'
+      - 'pubspec.lock'
+      - 'test/tool/ui_fonts_test.py'
+      - '.github/workflows/ui-font-subsets.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 tool/l10n/ui_fonts.py --check
+      - uses: actions/cache@v4
+        with:
+          path: .dart_tool/ui_fonts/sources
+          key: ui-font-sources-${{ hashFiles('tool/l10n/ui_fonts.lock.json') }}
+      - run: python3 tool/l10n/ui_fonts.py --rebuild
+      - run: git diff --exit-code -- assets/fonts tool/l10n/ui_fonts.manifest.json
+      - run: .dart_tool/ui_fonts/venv/bin/python test/tool/ui_fonts_test.py

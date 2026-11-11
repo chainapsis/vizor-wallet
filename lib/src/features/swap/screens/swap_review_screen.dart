@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -54,7 +55,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     copyTextWithToast(
       toastContext,
       text: address,
-      toastMessage: 'Address copied',
+      toastMessage: toastContext.l10n.commonAddressCopied,
     );
   }
 
@@ -138,8 +139,8 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     final startBlockedReason =
         swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
         ? widget.payMode
-              ? "You don't have enough ZEC for this payment. Try a smaller amount."
-              : "You don't have enough ZEC for this swap. Try a smaller amount."
+              ? context.l10n.commonPayInsufficientZec
+              : context.l10n.swapReviewInsufficientZecSwap
         : null;
 
     return AppDesktopShell(
@@ -152,7 +153,9 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
             AppPaneScrollScaffold(
               toolbar: AppPaneToolbar(
                 leading: AppBackLink(
-                  label: widget.payMode ? 'Pay' : 'Swap',
+                  label: widget.payMode
+                      ? context.l10n.swapReviewBackPay
+                      : context.l10n.swapPageTitle,
                   minWidth: 60,
                   onTap: _returnToSwap,
                 ),
@@ -174,8 +177,10 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                           const [],
                       userExternalContactId: swapState.userExternalContactId,
                       expired: swapState.quoteExpired,
-                      amountWarning: swapState.reviewAmountDifferenceWarning,
-                      startError: swapState.statusError,
+                      amountWarning: swapState.reviewAmountDifferenceWarning(
+                        context.l10n,
+                      ),
+                      startError: swapState.statusError?.text(context.l10n),
                       startBlockedReason: startBlockedReason,
                       payFiatTextOverride: swapReviewFiatTextForAsset(
                         swapState,

@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/config/private_transparent_recovery_config.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/enhance_pir_provider.dart';
@@ -33,7 +34,7 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
     }
     final recoveryTransition = ref.watch(enhancePirTransitionProvider);
     final interactive =
-        enabled && recoveryTransition != kEnhancePirChangingMessage;
+        enabled && recoveryTransition != EnhancePirTransition.changing;
     void onToggle() =>
         unawaited(onRequest?.call() ?? togglePrivateQueries(context, ref));
     return Column(
@@ -48,7 +49,7 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
                 button: true,
                 enabled: interactive,
                 toggled: enhancePirEnabled,
-                label: 'Private queries',
+                label: context.l10n.settingsPrivateQueriesLabel,
                 onTap: !interactive ? null : onToggle,
                 excludeSemantics: true,
                 child: GestureDetector(
@@ -78,7 +79,7 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
                           const SizedBox(width: AppSpacing.s),
                           Expanded(
                             child: Text(
-                              'Private queries',
+                              context.l10n.settingsPrivateQueriesLabel,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: AppTypography.labelLarge.copyWith(
@@ -88,7 +89,9 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
                           ),
                           const SizedBox(width: AppSpacing.xs),
                           Text(
-                            enhancePirEnabled ? 'On' : 'Off',
+                            enhancePirEnabled
+                                ? context.l10n.settingsStatusOn
+                                : context.l10n.settingsStatusOff,
                             key: const ValueKey(
                               'mobile_settings_enhance_pir_status',
                             ),
@@ -126,7 +129,7 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
         // deliberately not surfaced — see _EnhancePirPrivacyControl.
         if (recoveryTransition != null)
           Text(
-            recoveryTransition,
+            recoveryTransition.message(context.l10n),
             key: const ValueKey('mobile_settings_enhance_pir_transition'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -136,7 +139,7 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
         Text(
           // iOS background migration tracking cannot run privately, so
           // it stays off while this is on; say where confirmations happen.
-          privateQueriesMobileSettingsCopy(defaultTargetPlatform),
+          privateQueriesMobileSettingsCopy(context.l10n, defaultTargetPlatform),
           key: const ValueKey('mobile_settings_enhance_pir_description'),
           style: AppTypography.bodyMedium.copyWith(
             color: colors.text.secondary,

@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import 'fixtures/navigation_proposals.dart';
 
@@ -23,6 +24,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         builder: (context, child) =>
             AppTheme(data: AppThemeData.dark, child: child!),
         home: Scaffold(
