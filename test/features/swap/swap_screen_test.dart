@@ -3971,34 +3971,35 @@ void main() {
     expect(_fieldText(tester, 'swap_amount_field'), '1.2339');
   });
 
-  testWidgets('mobile ZEC swap composer masks the max balance in privacy mode', (
-    tester,
-  ) async {
-    await _setViewport(tester, const Size(390, 844));
+  testWidgets(
+    'mobile ZEC swap composer masks the max balance in privacy mode',
+    (tester) async {
+      await _setViewport(tester, const Size(390, 844));
 
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [
-            // The mobile shell supplies the Material ancestor in the app.
-            GoRoute(
-              path: '/swap',
-              builder: (_, _) => const Material(child: MobileSwapScreen()),
-            ),
-          ],
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [
+              // The mobile shell supplies the Material ancestor in the app.
+              GoRoute(
+                path: '/swap',
+                builder: (_, _) => const Material(child: MobileSwapScreen()),
+              ),
+            ],
+          ),
+          bootstrap: _privacyModeBootstrap,
+          seedSwapActivityFixtures: false,
+          sessionStore: _FakeSwapPersistenceStore(),
+          spendableBalance: BigInt.from(123450000),
         ),
-        bootstrap: _privacyModeBootstrap,
-        seedSwapActivityFixtures: false,
-        sessionStore: _FakeSwapPersistenceStore(),
-        spendableBalance: BigInt.from(123450000),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Max: ****** ZEC'), findsOneWidget);
-    expect(find.textContaining('1.2345'), findsNothing);
-  });
+      expect(find.text('Max: ****** ZEC'), findsOneWidget);
+      expect(find.textContaining('1.2345'), findsNothing);
+    },
+  );
 
   testWidgets('ZEC max amount request keeps the max label spinner-free', (
     tester,
@@ -10692,15 +10693,33 @@ void main() {
     expect(sessionStore.intentsFor('account-2'), isEmpty);
   });
 
-  testWidgets('a failed activity save on account switch is not uncaught', (
-    tester,
-  ) async {
+  List<SwapIntent> savedSwapPerAccount() => [
+    _persistedIntent(
+      id: 'account-one-swap',
+      txHash: 'account-one-txid',
+      accountUuid: 'account-1',
+    ),
+    _persistedIntent(
+      id: 'account-two-swap',
+      txHash: 'account-two-txid',
+      accountUuid: 'account-2',
+    ),
+  ];
+
+  List<String> ids(List<SwapIntent> intents) => [
+    for (final intent in intents) intent.id,
+  ];
+
+  Future<ProviderContainer> pumpTwoAccountSwap(
+    WidgetTester tester,
+    _FakeSwapPersistenceStore sessionStore, {
+    SwapProvider? swapProvider,
+    SwapDepositSender? depositSender,
+  }) async {
     await _setDesktopViewport(tester);
-    final sessionStore = _FailingSaveSwapPersistenceStore();
     final accountNotifier = _FakeSwapAccountNotifier(
       _twoAccountBootstrap.initialAccountState,
     );
-
     await tester.pumpWidget(
       _routerHarness(
         GoRouter(
@@ -10709,21 +10728,245 @@ void main() {
         ),
         bootstrap: _twoAccountBootstrap,
         accountNotifier: () => accountNotifier,
+        swapProvider: swapProvider,
+        depositSender: depositSender,
         sessionStore: sessionStore,
         seedSwapActivityFixtures: false,
       ),
     );
     await tester.pumpAndSettle();
-    final container = ProviderScope.containerOf(
+    return ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
       listen: false,
     );
+  }
+
+  // `settle: false` while a held load keeps the start button's spinner going.
+  Future<void> reviewAndTapStart(
+    WidgetTester tester, {
+    bool settle = true,
+  }) async {
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump();
+      await tester.pump();
+    }
+  }
+
+  testWidgets('account switch before saved swaps load keeps them', (
+    tester,
+  ) async {
+    final sessionStore = _DelayedLoadSwapPersistenceStore(
+      delayedAccounts: {'account-1'},
+      initialIntents: savedSwapPerAccount(),
+    );
+    final container = await pumpTwoAccountSwap(tester, sessionStore);
 
     await container.read(accountProvider.notifier).switchAccount('account-2');
     await tester.pumpAndSettle();
 
-    expect(sessionStore.failedSaves, ['account-1']);
-    expect(tester.takeException(), isNull);
+    expect(ids(sessionStore.intentsFor('account-1')), ['account-one-swap']);
+    expect(ids(sessionStore.intentsFor('account-2')), ['account-two-swap']);
+  });
+
+  testWidgets('switching back and away while saved swaps load keeps them', (
+    tester,
+  ) async {
+    final delayedAccounts = <String>{};
+    final sessionStore = _DelayedLoadSwapPersistenceStore(
+      delayedAccounts: delayedAccounts,
+      initialIntents: savedSwapPerAccount(),
+    );
+    final container = await pumpTwoAccountSwap(tester, sessionStore);
+    final accounts = container.read(accountProvider.notifier);
+
+    await accounts.switchAccount('account-2');
+    await tester.pumpAndSettle();
+    delayedAccounts.add('account-1');
+    await accounts.switchAccount('account-1');
+    await tester.pumpAndSettle();
+    // The screen still lists account-2's swap while account-1's load is held.
+    expect(ids(container.read(swapStateProvider).intents), [
+      'account-two-swap',
+    ]);
+    // A refresh in this window must not save that list for account-1. It
+    // waits on the held load, so it cannot be awaited here.
+    unawaited(
+      container.read(swapStateProvider.notifier).refreshOpenIntentStatuses(),
+    );
+    await tester.pump();
+    await accounts.switchAccount('account-2');
+    await tester.pumpAndSettle();
+
+    expect(ids(sessionStore.intentsFor('account-1')), ['account-one-swap']);
+    expect(ids(sessionStore.intentsFor('account-2')), ['account-two-swap']);
+  });
+
+  testWidgets('a status refresh while saved swaps load keeps them', (
+    tester,
+  ) async {
+    final sessionStore = _HeldRestoreSwapPersistenceStore(
+      initialIntents: savedSwapPerAccount(),
+    );
+    final container = await pumpTwoAccountSwap(tester, sessionStore);
+    final accounts = container.read(accountProvider.notifier);
+    await accounts.switchAccount('account-2');
+    await tester.pumpAndSettle();
+    sessionStore.heldAccounts.add('account-1');
+    await accounts.switchAccount('account-1');
+    await tester.pumpAndSettle();
+    expect(ids(container.read(swapStateProvider).intents), [
+      'account-two-swap',
+    ]);
+
+    await container
+        .read(swapStateProvider.notifier)
+        .refreshOpenIntentStatuses();
+    await tester.pumpAndSettle();
+
+    expect(ids(sessionStore.intentsFor('account-1')), ['account-one-swap']);
+  });
+
+  testWidgets('a deposit recorded before saved swaps load keeps them', (
+    tester,
+  ) async {
+    final sessionStore = _HeldRestoreSwapPersistenceStore(
+      initialIntents: [
+        ...savedSwapPerAccount(),
+        _persistedIntent(
+          id: 'account-one-other-swap',
+          txHash: 'account-one-other-txid',
+          accountUuid: 'account-1',
+        ),
+      ],
+    );
+    final container = await pumpTwoAccountSwap(tester, sessionStore);
+    final accounts = container.read(accountProvider.notifier);
+    final recorded = container
+        .read(swapStateProvider)
+        .intents
+        .firstWhere((intent) => intent.id == 'account-one-swap');
+    await accounts.switchAccount('account-2');
+    await tester.pumpAndSettle();
+    sessionStore.heldAccounts.add('account-1');
+    await accounts.switchAccount('account-1');
+    await tester.pumpAndSettle();
+
+    await container
+        .read(swapStateProvider.notifier)
+        .recordHardwareDepositBroadcast(
+          intent: recorded,
+          broadcast: const SwapDepositBroadcastResult(
+            txHash: 'recorded-deposit-txid',
+            status: SwapDepositBroadcastStatus.broadcasted,
+          ),
+        );
+    await tester.pumpAndSettle();
+
+    final saved = sessionStore.intentsFor('account-1');
+    expect(
+      ids(saved),
+      unorderedEquals(['account-one-swap', 'account-one-other-swap']),
+    );
+    expect(
+      saved
+          .firstWhere((intent) => intent.id == 'account-one-swap')
+          .depositTxHash,
+      'recorded-deposit-txid',
+    );
+  });
+
+  testWidgets('a failed swap load does not erase saved swaps', (tester) async {
+    final sessionStore = _FailingLoadSwapPersistenceStore(
+      initialIntents: savedSwapPerAccount(),
+    );
+    final container = await pumpTwoAccountSwap(tester, sessionStore);
+    final accounts = container.read(accountProvider.notifier);
+    expect(container.read(swapStateProvider).intents, isEmpty);
+
+    sessionStore.failLoads = false;
+    await accounts.switchAccount('account-2');
+    await tester.pumpAndSettle();
+    await accounts.switchAccount('account-1');
+    await tester.pumpAndSettle();
+
+    expect(ids(sessionStore.intentsFor('account-1')), ['account-one-swap']);
+    expect(ids(container.read(swapStateProvider).intents), [
+      'account-one-swap',
+    ]);
+  });
+
+  testWidgets('a swap started while saved swaps load waits for them', (
+    tester,
+  ) async {
+    final swapProvider = _FakeSwapProvider();
+    final sessionStore = _DelayedLoadSwapPersistenceStore(
+      delayedAccounts: {'account-1'},
+      initialIntents: savedSwapPerAccount(),
+    );
+    final container = await pumpTwoAccountSwap(
+      tester,
+      sessionStore,
+      swapProvider: swapProvider,
+      depositSender: _FakeSwapDepositSender(),
+    );
+
+    await reviewAndTapStart(tester, settle: false);
+    expect(swapProvider.startedQuotes, isEmpty);
+    expect(ids(sessionStore.intentsFor('account-1')), ['account-one-swap']);
+
+    sessionStore.completeLoad('account-1');
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.startedQuotes, hasLength(1));
+    final onScreen = ids(container.read(swapStateProvider).intents);
+    expect(onScreen, hasLength(2));
+    expect(onScreen.last, 'account-one-swap');
+    expect(ids(sessionStore.intentsFor('account-1')), onScreen);
+  });
+
+  testWidgets('a swap is not started when saved swaps cannot be loaded', (
+    tester,
+  ) async {
+    final swapProvider = _FakeSwapProvider();
+    final sessionStore = _FailingLoadSwapPersistenceStore(
+      initialIntents: savedSwapPerAccount(),
+    );
+    final container = await pumpTwoAccountSwap(
+      tester,
+      sessionStore,
+      swapProvider: swapProvider,
+      depositSender: _FakeSwapDepositSender(),
+    );
+
+    await reviewAndTapStart(tester);
+
+    expect(swapProvider.startedQuotes, isEmpty);
+    expect(container.read(swapStateProvider).statusError, isNotNull);
+    expect(ids(sessionStore.intentsFor('account-1')), ['account-one-swap']);
+
+    sessionStore.failLoads = false;
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.startedQuotes, hasLength(1));
+    expect(sessionStore.intentsFor('account-1'), hasLength(2));
   });
 }
 

@@ -69,6 +69,10 @@ class SwapNotifier extends Notifier<SwapState> {
   var _quoteGeneration = 0;
   var _pricingLoadGeneration = 0;
   var _accountScopeGeneration = 0;
+  // The account scope whose saved swaps are on screen. Until the current scope
+  // matches, saving the screen list would replace swaps that were never loaded.
+  int? _intentsLoadedScope;
+  Future<void>? _intentsRestore;
   var _payEntryGeneration = 0;
   var _hasResolvedSupportedAssets = false;
   Set<String> _deprecatedAssetIdentityKeys = const {};
@@ -113,13 +117,6 @@ class SwapNotifier extends Notifier<SwapState> {
       (previous, next) {
         if (previous == next) return;
         if (previous != null) {
-          unawaited(
-            _persistCurrentIntents(accountUuid: previous).catchError((
-              Object e,
-            ) {
-              log('Swap: saving activity on account switch failed error=$e');
-            }),
-          );
           // In Pay mode the composer state carries Pay's direction/payout
           // asset, which must not overwrite the previous account's saved
           // swap composer selection.
@@ -136,7 +133,10 @@ class SwapNotifier extends Notifier<SwapState> {
         unawaited(_restoreComposerPreferences(accountUuid: next));
         unawaited(_ensurePaySelectedAssetRestored(accountUuid: next));
         unawaited(
-          _restorePersistedIntents(accountUuid: next, replaceExisting: true),
+          _intentsRestore = _restorePersistedIntents(
+            accountUuid: next,
+            replaceExisting: true,
+          ),
         );
       },
     );
@@ -154,7 +154,12 @@ class SwapNotifier extends Notifier<SwapState> {
     unawaited(_restoreComposerPreferences(accountUuid: activeAccountUuid));
     unawaited(_ensurePaySelectedAssetRestored(accountUuid: activeAccountUuid));
     unawaited(_loadSupportedExternalAssets());
-    unawaited(_restorePersistedIntents(accountUuid: activeAccountUuid));
+    _intentsLoadedScope = null;
+    unawaited(
+      _intentsRestore = _restorePersistedIntents(
+        accountUuid: activeAccountUuid,
+      ),
+    );
     final initialIntents = ref.watch(swapInitialIntentsProvider);
     return const SwapState(
       direction: SwapDirection.zecToExternal,
@@ -890,6 +895,24 @@ class SwapNotifier extends Notifier<SwapState> {
     // anything is listed, saved or sent for it.
     bool screenMoved() =>
         scope != _accountScopeGeneration || !_isAccountActive(accountUuid);
+    // A swap listed before its account's saved swaps would be saved without
+    // them, then dropped when they arrive.
+    final intentsLoaded = await _ensureIntentsLoaded(accountUuid);
+    if (screenMoved()) {
+      log('Swap: start dropped after an account switch');
+      return null;
+    }
+    if (!intentsLoaded) {
+      log('Swap: start blocked; saved swaps could not be loaded');
+      state = state.copyWith(
+        startSubmitting: false,
+        statusError: _providerFailureMessage(
+          SwapFailureOperation.start,
+          StateError('Swap activity is unavailable.'),
+        ),
+      );
+      return null;
+    }
     final activeAccountIsHardware = ref
         .read(accountProvider.notifier)
         .isActiveAccountHardware;
@@ -1892,6 +1915,7 @@ class SwapNotifier extends Notifier<SwapState> {
           !_isAccountActive(scopedAccountUuid)) {
         return;
       }
+      _intentsLoadedScope = accountScopeGeneration;
       if (persisted.isEmpty && !replaceExisting) return;
       state = state.copyWith(
         intents: persisted,
@@ -2036,10 +2060,43 @@ class SwapNotifier extends Notifier<SwapState> {
     }
   }
 
+  bool get _intentsLoaded => _intentsLoadedScope == _accountScopeGeneration;
+
+  /// Waits for the active account's saved swaps, retrying a failed load once.
+  Future<bool> _ensureIntentsLoaded(String accountUuid) async {
+    if (_intentsLoaded) return true;
+    await _intentsRestore;
+    if (_intentsLoaded || !_isAccountActive(accountUuid)) return _intentsLoaded;
+    await (_intentsRestore = _restorePersistedIntents(
+      accountUuid: accountUuid,
+      replaceExisting: true,
+    ));
+    return _intentsLoaded;
+  }
+
   Future<void> _persistCurrentIntents({String? accountUuid}) async {
     final activeAccountUuid = accountUuid ?? _activeAccountUuidOrNull;
     if (activeAccountUuid == null) return;
-    await _persistIntentsForAccount(activeAccountUuid, state.intents);
+    if (_intentsLoaded) {
+      await _persistIntentsForAccount(activeAccountUuid, state.intents);
+      return;
+    }
+    // The screen does not hold this account's saved swaps yet, so its swaps
+    // are added to the saved ones instead of replacing them.
+    final tracker = ref.read(swapActivityTrackerProvider);
+    final scopedAccountUuid = SwapActivityTracker.normalizeAccountUuid(
+      activeAccountUuid,
+    );
+    final onScreen = [
+      for (final intent in state.intents)
+        if (intent.accountUuid == scopedAccountUuid) intent,
+    ];
+    final saved = await tracker.loadIntents(accountUuid: scopedAccountUuid);
+    await _persistIntentsForAccount(scopedAccountUuid, [
+      ...onScreen,
+      for (final intent in saved)
+        if (onScreen.swapIntentById(intent.id) == null) intent,
+    ]);
   }
 
   Future<void> _persistIntentsForAccount(
