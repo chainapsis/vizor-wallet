@@ -1072,6 +1072,8 @@ pub fn list_account_uuids_from_db(db_path: &str) -> Result<Vec<String>, String> 
 
 /// Delete an existing account and its lifecycle state atomically.
 ///
+const ACCOUNT_DELETION_CHECKPOINT_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// The library checks durable policy compatibility before deleting wallet-owned
 /// rows. Vizor cleanup shares the caller-owned transaction; any refusal or cleanup
 /// failure rolls back both. Cache eviction and process-local cleanup follow commit.
@@ -1130,6 +1132,16 @@ fn delete_account_rows(
         .map_err(|e| format!("Failed to load SQLite array module: {e}"))?;
     conn.execute("PRAGMA foreign_keys = ON", [])
         .map_err(|e| format!("Failed to enable SQLite foreign keys: {e}"))?;
+    // Zero the deleted account's rows instead of leaving them readable in freed
+    // space. The setting is per connection, so it covers only this deletion.
+    let secure_delete: i64 = conn
+        .pragma_update_and_check(None, "secure_delete", "ON", |row| row.get(0))
+        .map_err(|e| format!("Failed to enable SQLite secure delete: {e}"))?;
+    if secure_delete != 1 {
+        return Err(format!(
+            "Failed to enable SQLite secure delete: SQLite returned secure_delete={secure_delete}"
+        ));
+    }
 
     let tx = conn
         .transaction()
@@ -1171,7 +1183,28 @@ fn delete_account_rows(
         .map_err(|e| format!("Failed to prune orphaned scan ranges after deletion: {e}"))?;
 
     tx.commit()
-        .map_err(|e| format!("Failed to commit account deletion: {e}"))
+        .map_err(|e| format!("Failed to commit account deletion: {e}"))?;
+    checkpoint_after_account_deletion(&conn);
+    Ok(())
+}
+
+/// Moves the zeroed pages into the database file and empties the WAL, which
+/// still holds the frames that wrote the deleted rows.
+///
+/// Best effort: the deletion is already committed, so nothing here may fail it.
+/// A reader holding a snapshot leaves this to a later checkpoint.
+fn checkpoint_after_account_deletion(conn: &rusqlite::Connection) {
+    if let Err(error) = conn.busy_timeout(ACCOUNT_DELETION_CHECKPOINT_WAIT) {
+        log::warn!("Failed to bound the checkpoint wait after deleting account: {error}");
+        return;
+    }
+    match conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+        row.get::<_, i64>(0)
+    }) {
+        Ok(0) => {}
+        Ok(_) => log::warn!("WAL checkpoint after deleting account was blocked by a reader"),
+        Err(error) => log::warn!("WAL checkpoint after deleting account failed: {error}"),
+    }
 }
 
 /// Demote orphaned historical scan ranges that lie below the remaining
