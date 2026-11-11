@@ -53,8 +53,10 @@ void main() {
       expect(h.sync.awaited, 0);
       expect(
         h.state.quoteError,
-        'Update Vizor to keep checking private swap addresses. '
-        'Your saved progress is kept.',
+        const SwapLiteralMessage(
+          'Update Vizor to keep checking private swap addresses. '
+          'Your saved progress is kept.',
+        ),
       );
     },
   );
@@ -159,8 +161,7 @@ void main() {
     // The private wording, which leaves out closing older swaps.
     expect(
       h.state.quoteError,
-      'Could not prepare a fresh wallet receive address. '
-      'Try again after wallet sync.',
+      const SwapNotice(SwapNoticeKind.privateReceiveAddressPreparationFailed),
     );
   });
 
@@ -735,7 +736,7 @@ class _Provider extends Fake implements SwapProvider {
         sellAmountText: '1 ZEC',
         receiveEstimateText: '70 USDC',
         status: status,
-        nextAction: status.label,
+        nextAction: status.name,
         providerStatusRaw: _raw[status],
         statusOnly: true,
         depositInstruction: SwapDepositInstruction(

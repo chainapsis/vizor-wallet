@@ -69,6 +69,8 @@ abstract final class AppIcons {
   static const key = 'key';
   static const keystone = 'keystone';
   static const keystoneScan = 'keystone_scan';
+  // Shared by Welcome and Settings; `globe` is Explorer's.
+  static const language = 'language';
   static const ledger = 'ledger';
   static const ledgerBrand = 'ledger_brand';
   static const link = 'link';

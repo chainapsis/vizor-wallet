@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/widgets.dart';
 
@@ -52,14 +53,16 @@ class MobilePayAmountStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final precisionError = state.quoteAmountPrecisionError;
+    final precisionError = state.quoteAmountPrecisionError(context.l10n);
     final balanceExceeded = payAmountExceedsAvailableZec(
       state,
       zecAvailableZatoshi,
     );
     final canContinue = payAmountCanContinue(state) && !balanceExceeded;
     final errorText =
-        precisionError ?? state.externalAssetSupportError ?? state.quoteError;
+        precisionError ??
+        state.externalAssetSupportError(context.l10n) ??
+        state.quoteError?.text(context.l10n);
 
     return Column(
       key: const ValueKey('mobile_pay_amount_step'),
@@ -90,7 +93,9 @@ class MobilePayAmountStep extends StatelessWidget {
                 if (errorText != null || balanceExceeded) ...[
                   const SizedBox(height: AppSpacing.s),
                   SwapQuoteErrorText(
-                    message: balanceExceeded ? 'Not enough ZEC' : errorText!,
+                    message: balanceExceeded
+                        ? context.l10n.commonNotEnoughZec
+                        : errorText!,
                     textKey: const ValueKey('mobile_pay_amount_error'),
                     maxLines: 2,
                   ),
@@ -135,7 +140,7 @@ class MobilePayAmountStep extends StatelessWidget {
                   expand: true,
                   constrainContent: true,
                   onPressed: canContinue ? onContinue : null,
-                  child: const Text('Continue'),
+                  child: Text(context.l10n.commonContinue),
                 ),
               ),
             ],
@@ -185,7 +190,7 @@ class _MobilePayAmountCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Paying in',
+                    context.l10n.payAmountPayingIn,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -194,7 +199,7 @@ class _MobilePayAmountCard extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xs),
                 Semantics(
                   button: true,
-                  label: 'Choose payment asset',
+                  label: context.l10n.payAmountChooseAsset,
                   child: GestureDetector(
                     key: const ValueKey('mobile_pay_asset_selector'),
                     behavior: HitTestBehavior.opaque,
@@ -368,7 +373,9 @@ class _MobilePayAmountField extends StatelessWidget {
                           ),
                           const SizedBox(width: AppSpacing.xs),
                           Text(
-                            inputIsFiat ? 'USD' : asset.symbol,
+                            inputIsFiat
+                                ? 'USD' // l10n-ignore: currency code
+                                : asset.symbol,
                             key: const ValueKey('mobile_pay_amount_unit'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -388,8 +395,8 @@ class _MobilePayAmountField extends StatelessWidget {
             child: Semantics(
               button: true,
               label: inputIsFiat
-                  ? 'Enter amount in ${asset.symbol}'
-                  : 'Enter amount in USD',
+                  ? context.l10n.payAmountEnterIn(asset.symbol)
+                  : context.l10n.commonEnterAmountInUsd,
               child: GestureDetector(
                 key: const ValueKey('mobile_pay_amount_mode_toggle'),
                 behavior: HitTestBehavior.opaque,
@@ -463,7 +470,7 @@ class _EstimatedZecRow extends StatelessWidget {
         key: const ValueKey('mobile_pay_estimated_row'),
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Estimated:', style: labelStyle),
+          Text(context.l10n.payAmountEstimated, style: labelStyle),
           const SizedBox(width: AppSpacing.xs),
           if (estimateLoading)
             const _MobilePaySkeletonBar(
@@ -477,7 +484,7 @@ class _EstimatedZecRow extends StatelessWidget {
             ),
           const SizedBox(width: AppSpacing.xs),
           Text(
-            'ZEC',
+            'ZEC', // l10n-ignore: asset symbol
             style: AppTypography.labelLarge.copyWith(
               color: colors.text.secondary,
             ),
@@ -486,7 +493,7 @@ class _EstimatedZecRow extends StatelessWidget {
           AppIcon(AppIcons.shieldKeyhole, size: 20, color: colors.icon.regular),
           const SizedBox(width: AppSpacing.xxs),
           Text(
-            'Shielded',
+            context.l10n.poolShielded,
             style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
           ),
         ],

@@ -23,6 +23,8 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 const _account = 'test-account';
 const _recipient = 'u1recipient000000000000000000000000000000';
@@ -65,6 +67,7 @@ void main() {
           sendRecentRecipientStoreProvider.overrideWithValue(store),
         ],
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: Consumer(
             builder: (_, ref, _) {
               widgetRef = ref;
@@ -90,6 +93,7 @@ void main() {
     await tester.runAsync(
       () => runSendBroadcast(
         ref: widgetRef,
+        l10n: testL10n,
         args: args,
         keystone: keystone
             ? KeystoneBroadcastArgs(
@@ -275,6 +279,7 @@ class _ProposalRustApi extends Fake implements RustLibApi {
   String status = 'broadcasted';
 
   ExecuteProposalResult get _executed => ExecuteProposalResult(
+    notices: const [],
     txids: 'aa' * 32,
     status: status,
     broadcastedCount: status == 'broadcasted' ? 1 : 0,
@@ -317,6 +322,7 @@ class _ProposalRustApi extends Fake implements RustLibApi {
     String? spendParamsPath,
     String? outputParamsPath,
   }) async => StoreAndBroadcastPcztsResult(
+    notices: const [],
     txids: 'aa' * 32,
     status: status,
     broadcastedCount: status == 'broadcasted' ? 1 : 0,

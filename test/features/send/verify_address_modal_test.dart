@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
 import 'package:zcash_wallet/src/features/accounts/widgets/account_modal_card.dart';
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -244,6 +245,7 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Center(child: child),

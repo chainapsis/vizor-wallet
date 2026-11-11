@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import 'mobile/mobile_ledger_help_navigation.dart';
@@ -13,7 +14,7 @@ class MobileLedgerSigningSurface extends StatefulWidget {
     required this.onBack,
     required this.canLeave,
     this.onPrevious,
-    this.title = 'Ledger',
+    this.title = 'Ledger', // l10n-ignore: product name
     super.key,
   });
   final Widget child;
@@ -70,7 +71,7 @@ class _MobileLedgerSigningSurfaceState
           color: context.colors.background.neutralScrim,
           dismissible: widget.canLeave,
           onDismiss: _dismiss,
-          semanticsLabel: 'Close Ledger',
+          semanticsLabel: context.l10n.ledgerSigningCloseSemantics,
         ),
         SafeArea(
           bottom: false,

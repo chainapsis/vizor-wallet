@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_sync_status.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../../support/test_l10n.dart';
 
 void main() {
   testWidgets(
@@ -19,6 +21,7 @@ void main() {
       Future<void> pump(bool reduced, bool leading) async {
         await tester.pumpWidget(
           MaterialApp(
+            localizationsDelegates: appLocalizationsDelegates,
             home: AppTheme(
               data: AppThemeData.light,
               child: MediaQuery(
@@ -77,9 +80,9 @@ void main() {
       expect(find.byType(ShaderMask), findsNothing);
       expect(
         tester.widget<Text>(find.text(status.label)).style,
-        AppTypography.labelMedium.copyWith(
-          color: AppThemeData.light.colors.sync.textSyncing,
-        ),
+        withTabularFigures(
+          AppTypography.labelMedium,
+        ).copyWith(color: AppThemeData.light.colors.sync.textSyncing),
       );
       await pump(true, false);
       expect(
@@ -94,4 +97,62 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('the header keeps the synced label width for shorter labels; '
+      'the sidebar keeps its own width; both set figures tabular', (
+    tester,
+  ) async {
+    Future<void> pump(String label, {required bool leading}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
+          home: AppTheme(
+            data: AppThemeData.light,
+            child: Center(
+              child: Builder(
+                builder: (context) => MobileSyncStatus.fromStatus(
+                  context: context,
+                  status: SyncStatusLabel(
+                    kind: SyncStatusKind.syncing,
+                    label: label,
+                    semanticsLabel: label,
+                  ),
+                  leading: leading,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    final slot = find.byKey(const ValueKey('mobile_top_nav_sync_label_slot'));
+    await pump(testL10n.syncVizorSynced, leading: false);
+    final syncedWidth = tester.getSize(slot).width;
+    await pump(testL10n.syncCatchingUp, leading: false);
+    expect(tester.getSize(slot).width, syncedWidth);
+    await pump('45% Syncing\u2026', leading: false);
+    expect(tester.getSize(slot).width, syncedWidth);
+
+    await pump('45% Syncing\u2026', leading: true);
+    expect(slot, findsNothing);
+    expect(
+      tester.getSize(find.text('45% Syncing\u2026')).width,
+      lessThan(syncedWidth),
+    );
+    expect(
+      tester
+          .widget<RichText>(
+            find.descendant(
+              of: find.text('45% Syncing\u2026'),
+              matching: find.byType(RichText),
+            ),
+          )
+          .text
+          .style
+          ?.fontFeatures,
+      contains(const FontFeature.tabularFigures()),
+    );
+  });
 }

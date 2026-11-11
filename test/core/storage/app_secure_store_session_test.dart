@@ -27,6 +27,7 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _password = 'Oldpass1!';
 const _newPassword = 'Newpass1!';
@@ -597,6 +598,7 @@ void main() {
               container = ProviderScope.containerOf(context, listen: false);
               router = ref.watch(routerProvider);
               return MaterialApp.router(
+                localizationsDelegates: appLocalizationsDelegates,
                 routerConfig: router,
                 builder: (context, child) => MediaQuery(
                   data: MediaQuery.of(

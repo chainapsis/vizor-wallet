@@ -55,7 +55,7 @@ const _amountErrorRequest = ZecRequestView(
   amountZec: '',
   amountDisplayText: '0.123456789',
   conversionText: _fiatText,
-  amountError: kRequestAmountDecimalsError,
+  amountError: RequestAmountError.decimals,
 );
 
 /// USD entry mode — the amount is still 0.5 ZEC, the field just shows the

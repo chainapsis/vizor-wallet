@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/services/qr_scanner.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/payment_links_screen_support.dart';
 import '../../fakes/fake_gift_link_rust_api.dart';
@@ -268,6 +269,7 @@ void main() {
     final results = <ScanResult>[];
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: appLocalizationsDelegates,
         home: AppTheme(
           data: AppThemeData.light,
           child: Center(
@@ -335,6 +337,7 @@ Future<void> _openScanner(
   await tester.pumpWidget(
     ProviderScope(
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (context, child) =>
             AppTheme(data: AppThemeData.light, child: child!),

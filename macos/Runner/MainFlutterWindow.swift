@@ -154,6 +154,34 @@ final class PasswordInputSourceChannel {
   }
 }
 
+/// Receives the app language so the alerts AppKit draws (Tor update
+/// prompts) match the UI. `NativeStrings` uses English until it arrives.
+final class NativeLanguageChannel {
+  private static var channel: FlutterMethodChannel?
+
+  static func register(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.zcash.wallet/native_strings",
+      binaryMessenger: messenger
+    )
+    self.channel = channel
+    channel.setMethodCallHandler { call, result in
+      guard call.method == "setLanguage" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let arguments = call.arguments as? [String: Any],
+        let tag = arguments["tag"] as? String, !tag.isEmpty
+      else {
+        result(FlutterError(code: "invalid_arguments", message: "Expected tag argument.", details: nil))
+        return
+      }
+      NativeStrings.setLanguage(tag)
+      result(nil)
+    }
+  }
+}
+
 /// Exit-only hiding needs to be synchronous and must suppress AppKit's
 /// last-window auto-quit until Flutter has replied to its termination request.
 final class DesktopExitChannel {
@@ -1209,6 +1237,9 @@ class MainFlutterWindow: NSWindow {
     )
     DesktopExitChannel.register(
       window: self,
+      messenger: flutterViewController.engine.binaryMessenger
+    )
+    NativeLanguageChannel.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
     WindowAppearanceChannel.register(

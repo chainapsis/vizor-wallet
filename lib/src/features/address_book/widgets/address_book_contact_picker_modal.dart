@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart' show TextInputAction;
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
@@ -29,8 +30,8 @@ class AddressBookContactPickerModal extends ConsumerStatefulWidget {
     required this.networks,
     required this.onSelected,
     required this.onCancel,
-    this.emptyTitle = 'No contacts found',
-    this.searchHint = 'Search contacts',
+    this.emptyTitle,
+    this.searchHint,
     super.key,
   });
 
@@ -38,8 +39,12 @@ class AddressBookContactPickerModal extends ConsumerStatefulWidget {
   final List<AddressBookNetwork> networks;
   final ValueChanged<AddressBookContact> onSelected;
   final VoidCallback onCancel;
-  final String emptyTitle;
-  final String searchHint;
+
+  /// Overrides the default "no contacts" message.
+  final String? emptyTitle;
+
+  /// Overrides the default search placeholder.
+  final String? searchHint;
 
   @override
   ConsumerState<AddressBookContactPickerModal> createState() =>
@@ -173,7 +178,7 @@ class _AddressBookContactPickerModalState
               const SizedBox(width: AppSpacing.xs),
               Builder(
                 builder: (context) => AppIconHoverButton(
-                  semanticLabel: 'Close contacts',
+                  semanticLabel: context.l10n.addressBookPickerClose,
                   icon: AppIcons.cross,
                   onTap: widget.onCancel,
                   size: 24,
@@ -207,7 +212,8 @@ class _AddressBookContactPickerModalState
             fieldKey: const ValueKey('address_book_contact_picker_search'),
             controller: _queryController,
             focusNode: _queryFocusNode,
-            hintText: widget.searchHint,
+            hintText:
+                widget.searchHint ?? context.l10n.addressBookPickerSearchHint,
             textInputAction: TextInputAction.search,
             onChanged: (_) => setState(() {}),
             leading: SizedBox(
@@ -226,7 +232,7 @@ class _AddressBookContactPickerModalState
                 : Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: AppIconHoverButton(
-                      semanticLabel: 'Clear search',
+                      semanticLabel: context.l10n.addressBookClearSearch,
                       icon: AppIcons.cross,
                       onTap: _clearQuery,
                       size: 24,
@@ -238,11 +244,12 @@ class _AddressBookContactPickerModalState
           )
         : AppTextField(
             key: const ValueKey('address_book_contact_picker_search'),
-            label: 'Search',
+            label: context.l10n.addressBookSearch,
             showLabel: false,
             controller: _queryController,
             focusNode: _queryFocusNode,
-            hintText: widget.searchHint,
+            hintText:
+                widget.searchHint ?? context.l10n.addressBookPickerSearchHint,
             leading: const AppIcon(AppIcons.search),
             leadingSlotWidth: AppInputSizing.iconWrapWidth,
             trailingSlotWidth: 40,
@@ -278,8 +285,8 @@ class _AddressBookContactPickerModalState
             ),
             error: (_, _) => _pickerListViewport(
               height: listHeight,
-              child: const _ContactPickerEmptyResult(
-                title: "Couldn't load contacts. Try again.",
+              child: _ContactPickerEmptyResult(
+                title: context.l10n.addressBookPickerLoadFailed,
               ),
             ),
             data: (state) {
@@ -287,7 +294,11 @@ class _AddressBookContactPickerModalState
               if (contacts.isEmpty) {
                 return _pickerListViewport(
                   height: listHeight,
-                  child: _ContactPickerEmptyResult(title: widget.emptyTitle),
+                  child: _ContactPickerEmptyResult(
+                    title:
+                        widget.emptyTitle ??
+                        context.l10n.addressBookPickerEmptyTitle,
+                  ),
                 );
               }
               final list = _ContactPickerList(

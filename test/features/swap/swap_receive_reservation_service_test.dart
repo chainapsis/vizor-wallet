@@ -520,7 +520,7 @@ SwapIntentSnapshot _statusSnapshot(
   sellAmountText: '1 ZEC',
   receiveEstimateText: '70 USDC',
   status: status,
-  nextAction: status.label,
+  nextAction: status.name,
   providerStatusRaw: raw,
   originChainTxHash: origin.isEmpty ? null : origin.first,
   originChainTxHashes: origin,

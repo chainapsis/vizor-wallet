@@ -1,3 +1,5 @@
+import '../core/l10n/l10n.dart';
+
 enum SyncFailureKind {
   network,
 
@@ -16,17 +18,25 @@ enum SyncFailureKind {
 class SyncFailure {
   final SyncFailureKind kind;
   final String rawMessage;
-  final String userMessage;
 
-  const SyncFailure({
-    required this.kind,
-    required this.rawMessage,
-    required this.userMessage,
-  });
+  const SyncFailure({required this.kind, required this.rawMessage});
+
+  String userMessage(AppLocalizations l10n) => switch (kind) {
+    SyncFailureKind.network => l10n.syncFailureNetwork,
+    SyncFailureKind.torUnavailable => l10n.syncFailureTor,
+    SyncFailureKind.privateStatusCoverage => l10n.syncFailurePrivateStatus,
+    SyncFailureKind.endpoint => l10n.syncFailureEndpoint,
+    SyncFailureKind.databaseBusy => l10n.syncFailureDatabaseBusy,
+    SyncFailureKind.databaseFatal => l10n.syncFailureDatabaseFatal,
+    SyncFailureKind.chainRecovery => l10n.syncFailureChainRecovery,
+    SyncFailureKind.parseFatal => l10n.syncFailureParse,
+    SyncFailureKind.unknown => l10n.syncFailureUnknown,
+  };
 
   bool get showSettingsAction => settingsRoute != null;
 
-  String get actionLabel => showSettingsAction ? 'Settings' : 'Retry';
+  String actionLabel(AppLocalizations l10n) =>
+      showSettingsAction ? l10n.navSettings : l10n.commonRetry;
 
   String? get settingsRoute => switch (kind) {
     SyncFailureKind.privateStatusCoverage => '/settings',
@@ -43,11 +53,7 @@ SyncFailure classifySyncFailure(Object error) {
   final lower = rawMessage.toLowerCase();
   final kind = _classifySyncFailureKind(lower);
 
-  return SyncFailure(
-    kind: kind,
-    rawMessage: rawMessage,
-    userMessage: _syncFailureUserMessage(kind),
-  );
+  return SyncFailure(kind: kind, rawMessage: rawMessage);
 }
 
 String _errorText(Object error) {
@@ -140,26 +146,4 @@ bool _looksLikeNetworkFailure(String lower) {
       lower.contains('transport error') ||
       lower.contains('broken pipe') ||
       lower.contains('no route to host');
-}
-
-String _syncFailureUserMessage(SyncFailureKind kind) {
-  return switch (kind) {
-    SyncFailureKind.network =>
-      "Network connection lost. We'll keep trying automatically.",
-    SyncFailureKind.torUnavailable =>
-      "Tor couldn't connect. Retry, or turn Tor off in Settings.",
-    SyncFailureKind.privateStatusCoverage =>
-      "Private transaction lookup couldn't determine a transaction's status. Turn off experimental private queries in Settings to continue syncing.",
-    SyncFailureKind.endpoint =>
-      'Cannot reach the configured Zcash endpoint. Check your endpoint settings.',
-    SyncFailureKind.databaseBusy =>
-      "Wallet data is busy. We'll try syncing again automatically.",
-    SyncFailureKind.databaseFatal =>
-      'Wallet data could not be read. Restart the app and retry sync.',
-    SyncFailureKind.chainRecovery =>
-      "The chain changed while syncing. We'll keep trying to recover.",
-    SyncFailureKind.parseFatal =>
-      'Sync data could not be processed. Retry sync or check your endpoint.',
-    SyncFailureKind.unknown => 'Sync failed. Retry sync to continue.',
-  };
 }

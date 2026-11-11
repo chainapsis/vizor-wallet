@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/activity_scroll_anchor.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 ActivityRowData _row(int id, {List<ActivityRowData> children = const []}) =>
     ActivityRowData(
@@ -18,6 +19,7 @@ ActivityRowData _row(int id, {List<ActivityRowData> children = const []}) =>
       subtitle: 'Shielded',
       amountText: '+1 ZEC',
       statusText: 'Completed',
+      statusIsRoutine: true,
       timestampText: 'Oct 23, 12:00',
       childRows: children,
     );
@@ -172,6 +174,7 @@ Future<_FeedState> _mount(
   final key = GlobalKey<_FeedState>();
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: Center(

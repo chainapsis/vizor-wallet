@@ -1,0 +1,6 @@
+# Directories (or single files) whose user-facing strings live in lib/l10n ARB files.
+# test/l10n/l10n_gates_test.dart fails when one of them gains a literal.
+# All app code is listed; a new directory under lib/src is covered automatically.
+lib/app.dart
+lib/main.dart
+lib/src

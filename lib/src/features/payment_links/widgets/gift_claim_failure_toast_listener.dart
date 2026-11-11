@@ -8,6 +8,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/sync_keep_awake_provider.dart';
 import '../providers/gift_claim_failure_notice_provider.dart';
+import '../../../core/l10n/l10n.dart';
 
 /// A failure during Face ID waits until Home is actually visible. The notice
 /// is acknowledged by the user; the card remains in Received for later inspection.
@@ -80,7 +81,7 @@ class _GiftClaimFailureToastListenerState
       _toastNotice = notice;
       _dismissToast = showAppToast(
         context,
-        'Couldn’t redeem your gift card.',
+        context.l10n.paymentLinkClaimFailureToast,
         iconName: AppIcons.warning,
         // Keep the recovery action available until it is used or dismissed.
         duration: null,
@@ -91,7 +92,7 @@ class _GiftClaimFailureToastListenerState
           _toastNotice = null;
         },
         action: AppToastAction(
-          label: 'View card',
+          label: context.l10n.paymentLinkViewCardAction,
           onPressed: () {
             if (!mounted ||
                 ref.read(appSecurityProvider).requiresUnlock ||

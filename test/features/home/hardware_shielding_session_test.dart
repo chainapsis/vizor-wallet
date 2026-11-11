@@ -99,6 +99,7 @@ void main() {
       expect(api.discarded, isEmpty);
       api.broadcasted.complete(
         const StoreAndBroadcastPcztsResult(
+          notices: [],
           txids: 'tx',
           status: 'broadcast_unknown',
           broadcastedCount: 0,

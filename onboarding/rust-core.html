@@ -32,7 +32,8 @@
                           # propose_send(account_uuid), estimate_fee(account_uuid),
                           # get_next_available_address(account_uuid),
                           # create_pczt_from_proposal, add_proofs_to_pczt,
-                          # redact_pczt_for_signer, extract_and_broadcast_pczt,
+                          # redact_pczt_for_signer,
+                          # store_and_broadcast_pczts_with_keystone_signatures_for_proposal,
                           # discard_proposal   ← hardware PCZT 파이프라인
     keystone.rs           # FRB 노출 (Keystone 전용):
                           # is_keystone_connected, keystone_usb_sign_pczt (USB),
@@ -134,13 +135,13 @@
   <tr><td><code>create_pczt_from_proposal()</code></td><td>(hardware) Proposal 을 PCZT (base) 로 변환. Creator + IoFinalizer role. <strong>PROPOSAL_STORE 에서 consume-on-entry</strong> (execute_proposal 과 동일 패턴).</td></tr>
   <tr><td><code>add_proofs_to_pczt(pczt, params?)</code></td><td>(hardware) Base PCZT 에 Orchard proof 생성. <code>requires_sapling_proofs()</code> 이면 <code>LocalTxProver</code> 로 Sapling output proof 도 생성. 결과는 <code>pcztWithProofs</code>.</td></tr>
   <tr><td><code>redact_pczt_for_signer(pczt)</code></td><td>(hardware) Witness / proprietary metadata 제거 → 하드웨어 디바이스에 넘길 minimized PCZT.</td></tr>
-  <tr><td><code>extract_and_broadcast_pczt(proofs, sigs, params?)</code></td><td>(hardware) Combiner → TransactionExtractor (verifying key 필요) → gRPC broadcast → storage (primary <code>extract_and_store_transaction_from_pczt</code>, fallback <code>decrypt_and_store_transaction</code>). <a href="keystone.html#keystone-invariants">Critical invariants</a> 참조.</td></tr>
+  <tr><td><code>store_and_broadcast_pczts_with_keystone_signatures_for_proposal(proposal, proofs, sigs, params?)</code></td><td>(hardware) Combiner → TransactionExtractor (verifying key 필요) → gRPC broadcast → storage (primary <code>extract_and_store_transaction_from_pczt</code>, fallback <code>decrypt_and_store_transaction</code>). <a href="keystone.html#keystone-invariants">Critical invariants</a> 참조.</td></tr>
   <tr><td><code>discard_proposal(id)</code></td><td>(hardware/software 공용) PROPOSAL_STORE 에서 취소된 proposal 을 명시적으로 제거. Idempotent. Dart <code>_send()</code> finally 블록이 consume 되지 않은 proposal 정리용으로 호출.</td></tr>
   <tr><td><code>rewind_to_height()</code></td><td>chain reorg 시 롤백</td></tr>
 </table>
 
 <div class="note">
-  <p><strong>Legacy 함수:</strong> <code>api/sync.rs</code>에는 이전 Dart-orchestrated sync에서 사용하던 개별 단계 함수들(update_chain_tip, suggest_scan_ranges, write_block_metadata, scan_blocks 등)이 아직 남아있다. FRB 바인딩은 생성되지만 Dart에서 호출되지 않는 dead code이다. <strong>PCZT 파이프라인 함수들 (create_pczt_from_proposal, add_proofs_to_pczt, redact_pczt_for_signer, extract_and_broadcast_pczt, discard_proposal)</strong> 은 legacy 가 아니라 현재 사용 중인 하드웨어 송금 경로이다.</p>
+  <p><strong>Legacy 함수:</strong> <code>api/sync.rs</code>에는 이전 Dart-orchestrated sync에서 사용하던 개별 단계 함수들(update_chain_tip, suggest_scan_ranges, write_block_metadata, scan_blocks 등)이 아직 남아있다. FRB 바인딩은 생성되지만 Dart에서 호출되지 않는 dead code이다. <strong>PCZT 파이프라인 함수들 (create_pczt_from_proposal, add_proofs_to_pczt, redact_pczt_for_signer, store_and_broadcast_pczts_with_keystone_signatures_for_proposal, discard_proposal)</strong> 은 legacy 가 아니라 현재 사용 중인 하드웨어 송금 경로이다.</p>
 </div>
 
 <h3 id="rust-deps">3.4 Zcash Crate 의존성 그래프</h3>

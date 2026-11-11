@@ -64,6 +64,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/screens/payment_links_screen.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../test/support/wallet_path_read_blocker.dart';
 
 import 'support/speculos_review.dart';
@@ -331,6 +332,7 @@ void main() {
           ),
         ],
         child: MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: sendRouter,
           builder: (_, child) =>
               AppTheme(data: AppThemeData.light, child: child!),
@@ -611,6 +613,7 @@ Future<void> _runLedgerGiftCardScenario(WidgetTester tester) async {
         ledgerSignedOperationServiceProvider.overrideWithValue(operations),
       ],
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
@@ -932,6 +935,7 @@ class _LedgerFirstAccountOnboardingHarnessState
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: _router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     );
@@ -1107,6 +1111,7 @@ Future<void> _runLedgerShieldScenario(WidgetTester tester) async {
         ),
       ],
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
@@ -1243,6 +1248,7 @@ Future<void> _runLedgerTexSendScenario(WidgetTester tester) async {
         ),
       ],
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
@@ -1584,6 +1590,7 @@ Widget _ledgerSwapHarness({
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) {
         final media = MediaQuery.maybeOf(context);

@@ -181,9 +181,7 @@ Widget _buildGiftCardActivityDetailUseCase(
             message: 'Hope this makes your day a little brighter!',
             timestampText: '25 May, 13:30',
             txIdText: 'f154...8143',
-            feeText: kind == GiftCardActivityKind.created
-                ? '0.0002 ZEC'
-                : null,
+            feeText: kind == GiftCardActivityKind.created ? '0.0002 ZEC' : null,
             onTxIdPressed: _noop,
             onToggleMessage: _noop,
           ),
@@ -283,6 +281,7 @@ List<ActivityFeedSectionData> _activitySections(BuildContext context) {
           amountIconName: AppIcons.arrowBack,
           amountSubtitle: 'Refunded',
           statusText: 'Failed',
+          statusIsRoutine: false,
           statusIconName: AppIcons.skull,
           statusColor: context.colors.text.destructive,
         ),
@@ -307,6 +306,7 @@ ActivityRowData _activityRow(
   String? amountIconName,
   String? amountSubtitle,
   String statusText = 'Completed',
+  bool statusIsRoutine = true,
   String? statusIconName,
   Color? statusColor,
   Color? amountColor,
@@ -329,6 +329,7 @@ ActivityRowData _activityRow(
     amountColor: amountColor ?? colors.text.primary,
     amountSubtitle: amountSubtitle,
     statusText: statusText,
+    statusIsRoutine: statusIsRoutine,
     statusIconName: statusIconName,
     statusColor: statusColor ?? colors.text.secondary,
     timestampText: 'Today, 13:11',
@@ -418,7 +419,7 @@ class _ActivityUseCaseSidebar extends StatelessWidget {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      '34% Syncing...',
+                      '34% Syncing…',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelLarge.copyWith(

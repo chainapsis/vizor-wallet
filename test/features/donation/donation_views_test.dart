@@ -5,10 +5,12 @@ import 'package:zcash_wallet/src/core/theme/app_theme_host.dart';
 import 'package:zcash_wallet/src/core/widgets/comma_to_dot_input_formatter.dart';
 import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dart';
 import 'package:zcash_wallet/src/features/donation/widgets/donation_views.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/leading_decimal_input.dart';
 
 Widget _host(Widget child) => MaterialApp(
+  localizationsDelegates: appLocalizationsDelegates,
   home: AppThemeHost(
     themeMode: ThemeMode.light,
     child: Scaffold(body: child),

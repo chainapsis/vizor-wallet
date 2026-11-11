@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_icon_hover_button.dart';
@@ -43,7 +44,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              'Privacy',
+              context.l10n.settingsPrivacyTitle,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.secondary,
               ),
@@ -67,7 +68,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _MobileToggleRow(
-                    label: 'NEAR swap privacy',
+                    label: context.l10n.settingsNearSwapPrivacyLabel,
                     keyPrefix: 'mobile_settings_near_swap_privacy',
                     enabled: nearSwapPrivacy.enabled,
                     onToggle: () => unawaited(
@@ -78,7 +79,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                   // Feedback for this toggle only, as under Private queries.
                   if (nearSwapPrivacy.transition case final transition?)
                     Text(
-                      transition,
+                      transition.message(context.l10n),
                       key: const ValueKey(
                         'mobile_settings_near_swap_privacy_transition',
                       ),
@@ -92,7 +93,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                       horizontal: AppSpacing.xxs,
                     ),
                     child: Text(
-                      nearSwapPrivacy.description,
+                      nearSwapPrivacy.description.text(context.l10n),
                       key: const ValueKey(
                         'mobile_settings_near_swap_privacy_description',
                       ),
@@ -182,7 +183,7 @@ class _MobileToggleRow extends StatelessWidget {
                         AppIconHoverButton(
                           key: ValueKey('${keyPrefix}_info'),
                           icon: AppIcons.help,
-                          semanticLabel: "What's this?",
+                          semanticLabel: context.l10n.commonWhatsThis,
                           size: 32,
                           iconSize: 16,
                           iconColor: colors.icon.muted,
@@ -198,7 +199,9 @@ class _MobileToggleRow extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        enabled ? 'On' : 'Off',
+                        enabled
+                            ? context.l10n.settingsStatusOn
+                            : context.l10n.settingsStatusOff,
                         key: ValueKey('${keyPrefix}_status'),
                         style: AppTypography.labelLarge.copyWith(
                           color: enabled

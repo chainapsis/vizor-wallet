@@ -169,7 +169,7 @@ class DesktopTorUpdateProxy {
       return;
     }
     final result = await client.request(
-      'GET',
+      'GET', // l10n-ignore: HTTP method
       upstream,
       headers: const {HttpHeaders.acceptHeader: 'application/xml'},
     );

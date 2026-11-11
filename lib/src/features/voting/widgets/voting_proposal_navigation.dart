@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -112,7 +113,7 @@ class _VotingProposalNavigationState extends State<VotingProposalNavigation> {
     final selected = await showMenu<int>(
       context: _progressAnchor.currentContext!,
       requestFocus: true,
-      semanticLabel: 'Unanswered questions',
+      semanticLabel: context.l10n.votingNavUnansweredMenu,
       menuPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.xxs,
         vertical: AppSpacing.xs,
@@ -156,8 +157,8 @@ class _VotingProposalNavigationState extends State<VotingProposalNavigation> {
           ),
           child: Text(
             _unanswered.isEmpty
-                ? 'All questions answered'
-                : 'Unanswered · ${_unanswered.length}',
+                ? context.l10n.votingNavAllAnswered
+                : context.l10n.votingNavUnansweredCount(_unanswered.length),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -307,8 +308,11 @@ class _VotingProposalNavigationState extends State<VotingProposalNavigation> {
                             ),
                       child: Text(
                         showReview
-                            ? 'Review answers'
-                            : '${widget.proposals.length - _unanswered.length} / ${widget.proposals.length} answered',
+                            ? context.l10n.votingActionReviewAnswers
+                            : context.l10n.votingNavAnsweredProgress(
+                                widget.proposals.length - _unanswered.length,
+                                widget.proposals.length,
+                              ),
                         key: ValueKey(
                           showReview
                               ? 'sticky-review-action'
@@ -390,16 +394,16 @@ class _MobileUnansweredSheetState extends State<_MobileUnansweredSheet> {
     ),
     child: MobileModalScaffold(
       title: widget.unanswered.isEmpty
-          ? 'All questions answered'
-          : 'Unanswered · ${widget.unanswered.length}',
+          ? context.l10n.votingNavAllAnswered
+          : context.l10n.votingNavUnansweredCount(widget.unanswered.length),
       titleMaxLines: 2,
       onClose: () => Navigator.pop(context),
       constrainBody: true,
       child: _adaptiveSheetBody(context, [
         Text(
           widget.unanswered.isEmpty
-              ? 'Your answers are ready to review.'
-              : 'Tap a question to jump to it.',
+              ? context.l10n.votingNavReadyToReview
+              : context.l10n.votingNavTapToJump,
           style: AppTypography.bodySmall.copyWith(
             color: context.colors.text.secondary,
           ),

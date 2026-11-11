@@ -106,6 +106,7 @@ class HardwareShieldingSession {
         txid: result.txids,
         status: result.status,
         message: result.message,
+        notices: result.notices,
       );
     });
   }

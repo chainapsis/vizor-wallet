@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_ledger
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 import 'package:zcash_wallet/src/providers/router_refresh_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/go_route_descendants.dart';
 
@@ -131,7 +132,12 @@ void main() {
               ),
             ],
           );
-          await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+          await tester.pumpWidget(
+            MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
+              routerConfig: router,
+            ),
+          );
           await tester.pumpAndSettle();
           router.push<void>(path, extra: payload);
           await tester.pumpAndSettle();

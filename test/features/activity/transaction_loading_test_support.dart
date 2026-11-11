@@ -17,11 +17,12 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
-import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
+import '../../support/test_l10n.dart';
 
 const _txid =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -328,7 +329,7 @@ void transactionLoadingTests({required bool mobile}) {
     expect(find.text('Show full address'), findsNothing);
     // The send keeps its To row, naming no one.
     expect(find.text('To'), findsOneWidget);
-    expect(find.text(kUnknownRecipientText), findsOneWidget);
+    expect(find.text(testL10n.activityDetailsUnknownRecipient), findsOneWidget);
     expect(find.text('Message'), findsNothing);
   });
 
@@ -715,6 +716,7 @@ Future<void> _pump(
         addressBookRepositoryProvider.overrideWithValue(_AddressBook()),
       ],
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),

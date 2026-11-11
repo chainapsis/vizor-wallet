@@ -228,11 +228,11 @@ private final class TorUpdateFeedDelegate: NSObject, SPUUpdaterDelegate {
 
     let alert = NSAlert()
     alert.alertStyle = .informational
-    alert.messageText = "Use Tor for this update?"
-    alert.informativeText = "Updating over Tor may take longer. Turning Tor off switches all Vizor network requests to a direct connection."
-    alert.addButton(withTitle: "Continue with Tor")
-    alert.addButton(withTitle: "Turn off Tor and update")
-    alert.addButton(withTitle: "Cancel")
+    alert.messageText = NativeStrings.text(.nativeTorUpdateTitle)
+    alert.informativeText = NativeStrings.text(.nativeTorUpdateBody)
+    alert.addButton(withTitle: NativeStrings.text(.nativeTorUpdateContinue))
+    alert.addButton(withTitle: NativeStrings.text(.nativeTorUpdateTurnOff))
+    alert.addButton(withTitle: NativeStrings.text(.nativeTorUpdateCancel))
 
     switch alert.runModal() {
     case .alertFirstButtonReturn:
@@ -340,18 +340,18 @@ private final class TorUpdateFeedDelegate: NSObject, SPUUpdaterDelegate {
   private func showDirectUpdateRestartFailure() {
     let alert = NSAlert()
     alert.alertStyle = .warning
-    alert.messageText = "Couldn’t restart the update"
-    alert.informativeText = "Tor is off. Check for updates again to continue with a direct connection."
-    alert.addButton(withTitle: "Close")
+    alert.messageText = NativeStrings.text(.nativeTorUpdateRestartFailedTitle)
+    alert.informativeText = NativeStrings.text(.nativeTorUpdateRestartFailedBody)
+    alert.addButton(withTitle: NativeStrings.text(.nativeTorUpdateClose))
     alert.runModal()
   }
 
   private func showTorDisableFailure() {
     let alert = NSAlert()
     alert.alertStyle = .warning
-    alert.messageText = "Couldn’t turn off Tor"
-    alert.informativeText = "Tor remains on. Turn it off in Settings, then check for updates again."
-    alert.addButton(withTitle: "Close")
+    alert.messageText = NativeStrings.text(.nativeTorUpdateDisableFailedTitle)
+    alert.informativeText = NativeStrings.text(.nativeTorUpdateDisableFailedBody)
+    alert.addButton(withTitle: NativeStrings.text(.nativeTorUpdateClose))
     alert.runModal()
   }
 }

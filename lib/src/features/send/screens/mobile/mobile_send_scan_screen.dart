@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../address_scan/domain/address_scan_payload.dart';
@@ -8,7 +9,6 @@ import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome, MobileScanResolver;
 import '../../models/send_scan_result.dart';
-import '../../services/send_flow.dart' show kWrongNetworkAddressMessage;
 
 /// Presents the mobile send scanner over the current send screen — Figma
 /// `QR Scan` (4484:61584): a card-contained back camera scanner over the
@@ -25,9 +25,10 @@ Future<SendScanResult?> showMobileSendScanSheet(
   MobileScannerController? controller,
   MobileScanResolver? resolve,
 }) {
+  final l10n = context.l10n;
   final resolver =
       resolve ??
-      (raw) => resolveScannedZcashAddress(raw, networkName: networkName);
+      (raw) => resolveScannedZcashAddress(l10n, raw, networkName: networkName);
   // The card reports only the accepted address, but the ZIP-321 amount, memo
   // and label live in the payload around it. Keep the raw string the resolver
   // accepted so the pop value can be built from the whole request.
@@ -63,14 +64,13 @@ Future<SendScanResult?> showMobileSendScanSheet(
 /// [networkName] is the network the wallet is on; an address for any other
 /// network is refused, and named as such.
 Future<MobileScanOutcome> resolveScannedZcashAddress(
+  AppLocalizations l10n,
   String raw, {
   required String networkName,
 }) async {
   final address = normalizeAddressScanPayload(raw);
   if (address == null || address.isEmpty) {
-    return const MobileScanOutcome.rejected(
-      "This QR code isn't a Zcash address.",
-    );
+    return MobileScanOutcome.rejected(l10n.sendScanNotZcashAddress);
   }
   final result = await rust_sync.validateAddress(
     address: address,
@@ -81,9 +81,7 @@ Future<MobileScanOutcome> resolveScannedZcashAddress(
   // is refused like any other unusable one, but saying "isn't a Zcash address"
   // about a Zcash address reads as a broken scanner.
   if (result.wrongNetwork) {
-    return const MobileScanOutcome.rejected('$kWrongNetworkAddressMessage.');
+    return MobileScanOutcome.rejected('${l10n.sendRecipientWrongNetwork}.');
   }
-  return const MobileScanOutcome.rejected(
-    "This QR code isn't a Zcash address.",
-  );
+  return MobileScanOutcome.rejected(l10n.sendScanNotZcashAddress);
 }

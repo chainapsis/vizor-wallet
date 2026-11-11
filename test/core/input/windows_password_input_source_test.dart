@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:zcash_wallet/src/core/input/app_password_input_source.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_password_input_source.dart';
 
@@ -59,6 +60,7 @@ void main() {
       ProviderScope(
         overrides: [appPasswordInputSourceProvider.overrideWithValue(service)],
         child: MaterialApp(
+          localizationsDelegates: appLocalizationsDelegates,
           home: Scaffold(
             body: Column(
               children: [

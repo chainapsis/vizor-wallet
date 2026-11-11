@@ -26,12 +26,14 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_keystone_shield_screen.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/slide_to_shield.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' hide ScanResult;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
@@ -116,6 +118,63 @@ void main() {
       await tester.pump();
     });
   }
+  for (final privacyModeEnabled in [false, true]) {
+    testWidgets('review amount with privacy mode $privacyModeEnabled', (
+      tester,
+    ) async {
+      tester.view.physicalSize =
+          const Size(393, 852) * tester.view.devicePixelRatio;
+      addTearDown(tester.view.resetPhysicalSize);
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap),
+          privacyModeProvider.overrideWith(() => _Privacy(privacyModeEnabled)),
+          walletProvider.overrideWith(_Wallet.new),
+          syncProvider.overrideWith(
+            () => FakeSyncNotifier(
+              SyncState(
+                accountUuid: 'account-1',
+                hasAccountScopedData: true,
+                transparentBalance: BigInt.from(1412000000),
+                canShieldTransparentBalance: true,
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(walletProvider.future);
+      await container.read(syncProvider.future);
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: AppTheme(
+            data: AppThemeData.dark,
+            child: MaterialApp(
+              localizationsDelegates: appLocalizationsDelegates,
+              home: const MobileKeystoneShieldScreen(),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+
+      final amount = privacyModeEnabled ? '******' : '14.12';
+      expect(
+        tester.widget<MobileShieldScene>(find.byType(MobileShieldScene)).amount,
+        amount,
+      );
+      expect(find.bySemanticsLabel('$amount ZEC'), findsOneWidget);
+      if (privacyModeEnabled) {
+        expect(find.bySemanticsLabel(RegExp(r'14\.12')), findsNothing);
+      }
+      expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+      semantics.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   testWidgets('a reopened camera accepts only its current scan session', (
     tester,
   ) async {
@@ -148,6 +207,35 @@ void main() {
     expect(
       container.read(pendingActivityEvidenceProvider).observedAt.keys,
       contains(('account-1', 'ab')),
+    );
+    container.read(pendingActivityEvidenceProvider.notifier).clear();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+  testWidgets('an unusable signature QR starts a new scan session', (
+    tester,
+  ) async {
+    await _startScanner(tester);
+    final first = tester.widget<AnimatedUrScannerView>(
+      find.byType(AnimatedUrScannerView),
+    );
+    api.pendingDecode = Completer<Uint8List>();
+    first.onComplete(const ScanResult(urType: 'zcash-pczt', data: [4]));
+    await tester.pump();
+    api.pendingDecode!.completeError(StateError('malformed PCZT CBOR'));
+    api.pendingDecode = null;
+    await _flush(tester);
+    // The scanner completed on that QR; only a new session reads the next.
+    final next = tester.widget<AnimatedUrScannerView>(
+      find.byType(AnimatedUrScannerView),
+    );
+    expect(next.scanSessionResetToken, isNot(first.scanSessionResetToken));
+    next.onComplete(const ScanResult(urType: 'zcash-pczt', data: [4]));
+    await _flush(tester);
+    expect(api.decodes, 2);
+    expect(api.broadcasts, 1);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileKeystoneShieldScreen)),
     );
     container.read(pendingActivityEvidenceProvider.notifier).clear();
     await tester.pumpWidget(const SizedBox.shrink());
@@ -418,6 +506,7 @@ void main() {
     expect(api.discards, isEmpty);
     api.pendingBroadcast!.complete(
       const StoreAndBroadcastPcztsResult(
+        notices: [],
         broadcastedCount: 1,
         totalCount: 1,
         txids: 'ab',
@@ -582,6 +671,7 @@ Future<GoRouter> _startScanner(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: router,
         builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
       ),
@@ -689,6 +779,7 @@ class _Api extends RustLibApi {
     broadcasts++;
     return pendingBroadcast?.future ??
         const StoreAndBroadcastPcztsResult(
+          notices: [],
           broadcastedCount: 1,
           totalCount: 1,
           txids: 'ab',
@@ -717,6 +808,15 @@ class _Wallet extends WalletNotifier {
     network: 'main',
     activeAccountUuid: 'account-1',
   );
+}
+
+class _Privacy extends PrivacyModeNotifier {
+  _Privacy(this.enabled);
+
+  final bool enabled;
+
+  @override
+  bool build() => enabled;
 }
 
 final _bootstrap = AppBootstrapState(

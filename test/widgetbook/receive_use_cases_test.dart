@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/receive/widgets/receive_desktop_preview.dart';
 import 'package:zcash_wallet/widgetbook/receive_use_cases.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   testWidgets('receive desktop shielded use case renders Figma shell', (
@@ -141,6 +142,7 @@ Future<void> _pumpReceiveUseCase(
 
   await tester.pumpWidget(
     MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: theme,
         child: Builder(builder: builder),

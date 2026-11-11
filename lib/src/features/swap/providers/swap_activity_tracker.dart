@@ -71,7 +71,7 @@ class SwapActivityRefreshResult {
 
   final List<SwapIntent> intents;
   final Set<String> requestedIds;
-  final String? refreshError;
+  final SwapMessage? refreshError;
   final bool didRefresh;
 
   List<SwapIntent> reconcileInto(List<SwapIntent> currentIntents) {
@@ -265,7 +265,7 @@ class SwapActivityTracker {
   /// `intent`, a swap that never finished starting, marked failed.
   static SwapIntent _startFailed(SwapIntent intent) => intent.copyWith(
     status: SwapIntentStatus.failed,
-    statusError: swapStartFailedText,
+    statusError: const SwapNotice(SwapNoticeKind.startNotFinished),
   );
 
   /// Swaps whose start finished in this launch, by account and id, with
@@ -509,7 +509,7 @@ class SwapActivityTracker {
     var updatedIntents = currentIntents;
     var didRefresh = false;
     final refreshedIds = <String>{};
-    String? refreshError;
+    SwapMessage? refreshError;
 
     for (final intent in currentIntents) {
       if (!ids.contains(intent.id)) continue;
@@ -699,6 +699,6 @@ List<SwapIntent> _intentsFromRecords(List<SwapIntentRecord> records) {
 /// What one refresh pass changed (see `SwapActivityTracker._refreshBatch`).
 typedef _RefreshBatch = ({
   List<SwapIntent> intents,
-  String? refreshError,
+  SwapMessage? refreshError,
   bool didRefresh,
 });

@@ -34,8 +34,10 @@ import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 
 const _password = 'Password1!';
 
@@ -83,13 +85,21 @@ class _FakeAccountNotifier extends AccountNotifier {
 /// The post-unlock sync hooks are the awaits the claim deliberately sits
 /// behind; they must not reach Rust here.
 class _FakeUnlockSyncNotifier extends FakeSyncNotifier {
-  _FakeUnlockSyncNotifier() : super(SyncState());
+  _FakeUnlockSyncNotifier([this.syncStart]) : super(SyncState());
+
+  /// Holds the sync start open when set, as one waiting out a cancelled
+  /// sync does.
+  final Completer<void>? syncStart;
+  int syncStarts = 0;
 
   @override
   Future<void> refreshAfterUnlock() async {}
 
   @override
-  Future<void> startSyncAnyway({int? latestTipHeight}) async {}
+  Future<void> startSyncAnyway({int? latestTipHeight}) async {
+    syncStarts++;
+    await syncStart?.future;
+  }
 }
 
 /// Ends the card's pre-check without touching Rust: the claim is what these
@@ -143,11 +153,12 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
 List<Override> _overrides({
   required bool migrationGate,
   _FakeAccountNotifier? account,
+  _FakeUnlockSyncNotifier? sync,
 }) => [
   appBootstrapProvider.overrideWithValue(_bootstrap()),
   appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
   accountProvider.overrideWith(() => account ?? _FakeAccountNotifier()),
-  syncProvider.overrideWith(_FakeUnlockSyncNotifier.new),
+  syncProvider.overrideWith(() => sync ?? _FakeUnlockSyncNotifier()),
   migrationSendGateProvider.overrideWithValue(migrationGate),
   paymentRequestPrecheckProvider.overrideWithValue(_stubPrecheck()),
 ];
@@ -159,6 +170,7 @@ Future<ProviderContainer> _pumpUnlock(
   bool migrationGate = false,
   AppPasswordInputSource? inputSource,
   _FakeAccountNotifier? account,
+  _FakeUnlockSyncNotifier? sync,
 }) async {
   tester.view.physicalSize = const Size(1440, 1024);
   tester.view.devicePixelRatio = 1.0;
@@ -167,7 +179,7 @@ Future<ProviderContainer> _pumpUnlock(
 
   final container = ProviderContainer(
     overrides: [
-      ..._overrides(migrationGate: migrationGate, account: account),
+      ..._overrides(migrationGate: migrationGate, account: account, sync: sync),
       if (inputSource != null)
         appPasswordInputSourceProvider.overrideWithValue(inputSource),
     ],
@@ -198,6 +210,7 @@ Future<ProviderContainer> _pumpUnlock(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp.router(
+        localizationsDelegates: appLocalizationsDelegates,
         routerConfig: _router,
         builder: (_, child) =>
             AppTheme(data: AppThemeData.light, child: child!),
@@ -274,7 +287,28 @@ void main() {
     expect(flow.view.source, PaymentRequestSource.link);
     // Claimed, so a later drain cannot deliver the same link a second time.
     expect(container.read(paymentUriPrefillProvider), isNull);
-    expect(find.text(kPaymentUriExpiredMessage), findsNothing);
+    expect(find.text(PaymentUriNotice.expired.text(testL10n)), findsNothing);
+  });
+
+  testWidgets('a slow sync start does not hold the unlock off Home', (
+    tester,
+  ) async {
+    final syncStart = Completer<void>();
+    final sync = _FakeUnlockSyncNotifier(syncStart);
+    final container = await _pumpUnlock(tester, sync: sync);
+    container.read(paymentUriPrefillProvider.notifier).set(_parkedRequest);
+
+    await _unlock(tester);
+
+    expect(sync.syncStarts, 1);
+    expect(_location(), '/home');
+    expect(find.text('home-route'), findsOneWidget);
+    // The parked link is still claimed and presented.
+    expect(
+      container.read(paymentRequestFlowProvider)?.prefill.id,
+      'payment-uri-1',
+    );
+    syncStart.complete();
   });
 
   testWidgets('a scanned request retains its provenance after unlock', (
@@ -305,7 +339,7 @@ void main() {
     expect(_location(), '/home');
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(container.read(paymentUriPrefillProvider), isNull);
-    expect(find.text(kPaymentUriExpiredMessage), findsOneWidget);
+    expect(find.text(PaymentUriNotice.expired.text(testL10n)), findsOneWidget);
   });
 
   testWidgets('a migration send gate that closed while locked drops the link', (
@@ -323,7 +357,10 @@ void main() {
     expect(_location(), '/home');
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(container.read(paymentUriPrefillProvider), isNull);
-    expect(find.text(kPaymentUriMigrationSendGateMessage), findsOneWidget);
+    expect(
+      find.text(PaymentUriNotice.migrationSendGate.text(testL10n)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a failed unlock leaves the link parked', (tester) async {

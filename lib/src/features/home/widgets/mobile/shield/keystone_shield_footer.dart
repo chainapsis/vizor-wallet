@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
+import '../../../../../core/l10n/l10n.dart';
 import '../../../../../core/theme/app_theme.dart';
 import '../../../../../core/widgets/app_button.dart';
 import '../../../../../core/widgets/app_icon.dart';
@@ -63,7 +64,10 @@ class KeystoneShieldFooter extends StatelessWidget {
             availableWidth / 2,
             math.max(
               AppButtonSizing.largeHeight,
-              measure('Cancel', double.infinity).width.ceilToDouble() +
+              measure(
+                    context.l10n.commonCancel,
+                    double.infinity,
+                  ).width.ceilToDouble() +
                   labelInsets,
             ),
           );
@@ -77,11 +81,11 @@ class KeystoneShieldFooter extends StatelessWidget {
           final contentHeight = math.max(
             iconSize,
             math.max(
-              measure('Cancel', cancelLabelWidth).height,
+              measure(context.l10n.commonCancel, cancelLabelWidth).height,
               math.max(
-                measure('Show QR', actionLabelWidth).height,
+                measure(context.l10n.homeShieldShowQr, actionLabelWidth).height,
                 measure(
-                  'Next step',
+                  context.l10n.commonNextStep,
                   actionLabelWidth - iconSize - AppSpacing.xxs,
                 ).height,
               ),
@@ -102,8 +106,8 @@ class KeystoneShieldFooter extends StatelessWidget {
                   height: height,
                   variant: AppButtonVariant.ghost,
                   onPressed: onCancel,
-                  child: const Text(
-                    'Cancel',
+                  child: Text(
+                    context.l10n.commonCancel,
                     style: TextStyle(color: Color(0xFFFFFFFF)),
                   ),
                 ),
@@ -153,7 +157,9 @@ class KeystoneShieldFooter extends StatelessWidget {
                           children: [
                             Flexible(
                               child: Text(
-                                showQr ? 'Next step' : 'Show QR',
+                                showQr
+                                    ? context.l10n.commonNextStep
+                                    : context.l10n.homeShieldShowQr,
                                 textAlign: TextAlign.center,
                               ),
                             ),

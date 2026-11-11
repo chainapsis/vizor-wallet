@@ -721,11 +721,7 @@ mod tests {
         .into_option()
         .unwrap();
         let ironwood = version.value_pool() == ValuePool::Ironwood;
-        let branch = if version != BundleVersion::orchard_v2() {
-            BranchId::Nu6_3
-        } else {
-            BranchId::Nu6_2
-        };
+        let branch = BranchId::Nu6_3;
         let path =
             MerklePath::from_parts(0, [MerkleHashOrchard::from_bytes(&[0; 32]).unwrap(); 32]);
         let mut builder = Builder::new(
@@ -836,50 +832,43 @@ mod tests {
 
     #[test]
     fn memos_the_device_would_hash_are_refused_for_apps_without_memo_hash() {
-        for version in [
-            BundleVersion::orchard_v2(),
-            BundleVersion::orchard_v3(),
-            BundleVersion::ironwood_v3(),
+        for memo in [
+            b"first\nsecond".as_slice(),
+            b"first\rsecond",
+            b"first\r\nsecond",
+            b"\n",
+            b"first\tsecond",
+            "\u{c548}\u{b155}\u{d558}\u{c138}\u{c694}".as_bytes(),
+            "gg \u{1F389}".as_bytes(),
+            b"caf\xc3\xa9",
+            // A non-text lead byte the device hashes without inspecting.
+            b"\xffabc",
+            // Valid text tag, but not valid UTF-8 after it.
+            b"a\xff",
+            b"nul\0inside",
         ] {
-            for memo in [
-                b"first\nsecond".as_slice(),
-                b"first\rsecond",
-                b"first\r\nsecond",
-                b"\n",
-                b"first\tsecond",
-                "\u{c548}\u{b155}\u{d558}\u{c138}\u{c694}".as_bytes(),
-                "gg \u{1F389}".as_bytes(),
-                b"caf\xc3\xa9",
-                // A non-text lead byte the device hashes without inspecting.
-                b"\xffabc",
-                // Valid text tag, but not valid UTF-8 after it.
-                b"a\xff",
-                b"nul\0inside",
-            ] {
-                for value in [0, 90_000] {
-                    let pczt = memo_pczt(version, memo, value, true);
-                    assert!(super::super::build_pczt_full_signing_plan(
-                        &pczt,
-                        LedgerAppSupport::OLDEST
-                    )
-                    .unwrap_err()
-                    .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
-                    assert!(
-                        super::super::build_pczt_signing_plan(&pczt, LedgerAppSupport::OLDEST)
-                            .unwrap_err()
-                            .contains(LEDGER_MEMO_HASH_UNSUPPORTED)
-                    );
-                    // An app that can show the memo hash signs the same PCZT.
-                    assert!(super::super::build_pczt_full_signing_plan(
-                        &pczt,
-                        LedgerAppSupport::NEWEST
-                    )
-                    .is_ok());
-                    assert!(
-                        super::super::build_pczt_signing_plan(&pczt, LedgerAppSupport::NEWEST)
-                            .is_ok()
-                    );
-                }
+            for value in [0, 90_000] {
+                let pczt = memo_pczt(BundleVersion::ironwood_v3(), memo, value, true);
+                assert!(super::super::build_pczt_full_signing_plan(
+                    &pczt,
+                    LedgerAppSupport::OLDEST
+                )
+                .unwrap_err()
+                .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
+                assert!(
+                    super::super::build_pczt_signing_plan(&pczt, LedgerAppSupport::OLDEST)
+                        .unwrap_err()
+                        .contains(LEDGER_MEMO_HASH_UNSUPPORTED)
+                );
+                // An app that can show the memo hash signs the same PCZT.
+                assert!(super::super::build_pczt_full_signing_plan(
+                    &pczt,
+                    LedgerAppSupport::NEWEST
+                )
+                .is_ok());
+                assert!(
+                    super::super::build_pczt_signing_plan(&pczt, LedgerAppSupport::NEWEST).is_ok()
+                );
             }
         }
     }
@@ -898,28 +887,20 @@ mod tests {
 
     #[test]
     fn printable_ascii_memos_still_build_signing_plans() {
-        for version in [
-            BundleVersion::orchard_v2(),
-            BundleVersion::orchard_v3(),
-            BundleVersion::ironwood_v3(),
+        for memo in [
+            b"".as_slice(),
+            b"single line",
+            br"literal\n",
+            // ZIP-302 "no memo": the device shows no field at all.
+            b"\xf6",
+            b" leading and trailing ",
+            br#"~!@#$%^&*()_+-=[]{};':\",.<>/?`|"#,
+            &[b'x'; 512],
         ] {
-            for memo in [
-                b"".as_slice(),
-                b"single line",
-                br"literal\n",
-                // ZIP-302 "no memo": the device shows no field at all.
-                b"\xf6",
-                b" leading and trailing ",
-                br#"~!@#$%^&*()_+-=[]{};':\",.<>/?`|"#,
-                &[b'x'; 512],
-            ] {
-                let pczt = memo_pczt(version, memo, 90_000, true);
-                assert!(super::super::build_pczt_full_signing_plan(
-                    &pczt,
-                    LedgerAppSupport::OLDEST
-                )
-                .is_ok());
-            }
+            let pczt = memo_pczt(BundleVersion::ironwood_v3(), memo, 90_000, true);
+            assert!(
+                super::super::build_pczt_full_signing_plan(&pczt, LedgerAppSupport::OLDEST).is_ok()
+            );
         }
     }
 

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
+import '../../support/localized_test_scope.dart';
 
 void main() {
   testWidgets('matches the pane scrim shape without backdrop blur', (
@@ -12,8 +13,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+        child: LocalizedTestScope(
           child: SizedBox(
             width: 320,
             height: 240,
@@ -49,8 +49,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: const Directionality(
-          textDirection: TextDirection.ltr,
+        child: const LocalizedTestScope(
           child: SizedBox(
             width: 320,
             height: 240,
@@ -79,8 +78,7 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+        child: LocalizedTestScope(
           child: SizedBox(
             width: 360,
             height: 240,

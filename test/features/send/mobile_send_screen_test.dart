@@ -41,10 +41,12 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_zec_market_data_cache.dart';
 
 import '../../support/leading_decimal_input.dart';
+import '../../support/test_l10n.dart';
 
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
@@ -234,7 +236,10 @@ class _TestZecUsdPriceNotifier extends Notifier<double?> {
   }
 }
 
-AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
+AppBootstrapState _bootstrap({
+  AccountState? accountState,
+  bool privacyModeEnabled = false,
+}) => AppBootstrapState(
   initialLocation: '/send',
   initialAccountState:
       accountState ??
@@ -247,7 +252,7 @@ AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
   themeMode: ThemeMode.light,
-  privacyModeEnabled: false,
+  privacyModeEnabled: privacyModeEnabled,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
@@ -582,6 +587,7 @@ Widget _app({
         paymentRequestPrecheckProvider.overrideWithValue(precheck),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, c) {
         final mediaQuery = MediaQuery.of(
@@ -601,10 +607,12 @@ Widget _app({
   );
 }
 
-Widget _amountStepWithPriceLoadingApp() {
+Widget _amountStepWithPriceLoadingApp({bool privacyModeEnabled = false}) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(privacyModeEnabled: privacyModeEnabled),
+      ),
       sendProvingKeyWarmupProvider.overrideWithValue(() {}),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       zecLiveUsdUnitPriceProvider.overrideWithValue(null),
@@ -617,6 +625,7 @@ Widget _amountStepWithPriceLoadingApp() {
       ),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendScreen(
@@ -660,6 +669,7 @@ Widget _reviewApp({
       ),
     ],
     child: MaterialApp(
+      localizationsDelegates: appLocalizationsDelegates,
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendScreen(
@@ -854,6 +864,7 @@ Widget _sendFlowRouterApp({
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),
@@ -2961,7 +2972,7 @@ void main() {
       kZcashDefaultNetworkName,
       reason: 'validation has to be asked about the network we actually pay on',
     );
-    expect(find.text(kWrongNetworkAddressMessage), findsOneWidget);
+    expect(find.text(testL10n.sendRecipientWrongNetwork), findsOneWidget);
     expect(
       find.text('Invalid address'),
       findsNothing,
@@ -2976,7 +2987,7 @@ void main() {
     );
 
     await _enterAddress(tester, _shieldedAddress);
-    expect(find.text(kWrongNetworkAddressMessage), findsNothing);
+    expect(find.text(testL10n.sendRecipientWrongNetwork), findsNothing);
   });
 
   testWidgets('recipient step names a matched saved contact', (tester) async {
@@ -3079,7 +3090,10 @@ void main() {
     expect(editable.controller.text, _shieldedAddress);
     expect(
       find.text(
-        sendScanDowngradeMessage(SendScanDowngrade.multipleRecipients)!,
+        sendScanDowngradeMessage(
+          testL10n,
+          SendScanDowngrade.multipleRecipients,
+        )!,
       ),
       findsOneWidget,
     );
@@ -3099,7 +3113,7 @@ void main() {
 
     for (final downgrade in SendScanDowngrade.values) {
       expect(
-        find.text(sendScanDowngradeMessage(downgrade)!),
+        find.text(sendScanDowngradeMessage(testL10n, downgrade)!),
         findsNothing,
         reason: '$downgrade',
       );
@@ -3283,7 +3297,10 @@ void main() {
 
       await _enterAddress(tester, 'zcash:?amount=0.25');
 
-      expect(find.text(kUnreadablePaymentLinkMessage), findsOneWidget);
+      expect(
+        find.text(testL10n.sendRecipientUnreadableRequestLink),
+        findsOneWidget,
+      );
     });
   });
 
@@ -4015,6 +4032,36 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     expect(loadingFinder, findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('amount step masks the spendable balance in privacy mode', (
+    tester,
+  ) async {
+    final visibleBalance = ZecAmount.fromZatoshi(
+      BigInt.from(500000000),
+    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+    final balanceRow = find.byKey(
+      const ValueKey('mobile_send_amount_balance_row'),
+    );
+
+    await tester.pumpWidget(_amountStepWithPriceLoadingApp());
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(of: balanceRow, matching: find.text(visibleBalance)),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(
+      _amountStepWithPriceLoadingApp(privacyModeEnabled: true),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(of: balanceRow, matching: find.text('****** ZEC')),
+      findsOneWidget,
+    );
+    expect(find.textContaining(visibleBalance), findsNothing);
   });
 
   testWidgets('amount input displays a leading zero and keeps the cursor', (

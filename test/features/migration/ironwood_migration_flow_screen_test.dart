@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../support/test_l10n.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
+import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -27,11 +29,12 @@ import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
-import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 void main() {
   setUpAll(() async {
@@ -304,9 +307,9 @@ void main() {
 
     expect(find.text('Migrations can take a long time'), findsOneWidget);
     expect(find.text('You can spend as funds arrive'), findsOneWidget);
-    expect(find.text('Use VPN for an extra privacy'), findsOneWidget);
+    expect(find.text('Use a VPN for extra privacy'), findsOneWidget);
     expect(find.text('Keep Vizor running'), findsOneWidget);
-    expect(find.textContaining('VPN/network privacy layer'), findsOneWidget);
+    expect(find.textContaining('VPN or network privacy layer'), findsOneWidget);
     expect(
       find.textContaining('send the next migration transaction'),
       findsOneWidget,
@@ -615,7 +618,7 @@ void main() {
     await tester.tap(find.widgetWithText(AppButton, 'Authorise anyway'));
     await tester.pumpAndSettle();
 
-    expect(find.text(kLedgerAppUpdateRequiredTitle), findsOneWidget);
+    expect(find.text(testL10n.ledgerAppUpdateRequiredTitle), findsOneWidget);
     expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
     expect(discarded, ['ledger-immediate-request']);
 
@@ -1102,15 +1105,21 @@ void main() {
     'Keystone migration scan error asks for firmware update on legacy sign result',
     () {
       final legacyMessage = ironwoodMigrationKeystoneScanErrorMessage(
-        Exception(
-          'Unexpected UR type: got "zcash-sign-result", '
-          'expected "zcash-batch-sig-result"',
+        testL10n,
+        const rust_sync.ApiWalletError(
+          code: rust_sync.ApiWalletErrorCode.unexpectedUrType,
+          message:
+              'Unexpected UR type: got "zcash-sign-result", '
+              'expected "zcash-batch-sig-result"',
         ),
       );
       final wrongQrMessage = ironwoodMigrationKeystoneScanErrorMessage(
-        Exception(
-          'Unexpected UR type: got "zcash-pczt", '
-          'expected "zcash-batch-sig-result"',
+        testL10n,
+        const rust_sync.ApiWalletError(
+          code: rust_sync.ApiWalletErrorCode.unexpectedUrType,
+          message:
+              'Unexpected UR type: got "zcash-pczt", '
+              'expected "zcash-batch-sig-result"',
         ),
       );
 
@@ -1129,6 +1138,7 @@ void main() {
     'Keystone migration explains a signed QR from another signing round',
     () {
       final message = ironwoodMigrationKeystoneSigningErrorMessage(
+        testL10n,
         Exception(
           'Keystone batch result request id does not match the request',
         ),
@@ -1144,13 +1154,14 @@ void main() {
 
   test('Keystone migration explains the network upgrade hold', () {
     final message = ironwoodMigrationKeystoneSigningErrorMessage(
+      testL10n,
       Exception(
         "Migrations can't start this close to the network upgrade. "
         'Try again after it activates.',
       ),
     );
 
-    expect(message, kNetworkUpgradeHoldMessage);
+    expect(message, networkUpgradeHoldText(testL10n));
   });
 
   testWidgets(
@@ -1177,6 +1188,7 @@ void main() {
           child: AppTheme(
             data: AppThemeData.light,
             child: MaterialApp.router(
+              localizationsDelegates: appLocalizationsDelegates,
               routerConfig: GoRouter(
                 initialLocation: '/migration/immediate/keystone/sign',
                 routes: [
@@ -1380,13 +1392,13 @@ void main() {
     expect(ironwoodMigrationKeystoneProofReady(ready), isTrue);
     expect(ironwoodMigrationKeystoneProofFailed(failed), isTrue);
     expect(
-      ironwoodMigrationKeystoneProofWaitingMessage(pending),
+      ironwoodMigrationKeystoneProofWaitingMessage(testL10n, pending),
       'Signature captured. Vizor is still preparing local proofs (1/3). '
       'Keep this screen open.',
     );
     expect(
-      ironwoodMigrationKeystoneProofFailureMessage(failed),
-      'Proof generation failed.',
+      ironwoodMigrationKeystoneProofFailureMessage(testL10n, failed),
+      testL10n.migrationKeystoneProofFailed,
     );
   });
 
@@ -1631,14 +1643,14 @@ void main() {
       error:
           "Migrations can't start this close to the network upgrade. Try "
           'again after it activates.',
-      copy: kNetworkUpgradeHoldMessage,
+      copy: networkUpgradeHoldText(testL10n),
       redraws: false,
     ),
     (
       error:
           'Migration schedule was drawn before the network upgrade; review '
           'the plan again',
-      copy: kNetworkUpgradeScheduleChangedMessage,
+      copy: testL10n.sendPaymentRequestCheckUpgradeScheduleChanged,
       redraws: true,
     ),
   ]) {
@@ -1843,7 +1855,7 @@ void main() {
     expect(
       find.text(
         'You can close Vizor anytime. Migration will pause, and you can '
-        'restart it when you return.',
+        'resume it when you return.',
       ),
       findsOneWidget,
     );
@@ -5734,6 +5746,546 @@ void main() {
     await container.read(ironwoodMigrationPrivatePlanProvider.future);
     expect(planCallCount, 4);
   });
+
+  group('privacy mode', () {
+    void useDesktopView(WidgetTester tester) {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+    }
+
+    // A fresh ProviderScope keeps its first notifier, so unmount in between.
+    Future<void> remount(WidgetTester tester, Widget harness) async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(harness);
+    }
+
+    final introData = IronwoodMigrationFlowData(
+      amountZatoshi: BigInt.from(1_234_500_000),
+      accountName: 'Account 1',
+      profilePictureId: kDefaultProfilePictureId,
+    );
+
+    testWidgets('intro masks the Orchard balance and updates in place', (
+      tester,
+    ) async {
+      useDesktopView(tester);
+      await tester.pumpWidget(_migrationFlowDataHarness(flowData: introData));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('12.345 $kZcashDefaultCurrencyTicker'),
+        findsNWidgets(2),
+      );
+      expect(
+        find.textContaining('Your 12.345 ZEC is currently in Orchard.'),
+        findsOneWidget,
+      );
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.text('Zcash Network Upgrade')),
+      );
+      await container.read(privacyModeProvider.notifier).set(true);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('12.345'), findsNothing);
+      expect(
+        _countOutsideSidebar(find.text('****** $kZcashDefaultCurrencyTicker')),
+        2,
+      );
+      expect(
+        find.textContaining('Your ****** ZEC is currently in Orchard.'),
+        findsOneWidget,
+      );
+      _expectNoDoubledDenomination();
+    });
+
+    testWidgets('reviews mask the amount to migrate but keep the fee', (
+      tester,
+    ) async {
+      useDesktopView(tester);
+      await tester.pumpWidget(
+        _migrationOptionsHarness(initialLocation: '/migration/private/review'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('0.1\nZEC'), findsOneWidget);
+
+      await remount(
+        tester,
+        _migrationOptionsHarness(
+          initialLocation: '/migration/private/review',
+          privacyModeEnabled: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Amount to migrate'), findsOneWidget);
+      expect(find.text('******\nZEC'), findsOneWidget);
+      expect(find.textContaining('0.1'), findsNothing);
+      _expectNoDoubledDenomination();
+
+      await remount(
+        tester,
+        _migrationOptionsHarness(
+          initialLocation: '/migration/immediate/review',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('0.0999 ZEC'), findsOneWidget);
+      expect(find.text('~0.0001 ZEC'), findsOneWidget);
+
+      await remount(
+        tester,
+        _migrationOptionsHarness(
+          initialLocation: '/migration/immediate/review',
+          privacyModeEnabled: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(_countOutsideSidebar(find.text('****** ZEC')), 1);
+      expect(find.text('0.0999 ZEC'), findsNothing);
+      expect(find.text('~0.0001 ZEC'), findsOneWidget);
+      _expectNoDoubledDenomination();
+    });
+
+    rust_sync.MigrationStatus anchorWaitStatus() => _migrationStatus(
+      phase: kIronwoodMigrationReadyToMigratePhase,
+      activeRunId: 'run-1',
+      proofReady: false,
+      signedChildPcztCount: 2,
+      nextActionHeight: 1_144,
+      nextProofWindowHeight: 1_144,
+      nextProofWindowPartIndices: const [1, 2],
+      targetValuesZatoshi: const [1_000_000_000, 200_000_000, 300_000_000],
+      totalCount: 3,
+      parts: [
+        _migrationPart(
+          0,
+          1_000_000_000,
+          rust_sync.MigrationPartState.completed,
+          scheduleOrder: 0,
+        ),
+        _migrationPart(
+          1,
+          200_000_000,
+          rust_sync.MigrationPartState.preparing,
+          scheduleOrder: 1,
+          scheduledHeight: 1_150,
+        ),
+        _migrationPart(
+          2,
+          300_000_000,
+          rust_sync.MigrationPartState.preparing,
+          scheduleOrder: 2,
+          scheduledHeight: 1_160,
+        ),
+      ],
+    );
+    final anchorSyncState = SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      scannedHeight: 1_000,
+      chainTipHeight: 1_000,
+    );
+
+    testWidgets('status masks ring, left to migrate and note semantics', (
+      tester,
+    ) async {
+      useDesktopView(tester);
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: anchorWaitStatus(),
+          syncState: anchorSyncState,
+          disableAnimations: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('5 ZEC'), findsNWidgets(2));
+      expect(
+        find.bySemanticsLabel(RegExp(r'Note 3: 10 ZEC, completed\.')),
+        findsOneWidget,
+      );
+
+      await remount(
+        tester,
+        _privateStatusHarness(
+          status: anchorWaitStatus(),
+          syncState: anchorSyncState,
+          disableAnimations: true,
+          privacyModeEnabled: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Next migration window'), findsOneWidget);
+      expect(find.text('Left to migrate'), findsOneWidget);
+      expect(_countOutsideSidebar(find.text('****** ZEC')), 2);
+      expect(find.text('5 ZEC'), findsNothing);
+      expect(find.text('1,144'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(
+          'Migration notes in expected processing order. '
+          'Note 1: ****** ZEC, preparing. '
+          'Note 2: ****** ZEC, preparing. '
+          'Note 3: ****** ZEC, completed.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel(RegExp(r'\d ZEC')), findsNothing);
+      _expectNoDoubledDenomination();
+    });
+
+    testWidgets('signing batch card masks the amount but keeps its share', (
+      tester,
+    ) async {
+      useDesktopView(tester);
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationReadyToMigratePhase,
+        activeRunId: 'run-1',
+        currentSigningPartIndices: const [0],
+        targetValuesZatoshi: const [100_000_000, 300_000_000],
+        totalCount: 2,
+        parts: [
+          _migrationPart(
+            0,
+            100_000_000,
+            rust_sync.MigrationPartState.needsInput,
+            scheduleOrder: 0,
+          ),
+          _migrationPart(
+            1,
+            300_000_000,
+            rust_sync.MigrationPartState.scheduled,
+            scheduleOrder: 1,
+            scheduledHeight: 1_200,
+          ),
+        ],
+      );
+      Widget harness({required bool privacyModeEnabled}) =>
+          _migrationEntryHarness(
+            ctaState: IronwoodHomeMigrationCtaState.resume(
+              network: 'main',
+              accountUuid: 'account-1',
+              status: status,
+            ),
+            initialLocation: '/migration/private/status',
+            realStatusRoute: true,
+            activeAccountIsHardware: true,
+            disableAnimations: true,
+            privacyModeEnabled: privacyModeEnabled,
+          );
+
+      await tester.pumpWidget(harness(privacyModeEnabled: false));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Sign Batch #1'), findsOneWidget);
+      expect(find.text('1 ZEC (25%)'), findsOneWidget);
+
+      await remount(tester, harness(privacyModeEnabled: true));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Batch #1 (1 notes)'), findsOneWidget);
+      expect(find.text('****** ZEC (25%)'), findsOneWidget);
+      expect(find.text('1 ZEC (25%)'), findsNothing);
+      expect(find.text('Sign Batch #1'), findsOneWidget);
+      _expectNoDoubledDenomination();
+    });
+
+    testWidgets('preparation ring masks the split amount, keeps progress', (
+      tester,
+    ) async {
+      useDesktopView(tester);
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        activeRunId: 'run-1',
+        denominationConfirmationTarget: 3,
+        denominationSplitCompletedCount: 0,
+        denominationSplitTotalCount: 2,
+        totalCount: 4,
+        preparationTransactions: [
+          _preparationTransaction(
+            0,
+            200_000_000,
+            rust_sync.MigrationPreparationTransactionState.scheduled,
+            scheduledHeight: 1_010,
+          ),
+          _preparationTransaction(
+            1,
+            100_000_000,
+            rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+            round: 2,
+            projectedHeight: 1_100,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: status,
+          syncState: anchorSyncState,
+          disableAnimations: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('~2 ZEC'), findsOneWidget);
+
+      await remount(
+        tester,
+        _privateStatusHarness(
+          status: status,
+          syncState: anchorSyncState,
+          disableAnimations: true,
+          privacyModeEnabled: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('~****** ZEC'), findsOneWidget);
+      expect(find.text('~2 ZEC'), findsNothing);
+      expect(find.text('Transaction 1 of 6'), findsOneWidget);
+      expect(find.text('0 of 6 complete'), findsOneWidget);
+      _expectNoDoubledDenomination();
+    });
+
+    testWidgets('complete status masks the migrated total', (tester) async {
+      useDesktopView(tester);
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationCompletePhase,
+        activeRunId: 'run-1',
+        targetValuesZatoshi: const [10_000_000, 20_000_000, 30_000_000],
+        totalCount: 3,
+        parts: [
+          for (final (index, value) in const [
+            10_000_000,
+            20_000_000,
+            30_000_000,
+          ].indexed)
+            _migrationPart(
+              index,
+              value,
+              rust_sync.MigrationPartState.completed,
+            ),
+        ],
+      );
+      await tester.pumpWidget(_privateStatusHarness(status: status));
+      await tester.pumpAndSettle();
+      expect(find.text('Your\n0.6 ZEC\nare on Ironwood!'), findsOneWidget);
+
+      await remount(
+        tester,
+        _privateStatusHarness(status: status, privacyModeEnabled: true),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Your\n****** ZEC\nare on Ironwood!'), findsOneWidget);
+      expect(find.textContaining('0.6'), findsNothing);
+      _expectNoDoubledDenomination();
+    });
+
+    rust_sync.MigrationStatus preparationScheduleStatus() => _migrationStatus(
+      phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+      activeRunId: 'run-1',
+      denominationConfirmationTarget: 3,
+      denominationSplitCompletedCount: 1,
+      denominationSplitTotalCount: 2,
+      preparationTransactions: [
+        _preparationTransaction(
+          0,
+          500_000_000,
+          rust_sync.MigrationPreparationTransactionState.completed,
+          outputs: [
+            rust_sync.MigrationPreparationOutputStatus(
+              valueZatoshi: BigInt.from(400_000_000),
+              kind: rust_sync.MigrationPreparationOutputKind.continuation,
+              nextRound: 2,
+            ),
+            rust_sync.MigrationPreparationOutputStatus(
+              valueZatoshi: BigInt.from(50_010_000),
+              targetValueZatoshi: BigInt.from(50_000_000),
+              kind: rust_sync.MigrationPreparationOutputKind.migration,
+            ),
+          ],
+          scheduledHeight: 980,
+          minedHeight: 984,
+          confirmationCount: 3,
+        ),
+        _preparationTransaction(
+          1,
+          400_000_000,
+          rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+          round: 2,
+          projectedHeight: 1_171,
+          projectedCompletionHeight: 1_174,
+        ),
+      ],
+    );
+
+    testWidgets('preparation schedule masks split and output amounts', (
+      tester,
+    ) async {
+      useDesktopView(tester);
+      Widget harness({required bool privacyModeEnabled}) =>
+          _migrationEntryHarness(
+            ctaState: IronwoodHomeMigrationCtaState.resume(
+              network: 'test',
+              accountUuid: 'account-1',
+              status: preparationScheduleStatus(),
+            ),
+            initialLocation: '/migration/private/preparation-schedule',
+            syncState: anchorSyncState,
+            disableAnimations: true,
+            privacyModeEnabled: privacyModeEnabled,
+          );
+
+      await tester.pumpWidget(harness(privacyModeEnabled: false));
+      await tester.pumpAndSettle();
+      expect(find.text('1. 5 ZEC'), findsOneWidget);
+      expect(find.text('2. 4 ZEC'), findsOneWidget);
+      expect(find.text('0.5 ZEC'), findsOneWidget);
+
+      await remount(tester, harness(privacyModeEnabled: true));
+      await tester.pumpAndSettle();
+      expect(find.text('1. ****** ZEC'), findsOneWidget);
+      expect(find.text('2. ****** ZEC'), findsOneWidget);
+      expect(_countOutsideSidebar(find.text('****** ZEC')), 2);
+      expect(find.text('0.5 ZEC'), findsNothing);
+      expect(find.text('Current round'), findsOneWidget);
+      expect(find.text('2 of 2'), findsOneWidget);
+      expect(find.text('Used in round 2'), findsOneWidget);
+      expect(
+        // The first card merges with its "Split round 1" heading.
+        find.bySemanticsLabel(
+          RegExp(
+            '${RegExp.escape('Split 1, ****** ZEC, completed at block 984. '
+            'Outputs: ****** ZEC, used in round 2; '
+            '****** ZEC, for migration.')}\$',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(RegExp(r'Split 2, \*{6} ZEC, ')),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel(RegExp(r'\d ZEC')), findsNothing);
+      _expectNoDoubledDenomination();
+    });
+
+    testWidgets('migration schedule masks amounts and keeps percentages', (
+      tester,
+    ) async {
+      useDesktopView(tester);
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationReadyToMigratePhase,
+        activeRunId: 'run-1',
+        targetValuesZatoshi: const [100_000_000, 300_000_000],
+        totalCount: 2,
+        parts: [
+          _migrationPart(
+            0,
+            100_000_000,
+            rust_sync.MigrationPartState.completed,
+            minedHeight: 990,
+          ),
+          _migrationPart(
+            1,
+            300_000_000,
+            rust_sync.MigrationPartState.scheduled,
+            scheduledHeight: 1_200,
+          ),
+        ],
+      );
+      Widget harness({required bool privacyModeEnabled}) =>
+          _migrationEntryHarness(
+            ctaState: IronwoodHomeMigrationCtaState.resume(
+              network: 'main',
+              accountUuid: 'account-1',
+              status: status,
+            ),
+            initialLocation: '/migration/private/schedule',
+            syncState: anchorSyncState,
+            disableAnimations: true,
+            privacyModeEnabled: privacyModeEnabled,
+          );
+
+      await tester.pumpWidget(harness(privacyModeEnabled: false));
+      await tester.pumpAndSettle();
+      expect(find.text('3 ZEC'), findsOneWidget);
+      expect(find.text('1. 3 ZEC 75%'), findsOneWidget);
+      expect(find.text('2. 1 ZEC 25%'), findsOneWidget);
+
+      await remount(tester, harness(privacyModeEnabled: true));
+      await tester.pumpAndSettle();
+      expect(find.text('Left to migrate'), findsOneWidget);
+      expect(_countOutsideSidebar(find.text('****** ZEC')), 1);
+      expect(find.text('3 ZEC'), findsNothing);
+      expect(find.text('1. ****** ZEC 75%'), findsOneWidget);
+      expect(find.text('2. ****** ZEC 25%'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Note 1, ****** ZEC, scheduled at block 1,200.'),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel('Note 2, ****** ZEC, completed at block 990.'),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel(RegExp(r'\d ZEC')), findsNothing);
+      _expectNoDoubledDenomination();
+    });
+
+    testWidgets('upgrade stop and moving the rest mask the amounts', (
+      tester,
+    ) async {
+      useDesktopView(tester);
+      final stopped = _stoppedByUpgradeStatus();
+      Widget harness({required bool privacyModeEnabled}) =>
+          _migrationOptionsHarness(
+            initialLocation: '/migration/private/status',
+            statusRoutePreview: stopped,
+            presentationCta: IronwoodHomeMigrationCtaState.stopped(
+              network: 'main',
+              accountUuid: 'account-1',
+              status: stopped,
+            ),
+            privacyModeEnabled: privacyModeEnabled,
+          );
+
+      Finder onStop(Finder finder) => find.descendant(
+        of: find.byKey(
+          const ValueKey('ironwood_migration_status_stopped_by_upgrade'),
+        ),
+        matching: finder,
+      );
+
+      await tester.pumpWidget(harness(privacyModeEnabled: false));
+      await tester.pumpAndSettle();
+      expect(onStop(find.text('0 ZEC')), findsNWidgets(2));
+
+      await remount(tester, harness(privacyModeEnabled: true));
+      await tester.pumpAndSettle();
+      expect(find.text('Still in Orchard'), findsOneWidget);
+      expect(onStop(find.text('****** ZEC')), findsNWidgets(2));
+      expect(onStop(find.textContaining(RegExp(r'\d ZEC'))), findsNothing);
+      expect(find.bySemanticsLabel(RegExp(r'\d ZEC')), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey('ironwood_upgrade_stop_move_remaining')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          '****** ZEC is still in Orchard. Choose between more privacy over '
+          'time or a faster migration.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('0.1 ZEC'), findsNothing);
+      _expectNoDoubledDenomination();
+    });
+  });
 }
 
 Future<void> _openShuffleReview(WidgetTester tester) async {
@@ -5823,6 +6375,7 @@ Widget _migrationOptionsHarness({
   List<String> previewCombinedSigningUrParts = const [],
   rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan,
   LedgerImmediateMigrationService? ledgerImmediateMigrationService,
+  bool privacyModeEnabled = false,
   IronwoodHomeMigrationCtaState? presentationCta,
   rust_sync.MigrationStatus? statusRoutePreview,
 }) {
@@ -5964,6 +6517,9 @@ Widget _migrationOptionsHarness({
         ),
       ),
       syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
+      privacyModeProvider.overrideWith(
+        () => _TestPrivacyModeNotifier(privacyModeEnabled),
+      ),
       swapFeatureEnabledProvider.overrideWithValue(true),
       ironwoodMigrationAnalyzingMinimumDurationProvider.overrideWithValue(
         analyzingMinimumDuration,
@@ -6011,6 +6567,7 @@ Widget _migrationOptionsHarness({
         ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
@@ -6232,6 +6789,7 @@ class _MutablePrivateStatusHarnessState
       child: Builder(
         key: _scopeKey,
         builder: (context) => MaterialApp.router(
+          localizationsDelegates: appLocalizationsDelegates,
           routerConfig: _router,
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(
@@ -6256,6 +6814,7 @@ Widget _privateStatusHarness({
   SyncState? syncState,
   bool disableAnimations = false,
   TextScaler textScaler = TextScaler.noScaling,
+  bool privacyModeEnabled = false,
 }) {
   return _migrationEntryHarness(
     ctaState: IronwoodHomeMigrationCtaState.resume(
@@ -6273,11 +6832,13 @@ Widget _privateStatusHarness({
     syncState: syncState,
     disableAnimations: disableAnimations,
     textScaler: textScaler,
+    privacyModeEnabled: privacyModeEnabled,
   );
 }
 
 Widget _migrationFlowDataHarness({
   required IronwoodMigrationFlowData? flowData,
+  bool privacyModeEnabled = false,
 }) {
   final router = GoRouter(
     initialLocation: '/migration/intro',
@@ -6299,12 +6860,16 @@ Widget _migrationFlowDataHarness({
         _bootstrapFor(activeAccountIsHardware: false),
       ),
       syncProvider.overrideWith(() => _FakeSyncNotifier(_syncedSyncState)),
+      privacyModeProvider.overrideWith(
+        () => _TestPrivacyModeNotifier(privacyModeEnabled),
+      ),
       swapFeatureEnabledProvider.overrideWithValue(true),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(
         const IronwoodHomeMigrationCtaState.hidden(),
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(
@@ -6384,6 +6949,7 @@ Widget _migrationPrepareHarness({
       ),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(
@@ -6413,6 +6979,7 @@ Widget _migrationEntryHarness({
   TextScaler textScaler = TextScaler.noScaling,
   Future<void> Function({required String accountUuid, required String runId})?
   onStop,
+  bool privacyModeEnabled = false,
 }) {
   final network = ctaState.network ?? 'test';
   final accountUuid = ctaState.accountUuid ?? 'account-1';
@@ -6515,6 +7082,9 @@ Widget _migrationEntryHarness({
       syncProvider.overrideWith(
         () => _FakeSyncNotifier(syncState ?? _syncedSyncState),
       ),
+      privacyModeProvider.overrideWith(
+        () => _TestPrivacyModeNotifier(privacyModeEnabled),
+      ),
       swapFeatureEnabledProvider.overrideWithValue(true),
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _ScreenTestMigrationCoordinator(
@@ -6528,6 +7098,7 @@ Widget _migrationEntryHarness({
         ironwoodMigrationServiceProvider.overrideWithValue(migrationService),
     ],
     child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
@@ -6712,6 +7283,32 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<void> refreshAfterSend() async {}
+}
+
+class _TestPrivacyModeNotifier extends PrivacyModeNotifier {
+  _TestPrivacyModeNotifier(this.initial);
+
+  final bool initial;
+
+  @override
+  bool build() => initial;
+
+  @override
+  Future<void> set(bool enabled) async => state = enabled;
+}
+
+/// Counts [finder] matches outside the sidebar, which masks its own balance.
+int _countOutsideSidebar(Finder finder) =>
+    finder.evaluate().length -
+    find
+        .descendant(of: find.byType(AppMainSidebar), matching: finder)
+        .evaluate()
+        .length;
+
+/// Masking a bare amount with a denominated helper doubles the unit.
+void _expectNoDoubledDenomination() {
+  expect(find.textContaining('ZEC ZEC', findRichText: true), findsNothing);
+  expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
 }
 
 IronwoodMigrationService _keystonePrivateReviewService({

@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_submitte
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 Future<void> _setMobileViewport(WidgetTester tester) async {
   tester.view.physicalSize = const Size(393, 852);
@@ -118,7 +119,10 @@ void main() {
         MobileTransactionProgressPhase.pending,
         reason: status,
       );
-      expect(progress.notice, 'Check activity before trying again.');
+      expect(
+        progress.notice,
+        const SwapLiteralMessage('Check activity before trying again.'),
+      );
     }
   });
 
@@ -142,7 +146,7 @@ void main() {
 
     expect(submitting.phase, MobileTransactionProgressPhase.inProgress);
     expect(failed.phase, MobileTransactionProgressPhase.failed);
-    expect(failed.notice, 'Deposit failed.');
+    expect(failed.notice, const SwapLiteralMessage('Deposit failed.'));
     expect(unrelatedFailure.phase, MobileTransactionProgressPhase.inProgress);
   });
 
@@ -364,7 +368,10 @@ Widget _app(GoRouter router, SwapState state) {
     overrides: [
       swapStateProvider.overrideWith(() => _PayStatusNotifier(state)),
     ],
-    child: MaterialApp.router(routerConfig: router),
+    child: MaterialApp.router(
+      localizationsDelegates: appLocalizationsDelegates,
+      routerConfig: router,
+    ),
   );
 }
 
@@ -384,7 +391,7 @@ SwapState _state({
     intents: [?intent],
     selectedIntentId: selectedIntentId,
     depositSubmitting: depositSubmitting,
-    statusError: statusError,
+    statusError: statusError == null ? null : SwapLiteralMessage(statusError),
     payMode: true,
   );
 }
@@ -412,8 +419,10 @@ SwapIntent _intent({
     originChainTxHash: originChainTxHash,
     providerRefundInfo: providerRefundInfo,
     broadcastStatus: broadcastStatus,
-    broadcastNotice: broadcastNotice,
-    statusError: statusError,
+    broadcastNotice: broadcastNotice == null
+        ? null
+        : SwapLiteralMessage(broadcastNotice),
+    statusError: statusError == null ? null : SwapLiteralMessage(statusError),
     payMode: true,
   );
 }

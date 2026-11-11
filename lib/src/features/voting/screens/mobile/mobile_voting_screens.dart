@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import '../../../ledger/widgets/mobile_ledger_signing_surface.dart';
 import 'dart:async';
@@ -33,7 +34,7 @@ class MobileVotingPollsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MobileVotingScaffold(
-      title: 'Coinholder voting',
+      title: context.l10n.commonCoinholderVoting,
       fallbackPath: '/home',
       trailing: _MobileVotingSettingsButton(
         onTap: () => showMobileVotingConfigSettingsSheet(context),
@@ -73,8 +74,8 @@ class _MobileVotingProposalDetailScreenState
         sessionState != null &&
             hasCompletedVoteForDisplay(sessionState.roundPlan) &&
             !hasBlockingRoundRecoveryWork(sessionState.roundPlan)
-        ? 'Voted'
-        : 'Coinholder voting';
+        ? context.l10n.votingStatusVoted
+        : context.l10n.commonCoinholderVoting;
     return MobileSidebarExitScope(
       onExit: () async {
         await _clearDraftForExit(propagateError: true);
@@ -168,7 +169,7 @@ class MobileVotingReviewScreen extends ConsumerWidget {
         return true;
       },
       child: MobileVotingScaffold(
-        title: 'Review your answers',
+        title: context.l10n.votingReviewTitle,
         child: VotingReviewView(roundId: roundId, showDesktopToolbar: false),
       ),
     );
@@ -199,8 +200,10 @@ class MobileVotingStatusScreen extends StatelessWidget {
             activeStepDetail: presentation.activeStepDetail,
             warning: presentation.warning,
           ),
-      contentWrapper: (_, content) =>
-          MobileVotingScaffold(title: 'Submit vote', child: content),
+      contentWrapper: (_, content) => MobileVotingScaffold(
+        title: context.l10n.votingMobileSubmitTitle,
+        child: content,
+      ),
       ledgerStatusBuilder: (_, presentation, panel) => Stack(
         fit: StackFit.expand,
         children: [
@@ -239,8 +242,10 @@ class MobileVotingSubmissionConfirmationScreen extends StatelessWidget {
       roundId: roundId,
       accountUuid: accountUuid,
       showDesktopToolbar: false,
-      contentWrapper: (_, content) =>
-          MobileVotingScaffold(title: 'Vote submitted', child: content),
+      contentWrapper: (_, content) => MobileVotingScaffold(
+        title: context.l10n.votingMobileSubmittedTitle,
+        child: content,
+      ),
       confirmedContentBuilder: (_, onDone) =>
           MobileVotingSubmittedScreen(onDone: onDone),
     );
@@ -255,7 +260,7 @@ class MobileVotingResultsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MobileVotingScaffold(
-      title: 'Voting results',
+      title: context.l10n.votingResultsFallbackTitle,
       child: VotingResultsView(roundId: roundId, showDesktopToolbar: false),
     );
   }
@@ -273,18 +278,18 @@ class MobileVotingAccountGuard extends ConsumerWidget {
     return ref
         .watch(accountProvider)
         .when(
-          loading: () => const MobileVotingScaffold(
-            title: 'Coinholder voting',
+          loading: () => MobileVotingScaffold(
+            title: context.l10n.commonCoinholderVoting,
             fallbackPath: '/home',
             child: VotingPaneLoading(),
           ),
           error: (error, _) => MobileVotingScaffold(
-            title: 'Coinholder voting',
+            title: context.l10n.commonCoinholderVoting,
             fallbackPath: '/home',
             horizontalPadding: AppSpacing.sm,
             child: Center(
               child: Text(
-                "Couldn't load account.\n$error",
+                context.l10n.votingMobileAccountLoadFailed('$error'),
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.secondary,
@@ -365,7 +370,7 @@ class _MobileVotingSettingsButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Voting config settings',
+      label: context.l10n.votingConfigSettings,
       button: true,
       child: GestureDetector(
         key: const ValueKey('mobile_voting_settings_button'),

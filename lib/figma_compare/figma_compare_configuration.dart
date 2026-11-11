@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../src/core/l10n/app_language.dart';
 import '../src/core/layout/app_form_factor.dart';
 import 'figma_compare_scenarios.dart';
 
@@ -10,6 +11,7 @@ class FigmaCompareConfiguration {
     required this.outputPath,
     required this.logicalSize,
     required this.pixelRatio,
+    this.language,
   });
 
   factory FigmaCompareConfiguration.fromEnvironment({
@@ -29,6 +31,7 @@ class FigmaCompareConfiguration {
     const widthText = String.fromEnvironment('FIGMA_COMPARE_WIDTH');
     const heightText = String.fromEnvironment('FIGMA_COMPARE_HEIGHT');
     const pixelRatioText = String.fromEnvironment('FIGMA_COMPARE_PIXEL_RATIO');
+    const localeTag = String.fromEnvironment('FIGMA_COMPARE_LOCALE');
 
     final themeMode = switch (themeName) {
       'dark' => ThemeMode.dark,
@@ -49,12 +52,22 @@ class FigmaCompareConfiguration {
         ? defaultPixelRatio
         : _positiveDouble(pixelRatioText, 'FIGMA_COMPARE_PIXEL_RATIO');
 
+    final language = localeTag.isEmpty ? null : AppLanguage.fromTag(localeTag);
+    if (localeTag.isNotEmpty && language == null) {
+      throw ArgumentError.value(
+        localeTag,
+        'FIGMA_COMPARE_LOCALE',
+        'Expected one of ${AppLanguage.values.map((l) => l.tag).join(', ')}.',
+      );
+    }
+
     return FigmaCompareConfiguration(
       scenarioId: scenarioId.isEmpty ? defaultScenarioId : scenarioId,
       themeMode: themeMode,
       outputPath: outputPath,
       logicalSize: Size(width, height),
       pixelRatio: pixelRatio,
+      language: language,
     );
   }
 
@@ -63,6 +76,9 @@ class FigmaCompareConfiguration {
   final String outputPath;
   final Size logicalSize;
   final double pixelRatio;
+
+  /// UI language; `null` follows the test or device locale (English).
+  final AppLanguage? language;
 
   FigmaCompareScenario resolveScenario(AppFormFactor formFactor) {
     final scenario = findFigmaCompareScenario(scenarioId);

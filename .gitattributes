@@ -12,3 +12,12 @@
 *.otf binary
 *.woff binary
 *.woff2 binary
+
+# Generated from the ARB files; review lib/l10n/app_en.arb,
+# lib/l10n/source/app_ko.arb and lib/l10n/app_zh.arb instead.
+lib/l10n/app_localizations*.dart linguist-generated=true
+lib/l10n/app_ko.arb linguist-generated=true
+tool/l10n/ui_fonts.manifest.json linguist-generated=true
+tool/l10n/ui_font_characters.json linguist-generated=true
+ios/Runner/NativeStrings.swift linguist-generated=true
+android/app/src/main/kotlin/com/keplr/vizor/NativeStrings.kt linguist-generated=true

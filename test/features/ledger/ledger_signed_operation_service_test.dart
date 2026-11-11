@@ -60,6 +60,7 @@ void main() {
       api.operations = [
         for (final value in [amount, null])
           rust.LedgerSignedOperation(
+            notices: const [],
             operationId: 'shield-$value',
             accountUuid: 'account',
             kind: 'shield',
@@ -326,6 +327,7 @@ class _Api extends RustLibApi {
     if (gate != null) await gate!.future;
     if (error != null) throw error!;
     return rust.LedgerSignedOperationBroadcastResult(
+      notices: const [],
       operationId: operationId,
       txid: 'txid',
       status: status,

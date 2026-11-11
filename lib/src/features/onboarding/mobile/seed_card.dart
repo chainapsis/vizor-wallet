@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 
@@ -50,7 +51,7 @@ class SeedCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Secret Passphrase',
+                  context.l10n.secretPassphraseTitle,
                   style: AppTypography.headlineSmall.copyWith(
                     color: colors.text.homeCard,
                   ),
@@ -59,7 +60,7 @@ class SeedCard extends StatelessWidget {
               if (onCopy != null)
                 Semantics(
                   button: true,
-                  label: 'Copy secret passphrase',
+                  label: context.l10n.secretPassphraseCopy,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: onCopy,
@@ -67,7 +68,9 @@ class SeedCard extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          copied ? 'Copied' : 'Copy',
+                          copied
+                              ? context.l10n.commonCopied
+                              : context.l10n.commonCopy,
                           style: AppTypography.labelMedium.copyWith(
                             color: colors.text.homeCard,
                           ),

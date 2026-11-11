@@ -11,6 +11,13 @@ import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fixtures/private_shielding_activity.dart';
+import '../../support/localized_test_scope.dart';
+import '../../support/test_l10n.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
+
+/// The estimate whose English text is [label], or null for fallback copy.
+ActivityEta? _etaFor(String? label) =>
+    {for (final eta in ActivityEta.values) eta.label(testL10n): eta}[label];
 
 void main() {
   Future<ActivityRowData> mapRow(
@@ -29,22 +36,27 @@ void main() {
     await tester.pumpWidget(
       AppTheme(
         data: AppThemeData.light,
-        child: Builder(
-          builder: (context) {
-            row = buildTransactionActivityRow(
-              context: context,
-              transaction: transaction,
-              privateQueriesEnabled: privateQueriesEnabled,
-              pendingLabel: pendingLabel,
-              showPendingEstimate: showPendingEstimate,
-              giftCardKind: giftCardKind,
-              giftCardAmountZatoshi: giftCardAmountZatoshi,
-              giftCardBatchCount: giftCardBatchCount,
-              giftCardClaimInFlight: giftCardClaimInFlight,
-              giftCardDisplayPool: giftCardDisplayPool,
-            );
-            return const SizedBox.shrink();
-          },
+        child: LocalizedTestScope(
+          child: Builder(
+            builder: (context) {
+              row = buildTransactionActivityRow(
+                context: context,
+                transaction: transaction,
+                privateQueriesEnabled: privateQueriesEnabled,
+                pendingEta: _etaFor(pendingLabel),
+                pendingFallbackLabel: _etaFor(pendingLabel) == null
+                    ? pendingLabel
+                    : null,
+                showPendingEstimate: showPendingEstimate,
+                giftCardKind: giftCardKind,
+                giftCardAmountZatoshi: giftCardAmountZatoshi,
+                giftCardBatchCount: giftCardBatchCount,
+                giftCardClaimInFlight: giftCardClaimInFlight,
+                giftCardDisplayPool: giftCardDisplayPool,
+              );
+              return const SizedBox.shrink();
+            },
+          ),
         ),
       ),
     );
@@ -294,12 +306,12 @@ void main() {
   ) async {
     final transaction = loadPrivateTransparentActivity();
     final row = await mapRow(tester, transaction, privateQueriesEnabled: true);
-    expect(row.title, kNetChangeText);
+    expect(row.title, testL10n.activityReceiptNetChange);
     expect(row.subtitle, isNull);
     expect(row.subtitleIconName, isNull);
     expect(row.amountText, '-0.00215 ZEC');
     expect(row.statusText, 'Completed');
-    expect(row.amountSubtitle, kIncompleteDetailsText);
+    expect(row.amountSubtitle, testL10n.activityReceiptDetailsIncomplete);
     expect(transaction.displayPool, 'unknown');
     expect(transaction.provisional, isTrue);
     expect(transaction.detailsComplete, isFalse);
@@ -454,6 +466,7 @@ void main() {
     expect(row.leadingIconName, AppIcons.giftCard);
     expect(
       giftCardActivityTitle(
+        testL10n,
         GiftCardActivityKind.created,
         isInFlight: true,
         isFailed: false,
@@ -463,6 +476,7 @@ void main() {
     );
     expect(
       giftCardActivityTitle(
+        testL10n,
         GiftCardActivityKind.created,
         isInFlight: false,
         isFailed: true,
@@ -579,14 +593,20 @@ void main() {
       ),
       privateQueriesEnabled: true,
     );
-    expect(provisional.amountSubtitle, kIncompleteDetailsText);
+    expect(
+      provisional.amountSubtitle,
+      testL10n.activityReceiptDetailsIncomplete,
+    );
 
     final undiscoveredSelfReceipt = await mapRow(
       tester,
       _transaction(txKind: 'sent', provisional: true),
       privateQueriesEnabled: true,
     );
-    expect(undiscoveredSelfReceipt.amountSubtitle, kIncompleteDetailsText);
+    expect(
+      undiscoveredSelfReceipt.amountSubtitle,
+      testL10n.activityReceiptDetailsIncomplete,
+    );
 
     // A receive with every effect known can still lack a memo.
     final missingDetails = await mapRow(
@@ -688,7 +708,7 @@ void main() {
         transaction,
         privateQueriesEnabled: true,
       );
-      expect(row.amountSubtitle, kIncompleteDetailsText);
+      expect(row.amountSubtitle, testL10n.activityReceiptDetailsIncomplete);
     }
   });
 
@@ -716,9 +736,9 @@ void main() {
       recovered(displayAmount: 20000, fee: 20000),
       privateQueriesEnabled: true,
     );
-    expect(movement.title, kNetChangeText);
+    expect(movement.title, testL10n.activityReceiptNetChange);
     expect(movement.amountText, activityAmountTextForFormFactor('-0.0002 ZEC'));
-    expect(movement.amountSubtitle, kIncompleteDetailsText);
+    expect(movement.amountSubtitle, testL10n.activityReceiptDetailsIncomplete);
 
     // A net change keeps its sent row and its whole amount: a row has no fee
     // line to repeat the fee in.
@@ -726,7 +746,7 @@ void main() {
       tester,
       recovered(displayAmount: 70000000, fee: 10000),
     );
-    expect(netChange.title, kNetChangeText);
+    expect(netChange.title, testL10n.activityReceiptNetChange);
     expect(netChange.amountText, activityAmountTextForFormFactor('-0.7 ZEC'));
 
     final payment = await mapRow(
@@ -753,7 +773,7 @@ void main() {
         amountIncludesFee: true,
       ),
     );
-    expect(selfTransfer.title, kNetChangeText);
+    expect(selfTransfer.title, testL10n.activityReceiptNetChange);
     expect(
       selfTransfer.amountText,
       activityAmountTextForFormFactor('-0.0001 ZEC'),

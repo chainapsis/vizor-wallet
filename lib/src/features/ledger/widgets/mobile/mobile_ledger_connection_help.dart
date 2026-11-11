@@ -7,16 +7,17 @@ import 'package:flutter/material.dart'
         MaterialType;
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import 'mobile_ledger_help_navigation.dart';
 import 'mobile_ledger_sheet_content.dart';
 
 enum LedgerHelpModel {
-  nanoX('Ledger Nano X'),
-  flex('Ledger Flex'),
-  stax('Ledger Stax'),
-  nanoGen5('Ledger Nano Gen5');
+  nanoX('Ledger Nano X'), // l10n-ignore: product name
+  flex('Ledger Flex'), // l10n-ignore: product name
+  stax('Ledger Stax'), // l10n-ignore: product name
+  nanoGen5('Ledger Nano Gen5'); // l10n-ignore: product name
 
   const LedgerHelpModel(this.label);
   final String label;
@@ -37,9 +38,9 @@ enum LedgerHelpModel {
 
   // Ledger support: /article/Ledger-Nano-X-Nano-S-Plus-Navigation-Menu-Map
   // and /article/9774032283293-zd. These are name lookup, not rename steps.
-  String get nameHelp => this == nanoX
-      ? 'On your Nano X, hold both buttons for 2 seconds, then find Device Name.'
-      : 'On your ${label.replaceFirst('Ledger ', '')}, check Settings > Name.';
+  String nameHelp(AppLocalizations l10n) => this == nanoX
+      ? l10n.ledgerHelpNanoXName
+      : l10n.ledgerHelpOtherModelName(label.replaceFirst('Ledger ', ''));
 }
 
 enum _HelpStep { checks, ledger, phone, search }
@@ -135,45 +136,33 @@ class _MobileLedgerConnectionHelpState
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final ios = widget.platform == TargetPlatform.iOS;
     final children = <Widget>[
       if (_step != _HelpStep.checks)
-        _message(
-          'Step ${_step.index} of 3 · ${switch (_step) {
-            _HelpStep.ledger => 'On your Ledger',
-            _HelpStep.phone => 'On your phone',
-            _ => 'Back in Vizor',
-          }}',
-          small: true,
-        ),
+        _message(switch (_step) {
+          _HelpStep.ledger => l10n.ledgerHelpStepOnLedger('${_step.index}'),
+          _HelpStep.phone => l10n.ledgerHelpStepOnPhone('${_step.index}'),
+          _ => l10n.ledgerHelpStepBackInVizor('${_step.index}'),
+        }, small: true),
     ];
     late final String actionLabel;
     VoidCallback? action;
     switch (_step) {
       case _HelpStep.checks:
         children.addAll([
-          _message(
-            'Unlock Ledger, turn on Bluetooth, and keep it close to your phone.',
-          ),
-          _message(
-            'Leave Ledger on its home screen. Open the Zcash app when Vizor asks.',
-          ),
-          _message(
-            'Close other wallet apps and disconnect Ledger from other phones or computers.',
-          ),
-          _message('Still not showing?', strong: true),
-          _message(
-            'Try restarting Ledger. If it stays missing, removing the saved Bluetooth pairing on both devices may help.',
-          ),
+          _message(l10n.ledgerHelpChecksUnlockClose),
+          _message(l10n.ledgerHelpChecksHomeScreen),
+          _message(l10n.ledgerHelpChecksCloseOtherApps),
+          _message(l10n.ledgerHelpStillNotShowing, strong: true),
+          _message(l10n.ledgerHelpTryRestart),
         ]);
-        actionLabel = 'Search again';
+        actionLabel = l10n.ledgerSearchAgain;
         action = widget.onSearch;
       case _HelpStep.ledger:
         children.addAll([
-          _message(
-            'Remove the saved pairing on Ledger, then remove it on your phone.',
-          ),
-          _message('Ledger model', small: true),
+          _message(l10n.ledgerHelpRemovePairingOnLedger),
+          _message(l10n.ledgerHelpModelLabel, small: true),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             margin: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -188,7 +177,7 @@ class _MobileLedgerConnectionHelpState
                   value: _model,
                   isExpanded: true,
                   itemHeight: null,
-                  hint: const Text('Choose your model'),
+                  hint: Text(l10n.ledgerHelpChooseModel),
                   dropdownColor: context.colors.background.base,
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.accent,
@@ -213,72 +202,51 @@ class _MobileLedgerConnectionHelpState
             ),
           ),
           if (_model == null)
-            _message(
-              'Select your model to see its pairing removal instructions.',
-            )
+            _message(l10n.ledgerHelpSelectModelHint)
           else if (_model == LedgerHelpModel.nanoX) ...[
-            _message(
-              'Unlock Ledger. Hold both buttons to open its controls, then choose:',
-            ),
-            _message('Settings > Security > Reset pairings', strong: true),
-            _message('Confirm on Ledger and enter your PIN on the device.'),
+            _message(l10n.ledgerHelpNanoXControls),
+            _message(l10n.ledgerHelpNanoXMenuPath, strong: true),
+            _message(l10n.ledgerHelpNanoXConfirm),
           ] else ...[
-            _message(
-              'Unlock Ledger. From its home screen, tap the settings icon, then choose:',
-            ),
-            _message('Bluetooth > Remove pairing', strong: true),
+            _message(l10n.ledgerHelpTouchControls),
+            _message(l10n.ledgerHelpTouchMenuPath, strong: true),
           ],
-          _message(
-            'Use the Bluetooth pairing option, not Reset device. Your wallet and accounts stay unchanged.',
-            small: true,
-          ),
+          _message(l10n.ledgerHelpNotResetDevice, small: true),
         ]);
-        actionLabel = 'Next: phone settings';
+        actionLabel = l10n.ledgerHelpNextPhoneSettings;
         action = _model == null
             ? null
             : () => setState(() => _step = _HelpStep.phone);
       case _HelpStep.phone:
         children.addAll([
-          _message('Find your Ledger in your phone’s Bluetooth settings.'),
+          _message(l10n.ledgerHelpFindInPhoneBluetooth),
+          _message(l10n.ledgerHelpShortIdName, small: true),
+          if (_model != null) _message(_model!.nameHelp(l10n), small: true),
           _message(
-            'If you haven’t named your Ledger, it may appear as a short ID, such as 01AB. Otherwise, look for the name you set.',
-            small: true,
-          ),
-          if (_model != null) _message(_model!.nameHelp, small: true),
-          _message(
-            ios
-                ? 'Settings > Bluetooth > the info button next to your Ledger > Forget This Device'
-                : 'Bluetooth settings > the settings button next to your Ledger > Forget or Unpair',
+            ios ? l10n.ledgerHelpForgetIos : l10n.ledgerHelpForgetAndroid,
             strong: true,
           ),
-          _message('If Ledger is not listed, skip this step and continue.'),
+          _message(l10n.ledgerHelpSkipIfNotListed),
           if (!ios && widget.onSettings != null)
-            _secondary('Open Bluetooth settings', widget.onSettings),
+            _secondary(l10n.ledgerHelpOpenBluetoothSettings, widget.onSettings),
         ]);
-        actionLabel = 'Next: search in Vizor';
+        actionLabel = l10n.ledgerHelpNextSearchInVizor;
         action = () => setState(() => _step = _HelpStep.search);
       case _HelpStep.search:
         children.addAll([
-          _message(
-            'Keep Ledger unlocked with Bluetooth on, and leave it on its home screen.',
-          ),
-          _message(
-            'Search in Vizor and select your Ledger. Open the Zcash app when Vizor asks.',
-          ),
-          _message(
-            'If it still does not appear, restart both devices and check Ledger’s official Bluetooth troubleshooting guide.',
-            small: true,
-          ),
+          _message(l10n.ledgerHelpKeepUnlockedHome),
+          _message(l10n.ledgerHelpSearchSelectOpenZcash),
+          _message(l10n.ledgerHelpRestartBothGuide, small: true),
         ]);
-        actionLabel = 'Search again';
+        actionLabel = l10n.ledgerSearchAgain;
         action = widget.onSearch;
     }
     if (widget.error case final error?) children.add(_message(error));
     return MobileLedgerSheetContent(
       key: ValueKey(_step),
       title: _step == _HelpStep.checks || _step == _HelpStep.search
-          ? 'Find your Ledger'
-          : 'Reset Bluetooth pairing',
+          ? l10n.ledgerHelpNextSearchTitle
+          : l10n.ledgerResetBluetoothPairing,
       onBack: widget.busy ? null : _previous,
       onClose: widget.onClose,
       action: Column(
@@ -290,7 +258,7 @@ class _MobileLedgerConnectionHelpState
           ),
           if (_step == _HelpStep.checks)
             _secondary(
-              'Reset Bluetooth pairing',
+              l10n.ledgerResetBluetoothPairing,
               () => setState(() => _step = _HelpStep.ledger),
             ),
         ],

@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_bluetooth_acces
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_bluetooth_content.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/ledger_access_fake.dart';
 
@@ -52,6 +53,7 @@ void main() {
                 ledgerTargetPlatformProvider.overrideWithValue(platform),
               ],
               child: MaterialApp(
+                localizationsDelegates: appLocalizationsDelegates,
                 home: AppTheme(
                   data: small ? AppThemeData.dark : AppThemeData.light,
                   child: Builder(

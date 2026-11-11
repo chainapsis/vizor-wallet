@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -177,12 +178,13 @@ class _MobileLedgerConnectScreenState
         _error =
             LedgerRequestFailure.fromError(error) ==
                 LedgerRequestFailure.declined
-            ? 'The viewing key request was declined on Ledger. Try again when you’re ready.'
+            ? context.l10n.ledgerErrorViewingKeyDeclined
             : ledgerFailureGuidance(
+                    context.l10n,
                     error,
                     requestKind: LedgerRequestKind.viewingKey,
                   )?.message ??
-                  'Vizor could not read this Ledger account. Check the connection and try again.';
+                  context.l10n.ledgerErrorCannotReadCheckConnection;
       });
     } finally {
       if (mounted && generation == _generation) {
@@ -233,8 +235,8 @@ class _MobileLedgerConnectScreenState
         _closing = false;
         _cancelFailed = true;
         _error =
-            ledgerFailureGuidance(error)?.message ??
-            'Could not finish cancelling. Try again.';
+            ledgerFailureGuidance(context.l10n, error)?.message ??
+            context.l10n.ledgerCancelFailed;
       });
     }
   }
@@ -247,6 +249,7 @@ class _MobileLedgerConnectScreenState
     final guidance = _requestError == null
         ? null
         : ledgerFailureGuidance(
+            context.l10n,
             _requestError!,
             requestKind: LedgerRequestKind.viewingKey,
           );
@@ -257,7 +260,7 @@ class _MobileLedgerConnectScreenState
         service: ref.read(ledgerMobileBleServiceProvider),
         onRetry: () => unawaited(_readAccount(reconnect: true)),
         onClose: close,
-        purpose: 'add your account',
+        purpose: LedgerBluetoothPurpose.addAccount,
       );
     }
     final current = _reconnectingAccount
@@ -271,17 +274,19 @@ class _MobileLedgerConnectScreenState
     final pairingRecovery = guidance?.pairingRecovery == true;
     return MobileLedgerSheetContent(
       title: _cancelFailed
-          ? 'Could not cancel Ledger request'
+          ? context.l10n.ledgerSheetCancelFailedTitle
           : failure == LedgerRequestFailure.declined
-          ? 'Request declined'
+          ? context.l10n.ledgerSheetDeclinedTitle
           : _error != null
-          ? 'Could not add Ledger account'
-          : 'Add Ledger account',
+          ? context.l10n.ledgerSheetAddFailedTitle
+          : context.l10n.ledgerAddAccountTitle,
       onClose: close,
       action: _error == null || _closing
           ? null
           : MobileLedgerAction(
-              pairingRecovery ? 'Find my Ledger' : 'Try again',
+              pairingRecovery
+                  ? context.l10n.ledgerFindMyLedger
+                  : context.l10n.commonTryAgain,
               onPressed: _cancelFailed
                   ? () => unawaited(
                       _leaveSession(returnToPicker: _returnToPickerAfterCancel),
@@ -298,36 +303,42 @@ class _MobileLedgerConnectScreenState
         LedgerProcedure(
           currentStep: current,
           steps: [
-            LedgerStep('Connect Ledger', busy: current == 0 && pending),
             LedgerStep(
-              'Open $appName',
+              context.l10n.commonConnectLedger,
+              busy: current == 0 && pending,
+            ),
+            LedgerStep(
+              context.l10n.ledgerStepOpenApp(appName),
               message: current == 1
                   ? _closing
-                        ? 'Cancelling the Ledger request…'
+                        ? context.l10n.ledgerCancellingTheRequest
                         : _error ??
                               (opening
-                                  ? 'Confirm opening Zcash on Ledger.'
-                                  : 'Keep Ledger connected while Vizor checks the app.')
+                                  ? context.l10n.ledgerConfirmOpeningZcash
+                                  : context
+                                        .l10n
+                                        .ledgerKeepConnectedWhileChecking)
                   : null,
               note: current == 1 && opening && _error == null
-                  ? 'Keep $appName open.'
+                  ? context.l10n.ledgerKeepAppOpen(appName)
                   : null,
               busy: current == 1 && pending,
               requiresDeviceAction: opening && pending && !_closing,
             ),
             LedgerStep(
-              'Add account',
+              context.l10n.commonAddAccount,
               message: current == 2
                   ? _closing
-                        ? 'Cancelling the Ledger request…'
+                        ? context.l10n.ledgerCancellingTheRequest
                         : _error ??
                               ledgerViewingKeyApprovalMessage(
+                                context.l10n,
                                 _accountIndex,
                                 readiness.version,
                               )
                   : null,
               note: current == 2 && _error == null && !_closing
-                  ? 'View your balance and activity in Vizor. Transactions still need approval on Ledger.'
+                  ? context.l10n.ledgerAddAccountNote
                   : null,
               busy: current == 2 && pending,
               requiresDeviceAction: pending && !_closing,
@@ -348,7 +359,7 @@ class _MobileLedgerConnectScreenState
         maintainAnimation: true,
         maintainSize: true,
         child: Text(
-          'Keep 0 unless you used a different index for this Ledger account.',
+          context.l10n.ledgerAccountIndexHint,
           style: AppTypography.bodySmall.copyWith(
             color: context.colors.text.secondary,
           ),
@@ -359,7 +370,7 @@ class _MobileLedgerConnectScreenState
           child: Semantics(
             liveRegion: true,
             child: Text(
-              kLedgerOnboardingAccountIndexError,
+              context.l10n.ledgerAccountIndexOutOfRange,
               key: const ValueKey('mobile_ledger_connect_error'),
               style: AppTypography.bodySmall.copyWith(
                 color: context.colors.text.destructive,
@@ -383,8 +394,8 @@ class _MobileLedgerConnectScreenState
           progress: MobileOnboardingProgressScope.of(
             context,
           ).at(OnboardingFlow.ledger, OnboardingStage.deviceConnect).value,
-          title: 'Connect Ledger',
-          subtitle: 'Prepare your Ledger wallet.',
+          title: context.l10n.commonConnectLedger,
+          subtitle: context.l10n.ledgerConnectSubtitle,
           onBack: () => context.pop(),
           bottomArea: AppButton(
             key: const ValueKey('mobile_ledger_import_button'),
@@ -393,7 +404,7 @@ class _MobileLedgerConnectScreenState
             constrainContent: true,
             onPressed: _sessionOpen ? null : _startSession,
             trailing: const AppIcon(AppIcons.chevronForward),
-            child: const Text('Connect Ledger'),
+            child: Text(context.l10n.commonConnectLedger),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -413,7 +424,7 @@ class _MobileLedgerConnectScreenState
                         const SizedBox(width: AppSpacing.xs),
                         Expanded(
                           child: Text(
-                            'On your Ledger',
+                            context.l10n.ledgerOnYourLedger,
                             style: AppTypography.bodyLarge.copyWith(
                               fontWeight: FontWeight.w500,
                               color: colors.text.accent,
@@ -422,9 +433,9 @@ class _MobileLedgerConnectScreenState
                         ),
                       ],
                     ),
-                    for (final (index, text) in const [
-                      'Unlock with your PIN.',
-                      'Enable Bluetooth and keep Ledger nearby.',
+                    for (final (index, text) in [
+                      context.l10n.ledgerUnlockWithPin,
+                      context.l10n.ledgerEnableBluetoothNearby,
                     ].indexed) ...[
                       const SizedBox(height: AppSpacing.sm),
                       Row(
@@ -466,7 +477,7 @@ class _MobileLedgerConnectScreenState
                       button: true,
                       enabled: !_sessionOpen,
                       expanded: _showAdvancedOptions,
-                      label: 'Advanced options',
+                      label: context.l10n.ledgerAdvancedOptions,
                       onTap: _sessionOpen ? null : _toggleAdvancedOptions,
                       child: ExcludeSemantics(
                         child: AppButton(
@@ -484,7 +495,9 @@ class _MobileLedgerConnectScreenState
                               : _toggleAdvancedOptions,
                           child: Row(
                             children: [
-                              const Expanded(child: Text('Advanced options')),
+                              Expanded(
+                                child: Text(context.l10n.ledgerAdvancedOptions),
+                              ),
                               const SizedBox(width: AppSpacing.sm),
                               RotatedBox(
                                 quarterTurns: _showAdvancedOptions ? 2 : 0,
@@ -516,7 +529,7 @@ class _MobileLedgerConnectScreenState
                               key: const ValueKey(
                                 'mobile_ledger_account_index_field',
                               ),
-                              label: 'Account index (0–100)',
+                              label: context.l10n.ledgerAccountIndexLabel,
                               controller: _accountIndexController,
                               surface: AppTextFieldSurface.secondary,
                               tone: _invalidAccountIndex
@@ -548,7 +561,7 @@ class _MobileLedgerConnectScreenState
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                'See your balance and activity in Vizor.\nApprove transactions on Ledger.',
+                context.l10n.ledgerBalanceActivityNote,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.accent,
                 ),
@@ -562,7 +575,7 @@ class _MobileLedgerConnectScreenState
             canLeave: !_closing,
             onBack: () => unawaited(_cancelSession()),
             onPrevious: _selectedDevice == null ? null : _chooseAnotherDevice,
-            title: 'Add Ledger account',
+            title: context.l10n.ledgerAddAccountTitle,
             child: Stack(
               children: [
                 // Keep discovery's connection owner alive until this session ends.

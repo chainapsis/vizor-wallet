@@ -55,7 +55,7 @@ class LedgerImmediateMigrationCancelled implements Exception {
   const LedgerImmediateMigrationCancelled();
 
   @override
-  String toString() => 'Ledger Immediate migration was cancelled.';
+  String toString() => 'Ledger Immediate migration was cancelled.'; // l10n-ignore: exception text
 }
 
 class LedgerImmediateMigrationService {

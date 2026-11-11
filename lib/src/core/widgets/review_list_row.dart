@@ -1,23 +1,10 @@
 import 'package:flutter/widgets.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import 'app_copy_feedback.dart';
 import 'app_icon.dart';
 import 'app_tooltip.dart';
-
-/// Tx-fee help tooltip copy shared by the send review/status and received
-/// screens. Placeholder wording — final copy is still owed by design.
-const kTxFeeHelpTooltip =
-    'Fee paid to the Zcash network to process this transaction.';
-
-/// Help copy for the payment request card's requester name.
-///
-/// ZIP-321 calls `label` a name for an address, and a wallet must keep it
-/// identifiable as something distinct from the address. It is text the link
-/// supplied, never a sender the wallet verified — so the one surface that
-/// shows it says so. The send review never renders it at all.
-const kPaymentRequestRequesterTooltip =
-    "Name supplied by the payment link. Vizor can't verify who sent it.";
 
 /// One 32px "List Item" row inside a `ReviewWrapCard`: left label, right
 /// value cluster with optional 16px leading/trailing icons.
@@ -101,7 +88,7 @@ class ReviewListRow extends StatelessWidget {
             ? () => copyTextWithToast(
                 context,
                 text: copyText!,
-                toastMessage: 'Copied',
+                toastMessage: context.l10n.commonCopied,
               )
             : null);
 

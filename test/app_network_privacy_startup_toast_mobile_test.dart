@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_network_setti
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'fakes/fake_sync_notifier.dart';
+import 'support/test_l10n.dart';
 
 void main() {
   testWidgets(
@@ -32,7 +33,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byType(MobileNetworkSettingsSheet), findsOneWidget);
-      expect(find.text(kTorStartupFailureNotice), findsNothing);
+      expect(find.text(testL10n.networkPrivacyTorStartupFailed), findsNothing);
       expect(
         find.text(
           'Vizor could not connect to Tor. Requests stay blocked until it connects or you turn Tor off.',
@@ -69,7 +70,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.getSize(sheet).width, 434);
       expect(tester.element(sheet), same(element));
-      expect(find.text(kTorStartupFailureNotice), findsNothing);
+      expect(find.text(testL10n.networkPrivacyTorStartupFailed), findsNothing);
     },
   );
 }
@@ -79,6 +80,6 @@ class _FailedPrivacy extends NetworkPrivacyNotifier {
   NetworkPrivacyState build() => const NetworkPrivacyState(
     torEnabled: true,
     status: NetworkPrivacyConnectionStatus.failed,
-    startupNotice: kTorStartupFailureNotice,
+    startupNotice: NetworkPrivacyNotice.torStartupFailure,
   );
 }

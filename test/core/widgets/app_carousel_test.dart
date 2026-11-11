@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_carousel.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 const _items = [
   AppCarouselItem.icon(
@@ -338,6 +339,7 @@ Widget _harness({
   ValueChanged<int>? onPageChanged,
 }) {
   return MaterialApp(
+    localizationsDelegates: appLocalizationsDelegates,
     home: MediaQuery(
       data: const MediaQueryData(
         size: Size(900, 700),

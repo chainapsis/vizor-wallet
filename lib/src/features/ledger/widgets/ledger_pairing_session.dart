@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../providers/account_provider.dart';
 import '../ledger_capability.dart';
 import '../services/ledger_bluetooth_access.dart';
@@ -154,7 +155,7 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
     if (!mounted || _invalidated || generation != _generation) {
       throw const LedgerMobileException(
         LedgerMobileFailure.cancelled,
-        'Cancelled',
+        'Cancelled', // l10n-ignore: exception text
       );
     }
   }
@@ -229,10 +230,7 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
         try {
           _epoch();
           if (generation == _generation) {
-            setState(
-              () => _error =
-                  'Could not stop the search. Try opening connection help again.',
-            );
+            setState(() => _error = context.l10n.ledgerStopSearchFailedHelp);
           }
         } catch (_) {
           setState(() => _invalidated = true);
@@ -269,15 +267,19 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
     } catch (_) {
       _invalidated = true;
     }
+    final l10n = context.l10n;
     setState(() {
       _stage = error is LedgerAccountMismatchException
           ? LedgerPairingStage.mismatch
           : LedgerPairingStage.failed;
       _devices = const [];
-      pairingInvalid = ledgerFailureGuidance(error)?.pairingInvalid == true;
-      _accessRecovery = ledgerFailureGuidance(error)?.bluetoothRecovery == true;
+      pairingInvalid =
+          ledgerFailureGuidance(l10n, error)?.pairingInvalid == true;
+      _accessRecovery =
+          ledgerFailureGuidance(l10n, error)?.bluetoothRecovery == true;
       requestFailure = LedgerRequestFailure.fromError(error);
       final guidance = ledgerFailureGuidance(
+        l10n,
         error,
         requestKind: LedgerRequestKind.viewingKey,
       );
@@ -324,7 +326,7 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
           if (!await prepareLedgerBluetoothDiscovery(_mobile)) {
             throw const LedgerMobileException(
               LedgerMobileFailure.permissionDenied,
-              'Allow Bluetooth access to find your Ledger.',
+              'Allow Bluetooth access to find your Ledger.', // l10n-ignore: exception text
             );
           }
           _check(generation);
@@ -447,15 +449,13 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
       _check(generation);
       if (!opened) {
         setState(
-          () => _error =
-              'Open Bluetooth settings manually to remove the old pairing.',
+          () => _error = context.l10n.ledgerOpenBluetoothSettingsManually,
         );
       }
     } catch (_) {
       if (mounted && generation == _generation) {
         setState(
-          () => _error =
-              'Open Bluetooth settings manually to remove the old pairing.',
+          () => _error = context.l10n.ledgerOpenBluetoothSettingsManually,
         );
       }
     } finally {
@@ -467,7 +467,8 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
   }
 
   LedgerPairingStage get stage => _stage;
-  String get failureMessage => _nonRetryableMessage ?? requestFailure.message;
+  String failureMessage(AppLocalizations l10n) =>
+      _nonRetryableMessage ?? requestFailure.message(l10n);
   bool get busy => _busy;
   bool get preparingHelp => _helpBusy;
   bool get invalidated => _invalidated;
