@@ -406,6 +406,7 @@ Future<(VizorPaymentLink, BigInt)> _createGiftCard(
 
 /// The design rail cycles endlessly and is narrower than the artwork list,
 /// so the wanted design is nudged into the viewport before it is tapped.
+/// The amount field's keyboard can cover the rail, so it is dropped first.
 Future<void> _selectCardArtwork(WidgetTester tester, String artworkName) async {
   final selector = find.byKey(
     ValueKey('payment_link_card_selector_$artworkName'),
@@ -415,6 +416,12 @@ Future<void> _selectCardArtwork(WidgetTester tester, String artworkName) async {
     tester,
     () => tester.any(rail),
     description: 'the card design rail',
+  );
+  FocusManager.instance.primaryFocus?.unfocus();
+  await pumpUntil(
+    tester,
+    () => tester.any(rail.hitTestable()),
+    description: 'the card design rail clear of the keyboard',
   );
   final deadline = DateTime.now().add(const Duration(seconds: 30));
   while (!tester.any(selector.hitTestable())) {
