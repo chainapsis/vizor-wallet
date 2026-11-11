@@ -103,8 +103,7 @@ class FunderCacheLease:
         with contextlib.ExitStack() as stack:
             root = tree.open_directory(stack, self.root, private=True)
             self.root_id = tree.identity(os.fstat(root))
-            self.fd = os.open(self.key + ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW,
-                              0o600, dir_fd=root)
+            self.fd = tree.open_lock(self.key + ".lock", dir_fd=root)
         try:
             tree.check(os.fstat(self.fd), directory=False, private=True)
             self.lock_id = tree.identity(os.fstat(self.fd))

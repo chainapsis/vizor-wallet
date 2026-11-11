@@ -56,6 +56,21 @@ def check(details: os.stat_result, *, directory: bool, private=False, allow_link
         raise OwnedTreeError("tree entry must have its original owned regular identity")
 
 
+def open_lock(name, *, dir_fd=None) -> int:
+    """Open a lock file, creating it if it is missing.
+
+    When two processes create one file at the same moment, macOS reports the
+    loser that the file does not exist, although it does by then.
+    """
+    flags = os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW
+    for _ in range(8):
+        try:
+            return os.open(name, flags, 0o600, dir_fd=dir_fd)
+        except FileNotFoundError:
+            continue
+    return os.open(name, flags, 0o600, dir_fd=dir_fd)
+
+
 def open_directory(stack: contextlib.ExitStack, path, *, dir_fd=None, private=False, build_output=False):
     """Open an owned directory; one opened below dir_fd must be on dir_fd's filesystem.
 

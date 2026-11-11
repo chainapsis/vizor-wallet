@@ -49,6 +49,23 @@ class OwnedTreeTests(unittest.TestCase):
         (fonts / "external").symlink_to(self.outside / "shared")
         return builds, case
 
+    def test_open_lock_retries_when_a_concurrent_create_reports_a_missing_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "key.lock"
+            real_open, calls = os.open, []
+
+            def lose_the_race_once(*args, **kwargs):
+                calls.append(args)
+                if len(calls) == 1:
+                    raise FileNotFoundError(2, "No such file or directory", str(path))
+                return real_open(*args, **kwargs)
+
+            with patch.object(TREE.os, "open", lose_the_race_once):
+                descriptor = TREE.open_lock(path)
+            os.close(descriptor)
+            self.assertEqual(len(calls), 2)
+            self.assertTrue(path.is_file())
+
     def test_default_mode_keeps_refusing_hard_links_and_group_writable_files(self):
         for name, prepare in (("hard", lambda path: os.link(self.outside / "shared", path / "link")),
                               ("writable", lambda path: ((path / "font").write_text("x"),

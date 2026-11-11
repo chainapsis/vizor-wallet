@@ -15,6 +15,7 @@ import threading
 import time
 
 import e2e_runtime as runtime
+import native_owned_tree as tree
 from native_ports import _safe_lock_directory
 
 
@@ -51,8 +52,7 @@ class NativeClipboardLease:
         try:
             if os.fstat(directory) != root.stat():
                 raise ClipboardLeaseError("clipboard lock parent changed")
-            descriptor = os.open("host.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW,
-                0o600, dir_fd=directory)
+            descriptor = tree.open_lock("host.lock", dir_fd=directory)
             details = os.fstat(descriptor)
             if (not stat.S_ISREG(details.st_mode) or details.st_uid != os.getuid()
                 or stat.S_IMODE(details.st_mode) & 0o077 or details.st_nlink != 1):
