@@ -61,7 +61,9 @@ pub(crate) struct Snapshot {
 /// Use the same anchor depth as the claim selector, including for a frozen
 /// funding prefix whose later blocks are observed without wallet scanning.
 pub(crate) fn max_claim_anchor_height(checked_height: u32) -> Option<u32> {
-    checked_height.checked_add(1)?.checked_sub(u32::from(
+    // Like the SDK: `trusted` blocks below the tip, one below the target height.
+    let tip = checked_height.checked_add(1)?.checked_sub(1)?;
+    tip.checked_sub(u32::from(
         crate::wallet::payment_link_claim_confirmations_policy().trusted(),
     ))
 }

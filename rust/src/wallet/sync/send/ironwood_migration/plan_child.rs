@@ -30,7 +30,7 @@ fn get_orchard_migration_private_plan_for_targets(
     let orchard_fvk = ufvk.orchard().ok_or("Orchard viewing key not available")?;
 
     let (target_height, anchor_height) = db
-        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .get_target_and_anchor_heights(super::migration::trusted_anchor_confirmations())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before estimating migration plan")?;
     let fee_rule = ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height));
@@ -364,7 +364,7 @@ pub(crate) fn get_orchard_migration_immediate_plan(
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let (target_height, anchor_height) = db
-        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .get_target_and_anchor_heights(super::migration::trusted_anchor_confirmations())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before estimating Immediate migration")?;
     let orchard_notes =
@@ -434,7 +434,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     let internal_ovk = Some(orchard_fvk.to_ovk(orchard::keys::Scope::Internal));
     let memo = MemoBytes::empty();
     let (current_target_height, _) = db
-        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .get_target_and_anchor_heights(super::migration::trusted_anchor_confirmations())
         .map_err(|e| format!("Failed to read target height: {e}"))?
         .ok_or("Wallet must sync before preparing migration")?;
     let (target_height, scheduled_height) = initial_migration_schedule_heights(
@@ -832,7 +832,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
     let memo = MemoBytes::empty();
 
     let (target_height, anchor_height) = db
-        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .get_target_and_anchor_heights(super::migration::trusted_anchor_confirmations())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before migrating denominations")?;
 
