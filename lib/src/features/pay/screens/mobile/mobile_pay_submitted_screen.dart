@@ -132,7 +132,7 @@ class _MobilePaySubmittedScreenState
   }
 
   void _openActivity(BuildContext context) {
-    context.go(
+    context.pushReplacement(
       swapActivityDetailUri(
         intentId: widget.intentId,
         returnTarget: SwapActivityReturnTarget.pay,

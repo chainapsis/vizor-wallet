@@ -3809,11 +3809,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get lockConfirmPasscodeSemantics => '암‍호‍를 입‍력‍해 Vizor 잠‍금 해‍제';
 
   @override
-  String lockNavSyncing(int percent) {
-    return '$percent% 동‍기‍화 중...';
-  }
-
-  @override
   String get lockSyncCompleteTitle => '동‍기‍화 완‍료';
 
   @override
@@ -3823,7 +3818,23 @@ class AppLocalizationsKo extends AppLocalizations {
   String get lockSyncPausedTitle => '동‍기‍화 일‍시 중‍지‍됨';
 
   @override
+  String get lockSyncSlowedHeat => '휴‍대‍폰 열‍을 식‍히‍려‍고 속‍도‍를 늦‍췄‍어‍요';
+
+  @override
+  String get lockSyncSlowedLowPowerMode =>
+      '더 빠‍르‍게 동‍기‍화‍하‍려‍면 저‍전‍력 모‍드‍를 끄‍세‍요';
+
+  @override
+  String get lockSyncSlowedPowerSaving => '더 빠‍르‍게 동‍기‍화‍하‍려‍면 절‍전 모‍드‍를 끄‍세‍요';
+
+  @override
   String get lockSyncingMessage => 'Vizor 동‍기‍화 중';
+
+  @override
+  String get lockSyncingNewBlocks => '새 블‍록 동‍기‍화 중…';
+
+  @override
+  String get lockSyncingNewBlocksSemantics => '새 블‍록 동‍기‍화 중';
 
   @override
   String get lockUnlockToContinue => '계‍속‍하‍려‍면 잠‍금‍을 해‍제‍하‍세‍요';
@@ -9777,15 +9788,15 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsTorDescConnected =>
-      'Vizor‍의 네‍트‍워‍크 요‍청‍은 Tor‍를 거‍쳐‍요. 다‍른 앱‍에‍서 연 링‍크‍는 그 앱‍의 네‍트‍워‍크 설‍정‍을 따‍라‍요.';
+      'Vizor‍는 Tor‍로 IP 주‍소‍를 보‍호‍해‍요. 다‍른 앱‍에‍서 연 링‍크‍는 그 앱‍의 네‍트‍워‍크 설‍정‍을 따‍라‍요.';
 
   @override
   String get settingsTorDescConnectedIos =>
-      'Vizor‍의 네‍트‍워‍크 요‍청‍은 Tor‍를 거‍쳐‍요. Ironwood 비‍공‍개 마‍이‍그‍레‍이‍션‍은 Vizor‍가 닫‍혀 있‍는 동‍안 직‍접 연‍결‍을 사‍용‍해‍요. 다‍른 앱‍에‍서 연 링‍크‍는 해‍당 앱‍의 네‍트‍워‍크 설‍정‍을 따‍라‍요.';
+      'Vizor‍는 Tor‍로 IP 주‍소‍를 보‍호‍해‍요. Ironwood 비‍공‍개 마‍이‍그‍레‍이‍션‍은 Vizor‍가 닫‍혀 있‍는 동‍안 직‍접 연‍결‍을 사‍용‍해‍요. 다‍른 앱‍에‍서 연 링‍크‍는 해‍당 앱‍의 네‍트‍워‍크 설‍정‍을 따‍라‍요.';
 
   @override
   String get settingsTorDescConnectedNoUpdates =>
-      'Vizor‍의 네‍트‍워‍크 요‍청‍은 Tor‍를 거‍치‍지‍만 소‍프‍트‍웨‍어 업‍데‍이‍트‍를 사‍용‍할 수 없‍어‍요.';
+      'Vizor‍는 Tor‍로 IP 주‍소‍를 보‍호‍하‍지‍만 소‍프‍트‍웨‍어 업‍데‍이‍트‍를 사‍용‍할 수 없‍어‍요.';
 
   @override
   String get settingsTorDescConnecting =>
@@ -9821,7 +9832,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsTorDescOffMobile =>
-      '지‍갑 동‍기‍화‍와 앱 내 요‍청‍이 직‍접 연‍결‍돼‍요. Vizor‍가 통‍신‍하‍는 서‍버‍로‍부‍터 IP 주‍소‍를 숨‍기‍려‍면 Tor‍를 켜‍세‍요.';
+      '지‍갑 동‍기‍화‍와 앱 내 요‍청‍이 직‍접 연‍결‍돼‍요. IP 주‍소‍를 보‍호‍하‍려‍면 Tor‍를 켜‍세‍요.';
 
   @override
   String get settingsTorDescSwitchFailed =>
@@ -9845,7 +9856,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsTorGeneralDescription =>
-      'Tor‍를 사‍용‍하‍면 서‍버‍로‍부‍터 IP 주‍소‍를 숨‍길 수 있‍어‍요. 다‍른 앱‍은 자‍체 네‍트‍워‍크 설‍정‍을 사‍용‍해‍요.';
+      'Tor‍를 사‍용‍하‍면 IP 주‍소‍를 보‍호‍할 수 있‍어‍요. 다‍른 앱‍은 자‍체 네‍트‍워‍크 설‍정‍을 사‍용‍해‍요.';
 
   @override
   String get settingsTorGeneralIosSuffix =>
@@ -11050,6 +11061,17 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapViewOnNearIntents => 'NEAR Intents‍에‍서 보‍기';
 
   @override
+  String get syncCatchingUp => '동‍기‍화 중…';
+
+  @override
+  String syncCatchingUpAtBlock(String height) {
+    return '$height 블‍록 동‍기‍화 중';
+  }
+
+  @override
+  String get syncCatchingUpSemantics => '동‍기‍화 중';
+
+  @override
   String syncCheckingPercentSemantics(String percent) {
     return '$percent‍퍼‍센‍트 확‍인 중';
   }
@@ -11150,7 +11172,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String syncSyncingProgress(String percent) {
-    return '$percent% 동‍기‍화 중...';
+    return '$percent% 동‍기‍화 중…';
   }
 
   @override

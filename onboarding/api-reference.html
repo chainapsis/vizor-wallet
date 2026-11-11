@@ -226,15 +226,15 @@
     <td>Phone 이 animated QR 또는 USB EAPDU 로 <code>redactedPczt</code> 를 디바이스에 전달 → 유저가 디바이스에서 승인 → signed PCZT 반환 → phone 이 스캔하여 <code>pcztWithSignatures</code> 획득. <code>lib/src/services/keystone_transport.dart</code>.</td>
   </tr>
   <tr>
-    <td><code>extractAndBroadcastPczt({dbPath, lightwalletdUrl, network, pcztWithProofsBytes, pcztWithSignaturesBytes, spendParamsPath?, outputParamsPath?})</code></td>
-    <td><code>extract_and_broadcast_pczt(...)</code></td>
-    <td>Combiner → TransactionExtractor (verifying key 사용) → gRPC broadcast → primary storage <code>extract_and_store_transaction_from_pczt</code>, 실패 시 fallback <code>decrypt_and_store_transaction</code>. txid 반환. <strong>반드시 broadcast 뒤에 store</strong>. <strong>Sapling params 는 <code>addProofsToPczt</code> 와 동일한 쌍</strong> 으로 전달 — 한쪽만 넘기면 <code>SaplingRequired</code> 로 실패 (<a href="keystone.html#keystone-invariants">§9.6 invariants</a>).</td>
+    <td><code>storeAndBroadcastPcztsWithKeystoneSignaturesForProposal({dbPath, lightwalletdUrl, network, proposalId, sendFlowId, pcztWithProofs, signatureBlobs, spendParamsPath?, outputParamsPath?})</code></td>
+    <td><code>store_and_broadcast_pczts_with_keystone_signatures_for_proposal(...)</code></td>
+    <td>Combiner → TransactionExtractor (verifying key 사용) → gRPC broadcast → primary storage <code>extract_and_store_transaction_from_pczt</code>, 실패 시 fallback <code>decrypt_and_store_transaction</code>. <code>StoreAndBroadcastPcztsResult</code> (txids, status) 반환. TEX·투명 쉴딩은 full-PCZT 응답을 받는 <code>storeAndBroadcastSignedPcztsForProposal</code> 을 쓴다. <strong>반드시 broadcast 뒤에 store</strong>. <strong>Sapling params 는 <code>addProofsToPczt</code> 와 동일한 쌍</strong> 으로 전달 — 한쪽만 넘기면 <code>SaplingRequired</code> 로 실패 (<a href="keystone.html#keystone-invariants">§9.6 invariants</a>).</td>
   </tr>
 </table>
 
 <div class="note">
   <p><strong>Sapling Proving Parameters:</strong> Sapling proof 생성에 <code>sapling-spend.params</code> (~47MB) + <code>sapling-output.params</code> (~3.5MB) 파일이 필요하다. Orchard (Halo 2)는 trusted setup이 없어 파라미터 파일이 불필요하다. <code>propose_send()</code>의 <code>needsSaplingParams</code> 플래그로 필요 여부를 사전에 확인한 후, 필요 시 <code>https://download.z.cash/downloads/</code>에서 다운로드하고 SHA-1 검증 후 저장한다. 한 번만 다운로드하면 이후에는 로컬 파일을 사용한다.</p>
-  <p><strong>Software vs hardware:</strong> Software 경로의 <code>executeProposal</code> 은 <code>needsSaplingParams=false</code> 일 때 no-op Sapling prover 를 써서 params 파일이 필요 없다. Hardware 경로는 <code>needsSaplingParams=true</code> 일 때 <strong>같은 params 경로를 <code>addProofsToPczt</code> 와 <code>extractAndBroadcastPczt</code> 양쪽에</strong> 넘겨야 한다 (proving key + verifying key 둘 다 필요).</p>
+  <p><strong>Software vs hardware:</strong> Software 경로의 <code>executeProposal</code> 은 <code>needsSaplingParams=false</code> 일 때 no-op Sapling prover 를 써서 params 파일이 필요 없다. Hardware 경로는 <code>needsSaplingParams=true</code> 일 때 <strong>같은 params 경로를 <code>addProofsToPczt</code> 와 <code>storeAndBroadcastPcztsWithKeystoneSignaturesForProposal</code> 양쪽에</strong> 넘겨야 한다 (proving key + verifying key 둘 다 필요).</p>
 </div>
 
 <h3 id="api-structs">6.4 데이터 구조체</h3>

@@ -1,5 +1,6 @@
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
+import '../../../../core/navigation/mobile_destinations.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Scaffold;
@@ -194,16 +195,7 @@ class _MobileSwapReviewScreenState
           : SwapActivityReturnTarget.swap;
       switch (result) {
         case SwapStartedActivity(:final intentId):
-          if (widget.payMode) {
-            context.go('/pay/submitted/${Uri.encodeComponent(intentId)}');
-            return;
-          }
-          context.go(
-            swapActivityDetailUri(
-              intentId: intentId,
-              returnTarget: returnTarget,
-            ).toString(),
-          );
+          _openStartedIntent(intentId);
         case SwapStartedHardwareSigning(:final intentId):
           final pendingIntent = ref
               .read(swapStateProvider)
@@ -213,16 +205,20 @@ class _MobileSwapReviewScreenState
                 .read(accountProvider.notifier)
                 .hardwareSignerKindForAccount(pendingIntent.accountUuid ?? '');
             if (signerKind == HardwareSignerKind.ledger) {
-              await context.push<void>(
-                '/swap/ledger-sign',
-                extra: MobileSwapLedgerSignArgs.fromReview(
-                  intent: pendingIntent,
-                  returnTarget: returnTarget,
-                ),
-              );
+              final signingResult = await context
+                  .push<MobileSwapLedgerSignSuccess>(
+                    '/swap/ledger-sign',
+                    extra: MobileSwapLedgerSignArgs.fromReview(
+                      intent: pendingIntent,
+                      returnTarget: returnTarget,
+                    ),
+                  );
+              if (mounted && signingResult != null && _isCurrentReview) {
+                _openStartedIntent(intentId);
+              }
               return;
             }
-            final signingRoute = context.push<void>(
+            final signingRoute = context.push<MobileSwapKeystoneSignResult>(
               '/swap/keystone-sign',
               extra: MobileSwapKeystoneSignArgs.fromReview(
                 intent: pendingIntent,
@@ -230,12 +226,12 @@ class _MobileSwapReviewScreenState
               ),
             );
             _scheduleKeystoneSigningReviewInactive();
-            await signingRoute;
+            final signingResult = await signingRoute;
             if (!mounted) return;
-            final path = GoRouter.of(
-              context,
-            ).routerDelegate.currentConfiguration.uri.path;
-            if (path == (widget.payMode ? '/pay/review' : '/swap/review')) {
+            if (!_isCurrentReview) return;
+            if (signingResult is MobileSwapKeystoneSignSuccess) {
+              _openStartedIntent(intentId);
+            } else {
               ref
                   .read(swapStateProvider.notifier)
                   .clearPendingHardwareSigningIntent(intentId);
@@ -245,7 +241,7 @@ class _MobileSwapReviewScreenState
             }
             return;
           }
-          context.go(
+          context.pushReplacement(
             swapActivityDetailUri(
               intentId: intentId,
               returnTarget: returnTarget,
@@ -254,6 +250,24 @@ class _MobileSwapReviewScreenState
           );
       }
     }());
+  }
+
+  bool get _isCurrentReview =>
+      mobileVisiblePath(GoRouter.of(context)) ==
+      (widget.payMode ? '/pay/review' : '/swap/review');
+
+  void _openStartedIntent(String intentId) {
+    // Replace the completed review, leaving its composer below the receipt.
+    // Signing routes return here after saving the broadcast result so they
+    // cannot leave a completed review between the receipt and the composer.
+    context.pushReplacement(
+      widget.payMode
+          ? '/pay/submitted/${Uri.encodeComponent(intentId)}'
+          : swapActivityDetailUri(
+              intentId: intentId,
+              returnTarget: SwapActivityReturnTarget.swap,
+            ).toString(),
+    );
   }
 
   void _scheduleKeystoneSigningReviewInactive() {

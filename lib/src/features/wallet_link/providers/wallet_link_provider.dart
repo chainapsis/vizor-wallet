@@ -321,6 +321,8 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       _remotePackageId = null;
       _activeKeyBytes = null;
       _lastStatusPollErrorLogKey = null;
+      // The phone has the package; nothing needs the server copy any more.
+      unawaited(_revokePackage(packageId));
       state = WalletLinkState(
         phase: WalletLinkPhase.linked,
         accountCount: importSummary?.importedAccountCount ?? state.accountCount,
@@ -363,7 +365,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
 
   Future<void> _revokePackage(String packageId) async {
     try {
-      await ref.read(walletLinkApiClientProvider).revokePackage(packageId);
+      await _client.revokePackage(packageId);
     } catch (error, stackTrace) {
       log('WalletLinkController.revokePackage: ERROR: $error\n$stackTrace');
       // Explicit cleanup is best-effort. Backend TTL remains the fallback
@@ -376,8 +378,13 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     _epoch++;
     _statusPollEpoch = null;
     _lastStatusPollErrorLogKey = null;
+    final packageId = _remotePackageId;
     _remotePackageId = null;
     _activeKeyBytes = null;
+    // Leaving the screen withdraws a QR that is still showing.
+    if (packageId != null) {
+      unawaited(_revokePackage(packageId));
+    }
   }
 
   Uint8List _randomBytes(int length) {

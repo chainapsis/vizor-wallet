@@ -28,7 +28,13 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
-  for (final scenario in ['fresh', 'removed', 'cached', 'checkpoint']) {
+  for (final scenario in [
+    'fresh',
+    'removed',
+    'cached',
+    'checkpoint',
+    'review',
+  ]) {
     final leaveRoute = scenario == 'removed';
     final cached = scenario == 'cached';
     testWidgets('mobile Ledger persists before ack ($scenario)', (
@@ -66,7 +72,10 @@ void main() {
             builder: (context, _) {
               signingContext = context;
               return MobileSwapLedgerSignScreen(
-                args: MobileSwapLedgerSignArgs(intent: _intent),
+                args: MobileSwapLedgerSignArgs(
+                  intent: _intent,
+                  startedFromReview: scenario == 'review',
+                ),
               );
             },
           ),

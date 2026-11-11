@@ -16,6 +16,7 @@ import '../../providers/privacy_mode_provider.dart';
 import '../../providers/receive_address_provider.dart';
 import '../../providers/sync_display_progress_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../providers/sync_short_catch_up_provider.dart';
 import '../../providers/voting/voting_rounds_provider.dart';
 import '../../providers/voting/voting_submission_guard_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
@@ -663,6 +664,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       child: _SidebarSyncStatus(
                         sync: sync,
                         networkPrivacy: networkPrivacy,
+                        shortCatchUp: ref.watch(syncShortCatchUpProvider),
                       ),
                     ),
                   ],
@@ -1575,10 +1577,15 @@ class _SidebarPopoverHoverTargetState
 /// small shimmer/motion helpers are intentionally duplicated rather than
 /// shared so the two surfaces ship as independent changes.)
 class _SidebarSyncStatus extends ConsumerStatefulWidget {
-  const _SidebarSyncStatus({required this.sync, required this.networkPrivacy});
+  const _SidebarSyncStatus({
+    required this.sync,
+    required this.networkPrivacy,
+    this.shortCatchUp = false,
+  });
 
   final SyncState sync;
   final NetworkPrivacyState networkPrivacy;
+  final bool shortCatchUp;
 
   @override
   ConsumerState<_SidebarSyncStatus> createState() => _SidebarSyncStatusState();
@@ -1606,6 +1613,7 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
         context.l10n,
         widget.sync,
         networkPrivacy: widget.networkPrivacy,
+        shortCatchUp: widget.shortCatchUp,
       ).kind ==
       SyncStatusKind.syncing;
 
@@ -1657,30 +1665,42 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
       widget.sync,
       displayWholePercentage: ref.watch(syncDisplayWholePercentageProvider),
       networkPrivacy: widget.networkPrivacy,
+      shortCatchUp: widget.shortCatchUp,
     );
-    final syncedHeight =
-        status.kind == SyncStatusKind.synced &&
-            widget.sync.isSyncComplete &&
-            widget.sync.scannedHeight > 0
+    // A short catch-up keeps the synced look, block height included; the
+    // height follows the scan.
+    final showsHeight = switch (status.kind) {
+      SyncStatusKind.synced => widget.sync.isSyncComplete,
+      SyncStatusKind.catchingUp => true,
+      SyncStatusKind.syncing || SyncStatusKind.failed => false,
+    };
+    final syncedHeight = showsHeight && widget.sync.scannedHeight > 0
         ? widget.sync.scannedHeight
         : null;
     final label = status.kind == SyncStatusKind.synced
         ? context.l10n.syncSynced
         : status.label;
-    final semanticsLabel = syncedHeight == null
-        ? (status.kind == SyncStatusKind.synced
-              ? context.l10n.syncSynced
-              : status.semanticsLabel)
-        : context.l10n.syncSyncedAtBlock(formatGroupedInteger(syncedHeight));
+    final String semanticsLabel;
+    if (syncedHeight == null) {
+      semanticsLabel = status.kind == SyncStatusKind.synced
+          ? context.l10n.syncSynced
+          : status.semanticsLabel;
+    } else {
+      final height = formatGroupedInteger(syncedHeight);
+      semanticsLabel = status.kind == SyncStatusKind.catchingUp
+          ? context.l10n.syncCatchingUpAtBlock(height)
+          : context.l10n.syncSyncedAtBlock(height);
+    }
     final textColor = switch (status.kind) {
       SyncStatusKind.syncing => colors.sync.textSyncing,
       SyncStatusKind.failed => colors.sync.textError,
-      SyncStatusKind.synced => colors.sync.text,
+      SyncStatusKind.synced || SyncStatusKind.catchingUp => colors.sync.text,
     };
     final indicatorColor = switch (status.kind) {
       SyncStatusKind.syncing => colors.text.muted,
       SyncStatusKind.failed => colors.sync.lightError,
-      SyncStatusKind.synced => colors.sync.lightSuccess,
+      SyncStatusKind.synced ||
+      SyncStatusKind.catchingUp => colors.sync.lightSuccess,
     };
 
     final Widget body = _shouldAnimate
@@ -1710,14 +1730,22 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
               label: label,
               tooltipMessage: status.semanticsLabel,
               showTooltipOnOverflow: status.kind == SyncStatusKind.failed,
-              style: AppTypography.labelLarge.copyWith(color: textColor),
+              style: withTabularFigures(
+                AppTypography.labelLarge,
+              ).copyWith(color: textColor),
             ),
           );
 
     return SizedBox(
       width: double.infinity,
       height: _height,
-      child: Semantics(label: semanticsLabel, child: body),
+      // The label stands in for the row's text (the visible label and the
+      // block height) so it is announced once.
+      child: Semantics(
+        label: semanticsLabel,
+        excludeSemantics: true,
+        child: body,
+      ),
     );
   }
 
@@ -1926,9 +1954,9 @@ class _SidebarSyncShimmerLabel extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: AppTypography.labelLarge.copyWith(
-          color: const Color(0xFFFFFFFF),
-        ),
+        style: withTabularFigures(
+          AppTypography.labelLarge,
+        ).copyWith(color: const Color(0xFFFFFFFF)),
       ),
     );
   }

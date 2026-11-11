@@ -94,6 +94,10 @@ class MainActivity : FlutterFragmentActivity() {
     }
     private lateinit var ledgerMobileHandler: LedgerMobileHandler
 
+    // Registers its receiver and thermal listener on the application context,
+    // which outlives this activity; a destroyed engine never cancels the stream.
+    private var devicePowerHandler: DevicePowerHandler? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val appReviewHandler = AppReviewHandler(this)
@@ -178,6 +182,13 @@ class MainActivity : FlutterFragmentActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             LedgerMobileHandler.EVENT_CHANNEL
         ).setStreamHandler(ledgerMobileHandler)
+        devicePowerHandler?.onCancel(null)
+        val powerHandler = DevicePowerHandler(applicationContext)
+        devicePowerHandler = powerHandler
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DEVICE_POWER_CHANNEL
+        ).setStreamHandler(powerHandler)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             CAMERA_PERMISSION_CHANNEL
@@ -347,6 +358,8 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onDestroy() {
         if (::ledgerMobileHandler.isInitialized) ledgerMobileHandler.close()
+        devicePowerHandler?.onCancel(null)
+        devicePowerHandler = null
         super.onDestroy()
     }
 
@@ -464,6 +477,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     companion object {
         private const val CAMERA_PERMISSION_CHANNEL = "com.zcash.wallet/camera_permission"
+        private const val DEVICE_POWER_CHANNEL = "com.zcash.wallet/device_power"
         private const val HAPTICS_CHANNEL = "com.zcash.wallet/haptics"
         private const val NATIVE_STRINGS_CHANNEL = "com.zcash.wallet/native_strings"
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"

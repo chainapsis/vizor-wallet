@@ -3599,11 +3599,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get lockConfirmPasscodeSemantics => '确认数字密码以解锁 Vizor';
 
   @override
-  String lockNavSyncing(int percent) {
-    return '$percent% 同步中...';
-  }
-
-  @override
   String get lockSyncCompleteTitle => '同步完成';
 
   @override
@@ -3613,7 +3608,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get lockSyncPausedTitle => '同步已暂停';
 
   @override
+  String get lockSyncSlowedHeat => '已减速，让手机降温';
+
+  @override
+  String get lockSyncSlowedLowPowerMode => '关闭低电量模式可加快同步';
+
+  @override
+  String get lockSyncSlowedPowerSaving => '关闭省电模式可加快同步';
+
+  @override
   String get lockSyncingMessage => 'Vizor 正在同步';
+
+  @override
+  String get lockSyncingNewBlocks => '正在同步新区块…';
+
+  @override
+  String get lockSyncingNewBlocksSemantics => '正在同步新区块';
 
   @override
   String get lockUnlockToContinue => '解锁以继续';
@@ -9156,15 +9166,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsTorDescConnected =>
-      'Vizor 的网络请求通过 Tor 发送。在其他应用中打开的链接使用这些应用的网络设置。';
+      'Vizor 使用 Tor 保护你的 IP 地址。在其他应用中打开的链接使用这些应用的网络设置。';
 
   @override
   String get settingsTorDescConnectedIos =>
-      'Vizor 的网络请求通过 Tor 发送。Vizor 关闭期间，Ironwood 私密迁移使用直接连接。在其他应用中打开的链接使用这些应用的网络设置。';
+      'Vizor 使用 Tor 保护你的 IP 地址。Vizor 关闭期间，Ironwood 私密迁移使用直接连接。在其他应用中打开的链接使用这些应用的网络设置。';
 
   @override
   String get settingsTorDescConnectedNoUpdates =>
-      'Vizor 的网络请求通过 Tor 发送，但无法进行软件更新。';
+      'Vizor 使用 Tor 保护你的 IP 地址，但无法进行软件更新。';
 
   @override
   String get settingsTorDescConnecting =>
@@ -9196,8 +9206,7 @@ class AppLocalizationsZh extends AppLocalizations {
       'Tor 已关闭。Vizor 的请求（包括软件更新检查）直接连接。更新页面和下载会在其他应用中打开。';
 
   @override
-  String get settingsTorDescOffMobile =>
-      '钱包同步和应用内请求直接连接。开启 Tor 可向 Vizor 所连接的服务器隐藏你的 IP 地址。';
+  String get settingsTorDescOffMobile => '钱包同步和应用内请求直接连接。开启 Tor 可保护你的 IP 地址。';
 
   @override
   String get settingsTorDescSwitchFailed => 'Vizor 无法切换为直接连接。请重试。';
@@ -9217,7 +9226,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsTorGeneralDescription =>
-      '使用 Tor 可向服务器隐藏你的 IP 地址。其他应用使用各自的网络设置。';
+      '使用 Tor 可保护你的 IP 地址。其他应用使用各自的网络设置。';
 
   @override
   String get settingsTorGeneralIosSuffix => ' Vizor 关闭期间，Ironwood 私密迁移使用直接连接。';
@@ -10358,6 +10367,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapViewOnNearIntents => '在 NEAR Intents 中查看';
 
   @override
+  String get syncCatchingUp => '同步中…';
+
+  @override
+  String syncCatchingUpAtBlock(String height) {
+    return '同步中，区块 $height';
+  }
+
+  @override
+  String get syncCatchingUpSemantics => '同步中';
+
+  @override
   String syncCheckingPercentSemantics(String percent) {
     return '检查中，$percent%';
   }
@@ -10450,7 +10470,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String syncSyncingProgress(String percent) {
-    return '$percent% 同步中...';
+    return '$percent% 同步中…';
   }
 
   @override
