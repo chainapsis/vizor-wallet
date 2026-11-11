@@ -52,13 +52,11 @@ class MobileSwapLedgerSignScreen extends ConsumerWidget {
         }
       },
       onDepositBroadcast: (broadcast) async {
-        if (!args.startedFromReview) {
-          if (context.mounted) {
-            context.pop(MobileSwapLedgerSignSuccess(broadcast));
-          }
+        if (!context.mounted) return;
+        if (!args.startedFromReview || context.canPop()) {
+          context.pop(MobileSwapLedgerSignSuccess(broadcast));
           return;
         }
-        if (!context.mounted) return;
         if (args.returnTarget == SwapActivityReturnTarget.pay) {
           context.go('/pay/submitted/${Uri.encodeComponent(args.intent.id)}');
           return;
