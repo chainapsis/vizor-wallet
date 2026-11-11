@@ -6536,12 +6536,6 @@ abstract class AppLocalizations {
   /// **'Confirm passcode to unlock Vizor'**
   String get lockConfirmPasscodeSemantics;
 
-  /// Top bar title of the passcode entry screen while sync runs, with the percentage complete.
-  ///
-  /// In en, this message translates to:
-  /// **'{percent}% Syncing...'**
-  String lockNavSyncing(int percent);
-
   /// Title on the sync lock screen when sync has finished.
   ///
   /// In en, this message translates to:
@@ -6560,11 +6554,41 @@ abstract class AppLocalizations {
   /// **'Sync paused'**
   String get lockSyncPausedTitle;
 
+  /// Note under the progress on the sync lock screen when sync runs slower because the phone is hot. Fits two short lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Slowed down so your phone can cool'**
+  String get lockSyncSlowedHeat;
+
+  /// Note under the progress on the sync lock screen on iOS when Low Power Mode slows sync. Low Power Mode is the iOS setting name. Fits two short lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off Low Power Mode to sync faster'**
+  String get lockSyncSlowedLowPowerMode;
+
+  /// Note under the progress on the sync lock screen on Android when the device's power saving slows sync. Fits two short lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off power saving to sync faster'**
+  String get lockSyncSlowedPowerSaving;
+
   /// Screen-reader label and caption on the sync lock screen while sync is running.
   ///
   /// In en, this message translates to:
   /// **'Vizor is syncing'**
   String get lockSyncingMessage;
+
+  /// Body under the Sync Complete title on the sync lock screen while the wallet catches up to newly mined blocks.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing new blocks…'**
+  String get lockSyncingNewBlocks;
+
+  /// Screen-reader form of the sync lock screen body shown while the wallet catches up to newly mined blocks.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing new blocks'**
+  String get lockSyncingNewBlocksSemantics;
 
   /// [security] Body of the passcode entry screen while sync is running.
   ///
@@ -16439,19 +16463,19 @@ abstract class AppLocalizations {
   /// Tor status description when connected.
   ///
   /// In en, this message translates to:
-  /// **'Vizor’s network requests go through Tor. Links opened in other apps use those apps’ network settings.'**
+  /// **'Vizor uses Tor to protect your IP address. Links opened in other apps use those apps’ network settings.'**
   String get settingsTorDescConnected;
 
   /// [security] Tor status description on iOS: the background Ironwood migration is direct while the app is closed.
   ///
   /// In en, this message translates to:
-  /// **'Vizor’s network requests go through Tor. Ironwood private migration uses a direct connection while Vizor is closed. Links opened in other apps use those apps’ network settings.'**
+  /// **'Vizor uses Tor to protect your IP address. Ironwood private migration uses a direct connection while Vizor is closed. Links opened in other apps use those apps’ network settings.'**
   String get settingsTorDescConnectedIos;
 
   /// Tor status description when connected but software updates cannot be reached.
   ///
   /// In en, this message translates to:
-  /// **'Vizor’s network requests go through Tor, but software updates are unavailable.'**
+  /// **'Vizor uses Tor to protect your IP address, but software updates are unavailable.'**
   String get settingsTorDescConnectedNoUpdates;
 
   /// Tor status description while connecting; it names the way out for networks that block Tor.
@@ -16505,7 +16529,7 @@ abstract class AppLocalizations {
   /// Tor status description on mobile when Tor is off.
   ///
   /// In en, this message translates to:
-  /// **'Wallet sync and in-app requests connect directly. Turn Tor on to hide your IP address from the servers Vizor talks to.'**
+  /// **'Wallet sync and in-app requests connect directly. Turn Tor on to protect your IP address.'**
   String get settingsTorDescOffMobile;
 
   /// Tor status description when switching to direct failed (desktop).
@@ -16541,7 +16565,7 @@ abstract class AppLocalizations {
   /// Short general description of the Tor setting on mobile.
   ///
   /// In en, this message translates to:
-  /// **'Use Tor to hide your IP address from servers. Other apps use their own network settings.'**
+  /// **'Use Tor to protect your IP address. Other apps use their own network settings.'**
   String get settingsTorGeneralDescription;
 
   /// [security] Sentence appended (with a leading space) to the general Tor description on iOS.
@@ -18582,10 +18606,28 @@ abstract class AppLocalizations {
   /// **'View on NEAR Intents'**
   String get swapViewOnNearIntents;
 
+  /// Sync status while an already synced wallet catches up to a few new blocks, shown without a percentage.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing…'**
+  String get syncCatchingUp;
+
+  /// Screen-reader sync status with the scanned block height while a synced wallet catches up to new blocks.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing at block {height}'**
+  String syncCatchingUpAtBlock(String height);
+
+  /// Screen-reader sync status while an already synced wallet catches up to a few new blocks.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing'**
+  String get syncCatchingUpSemantics;
+
   /// Screen-reader sync status while Vizor re-checks the wallet.
   ///
   /// In en, this message translates to:
-  /// **'Checking {percent} percent'**
+  /// **'{percent}% checking'**
   String syncCheckingPercentSemantics(String percent);
 
   /// Sync status while Vizor re-checks the wallet. {percent} is a whole number 0-99.
@@ -18735,13 +18777,13 @@ abstract class AppLocalizations {
   /// Screen-reader sync status while the wallet syncs.
   ///
   /// In en, this message translates to:
-  /// **'Syncing {percent} percent'**
+  /// **'{percent}% Syncing'**
   String syncSyncingPercentSemantics(String percent);
 
   /// Sync status while the wallet syncs. {percent} is a whole number 0-99.
   ///
   /// In en, this message translates to:
-  /// **'{percent}% Syncing...'**
+  /// **'{percent}% Syncing…'**
   String syncSyncingProgress(String percent);
 
   /// Sync status after the Tor connection failed; sync is paused until the user acts.

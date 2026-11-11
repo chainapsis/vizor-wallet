@@ -219,10 +219,10 @@ _MobileTorPresentation _presentationFor(
       ),
     (NetworkPrivacyConnectionStatus.connected, _) => _MobileTorPresentation(
       statusLabel: l10n.settingsTorStatusConnected,
-      // iOS can continue Ironwood private migration through its native
-      // background task after Vizor closes. That task is pinned direct, so
-      // name the exception instead of weakening the foreground guarantee with
-      // "most". Android has no corresponding background migration lane.
+      // Large block downloads fetch public blocks directly, so this does not
+      // promise every request. iOS can continue Ironwood private migration
+      // through its native background task after Vizor closes; that task is
+      // pinned direct and named. Android has no background migration lane.
       description: platform == TargetPlatform.iOS
           ? l10n.settingsTorDescConnectedIos
           : l10n.settingsTorDescConnected,

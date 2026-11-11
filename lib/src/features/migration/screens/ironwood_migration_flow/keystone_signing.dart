@@ -1959,7 +1959,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           else
             KeystoneQrScannerCard(
               expectedUrType: _keystoneMigrationSignBatchResultUrType,
-              decoding: _decoding,
+              // The signature was read; the card must not start a new scan.
+              decoding: _decoding || waitingForProofs,
               error: _error,
               onProgress: (_) {
                 if (_pendingSignedMessages != null) return;

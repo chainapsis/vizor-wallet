@@ -419,7 +419,7 @@ class _ActivityUseCaseSidebar extends StatelessWidget {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      '34% Syncing...',
+                      '34% Syncing…',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelLarge.copyWith(

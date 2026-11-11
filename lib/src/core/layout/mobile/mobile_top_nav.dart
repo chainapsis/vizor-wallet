@@ -29,6 +29,7 @@ class MobileTopNav extends StatelessWidget {
     required this.accountName,
     this.balanceLabel,
     this.syncLabel,
+    this.syncSemanticsLabel,
     this.syncLabelColor,
     this.syncIndicatorColor,
     this.syncAnimated = false,
@@ -38,6 +39,7 @@ class MobileTopNav extends StatelessWidget {
     super.key,
   }) : _variant = _MobileTopNavVariant.account,
        title = '',
+       titleSemanticsLabel = null,
        titleStyle = null,
        titleMaxLines = 1,
        height = kMobileTopNavHeight,
@@ -62,6 +64,7 @@ class MobileTopNav extends StatelessWidget {
        accountName = '',
        balanceLabel = null,
        syncLabel = null,
+       syncSemanticsLabel = null,
        syncLabelColor = null,
        syncIndicatorColor = null,
        syncAnimated = false,
@@ -69,6 +72,7 @@ class MobileTopNav extends StatelessWidget {
        avatar = null,
        onAccountTap = null,
        title = '',
+       titleSemanticsLabel = null,
        titleStyle = null,
        titleMaxLines = 1,
        trailing = null,
@@ -77,6 +81,7 @@ class MobileTopNav extends StatelessWidget {
 
   const MobileTopNav.back({
     required this.title,
+    this.titleSemanticsLabel,
     this.onBack,
     this.trailing,
     this.backIcon = AppIcons.chevronBackward,
@@ -89,6 +94,7 @@ class MobileTopNav extends StatelessWidget {
        accountName = '',
        balanceLabel = null,
        syncLabel = null,
+       syncSemanticsLabel = null,
        syncLabelColor = null,
        syncIndicatorColor = null,
        syncAnimated = false,
@@ -109,6 +115,10 @@ class MobileTopNav extends StatelessWidget {
   final String accountName;
   final String? balanceLabel;
   final String? syncLabel;
+
+  /// What a screen reader announces for [syncLabel]; the label itself when
+  /// null.
+  final String? syncSemanticsLabel;
   final Color? syncLabelColor;
   final Color? syncIndicatorColor;
 
@@ -136,6 +146,9 @@ class MobileTopNav extends StatelessWidget {
 
   /// Back variant: centered serif title.
   final String title;
+
+  /// What a screen reader announces for [title]; the title itself when null.
+  final String? titleSemanticsLabel;
   final TextStyle? titleStyle;
   final int titleMaxLines;
   final Color? foregroundColor;
@@ -224,6 +237,7 @@ class MobileTopNav extends StatelessWidget {
         if (syncLabel != null)
           MobileSyncStatus(
             label: syncLabel!,
+            semanticsLabel: syncSemanticsLabel,
             baseColor: syncLabelColor ?? colors.sync.text,
             highlightColor:
                 syncHighlightColor ?? syncLabelColor ?? colors.sync.text,
@@ -292,6 +306,7 @@ class MobileTopNav extends StatelessWidget {
             ),
             child: Text(
               title,
+              semanticsLabel: titleSemanticsLabel,
               maxLines: titleMaxLines,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,

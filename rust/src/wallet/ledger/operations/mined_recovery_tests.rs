@@ -1482,3 +1482,254 @@ fn shield_checkpoint_after_cancellation_cannot_recreate_reservation() {
         .unwrap();
     assert_eq!(count, 0);
 }
+
+/// A Ledger checkpoint whose signed transaction spends a really locked input.
+fn locked_transparent_checkpoint(
+    operation_id: &str,
+    kind: &str,
+) -> (
+    Wallet,
+    zcash_client_backend::wallet::LockOwner,
+    transparent::address::TransparentAddress,
+) {
+    use secrecy::ExposeSecret;
+    use transparent::{
+        address::TransparentAddress,
+        bundle::TxOut,
+        keys::{AccountPrivKey, NonHardenedChildIndex, TransparentKeyScope},
+    };
+    use zcash_client_backend::{
+        data_api::{OutputLockStore, WalletWrite},
+        wallet::{LockOwner, OutputRef, WalletTransparentOutput},
+    };
+    use zcash_protocol::{consensus::BlockHeight, value::Zatoshis, PoolType};
+    let mut wallet = Wallet::new(false);
+    let seed = secrecy::SecretVec::new(vec![1; 32]);
+    let (uuid, _) = crate::wallet::keys::init_db_and_create_account(
+        &wallet.path,
+        WalletNetwork::Regtest,
+        &seed,
+        Some(1),
+        "Ledger",
+    )
+    .unwrap();
+    let account = crate::wallet::keys::parse_account_uuid(&uuid).unwrap();
+    let key = AccountPrivKey::from_seed(
+        &WalletNetwork::Regtest,
+        seed.expose_secret(),
+        zip32::AccountId::ZERO,
+    )
+    .unwrap()
+    .derive_external_secret_key(NonHardenedChildIndex::from_index(0).unwrap())
+    .unwrap();
+    let address = TransparentAddress::from_pubkey(&key.public_key());
+    wallet.signed[0] = Signed::with_key(OutPoint::new([1; 32], 0), 1_000_000, key);
+    let owner = LockOwner::new([43; 32]);
+    let output = OutputRef::new(
+        zcash_primitives::transaction::TxId::from_bytes([1; 32]),
+        PoolType::TRANSPARENT,
+        0,
+    );
+    let expiry = wallet.signed[0].tx.expiry_height();
+    let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+        &wallet.path,
+        WalletNetwork::Regtest,
+        WALLET_DB_BUSY_TIMEOUT,
+    )
+    .unwrap();
+    db.update_chain_tip(BlockHeight::from_u32(200)).unwrap();
+    db.put_received_transparent_utxo(
+        &WalletTransparentOutput::from_parts(
+            OutPoint::new([1; 32], 0),
+            TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
+            Some(BlockHeight::from_u32(150)),
+            Some(account),
+            Some(TransparentKeyScope::EXTERNAL),
+            None,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    db.lock_outputs(std::slice::from_ref(&output), owner, expiry)
+        .unwrap();
+    drop(db);
+    proposal_locks::persist(&wallet.path, owner, &[output], expiry).unwrap();
+    wallet.signed[0].proof =
+        proposal_locks::bind_pczt(pczt::Pczt::parse(&wallet.signed[0].proof).unwrap(), owner)
+            .serialize()
+            .unwrap();
+    wallet.checkpoint(operation_id, kind);
+    (wallet, owner, address)
+}
+
+fn input_lock_held(wallet: &Wallet, owner: zcash_client_backend::wallet::LockOwner) -> bool {
+    rusqlite::Connection::open(&wallet.path)
+        .unwrap()
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM transparent_received_outputs WHERE lock_owner = ?1)",
+            [owner.as_bytes().as_slice()],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+/// Whether the checkpoint's funding output can be spent by a transaction that
+/// targets `target_height`.
+fn funding_spendable_at(
+    wallet: &Wallet,
+    address: &transparent::address::TransparentAddress,
+    target_height: u32,
+) -> bool {
+    use zcash_client_backend::data_api::{
+        wallet::{
+            input_selection::{LockFilter, LockedInputPolicy},
+            ConfirmationsPolicy,
+        },
+        CoinbaseFilter, InputSource,
+    };
+    let db = crate::wallet::db::open_wallet_db_with_timeout(
+        &wallet.path,
+        WalletNetwork::Regtest,
+        WALLET_DB_BUSY_TIMEOUT,
+    )
+    .unwrap();
+    // The signed transaction pays the same address, so match the outpoint.
+    let funding = OutPoint::new([1; 32], 0);
+    db.get_spendable_transparent_outputs(
+        address,
+        zcash_protocol::consensus::BlockHeight::from_u32(target_height).into(),
+        ConfirmationsPolicy::MIN,
+        CoinbaseFilter::AllTransparentOutputs,
+        LockFilter::Policy(&LockedInputPolicy::default()),
+    )
+    .unwrap()
+    .iter()
+    .any(|output| *output.outpoint() == funding)
+}
+
+/// A node that rejects a transaction it fully received can still relay it:
+/// Zebra and Zakura re-queue rejected transactions for later blocks. The
+/// outbox keeps it like an unknown result, and the wallet treats the input as
+/// spent until the transaction expires.
+#[tokio::test]
+async fn rejection_after_full_submission_keeps_the_spend_until_expiry() {
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    for kind in ["send", "swap_deposit", "pay_deposit", "shield"] {
+        let (wallet, owner, address) = locked_transparent_checkpoint("rejected-op", kind);
+        let expiry = u32::from(wallet.signed[0].tx.expiry_height());
+        let (url, service, handle) = server(200, 18).await;
+        let result = broadcast(
+            &wallet.path,
+            &url,
+            WalletNetwork::Regtest,
+            "rejected-op",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.status, "broadcast_unknown", "{kind}");
+        assert!(result.requires_ack, "{kind}");
+        assert!(
+            result.notices.iter().any(|notice| notice
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("code 18"))),
+            "{kind}: {result:?}"
+        );
+        assert_eq!(
+            *service.submitted.lock().unwrap(),
+            [wallet.signed[0].raw.clone()],
+            "{kind}"
+        );
+        let rows = list(&wallet.path, WalletNetwork::Regtest, None).unwrap();
+        assert_eq!(rows.len(), 1, "{kind}");
+        assert_eq!(rows[0].state, STATE_RESULT_PENDING_ACK, "{kind}");
+        assert!(input_lock_held(&wallet, owner), "{kind}");
+        let stored: Option<u32> = rusqlite::Connection::open(&wallet.path)
+            .unwrap()
+            .query_row(
+                "SELECT mined_height FROM transactions WHERE txid = ?1",
+                [wallet.signed[0].tx.txid().as_ref()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, None, "{kind}: stored as unmined");
+        // The stored spend holds the input while the transaction can be
+        // mined, and gives it back after its expiry height.
+        assert!(!funding_spendable_at(&wallet, &address, expiry), "{kind}");
+        assert!(funding_spendable_at(&wallet, &address, expiry + 1), "{kind}");
+        handle.abort();
+    }
+}
+
+/// A TEX pair's first round pays only the wallet's ephemeral address. Keeping
+/// it after a rejection would drop the signed payment round, so the pair still
+/// fails, stores nothing, and releases its inputs for a retry.
+#[tokio::test]
+async fn rejected_first_round_of_a_pair_still_fails() {
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    let wallet = Wallet::funded(true);
+    let proposal = SignedProposal::new(&wallet);
+    let (url, service, handle) = server(205, 18).await;
+    let Err(error) = proposal.recover_batch(&wallet, &url).await else {
+        panic!("a rejected first round must fail the pair");
+    };
+    assert!(error.message.contains("code 18"), "{error}");
+    assert_eq!(
+        *service.submitted.lock().unwrap(),
+        [wallet.signed[0].raw.clone()]
+    );
+    let stored: u32 = rusqlite::Connection::open(&wallet.path)
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE txid IN (?1, ?2)",
+            params![
+                wallet.signed[0].tx.txid().as_ref(),
+                wallet.signed[1].tx.txid().as_ref()
+            ],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, 0);
+    proposal.assert_retained(&wallet, false);
+    handle.abort();
+}
+
+/// A rejected TEX payment round can still be mined, like any rejected
+/// transaction. It is stored with its funding round, so sync resubmits it
+/// until it expires instead of dropping the payment.
+#[tokio::test]
+async fn rejected_payment_round_is_kept_with_its_funding_round() {
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    let wallet = Wallet::funded(true);
+    let proposal = SignedProposal::new(&wallet);
+    let (url, service, handle) = server(205, 0).await;
+    *service.responses.lock().unwrap() = vec![0, 18];
+    let result = proposal.recover_batch(&wallet, &url).await.unwrap();
+    assert_eq!(result.status, "partial_broadcast");
+    assert_eq!((result.broadcasted_count, result.total_count), (1, 2));
+    let message = result.message.as_deref().unwrap_or_default();
+    assert!(message.contains("code 18"), "{message}");
+    assert_eq!(
+        *service.submitted.lock().unwrap(),
+        [wallet.signed[0].raw.clone(), wallet.signed[1].raw.clone()]
+    );
+    let unmined: u32 = rusqlite::Connection::open(&wallet.path)
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE txid IN (?1, ?2) AND raw IS NOT NULL AND mined_height IS NULL",
+            params![
+                wallet.signed[0].tx.txid().as_ref(),
+                wallet.signed[1].tx.txid().as_ref()
+            ],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(unmined, 2, "both rounds are stored for resubmission");
+    proposal.assert_retained(&wallet, false);
+    handle.abort();
+}

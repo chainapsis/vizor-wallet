@@ -148,24 +148,25 @@ class AppSecureStoreSwapActivityStore implements SwapActivityStore {
 }
 
 /// The one gate every swap activity read and write passes, so no caller can
-/// race account deletion. Each account's reads, saves and deletions run one at
-/// a time in the order they arrive, so a read never overtakes a save accepted before it, and
-/// deleting an account waits only for a storage operation already under way,
-/// never for a provider request or recovery work. Once an account's activity is deleted,
-/// later saves for it are dropped, which stops a save prepared before the
-/// deletion from bringing the deleted account's swaps back. Account UUIDs are
-/// never reused, so a dropped account stays dropped.
+/// race account deletion. Each account's saves and deletions run one at a time
+/// in the order they arrive. A read waits for every save accepted before it, so
+/// it never overtakes one, but nothing waits for a read: a slow load must not
+/// hold up a swap's start or removal. Deleting an account waits only for a
+/// save under way, never for a provider request or recovery work. Once an
+/// account's activity is deleted, later saves for it are dropped, which stops a
+/// save prepared before the deletion from bringing the deleted account's swaps
+/// back. Account UUIDs are never reused, so a dropped account stays dropped.
 class DeletionSafeSwapActivityStore implements SwapActivityStore {
   DeletionSafeSwapActivityStore(this._inner);
 
   final SwapActivityStore _inner;
   final Set<String> _deleted = {};
 
-  /// The last queued operation of each account. Accounts queue separately, so
+  /// The last queued write of each account. Accounts queue separately, so
   /// one account's slow storage call never holds up another's.
   final Map<String, Future<void>> _tails = {};
 
-  /// Runs `action` after every read, save and deletion queued before it for
+  /// Runs `action` after every save and deletion queued before it for
   /// `accountUuid`.
   Future<T> _serialized<T>(String accountUuid, Future<T> Function() action) {
     final result = (_tails[accountUuid] ?? Future<void>.value()).then(
@@ -181,13 +182,15 @@ class DeletionSafeSwapActivityStore implements SwapActivityStore {
     return result;
   }
 
-  /// Reads `accountUuid`'s activity once every earlier save has landed.
+  /// Reads `accountUuid`'s activity once every earlier save has landed,
+  /// without queueing later ones behind it.
   @override
-  Future<List<SwapIntentRecord>> loadRecords({required String accountUuid}) =>
-      _serialized(
-        accountUuid,
-        () => _inner.loadRecords(accountUuid: accountUuid),
-      );
+  Future<List<SwapIntentRecord>> loadRecords({
+    required String accountUuid,
+  }) async {
+    await (_tails[accountUuid] ?? Future<void>.value());
+    return _inner.loadRecords(accountUuid: accountUuid);
+  }
 
   /// Saves `records` unless `accountUuid`'s activity was deleted, in which case
   /// it writes nothing. It does not read what it replaces.

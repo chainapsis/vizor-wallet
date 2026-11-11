@@ -78,6 +78,13 @@ class SwapNotifier extends Notifier<SwapState> {
       <(String, SwapDirection), Future<SwapZecStagingAddress>>{};
   var _pricingLoadGeneration = 0;
   var _accountScopeGeneration = 0;
+  // The account scope whose saved swaps are on screen. Until the current scope
+  // matches, saving the screen list would replace swaps that were never loaded.
+  int? _intentsLoadedScope;
+  // Saves made before the load finished. A load that read storage before one
+  // of them holds a list without it, so it reads again.
+  var _unloadedSaveCount = 0;
+  Future<void> _unloadedSaves = Future<void>.value();
   var _payEntryGeneration = 0;
   var _hasResolvedSupportedAssets = false;
   Set<String> _deprecatedAssetIdentityKeys = const {};
@@ -140,13 +147,6 @@ class SwapNotifier extends Notifier<SwapState> {
       (previous, next) {
         if (previous == next) return;
         if (previous != null) {
-          unawaited(
-            _persistCurrentIntents(accountUuid: previous).catchError((
-              Object e,
-            ) {
-              log('Swap: saving activity on account switch failed error=$e');
-            }),
-          );
           // In Pay mode the composer state carries Pay's direction/payout
           // asset, which must not overwrite the previous account's saved
           // swap composer selection.
@@ -181,6 +181,7 @@ class SwapNotifier extends Notifier<SwapState> {
     unawaited(_restoreComposerPreferences(accountUuid: activeAccountUuid));
     unawaited(_ensurePaySelectedAssetRestored(accountUuid: activeAccountUuid));
     unawaited(_loadSupportedExternalAssets());
+    _intentsLoadedScope = null;
     unawaited(_restorePersistedIntents(accountUuid: activeAccountUuid));
     final initialIntents = ref.watch(swapInitialIntentsProvider);
     return const SwapState(
@@ -2125,11 +2126,18 @@ class SwapNotifier extends Notifier<SwapState> {
     final accountScopeGeneration = _accountScopeGeneration;
     try {
       final tracker = ref.read(swapActivityTrackerProvider);
-      final loaded = await tracker.loadIntents(accountUuid: scopedAccountUuid);
+      List<SwapIntent> loaded;
+      int savesSeen;
+      do {
+        savesSeen = _unloadedSaveCount;
+        loaded = await tracker.loadIntents(accountUuid: scopedAccountUuid);
+        await _unloadedSaves;
+      } while (savesSeen != _unloadedSaveCount);
       if (accountScopeGeneration != _accountScopeGeneration ||
           !_isAccountActive(scopedAccountUuid)) {
         return;
       }
+      _intentsLoadedScope = accountScopeGeneration;
       // The load may have read a swap before its start finished.
       final persisted = tracker.withFinishedStarts(scopedAccountUuid, loaded);
       if (persisted.isEmpty && !replaceExisting) return;
@@ -2276,10 +2284,39 @@ class SwapNotifier extends Notifier<SwapState> {
     }
   }
 
+  bool get _intentsLoaded => _intentsLoadedScope == _accountScopeGeneration;
+
   Future<void> _persistCurrentIntents({String? accountUuid}) async {
     final activeAccountUuid = accountUuid ?? _activeAccountUuidOrNull;
     if (activeAccountUuid == null) return;
-    await _persistIntentsForAccount(activeAccountUuid, state.intents);
+    if (_intentsLoaded) {
+      await _persistIntentsForAccount(activeAccountUuid, state.intents);
+      return;
+    }
+    // The screen does not hold this account's saved swaps yet, so its swaps
+    // are added to the saved ones instead of replacing them.
+    final scopedAccountUuid = SwapActivityTracker.normalizeAccountUuid(
+      activeAccountUuid,
+    );
+    // Taken now: the screen may show another account by the time a queued
+    // save runs.
+    final onScreen = [
+      for (final intent in state.intents)
+        if (intent.accountUuid == scopedAccountUuid) intent,
+    ];
+    _unloadedSaveCount++;
+    final save = _unloadedSaves.then((_) async {
+      final saved = await ref
+          .read(swapActivityTrackerProvider)
+          .loadIntents(accountUuid: scopedAccountUuid);
+      await _persistIntentsForAccount(scopedAccountUuid, [
+        ...onScreen,
+        for (final intent in saved)
+          if (onScreen.swapIntentById(intent.id) == null) intent,
+      ]);
+    });
+    _unloadedSaves = save.catchError((Object _) {});
+    await save;
   }
 
   Future<void> _persistIntentsForAccount(

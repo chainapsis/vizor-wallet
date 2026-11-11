@@ -3854,11 +3854,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lockConfirmPasscodeSemantics => 'Confirm passcode to unlock Vizor';
 
   @override
-  String lockNavSyncing(int percent) {
-    return '$percent% Syncing...';
-  }
-
-  @override
   String get lockSyncCompleteTitle => 'Sync Complete';
 
   @override
@@ -3868,7 +3863,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lockSyncPausedTitle => 'Sync paused';
 
   @override
+  String get lockSyncSlowedHeat => 'Slowed down so your phone can cool';
+
+  @override
+  String get lockSyncSlowedLowPowerMode =>
+      'Turn off Low Power Mode to sync faster';
+
+  @override
+  String get lockSyncSlowedPowerSaving =>
+      'Turn off power saving to sync faster';
+
+  @override
   String get lockSyncingMessage => 'Vizor is syncing';
+
+  @override
+  String get lockSyncingNewBlocks => 'Syncing new blocks…';
+
+  @override
+  String get lockSyncingNewBlocksSemantics => 'Syncing new blocks';
 
   @override
   String get lockUnlockToContinue => 'Unlock to continue';
@@ -10032,15 +10044,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsTorDescConnected =>
-      'Vizor’s network requests go through Tor. Links opened in other apps use those apps’ network settings.';
+      'Vizor uses Tor to protect your IP address. Links opened in other apps use those apps’ network settings.';
 
   @override
   String get settingsTorDescConnectedIos =>
-      'Vizor’s network requests go through Tor. Ironwood private migration uses a direct connection while Vizor is closed. Links opened in other apps use those apps’ network settings.';
+      'Vizor uses Tor to protect your IP address. Ironwood private migration uses a direct connection while Vizor is closed. Links opened in other apps use those apps’ network settings.';
 
   @override
   String get settingsTorDescConnectedNoUpdates =>
-      'Vizor’s network requests go through Tor, but software updates are unavailable.';
+      'Vizor uses Tor to protect your IP address, but software updates are unavailable.';
 
   @override
   String get settingsTorDescConnecting =>
@@ -10076,7 +10088,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsTorDescOffMobile =>
-      'Wallet sync and in-app requests connect directly. Turn Tor on to hide your IP address from the servers Vizor talks to.';
+      'Wallet sync and in-app requests connect directly. Turn Tor on to protect your IP address.';
 
   @override
   String get settingsTorDescSwitchFailed =>
@@ -10100,7 +10112,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsTorGeneralDescription =>
-      'Use Tor to hide your IP address from servers. Other apps use their own network settings.';
+      'Use Tor to protect your IP address. Other apps use their own network settings.';
 
   @override
   String get settingsTorGeneralIosSuffix =>
@@ -11350,8 +11362,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapViewOnNearIntents => 'View on NEAR Intents';
 
   @override
+  String get syncCatchingUp => 'Syncing…';
+
+  @override
+  String syncCatchingUpAtBlock(String height) {
+    return 'Syncing at block $height';
+  }
+
+  @override
+  String get syncCatchingUpSemantics => 'Syncing';
+
+  @override
   String syncCheckingPercentSemantics(String percent) {
-    return 'Checking $percent percent';
+    return '$percent% checking';
   }
 
   @override
@@ -11444,12 +11467,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String syncSyncingPercentSemantics(String percent) {
-    return 'Syncing $percent percent';
+    return '$percent% Syncing';
   }
 
   @override
   String syncSyncingProgress(String percent) {
-    return '$percent% Syncing...';
+    return '$percent% Syncing…';
   }
 
   @override

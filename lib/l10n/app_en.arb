@@ -4930,15 +4930,6 @@
   "@lockConfirmPasscodeSemantics": {
     "description": "[security] Screen-reader label of the passcode entry screen that unlocks the wallet."
   },
-  "lockNavSyncing": "{percent}% Syncing...",
-  "@lockNavSyncing": {
-    "description": "Top bar title of the passcode entry screen while sync runs, with the percentage complete.",
-    "placeholders": {
-      "percent": {
-        "type": "int"
-      }
-    }
-  },
   "lockSyncCompleteTitle": "Sync Complete",
   "@lockSyncCompleteTitle": {
     "description": "Title on the sync lock screen when sync has finished."
@@ -4951,9 +4942,29 @@
   "@lockSyncPausedTitle": {
     "description": "Title on the sync lock screen and passcode screen header when sync was interrupted."
   },
+  "lockSyncSlowedHeat": "Slowed down so your phone can cool",
+  "@lockSyncSlowedHeat": {
+    "description": "Note under the progress on the sync lock screen when sync runs slower because the phone is hot. Fits two short lines."
+  },
+  "lockSyncSlowedLowPowerMode": "Turn off Low Power Mode to sync faster",
+  "@lockSyncSlowedLowPowerMode": {
+    "description": "Note under the progress on the sync lock screen on iOS when Low Power Mode slows sync. Low Power Mode is the iOS setting name. Fits two short lines."
+  },
+  "lockSyncSlowedPowerSaving": "Turn off power saving to sync faster",
+  "@lockSyncSlowedPowerSaving": {
+    "description": "Note under the progress on the sync lock screen on Android when the device's power saving slows sync. Fits two short lines."
+  },
   "lockSyncingMessage": "Vizor is syncing",
   "@lockSyncingMessage": {
     "description": "Screen-reader label and caption on the sync lock screen while sync is running."
+  },
+  "lockSyncingNewBlocks": "Syncing new blocks…",
+  "@lockSyncingNewBlocks": {
+    "description": "Body under the Sync Complete title on the sync lock screen while the wallet catches up to newly mined blocks."
+  },
+  "lockSyncingNewBlocksSemantics": "Syncing new blocks",
+  "@lockSyncingNewBlocksSemantics": {
+    "description": "Screen-reader form of the sync lock screen body shown while the wallet catches up to newly mined blocks."
   },
   "lockUnlockToContinue": "Unlock to continue",
   "@lockUnlockToContinue": {
@@ -12698,15 +12709,15 @@
   "@settingsTorDescBootstrapFailed": {
     "description": "[security] Tor status description on mobile when connecting failed; requests fail closed."
   },
-  "settingsTorDescConnected": "Vizor’s network requests go through Tor. Links opened in other apps use those apps’ network settings.",
+  "settingsTorDescConnected": "Vizor uses Tor to protect your IP address. Links opened in other apps use those apps’ network settings.",
   "@settingsTorDescConnected": {
     "description": "Tor status description when connected."
   },
-  "settingsTorDescConnectedIos": "Vizor’s network requests go through Tor. Ironwood private migration uses a direct connection while Vizor is closed. Links opened in other apps use those apps’ network settings.",
+  "settingsTorDescConnectedIos": "Vizor uses Tor to protect your IP address. Ironwood private migration uses a direct connection while Vizor is closed. Links opened in other apps use those apps’ network settings.",
   "@settingsTorDescConnectedIos": {
     "description": "[security] Tor status description on iOS: the background Ironwood migration is direct while the app is closed."
   },
-  "settingsTorDescConnectedNoUpdates": "Vizor’s network requests go through Tor, but software updates are unavailable.",
+  "settingsTorDescConnectedNoUpdates": "Vizor uses Tor to protect your IP address, but software updates are unavailable.",
   "@settingsTorDescConnectedNoUpdates": {
     "description": "Tor status description when connected but software updates cannot be reached."
   },
@@ -12742,7 +12753,7 @@
   "@settingsTorDescOffLinux": {
     "description": "Tor status description when Tor is off on Linux; update pages and downloads open in another app."
   },
-  "settingsTorDescOffMobile": "Wallet sync and in-app requests connect directly. Turn Tor on to hide your IP address from the servers Vizor talks to.",
+  "settingsTorDescOffMobile": "Wallet sync and in-app requests connect directly. Turn Tor on to protect your IP address.",
   "@settingsTorDescOffMobile": {
     "description": "Tor status description on mobile when Tor is off."
   },
@@ -12766,7 +12777,7 @@
   "@settingsTorDescSwitchingMobile": {
     "description": "Tor status description while switching to direct (mobile)."
   },
-  "settingsTorGeneralDescription": "Use Tor to hide your IP address from servers. Other apps use their own network settings.",
+  "settingsTorGeneralDescription": "Use Tor to protect your IP address. Other apps use their own network settings.",
   "@settingsTorGeneralDescription": {
     "description": "Short general description of the Tor setting on mobile."
   },
@@ -14445,7 +14456,25 @@
   "@swapViewOnNearIntents": {
     "description": "Button label on the swap progress footer that opens the swap in the NEAR Intents explorer."
   },
-  "syncCheckingPercentSemantics": "Checking {percent} percent",
+  "syncCatchingUp": "Syncing…",
+  "@syncCatchingUp": {
+    "description": "Sync status while an already synced wallet catches up to a few new blocks, shown without a percentage."
+  },
+  "syncCatchingUpAtBlock": "Syncing at block {height}",
+  "@syncCatchingUpAtBlock": {
+    "description": "Screen-reader sync status with the scanned block height while a synced wallet catches up to new blocks.",
+    "placeholders": {
+      "height": {
+        "type": "String",
+        "example": "3,120,450"
+      }
+    }
+  },
+  "syncCatchingUpSemantics": "Syncing",
+  "@syncCatchingUpSemantics": {
+    "description": "Screen-reader sync status while an already synced wallet catches up to a few new blocks."
+  },
+  "syncCheckingPercentSemantics": "{percent}% checking",
   "@syncCheckingPercentSemantics": {
     "description": "Screen-reader sync status while Vizor re-checks the wallet.",
     "placeholders": {
@@ -14575,7 +14604,7 @@
       }
     }
   },
-  "syncSyncingPercentSemantics": "Syncing {percent} percent",
+  "syncSyncingPercentSemantics": "{percent}% Syncing",
   "@syncSyncingPercentSemantics": {
     "description": "Screen-reader sync status while the wallet syncs.",
     "placeholders": {
@@ -14585,7 +14614,7 @@
       }
     }
   },
-  "syncSyncingProgress": "{percent}% Syncing...",
+  "syncSyncingProgress": "{percent}% Syncing…",
   "@syncSyncingProgress": {
     "description": "Sync status while the wallet syncs. {percent} is a whole number 0-99.",
     "placeholders": {
