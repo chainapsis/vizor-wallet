@@ -443,12 +443,20 @@ class SequentialCase:
                 "wallet_files": str(self.storage.path) if self.storage is not None else None}
 
 
-def _require_unbound(port):
-    """The Unavailable endpoint preset must refuse connections."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.settimeout(1.0)
-        if probe.connect_ex(("127.0.0.1", port)) == 0:
+def _require_unbound(port, *, wait_seconds=20.0):
+    """The Unavailable endpoint preset must refuse connections.
+
+    A listener that is gone within the wait does not fail the case.
+    """
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(1.0)
+            if probe.connect_ex(("127.0.0.1", port)) != 0:
+                return
+        if time.monotonic() >= deadline:
             raise runtime.RunnerError(f"something listens on port {port}, which must stay unavailable")
+        time.sleep(0.5)
 
 
 def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, proto_dir, dart,

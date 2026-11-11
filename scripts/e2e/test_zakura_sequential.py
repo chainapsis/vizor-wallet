@@ -2,6 +2,7 @@
 import dataclasses
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -317,6 +318,8 @@ class FlutterCommandTests(unittest.TestCase):
             self.assertIn("--dart-define=ZCASH_E2E_DRIVER_URL=http://127.0.0.1:41001", command)
             self.assertIn("--dart-define=ZCASH_E2E_LIGHTWALLETD_URL=http://127.0.0.1:41002", command)
             self.assertFalse(any(":9067" in part or ":18232" in part for part in command))
+        for name in ("flutter.macos.tex-send", "flutter.macos.mempool-during-sync"):
+            self.assertTrue(flutter.leasable(SEQUENTIAL.SCENARIOS[name]))  # process environment, no fixed port
         for name in ("flutter.macos.fallback-endpoint", "flutter.macos.payment-link-batch-restart",
                      "flutter.ios.screenshot-tour", "flutter.macos.voting", "flutter.ios.voting"):
             scenario = SEQUENTIAL.SCENARIOS[name]
@@ -619,6 +622,16 @@ class VotingPhaseTests(unittest.TestCase):
 
 
 class CasePortTests(unittest.TestCase):
+    def test_the_unavailable_port_check_waits_out_a_short_lived_listener(self):
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            port = listener.getsockname()[1]
+            with self.assertRaisesRegex(Exception, "must stay unavailable"):
+                SEQUENTIAL._require_unbound(port, wait_seconds=0)
+            threading.Timer(0.3, listener.close).start()
+            SEQUENTIAL._require_unbound(port, wait_seconds=10)
+
     def test_service_ports_are_leased_but_kept_out_of_the_fixture_workspace(self):
         ports = SEQUENTIAL.flutter_cases.fixed_ports(SEQUENTIAL.SCENARIOS["flutter.ios.voting"])
         lease = type("Lease", (), {"ports": dict(ports), "close": lambda self: None})()
