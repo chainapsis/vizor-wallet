@@ -92,11 +92,13 @@ def share_build_cache(root, checkout):
             shutil.copytree(entry, copy)
 
 
-def lane_command(checkout, scenarios, *, leased, flutter, grpcurl, build_jobs, keep_failed, ios_runtime,
-                 dart_defines):
+def lane_command(checkout, scenarios, *, leased, flutter, grpcurl, proto_dir, build_jobs, keep_failed,
+                 ios_runtime, dart_defines):
     command = [sys.executable, str(Path(checkout) / "scripts/e2e/zakura-run.py"),
                *(scenario.id for scenario in scenarios), "--flutter", str(flutter),
                "--grpcurl", str(grpcurl), "--build-jobs", str(build_jobs)]
+    if proto_dir is not None:
+        command += ["--proto-dir", str(proto_dir)]
     if leased:
         command.append("--lease-ports")
     if keep_failed:
@@ -115,7 +117,7 @@ def _report_path(lines):
     return None
 
 
-def run_lanes(root, scenarios, *, flutter, grpcurl, proto_dir, build_jobs=4, keep_failed=False,
+def run_lanes(root, scenarios, *, flutter, grpcurl, proto_dir=None, build_jobs=4, keep_failed=False,
               ios_runtime=None, dart_defines=(), second_macos=True, cancel_event=None, out=print):
     """Run the scenarios as concurrent lanes; return the merged report and its path."""
     root = Path(root).resolve(strict=True)
@@ -132,7 +134,8 @@ def run_lanes(root, scenarios, *, flutter, grpcurl, proto_dir, build_jobs=4, kee
     checkouts = {FIXED: root}
     if MACOS in lanes or IOS in lanes:
         # One build of the signer serves every lane.
-        built, _ = sequential.run_sequence(root, [], flutter=flutter, grpcurl=grpcurl, proto_dir=proto_dir,
+        built, _ = sequential.run_sequence(root, [], flutter=flutter, grpcurl=grpcurl,
+            proto_dir=proto_dir if proto_dir is not None else root / "protos",
             build_jobs=build_jobs, cancel_event=cancel, out=out)
         if built["error"]:
             raise ValueError(f"the signer did not build: {built['error']}")
@@ -160,8 +163,8 @@ def run_lanes(root, scenarios, *, flutter, grpcurl, proto_dir, build_jobs=4, kee
     try:
         for name, selected in lanes.items():
             command = lane_command(checkouts[name], selected, leased=name != FIXED, flutter=flutter,
-                grpcurl=grpcurl, build_jobs=build_jobs, keep_failed=keep_failed, ios_runtime=ios_runtime,
-                dart_defines=dart_defines)
+                grpcurl=grpcurl, proto_dir=proto_dir, build_jobs=build_jobs, keep_failed=keep_failed,
+                ios_runtime=ios_runtime, dart_defines=dart_defines)
             out(f"[{name}] {len(selected)} scenario(s) in {checkouts[name]}")
             process = subprocess.Popen(command, cwd=checkouts[name], stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT, text=True, start_new_session=True)

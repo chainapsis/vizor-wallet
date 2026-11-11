@@ -43,7 +43,7 @@ class PlanTests(unittest.TestCase):
 class CommandTests(unittest.TestCase):
     def test_only_lanes_beside_the_fixed_one_lease_ports(self):
         selected = SEQUENTIAL.select_scenarios(["flutter.macos.import-sync"])
-        options = dict(flutter=Path("/sdk/flutter"), grpcurl=Path("/bin/grpcurl"), build_jobs=2,
+        options = dict(flutter=Path("/sdk/flutter"), grpcurl=Path("/bin/grpcurl"), proto_dir=None, build_jobs=2,
             keep_failed=True, ios_runtime="runtime", dart_defines=(("NAME", "value"),))
         leased = LANES.lane_command(Path("/checkout"), selected, leased=True, **options)
         self.assertEqual(leased[1:3], ["/checkout/scripts/e2e/zakura-run.py", "flutter.macos.import-sync"])
@@ -51,7 +51,10 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(leased[-2:], ["--dart-define", "NAME=value"])
         self.assertIn("--keep-failed", leased)
         self.assertEqual(leased[leased.index("--ios-runtime") + 1], "runtime")
-        self.assertNotIn("--lease-ports", LANES.lane_command(Path("/root"), selected, leased=False, **options))
+        self.assertNotIn("--proto-dir", leased)
+        fixed = LANES.lane_command(Path("/root"), selected, leased=False, **{**options, "proto_dir": Path("/protos")})
+        self.assertNotIn("--lease-ports", fixed)
+        self.assertEqual(fixed[fixed.index("--proto-dir") + 1], "/protos")
 
 
 if __name__ == "__main__":

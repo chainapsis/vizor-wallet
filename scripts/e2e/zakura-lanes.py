@@ -34,8 +34,8 @@ def main(argv=None):
         help="scenario IDs, or dotted prefixes such as `rust` or `flutter.ios`")
     parser.add_argument("--flutter", type=Path, help="Flutter executable (default: the fvm-pinned SDK)")
     parser.add_argument("--grpcurl", type=Path, help="grpcurl executable (default: from PATH)")
-    parser.add_argument("--proto-dir", type=Path, default=root / "protos",
-        help="lightwalletd protos (default: protos/)")
+    parser.add_argument("--proto-dir", type=Path,
+        help="lightwalletd protos (default: each checkout's protos/)")
     parser.add_argument("--build-jobs", type=int, default=4, help="Cargo build jobs, 1 through 8")
     parser.add_argument("--keep-failed", action="store_true",
         help="keep the regtest chain and wallet files of failed scenarios")
@@ -63,6 +63,9 @@ def main(argv=None):
     flutter = args.flutter or sequential.flutter_cases.pinned_flutter(root)
     if flutter is None:
         parser.error("the Flutter SDK could not be resolved through fvm; pass --flutter")
+    # Lanes run in other directories, so relative paths must not reach them.
+    flutter, grpcurl = flutter.absolute(), grpcurl.absolute()
+    proto_dir = args.proto_dir.absolute() if args.proto_dir else None
 
     cancel = threading.Event()
 
@@ -74,7 +77,7 @@ def main(argv=None):
     signal.signal(signal.SIGHUP, interrupt)
     try:
         report, path = lanes.run_lanes(root, scenarios, flutter=flutter, grpcurl=grpcurl,
-            proto_dir=args.proto_dir, build_jobs=args.build_jobs, keep_failed=args.keep_failed,
+            proto_dir=proto_dir, build_jobs=args.build_jobs, keep_failed=args.keep_failed,
             ios_runtime=args.ios_runtime, dart_defines=tuple(defines),
             second_macos=not args.single_macos, cancel_event=cancel, out=_console)
     except ValueError as error:
