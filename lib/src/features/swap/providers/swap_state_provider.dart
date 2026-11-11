@@ -72,7 +72,6 @@ class SwapNotifier extends Notifier<SwapState> {
   // The account scope whose saved swaps are on screen. Until the current scope
   // matches, saving the screen list would replace swaps that were never loaded.
   int? _intentsLoadedScope;
-  Future<void>? _intentsRestore;
   // Saves made before the load finished. A load that read storage before one
   // of them holds a list without it, so it reads again.
   var _unloadedSaveCount = 0;
@@ -137,10 +136,7 @@ class SwapNotifier extends Notifier<SwapState> {
         unawaited(_restoreComposerPreferences(accountUuid: next));
         unawaited(_ensurePaySelectedAssetRestored(accountUuid: next));
         unawaited(
-          _intentsRestore = _restorePersistedIntents(
-            accountUuid: next,
-            replaceExisting: true,
-          ),
+          _restorePersistedIntents(accountUuid: next, replaceExisting: true),
         );
       },
     );
@@ -159,11 +155,7 @@ class SwapNotifier extends Notifier<SwapState> {
     unawaited(_ensurePaySelectedAssetRestored(accountUuid: activeAccountUuid));
     unawaited(_loadSupportedExternalAssets());
     _intentsLoadedScope = null;
-    unawaited(
-      _intentsRestore = _restorePersistedIntents(
-        accountUuid: activeAccountUuid,
-      ),
-    );
+    unawaited(_restorePersistedIntents(accountUuid: activeAccountUuid));
     final initialIntents = ref.watch(swapInitialIntentsProvider);
     return const SwapState(
       direction: SwapDirection.zecToExternal,
@@ -899,24 +891,6 @@ class SwapNotifier extends Notifier<SwapState> {
     // anything is listed, saved or sent for it.
     bool screenMoved() =>
         scope != _accountScopeGeneration || !_isAccountActive(accountUuid);
-    // A swap listed before its account's saved swaps would be saved without
-    // them, then dropped when they arrive.
-    final intentsLoaded = await _ensureIntentsLoaded(accountUuid);
-    if (screenMoved()) {
-      log('Swap: start dropped after an account switch');
-      return null;
-    }
-    if (!intentsLoaded) {
-      log('Swap: start blocked; saved swaps could not be loaded');
-      state = state.copyWith(
-        startSubmitting: false,
-        statusError: _providerFailureMessage(
-          SwapFailureOperation.start,
-          StateError('Swap activity is unavailable.'),
-        ),
-      );
-      return null;
-    }
     final activeAccountIsHardware = ref
         .read(accountProvider.notifier)
         .isActiveAccountHardware;
@@ -1162,13 +1136,6 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   Future<void> removeIntent(String intentId) async {
-    // A removal from a list that is still loading would be undone by the load.
-    final accountUuid = _activeAccountUuidOrNull;
-    if (accountUuid != null && !_intentsLoaded) {
-      final scope = _accountScopeGeneration;
-      final loaded = await _ensureIntentsLoaded(accountUuid);
-      if (!loaded || scope != _accountScopeGeneration) return;
-    }
     final remaining = [
       for (final intent in state.intents)
         if (intent.id != intentId) intent,
@@ -2077,18 +2044,6 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   bool get _intentsLoaded => _intentsLoadedScope == _accountScopeGeneration;
-
-  /// Waits for the active account's saved swaps, retrying a failed load once.
-  Future<bool> _ensureIntentsLoaded(String accountUuid) async {
-    if (_intentsLoaded) return true;
-    await _intentsRestore;
-    if (_intentsLoaded || !_isAccountActive(accountUuid)) return _intentsLoaded;
-    await (_intentsRestore = _restorePersistedIntents(
-      accountUuid: accountUuid,
-      replaceExisting: true,
-    ));
-    return _intentsLoaded;
-  }
 
   Future<void> _persistCurrentIntents({String? accountUuid}) async {
     final activeAccountUuid = accountUuid ?? _activeAccountUuidOrNull;
